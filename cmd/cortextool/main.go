@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/grafana/ruler_cli/pkg/client"
-	"github.com/grafana/ruler_cli/pkg/parser"
+	"github.com/grafana/cortex-tools/pkg/client"
+	"github.com/grafana/cortex-tools/pkg/parser"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
