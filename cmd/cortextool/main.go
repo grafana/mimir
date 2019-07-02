@@ -20,21 +20,18 @@ var (
 
 func main() {
 	kingpin.Version("0.0.1")
-	app := kingpin.New("rulerclient", "A command-line tool to manage the cortex ruler")
-	app.Flag("address", "The address of the ruler server").Required().StringVar(&clientConfig.Address)
-	app.Flag("id", "cortex tenant id").Required().StringVar(&clientConfig.ID)
-	app.Flag("key", "api key, no basic auth if left blank").Default("").StringVar(&clientConfig.Key)
-	app.Flag("debug", "print information useful for debugging the ruler client").BoolVar(&debug)
-
-	listRulegroupsCmd := app.Command("list", "list the rules currently in the cortex ruler")
-
-	getRuleGroupCmd := app.Command("get", "retreive a rulegroup from the ruler")
-	namespace := getRuleGroupCmd.Arg("namespace", "namespace of the rulegroup to retrieve").Required().String()
-	rulegroup := getRuleGroupCmd.Arg("group name", "name of the rulegroup ot retrieve").Required().String()
-
-	loadRulesCmd := app.Command("load", "load a set of rules to a designated cortex endpoint")
+	app := kingpin.New("cortex-tool", "A command-line tool to manage cortex configs.")
+	app.Flag("address", "Address of the cortex cluster, alternatively set GRAFANACLOUD_ADDRESS.").Envar("GRAFANACLOUD_ADDRESS").Required().StringVar(&clientConfig.Address)
+	app.Flag("id", "Cortex tenant id, alternatively set GRAFANACLOUD_INSTANCE_ID.").Envar("GRAFANACLOUD_INSTANCE_ID").Required().StringVar(&clientConfig.ID)
+	app.Flag("key", "Api key to use when contacting cortex, alternatively set $GRAFANACLOUD_API_KEY.").Default("").Envar("GRAFANACLOUD_API_KEY").StringVar(&clientConfig.Key)
+	app.Flag("debug", "Print information useful for debugging the ruler client.").BoolVar(&debug)
+	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.")
+	listRulegroupsCmd := rulesCmd.Command("list", "List the rules currently in the cortex ruler.")
+	getRuleGroupCmd := rulesCmd.Command("get", "Retreive a rulegroup from the ruler.")
+	namespace := getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().String()
+	rulegroup := getRuleGroupCmd.Arg("group", "Name of the rulegroup ot retrieve.").Required().String()
+	loadRulesCmd := rulesCmd.Command("load", "load a set of rules to a designated cortex endpoint")
 	ruleFiles := loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFiles()
-
 	command := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	if debug {

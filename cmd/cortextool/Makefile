@@ -3,7 +3,7 @@ GOCMD=go
 GOBUILD=$(GOCMD) build
 GOCLEAN=$(GOCMD) clean
 GOTEST=$(GOCMD) test
-BINARY_NAME=ruler_cli
+BINARY_NAME=cortex-tool
 
 all: test build
 build: 

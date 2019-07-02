@@ -3,14 +3,13 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 
 	"github.com/cortexproject/cortex/pkg/configs"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
@@ -93,9 +92,9 @@ func checkResponse(r *http.Response) error {
 	var msg string
 	data, err := ioutil.ReadAll(r.Body)
 	if err != nil {
-		msg = err.Error()
+		msg = fmt.Sprintf("unable to decode body, %s", err.Error())
 	} else {
-		msg = string(data)
+		msg = fmt.Sprintf("request failed with response body %v", string(data))
 	}
 
 	log.WithFields(log.Fields{
@@ -156,14 +155,15 @@ func (r *RulerClient) DeleteRuleGroup(ctx context.Context, namespace, groupName 
 func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (rulefmt.RuleGroup, error) {
 	res, err := r.doRequest(fmt.Sprintf("/api/prom/rules/%s/%s", namespace, groupName), "GET", nil)
 	if err != nil {
-		return rulefmt.RuleGroup{}, err
+		return rulefmt.RuleGroup{}, errors.Wrap(err, "failed to perform request")
 	}
 
 	defer res.Body.Close()
 	err = checkResponse(res)
 	if err != nil {
-		return rulefmt.RuleGroup{}, err
+		return rulefmt.RuleGroup{}, errors.Wrap(err, "request failed")
 	}
+
 	body, err := ioutil.ReadAll(res.Body)
 
 	if err != nil {
@@ -171,9 +171,13 @@ func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	}
 
 	rg := rulefmt.RuleGroup{}
-	err = json.Unmarshal(body, &rg)
+	err = yaml.Unmarshal(body, &rg)
 	if err != nil {
-		return rulefmt.RuleGroup{}, err
+		log.WithFields(log.Fields{
+			"body": string(body),
+		}).Debugln("failed to unmarshal rule group from response")
+
+		return rulefmt.RuleGroup{}, errors.Wrap(err, "unable to unmarshal response")
 	}
 
 	return rg, nil
