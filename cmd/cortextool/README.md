@@ -1,3 +1,3 @@
-# Cortex-Tools
+# Cortex-Tool
 
 ## 

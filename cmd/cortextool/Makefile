@@ -10,10 +10,10 @@ BINARY_NAME=cortex-tool
 all: build
 
 build: 
-	$(GOBUILD) -o bin/$(BINARY_NAME) -v
+	$(GOBUILD) -v -o cmd/cortex-tool/$(BINARY_NAME) cmd/cortex-tool/cortex-tool.go
 
 build-linux:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "-X main.Version=$(VERSION)" -o bin/$(BINARY_NAME) .
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) -ldflags "-X main.Version=$(VERSION)" -o cmd/cortex-tool/$(BINARY_NAME) cmd/cortex-tool/cortex-tool.go
 
 test: 
 	$(GOTEST) -v -race ./...
@@ -23,4 +23,4 @@ clean:
 	rm -f bin/$(BINARY_NAME)
 
 build-docker: build-linux
-	docker build -t grafana/$(BINARY_NAME):$(VERSION) .
+	docker build -t grafana/$(BINARY_NAME):$(VERSION) cmd/cortex-tool

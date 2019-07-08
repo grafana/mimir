@@ -1,4 +1,4 @@
-package parser
+package rules
 
 import (
 	"errors"

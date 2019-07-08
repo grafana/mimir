@@ -152,22 +152,22 @@ func (r *RulerClient) DeleteRuleGroup(ctx context.Context, namespace, groupName 
 }
 
 // GetRuleGroup retrieves a rule group
-func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (rulefmt.RuleGroup, error) {
+func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rulefmt.RuleGroup, error) {
 	res, err := r.doRequest(fmt.Sprintf("/api/prom/rules/%s/%s", namespace, groupName), "GET", nil)
 	if err != nil {
-		return rulefmt.RuleGroup{}, errors.Wrap(err, "failed to perform request")
+		return nil, errors.Wrap(err, "failed to perform request")
 	}
 
 	defer res.Body.Close()
 	err = checkResponse(res)
 	if err != nil {
-		return rulefmt.RuleGroup{}, errors.Wrap(err, "request failed")
+		return nil, errors.Wrap(err, "request failed")
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 
 	if err != nil {
-		return rulefmt.RuleGroup{}, err
+		return nil, err
 	}
 
 	rg := rulefmt.RuleGroup{}
@@ -177,10 +177,10 @@ func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 			"body": string(body),
 		}).Debugln("failed to unmarshal rule group from response")
 
-		return rulefmt.RuleGroup{}, errors.Wrap(err, "unable to unmarshal response")
+		return nil, errors.Wrap(err, "unable to unmarshal response")
 	}
 
-	return rg, nil
+	return &rg, nil
 }
 
 // ListRules retrieves a rule group
