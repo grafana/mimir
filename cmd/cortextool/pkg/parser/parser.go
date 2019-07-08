@@ -35,7 +35,7 @@ func ParseFiles(files []string) (map[string]configs.RuleNamespace, error) {
 		// the file name without the extension is used.
 		namespace := ns.Namespace
 		if namespace == "" {
-			namespace = strings.TrimSuffix(f, filepath.Ext(f))
+			namespace = strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
 			ns.Namespace = namespace
 		}
 
