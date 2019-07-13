@@ -1,1 +1,5 @@
 cmd/cortex-tool/cortex-tool
+.uptodate
+.pkg
+.cache
+images/
