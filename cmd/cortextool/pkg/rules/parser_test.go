@@ -10,9 +10,6 @@ import (
 )
 
 func TestParseFiles(t *testing.T) {
-	type args struct {
-		files []string
-	}
 	tests := []struct {
 		name    string
 		files   []string
