@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/cortexproject/cortex/pkg/configs"
+	"github.com/cortexproject/cortex/pkg/ruler/store"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
@@ -16,7 +16,8 @@ import (
 )
 
 var (
-	ErrNoConfig = errors.New("No config exists for this user")
+	ErrNoConfig         = errors.New("No config exists for this user")
+	ErrResourceNotFound = errors.New("requested resource not found")
 )
 
 // Config is used to configure a Ruler Client
@@ -85,7 +86,10 @@ func (r *RulerClient) doRequest(path, method string, payload []byte) (*http.Resp
 
 // checkResponse checks the API response for errors
 func checkResponse(r *http.Response) error {
-	if c := r.StatusCode; 200 <= c && c <= 299 {
+	log.WithFields(log.Fields{
+		"status": r.Status,
+	}).Debugln("checking response")
+	if 200 <= r.StatusCode && r.StatusCode <= 299 {
 		return nil
 	}
 
@@ -95,6 +99,14 @@ func checkResponse(r *http.Response) error {
 		msg = fmt.Sprintf("unable to decode body, %s", err.Error())
 	} else {
 		msg = fmt.Sprintf("request failed with response body %v", string(data))
+	}
+
+	if r.StatusCode == http.StatusNotFound {
+		log.WithFields(log.Fields{
+			"status": r.Status,
+			"msg":    msg,
+		}).Debugln("resource not found")
+		return ErrResourceNotFound
 	}
 
 	log.WithFields(log.Fields{
@@ -161,7 +173,7 @@ func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 	defer res.Body.Close()
 	err = checkResponse(res)
 	if err != nil {
-		return nil, errors.Wrap(err, "request failed")
+		return nil, err
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
@@ -184,7 +196,7 @@ func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 }
 
 // ListRules retrieves a rule group
-func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[string]configs.RuleNamespace, error) {
+func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[string]store.RuleNamespace, error) {
 	path := "/api/prom/rules"
 	if namespace != "" {
 		path = path + "/" + namespace
@@ -207,7 +219,7 @@ func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[stri
 		return nil, err
 	}
 
-	ruleSet := map[string]configs.RuleNamespace{}
+	ruleSet := map[string]store.RuleNamespace{}
 	err = yaml.Unmarshal(body, &ruleSet)
 	if err != nil {
 		return nil, err

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cortexproject/cortex/pkg/configs"
+	"github.com/cortexproject/cortex/pkg/ruler/store"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -16,8 +16,8 @@ var (
 )
 
 // ParseFiles returns a formatted set of prometheus rule groups
-func ParseFiles(files []string) (map[string]configs.RuleNamespace, error) {
-	ruleSet := map[string]configs.RuleNamespace{}
+func ParseFiles(files []string) (map[string]store.RuleNamespace, error) {
+	ruleSet := map[string]store.RuleNamespace{}
 	for _, f := range files {
 		d, err := loadFile(f)
 		if err != nil {
@@ -53,8 +53,8 @@ func ParseFiles(files []string) (map[string]configs.RuleNamespace, error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte) (*configs.RuleNamespace, []error) {
-	var ns configs.RuleNamespace
+func Parse(content []byte) (*store.RuleNamespace, []error) {
+	var ns store.RuleNamespace
 	if err := yaml.UnmarshalStrict(content, &ns); err != nil {
 		return nil, []error{err}
 	}

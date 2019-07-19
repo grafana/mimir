@@ -6,7 +6,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 
-	"github.com/cortexproject/cortex/pkg/configs"
+	"github.com/cortexproject/cortex/pkg/ruler/store"
 )
 
 func TestParseFiles(t *testing.T) {
@@ -16,7 +16,7 @@ func TestParseFiles(t *testing.T) {
 	tests := []struct {
 		name    string
 		files   []string
-		want    map[string]configs.RuleNamespace
+		want    map[string]store.RuleNamespace
 		wantErr bool
 	}{
 		{
@@ -24,8 +24,8 @@ func TestParseFiles(t *testing.T) {
 			files: []string{
 				"testdata/basic_namespace.yaml",
 			},
-			want: map[string]configs.RuleNamespace{
-				"example_namespace": configs.RuleNamespace{
+			want: map[string]store.RuleNamespace{
+				"example_namespace": store.RuleNamespace{
 					Namespace: "example_namespace",
 					Groups: []rulefmt.RuleGroup{
 						rulefmt.RuleGroup{
@@ -74,7 +74,7 @@ func TestParseFiles(t *testing.T) {
 	}
 }
 
-func compareNamespace(g, w configs.RuleNamespace) error {
+func compareNamespace(g, w store.RuleNamespace) error {
 	if g.Namespace != w.Namespace {
 		return fmt.Errorf("namespaces do not match, actual=%v expected=%v", g.Namespace, w.Namespace)
 	}
