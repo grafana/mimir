@@ -41,9 +41,10 @@ RM := --rm
 # in any custom cloudbuild.yaml files
 TTY := --tty
 
-all: cortex-tool
+all: cortex-tool chunk-tool
 images: cortex-tool-image
-cortex-tool:cmd/cortex-tool/cortex-tool
+cortex-tool: cmd/cortex-tool/cortex-tool
+chunk-tool: cmd/chunk-tool/chunk-tool
 
 # Images
 cortex-tool-image:
@@ -54,6 +55,11 @@ cmd/cortex-tool/cortex-tool: $(APP_GO_FILES) cmd/cortex-tool/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 	$(NETGO_CHECK)
 
+cmd/chunk-tool/chunk-tool: $(APP_GO_FILES) cmd/chunk-tool/main.go
+	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
+	$(NETGO_CHECK)
+
+
 lint:
 	GOGC=20 golangci-lint run
 
@@ -62,3 +68,4 @@ test:
 
 clean:
 	rm -rf cmd/cortex-tool/cortex-tool
+	rm -rf cmd/chunk-tool/chunk-tool
