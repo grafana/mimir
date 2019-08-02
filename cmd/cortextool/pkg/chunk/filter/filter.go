@@ -1,6 +1,8 @@
 package filter
 
 import (
+	"time"
+
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
@@ -47,6 +49,16 @@ func (f *MetricFilter) Filter(c chunk.Chunk) bool {
 
 	if f.Name != "" && f.Name != c.Metric.Get("__name__") {
 		logrus.Debugf("chunk %v does not pass filter, incorrect name: %v", c.ExternalKey(), c.Metric.Get("__name__"))
+		return false
+	}
+
+	return true
+}
+
+// CheckTime returns true if the provided time passes the filter
+func (f *MetricFilter) CheckTime(t time.Time) bool {
+	mT := model.TimeFromUnix(t.Unix())
+	if f.From.After(mT) || mT.Add(time.Hour*12).After(f.To) {
 		return false
 	}
 

@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/cortexproject/cortex/pkg/chunk"
@@ -11,72 +12,130 @@ import (
 	toolGCP "github.com/grafana/cortex-tool/pkg/chunk/gcp"
 	"github.com/grafana/cortex-tool/pkg/chunk/tool"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v2"
 )
 
-// ChunkCommand configures and executes chunk related cortex operations
-type ChunkCommand struct {
-	Table          string
-	ChunkStore     string
-	ChunkGCPConfig gcp.Config
-	ChunkGCSConfig gcp.GCSConfig
-	IndexGCPConfig gcp.Config
-	FilterConfig   filter.Config
-	SchemaFile     string
+// SchemaConfig contains the config for our chunk index schemas
+type SchemaConfig struct {
+	Config   *chunk.PeriodConfig `yaml:"config"`
+	FileName string
 }
 
-// Register chunk related commands and flags with the kingpin application
-func (c *ChunkCommand) Register(app *kingpin.Application) {
-	cmd := app.Command("chunk", "View & edit chunks stored in cortex.").Action(c.run)
-	deleteCmd := cmd.Command("delete", "Delete specified chunks from cortex")
-	deleteCmd.Flag("chunkstore.type", "specify which object store backend to utilize").StringVar(&c.ChunkStore)
-	deleteCmd.Flag("chunk.bigtable.project", "bigtable project to use").StringVar(&c.ChunkGCPConfig.Project)
-	deleteCmd.Flag("chunk.bigtable.instance", "bigtable instance to use").StringVar(&c.ChunkGCPConfig.Instance)
-	deleteCmd.Flag("chunk.bigtable.table", "bigtable table to use").StringVar(&c.Table)
-	deleteCmd.Flag("chunk.gcs.bucketname", "name of the gcs bucket to use").StringVar(&c.ChunkGCSConfig.BucketName)
-	deleteCmd.Flag("index.bigtable.project", "bigtable project to use").StringVar(&c.IndexGCPConfig.Project)
-	deleteCmd.Flag("index.bigtable.instance", "bigtable instance to use").StringVar(&c.IndexGCPConfig.Instance)
-	deleteCmd.Flag("index.bigtable.table", "bigtable table to use").StringVar(&c.Table)
-	deleteCmd.Flag("index.bigtable.column-key", "enable column key for bigtable index").BoolVar(&c.IndexGCPConfig.ColumnKey)
-	deleteCmd.Flag("index.bigtable.distribute-keys", "enable distributes for bigtable index").BoolVar(&c.IndexGCPConfig.DistributeKeys)
-	deleteCmd.Flag("schema.config-yaml", "path to file containing cortex schema config").StringVar(&c.SchemaFile)
-	c.FilterConfig.Register(deleteCmd)
+// Load the yaml file, or build the config from legacy command-line flags
+func (cfg *SchemaConfig) Load() error {
+	if cfg.Config != nil {
+		return nil
+	}
+
+	f, err := os.Open(cfg.FileName)
+	if err != nil {
+		return err
+	}
+
+	decoder := yaml.NewDecoder(f)
+	decoder.SetStrict(true)
+	return decoder.Decode(&cfg)
 }
 
-func (c *ChunkCommand) run(k *kingpin.ParseContext) error {
-	var (
-		scanner tool.Scanner
-		err     error
-	)
+type DeleteChunkCommand struct {
+	DryRun       bool
+	Bigtable     gcp.Config
+	GCS          gcp.GCSConfig
+	FilterConfig filter.Config
+	Schema       SchemaConfig
+}
+
+func (c *DeleteChunkCommand) Register(app *kingpin.Application) {
+	cmd := app.Command("chunk", "Chunk related operations")
+	deleteCommand := cmd.Command("delete", "Deletes the specified chunks").Action(c.run)
+	deleteCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&c.DryRun)
+	deleteCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&c.Bigtable.Project)
+	deleteCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&c.Bigtable.Instance)
+	deleteCommand.Flag("chunk.gcs.bucketname", "name of the gcs bucket to use").StringVar(&c.GCS.BucketName)
+	deleteCommand.Flag("schema-file", "path to file containing cortex schema config").Required().StringVar(&c.Schema.FileName)
+	c.FilterConfig.Register(deleteCommand)
+}
+
+func (c *DeleteChunkCommand) run(k *kingpin.ParseContext) error {
+	err := c.Schema.Load()
+	if err != nil {
+		return errors.Wrap(err, "unable to load schema")
+	}
 
 	ctx := context.Background()
 	fltr := filter.NewMetricFilter(c.FilterConfig)
 
-	switch c.ChunkStore {
+	var (
+		scanner tool.Scanner
+		deleter tool.Deleter
+	)
+
+	switch c.Schema.Config.ObjectType {
 	case "bigtable":
-		logrus.Infof("bigtable object store, project=%v, instance=%v", c.ChunkGCPConfig.Project, c.ChunkGCPConfig.Instance)
-		scanner, err = toolGCP.NewBigtableScanner(ctx, c.ChunkGCPConfig.Project, c.ChunkGCPConfig.Instance)
+		logrus.Infof("bigtable object store, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
+		scanner, err = toolGCP.NewBigtableScanner(ctx, c.Bigtable.Project, c.Bigtable.Instance)
 		if err != nil {
 			return errors.Wrap(err, "unable to initialize scanner")
 		}
 	case "gcs":
-		logrus.Infof("gcs object store, bucket=%v", c.ChunkGCSConfig.BucketName)
-		scanner, err = toolGCP.NewGcsScanner(ctx, c.ChunkGCSConfig)
+		logrus.Infof("gcs object store, bucket=%v", c.GCS.BucketName)
+		scanner, err = toolGCP.NewGcsScanner(ctx, c.GCS)
 		if err != nil {
 			return errors.Wrap(err, "unable to initialize scanner")
 		}
 	default:
-		return errors.New("no object store specified")
+		return fmt.Errorf("object store type %v not supported for deletes", c.Schema.Config.ObjectType)
+	}
+
+	switch c.Schema.Config.IndexType {
+	case "bigtable":
+		logrus.Infof("bigtable deleter, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
+		deleter, err = toolGCP.NewStorageIndexDeleter(ctx, c.Bigtable)
+		if err != nil {
+			return errors.Wrap(err, "unable to initialize deleter")
+		}
+	case "bigtable-hashed":
+		logrus.Infof("bigtable deleter, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
+		c.Bigtable.DistributeKeys = true
+		deleter, err = toolGCP.NewStorageIndexDeleter(ctx, c.Bigtable)
+		if err != nil {
+			return errors.Wrap(err, "unable to initialize deleter")
+		}
+	default:
+		return fmt.Errorf("index store type %v not supported for deletes", c.Schema.Config.IndexType)
 	}
 
 	outChan := make(chan chunk.Chunk, 100)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
-	go readChan(outChan, wg)
 
-	err = scanner.Scan(ctx, c.Table, fltr, outChan)
+	go func() {
+		schema := c.Schema.Config.CreateSchema()
+		for chk := range outChan {
+			logrus.Infof("found chunk eligible for deletion: %s, from: %s, to: %s\n", chk.ExternalKey(), chk.From.Time().String(), chk.Through.Time().String())
+			entries, err := schema.GetChunkWriteEntries(chk.From, chk.Through, chk.UserID, chk.Metric.Get(labels.MetricName), chk.Metric, chk.ExternalKey())
+			if err != nil {
+				logrus.Errorln(err)
+			}
+			for _, e := range entries {
+				if !c.DryRun {
+					err := deleter.DeleteEntry(ctx, e)
+					if err != nil {
+						logrus.Errorln(err)
+					}
+				}
+			}
+
+		}
+		wg.Done()
+	}()
+
+	table := c.Schema.Config.ChunkTables.TableFor(fltr.From)
+	err = scanner.Scan(ctx, table, fltr, outChan)
 	close(outChan)
 	if err != nil {
 		return errors.Wrap(err, "scan failed")
@@ -84,11 +143,4 @@ func (c *ChunkCommand) run(k *kingpin.ParseContext) error {
 
 	wg.Wait()
 	return nil
-}
-
-func readChan(chunkChan chan chunk.Chunk, wg *sync.WaitGroup) {
-	for c := range chunkChan {
-		fmt.Printf("chunk: %s, from: %s, to: %s\n", c.ExternalKey(), c.From.Time().String(), c.Through.Time().String())
-	}
-	wg.Done()
 }
