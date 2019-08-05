@@ -15,7 +15,8 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
-type DeleteChunkCommand struct {
+// ChunkCommand configures and executes chunk related cortex operations
+type ChunkCommand struct {
 	Table          string
 	ChunkStore     string
 	ChunkGCPConfig gcp.Config
@@ -25,23 +26,25 @@ type DeleteChunkCommand struct {
 	SchemaFile     string
 }
 
-func (c *DeleteChunkCommand) Register(app *kingpin.Application) {
-	cmd := app.Command("delete", "Deletes the specified chunks").Action(c.run)
-	cmd.Flag("chunkstore.type", "specify which object store backend to utilize").StringVar(&c.ChunkStore)
-	cmd.Flag("chunk.bigtable.project", "bigtable project to use").StringVar(&c.ChunkGCPConfig.Project)
-	cmd.Flag("chunk.bigtable.instance", "bigtable instance to use").StringVar(&c.ChunkGCPConfig.Instance)
-	cmd.Flag("chunk.bigtable.table", "bigtable table to use").StringVar(&c.Table)
-	cmd.Flag("chunk.gcs.bucketname", "name of the gcs bucket to use").StringVar(&c.ChunkGCSConfig.BucketName)
-	cmd.Flag("index.bigtable.project", "bigtable project to use").StringVar(&c.IndexGCPConfig.Project)
-	cmd.Flag("index.bigtable.instance", "bigtable instance to use").StringVar(&c.IndexGCPConfig.Instance)
-	cmd.Flag("index.bigtable.table", "bigtable table to use").StringVar(&c.Table)
-	cmd.Flag("index.bigtable.column-key", "enable column key for bigtable index").BoolVar(&c.IndexGCPConfig.ColumnKey)
-	cmd.Flag("index.bigtable.distribute-keys", "enable distributes for bigtable index").BoolVar(&c.IndexGCPConfig.DistributeKeys)
-	cmd.Flag("schema.config-yaml", "path to file containing cortex schema config").StringVar(&c.SchemaFile)
-	c.FilterConfig.Register(cmd)
+// Register chunk related commands and flags with the kingpin application
+func (c *ChunkCommand) Register(app *kingpin.Application) {
+	cmd := app.Command("chunk", "View & edit chunks stored in cortex.").Action(c.run)
+	deleteCmd := cmd.Command("delete", "Delete specified chunks from cortex")
+	deleteCmd.Flag("chunkstore.type", "specify which object store backend to utilize").StringVar(&c.ChunkStore)
+	deleteCmd.Flag("chunk.bigtable.project", "bigtable project to use").StringVar(&c.ChunkGCPConfig.Project)
+	deleteCmd.Flag("chunk.bigtable.instance", "bigtable instance to use").StringVar(&c.ChunkGCPConfig.Instance)
+	deleteCmd.Flag("chunk.bigtable.table", "bigtable table to use").StringVar(&c.Table)
+	deleteCmd.Flag("chunk.gcs.bucketname", "name of the gcs bucket to use").StringVar(&c.ChunkGCSConfig.BucketName)
+	deleteCmd.Flag("index.bigtable.project", "bigtable project to use").StringVar(&c.IndexGCPConfig.Project)
+	deleteCmd.Flag("index.bigtable.instance", "bigtable instance to use").StringVar(&c.IndexGCPConfig.Instance)
+	deleteCmd.Flag("index.bigtable.table", "bigtable table to use").StringVar(&c.Table)
+	deleteCmd.Flag("index.bigtable.column-key", "enable column key for bigtable index").BoolVar(&c.IndexGCPConfig.ColumnKey)
+	deleteCmd.Flag("index.bigtable.distribute-keys", "enable distributes for bigtable index").BoolVar(&c.IndexGCPConfig.DistributeKeys)
+	deleteCmd.Flag("schema.config-yaml", "path to file containing cortex schema config").StringVar(&c.SchemaFile)
+	c.FilterConfig.Register(deleteCmd)
 }
 
-func (c *DeleteChunkCommand) run(k *kingpin.ParseContext) error {
+func (c *ChunkCommand) run(k *kingpin.ParseContext) error {
 	var (
 		scanner tool.Scanner
 		err     error

@@ -41,24 +41,18 @@ RM := --rm
 # in any custom cloudbuild.yaml files
 TTY := --tty
 
-all: cortex-tool chunk-tool
-images: cortex-tool-image
-cortex-tool: cmd/cortex-tool/cortex-tool
-chunk-tool: cmd/chunk-tool/chunk-tool
+all: cortex-cli
+images: cortex-cli-image
+cortex-cli: cmd/cortex-cli/cortex-cli
 
 # Images
-cortex-tool-image:
-	$(SUDO) docker build -t $(IMAGE_PREFIX)/cortex-tool -f cmd/cortex-tool/Dockerfile .
-	$(SUDO) docker tag $(IMAGE_PREFIX)/cortex-tool $(IMAGE_PREFIX)/cortex-tool:$(IMAGE_TAG)
+cortex-cli-image:
+	$(SUDO) docker build -t $(IMAGE_PREFIX)/cortex-cli -f cmd/cortex-cli/Dockerfile .
+	$(SUDO) docker tag $(IMAGE_PREFIX)/cortex-cli $(IMAGE_PREFIX)/cortex-cli:$(IMAGE_TAG)
 
-cmd/cortex-tool/cortex-tool: $(APP_GO_FILES) cmd/cortex-tool/main.go
+cmd/cortex-cli/cortex-cli: $(APP_GO_FILES) cmd/cortex-cli/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 	$(NETGO_CHECK)
-
-cmd/chunk-tool/chunk-tool: $(APP_GO_FILES) cmd/chunk-tool/main.go
-	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
-	$(NETGO_CHECK)
-
 
 lint:
 	GOGC=20 golangci-lint run
@@ -67,5 +61,5 @@ test:
 	go test -p=8 ./...
 
 clean:
-	rm -rf cmd/cortex-tool/cortex-tool
-	rm -rf cmd/chunk-tool/chunk-tool
+	rm -rf cmd/cortex-cli/cortex-cli
+
