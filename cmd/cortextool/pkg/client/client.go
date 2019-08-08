@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/cortexproject/cortex/pkg/storage/rules"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
@@ -196,7 +195,7 @@ func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName str
 }
 
 // ListRules retrieves a rule group
-func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[string]rules.RuleNamespace, error) {
+func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[string][]rulefmt.RuleGroup, error) {
 	path := "/api/prom/rules"
 	if namespace != "" {
 		path = path + "/" + namespace
@@ -219,7 +218,7 @@ func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[stri
 		return nil, err
 	}
 
-	ruleSet := map[string]rules.RuleNamespace{}
+	ruleSet := map[string][]rulefmt.RuleGroup{}
 	err = yaml.Unmarshal(body, &ruleSet)
 	if err != nil {
 		return nil, err
