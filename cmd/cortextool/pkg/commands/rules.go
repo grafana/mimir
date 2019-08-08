@@ -38,7 +38,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd.Command("list", "List the rules currently in the cortex ruler.").Action(r.listRules)
 
 	// Get RuleGroup Command
-	getRuleGroupCmd := rulesCmd.Command("get", "Retreive a rulegroup from the ruler.")
+	getRuleGroupCmd := rulesCmd.Command("get", "Retreive a rulegroup from the ruler.").Action(r.getRuleGroup)
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup ot retrieve.").Required().StringVar(&r.RuleGroup)
 

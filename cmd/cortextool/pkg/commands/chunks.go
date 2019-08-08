@@ -48,13 +48,14 @@ type DeleteChunkCommand struct {
 	Schema       SchemaConfig
 }
 
+// Register registers the DeleteChunkCommand flags with the kingpin applicattion
 func (c *DeleteChunkCommand) Register(app *kingpin.Application) {
 	cmd := app.Command("chunk", "Chunk related operations")
 	deleteCommand := cmd.Command("delete", "Deletes the specified chunks").Action(c.run)
 	deleteCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&c.DryRun)
 	deleteCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&c.Bigtable.Project)
 	deleteCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&c.Bigtable.Instance)
-	deleteCommand.Flag("chunk.gcs.bucketname", "name of the gcs bucket to use").StringVar(&c.GCS.BucketName)
+	deleteCommand.Flag("chunk.gcs.bucketname", "specify gcs bucket to scan for chunks").StringVar(&c.GCS.BucketName)
 	deleteCommand.Flag("schema-file", "path to file containing cortex schema config").Required().StringVar(&c.Schema.FileName)
 	c.FilterConfig.Register(deleteCommand)
 }

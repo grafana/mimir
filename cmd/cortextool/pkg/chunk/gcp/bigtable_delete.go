@@ -35,8 +35,6 @@ type storageIndexDeleter struct {
 	cfg    gcp.Config
 	client *bigtable.Client
 	keysFn keysFn
-
-	distributeKeys bool
 }
 
 // NewStorageIndexDeleter returns a new v2 StorageClient.
