@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/cortex-tool/pkg/chunk/filter"
 	"github.com/grafana/cortex-tool/pkg/chunk/tool"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
 )
 
@@ -53,6 +54,11 @@ func (s *gcsScanner) Scan(ctx context.Context, tbl string, mFilter filter.Metric
 
 		if err != nil {
 			return fmt.Errorf("unable to iterate chunks, err: %v, user: %v", err, mFilter.User)
+		}
+
+		if !mFilter.CheckTime(objAttrs.Updated) {
+			logrus.Debugln("skipping chunk updated at timestamp outside filters range")
+			continue
 		}
 
 		c, err := chunk.ParseExternalKey(mFilter.User, objAttrs.Name)
