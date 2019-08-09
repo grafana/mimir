@@ -10,6 +10,7 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
 	"github.com/grafana/cortex-tool/pkg/chunk/tool"
 	ot "github.com/opentracing/opentracing-go"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -74,4 +75,34 @@ func (s *storageIndexDeleter) DeleteEntry(ctx context.Context, entry chunk.Index
 	mut.DeleteCellsInColumn(columnFamily, columnKey)
 
 	return table.Apply(ctx, rowKey, mut)
+}
+
+func (s *storageIndexDeleter) DeleteSeries(ctx context.Context, series chunk.IndexQuery) ([]error, error) {
+	sp, ctx := ot.StartSpanFromContext(ctx, "DeleteSeries")
+	defer sp.Finish()
+
+	table := s.client.Open(series.TableName)
+	rowKey, _ := s.keysFn(series.HashValue, []byte{})
+
+	mut := bigtable.NewMutation()
+	mut.DeleteRow()
+
+	muts := []*bigtable.Mutation{mut}
+	rowKeys := []string{rowKey}
+
+	logrus.Infof("deleting series from bigtable, rowkey: %v, table: %v", rowKey, series.TableName)
+
+	err := table.ReadRows(ctx, bigtable.PrefixRange(rowKey+":"), func(row bigtable.Row) bool {
+		mut := bigtable.NewMutation()
+		mut.DeleteRow()
+		rowKeys = append(rowKeys, row.Key())
+		logrus.Infof("deleting series from bigtable, rowkey: %v, table: %v", row.Key(), series.TableName)
+		return true
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return table.ApplyBulk(ctx, rowKeys, muts)
 }

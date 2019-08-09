@@ -40,27 +40,51 @@ func (cfg *SchemaConfig) Load() error {
 	return decoder.Decode(&cfg)
 }
 
-type DeleteChunkCommand struct {
-	DryRun       bool
+type chunkCommandOptions struct {
 	Bigtable     gcp.Config
-	GCS          gcp.GCSConfig
-	FilterConfig filter.Config
+	DryRun       bool
 	Schema       SchemaConfig
+	FilterConfig filter.Config
 }
 
-// Register registers the DeleteChunkCommand flags with the kingpin applicattion
-func (c *DeleteChunkCommand) Register(app *kingpin.Application) {
-	cmd := app.Command("chunk", "Chunk related operations")
-	deleteCommand := cmd.Command("delete", "Deletes the specified chunks").Action(c.run)
-	deleteCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&c.DryRun)
-	deleteCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&c.Bigtable.Project)
-	deleteCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&c.Bigtable.Instance)
-	deleteCommand.Flag("chunk.gcs.bucketname", "specify gcs bucket to scan for chunks").StringVar(&c.GCS.BucketName)
-	deleteCommand.Flag("schema-file", "path to file containing cortex schema config").Required().StringVar(&c.Schema.FileName)
-	c.FilterConfig.Register(deleteCommand)
+type deleteChunkCommandOptions struct {
+	chunkCommandOptions
+	GCS gcp.GCSConfig
 }
 
-func (c *DeleteChunkCommand) run(k *kingpin.ParseContext) error {
+type deleteSeriesCommandOptions struct {
+	chunkCommandOptions
+}
+
+func registerDeleteChunkCommandOptions(cmd *kingpin.CmdClause) {
+	deleteChunkCommandOptions := &deleteChunkCommandOptions{}
+	deleteChunkCommand := cmd.Command("delete", "Deletes the specified chunk references from the index").Action(deleteChunkCommandOptions.run)
+	deleteChunkCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&deleteChunkCommandOptions.DryRun)
+	deleteChunkCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&deleteChunkCommandOptions.Bigtable.Project)
+	deleteChunkCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&deleteChunkCommandOptions.Bigtable.Instance)
+	deleteChunkCommand.Flag("chunk.gcs.bucketname", "specify gcs bucket to scan for chunks").StringVar(&deleteChunkCommandOptions.GCS.BucketName)
+	deleteChunkCommand.Flag("schema-file", "path to file containing cortex schema config").Required().StringVar(&deleteChunkCommandOptions.Schema.FileName)
+	deleteChunkCommandOptions.FilterConfig.Register(deleteChunkCommand)
+}
+
+func registerDeleteSeriesCommandOptions(cmd *kingpin.CmdClause) {
+	deleteSeriesCommandOptions := &deleteSeriesCommandOptions{}
+	deleteSeriesCommand := cmd.Command("delete-series", "Deletes the specified chunk references from the index").Action(deleteSeriesCommandOptions.run)
+	deleteSeriesCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&deleteSeriesCommandOptions.DryRun)
+	deleteSeriesCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&deleteSeriesCommandOptions.Bigtable.Project)
+	deleteSeriesCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&deleteSeriesCommandOptions.Bigtable.Instance)
+	deleteSeriesCommand.Flag("schema-file", "path to file containing cortex schema config").Required().StringVar(&deleteSeriesCommandOptions.Schema.FileName)
+	deleteSeriesCommandOptions.FilterConfig.Register(deleteSeriesCommand)
+}
+
+// RegisterChunkCommands registers the ChunkCommand flags with the kingpin applicattion
+func RegisterChunkCommands(app *kingpin.Application) {
+	chunkCommand := app.Command("chunk", "Chunk related operations")
+	registerDeleteChunkCommandOptions(chunkCommand)
+	registerDeleteSeriesCommandOptions(chunkCommand)
+}
+
+func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	err := c.Schema.Load()
 	if err != nil {
 		return errors.Wrap(err, "unable to load schema")
@@ -143,5 +167,62 @@ func (c *DeleteChunkCommand) run(k *kingpin.ParseContext) error {
 	}
 
 	wg.Wait()
+	return nil
+}
+
+func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
+	err := c.Schema.Load()
+	if err != nil {
+		return errors.Wrap(err, "unable to load schema")
+	}
+
+	ctx := context.Background()
+
+	fltr := filter.NewMetricFilter(c.FilterConfig)
+
+	var deleter tool.Deleter
+
+	switch c.Schema.Config.IndexType {
+	case "bigtable":
+		logrus.Infof("bigtable deleter, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
+		deleter, err = toolGCP.NewStorageIndexDeleter(ctx, c.Bigtable)
+		if err != nil {
+			return errors.Wrap(err, "unable to initialize deleter")
+		}
+	case "bigtable-hashed":
+		logrus.Infof("bigtable deleter, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
+		c.Bigtable.DistributeKeys = true
+		deleter, err = toolGCP.NewStorageIndexDeleter(ctx, c.Bigtable)
+		if err != nil {
+			return errors.Wrap(err, "unable to initialize deleter")
+		}
+	default:
+		return fmt.Errorf("index store type %v not supported for deletes", c.Schema.Config.IndexType)
+	}
+
+	schema := c.Schema.Config.CreateSchema()
+
+	deleteMetricNameRows, err := schema.GetReadQueriesForMetric(fltr.From, fltr.To, fltr.User, fltr.Name)
+	if err != nil {
+		logrus.Errorln(err)
+	}
+
+	for _, query := range deleteMetricNameRows {
+		logrus.WithFields(logrus.Fields{
+			"table":     query.TableName,
+			"hashvalue": query.HashValue,
+			"dryrun":    c.DryRun,
+		}).Debugln("deleting series from index")
+		if !c.DryRun {
+			errs, err := deleter.DeleteSeries(ctx, query)
+			for _, e := range errs {
+				logrus.WithError(e).Errorln("series deletion error")
+			}
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	return nil
 }

@@ -13,5 +13,6 @@ type Scanner interface {
 }
 
 type Deleter interface {
-	DeleteEntry(ctx context.Context, entry chunk.IndexEntry) error
+	DeleteEntry(context.Context, chunk.IndexEntry) error
+	DeleteSeries(context.Context, chunk.IndexQuery) ([]error, error)
 }
