@@ -20,7 +20,7 @@ import (
 
 // SchemaConfig contains the config for our chunk index schemas
 type SchemaConfig struct {
-	Config   *chunk.PeriodConfig `yaml:"config"`
+	Config   *chunk.PeriodConfig `yaml:"configs"`
 	FileName string
 }
 
