@@ -152,10 +152,20 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	go func() {
 		schema := schemaConfig.CreateSchema()
 		for chk := range outChan {
-			logrus.Infof("found chunk eligible for deletion: %s, from: %s, to: %s\n", chk.ExternalKey(), chk.From.Time().String(), chk.Through.Time().String())
+			logrus.WithFields(logrus.Fields{
+				"chunkID": chk.ExternalKey(),
+				"from":    chk.From.Time().String(),
+				"through": chk.Through.Time().String(),
+				"dryrun":  c.DryRun,
+			}).Infoln("found chunk eligible for deletion")
 			entries, err := schema.GetChunkWriteEntries(chk.From, chk.Through, chk.UserID, chk.Metric.Get(labels.MetricName), chk.Metric, chk.ExternalKey())
 			if err != nil {
-				logrus.Errorln(err)
+				logrus.WithFields(logrus.Fields{
+					"chunkID": chk.ExternalKey(),
+					"from":    chk.From.Time().String(),
+					"through": chk.Through.Time().String(),
+					"dryrun":  c.DryRun,
+				}).Errorln(err)
 			}
 			for _, e := range entries {
 				if !c.DryRun {
