@@ -20,13 +20,13 @@ import (
 
 // SchemaConfig contains the config for our chunk index schemas
 type SchemaConfig struct {
-	Config   *chunk.PeriodConfig `yaml:"configs"`
+	Configs  []*chunk.PeriodConfig `yaml:"configs"`
 	FileName string
 }
 
 // Load the yaml file, or build the config from legacy command-line flags
 func (cfg *SchemaConfig) Load() error {
-	if cfg.Config != nil {
+	if len(cfg.Configs) > 0 {
 		return nil
 	}
 
@@ -90,6 +90,17 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "unable to load schema")
 	}
 
+	var schemaConfig *chunk.PeriodConfig
+	for i := len(c.Schema.Configs) - 1; i >= 0; i-- {
+		if c.Schema.Configs[i].From.Unix() < c.FilterConfig.From {
+			schemaConfig = c.Schema.Configs[i]
+			break
+		}
+	}
+	if schemaConfig == nil {
+		return fmt.Errorf("no schema found for provided from timestamp")
+	}
+
 	ctx := context.Background()
 	fltr := filter.NewMetricFilter(c.FilterConfig)
 
@@ -98,7 +109,7 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 		deleter tool.Deleter
 	)
 
-	switch c.Schema.Config.ObjectType {
+	switch schemaConfig.ObjectType {
 	case "bigtable":
 		logrus.Infof("bigtable object store, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
 		scanner, err = toolGCP.NewBigtableScanner(ctx, c.Bigtable.Project, c.Bigtable.Instance)
@@ -112,10 +123,10 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 			return errors.Wrap(err, "unable to initialize scanner")
 		}
 	default:
-		return fmt.Errorf("object store type %v not supported for deletes", c.Schema.Config.ObjectType)
+		return fmt.Errorf("object store type %v not supported for deletes", schemaConfig.ObjectType)
 	}
 
-	switch c.Schema.Config.IndexType {
+	switch schemaConfig.IndexType {
 	case "bigtable":
 		logrus.Infof("bigtable deleter, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
 		deleter, err = toolGCP.NewStorageIndexDeleter(ctx, c.Bigtable)
@@ -130,7 +141,7 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 			return errors.Wrap(err, "unable to initialize deleter")
 		}
 	default:
-		return fmt.Errorf("index store type %v not supported for deletes", c.Schema.Config.IndexType)
+		return fmt.Errorf("index store type %v not supported for deletes", schemaConfig.IndexType)
 	}
 
 	outChan := make(chan chunk.Chunk, 100)
@@ -139,7 +150,7 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	wg.Add(1)
 
 	go func() {
-		schema := c.Schema.Config.CreateSchema()
+		schema := schemaConfig.CreateSchema()
 		for chk := range outChan {
 			logrus.Infof("found chunk eligible for deletion: %s, from: %s, to: %s\n", chk.ExternalKey(), chk.From.Time().String(), chk.Through.Time().String())
 			entries, err := schema.GetChunkWriteEntries(chk.From, chk.Through, chk.UserID, chk.Metric.Get(labels.MetricName), chk.Metric, chk.ExternalKey())
@@ -159,7 +170,7 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 		wg.Done()
 	}()
 
-	table := c.Schema.Config.ChunkTables.TableFor(fltr.From)
+	table := schemaConfig.ChunkTables.TableFor(fltr.From)
 	err = scanner.Scan(ctx, table, fltr, outChan)
 	close(outChan)
 	if err != nil {
@@ -176,13 +187,24 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "unable to load schema")
 	}
 
+	var schemaConfig *chunk.PeriodConfig
+	for i := len(c.Schema.Configs) - 1; i >= 0; i-- {
+		if c.Schema.Configs[i].From.Unix() < c.FilterConfig.From {
+			schemaConfig = c.Schema.Configs[i]
+			break
+		}
+	}
+	if schemaConfig == nil {
+		return fmt.Errorf("no schema found for provided from timestamp")
+	}
+
 	ctx := context.Background()
 
 	fltr := filter.NewMetricFilter(c.FilterConfig)
 
 	var deleter tool.Deleter
 
-	switch c.Schema.Config.IndexType {
+	switch schemaConfig.IndexType {
 	case "bigtable":
 		logrus.Infof("bigtable deleter, project=%v, instance=%v", c.Bigtable.Project, c.Bigtable.Instance)
 		deleter, err = toolGCP.NewStorageIndexDeleter(ctx, c.Bigtable)
@@ -197,10 +219,10 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 			return errors.Wrap(err, "unable to initialize deleter")
 		}
 	default:
-		return fmt.Errorf("index store type %v not supported for deletes", c.Schema.Config.IndexType)
+		return fmt.Errorf("index store type %v not supported for deletes", schemaConfig.IndexType)
 	}
 
-	schema := c.Schema.Config.CreateSchema()
+	schema := schemaConfig.CreateSchema()
 
 	deleteMetricNameRows, err := schema.GetReadQueriesForMetric(fltr.From, fltr.To, fltr.User, fltr.Name)
 	if err != nil {
