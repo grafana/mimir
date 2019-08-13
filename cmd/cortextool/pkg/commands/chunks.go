@@ -256,5 +256,28 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 		}
 	}
 
+	for _, lbl := range fltr.Labels {
+		deleteMetricNameRows, err := schema.GetReadQueriesForMetricLabel(fltr.From, fltr.To, fltr.User, fltr.Name, lbl)
+		if err != nil {
+			logrus.Errorln(err)
+		}
+		for _, query := range deleteMetricNameRows {
+			logrus.WithFields(logrus.Fields{
+				"table":     query.TableName,
+				"hashvalue": query.HashValue,
+				"dryrun":    c.DryRun,
+			}).Debugln("deleting series from index")
+			if !c.DryRun {
+				errs, err := deleter.DeleteSeries(ctx, query)
+				for _, e := range errs {
+					logrus.WithError(e).Errorln("series deletion error")
+				}
+				if err != nil {
+					return err
+				}
+			}
+		}
+	}
+
 	return nil
 }
