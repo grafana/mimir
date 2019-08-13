@@ -36,6 +36,7 @@ type MetricFilter struct {
 	Labels []string
 }
 
+// NewMetricFilter returns a metric filter
 func NewMetricFilter(cfg Config) MetricFilter {
 	// By default the maximum time point is chosen if no point is specified
 	if cfg.To == 0 {
