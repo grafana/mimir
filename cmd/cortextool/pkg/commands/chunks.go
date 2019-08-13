@@ -8,9 +8,9 @@ import (
 
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
+	chunkTool "github.com/grafana/cortex-tool/pkg/chunk"
 	"github.com/grafana/cortex-tool/pkg/chunk/filter"
 	toolGCP "github.com/grafana/cortex-tool/pkg/chunk/gcp"
-	"github.com/grafana/cortex-tool/pkg/chunk/tool"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/sirupsen/logrus"
@@ -105,8 +105,8 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	fltr := filter.NewMetricFilter(c.FilterConfig)
 
 	var (
-		scanner tool.Scanner
-		deleter tool.Deleter
+		scanner chunkTool.Scanner
+		deleter chunkTool.Deleter
 	)
 
 	switch schemaConfig.ObjectType {
@@ -212,7 +212,7 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 
 	fltr := filter.NewMetricFilter(c.FilterConfig)
 
-	var deleter tool.Deleter
+	var deleter chunkTool.Deleter
 
 	switch schemaConfig.IndexType {
 	case "bigtable":

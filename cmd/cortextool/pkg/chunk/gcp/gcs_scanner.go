@@ -8,8 +8,8 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
+	chunkTool "github.com/grafana/cortex-tool/pkg/chunk"
 	"github.com/grafana/cortex-tool/pkg/chunk/filter"
-	"github.com/grafana/cortex-tool/pkg/chunk/tool"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
@@ -22,7 +22,7 @@ type gcsScanner struct {
 }
 
 // NewGcsScanner returns a bigtable scanner
-func NewGcsScanner(ctx context.Context, cfg gcp.GCSConfig) (tool.Scanner, error) {
+func NewGcsScanner(ctx context.Context, cfg gcp.GCSConfig) (chunkTool.Scanner, error) {
 	client, err := storage.NewClient(ctx)
 	if err != nil {
 		return nil, err

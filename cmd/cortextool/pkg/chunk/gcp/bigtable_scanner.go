@@ -6,8 +6,8 @@ import (
 
 	"cloud.google.com/go/bigtable"
 	"github.com/cortexproject/cortex/pkg/chunk"
+	chunkTool "github.com/grafana/cortex-tool/pkg/chunk"
 	"github.com/grafana/cortex-tool/pkg/chunk/filter"
-	"github.com/grafana/cortex-tool/pkg/chunk/tool"
 )
 
 type bigtableScanner struct {
@@ -15,7 +15,7 @@ type bigtableScanner struct {
 }
 
 // NewBigtableScanner returns a bigtable scanner
-func NewBigtableScanner(ctx context.Context, project, instance string) (tool.Scanner, error) {
+func NewBigtableScanner(ctx context.Context, project, instance string) (chunkTool.Scanner, error) {
 	client, err := bigtable.NewClient(ctx, project, instance)
 	if err != nil {
 		return nil, err

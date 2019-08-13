@@ -8,7 +8,7 @@ import (
 	"cloud.google.com/go/bigtable"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	"github.com/grafana/cortex-tool/pkg/chunk/tool"
+	chunkTool "github.com/grafana/cortex-tool/pkg/chunk"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/sirupsen/logrus"
 )
@@ -39,7 +39,7 @@ type storageIndexDeleter struct {
 }
 
 // NewStorageIndexDeleter returns a new v2 StorageClient.
-func NewStorageIndexDeleter(ctx context.Context, cfg gcp.Config) (tool.Deleter, error) {
+func NewStorageIndexDeleter(ctx context.Context, cfg gcp.Config) (chunkTool.Deleter, error) {
 	client, err := bigtable.NewClient(ctx, cfg.Project, cfg.Instance)
 	if err != nil {
 		return nil, err
