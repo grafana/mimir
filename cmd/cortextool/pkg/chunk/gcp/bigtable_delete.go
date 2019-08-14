@@ -64,7 +64,7 @@ func newstorageIndexDeleter(cfg gcp.Config, client *bigtable.Client) *storageInd
 	}
 }
 
-func (s *storageIndexDeleter) DeleteEntry(ctx context.Context, entry chunk.IndexEntry) error {
+func (s *storageIndexDeleter) DeleteEntry(ctx context.Context, entry chunk.IndexEntry, deleteSeries bool) error {
 	sp, ctx := ot.StartSpanFromContext(ctx, "DeleteEntry")
 	defer sp.Finish()
 
@@ -72,9 +72,17 @@ func (s *storageIndexDeleter) DeleteEntry(ctx context.Context, entry chunk.Index
 	rowKey, columnKey := s.keysFn(entry.HashValue, entry.RangeValue)
 
 	mut := bigtable.NewMutation()
-	mut.DeleteCellsInColumn(columnFamily, columnKey)
+	if deleteSeries {
+		mut.DeleteRow()
+	} else {
+		mut.DeleteCellsInColumn(columnFamily, columnKey)
+	}
 
-	return table.Apply(ctx, rowKey, mut)
+	err := table.Apply(ctx, rowKey, mut)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *storageIndexDeleter) DeleteSeries(ctx context.Context, series chunk.IndexQuery) ([]error, error) {

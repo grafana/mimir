@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
@@ -12,10 +13,37 @@ import (
 	"github.com/grafana/cortex-tool/pkg/chunk/filter"
 	toolGCP "github.com/grafana/cortex-tool/pkg/chunk/gcp"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
+)
+
+var (
+	chunkRefsDeleted = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "chunk_entries_deleted_total",
+		Help:      "Total count of entries deleted from the cortex index",
+	})
+
+	seriesEntriesDeleted = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "series_entries_deleted_total",
+		Help:      "Total count of entries deleted from the cortex index",
+	})
+
+	labelEntriesDeleted = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "series_label_entries_deleted_total",
+		Help:      "Total count of label entries deleted from the cortex index",
+	})
+
+	deletionDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "delete_operation_seconds",
+		Help:      "The duration of the chunk deletion operation.",
+	})
 )
 
 // SchemaConfig contains the config for our chunk index schemas
@@ -49,7 +77,8 @@ type chunkCommandOptions struct {
 
 type deleteChunkCommandOptions struct {
 	chunkCommandOptions
-	GCS gcp.GCSConfig
+	GCS          gcp.GCSConfig
+	DeleteSeries bool
 }
 
 type deleteSeriesCommandOptions struct {
@@ -60,6 +89,7 @@ func registerDeleteChunkCommandOptions(cmd *kingpin.CmdClause) {
 	deleteChunkCommandOptions := &deleteChunkCommandOptions{}
 	deleteChunkCommand := cmd.Command("delete", "Deletes the specified chunk references from the index").Action(deleteChunkCommandOptions.run)
 	deleteChunkCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&deleteChunkCommandOptions.DryRun)
+	deleteChunkCommand.Flag("delete-series", "if enabled, the entire series will be deleted, not just the chunkID column").BoolVar(&deleteChunkCommandOptions.DeleteSeries)
 	deleteChunkCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&deleteChunkCommandOptions.Bigtable.Project)
 	deleteChunkCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&deleteChunkCommandOptions.Bigtable.Instance)
 	deleteChunkCommand.Flag("chunk.gcs.bucketname", "specify gcs bucket to scan for chunks").StringVar(&deleteChunkCommandOptions.GCS.BucketName)
@@ -79,9 +109,19 @@ func registerDeleteSeriesCommandOptions(cmd *kingpin.CmdClause) {
 
 // RegisterChunkCommands registers the ChunkCommand flags with the kingpin applicattion
 func RegisterChunkCommands(app *kingpin.Application) {
-	chunkCommand := app.Command("chunk", "Chunk related operations")
+	chunkCommand := app.Command("chunk", "Chunk related operations").PreAction(setup)
 	registerDeleteChunkCommandOptions(chunkCommand)
 	registerDeleteSeriesCommandOptions(chunkCommand)
+}
+
+func setup(k *kingpin.ParseContext) error {
+	prometheus.MustRegister(
+		chunkRefsDeleted,
+		seriesEntriesDeleted,
+		labelEntriesDeleted,
+	)
+
+	return nil
 }
 
 func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
@@ -169,9 +209,11 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 			}
 			for _, e := range entries {
 				if !c.DryRun {
-					err := deleter.DeleteEntry(ctx, e)
+					err := deleter.DeleteEntry(ctx, e, c.DeleteSeries)
 					if err != nil {
 						logrus.Errorln(err)
+					} else {
+						chunkRefsDeleted.Inc()
 					}
 				}
 			}
@@ -181,13 +223,15 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	}()
 
 	table := schemaConfig.ChunkTables.TableFor(fltr.From)
+
+	start := time.Now()
 	err = scanner.Scan(ctx, table, fltr, outChan)
 	close(outChan)
 	if err != nil {
 		return errors.Wrap(err, "scan failed")
 	}
-
 	wg.Wait()
+	deletionDuration.Set(time.Since(start).Seconds())
 	return nil
 }
 
@@ -239,6 +283,8 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 		logrus.Errorln(err)
 	}
 
+	start := time.Now()
+
 	for _, query := range deleteMetricNameRows {
 		logrus.WithFields(logrus.Fields{
 			"table":     query.TableName,
@@ -253,8 +299,35 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 			if err != nil {
 				return err
 			}
+			seriesEntriesDeleted.Inc()
 		}
 	}
+
+	for _, lbl := range fltr.Labels {
+		deleteMetricNameRows, err := schema.GetReadQueriesForMetricLabel(fltr.From, fltr.To, fltr.User, fltr.Name, lbl)
+		if err != nil {
+			logrus.Errorln(err)
+		}
+		for _, query := range deleteMetricNameRows {
+			logrus.WithFields(logrus.Fields{
+				"table":     query.TableName,
+				"hashvalue": query.HashValue,
+				"dryrun":    c.DryRun,
+			}).Debugln("deleting series from index")
+			if !c.DryRun {
+				errs, err := deleter.DeleteSeries(ctx, query)
+				for _, e := range errs {
+					logrus.WithError(e).Errorln("series deletion error")
+				}
+				if err != nil {
+					return err
+				}
+				labelEntriesDeleted.Inc()
+			}
+		}
+	}
+
+	deletionDuration.Set(time.Since(start).Seconds())
 
 	return nil
 }
