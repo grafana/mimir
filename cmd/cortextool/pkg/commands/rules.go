@@ -106,14 +106,15 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 	nss, err := rules.ParseFiles(r.RuleFiles)
 	if err != nil {
-		log.WithError(err).Fatalf("unable to parse rules files")
+		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
+	defer ruleLoadTimestamp.SetToCurrentTime()
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
 			curGroup, err := r.cli.GetRuleGroup(context.Background(), ns.Namespace, group.Name)
 			if err != nil && err != client.ErrResourceNotFound {
-				return errors.Wrap(err, "unable to contact cortex api")
+				return errors.Wrap(err, "load operation unsuccessful, unable to contact cortex api")
 			}
 			if curGroup != nil {
 				err = rules.CompareGroups(*curGroup, group)
@@ -131,10 +132,12 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 				log.WithError(err).WithFields(log.Fields{
 					"group":     group.Name,
 					"namespace": ns.Namespace,
-				}).Fatalf("unable to load rule group")
+				}).Errorf("unable to load rule group")
+				return fmt.Errorf("load operation unsuccessful")
 			}
 		}
 	}
 
+	ruleLoadSuccessTimestamp.SetToCurrentTime()
 	return nil
 }
