@@ -5,12 +5,26 @@ import (
 	"fmt"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cortex-tool/pkg/client"
 	"github.com/grafana/cortex-tool/pkg/rules"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
+)
+
+var (
+	ruleLoadTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "last_rule_load_timestamp_seconds",
+		Help:      "The timestamp of the last rule load.",
+	})
+	ruleLoadSuccessTimestamp = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "cortex",
+		Name:      "last_rule_load_success_timestamp_seconds",
+		Help:      "The timestamp of the last successful rule load.",
+	})
 )
 
 // RuleCommand configures and executes rule related cortex api operations
@@ -29,7 +43,7 @@ type RuleCommand struct {
 
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application) {
-	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.registerClient)
+	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
 	rulesCmd.Flag("address", "Address of the cortex cluster, alternatively set GRAFANACLOUD_ADDRESS.").Envar("GRAFANACLOUD_ADDRESS").Required().StringVar(&r.ClientConfig.Address)
 	rulesCmd.Flag("id", "Cortex tenant id, alternatively set GRAFANACLOUD_INSTANCE_ID.").Envar("GRAFANACLOUD_INSTANCE_ID").Required().StringVar(&r.ClientConfig.ID)
 	rulesCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $GRAFANACLOUD_API_KEY.").Default("").Envar("GRAFANACLOUD_API_KEY").StringVar(&r.ClientConfig.Key)
@@ -46,10 +60,19 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFiles)
 }
 
-func (r *RuleCommand) registerClient(k *kingpin.ParseContext) error {
-	var err error
-	r.cli, err = client.New(r.ClientConfig)
-	return err
+func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
+	prometheus.MustRegister(
+		ruleLoadTimestamp,
+		ruleLoadSuccessTimestamp,
+	)
+
+	cli, err := client.New(r.ClientConfig)
+	if err != nil {
+		return err
+	}
+	r.cli = cli
+
+	return nil
 }
 
 func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
