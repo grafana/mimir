@@ -77,7 +77,8 @@ type chunkCommandOptions struct {
 
 type deleteChunkCommandOptions struct {
 	chunkCommandOptions
-	GCS gcp.GCSConfig
+	GCS          gcp.GCSConfig
+	DeleteSeries bool
 }
 
 type deleteSeriesCommandOptions struct {
@@ -88,6 +89,7 @@ func registerDeleteChunkCommandOptions(cmd *kingpin.CmdClause) {
 	deleteChunkCommandOptions := &deleteChunkCommandOptions{}
 	deleteChunkCommand := cmd.Command("delete", "Deletes the specified chunk references from the index").Action(deleteChunkCommandOptions.run)
 	deleteChunkCommand.Flag("dryrun", "if enabled, no delete action will be taken").BoolVar(&deleteChunkCommandOptions.DryRun)
+	deleteChunkCommand.Flag("dryrun", "if enabled, the entire series will be deleted, not just the chunkID column").BoolVar(&deleteChunkCommandOptions.DeleteSeries)
 	deleteChunkCommand.Flag("bigtable.project", "bigtable project to use").StringVar(&deleteChunkCommandOptions.Bigtable.Project)
 	deleteChunkCommand.Flag("bigtable.instance", "bigtable instance to use").StringVar(&deleteChunkCommandOptions.Bigtable.Instance)
 	deleteChunkCommand.Flag("chunk.gcs.bucketname", "specify gcs bucket to scan for chunks").StringVar(&deleteChunkCommandOptions.GCS.BucketName)
@@ -207,7 +209,7 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 			}
 			for _, e := range entries {
 				if !c.DryRun {
-					err := deleter.DeleteEntry(ctx, e)
+					err := deleter.DeleteEntry(ctx, e, c.DeleteSeries)
 					if err != nil {
 						logrus.Errorln(err)
 					} else {

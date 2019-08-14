@@ -7,6 +7,6 @@ import (
 )
 
 type Deleter interface {
-	DeleteEntry(context.Context, chunk.IndexEntry) error
+	DeleteEntry(context.Context, chunk.IndexEntry, bool) error
 	DeleteSeries(context.Context, chunk.IndexQuery) ([]error, error)
 }
