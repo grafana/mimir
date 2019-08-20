@@ -166,7 +166,7 @@ func (r *RulerClient) DeleteRuleGroup(ctx context.Context, namespace, groupName 
 func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rulefmt.RuleGroup, error) {
 	res, err := r.doRequest(fmt.Sprintf("/api/prom/rules/%s/%s", namespace, groupName), "GET", nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to perform request")
+		return nil, err
 	}
 
 	defer res.Body.Close()

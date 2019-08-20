@@ -47,6 +47,9 @@ func (l *PushGatewayConfig) setup(pc *kingpin.ParseContext) error {
 		logrus.WithError(err).Errorln("unable to forward metrics to pushgateway")
 	}
 
+	l.done = make(chan struct{}, 0)
+	l.terminated = make(chan struct{}, 0)
+
 	go l.push()
 
 	return nil
@@ -70,6 +73,9 @@ func (l *PushGatewayConfig) push() {
 
 // Stop shutsdown the pushgateway
 func (l *PushGatewayConfig) Stop() {
+	if l.done == nil {
+		return
+	}
 	close(l.done)
 	<-l.terminated
 }
