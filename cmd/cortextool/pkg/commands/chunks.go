@@ -73,12 +73,12 @@ type chunkCommandOptions struct {
 	DryRun       bool
 	Schema       SchemaConfig
 	FilterConfig filter.Config
+	DeleteSeries bool
 }
 
 type deleteChunkCommandOptions struct {
 	chunkCommandOptions
-	GCS          gcp.GCSConfig
-	DeleteSeries bool
+	GCS gcp.GCSConfig
 }
 
 type deleteSeriesCommandOptions struct {
@@ -207,6 +207,19 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 					"dryrun":  c.DryRun,
 				}).Errorln(err)
 			}
+
+			_, labelEntries, err := schema.GetCacheKeysAndLabelWriteEntries(chk.From, chk.Through, chk.UserID, chk.Metric.Get(labels.MetricName), chk.Metric, chk.ExternalKey())
+			if c.DeleteSeries {
+				expandedLabelEntries := make([]chunk.IndexEntry, 0, len(labelEntries))
+				for _, le := range labelEntries {
+					expandedLabelEntries = append(expandedLabelEntries, le...)
+				}
+
+				// This makes sure the entries for the index are deleted first so that incase we error, we can
+				// still get the index entries from the chunk entries.
+				entries = append(expandedLabelEntries, entries...)
+			}
+
 			for _, e := range entries {
 				if !c.DryRun {
 					err := deleter.DeleteEntry(ctx, e, c.DeleteSeries)
