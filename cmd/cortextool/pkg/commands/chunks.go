@@ -209,6 +209,16 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 			}
 
 			_, labelEntries, err := schema.GetCacheKeysAndLabelWriteEntries(chk.From, chk.Through, chk.UserID, chk.Metric.Get(labels.MetricName), chk.Metric, chk.ExternalKey())
+			if err != nil {
+				logrus.WithFields(logrus.Fields{
+					"chunkID": chk.ExternalKey(),
+					"from":    chk.From.Time().String(),
+					"through": chk.Through.Time().String(),
+					"dryrun":  c.DryRun,
+					"message": "GetCacheKeysAndLabelWriteEntries",
+				}).Errorln(err)
+			}
+
 			if c.DeleteSeries {
 				expandedLabelEntries := make([]chunk.IndexEntry, 0, len(labelEntries))
 				for _, le := range labelEntries {
