@@ -55,7 +55,7 @@ cmd/cortex-cli/cortex-cli: $(APP_GO_FILES) cmd/cortex-cli/main.go
 	$(NETGO_CHECK)
 
 lint:
-	GOGC=20 golangci-lint run
+	GOGC=20 golangci-lint --deadline=20m run
 
 test:
 	go test -p=8 ./...

@@ -2,16 +2,13 @@ package client
 
 import (
 	"bytes"
-	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -26,8 +23,8 @@ type Config struct {
 	ID      string `yaml:"id"`
 }
 
-// RulerClient is used to get and load rules into a cortex ruler
-type RulerClient struct {
+// CortexClient is used to get and load rules into a cortex ruler
+type CortexClient struct {
 	key      string
 	id       string
 	endpoint *url.URL
@@ -35,7 +32,7 @@ type RulerClient struct {
 }
 
 // New returns a new Client
-func New(cfg Config) (*RulerClient, error) {
+func New(cfg Config) (*CortexClient, error) {
 	endpoint, err := url.Parse(cfg.Address)
 	if err != nil {
 		return nil, err
@@ -46,7 +43,7 @@ func New(cfg Config) (*RulerClient, error) {
 		"id":      cfg.ID,
 	}).Debugln("New ruler client created")
 
-	return &RulerClient{
+	return &CortexClient{
 		key:      cfg.Key,
 		id:       cfg.ID,
 		endpoint: endpoint,
@@ -54,7 +51,7 @@ func New(cfg Config) (*RulerClient, error) {
 	}, nil
 }
 
-func (r *RulerClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
+func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
 	req, err := http.NewRequest(method, r.endpoint.String()+path, bytes.NewBuffer(payload))
 	if err != nil {
 		return nil, err
@@ -114,115 +111,4 @@ func checkResponse(r *http.Response) error {
 	}).Errorln("requests failed")
 
 	return errors.New("failed request to the ruler api")
-}
-
-// CreateRuleGroup creates a new rule group
-func (r *RulerClient) CreateRuleGroup(ctx context.Context, namespace string, rg rulefmt.RuleGroup) error {
-	payload, err := yaml.Marshal(&rg)
-	if err != nil {
-		return err
-	}
-
-	res, err := r.doRequest("/api/prom/rules/"+namespace, "POST", payload)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// DeleteRuleGroup creates a new rule group
-func (r *RulerClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
-	res, err := r.doRequest("/api/prom/rules/"+namespace, "DELETE", nil)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return err
-	}
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return err
-	}
-
-	if res.StatusCode%2 > 0 {
-		return fmt.Errorf("error occured, %v", string(body))
-	}
-
-	return nil
-}
-
-// GetRuleGroup retrieves a rule group
-func (r *RulerClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rulefmt.RuleGroup, error) {
-	res, err := r.doRequest(fmt.Sprintf("/api/prom/rules/%s/%s", namespace, groupName), "GET", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return nil, err
-	}
-
-	rg := rulefmt.RuleGroup{}
-	err = yaml.Unmarshal(body, &rg)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"body": string(body),
-		}).Debugln("failed to unmarshal rule group from response")
-
-		return nil, errors.Wrap(err, "unable to unmarshal response")
-	}
-
-	return &rg, nil
-}
-
-// ListRules retrieves a rule group
-func (r *RulerClient) ListRules(ctx context.Context, namespace string) (map[string][]rulefmt.RuleGroup, error) {
-	path := "/api/prom/rules"
-	if namespace != "" {
-		path = path + "/" + namespace
-	}
-
-	res, err := r.doRequest(path, "GET", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return nil, err
-	}
-
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return nil, err
-	}
-
-	ruleSet := map[string][]rulefmt.RuleGroup{}
-	err = yaml.Unmarshal(body, &ruleSet)
-	if err != nil {
-		return nil, err
-	}
-
-	return ruleSet, nil
 }

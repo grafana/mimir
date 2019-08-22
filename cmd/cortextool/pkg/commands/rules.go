@@ -31,7 +31,7 @@ var (
 type RuleCommand struct {
 	ClientConfig client.Config
 
-	cli *client.RulerClient
+	cli *client.CortexClient
 
 	// Get Rule Groups Configs
 	Namespace string
