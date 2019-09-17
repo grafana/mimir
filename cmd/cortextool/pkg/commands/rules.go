@@ -3,7 +3,9 @@ package commands
 import (
 	"context"
 	"fmt"
+	"os"
 
+	"github.com/alecthomas/chroma/quick"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -84,7 +86,11 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("---\n%s\n", string(d))
+
+	err = quick.Highlight(os.Stdout, string(d), "yaml", "terminal", "swapoff")
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -98,7 +104,11 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 	if err != nil {
 		log.Fatalf("error: %v", err)
 	}
-	fmt.Printf("---\n%s\n", string(d))
+
+	err = quick.Highlight(os.Stdout, string(d), "yaml", "terminal", "swapoff")
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

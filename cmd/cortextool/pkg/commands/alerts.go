@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"os"
 
+	"github.com/alecthomas/chroma/quick"
 	"github.com/grafana/cortex-tool/pkg/client"
 	"github.com/prometheus/alertmanager/config"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -52,7 +54,12 @@ func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	fmt.Println(cfg)
+	err = quick.Highlight(os.Stdout, cfg, "yaml", "terminal", "swapoff")
+	if err != nil {
+		return err
+	}
+
+	// fmt.Println(cfg)
 	for fn, template := range templates {
 		fmt.Println(fn)
 		fmt.Println(template)
