@@ -41,3 +41,6 @@ Flags:
 #### Set
 
 #### Load
+
+## License
+Licensed Apache 2.0, see [LICENSE](LICENSE).
