@@ -27,4 +27,3 @@ test:
 
 clean:
 	rm -rf cmd/cortex-cli/cortex-cli
-
