@@ -2,13 +2,11 @@ package commands
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-
-	"github.com/prometheus/alertmanager/config"
+	"io/ioutil"
 
 	"github.com/grafana/cortex-tool/pkg/client"
-	log "github.com/sirupsen/logrus"
+	"github.com/prometheus/alertmanager/config"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -29,7 +27,9 @@ func (a *AlertCommand) Register(app *kingpin.Application) {
 	alertCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $GRAFANACLOUD_API_KEY.").Default("").Envar("GRAFANACLOUD_API_KEY").StringVar(&a.ClientConfig.Key)
 
 	// List Rules Command
-	alertCmd.Command("get", "List the rules currently in the cortex ruler.").Action(a.getConfig)
+	alertCmd.Command("get", "Get the alertmanager config currently in the cortex alertmanager.").Action(a.getConfig)
+
+	alertCmd.Command("delete", "Delete the alertmanager config currently in the cortex alertmanager.").Action(a.deleteConfig)
 
 	loadalertCmd := alertCmd.Command("load", "load a set of rules to a designated cortex endpoint").Action(a.loadConfig)
 	loadalertCmd.Arg("config", "alertmanager configuration to load").Required().StringVar(&a.AlertmanagerConfigFile)
@@ -49,14 +49,10 @@ func (a *AlertCommand) setup(k *kingpin.ParseContext) error {
 func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
-		log.Fatalf("unable to read rules from cortex, %v", err)
-	}
-	d, err := json.Marshal(&cfg)
-	if err != nil {
 		return err
 	}
-	fmt.Printf("---\n%s\n", string(d))
 
+	fmt.Println(cfg)
 	for fn, template := range templates {
 		fmt.Println(fn)
 		fmt.Println(template)
@@ -66,10 +62,20 @@ func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 }
 
 func (a *AlertCommand) loadConfig(k *kingpin.ParseContext) error {
-	cfg, _, err := config.LoadFile(a.AlertmanagerConfigFile)
+	content, err := ioutil.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
 		return err
 	}
 
-	return a.cli.CreateAlertmanagerConfig(context.Background(), *cfg, nil)
+	cfg := string(content)
+	_, err = config.Load(cfg)
+	if err != nil {
+		return err
+	}
+
+	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, nil)
+}
+
+func (a *AlertCommand) deleteConfig(k *kingpin.ParseContext) error {
+	return a.cli.DeleteAlermanagerConfig(context.Background())
 }

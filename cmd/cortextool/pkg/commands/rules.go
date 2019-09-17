@@ -125,6 +125,11 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 					}).Infof("group already exists")
 					continue
 				}
+				log.WithFields(log.Fields{
+					"group":      group.Name,
+					"namespace":  ns.Namespace,
+					"difference": err,
+				}).Infof("updating group")
 			}
 
 			err = r.cli.CreateRuleGroup(context.Background(), ns.Namespace, group)

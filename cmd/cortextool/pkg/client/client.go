@@ -64,11 +64,17 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 	req.Header.Add("X-Scope-OrgID", r.id)
 
 	log.WithFields(log.Fields{
-		"url": req.URL.String(),
-	}).Debugln("sending request to ruler api")
+		"url":    req.URL.String(),
+		"method": req.Method,
+	}).Debugln("sending request to cortex api")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
+		log.WithFields(log.Fields{
+			"url":    req.URL.String(),
+			"method": req.Method,
+			"error":  err.Error(),
+		}).Errorln("error during request to cortex api")
 		return nil, err
 	}
 
@@ -110,5 +116,5 @@ func checkResponse(r *http.Response) error {
 		"msg":    msg,
 	}).Errorln("requests failed")
 
-	return errors.New("failed request to the ruler api")
+	return errors.New("failed request to the cortex api")
 }

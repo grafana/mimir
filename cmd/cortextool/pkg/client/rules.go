@@ -24,10 +24,6 @@ func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg
 	}
 
 	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return err
-	}
 
 	return nil
 }
@@ -40,10 +36,6 @@ func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName
 	}
 
 	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return err
-	}
 	body, err := ioutil.ReadAll(res.Body)
 
 	if err != nil {
@@ -65,11 +57,6 @@ func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName st
 	}
 
 	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return nil, err
-	}
-
 	body, err := ioutil.ReadAll(res.Body)
 
 	if err != nil {
@@ -102,11 +89,6 @@ func (r *CortexClient) ListRules(ctx context.Context, namespace string) (map[str
 	}
 
 	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return nil, err
-	}
-
 	body, err := ioutil.ReadAll(res.Body)
 
 	if err != nil {
