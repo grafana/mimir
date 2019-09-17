@@ -1,23 +1,14 @@
 .DEFAULT_GOAL := all
-#############
-# Variables #
-#############
-
-# Docker image info
 IMAGE_PREFIX ?= grafana
 IMAGE_TAG := $(shell ./tools/image-tag)
-
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
-
-# Build flags
 GO_FLAGS := -mod=vendor -ldflags "-extldflags \"-static\" -s -w -X $(VPREFIX).Branch=$(GIT_BRANCH) -X $(VPREFIX).Version=$(IMAGE_TAG) -X $(VPREFIX).Revision=$(GIT_REVISION)" -tags netgo
 
 all: cortex-cli
 images: cortex-cli-image
 cortex-cli: cmd/cortex-cli/cortex-cli
 
-# Images
 cortex-cli-image:
 	$(SUDO) docker build -t $(IMAGE_PREFIX)/cortex-cli -f cmd/cortex-cli/Dockerfile .
 	$(SUDO) docker tag $(IMAGE_PREFIX)/cortex-cli $(IMAGE_PREFIX)/cortex-cli:$(IMAGE_TAG)
