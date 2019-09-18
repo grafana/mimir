@@ -7,7 +7,7 @@ import (
 	"os"
 
 	"github.com/alecthomas/chroma/quick"
-	"github.com/grafana/cortex-tool/pkg/client"
+	"github.com/grafana/cortex-cli/pkg/client"
 	"github.com/prometheus/alertmanager/config"
 	"gopkg.in/alecthomas/kingpin.v2"
 )

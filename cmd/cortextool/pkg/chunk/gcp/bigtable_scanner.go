@@ -6,8 +6,8 @@ import (
 
 	"cloud.google.com/go/bigtable"
 	"github.com/cortexproject/cortex/pkg/chunk"
-	chunkTool "github.com/grafana/cortex-tool/pkg/chunk"
-	"github.com/grafana/cortex-tool/pkg/chunk/filter"
+	chunkTool "github.com/grafana/cortex-cli/pkg/chunk"
+	"github.com/grafana/cortex-cli/pkg/chunk/filter"
 )
 
 type bigtableScanner struct {

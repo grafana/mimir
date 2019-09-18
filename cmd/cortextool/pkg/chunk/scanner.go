@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/grafana/cortex-tool/pkg/chunk/filter"
+	"github.com/grafana/cortex-cli/pkg/chunk/filter"
 )
 
 // Scanner scans an

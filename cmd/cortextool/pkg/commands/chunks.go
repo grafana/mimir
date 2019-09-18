@@ -9,9 +9,9 @@ import (
 
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	chunkTool "github.com/grafana/cortex-tool/pkg/chunk"
-	"github.com/grafana/cortex-tool/pkg/chunk/filter"
-	toolGCP "github.com/grafana/cortex-tool/pkg/chunk/gcp"
+	chunkTool "github.com/grafana/cortex-cli/pkg/chunk"
+	"github.com/grafana/cortex-cli/pkg/chunk/filter"
+	toolGCP "github.com/grafana/cortex-cli/pkg/chunk/gcp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"

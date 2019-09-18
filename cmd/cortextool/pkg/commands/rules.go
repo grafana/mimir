@@ -9,8 +9,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/cortex-tool/pkg/client"
-	"github.com/grafana/cortex-tool/pkg/rules"
+	"github.com/grafana/cortex-cli/pkg/client"
+	"github.com/grafana/cortex-cli/pkg/rules"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
