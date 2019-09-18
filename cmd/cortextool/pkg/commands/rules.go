@@ -46,9 +46,9 @@ type RuleCommand struct {
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
-	rulesCmd.Flag("address", "Address of the cortex cluster, alternatively set GRAFANACLOUD_ADDRESS.").Envar("GRAFANACLOUD_ADDRESS").Required().StringVar(&r.ClientConfig.Address)
-	rulesCmd.Flag("id", "Cortex tenant id, alternatively set GRAFANACLOUD_INSTANCE_ID.").Envar("GRAFANACLOUD_INSTANCE_ID").Required().StringVar(&r.ClientConfig.ID)
-	rulesCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $GRAFANACLOUD_API_KEY.").Default("").Envar("GRAFANACLOUD_API_KEY").StringVar(&r.ClientConfig.Key)
+	rulesCmd.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").Envar("CORTEX_ADDRESS").Required().StringVar(&r.ClientConfig.Address)
+	rulesCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENTANT_ID.").Envar("CORTEX_TENTANT_ID").Required().StringVar(&r.ClientConfig.ID)
+	rulesCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&r.ClientConfig.Key)
 
 	// List Rules Command
 	rulesCmd.Command("list", "List the rules currently in the cortex ruler.").Action(r.listRules)

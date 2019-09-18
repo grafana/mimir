@@ -24,9 +24,9 @@ type AlertCommand struct {
 // Register rule related commands and flags with the kingpin application
 func (a *AlertCommand) Register(app *kingpin.Application) {
 	alertCmd := app.Command("alertmanager", "View & edit alertmanager configs stored in cortex.").PreAction(a.setup)
-	alertCmd.Flag("address", "Address of the cortex cluster, alternatively set GRAFANACLOUD_ADDRESS.").Envar("GRAFANACLOUD_ADDRESS").Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Cortex tenant id, alternatively set GRAFANACLOUD_INSTANCE_ID.").Envar("GRAFANACLOUD_INSTANCE_ID").Required().StringVar(&a.ClientConfig.ID)
-	alertCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $GRAFANACLOUD_API_KEY.").Default("").Envar("GRAFANACLOUD_API_KEY").StringVar(&a.ClientConfig.Key)
+	alertCmd.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").Envar("CORTEX_ADDRESS").Required().StringVar(&a.ClientConfig.Address)
+	alertCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENTANT_ID.").Envar("CORTEX_TENTANT_ID").Required().StringVar(&a.ClientConfig.ID)
+	alertCmd.Flag("key", "Api key to use when contacting cortex, alternatively set CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&a.ClientConfig.Key)
 
 	// List Rules Command
 	alertCmd.Command("get", "Get the alertmanager config currently in the cortex alertmanager.").Action(a.getConfig)
