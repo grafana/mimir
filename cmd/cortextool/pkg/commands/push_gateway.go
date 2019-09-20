@@ -50,12 +50,12 @@ func (l *PushGatewayConfig) setup(pc *kingpin.ParseContext) error {
 	l.done = make(chan struct{})
 	l.terminated = make(chan struct{})
 
-	go l.push()
+	go l.loop()
 
 	return nil
 }
 
-func (l *PushGatewayConfig) push() {
+func (l *PushGatewayConfig) loop() {
 	timer := time.NewTicker(l.Interval)
 	defer timer.Stop()
 	defer close(l.terminated)
@@ -63,6 +63,8 @@ func (l *PushGatewayConfig) push() {
 	for {
 		select {
 		case <-l.done:
+			err := l.pusher.Add()
+			logrus.WithError(err).Errorln("unable to forward metrics to pushgateway")
 			return
 		case <-timer.C:
 			err := l.pusher.Add()

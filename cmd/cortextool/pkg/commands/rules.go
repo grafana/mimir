@@ -118,7 +118,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
-	defer ruleLoadTimestamp.SetToCurrentTime()
+	ruleLoadTimestamp.SetToCurrentTime()
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
