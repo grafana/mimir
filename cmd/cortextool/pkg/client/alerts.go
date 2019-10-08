@@ -25,7 +25,7 @@ func (r *CortexClient) CreateAlertmanagerConfig(ctx context.Context, cfg string,
 		return err
 	}
 
-	res, err := r.doRequest("/api/prom/alerts", "POST", payload)
+	res, err := r.doRequest("/alertmanager/alerts", "POST", payload)
 	if err != nil {
 		return err
 	}
@@ -41,7 +41,7 @@ func (r *CortexClient) CreateAlertmanagerConfig(ctx context.Context, cfg string,
 
 // DeleteAlermanagerConfig deletes the users alertmanagerconfig
 func (r *CortexClient) DeleteAlermanagerConfig(ctx context.Context) error {
-	res, err := r.doRequest("/api/prom/alerts", "DELETE", nil)
+	res, err := r.doRequest("/alertmanager/alerts", "DELETE", nil)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func (r *CortexClient) DeleteAlermanagerConfig(ctx context.Context) error {
 
 // GetAlertmanagerConfig retrieves a rule group
 func (r *CortexClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
-	res, err := r.doRequest("/api/prom/alerts", "GET", nil)
+	res, err := r.doRequest("/alertmanager/alerts", "GET", nil)
 	if err != nil {
 		log.Debugln("no alert config present in response")
 		return "", nil, err
