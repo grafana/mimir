@@ -8,11 +8,11 @@ Config commands interact with the cortex api and read/create/update/delete user 
 
 ### Configuration
 
-| Variable          | Flag      | Description                                                                                                   |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| CORTEX_ADDRESS    | --address | Addess of the api of the desired cortex cluster.                                                              |
-| CORTEX_API_KEY    | --key     | In cases where the cortex api is set behind a basic auth gateway, an key can be set as a basic auth password. |
-| CORTEX_TENTANT_ID | --id      | The tenant ID of the cortex instance to interact with.                                                        |
+| Variable          | Flag        | Description                                                                                                   |
+| ----------------- | ----------- | ------------------------------------------------------------------------------------------------------------- |
+| CORTEX_ADDRESS    | `--address` | Addess of the api of the desired cortex cluster.                                                              |
+| CORTEX_API_KEY    | `--key`     | In cases where the cortex api is set behind a basic auth gateway, an key can be set as a basic auth password. |
+| CORTEX_TENTANT_ID | `--id`      | The tenant ID of the cortex instance to interact with.                                                        |
 
 ### Alertmanager
 
