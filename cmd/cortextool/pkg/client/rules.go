@@ -30,7 +30,7 @@ func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg
 
 // DeleteRuleGroup creates a new rule group
 func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
-	res, err := r.doRequest("/api/prom/rules/"+namespace, "DELETE", nil)
+	res, err := r.doRequest("/api/prom/rules/"+namespace+"/"+groupName, "DELETE", nil)
 	if err != nil {
 		return err
 	}

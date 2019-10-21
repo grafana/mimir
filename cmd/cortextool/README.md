@@ -32,13 +32,31 @@ The following commands are used by users to interact with their cortex ruler con
 
 #### Rules List
 
+This command will retrieve all of the rule groups stored in the specified cortex instance and print each one by rule group name and namespace to the terminal.
+
     cortex-cli rules list
 
-#### RulesGet
+#### Rules Print
 
-    cortex-cli rules get example_rule_group
+This command will retrieve all of the rule groups stored in the specified cortex instance and print them to the terminal.
+
+    cortex-cli rules print
+
+#### Rules Get
+
+This command will retrieve the specified rule group from cortex and print it to the terminal.
+
+    cortex-cli rules get example_namespace example_rule_group
+
+#### Rules Delete
+
+This command will retrieve the specified rule group from cortex and print it to the terminal.
+
+    cortex-cli rules delete example_namespace example_rule_group
 
 #### Rules Load
+
+This command will load each rule group in the specified files and load them into cortex. If a rule already exists in cortex it will be overwritten if a diff is found.
 
     cortex-cli rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 

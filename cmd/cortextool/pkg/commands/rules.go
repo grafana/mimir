@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"text/tabwriter"
 
 	"github.com/alecthomas/chroma/quick"
 	"github.com/pkg/errors"
@@ -53,10 +54,18 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	// List Rules Command
 	rulesCmd.Command("list", "List the rules currently in the cortex ruler.").Action(r.listRules)
 
+	// Print Rules Command
+	rulesCmd.Command("print", "Print the rules currently in the cortex ruler.").Action(r.printRules)
+
 	// Get RuleGroup Command
 	getRuleGroupCmd := rulesCmd.Command("get", "Retreive a rulegroup from the ruler.").Action(r.getRuleGroup)
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup ot retrieve.").Required().StringVar(&r.RuleGroup)
+
+	// Delete RuleGroup Command
+	deleteRuleGroupCmd := rulesCmd.Command("delete", "Delete a rulegroup from the ruler.").Action(r.deleteRuleGroup)
+	deleteRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to delete.").Required().StringVar(&r.Namespace)
+	deleteRuleGroupCmd.Arg("group", "Name of the rulegroup ot delete.").Required().StringVar(&r.RuleGroup)
 
 	loadRulesCmd := rulesCmd.Command("load", "load a set of rules to a designated cortex endpoint").Action(r.loadRules)
 	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFiles)
@@ -78,6 +87,27 @@ func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
+	rules, err := r.cli.ListRules(context.Background(), "")
+	if err != nil {
+		log.Fatalf("unable to read rules from cortex, %v", err)
+
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
+
+	fmt.Fprintln(w, "Namespace\t Rule Group")
+	for ns, rulegroups := range rules {
+		for _, rg := range rulegroups {
+			fmt.Fprintf(w, "%s\t %s\n", ns, rg.Name)
+		}
+	}
+
+	w.Flush()
+
+	return nil
+}
+
+func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
 		log.Fatalf("unable to read rules from cortex, %v", err)
@@ -110,6 +140,14 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 		return err
 	}
 
+	return nil
+}
+
+func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
+	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
+	if err != nil {
+		log.Fatalf("unable to delete rule group from cortex, %v", err)
+	}
 	return nil
 }
 
