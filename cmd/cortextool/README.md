@@ -1,22 +1,22 @@
 # Cortex-Cli
 
-This tool is designed to interact with the various user facing apis provided by cortex, as well as, interact with various backend storage components containing cortex data.
+This tool is designed to interact with the various user facing APIs provided by Cortex, as well as, interact with various backend storage components containing Cortex data.
 
 ## Config Commands
 
-Config commands interact with the cortex api and read/create/update/delete user configs from cortex. Specifically a users alertmanager and rule configs can be composed and updated using these commands.
+Config commands interact with the Cortex api and read/create/update/delete user configs from Cortex. Specifically a users alertmanager and rule configs can be composed and updated using these commands.
 
 ### Configuration
 
-| Variable          | Flag      | Description                                                                                                   |
+| Env Variables     | Flag      | Description                                                                                                   |
 | ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| CORTEX_ADDRESS    | `address` | Addess of the api of the desired cortex cluster.                                                              |
-| CORTEX_API_KEY    | `key`     | In cases where the cortex api is set behind a basic auth gateway, an key can be set as a basic auth password. |
-| CORTEX_TENTANT_ID | `id`      | The tenant ID of the cortex instance to interact with.                                                        |
+| CORTEX_ADDRESS    | `address` | Addess of the API of the desired Cortex cluster.                                                              |
+| CORTEX_API_KEY    | `key`     | In cases where the Cortex API is set behind a basic auth gateway, an key can be set as a basic auth password. |
+| CORTEX_TENTANT_ID | `id`      | The tenant ID of the Cortex instance to interact with.                                                        |
 
 ### Alertmanager
 
-The following commands are used by users to interact with their cortex alertmanager configuration, as well as their alert template files.
+The following commands are used by users to interact with their Cortex alertmanager configuration, as well as their alert template files.
 
 #### Alertmanager Get
 
@@ -28,35 +28,35 @@ The following commands are used by users to interact with their cortex alertmana
 
 ### Rules
 
-The following commands are used by users to interact with their cortex ruler configuration. They can load prometheus rule files, as well as interact with individual rule groups.
+The following commands are used by users to interact with their Cortex ruler configuration. They can load prometheus rule files, as well as interact with individual rule groups.
 
 #### Rules List
 
-This command will retrieve all of the rule groups stored in the specified cortex instance and print each one by rule group name and namespace to the terminal.
+This command will retrieve all of the rule groups stored in the specified Cortex instance and print each one by rule group name and namespace to the terminal.
 
     cortex-cli rules list
 
 #### Rules Print
 
-This command will retrieve all of the rule groups stored in the specified cortex instance and print them to the terminal.
+This command will retrieve all of the rule groups stored in the specified Cortex instance and print them to the terminal.
 
     cortex-cli rules print
 
 #### Rules Get
 
-This command will retrieve the specified rule group from cortex and print it to the terminal.
+This command will retrieve the specified rule group from Cortex and print it to the terminal.
 
     cortex-cli rules get example_namespace example_rule_group
 
 #### Rules Delete
 
-This command will retrieve the specified rule group from cortex and print it to the terminal.
+This command will retrieve the specified rule group from Cortex and print it to the terminal.
 
     cortex-cli rules delete example_namespace example_rule_group
 
 #### Rules Load
 
-This command will load each rule group in the specified files and load them into cortex. If a rule already exists in cortex it will be overwritten if a diff is found.
+This command will load each rule group in the specified files and load them into Cortex. If a rule already exists in Cortex it will be overwritten if a diff is found.
 
     cortex-cli rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 
