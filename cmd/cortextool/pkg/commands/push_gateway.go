@@ -31,7 +31,7 @@ func (l *PushGatewayConfig) Register(app *kingpin.Application) {
 
 func (l *PushGatewayConfig) setup(pc *kingpin.ParseContext) error {
 	if l.Endpoint == nil || l.JobName == "" {
-		logrus.Infoln("push-gateway not configured")
+		logrus.Debugln("push-gateway not configured")
 		return nil
 	}
 
@@ -39,7 +39,7 @@ func (l *PushGatewayConfig) setup(pc *kingpin.ParseContext) error {
 		"endpoint": l.Endpoint,
 		"job_name": l.JobName,
 		"interval": l.Interval.String(),
-	}).Infoln("push-gateway enabled")
+	}).Debugln("push-gateway enabled")
 
 	l.pusher = push.New(l.Endpoint.String(), l.JobName).Gatherer(prometheus.DefaultGatherer)
 	err := l.pusher.Push()
