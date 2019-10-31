@@ -3,3 +3,5 @@ cmd/cortex-cli/cortex-cli
 .pkg
 .cache
 images/
+dist/
+.DS_STORE

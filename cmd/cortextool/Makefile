@@ -20,7 +20,7 @@ lint:
 	GOGC=20 golangci-lint --deadline=20m run
 
 cross:
-	CGO_ENABLED=0 gox -output="dist/{{.Dir}}-{{.OS}}-{{.Arch}}" -ldflags=${LDFLAGS} -arch="amd64 arm64 arm" -os="linux" -osarch="darwin/amd64" ./cmd/cortex-cli
+	CGO_ENABLED=0 gox -output="dist/{{.Dir}}-{{.OS}}-{{.Arch}}" -ldflags=${LDFLAGS} -arch="amd64" -os="linux" -osarch="darwin/amd64" ./cmd/cortex-cli
 
 test:
 	go test -p=8 ./...
