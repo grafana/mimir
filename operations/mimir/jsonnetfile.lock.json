@@ -1,0 +1,48 @@
+{
+  "dependencies": [
+    {
+      "name": "consul",
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs",
+          "subdir": "consul"
+        }
+      },
+      "version": "8f9d72b2e35b5f3cc1b7c2a8af9bbae7658804e2",
+      "sum": "S3cLCI5OLpSdwqsAWkNtdGXTlFTpuVGB29m6CXw8xHI="
+    },
+    {
+      "name": "etcd-operator",
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs",
+          "subdir": "etcd-operator"
+        }
+      },
+      "version": "8f9d72b2e35b5f3cc1b7c2a8af9bbae7658804e2",
+      "sum": "KUklp389C8zcSrYjRkIy00w81gP1HGU3eDmxghqtmBs="
+    },
+    {
+      "name": "ksonnet-util",
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs",
+          "subdir": "ksonnet-util"
+        }
+      },
+      "version": "250bf5499d81e5e77e1e5ed2242c89ad27485aec",
+      "sum": "8gmmSMANOAs4dfP5a09Y+nE9pd8E4TMpk3YPKxT4ys0="
+    },
+    {
+      "name": "memcached",
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs",
+          "subdir": "memcached"
+        }
+      },
+      "version": "8f9d72b2e35b5f3cc1b7c2a8af9bbae7658804e2",
+      "sum": "hroD9u119YWI5g2SnspmSgMDJUMyXFZDnjymhUS6Pjs="
+    }
+  ]
+}
