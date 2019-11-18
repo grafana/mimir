@@ -8,7 +8,7 @@ import (
 	"cloud.google.com/go/bigtable"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	chunkTool "github.com/grafana/cortex-cli/pkg/chunk"
+	chunkTool "github.com/grafana/cortextool/pkg/chunk"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/sirupsen/logrus"
 )

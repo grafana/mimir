@@ -1,4 +1,4 @@
-cmd/cortex-cli/cortex-cli
+cmd/cortextool/cortextool
 .uptodate
 .pkg
 .cache

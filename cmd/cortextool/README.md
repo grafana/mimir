@@ -1,4 +1,4 @@
-# Cortex-Cli
+# cortextool
 
 This tool is designed to interact with the various user facing APIs provided by Cortex, as well as, interact with various backend storage components containing Cortex data.
 
@@ -20,11 +20,11 @@ The following commands are used by users to interact with their Cortex alertmana
 
 #### Alertmanager Get
 
-    cortex-cli alertmanager get
+    cortextool alertmanager get
 
 #### Alertmanager Load
 
-    cortex-cli alertmanager load ./example_alertmanager_config.yaml
+    cortextool alertmanager load ./example_alertmanager_config.yaml
 
 ### Rules
 
@@ -34,31 +34,31 @@ The following commands are used by users to interact with their Cortex ruler con
 
 This command will retrieve all of the rule groups stored in the specified Cortex instance and print each one by rule group name and namespace to the terminal.
 
-    cortex-cli rules list
+    cortextool rules list
 
 #### Rules Print
 
 This command will retrieve all of the rule groups stored in the specified Cortex instance and print them to the terminal.
 
-    cortex-cli rules print
+    cortextool rules print
 
 #### Rules Get
 
 This command will retrieve the specified rule group from Cortex and print it to the terminal.
 
-    cortex-cli rules get example_namespace example_rule_group
+    cortextool rules get example_namespace example_rule_group
 
 #### Rules Delete
 
 This command will retrieve the specified rule group from Cortex and print it to the terminal.
 
-    cortex-cli rules delete example_namespace example_rule_group
+    cortextool rules delete example_namespace example_rule_group
 
 #### Rules Load
 
 This command will load each rule group in the specified files and load them into Cortex. If a rule already exists in Cortex it will be overwritten if a diff is found.
 
-    cortex-cli rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
+    cortextool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 
 ## Chunks
 
