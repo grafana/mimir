@@ -25,7 +25,7 @@ type AlertCommand struct {
 func (a *AlertCommand) Register(app *kingpin.Application) {
 	alertCmd := app.Command("alertmanager", "View & edit alertmanager configs stored in cortex.").PreAction(a.setup)
 	alertCmd.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").Envar("CORTEX_ADDRESS").Required().StringVar(&a.ClientConfig.Address)
-	alertCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENTANT_ID.").Envar("CORTEX_TENTANT_ID").Required().StringVar(&a.ClientConfig.ID)
+	alertCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENANT_ID.").Envar("CORTEX_TENANT_ID").Required().StringVar(&a.ClientConfig.ID)
 	alertCmd.Flag("key", "Api key to use when contacting cortex, alternatively set CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&a.ClientConfig.Key)
 
 	// List Rules Command
