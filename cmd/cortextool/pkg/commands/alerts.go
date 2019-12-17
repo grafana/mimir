@@ -9,6 +9,7 @@ import (
 	"github.com/alecthomas/chroma/quick"
 	"github.com/grafana/cortextool/pkg/client"
 	"github.com/prometheus/alertmanager/config"
+	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -51,6 +52,10 @@ func (a *AlertCommand) setup(k *kingpin.ParseContext) error {
 func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 	cfg, templates, err := a.cli.GetAlertmanagerConfig(context.Background())
 	if err != nil {
+		if err == client.ErrResourceNotFound {
+			log.Infof("no alertmanager config currently exist for this user")
+			return nil
+		}
 		return err
 	}
 

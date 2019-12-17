@@ -110,6 +110,10 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 	rules, err := r.cli.ListRules(context.Background(), "")
 	if err != nil {
+		if err == client.ErrResourceNotFound {
+			log.Infof("no rule groups currently exist for this user")
+			return nil
+		}
 		log.Fatalf("unable to read rules from cortex, %v", err)
 	}
 	d, err := yaml.Marshal(&rules)
@@ -128,6 +132,10 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 	group, err := r.cli.GetRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
 	if err != nil {
+		if err == client.ErrResourceNotFound {
+			log.Infof("this rule group does not currently exist")
+			return nil
+		}
 		log.Fatalf("unable to read rules from cortex, %v", err)
 	}
 	d, err := yaml.Marshal(&group)

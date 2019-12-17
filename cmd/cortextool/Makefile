@@ -17,13 +17,13 @@ cmd/cortextool/cortextool: $(APP_GO_FILES) cmd/cortextool/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
 lint:
-	GOGC=20 golangci-lint --deadline=20m run
+	golangci-lint run
 
 cross:
 	CGO_ENABLED=0 gox -output="dist/{{.Dir}}-{{.OS}}-{{.Arch}}" -ldflags=${LDFLAGS} -arch="amd64" -os="linux windows darwin" ./cmd/cortextool
 
 test:
-	go test -p=8 ./...
+	go test -mod=vendor -p=8 ./...
 
 clean:
 	rm -rf cmd/cortextool/cortextool
