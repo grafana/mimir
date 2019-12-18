@@ -12,7 +12,7 @@ Config commands interact with the Cortex api and read/create/update/delete user 
 | ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
 | CORTEX_ADDRESS    | `address` | Addess of the API of the desired Cortex cluster.                                                              |
 | CORTEX_API_KEY    | `key`     | In cases where the Cortex API is set behind a basic auth gateway, an key can be set as a basic auth password. |
-| CORTEX_TENTANT_ID | `id`      | The tenant ID of the Cortex instance to interact with.                                                        |
+| CORTEX_TENANT_ID | `id`      | The tenant ID of the Cortex instance to interact with.                                                        |
 
 ### Alertmanager
 
