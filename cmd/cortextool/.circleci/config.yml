@@ -6,7 +6,7 @@ executors:
       - image: circleci/golang:1.12.7
   linter:
     docker:
-      - image: golangci/golangci-lint:v1.17
+      - image: golangci/golangci-lint:v1.23.1
 
 jobs:
   build:
