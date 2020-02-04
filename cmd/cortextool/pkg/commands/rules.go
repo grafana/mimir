@@ -114,7 +114,9 @@ func (r *RuleCommand) setupFiles() error {
 	// Set up ignored namespaces map for sync/diff command
 	r.ignoredNamespacesMap = map[string]struct{}{}
 	for _, ns := range strings.Split(r.IgnoredNamespaces, ",") {
-		r.ignoredNamespacesMap[ns] = struct{}{}
+		if ns != "" {
+			r.ignoredNamespacesMap[ns] = struct{}{}
+		}
 	}
 
 	for _, file := range strings.Split(r.RuleFiles, ",") {
@@ -127,30 +129,32 @@ func (r *RuleCommand) setupFiles() error {
 	}
 
 	for _, dir := range strings.Split(r.RuleFilesPath, ",") {
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
-			}
+		if dir != "" {
+			err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					return nil
+				}
 
-			if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
+				if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
+					log.WithFields(log.Fields{
+						"file": info.Name(),
+						"path": path,
+					}).Debugf("adding file in rule-path")
+					r.RuleFilesList = append(r.RuleFilesList, path)
+					return nil
+				}
 				log.WithFields(log.Fields{
 					"file": info.Name(),
 					"path": path,
-				}).Debugf("adding file in rule-path")
-				r.RuleFilesList = append(r.RuleFilesList, path)
+				}).Debugf("ignorings file in rule-path")
 				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("error walking the path %q: %v", dir, err)
 			}
-			log.WithFields(log.Fields{
-				"file": info.Name(),
-				"path": path,
-			}).Debugf("ignorings file in rule-path")
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("error walking the path %q: %v", dir, err)
 		}
 	}
 
