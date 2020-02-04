@@ -3,3 +3,7 @@ run:
   deadline: 5m
 
   modules-download-mode: vendor
+
+linters-settings:
+  errcheck:
+    exclude: .errcheck-exclude

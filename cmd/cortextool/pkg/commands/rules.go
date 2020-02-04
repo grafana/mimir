@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/alecthomas/chroma/quick"
@@ -41,7 +43,12 @@ type RuleCommand struct {
 	RuleGroup string
 
 	// Load Rules Configs
-	RuleFiles []string
+	RuleFiles     []string
+	RuleFilesPath []string
+
+	// Sync/Diff Rules Config
+	IgnoredNamespaces    []string
+	ignoredNamespacesMap map[string]struct{}
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -69,6 +76,22 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 
 	loadRulesCmd := rulesCmd.Command("load", "load a set of rules to a designated cortex endpoint").Action(r.loadRules)
 	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFiles)
+
+	diffRulesCmd := rulesCmd.Command("diff", "diff a set of rules to a designated cortex endpoint").Action(r.diffRules)
+	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff.").StringsVar(&r.IgnoredNamespaces)
+	diffRulesCmd.Flag("rule-file", "The rule files to check. Flag can be reused to load multiple files.").ExistingFilesVar(&r.RuleFiles)
+	diffRulesCmd.Flag(
+		"rule-path",
+		"Path to directory containing rules yaml files. Each file in the directory with a .yml or .yaml suffix will be parsed.",
+	).StringsVar(&r.RuleFilesPath)
+
+	syncRulesCmd := rulesCmd.Command("sync", "sync a set of rules to a designated cortex endpoint").Action(r.syncRules)
+	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync.").StringsVar(&r.IgnoredNamespaces)
+	syncRulesCmd.Flag("rule-file", "The rule files to check. Flag can be reused to load multiple files.").ExistingFilesVar(&r.RuleFiles)
+	syncRulesCmd.Flag(
+		"rule-path",
+		"Path to directory containing rules yaml files. Each file in the directory with a .yml or .yaml suffix will be parsed.",
+	).StringsVar(&r.RuleFilesPath)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -82,6 +105,44 @@ func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
 		return err
 	}
 	r.cli = cli
+
+	return nil
+}
+
+func (r *RuleCommand) setupFiles() error {
+	// Set up ignored namespaces map for sync/diff command
+	r.ignoredNamespacesMap = map[string]struct{}{}
+	for _, ns := range r.IgnoredNamespaces {
+		r.ignoredNamespacesMap[ns] = struct{}{}
+	}
+
+	for _, dir := range r.RuleFilesPath {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
+				log.WithFields(log.Fields{
+					"file": info.Name(),
+					"path": path,
+				}).Debugf("adding file in rule-path")
+				r.RuleFiles = append(r.RuleFiles, path)
+				return nil
+			}
+			log.WithFields(log.Fields{
+				"file": info.Name(),
+				"path": path,
+			}).Debugf("ignorings file in rule-path")
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("error walking the path %q: %v", dir, err)
+		}
+	}
 
 	return nil
 }
@@ -200,5 +261,155 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 	}
 
 	ruleLoadSuccessTimestamp.SetToCurrentTime()
+	return nil
+}
+
+func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "diff operation unsuccessful, unable to load rules files")
+	}
+
+	nss, err := rules.ParseFiles(r.RuleFiles)
+	if err != nil {
+		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
+	}
+
+	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
+	if err != nil && err != client.ErrResourceNotFound {
+		return errors.Wrap(err, "diff operation unsuccessful, unable to contact cortex api")
+	}
+
+	changes := []rules.NamespaceChange{}
+
+	for _, ns := range nss {
+		currentNamespace, exists := currentNamespaceMap[ns.Namespace]
+		if !exists {
+			changes = append(changes, rules.NamespaceChange{
+				State:         rules.Created,
+				Namespace:     ns.Namespace,
+				GroupsCreated: ns.Groups,
+			})
+			continue
+		}
+
+		origNamespace := rules.RuleNamespace{
+			Namespace: ns.Namespace,
+			Groups:    currentNamespace,
+		}
+
+		changes = append(changes, rules.CompareNamespaces(origNamespace, ns))
+
+		// Remove namespace from temp map so namespaces that have been removed can easily be detected
+		delete(currentNamespaceMap, ns.Namespace)
+	}
+
+	for ns, deletedGroups := range currentNamespaceMap {
+		if _, ignored := r.ignoredNamespacesMap[ns]; !ignored {
+			changes = append(changes, rules.NamespaceChange{
+				State:         rules.Deleted,
+				Namespace:     ns,
+				GroupsDeleted: deletedGroups,
+			})
+		}
+	}
+
+	return rules.PrintComparisonResult(changes, false)
+}
+
+func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "sync operation unsuccessful, unable to load rules files")
+	}
+
+	nss, err := rules.ParseFiles(r.RuleFiles)
+	if err != nil {
+		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
+	}
+
+	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
+	if err != nil && err != client.ErrResourceNotFound {
+		return errors.Wrap(err, "sync operation unsuccessful, unable to contact cortex api")
+	}
+
+	changes := []rules.NamespaceChange{}
+
+	for _, ns := range nss {
+		currentNamespace, exists := currentNamespaceMap[ns.Namespace]
+		if !exists {
+			changes = append(changes, rules.NamespaceChange{
+				State:         rules.Created,
+				Namespace:     ns.Namespace,
+				GroupsCreated: ns.Groups,
+			})
+			continue
+		}
+
+		origNamespace := rules.RuleNamespace{
+			Namespace: ns.Namespace,
+			Groups:    currentNamespace,
+		}
+
+		changes = append(changes, rules.CompareNamespaces(origNamespace, ns))
+
+		// Remove namespace from temp map so namespaces that have been removed can easily be detected
+		delete(currentNamespaceMap, ns.Namespace)
+	}
+
+	for ns, deletedGroups := range currentNamespaceMap {
+		if _, ignored := r.ignoredNamespacesMap[ns]; !ignored {
+			changes = append(changes, rules.NamespaceChange{
+				State:         rules.Deleted,
+				Namespace:     ns,
+				GroupsDeleted: deletedGroups,
+			})
+		}
+	}
+
+	err = r.executeChanges(context.Background(), changes)
+	if err != nil {
+		return errors.Wrap(err, "sync operation unsuccessful, unable to complete executing changes.")
+	}
+
+	return nil
+}
+
+func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.NamespaceChange) error {
+	var err error
+	for _, ch := range changes {
+		for _, g := range ch.GroupsCreated {
+			log.WithFields(log.Fields{
+				"group":     g.Name,
+				"namespace": ch.Namespace,
+			}).Infof("creating group")
+			err = r.cli.CreateRuleGroup(ctx, ch.Namespace, g)
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, g := range ch.GroupsUpdated {
+			log.WithFields(log.Fields{
+				"group":     g.New.Name,
+				"namespace": ch.Namespace,
+			}).Infof("updating group")
+			err = r.cli.CreateRuleGroup(ctx, ch.Namespace, g.New)
+			if err != nil {
+				return err
+			}
+		}
+
+		for _, g := range ch.GroupsDeleted {
+			log.WithFields(log.Fields{
+				"group":     g.Name,
+				"namespace": ch.Namespace,
+			}).Infof("deleting group")
+			err = r.cli.DeleteRuleGroup(ctx, ch.Namespace, g.Name)
+			if err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
