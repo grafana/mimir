@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"text/tabwriter"
 
 	"github.com/alecthomas/chroma/quick"
@@ -41,7 +43,8 @@ type RuleCommand struct {
 	RuleGroup string
 
 	// Load Rules Configs
-	RuleFiles []string
+	RuleFiles     []string
+	RuleFilesPath []string
 
 	// Sync/Diff Rules Config
 	IgnoredNamespaces    []string
@@ -76,11 +79,19 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 
 	diffRulesCmd := rulesCmd.Command("diff", "diff a set of rules to a designated cortex endpoint").Action(r.diffRules)
 	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff.").StringsVar(&r.IgnoredNamespaces)
-	diffRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFiles)
+	diffRulesCmd.Flag("rule-file", "The rule files to check. Flag can be reused to load multiple files.").ExistingFilesVar(&r.RuleFiles)
+	diffRulesCmd.Flag(
+		"rule-path",
+		"Path to directory containing rules yaml files. Each file in the directory with a .yml or .yaml suffix will be parsed.",
+	).StringsVar(&r.RuleFilesPath)
 
 	syncRulesCmd := rulesCmd.Command("sync", "sync a set of rules to a designated cortex endpoint").Action(r.syncRules)
 	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync.").StringsVar(&r.IgnoredNamespaces)
-	syncRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFiles)
+	syncRulesCmd.Flag("rule-file", "The rule files to check. Flag can be reused to load multiple files.").ExistingFilesVar(&r.RuleFiles)
+	syncRulesCmd.Flag(
+		"rule-path",
+		"Path to directory containing rules yaml files. Each file in the directory with a .yml or .yaml suffix will be parsed.",
+	).StringsVar(&r.RuleFilesPath)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -95,10 +106,42 @@ func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
 	}
 	r.cli = cli
 
+	return nil
+}
+
+func (r *RuleCommand) setupFiles() error {
 	// Set up ignored namespaces map for sync/diff command
 	r.ignoredNamespacesMap = map[string]struct{}{}
 	for _, ns := range r.IgnoredNamespaces {
 		r.ignoredNamespacesMap[ns] = struct{}{}
+	}
+
+	for _, dir := range r.RuleFilesPath {
+		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if info.IsDir() {
+				return nil
+			}
+
+			if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
+				log.WithFields(log.Fields{
+					"file": info.Name(),
+					"path": path,
+				}).Debugf("adding file in rule-path")
+				r.RuleFiles = append(r.RuleFiles, path)
+				return nil
+			}
+			log.WithFields(log.Fields{
+				"file": info.Name(),
+				"path": path,
+			}).Debugf("ignorings file in rule-path")
+			return nil
+		})
+		if err != nil {
+			return fmt.Errorf("error walking the path %q: %v", dir, err)
+		}
 	}
 
 	return nil
@@ -222,6 +265,11 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "diff operation unsuccessful, unable to load rules files")
+	}
+
 	nss, err := rules.ParseFiles(r.RuleFiles)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
@@ -270,6 +318,11 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "sync operation unsuccessful, unable to load rules files")
+	}
+
 	nss, err := rules.ParseFiles(r.RuleFiles)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
