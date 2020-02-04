@@ -17,7 +17,7 @@ cmd/cortextool/cortextool: $(APP_GO_FILES) cmd/cortextool/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
 lint:
-	golangci-lint run
+	golangci-lint run -v
 
 cross:
 	CGO_ENABLED=0 gox -output="dist/{{.Dir}}-{{.OS}}-{{.Arch}}" -ldflags=${LDFLAGS} -arch="amd64" -os="linux windows darwin" ./cmd/cortextool

@@ -135,13 +135,13 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 	if created || updated || deleted {
 		fmt.Println("Changes are indicated with the following symbols:")
 		if created {
-			colorstring.Println("[green]  +[reset] created")
+			colorstring.Println("[green]  +[reset] created") //nolint
 		}
 		if updated {
-			colorstring.Println("[yellow]  +[reset] updated")
+			colorstring.Println("[yellow]  +[reset] updated") //nolint
 		}
 		if deleted {
-			colorstring.Println("[red]  +[reset] deleted")
+			colorstring.Println("[red]  +[reset] deleted") //nolint
 		}
 	} else {
 		fmt.Println("no changes detected")
