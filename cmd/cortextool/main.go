@@ -8,10 +8,10 @@ import (
 )
 
 var (
-	ruleCommand commands.RuleCommand
+	ruleCommand  commands.RuleCommand
 	alertCommand commands.AlertCommand
-	logConfig   commands.LoggerConfig
-	pushGateway commands.PushGatewayConfig
+	logConfig    commands.LoggerConfig
+	pushGateway  commands.PushGatewayConfig
 )
 
 func main() {
