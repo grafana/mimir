@@ -143,6 +143,8 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 		if deleted {
 			colorstring.Println("[red]  +[reset] deleted") //nolint
 		}
+		fmt.Println()
+		fmt.Println("The following changes will be made if the provided rule set is synced:")
 	} else {
 		fmt.Println("no changes detected")
 		return nil

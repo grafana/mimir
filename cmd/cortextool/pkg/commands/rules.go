@@ -43,11 +43,12 @@ type RuleCommand struct {
 	RuleGroup string
 
 	// Load Rules Configs
-	RuleFiles     []string
-	RuleFilesPath []string
+	RuleFilesList []string
+	RuleFiles     string
+	RuleFilesPath string
 
 	// Sync/Diff Rules Config
-	IgnoredNamespaces    []string
+	IgnoredNamespaces    string
 	ignoredNamespacesMap map[string]struct{}
 }
 
@@ -75,23 +76,23 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	deleteRuleGroupCmd.Arg("group", "Name of the rulegroup ot delete.").Required().StringVar(&r.RuleGroup)
 
 	loadRulesCmd := rulesCmd.Command("load", "load a set of rules to a designated cortex endpoint").Action(r.loadRules)
-	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFiles)
+	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
 
 	diffRulesCmd := rulesCmd.Command("diff", "diff a set of rules to a designated cortex endpoint").Action(r.diffRules)
-	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff.").StringsVar(&r.IgnoredNamespaces)
-	diffRulesCmd.Flag("rule-file", "The rule files to check. Flag can be reused to load multiple files.").ExistingFilesVar(&r.RuleFiles)
+	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff.").StringVar(&r.IgnoredNamespaces)
+	diffRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	diffRulesCmd.Flag(
-		"rule-path",
-		"Path to directory containing rules yaml files. Each file in the directory with a .yml or .yaml suffix will be parsed.",
-	).StringsVar(&r.RuleFilesPath)
+		"rule-dirs",
+		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+	).StringVar(&r.RuleFilesPath)
 
 	syncRulesCmd := rulesCmd.Command("sync", "sync a set of rules to a designated cortex endpoint").Action(r.syncRules)
-	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync.").StringsVar(&r.IgnoredNamespaces)
-	syncRulesCmd.Flag("rule-file", "The rule files to check. Flag can be reused to load multiple files.").ExistingFilesVar(&r.RuleFiles)
+	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync.").StringVar(&r.IgnoredNamespaces)
+	syncRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	syncRulesCmd.Flag(
-		"rule-path",
-		"Path to directory containing rules yaml files. Each file in the directory with a .yml or .yaml suffix will be parsed.",
-	).StringsVar(&r.RuleFilesPath)
+		"rule-dirs",
+		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+	).StringVar(&r.RuleFilesPath)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -112,35 +113,48 @@ func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
 func (r *RuleCommand) setupFiles() error {
 	// Set up ignored namespaces map for sync/diff command
 	r.ignoredNamespacesMap = map[string]struct{}{}
-	for _, ns := range r.IgnoredNamespaces {
-		r.ignoredNamespacesMap[ns] = struct{}{}
+	for _, ns := range strings.Split(r.IgnoredNamespaces, ",") {
+		if ns != "" {
+			r.ignoredNamespacesMap[ns] = struct{}{}
+		}
 	}
 
-	for _, dir := range r.RuleFilesPath {
-		err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-			if err != nil {
-				return err
-			}
-			if info.IsDir() {
-				return nil
-			}
+	for _, file := range strings.Split(r.RuleFiles, ",") {
+		if file != "" {
+			log.WithFields(log.Fields{
+				"file": file,
+			}).Debugf("adding file")
+			r.RuleFilesList = append(r.RuleFilesList, file)
+		}
+	}
 
-			if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
+	for _, dir := range strings.Split(r.RuleFilesPath, ",") {
+		if dir != "" {
+			err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if info.IsDir() {
+					return nil
+				}
+
+				if strings.HasSuffix(info.Name(), ".yml") || strings.HasSuffix(info.Name(), ".yaml") {
+					log.WithFields(log.Fields{
+						"file": info.Name(),
+						"path": path,
+					}).Debugf("adding file in rule-path")
+					r.RuleFilesList = append(r.RuleFilesList, path)
+					return nil
+				}
 				log.WithFields(log.Fields{
 					"file": info.Name(),
 					"path": path,
-				}).Debugf("adding file in rule-path")
-				r.RuleFiles = append(r.RuleFiles, path)
+				}).Debugf("ignorings file in rule-path")
 				return nil
+			})
+			if err != nil {
+				return fmt.Errorf("error walking the path %q: %v", dir, err)
 			}
-			log.WithFields(log.Fields{
-				"file": info.Name(),
-				"path": path,
-			}).Debugf("ignorings file in rule-path")
-			return nil
-		})
-		if err != nil {
-			return fmt.Errorf("error walking the path %q: %v", dir, err)
 		}
 	}
 
@@ -221,7 +235,7 @@ func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
-	nss, err := rules.ParseFiles(r.RuleFiles)
+	nss, err := rules.ParseFiles(r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -270,7 +284,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to load rules files")
 	}
 
-	nss, err := rules.ParseFiles(r.RuleFiles)
+	nss, err := rules.ParseFiles(r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
 	}
@@ -323,7 +337,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to load rules files")
 	}
 
-	nss, err := rules.ParseFiles(r.RuleFiles)
+	nss, err := rules.ParseFiles(r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
