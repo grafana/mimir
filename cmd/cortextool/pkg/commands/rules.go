@@ -425,5 +425,8 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 			}
 		}
 	}
+
+	updated, created, deleted := rules.SummarizeChanges(changes)
+	fmt.Printf("Sync Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted", created, updated, deleted)
 	return nil
 }

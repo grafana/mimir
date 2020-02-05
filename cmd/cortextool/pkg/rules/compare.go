@@ -42,6 +42,23 @@ type NamespaceChange struct {
 	GroupsDeleted []rulefmt.RuleGroup
 }
 
+// SummarizeChanges returns the number of each type of change in a set of changes
+func SummarizeChanges(changes []NamespaceChange) (created, updated, deleted int) {
+	// Cycle through the results to determine which types of changes have been made
+	for _, change := range changes {
+		if len(change.GroupsCreated) > 0 {
+			created += len(change.GroupsCreated)
+		}
+		if len(change.GroupsUpdated) > 0 {
+			updated += len(change.GroupsUpdated)
+		}
+		if len(change.GroupsDeleted) > 0 {
+			deleted += len(change.GroupsDeleted)
+		}
+	}
+	return
+}
+
 // UpdatedRuleGroup is used to store an change between a rule group
 type UpdatedRuleGroup struct {
 	New      rulefmt.RuleGroup
@@ -117,34 +134,18 @@ func CompareNamespaces(original, new RuleNamespace) NamespaceChange {
 // PrintComparisonResult prints the differences between the staged namespace
 // and active namespace
 func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
-	// Cycle through the results to determine which types of changes have been made
-	var updated, created, deleted bool
-	var updatedTotal, createdTotal, deletedTotal int
-	for _, result := range results {
-		if len(result.GroupsCreated) > 0 {
-			created = true
-			createdTotal += len(result.GroupsCreated)
-		}
-		if len(result.GroupsUpdated) > 0 {
-			updated = true
-			updatedTotal += len(result.GroupsUpdated)
-		}
-		if len(result.GroupsDeleted) > 0 {
-			deleted = true
-			deletedTotal += len(result.GroupsDeleted)
-		}
-	}
+	updated, created, deleted := SummarizeChanges(results)
 
 	// If any changes are detected, print the symbol legend
-	if created || updated || deleted {
+	if (created + updated + deleted) > 0 {
 		fmt.Println("Changes are indicated with the following symbols:")
-		if created {
+		if created > 0 {
 			colorstring.Println("[green]  +[reset] created") //nolint
 		}
-		if updated {
+		if updated > 0 {
 			colorstring.Println("[yellow]  +[reset] updated") //nolint
 		}
-		if deleted {
+		if deleted > 0 {
 			colorstring.Println("[red]  +[reset] deleted") //nolint
 		}
 		fmt.Println()
@@ -158,27 +159,27 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 		switch change.State {
 		case Created:
 			colorstring.Printf("[green]+ Namespace: %v\n", change.Namespace)
-			for _, g := range change.GroupsCreated {
-				colorstring.Printf("[green]  + Group: %v\n", g.Name)
+			for _, c := range change.GroupsCreated {
+				colorstring.Printf("[green]  + Group: %v\n", c.Name)
 			}
 		case Updated:
 			colorstring.Printf("[yellow]~ Namespace: %v\n", change.Namespace)
-			for _, created := range change.GroupsCreated {
-				colorstring.Printf("[green]  + Group: %v\n", created.Name)
+			for _, c := range change.GroupsCreated {
+				colorstring.Printf("[green]  + Group: %v\n", c.Name)
 			}
 
-			for _, updated := range change.GroupsUpdated {
-				colorstring.Printf("[yellow]  ~ Group: %v\n", updated.New.Name)
+			for _, c := range change.GroupsUpdated {
+				colorstring.Printf("[yellow]  ~ Group: %v\n", c.New.Name)
 
 				// Print the full diff of the rules if verbose is set
 				if verbose {
-					newYaml, _ := yaml.Marshal(updated.New)
+					newYaml, _ := yaml.Marshal(c.New)
 					seperated := strings.Split(string(newYaml), "\n")
 					for _, l := range seperated {
 						colorstring.Printf("[green]+ %v\n", l)
 					}
 
-					oldYaml, _ := yaml.Marshal(updated.Original)
+					oldYaml, _ := yaml.Marshal(c.Original)
 					seperated = strings.Split(string(oldYaml), "\n")
 					for _, l := range seperated {
 						colorstring.Printf("[red]+ %v\n", l)
@@ -186,19 +187,19 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 				}
 			}
 
-			for _, deleted := range change.GroupsDeleted {
-				colorstring.Printf("[red]  - Group: %v\n", deleted.Name)
+			for _, c := range change.GroupsDeleted {
+				colorstring.Printf("[red]  - Group: %v\n", c.Name)
 			}
 		case Deleted:
 			colorstring.Printf("[red]- Namespace: %v\n", change.Namespace)
-			for _, g := range change.GroupsDeleted {
-				colorstring.Printf("[red]  - Group: %v\n", g.Name)
+			for _, c := range change.GroupsDeleted {
+				colorstring.Printf("[red]  - Group: %v\n", c.Name)
 			}
 		}
 	}
 
 	fmt.Println()
-	fmt.Printf("Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted", createdTotal, updatedTotal, deletedTotal)
+	fmt.Printf("Diff Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted", created, updated, deleted)
 
 	return nil
 }
