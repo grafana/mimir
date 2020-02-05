@@ -199,7 +199,6 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 	}
 
 	fmt.Println()
-	fmt.Printf("Diff Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted", created, updated, deleted)
-
+	fmt.Printf("Diff Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
 	return nil
 }
