@@ -119,15 +119,19 @@ func CompareNamespaces(original, new RuleNamespace) NamespaceChange {
 func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 	// Cycle through the results to determine which types of changes have been made
 	var updated, created, deleted bool
+	var updatedTotal, createdTotal, deletedTotal int
 	for _, result := range results {
 		if len(result.GroupsCreated) > 0 {
 			created = true
+			createdTotal += len(result.GroupsCreated)
 		}
 		if len(result.GroupsUpdated) > 0 {
 			updated = true
+			updatedTotal += len(result.GroupsUpdated)
 		}
 		if len(result.GroupsDeleted) > 0 {
 			deleted = true
+			deletedTotal += len(result.GroupsDeleted)
 		}
 	}
 
@@ -192,6 +196,9 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 			}
 		}
 	}
+
+	fmt.Println()
+	fmt.Printf("Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted", createdTotal, updatedTotal, deletedTotal)
 
 	return nil
 }
