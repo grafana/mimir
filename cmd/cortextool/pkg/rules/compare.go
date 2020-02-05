@@ -134,7 +134,7 @@ func CompareNamespaces(original, new RuleNamespace) NamespaceChange {
 // PrintComparisonResult prints the differences between the staged namespace
 // and active namespace
 func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
-	updated, created, deleted := SummarizeChanges(results)
+	created, updated, deleted := SummarizeChanges(results)
 
 	// If any changes are detected, print the symbol legend
 	if (created + updated + deleted) > 0 {
