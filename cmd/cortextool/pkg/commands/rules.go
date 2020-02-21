@@ -50,6 +50,8 @@ type RuleCommand struct {
 	// Sync/Diff Rules Config
 	IgnoredNamespaces    string
 	ignoredNamespacesMap map[string]struct{}
+
+	DisableColor bool
 }
 
 // Register rule related commands and flags with the kingpin application

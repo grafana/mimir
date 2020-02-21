@@ -8,6 +8,7 @@ import (
 
 	"github.com/alecthomas/chroma/quick"
 	"github.com/grafana/cortextool/pkg/client"
+	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -18,6 +19,7 @@ type AlertCommand struct {
 	ClientConfig           client.Config
 	AlertmanagerConfigFile string
 	TemplateFiles          []string
+	DisableColor           bool
 
 	cli *client.CortexClient
 }
@@ -64,9 +66,8 @@ func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	// fmt.Println(cfg)
 	for fn, template := range templates {
-		fmt.Println(fn)
+		fmt.Printf("\nTemplates %s:\n", fn)
 		fmt.Println(template)
 	}
 
@@ -76,7 +77,7 @@ func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 func (a *AlertCommand) loadConfig(k *kingpin.ParseContext) error {
 	content, err := ioutil.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
 	}
 
 	cfg := string(content)
@@ -85,7 +86,16 @@ func (a *AlertCommand) loadConfig(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, nil)
+	templates := map[string]string{}
+	for _, f := range a.TemplateFiles {
+		tmpl, err := ioutil.ReadFile(f)
+		if err != nil {
+			return errors.Wrap(err, "unable to load template file: "+f)
+		}
+		templates[f] = string(tmpl)
+	}
+
+	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
 }
 
 func (a *AlertCommand) deleteConfig(k *kingpin.ParseContext) error {
