@@ -60,7 +60,9 @@ This command will load each rule group in the specified files and load them into
 
     cortextool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 
-## Chunks
+# chunktool
+
+This repo also contains the `chunktool`. I client meant to interact with chunks stored and indexed in cortex backends.
 
 ### Chunk Delete
 
