@@ -1,4 +1,5 @@
 cmd/cortextool/cortextool
+cmd/chunktool/chunktool
 .uptodate
 .pkg
 .cache
