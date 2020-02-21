@@ -1,5 +1,9 @@
 # Changelog
 
+## unreleased / master
+
+* [BUGFIX] Ensure rules commands use escaped URLs when contacting cortex API #24
+
 ## 0.1.3 / 2020-02-04
 
 * [FEATURE] Add `rules sync` command
