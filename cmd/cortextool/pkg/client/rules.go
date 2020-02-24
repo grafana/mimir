@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net/url"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -18,7 +19,8 @@ func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg
 		return err
 	}
 
-	res, err := r.doRequest("/api/prom/rules/"+namespace, "POST", payload)
+	escapedNamespace := url.PathEscape(namespace)
+	res, err := r.doRequest("/api/prom/rules/"+escapedNamespace, "POST", payload)
 	if err != nil {
 		return err
 	}
@@ -30,7 +32,10 @@ func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg
 
 // DeleteRuleGroup creates a new rule group
 func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName string) error {
-	res, err := r.doRequest("/api/prom/rules/"+namespace+"/"+groupName, "DELETE", nil)
+	escapedNamespace := url.PathEscape(namespace)
+	escapedGroupName := url.PathEscape(groupName)
+
+	res, err := r.doRequest("/api/prom/rules/"+escapedNamespace+"/"+escapedGroupName, "DELETE", nil)
 	if err != nil {
 		return err
 	}
@@ -51,7 +56,15 @@ func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName
 
 // GetRuleGroup retrieves a rule group
 func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rulefmt.RuleGroup, error) {
-	res, err := r.doRequest(fmt.Sprintf("/api/prom/rules/%s/%s", namespace, groupName), "GET", nil)
+	escapedNamespace := url.PathEscape(namespace)
+	escapedGroupName := url.PathEscape(groupName)
+	path := "/api/prom/rules/" + escapedNamespace + "/" + escapedGroupName
+
+	log.WithFields(log.Fields{
+		"url": path,
+	}).Debugln("path built to request rule group")
+
+	res, err := r.doRequest(path, "GET", nil)
 	if err != nil {
 		return nil, err
 	}
