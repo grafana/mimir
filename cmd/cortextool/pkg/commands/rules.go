@@ -8,15 +8,14 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/alecthomas/chroma/quick"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/cortextool/pkg/client"
+	"github.com/grafana/cortextool/pkg/printer"
 	"github.com/grafana/cortextool/pkg/rules"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
 )
 
 var (
@@ -65,12 +64,14 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd.Command("list", "List the rules currently in the cortex ruler.").Action(r.listRules)
 
 	// Print Rules Command
-	rulesCmd.Command("print", "Print the rules currently in the cortex ruler.").Action(r.printRules)
+	printRulesCmd := rulesCmd.Command("print", "Print the rules currently in the cortex ruler.").Action(r.printRules)
+	printRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
 	// Get RuleGroup Command
 	getRuleGroupCmd := rulesCmd.Command("get", "Retreive a rulegroup from the ruler.").Action(r.getRuleGroup)
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup ot retrieve.").Required().StringVar(&r.RuleGroup)
+	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
 	// Delete RuleGroup Command
 	deleteRuleGroupCmd := rulesCmd.Command("delete", "Delete a rulegroup from the ruler.").Action(r.deleteRuleGroup)
@@ -87,6 +88,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		"rule-dirs",
 		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
+	diffRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
 	syncRulesCmd := rulesCmd.Command("sync", "sync a set of rules to a designated cortex endpoint").Action(r.syncRules)
 	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync.").StringVar(&r.IgnoredNamespaces)
@@ -193,17 +195,9 @@ func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {
 		}
 		log.Fatalf("unable to read rules from cortex, %v", err)
 	}
-	d, err := yaml.Marshal(&rules)
-	if err != nil {
-		return err
-	}
 
-	err = quick.Highlight(os.Stdout, string(d), "yaml", "terminal", "swapoff")
-	if err != nil {
-		return err
-	}
-
-	return nil
+	p := printer.New(r.DisableColor)
+	return p.PrintRuleGroups(rules)
 }
 
 func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
@@ -215,17 +209,9 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 		}
 		log.Fatalf("unable to read rules from cortex, %v", err)
 	}
-	d, err := yaml.Marshal(&group)
-	if err != nil {
-		log.Fatalf("error: %v", err)
-	}
 
-	err = quick.Highlight(os.Stdout, string(d), "yaml", "terminal", "swapoff")
-	if err != nil {
-		return err
-	}
-
-	return nil
+	p := printer.New(r.DisableColor)
+	return p.PrintRuleGroup(*group)
 }
 
 func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
@@ -330,7 +316,8 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 		}
 	}
 
-	return rules.PrintComparisonResult(changes, false)
+	p := printer.New(r.DisableColor)
+	return p.PrintComparisonResult(changes, false)
 }
 
 func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {

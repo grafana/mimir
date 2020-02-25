@@ -7,6 +7,7 @@ import (
 
 	"github.com/alecthomas/chroma/quick"
 	"github.com/mitchellh/colorstring"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/cortextool/pkg/rules"
@@ -18,8 +19,8 @@ type Printer struct {
 	colorizer    colorstring.Colorize
 }
 
-// NewPrinter returns a Printer struct
-func NewPrinter(color bool) *Printer {
+// New returns a Printer struct
+func New(color bool) *Printer {
 	return &Printer{
 		disableColor: color,
 		colorizer: colorstring.Colorize{
@@ -47,17 +48,17 @@ func (p *Printer) PrintAlertmanagerConfig(config string, templates map[string]st
 
 	// go-text-template
 	if !p.disableColor {
-		err := quick.Highlight(os.Stdout, cfg, "yaml", "terminal", "swapoff")
+		err := quick.Highlight(os.Stdout, config, "yaml", "terminal", "swapoff")
 		if err != nil {
 			return err
 		}
 	} else {
-		fmt.Println(config)
+		fmt.Println(string(config))
 	}
 
 	fmt.Printf("\nTemplates:\n")
 	for fn, template := range templates {
-		fmt.Println("template " + fn)
+		fmt.Println(fn + ":")
 		if !p.disableColor {
 			err := quick.Highlight(os.Stdout, template, "go-text-template", "terminal", "swapoff")
 			if err != nil {
@@ -67,6 +68,40 @@ func (p *Printer) PrintAlertmanagerConfig(config string, templates map[string]st
 			fmt.Println(template)
 		}
 	}
+
+	return nil
+}
+
+// PrintRuleGroups prints the current alertmanager config
+func (p *Printer) PrintRuleGroups(rules map[string][]rulefmt.RuleGroup) error {
+	encodedRules, err := yaml.Marshal(&rules)
+	if err != nil {
+		return err
+	}
+
+	// go-text-template
+	if !p.disableColor {
+		return quick.Highlight(os.Stdout, string(encodedRules), "yaml", "terminal", "swapoff")
+	}
+
+	fmt.Println(string(encodedRules))
+
+	return nil
+}
+
+// PrintRuleGroup prints the current alertmanager config
+func (p *Printer) PrintRuleGroup(rule rulefmt.RuleGroup) error {
+	encodedRule, err := yaml.Marshal(&rule)
+	if err != nil {
+		return err
+	}
+
+	// go-text-template
+	if !p.disableColor {
+		return quick.Highlight(os.Stdout, string(encodedRule), "yaml", "terminal", "swapoff")
+	}
+
+	fmt.Println(encodedRule)
 
 	return nil
 }
