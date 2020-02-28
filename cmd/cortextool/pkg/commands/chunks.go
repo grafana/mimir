@@ -122,14 +122,12 @@ func RegisterChunkCommands(app *kingpin.Application) {
 func setup(k *kingpin.ParseContext) error {
 	if strings.HasPrefix(k.String(), "chunk migrate") {
 		return migrate.Setup()
-	} else {
-		prometheus.MustRegister(
-			chunkRefsDeleted,
-			seriesEntriesDeleted,
-			labelEntriesDeleted,
-		)
 	}
-
+	prometheus.MustRegister(
+		chunkRefsDeleted,
+		seriesEntriesDeleted,
+		labelEntriesDeleted,
+	)
 	return nil
 }
 

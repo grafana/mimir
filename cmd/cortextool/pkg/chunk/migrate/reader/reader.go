@@ -9,43 +9,28 @@ import (
 	cortex_storage "github.com/cortexproject/cortex/pkg/chunk/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/cortextool/pkg/chunk"
 	"github.com/grafana/cortextool/pkg/chunk/storage"
 )
 
 var (
-	SentChunks = prometheus.NewCounterVec(prometheus.CounterOpts{
+	SentChunks = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace: "cortex",
 		Name:      "reader_sent_chunks_total",
 		Help:      "The total number of chunks sent by this reader.",
-	}, []string{"reader_id"})
+	})
 )
 
-// ReaderConfig is a config for a Reader
-type ReaderConfig struct {
-	PlannerConfig     PlannerConfig
-	ReaderIDPrefix    string
-	StorageClient     string
-	StorageConfig     cortex_storage.Config
-	StorageConfigFile string
-
-	NumWorkers int
-}
-
-// RegisterFlags adds the flags required to configure this flag set.
-func (cfg *ReaderConfig) Register(cmd *kingpin.CmdClause) {
-	cfg.PlannerConfig.Register(cmd)
-	cmd.Flag("reader.storage-client", "Which storage client to use (gcp, gcs).").Default("gcp").StringVar(&cfg.StorageClient)
-	cmd.Flag("reader.storage-config-file", "Path to config file for storage").Required().StringVar(&cfg.StorageConfigFile)
-	cmd.Flag("reader.prefix", "prefix used to identify reader when forwarding data to writer").StringVar(&cfg.ReaderIDPrefix)
-	cmd.Flag("reader.num-workers", "Number of workers to scan tables").Default("1").IntVar(&cfg.NumWorkers)
+// Config is a config for a Reader
+type Config struct {
+	StorageConfig cortex_storage.Config `yaml:"storage"`
+	NumWorkers    int                   `yaml:"num_workers"`
 }
 
 // Reader collects and forwards chunks according to it's planner
 type Reader struct {
-	cfg ReaderConfig
+	cfg Config
 	id  string // ID is the configured as the reading prefix and the shards assigned to the reader
 
 	scanner          chunk.Scanner
@@ -57,18 +42,23 @@ type Reader struct {
 }
 
 // NewReader returns a Reader struct
-func NewReader(cfg ReaderConfig) (*Reader, error) {
-	planner, err := NewPlanner(cfg.PlannerConfig)
+func NewReader(cfg Config, plannerCfg PlannerConfig) (*Reader, error) {
+	planner, err := NewPlanner(plannerCfg)
 	if err != nil {
 		return nil, err
 	}
 
-	scanner, err := storage.NewChunkScanner(cfg.StorageClient, cfg.StorageConfig)
+	scanner, err := storage.NewChunkScanner(cfg.StorageConfig.Engine, cfg.StorageConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	id := cfg.ReaderIDPrefix + fmt.Sprintf("%d_%d", cfg.PlannerConfig.FirstShard, cfg.PlannerConfig.LastShard)
+	id := fmt.Sprintf("%d_%d", plannerCfg.FirstShard, plannerCfg.LastShard)
+
+	// Default to one worker if none is set
+	if cfg.NumWorkers < 1 {
+		cfg.NumWorkers = 1
+	}
 
 	return &Reader{
 		cfg:              cfg,
@@ -151,7 +141,7 @@ func (r *Reader) readLoop(ctx context.Context, outChan chan cortex_chunk.Chunk, 
 			logEntry.Infoln("attempting  scan request")
 			err := r.scanner.Scan(ctx, req, func(i cortex_chunk.Chunk) bool {
 				// while this does not mean chunk is sent by scanner, this is the closest we can get
-				SentChunks.WithLabelValues(r.id).Add(1)
+				SentChunks.Inc()
 				return true
 			}, outChan)
 

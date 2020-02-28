@@ -9,7 +9,6 @@ import (
 	"github.com/cortexproject/cortex/pkg/util/validation"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
 )
 
 var (
@@ -20,46 +19,27 @@ var (
 	}, nil)
 )
 
-// WriterConfig configures are Writer objects
-type WriterConfig struct {
-	StorageConfig     storage.Config
-	StorageConfigFile string
-
-	SchemaConfig     chunk.SchemaConfig
-	SchemaConfigFile string
-
-	MapperConfig MapperConfig
-
-	NumWorkers int
-}
-
-// RegisterFlags adds the flags required to configure this flag set.
-func (cfg *WriterConfig) Register(cmd *kingpin.CmdClause) {
-	cmd.Flag("writer.num-workers", "number of worker jobs handling backend writes").Default("5").IntVar(&cfg.NumWorkers)
-	cmd.Flag("writer.storage-config-file", "Path to config file for storage").Required().StringVar(&cfg.StorageConfigFile)
-	cmd.Flag("writer.schema-config-file", "Path to config file for schema").Required().StringVar(&cfg.SchemaConfigFile)
-	cfg.MapperConfig.Register(cmd)
+// Config configures the Writer struct
+type Config struct {
+	StorageConfig storage.Config     `yaml:"storage"`
+	SchemaConfig  chunk.SchemaConfig `yaml:"schema"`
+	NumWorkers    int                `yaml:"num_workers"`
 }
 
 // Writer receives chunks and stores them in a storage backend
 type Writer struct {
-	cfg        WriterConfig
+	cfg        Config
 	chunkStore chunk.Store
 
 	workerGroup sync.WaitGroup
-	mapper      *Mapper
+	mapper      Mapper
 
 	err  error
 	quit chan struct{}
 }
 
 // NewWriter returns a Writer object
-func NewWriter(cfg WriterConfig) (*Writer, error) {
-	mapper, err := NewMapper(cfg.MapperConfig)
-	if err != nil {
-		return nil, err
-	}
-
+func NewWriter(cfg Config, mapper Mapper) (*Writer, error) {
 	overrides, err := validation.NewOverrides(validation.Limits{})
 	if err != nil {
 		return nil, err

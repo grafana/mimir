@@ -1,25 +1,43 @@
 package commands
 
 import (
+	"os"
+
 	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/cortextool/pkg/chunk/migrate"
+	"github.com/grafana/cortextool/pkg/chunk/migrate/reader"
 )
 
 type migrateChunksCommandOptions struct {
-	migrate.MigratorConfig
+	ConfigFile string
+	Config     migrate.Config
+	Planner    reader.PlannerConfig
 }
 
 func registerMigrateChunksCommandOptions(cmd *kingpin.CmdClause) {
 	migrateChunksCommandOptions := &migrateChunksCommandOptions{}
 	migrateChunksCommand := cmd.Command("migrate", "Deletes the specified chunk references from the index").Action(migrateChunksCommandOptions.run)
-
-	migrateChunksCommandOptions.MigratorConfig.Register(migrateChunksCommand)
+	migrateChunksCommand.Flag("config-file", "path to migration job config file").Required().StringVar(&migrateChunksCommandOptions.ConfigFile)
+	migrateChunksCommandOptions.Planner.Register(migrateChunksCommand)
 }
 
 func (c *migrateChunksCommandOptions) run(k *kingpin.ParseContext) error {
-	migrator, err := migrate.NewMigrator(c.MigratorConfig)
+	migrator, err := migrate.NewMigrator(c.Config, c.Planner)
 	if err != nil {
+		return err
+	}
+
+	f, err := os.Open(c.ConfigFile)
+	if err != nil {
+		return err
+	}
+
+	decoder := yaml.NewDecoder(f)
+	decoder.SetStrict(true)
+
+	if err := decoder.Decode(&c.Config); err != nil {
 		return err
 	}
 
