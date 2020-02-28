@@ -7,7 +7,7 @@ import (
 	"cloud.google.com/go/bigtable"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	chunkTool "github.com/grafana/cortextool/pkg/chunk"
-	"github.com/grafana/cortextool/pkg/chunk/filter"
+	"github.com/sirupsen/logrus"
 )
 
 type bigtableScanner struct {
@@ -28,37 +28,45 @@ func NewBigtableScanner(ctx context.Context, project, instance string) (chunkToo
 
 // Scan forwards metrics to a golang channel, forwarded chunks must have the same
 // user ID
-func (s *bigtableScanner) Scan(ctx context.Context, tbl string, mFilter filter.MetricFilter, out chan chunk.Chunk) error {
+func (s *bigtableScanner) Scan(ctx context.Context, req chunkTool.ScanRequest, filterFunc chunkTool.FilterFunc, out chan chunk.Chunk) error {
 	var processingErr error
 
-	table := s.client.Open(tbl)
+	table := s.client.Open(req.Table)
 	decodeContext := chunk.NewDecodeContext()
-	rr := bigtable.PrefixRange(mFilter.User + "/")
+
+	rr := bigtable.PrefixRange(req.User + "/" + req.Prefix)
 
 	// Read through rows and forward slices of chunks with the same metrics
 	// fingerprint
 	err := table.ReadRows(ctx, rr, func(row bigtable.Row) bool {
-		c, err := chunk.ParseExternalKey(mFilter.User, row.Key())
+		c, err := chunk.ParseExternalKey(req.User, row.Key())
 		if err != nil {
 			processingErr = err
 			return false
 		}
+
+		if !req.CheckTime(c.From, c.Through) {
+			logrus.Debugln("skipping chunk updated at timestamp outside filters range")
+			return true
+		}
+
 		err = c.Decode(decodeContext, row[columnFamily][0].Value)
 		if err != nil {
 			processingErr = err
 			return false
 		}
-		if mFilter.Filter(c) {
+
+		if filterFunc(c) {
 			out <- c
 		}
 		return true
 	})
 
 	if err != nil {
-		return fmt.Errorf("stream canceled, err: %v, table: %v, user: %v", err, tbl, mFilter.User)
+		return fmt.Errorf("stream canceled, err: %v, table: %v, user: %v", err, req.Table, req.User)
 	}
 	if processingErr != nil {
-		return fmt.Errorf("stream canceled, err: %v, table: %v, user: %v", processingErr, tbl, mFilter.User)
+		return fmt.Errorf("stream canceled, err: %v, table: %v, user: %v", processingErr, req.Table, req.User)
 	}
 
 	return nil

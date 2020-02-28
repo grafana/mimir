@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,10 +15,13 @@ import (
 	toolGCP "github.com/grafana/cortextool/pkg/chunk/gcp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
+
+	"github.com/grafana/cortextool/pkg/chunk/migrate"
 )
 
 var (
@@ -112,14 +116,19 @@ func RegisterChunkCommands(app *kingpin.Application) {
 	chunkCommand := app.Command("chunk", "Chunk related operations").PreAction(setup)
 	registerDeleteChunkCommandOptions(chunkCommand)
 	registerDeleteSeriesCommandOptions(chunkCommand)
+	registerMigrateChunksCommandOptions(chunkCommand)
 }
 
 func setup(k *kingpin.ParseContext) error {
-	prometheus.MustRegister(
-		chunkRefsDeleted,
-		seriesEntriesDeleted,
-		labelEntriesDeleted,
-	)
+	if strings.HasPrefix(k.String(), "chunk migrate") {
+		return migrate.Setup()
+	} else {
+		prometheus.MustRegister(
+			chunkRefsDeleted,
+			seriesEntriesDeleted,
+			labelEntriesDeleted,
+		)
+	}
 
 	return nil
 }
@@ -248,7 +257,15 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	table := schemaConfig.ChunkTables.TableFor(fltr.From)
 
 	start := time.Now()
-	err = scanner.Scan(ctx, table, fltr, outChan)
+	scanRequest := chunkTool.ScanRequest{
+		Table:    table,
+		User:     fltr.User,
+		Interval: &model.Interval{Start: fltr.From, End: fltr.To},
+	}
+	err = scanner.Scan(ctx, scanRequest, func(c chunk.Chunk) bool {
+		return fltr.Filter(c)
+	}, outChan)
+
 	close(outChan)
 	if err != nil {
 		return errors.Wrap(err, "scan failed")

@@ -9,7 +9,6 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
 	chunkTool "github.com/grafana/cortextool/pkg/chunk"
-	"github.com/grafana/cortextool/pkg/chunk/filter"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
@@ -39,11 +38,11 @@ func NewGcsScanner(ctx context.Context, cfg gcp.GCSConfig) (chunkTool.Scanner, e
 
 // Scan forwards metrics to a golang channel, forwarded chunks must have the same
 // user ID
-func (s *gcsScanner) Scan(ctx context.Context, tbl string, mFilter filter.MetricFilter, out chan chunk.Chunk) error {
+func (s *gcsScanner) Scan(ctx context.Context, req chunkTool.ScanRequest, filterFunc chunkTool.FilterFunc, out chan chunk.Chunk) error {
 	decodeContext := chunk.NewDecodeContext()
 
 	it := s.bucket.Objects(ctx, &storage.Query{
-		Prefix: mFilter.User + "/",
+		Prefix: req.User + "/" + req.Prefix,
 	})
 
 	for {
@@ -53,26 +52,28 @@ func (s *gcsScanner) Scan(ctx context.Context, tbl string, mFilter filter.Metric
 		}
 
 		if err != nil {
-			return fmt.Errorf("unable to iterate chunks, err: %v, user: %v", err, mFilter.User)
+			return fmt.Errorf("unable to iterate chunks, err: %v, user: %v", err, req.User)
 		}
 
-		if !mFilter.CheckTime(objAttrs.Updated) {
-			logrus.Debugln("skipping chunk updated at timestamp outside filters range")
-			continue
-		}
-
-		c, err := chunk.ParseExternalKey(mFilter.User, objAttrs.Name)
+		c, err := chunk.ParseExternalKey(req.User, objAttrs.Name)
 		if err != nil {
 			return errors.WithStack(err)
+		}
+
+		if !req.CheckTime(c.From, c.Through) {
+			fmt.Println(*req.Interval, c.From, c.Through)
+			logrus.Debugln("skipping chunk updated at timestamp outside filters range")
+			continue
 		}
 
 		reader, err := s.bucket.Object(objAttrs.Name).NewReader(ctx)
 		if err != nil {
 			return errors.WithStack(err)
 		}
-		defer reader.Close()
 
 		buf, err := ioutil.ReadAll(reader)
+		reader.Close()
+
 		if err != nil {
 			return errors.WithStack(err)
 		}
@@ -81,7 +82,7 @@ func (s *gcsScanner) Scan(ctx context.Context, tbl string, mFilter filter.Metric
 			return err
 		}
 
-		if mFilter.Filter(c) {
+		if filterFunc(c) {
 			out <- c
 		}
 	}
