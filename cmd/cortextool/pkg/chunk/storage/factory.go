@@ -10,7 +10,7 @@ import (
 	"github.com/grafana/cortextool/pkg/chunk/gcp"
 )
 
-// NewStorage makes a new table client based on the configuration.
+// NewChunkScanner makes a new table client based on the configuration.
 func NewChunkScanner(name string, cfg storage.Config) (chunk.Scanner, error) {
 	switch name {
 	case "gcp", "gcp-columnkey":
@@ -18,6 +18,6 @@ func NewChunkScanner(name string, cfg storage.Config) (chunk.Scanner, error) {
 	case "gcs":
 		return gcp.NewGcsScanner(context.Background(), cfg.GCSConfig)
 	default:
-		return nil, fmt.Errorf("unrecognized storage client %v, choose one of: aws, gcp, inmemory", name)
+		return nil, fmt.Errorf("unrecognized storage client %v, choose one of: gcp, gcp-columnkey, gcs", name)
 	}
 }

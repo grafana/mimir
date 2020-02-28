@@ -24,11 +24,6 @@ func registerMigrateChunksCommandOptions(cmd *kingpin.CmdClause) {
 }
 
 func (c *migrateChunksCommandOptions) run(k *kingpin.ParseContext) error {
-	migrator, err := migrate.NewMigrator(c.Config, c.Planner)
-	if err != nil {
-		return err
-	}
-
 	f, err := os.Open(c.ConfigFile)
 	if err != nil {
 		return err
@@ -38,6 +33,11 @@ func (c *migrateChunksCommandOptions) run(k *kingpin.ParseContext) error {
 	decoder.SetStrict(true)
 
 	if err := decoder.Decode(&c.Config); err != nil {
+		return err
+	}
+
+	migrator, err := migrate.NewMigrator(c.Config, c.Planner)
+	if err != nil {
 		return err
 	}
 
