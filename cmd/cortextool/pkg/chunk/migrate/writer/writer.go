@@ -35,7 +35,7 @@ type WriterConfig struct {
 
 // RegisterFlags adds the flags required to configure this flag set.
 func (cfg *WriterConfig) Register(cmd *kingpin.CmdClause) {
-	cmd.Flag("writer.num-workers", "number of worker jobs handling backend writes").Default("50").IntVar(&cfg.NumWorkers)
+	cmd.Flag("writer.num-workers", "number of worker jobs handling backend writes").Default("5").IntVar(&cfg.NumWorkers)
 	cmd.Flag("writer.storage-config-file", "Path to config file for storage").Required().StringVar(&cfg.StorageConfigFile)
 	cmd.Flag("writer.schema-config-file", "Path to config file for schema").Required().StringVar(&cfg.SchemaConfigFile)
 	cfg.MapperConfig.Register(cmd)
