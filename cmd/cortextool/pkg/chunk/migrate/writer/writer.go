@@ -133,6 +133,13 @@ func (w *Writer) writeLoop(ctx context.Context, workerID int, inChan chan chunk.
 				return
 			}
 
+			// Ensure the chunk has been encoded before persisting in order to avoid
+			// bad external keys in the index entry
+			if remapped.Encode() != nil {
+				errChan <- err
+				return
+			}
+
 			err = w.chunkStore.PutOne(ctx, remapped.From, remapped.Through, remapped)
 			if err != nil {
 				logrus.WithError(err).Errorln("failed to store chunk")
