@@ -24,6 +24,7 @@ var (
 
 // Config is a config for a Reader
 type Config struct {
+	StorageType   string                `yaml:"storage_type"`
 	StorageConfig cortex_storage.Config `yaml:"storage"`
 	NumWorkers    int                   `yaml:"num_workers"`
 }
@@ -48,7 +49,7 @@ func NewReader(cfg Config, plannerCfg PlannerConfig) (*Reader, error) {
 		return nil, err
 	}
 
-	scanner, err := storage.NewChunkScanner(cfg.StorageConfig.Engine, cfg.StorageConfig)
+	scanner, err := storage.NewChunkScanner(cfg.StorageType, cfg.StorageConfig)
 	if err != nil {
 		return nil, err
 	}
