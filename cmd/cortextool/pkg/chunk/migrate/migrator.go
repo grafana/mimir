@@ -46,9 +46,10 @@ func NewMigrator(cfg Config, plannerCfg reader.PlannerConfig) (*Migrator, error)
 }
 
 func (m *Migrator) Run() {
-	go m.reader.Run(context.Background(), m.chunkBuffer)
-	m.writer.Run(context.Background(), m.chunkBuffer)
-
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.reader.Run(ctx, m.chunkBuffer)
+	m.writer.Run(ctx, m.chunkBuffer)
 	if m.reader.Err() != nil {
 		logrus.WithError(m.reader.Err()).Errorln("stopped migrator due to an error in reader")
 	}
