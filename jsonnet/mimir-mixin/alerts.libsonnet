@@ -118,7 +118,7 @@ local windows = [
           {
             alert: 'CortexBadOverrides',
             expr: |||
-              cortex_overrides_last_reload_successful{job!~".+/table-manager"} == 0
+              cortex_overrides_last_reload_successful{job!~".+/table-manager|.+/alertmanager"} == 0
             |||,
             'for': '15m',
             labels: {
@@ -200,16 +200,16 @@ local windows = [
               severity: 'critical',
             },
             annotations: {
-              message: '{{ $labels.namespace }}/{{ $labels.pod }} transfer failed.',
+              message: '{{ $labels.namespace }}/{{ $labels.instance }} transfer failed.',
             },
           },
           {
             alert: 'CortexOldChunkInMemory',
-            // We flush chunks after 6h and then keep them in memory for extra 15m. If chunks are older
-            // than 7h (= 25200 seconds), raise an alert. Ignore cortex_oldest_unflushed_chunk_timestamp_seconds
-            // that are zero (eg. distributors).
+            // Even though we should flush chunks after 6h, we see that 99p of age of flushed chunks is closer
+            // to 10 hours.
+            // Ignore cortex_oldest_unflushed_chunk_timestamp_seconds that are zero (eg. distributors).
             expr: |||
-              (time() - cortex_oldest_unflushed_chunk_timestamp_seconds > 25200) and cortex_oldest_unflushed_chunk_timestamp_seconds > 0
+              (time() - cortex_oldest_unflushed_chunk_timestamp_seconds > 36000) and cortex_oldest_unflushed_chunk_timestamp_seconds > 0
             |||,
             'for': '5m',
             labels: {
@@ -217,7 +217,7 @@ local windows = [
             },
             annotations: {
               message: |||
-                {{ $labels.namespace }}/{{ $labels.pod }} has very old unflushed chunk in memory.
+                {{ $labels.namespace }}/{{ $labels.instance }} has very old unflushed chunk in memory.
               |||,
             },
           },
@@ -279,103 +279,8 @@ local windows = [
             },
           }
           for window in windows
-        ] + [
-          {
-            alert: 'LegacyCortexWriteErrorBudgetBurn',
-            expr: |||
-              (
-                (
-                100 * namespace_job:cortex_gw_write_slo_errors_per_request:ratio_rate%(long_period)s
-                > 0.1 * %(factor)f
-                )
-              and
-                (
-                100 * namespace_job:cortex_gw_write_slo_errors_per_request:ratio_rate%(short_period)s
-                > 0.1 * %(factor)f
-                )
-              )
-            ||| % window,
-            'for': window.for_period,
-            labels: {
-              severity: window.severity,
-              period: window.long_period,  // The annotation alone doesn't make this alert unique.
-            },
-            annotations: {
-              summary: 'Cortex burns its write error budget too fast.',
-              description: "{{ $value | printf `%%.2f` }}%% of {{ $labels.job }}'s write requests in the last %(long_period)s are failing or too slow to meet the SLO." % window,
-            },
-          }
-          for window in windows
-        ] + [
-          {
-            alert: 'LegacyCortexReadErrorBudgetBurn',
-            expr: |||
-              (
-                (
-                100 * namespace_job:cortex_gw_read_slo_errors_per_request:ratio_rate%(long_period)s
-                > 0.5 * %(factor)f
-                )
-              and
-                (
-                100 * namespace_job:cortex_gw_read_slo_errors_per_request:ratio_rate%(short_period)s
-                > 0.5 * %(factor)f
-                )
-              )
-            ||| % window,
-            'for': window.for_period,
-            labels: {
-              severity: window.severity,
-              period: window.long_period,  // The annotation alone doesn't make this alert unique.
-            },
-            annotations: {
-              summary: 'Cortex burns its read error budget too fast.',
-              description: "{{ $value | printf `%%.2f` }}%% of {{ $labels.job }}'s read requests in the last %(long_period)s are failing or too slow to meet the SLO." % window,
-            },
-          }
-          for window in windows
         ],
       },
-      {
-        name: 'cortex_gw_alerts',
-        rules: [
-          {
-            alert: 'CortexGWRequestErrors',
-            expr: |||
-              100 * sum(rate(cortex_gw_request_duration_seconds_count{status_code=~"5.."}[1m])) by (namespace, job, route)
-                /
-              sum(rate(cortex_gw_request_duration_seconds_count[1m])) by (namespace, job, route)
-                > 0.1
-            |||,
-            'for': '15m',
-            labels: {
-              severity: 'critical',
-            },
-            annotations: {
-              message: |||
-                {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}% errors.
-              |||,
-            },
-          },
-          {
-            alert: 'CortexGWRequestLatency',
-            expr: |||
-              namespace_job_route:cortex_gw_request_duration_seconds:99quantile{route!="metrics"}
-                >
-              %(cortex_p99_latency_threshold_seconds)s
-            ||| % $._config,
-            'for': '15m',
-            labels: {
-              severity: 'critical',
-            },
-            annotations: {
-              message: |||
-                {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
-              |||,
-            },
-          },
-        ],
-      },
-
       {
         name: 'cortex-provisioning',
         rules: [
@@ -482,7 +387,7 @@ local windows = [
             expr: |||
               sum(rate(cortex_prometheus_rule_evaluation_failures_total[1m])) by (namespace, job)
                 /
-              sum(rate(cortex_prometheus_rule_evaluation_total[1m])) by (namespace, job)
+              sum(rate(cortex_prometheus_rule_evaluations_total[1m])) by (namespace, job)
                 > 0.01
             |||,
             'for': '5m',
@@ -498,7 +403,7 @@ local windows = [
           {
             alert: 'CortexRulerMissedEvaluations',
             expr: |||
-              sum(rate(cortex_prometheus_rule_group_missed_iterations_total[1m])) by (namespace, job)
+              sum(rate(cortex_prometheus_rule_group_iterations_missed_total[1m])) by (namespace, job)
                 /
               sum(rate(cortex_prometheus_rule_group_iterations_total[1m])) by (namespace, job)
                 > 0.01
@@ -511,6 +416,26 @@ local windows = [
               message: |||
                 {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% missed iterations.
               |||,
+            },
+          },
+        ],
+      },
+      {
+        name: 'gossip_alerts',
+        rules: [
+          {
+            alert: 'CortexGossipMembersMismatch',
+            expr: |||
+              memberlist_client_cluster_members_count
+                != on (cluster,namespace) group_left
+              sum(up{job=~".+/(distributor|ingester|querier)"}) by (cluster,namespace)
+            |||,
+            'for': '5m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              message: '{{ $labels.job }}/{{ $labels.instance }} sees incorrect number of gossip members.',
             },
           },
         ],
