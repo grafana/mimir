@@ -36,15 +36,6 @@ local windows = [
         utils.histogramRules('cortex_gcs_request_duration_seconds', ['cluster', 'job', 'operation']) +
         utils.histogramRules('cortex_kv_request_duration_seconds', ['cluster', 'job']),
     }, {
-      name: 'frontend_rules',
-      rules:
-        utils.histogramRules('tsdb_gw_request_duration_seconds', ['cluster', 'job']) +
-        utils.histogramRules('tsdb_gw_request_duration_seconds', ['cluster', 'job', 'route']) +
-        utils.histogramRules('tsdb_gw_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']) +
-        utils.histogramRules('cortex_gw_request_duration_seconds', ['cluster', 'job']) +
-        utils.histogramRules('cortex_gw_request_duration_seconds', ['cluster', 'job', 'route']) +
-        utils.histogramRules('cortex_gw_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
-    }, {
       name: 'cortex_slo_rules',
       rules: [
         {
@@ -68,32 +59,6 @@ local windows = [
               sum by (namespace, job) (rate(cortex_request_duration_seconds_bucket{status_code!~"5..",le="2.5",route=~"api_prom_api_v1_query.*", job=~".*/cortex-gw"}[%(period)s]))
             /
               sum by (namespace, job) (rate(cortex_request_duration_seconds_count{route=~"api_prom_api_v1_query.*", job=~".*/cortex-gw"}[%(period)s]))
-            )
-          ||| % window,
-        }
-        for window in windows
-      ] + [
-        {
-          record: 'namespace_job:cortex_gw_write_slo_errors_per_request:ratio_rate%(period)s' % window,
-          expr: |||
-            1 -
-            (
-              sum by (namespace, job) (rate(cortex_gw_request_duration_seconds_bucket{status_code!~"error|5..",le="1",route="cortex-write"}[%(period)s]))
-            /
-              sum by (namespace, job) (rate(cortex_gw_request_duration_seconds_count{route="cortex-write"}[%(period)s]))
-            )
-          ||| % window,
-        }
-        for window in windows
-      ] + [
-        {
-          record: 'namespace_job:cortex_gw_read_slo_errors_per_request:ratio_rate%(period)s' % window,
-          expr: |||
-            1 -
-            (
-              sum by (namespace, job) (rate(cortex_gw_request_duration_seconds_bucket{status_code!~"error|5..",le="2.5",route="cortex-read"}[%(period)s]))
-            /
-              sum by (namespace, job) (rate(cortex_gw_request_duration_seconds_count{route="cortex-read"}[%(period)s]))
             )
           ||| % window,
         }

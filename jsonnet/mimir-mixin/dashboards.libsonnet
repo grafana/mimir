@@ -20,18 +20,75 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         for target in super.targets
       ],
     },
+
+  successFailurePanel(title, successMetric, failureMetric)::
+    g.panel(title) +
+    g.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
+    g.stack + {
+      aliasColors: {
+        successful: '#7EB26D',
+        failed: '#E24D42',
+      },
+    },
+
+  objectStorePanels1(title, metricPrefix)::
+    local opsTotal = '%s_thanos_objstore_bucket_operations_total' % [metricPrefix];
+    local opsTotalFailures = '%s_thanos_objstore_bucket_operation_failures_total' % [metricPrefix];
+    local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
+    local interval = '$__interval';
+    super.row(title)
+    .addPanel(
+      // We use 'up{cluster=~"$cluster", job="($namespace)/.+"}' to add 0 if there are no failed operations.
+      self.successFailurePanel(
+        'Operations/sec',
+        'sum(rate(%s{cluster=~"$cluster"}[%s])) - sum(rate(%s{cluster=~"$cluster"}[%s]) or (up{cluster=~"$cluster", job="($namespace)/.+"}*0))' % [opsTotal, interval, opsTotalFailures, interval],
+        'sum(rate(%s{cluster=~"$cluster"}[%s]) or (up{cluster=~"$cluster", job="($namespace)/.+"}*0))' % [opsTotalFailures, interval]
+      )
+    )
+    .addPanel(
+      g.panel('Op: ObjectSize') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="objectsize"}'),
+    )
+    // oper="iter" is also available, but not used.
+    .addPanel(
+      g.panel('Op: Exists') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="exists"}'),
+    ),
+
+  // Second row of Object Store stats
+  objectStorePanels2(title, metricPrefix)::
+    local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
+    super.row(title)
+    .addPanel(
+      g.panel('Op: Get') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="get"}'),
+    )
+    .addPanel(
+      g.panel('Op: GetRange') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="get_range"}'),
+    )
+    .addPanel(
+      g.panel('Op: Upload') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="upload"}'),
+    )
+    .addPanel(
+      g.panel('Op: Delete') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="delete"}'),
+    ),
 };
 
 {
   _config+:: {
     storage_backend: error 'must specify storage backend (cassandra, gcp)',
+    // may contain 'chunks', 'tsdb' or both. Enables chunks- or tsdb- specific panels and dashboards.
+    storage_engine: ['chunks'],
     gcs_enabled: false,
   },
 
   dashboards+: {
     'cortex-writes.json':
-      if $._config.gcs_enabled then
-        $.cortex_writes_dashboard.addRow(
+      local addGcsRow(dashboard) = if $._config.gcs_enabled then
+        dashboard.addRow(
           g.row('GCS')
           .addPanel(
             g.panel('QPS') +
@@ -41,12 +98,29 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
             g.panel('Latency') +
             utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'POST')])
           )
+        ) else dashboard;
+
+      local addBlocksRows(dashboard) = if std.setMember('tsdb', $._config.storage_engine) then
+        // Used by ingester when using TSDB storage engine.
+        dashboard.addRow(
+          g.row('Blocks Shipper')
+          .addPanel(
+            g.successFailurePanel(
+              'Uploaded blocks / sec',
+              'sum(rate(cortex_ingester_shipper_uploads_total{cluster=~"$cluster"}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{cluster=~"$cluster"}[$__interval]))',
+              'sum(rate(cortex_ingester_shipper_upload_failures_total{cluster=~"$cluster"}[$__interval]))'
+            )
+          )
         )
-      else $.cortex_writes_dashboard,
+        .addRow(g.objectStorePanels1('Blocks Object Store Stats (Ingester)', 'cortex_ingester'))
+        .addRow(g.objectStorePanels2('', 'cortex_ingester'))
+      else dashboard;
+
+      addBlocksRows(addGcsRow($.cortex_writes_dashboard)),
 
     'cortex-reads.json':
-      if $._config.gcs_enabled then
-        $.cortex_reads_dashboard.addRow(
+      local addGcsRows(dashboard) = if $._config.gcs_enabled then
+        dashboard.addRow(
           g.row('GCS')
           .addPanel(
             g.panel('QPS') +
@@ -57,9 +131,41 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
             utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'GET')])
           )
         )
-      else $.cortex_reads_dashboard,
+      else dashboard;
 
-    'cortex-chunks.json':
+      local addBlocksRows(dashboard) = if std.setMember('tsdb', $._config.storage_engine) then
+        dashboard.addRow(
+          g.row('Querier - Blocks Storage')
+          .addPanel(
+            g.successFailurePanel(
+              'Block Loads / sec',
+              'sum(rate(cortex_querier_bucket_store_block_loads_total{cluster=~"$cluster"}[$__interval])) - sum(rate(cortex_querier_bucket_store_block_load_failures_total{cluster=~"$cluster"}[$__interval]))',
+              'sum(rate(cortex_querier_bucket_store_block_load_failures_total{cluster=~"$cluster"}[$__interval]))'
+            )
+          )
+          .addPanel(
+            g.successFailurePanel(
+              'Block Drops / sec',
+              'sum(rate(cortex_querier_bucket_store_block_drops_total{cluster=~"$cluster"}[$__interval])) - sum(rate(cortex_querier_bucket_store_block_drop_failures_total{cluster=~"$cluster"}[$__interval]))',
+              'sum(rate(cortex_querier_bucket_store_block_drop_failures_total{cluster=~"$cluster"}[$__interval]))'
+            )
+          )
+          .addPanel(
+            g.panel('Per-block prepares and preloads duration') +
+            g.latencyPanel('cortex_querier_bucket_store_series_get_all_duration_seconds', '{cluster=~"$cluster"}'),
+          )
+          .addPanel(
+            g.panel('Series merge duration') +
+            g.latencyPanel('cortex_querier_bucket_store_series_merge_duration_seconds', '{cluster=~"$cluster"}'),
+          )
+        )
+        .addRow(g.objectStorePanels1('Blocks Object Store Stats (Querier)', 'cortex_querier'))
+        .addRow(g.objectStorePanels2('', 'cortex_querier'))
+      else dashboard;
+
+      addBlocksRows(addGcsRows($.cortex_reads_dashboard)),
+
+    [if std.setMember('chunks', $._config.storage_engine) then 'cortex-chunks.json' else null]:
       g.dashboard('Cortex / Chunks')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
@@ -217,22 +323,6 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         )
       ),
 
-    'frontend.json':
-      g.dashboard('Frontend')
-      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-      .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
-      .addRow(
-        g.row('Cortex Reqs (cortex_gw)')
-        .addPanel(
-          g.panel('QPS') +
-          g.qpsPanel('cortex_gw_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw"}')
-        )
-        .addPanel(
-          g.panel('Latency') +
-          utils.latencyRecordingRulePanel('cortex_gw_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw')])
-        )
-      ),
-
     'ruler.json':
       g.dashboard('Cortex / Ruler')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
@@ -258,7 +348,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         g.row('Group Evaluations')
         .addPanel(
           g.panel('Missed Iterations') +
-          g.queryPanel('sum(rate(prometheus_rule_group_iterations_missed_total{cluster=~"$cluster", job=~"($namespace)/ruler"}[$__interval]))', 'iterations missed'),
+          g.queryPanel('sum(rate(cortex_prometheus_rule_group_iterations_missed_total{cluster=~"$cluster", job=~"($namespace)/ruler"}[$__interval]))', 'iterations missed'),
         )
         .addPanel(
           g.panel('Latency') +
@@ -379,114 +469,255 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
           })
         )
       ),
+
+    [if std.setMember('tsdb', $._config.storage_engine) then 'cortex-blocks.json' else null]:
+      g.dashboard('Cortex / Blocks')
+      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
+      .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+      // repeated from Cortex / Chunks
+      .addRow(
+        g.row('Active Series / Chunks')
+        .addPanel(
+          g.panel('Series') +
+          g.queryPanel('sum(cortex_ingester_memory_series{cluster=~"$cluster", job=~"($namespace)/ingester"})', 'series'),
+        )
+        // Chunks per series doesn't make sense for Blocks storage
+      )
+      .addRow(
+        g.row('Compactor')
+        .addPanel(
+          g.successFailurePanel(
+            'Compactor Runs / second',
+            'sum(rate(cortex_compactor_runs_completed_total{cluster=~"$cluster"}[$__interval]))',
+            'sum(rate(cortex_compactor_runs_failed_total{cluster=~"$cluster"}[$__interval]))'
+          )
+        )
+        .addPanel(
+          g.successFailurePanel(
+            'Per-tenant Compaction Runs / seconds',
+            'sum(rate(cortex_compactor_group_compactions_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval])) - sum(rate(cortex_compactor_group_compactions_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+            'sum(rate(cortex_compactor_group_compactions_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+          )
+        )
+      )
+      .addRow(
+        g.row('Compactor – Blocks Garbage Collections')
+        .addPanel(
+          g.successFailurePanel(
+            'Collections Rate',
+            'sum(rate(cortex_compactor_garbage_collection_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval])) - sum(rate(cortex_compactor_garbage_collection_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+            'sum(rate(cortex_compactor_garbage_collection_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+          )
+        )
+        .addPanel(
+          g.panel('Collections Duration') +
+          g.latencyPanel('cortex_compactor_garbage_collection_duration_seconds', '{cluster=~"$cluster", job=~"($namespace)/compactor"}')
+        )
+        .addPanel(
+          g.panel('Collected Blocks Rate') +
+          g.queryPanel('sum(rate(cortex_compactor_garbage_collected_blocks_total{cluster=~"$cluster"}[$__interval]))', 'blocks')
+        )
+      )
+      .addRow(
+        g.row('Compactor - Meta Syncs')
+        .addPanel(
+          g.successFailurePanel(
+            'Meta Syncs / sec',
+            'sum(rate(cortex_compactor_sync_meta_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval])) - sum(rate(cortex_compactor_sync_meta_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+            'sum(rate(cortex_compactor_sync_meta_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+          )
+        )
+        .addPanel(
+          g.panel('Meta Sync Durations') +
+          g.latencyPanel('cortex_compactor_sync_meta_duration_seconds', '{cluster=~"$cluster"}'),
+        )
+      )
+      .addRow(
+        g.row('Prometheus TSDB Compactions')
+        .addPanel(
+          g.panel('Compactions Rate') +
+          g.queryPanel('sum(rate(prometheus_tsdb_compactions_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))', 'rate')
+        )
+        .addPanel(
+          g.panel('Compaction Duration') +
+          g.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{cluster=~"$cluster", job=~"($namespace)/compactor"}')
+        )
+        .addPanel(
+          g.panel('Chunk Size Bytes') +
+          g.latencyPanel('prometheus_tsdb_compaction_chunk_size_bytes', '{cluster=~"$cluster", job=~"($namespace)/compactor"}') +
+          { yaxes: g.yaxes('bytes') }
+        )
+        .addPanel(
+          g.panel('Chunk Samples') +
+          g.latencyPanel('prometheus_tsdb_compaction_chunk_samples', '{cluster=~"$cluster", job=~"($namespace)/compactor"}') +
+          { yaxes: g.yaxes('short') }
+        )
+        .addPanel(
+          g.panel('Chunk Range (seconds)') +
+          g.latencyPanel('prometheus_tsdb_compaction_chunk_range_seconds', '{cluster=~"$cluster", job=~"($namespace)/compactor"}')
+        )
+      )
+      .addRow(g.objectStorePanels1('Object Store Stats', 'cortex_compactor'))
+      .addRow(g.objectStorePanels2('', 'cortex_compactor')),
+
+    [if std.setMember('tsdb', $._config.storage_engine) && std.setMember('chunks', $._config.storage_engine) then 'cortex-blocks-vs-chunks.json' else null]:
+      g.dashboard('Cortex / Blocks vs Chunks')
+      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
+      .addTemplate('blocks_namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+      .addTemplate('chunks_namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+      .addRow(
+        g.row('Ingesters')
+        .addPanel(
+          g.panel('Samples / sec') +
+          g.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($blocks_namespace)/ingester"}[1m]))', 'blocks') +
+          g.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($chunks_namespace)/ingester"}[1m]))', 'chunks')
+        )
+      )
+      .addRow(
+        g.row('')
+        .addPanel(
+          g.panel('Blocks Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($blocks_namespace)/ingester'), utils.selector.eq('route', '/cortex.Ingester/Push')])
+        )
+        .addPanel(
+          g.panel('Chunks Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($chunks_namespace)/ingester'), utils.selector.eq('route', '/cortex.Ingester/Push')])
+        )
+      )
+      .addRow(
+        g.row('')
+        .addPanel(
+          g.panel('CPU per sample') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[1m])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[1m]))', 'blocks') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[1m])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[1m]))', 'chunks')
+        )
+        .addPanel(
+          g.panel('Memory per active series') +
+          g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - working set') +
+          g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - working set') +
+          g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - heap inuse') +
+          g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - heap inuse') +
+          { yaxes: g.yaxes('bytes') }
+        )
+      )
+      .addRow(
+        g.row('')
+        .addPanel(
+          g.panel('CPU') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[1m]))', 'blocks') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[1m]))', 'chunks')
+        )
+        .addPanel(
+          g.panel('Memory') +
+          g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"})', 'blocks - working set') +
+          g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"})', 'chunks - working set') +
+          g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - heap inuse') +
+          g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - heap inuse') +
+          { yaxes: g.yaxes('bytes') }
+        )
+      ),
   },
 
   cortex_writes_dashboard::
-    g.dashboard('Cortex / Writes')
-    .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-    .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
-    .addRow(
-      (g.row('Headlines') +
-       {
-         height: '100px',
-         showTitle: false,
-       })
-      .addPanel(
-        g.panel('Samples / s') +
-        g.statPanel('sum(cluster_namespace:cortex_distributor_received_samples:rate5m{cluster=~"$cluster", namespace=~"$namespace"})', format='reqps')
+    local out =
+      g.dashboard('Cortex / Writes')
+      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
+      .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+      .addRow(
+        (g.row('Headlines') +
+         {
+           height: '100px',
+           showTitle: false,
+         })
+        .addPanel(
+          g.panel('Samples / s') +
+          g.statPanel('sum(cluster_namespace:cortex_distributor_received_samples:rate5m{cluster=~"$cluster", namespace=~"$namespace"})', format='reqps')
+        )
+        .addPanel(
+          g.panel('Active Series') +
+          g.statPanel(|||
+            sum(cortex_ingester_memory_series{cluster=~"$cluster", job=~"($namespace)/ingester"}
+            / on(namespace) group_left
+            max by (namespace) (cortex_distributor_replication_factor{cluster=~"$cluster", job=~"($namespace)/distributor"}))
+          |||, format='short')
+        )
+        .addPanel(
+          g.panel('QPS') +
+          g.statPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="api_prom_push"}[5m]))', format='reqps')
+        )
       )
-      .addPanel(
-        g.panel('Active Series') +
-        g.statPanel(|||
-          sum(cortex_ingester_memory_series{cluster=~"$cluster", job=~"($namespace)/ingester"}
-          / on(namespace) group_left
-          max by (namespace) (cortex_distributor_replication_factor{cluster=~"$cluster", job=~"($namespace)/distributor"}))
-        |||, format='short')
+      .addRow(
+        g.row('Gateway')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="api_prom_push"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.eq('route', 'api_prom_push')])
+        )
       )
-      .addPanel(
-        g.panel('QPS') +
-        g.statPanel('sum(rate(cortex_gw_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="cortex-write"}[5m]))', format='reqps')
+      .addRow(
+        g.row('Distributor')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/distributor"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/distributor')])
+        )
       )
-    )
-    .addRow(
-      g.row('Legacy Gateway')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_gw_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="cortex-write"}')
+      .addRow(
+        g.row('Etcd (HA Dedupe)')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_kv_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/distributor"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/distributor')])
+        )
       )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gw_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.eq('route', 'cortex-write')])
+      .addRow(
+        g.row('Ingester')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",route="/cortex.Ingester/Push"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('route', '/cortex.Ingester/Push')])
+        )
       )
-    )
-    .addRow(
-      g.row('Gateway')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="api_prom_push"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.eq('route', 'api_prom_push')])
-      )
-    )
-    .addRow(
-      g.row('Distributor')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/distributor"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/distributor')])
-      )
-    )
-    .addRow(
-      g.row('Etcd (HA Dedupe)')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_kv_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/distributor"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/distributor')])
-      )
-    )
-    .addRow(
-      g.row('Ingester')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",route="/cortex.Ingester/Push"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('route', '/cortex.Ingester/Push')])
-      )
-    )
-    .addRow(
-      g.row('Consul (Ring)')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_kv_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester')])
-      )
-    )
-    .addRow(
-      g.row('Memcached')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_memcache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",method="Memcache.Put"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('method', 'Memcache.Put')])
-      )
-    )
-    .addRow({
-      cassandra:
+      .addRow(
+        g.row('Consul (Ring)')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_kv_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester')])
+        )
+      );
+
+    local addChunksRows(dashboard) =
+      if std.setMember('chunks', $._config.storage_engine) then
+        dashboard.addRow(
+          g.row('Memcached')
+          .addPanel(
+            g.panel('QPS') +
+            g.qpsPanel('cortex_memcache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",method="Memcache.Put"}')
+          )
+          .addPanel(
+            g.panel('Latency') +
+            utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('method', 'Memcache.Put')])
+          )
+        ) else dashboard;
+
+    local addStorageRows(dashboard) = if $._config.storage_backend == 'cassandra' then
+      dashboard.addRow(
         g.row('Cassandra')
         .addPanel(
           g.panel('QPS') +
@@ -495,9 +726,10 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         .addPanel(
           g.panel('Latency') +
           utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('operation', 'INSERT')])
-        ),
-
-      gcp:
+        )
+      )
+    else if $._config.storage_backend == 'gcp' && std.setMember('chunks', $._config.storage_engine) then  // only show BigTable if chunks panels are enabled
+      dashboard.addRow(
         g.row('BigTable')
         .addPanel(
           g.panel('QPS') +
@@ -506,9 +738,10 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         .addPanel(
           g.panel('Latency') +
           utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/MutateRows')])
-        ),
-
-      dynamodb:
+        )
+      )
+    else if $._config.storage_backend == 'dynamodb' then
+      dashboard.addRow(
         g.row('DynamoDB')
         .addPanel(
           g.panel('QPS') +
@@ -517,133 +750,133 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         .addPanel(
           g.panel('Latency') +
           utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('operation', 'DynamoDB.BatchWriteItem')])
-        ),
-    }[$._config.storage_backend]),
+        )
+      ) else dashboard;
+
+    addStorageRows(addChunksRows(out)),
 
   cortex_reads_dashboard::
-    g.dashboard('Cortex / Reads')
-    .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-    .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
-    .addRow(
-      g.row('Legacy Gateway')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_gw_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="cortex-read"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gw_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.eq('route', 'cortex-read')])
-      )
-    )
-    .addRow(
-      g.row('Gateway')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route=~"(api_prom_api_v1_query_range|api_prom_api_v1_query|api_prom_api_v1_label_name_values|api_prom_api_v1_series|api_prom_api_v1_labels)"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.re('route', '(api_prom_api_v1_query_range|api_prom_api_v1_query|api_prom_api_v1_label_name_values|api_prom_api_v1_series|api_prom_api_v1_labels)')])
-      )
-    )
-    .addRow(
-      g.row('Query Frontend')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/query-frontend"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/query-frontend'), utils.selector.neq('route', '/frontend.Frontend/Process')])
-      )
-    )
-    .addRow(
-      g.row('Cache - Query Results')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_cache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/query-frontend"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/query-frontend')])
-      )
-    )
-    .addRow(
-      g.row('Querier')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier')])
-      )
-    )
-    .addRow(
-      g.row('Ingester')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",route!~"/cortex.Ingester/Push|metrics|ready|traces"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.nre('route', '/cortex.Ingester/Push|metrics|ready')])
-      )
-    )
-    .addRow(
-      g.row('Memcached - Index')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_cache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier",method="store.index-cache-read.memcache.fetch"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('method', 'store.index-cache-read.memcache.fetch')])
-      )
-    )
-    .addRow(
-      g.row('Memcached - Chunks')
-      .addPanel(
-        g.panel('QPS') +
-        g.qpsPanel('cortex_cache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier",method="chunksmemcache.fetch"}')
-      )
-      .addPanel(
-        g.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('method', 'chunksmemcache.fetch')])
-      )
-    )
-    .addRow({
-      cassandra:
-        g.row('Cassandra')
+    local out =
+      g.dashboard('Cortex / Reads')
+      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
+      .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+      .addRow(
+        g.row('Gateway')
         .addPanel(
           g.panel('QPS') +
-          g.qpsPanel('cortex_cassandra_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="SELECT"}')
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route=~"(api_prom_api_v1_query_range|api_prom_api_v1_query|api_prom_api_v1_label_name_values|api_prom_api_v1_series|api_prom_api_v1_labels)"}')
         )
         .addPanel(
           g.panel('Latency') +
-          utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'SELECT')])
-        ),
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.re('route', '(api_prom_api_v1_query_range|api_prom_api_v1_query|api_prom_api_v1_label_name_values|api_prom_api_v1_series|api_prom_api_v1_labels)')])
+        )
+      )
+      .addRow(
+        g.row('Query Frontend')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/query-frontend"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/query-frontend'), utils.selector.neq('route', '/frontend.Frontend/Process')])
+        )
+      )
+      .addRow(
+        g.row('Cache - Query Results')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_cache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/query-frontend"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/query-frontend')])
+        )
+      )
+      .addRow(
+        g.row('Querier')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier')])
+        )
+      )
+      .addRow(
+        g.row('Ingester')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",route!~"/cortex.Ingester/Push|metrics|ready|traces"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.nre('route', '/cortex.Ingester/Push|metrics|ready')])
+        )
+      );
 
-      gcp:
-        g.row('BigTable')
+    local addChunksRows(dashboard) = if std.setMember('chunks', $._config.storage_engine) then
+      dashboard.addRow(
+        g.row('Memcached - Index')
         .addPanel(
           g.panel('QPS') +
-          g.qpsPanel('cortex_bigtable_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="/google.bigtable.v2.Bigtable/ReadRows"}')
+          g.qpsPanel('cortex_cache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier",method="store.index-cache-read.memcache.fetch"}')
         )
         .addPanel(
           g.panel('Latency') +
-          utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/ReadRows')])
-        ),
+          utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('method', 'store.index-cache-read.memcache.fetch')])
+        )
+      )
+      .addRow(
+        g.row('Memcached - Chunks')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_cache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier",method="chunksmemcache.fetch"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('method', 'chunksmemcache.fetch')])
+        )
+      ) else dashboard;
 
-      dynamodb:
-        g.row('DynamoDB')
-        .addPanel(
-          g.panel('QPS') +
-          g.qpsPanel('cortex_dynamo_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="DynamoDB.QueryPages"}')
+    local addStorageRows(dashboard) =
+      if $._config.storage_backend == 'cassandra' then
+        dashboard.addRow(
+          g.row('Cassandra')
+          .addPanel(
+            g.panel('QPS') +
+            g.qpsPanel('cortex_cassandra_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="SELECT"}')
+          )
+          .addPanel(
+            g.panel('Latency') +
+            utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'SELECT')])
+          ),
         )
-        .addPanel(
-          g.panel('Latency') +
-          utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'DynamoDB.QueryPages')])
-        ),
-    }[$._config.storage_backend]),
+      else if $._config.storage_backend == 'gcp' && std.setMember('chunks', $._config.storage_engine) then  // only show BigTable if chunks panels are enabled
+        dashboard.addRow(
+          g.row('BigTable')
+          .addPanel(
+            g.panel('QPS') +
+            g.qpsPanel('cortex_bigtable_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="/google.bigtable.v2.Bigtable/ReadRows"}')
+          )
+          .addPanel(
+            g.panel('Latency') +
+            utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/ReadRows')])
+          ),
+        )
+      else if $._config.storage_backend == 'dynamodb' then
+        dashboard.addRow(
+          g.row('DynamoDB')
+          .addPanel(
+            g.panel('QPS') +
+            g.qpsPanel('cortex_dynamo_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="DynamoDB.QueryPages"}')
+          )
+          .addPanel(
+            g.panel('Latency') +
+            utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'DynamoDB.QueryPages')])
+          ),
+        ) else dashboard;
+
+    addStorageRows(addChunksRows(out)),
 }
