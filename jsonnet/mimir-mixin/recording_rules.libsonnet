@@ -36,12 +36,6 @@ local windows = [
         utils.histogramRules('cortex_gcs_request_duration_seconds', ['cluster', 'job', 'operation']) +
         utils.histogramRules('cortex_kv_request_duration_seconds', ['cluster', 'job']),
     }, {
-      name: 'frontend_rules',
-      rules:
-        utils.histogramRules('tsdb_gw_request_duration_seconds', ['cluster', 'job']) +
-        utils.histogramRules('tsdb_gw_request_duration_seconds', ['cluster', 'job', 'route']) +
-        utils.histogramRules('tsdb_gw_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
-    }, {
       name: 'cortex_slo_rules',
       rules: [
         {
