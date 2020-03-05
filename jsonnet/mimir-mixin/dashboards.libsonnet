@@ -569,8 +569,8 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         g.row('Ingesters')
         .addPanel(
           g.panel('Samples / sec') +
-          g.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($blocks_namespace)/ingester"}[1m]))', 'blocks') +
-          g.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($chunks_namespace)/ingester"}[1m]))', 'chunks')
+          g.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($blocks_namespace)/ingester"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($chunks_namespace)/ingester"}[$__interval]))', 'chunks')
         )
       )
       .addRow(
@@ -588,8 +588,8 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         g.row('')
         .addPanel(
           g.panel('CPU per sample') +
-          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[1m])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[1m]))', 'blocks') +
-          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[1m])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[1m]))', 'chunks')
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[$__interval]))', 'chunks')
         )
         .addPanel(
           g.panel('Memory per active series') +
@@ -604,8 +604,8 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         g.row('')
         .addPanel(
           g.panel('CPU') +
-          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[1m]))', 'blocks') +
-          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[1m]))', 'chunks')
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[$__interval]))', 'chunks')
         )
         .addPanel(
           g.panel('Memory') +
@@ -613,6 +613,50 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
           g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"})', 'chunks - working set') +
           g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - heap inuse') +
           g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - heap inuse') +
+          { yaxes: g.yaxes('bytes') }
+        )
+      )
+      .addRow(
+        g.row('Queriers')
+        .addPanel(
+          g.panel('Queries / sec (query-frontend)') +
+          g.queryPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster",job="$blocks_namespace/query-frontend",route!="metrics"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster",job="$chunks_namespace/query-frontend",route!="metrics"}[$__interval]))', 'chunks')
+        )
+        .addPanel(
+          g.panel('Queries / sec (query-tee)') +
+          g.queryPanel('sum(rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum(rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval]))', 'chunks')
+        )
+      )
+      .addRow(
+        g.row('')
+        .addPanel(
+          g.panel('Latency 99th') +
+          g.queryPanel('histogram_quantile(0.99, sum by(backend, le) (rate(cortex_querytee_request_duration_seconds_bucket{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval])))', 'blocks') +
+          g.queryPanel('histogram_quantile(0.99, sum by(backend, le) (rate(cortex_querytee_request_duration_seconds_bucket{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval])))', 'chunks') +
+          { yaxes: g.yaxes('s') }
+        )
+        .addPanel(
+          g.panel('Latency average') +
+          g.queryPanel('sum by(backend) (rate(cortex_querytee_request_duration_seconds_sum{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval])) / sum by(backend) (rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum by(backend) (rate(cortex_querytee_request_duration_seconds_sum{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval])) / sum by(backend) (rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval]))', 'chunks') +
+          { yaxes: g.yaxes('s') }
+        )
+      )
+      .addRow(
+        g.row('')
+        .addPanel(
+          g.panel('CPU') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="querier"}[$__interval]))', 'blocks') +
+          g.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="querier"}[$__interval]))', 'chunks')
+        )
+        .addPanel(
+          g.panel('Memory') +
+          g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container_name="querier"})', 'blocks - working set') +
+          g.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="querier"})', 'chunks - working set') +
+          g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/querier"})', 'blocks - heap inuse') +
+          g.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/querier"})', 'chunks - heap inuse') +
           { yaxes: g.yaxes('bytes') }
         )
       ),
