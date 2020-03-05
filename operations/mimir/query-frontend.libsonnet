@@ -12,7 +12,7 @@
     'server.http-write-timeout': '1m',
 
     // Split long queries up into multiple day-long queries.
-    'querier.split-queries-by-day': true,
+    'querier.split-queries-by-interval': '24h',
 
     // Cache query results.
     'querier.align-querier-with-step': true,
@@ -56,5 +56,9 @@
 
   query_frontend_service:
     $.util.serviceFor($.query_frontend_deployment) +
+    // Make sure that query frontend worker, running in the querier, do resolve
+    // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
+    // use the service cluster IP so that when the service DNS is resolved it
+    // returns the set of query-frontend IPs.
     service.mixin.spec.withClusterIp('None'),
 }

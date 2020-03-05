@@ -3,6 +3,7 @@
     namespace: error 'must define namespace',
     cluster: error 'must define cluster',
     replication_factor: 3,
+    external_url: error 'must define external url for cluster',
 
     storage_backend: error 'must specify storage backend (cassandra, gcp)',
     table_prefix: $._config.namespace,
@@ -22,11 +23,9 @@
     else
       [],
 
-    max_series_per_user: 250000,
-    max_series_per_metric: 10000,
     max_chunk_idle: '15m',
 
-    test_exporter_enabled: false,
+    test_exporter_enabled: true,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
 
@@ -40,6 +39,8 @@
     storage_engine: 'chunks',
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
+    distributor_short_grpc_keepalive_enabled: false,
+
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
 
@@ -47,6 +48,15 @@
     memcached_index_queries_enabled: $._config.storage_engine != 'tsdb',
     memcached_index_writes_enabled: $._config.storage_engine != 'tsdb',
     memcached_chunks_enabled: $._config.storage_engine != 'tsdb',
+
+    ingestion_rate_global_limit_enabled: false,
+
+    // The query-tee is an optional service which can be used to send
+    // the same input query to multiple backends and make them compete
+    // (comparing performances).
+    query_tee_enabled: false,
+    query_tee_backend_endpoints: [],
+    query_tee_backend_preferred: '',
 
     enabledBackends: [
       backend
@@ -96,8 +106,8 @@
     // engine is explicitly enabled.
     storageTSDBConfig: if $._config.storage_engine == 'tsdb' then {
       'store.engine': 'tsdb',
-      'experimental.tsdb.dir': '/tmp/tsdb',
-      'experimental.tsdb.sync-dir': '/tmp/tsdb',
+      'experimental.tsdb.dir': '/data/tsdb',
+      'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
       'experimental.tsdb.block-ranges-period': '2h',
       'experimental.tsdb.retention-period': '1h',
       'experimental.tsdb.ship-interval': '1m',
@@ -110,9 +120,6 @@
       // Use iterators to merge chunks, to reduce memory usage.
       'querier.ingester-streaming': $._config.querier_ingester_streaming_enabled,
       'querier.batch-iterators': true,
-
-      // Don't query the chunk store for data younger than max_chunk_idle.
-      'store.min-chunk-age': $._config.max_chunk_idle,
 
       // Don't query ingesters for older queries.
       // Chunks are 6hrs right now.  Add some slack for safety.
@@ -127,6 +134,9 @@
       // splitting in the frontend, the reality is this only limits rate(foo[31d])
       // type queries.
       'store.max-query-length': '744h',
+
+      // Don't query the chunk store for data younger than max_chunk_idle.
+      'querier.query-store-after': $._config.max_chunk_idle,
     } + (
       if $._config.memcached_index_queries_enabled then
         {
@@ -147,6 +157,8 @@
       'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'consul.consistent-reads': false,
       'ring.prefix': '',
+      'consul.watch-rate-limit': 1,
+      'consul.watch-burst-size': 5,
     },
 
     // Some distributor config is shared with the querier.
@@ -160,14 +172,19 @@
 
     overrides: {
       // === Per-tenant usage limits. ===
-      // These are the defaults. These are not global limits but per instance limits.
+      //
+      // These are the defaults. Distributor limits will be 5x (#replicas) higher,
+      // ingester limits are 6s (#replicas) / 3x (#replication factor) higher.
       //
       // small_user: {
       //   ingestion_rate: 10,000
       //   ingestion_burst_size: 20,000
       //
-      //   max_series_per_user: 250,000
-      //   max_series_per_metric: 10,000
+      //   max_series_per_user:   0 (disabled)
+      //   max_series_per_metric: 0 (disabled)
+      //
+      //   max_global_series_per_user:   1,000,000
+      //   max_global_series_per_metric: 100,000
       //
       //   max_series_per_query: 10,000
       //   max_samples_per_query: 100,000
@@ -177,35 +194,56 @@
         ingestion_rate: 25000,
         ingestion_burst_size: 50000,
 
-        max_series_per_metric: 100000,
-        max_series_per_user: 500000,
+        max_series_per_metric: 0,  // Disabled in favour of the max global limit
+        max_series_per_user: 0,  // Disabled in favour of the max global limit
+
+        max_global_series_per_user: 3000000,  // 3M
+        max_global_series_per_metric: 300000,  // 300K
 
         max_series_per_query: 100000,
         max_samples_per_query: 1000000,
+      } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+        ingestion_rate: 350000,  // 350K
+        ingestion_burst_size: 3500000,  // 3.5M
       },
 
       big_user:: {
         ingestion_rate: 50000,
         ingestion_burst_size: 70000,
 
-        max_series_per_metric: 100000,
-        max_series_per_user: 1000000,
+        max_series_per_metric: 0,  // Disabled in favour of the max global limit
+        max_series_per_user: 0,  // Disabled in favour of the max global limit
 
         max_series_per_query: 100000,
         max_samples_per_query: 1000000,
+
+        max_global_series_per_user: 6000000,  // 6M
+        max_global_series_per_metric: 600000,  // 600K
+      } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+        ingestion_rate: 700000,  // 700K
+        ingestion_burst_size: 7000000,  // 7M
       },
 
       super_user:: {
         ingestion_rate: 200000,
         ingestion_burst_size: 240000,
 
-        max_series_per_metric: 200000,
-        max_series_per_user: 2000000,
+        max_series_per_metric: 0,  // Disabled in favour of the max global limit
+        max_series_per_user: 0,  // Disabled in favour of the max global limit
+
+        max_global_series_per_user: 12000000,  // 12M
+        max_global_series_per_metric: 1200000,  // 1.2M
 
         max_series_per_query: 100000,
         max_samples_per_query: 1000000,
+      } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+        ingestion_rate: 1500000,  // 1.5M
+        ingestion_burst_size: 15000000,  // 15M
       },
     },
+
+    // if not empty, passed to overrides.yaml as another top-level field
+    multi_kv_config: {},
 
     schemaID: std.md5(std.toString($._config.schema)),
 
@@ -217,9 +255,13 @@
   overrides_config:
     configMap.new('overrides') +
     configMap.withData({
-      'overrides.yaml': $.util.manifestYaml({
-        overrides: $._config.overrides,
-      }),
+      'overrides.yaml': $.util.manifestYaml(
+        {
+          overrides: $._config.overrides,
+        } + if std.length($._config.multi_kv_config) > 0 then {
+          multi_kv_config: $._config.multi_kv_config,
+        } else {}
+      ),
     }),
 
   storage_config:

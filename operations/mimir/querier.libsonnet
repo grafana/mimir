@@ -25,28 +25,36 @@
       'log.level': 'debug',
     },
 
+  querier_ports:: $.util.defaultPorts,
+
+  querier_env_map:: {
+    JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
+  },
+
   querier_container::
     container.new('querier', $._images.querier) +
-    container.withPorts($.util.defaultPorts) +
+    container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags($.querier_args)) +
     $.util.resourcesRequests('1', '12Gi') +
     $.util.resourcesLimits(null, '24Gi') +
     $.jaeger_mixin +
-    container.withEnvMap({
-      JAEGER_REPORTER_MAX_QUEUE_SIZE: '1024',  // Default is 100.
-    }),
+    container.withEnvMap($.querier_env_map),
 
   local deployment = $.apps.v1beta1.deployment,
 
+  querier_deployment_labels: {},
+
   querier_deployment:
-    deployment.new('querier', 3, [$.querier_container]) +
+    deployment.new('querier', 3, [$.querier_container], $.querier_deployment_labels) +
     $.util.antiAffinity +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
     $.storage_config_mixin,
 
   local service = $.core.v1.service,
 
+  querier_service_ignored_labels:: [],
+
   querier_service:
-    $.util.serviceFor($.querier_deployment) +
+    $.util.serviceFor($.querier_deployment, $.querier_service_ignored_labels) +
     service.mixin.spec.withSelector({ name: 'query-frontend' }),
 }

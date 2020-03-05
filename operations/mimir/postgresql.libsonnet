@@ -10,7 +10,7 @@
   postgresql_container::
     container.new('postgres', $._images.postgresql) +
     container.withPorts([
-      containerPort.newNamed('postgresql', 5432),
+      containerPort.newNamed(name='postgresql', containerPort=5432),
     ]) +
     container.withEnvMap({
       POSTGRES_USER: $._config.pgUser,
