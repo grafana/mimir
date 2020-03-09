@@ -2,15 +2,15 @@ package commands
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
-	"os"
 
-	"github.com/alecthomas/chroma/quick"
-	"github.com/grafana/cortextool/pkg/client"
+	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/grafana/cortextool/pkg/client"
+	"github.com/grafana/cortextool/pkg/printer"
 )
 
 // AlertCommand configures and executes rule related cortex api operations
@@ -18,6 +18,7 @@ type AlertCommand struct {
 	ClientConfig           client.Config
 	AlertmanagerConfigFile string
 	TemplateFiles          []string
+	DisableColor           bool
 
 	cli *client.CortexClient
 }
@@ -29,8 +30,9 @@ func (a *AlertCommand) Register(app *kingpin.Application) {
 	alertCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENANT_ID.").Envar("CORTEX_TENANT_ID").Required().StringVar(&a.ClientConfig.ID)
 	alertCmd.Flag("key", "Api key to use when contacting cortex, alternatively set CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&a.ClientConfig.Key)
 
-	// List Rules Command
-	alertCmd.Command("get", "Get the alertmanager config currently in the cortex alertmanager.").Action(a.getConfig)
+	// Get Alertmanager Configs Command
+	getAlertsCmd := alertCmd.Command("get", "Get the alertmanager config currently in the cortex alertmanager.").Action(a.getConfig)
+	getAlertsCmd.Flag("disable-color", "disable colored output").BoolVar(&a.DisableColor)
 
 	alertCmd.Command("delete", "Delete the alertmanager config currently in the cortex alertmanager.").Action(a.deleteConfig)
 
@@ -59,24 +61,15 @@ func (a *AlertCommand) getConfig(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	err = quick.Highlight(os.Stdout, cfg, "yaml", "terminal", "swapoff")
-	if err != nil {
-		return err
-	}
+	p := printer.New(a.DisableColor)
 
-	// fmt.Println(cfg)
-	for fn, template := range templates {
-		fmt.Println(fn)
-		fmt.Println(template)
-	}
-
-	return nil
+	return p.PrintAlertmanagerConfig(cfg, templates)
 }
 
 func (a *AlertCommand) loadConfig(k *kingpin.ParseContext) error {
 	content, err := ioutil.ReadFile(a.AlertmanagerConfigFile)
 	if err != nil {
-		return err
+		return errors.Wrap(err, "unable to load config file: "+a.AlertmanagerConfigFile)
 	}
 
 	cfg := string(content)
@@ -85,7 +78,16 @@ func (a *AlertCommand) loadConfig(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, nil)
+	templates := map[string]string{}
+	for _, f := range a.TemplateFiles {
+		tmpl, err := ioutil.ReadFile(f)
+		if err != nil {
+			return errors.Wrap(err, "unable to load template file: "+f)
+		}
+		templates[f] = string(tmpl)
+	}
+
+	return a.cli.CreateAlertmanagerConfig(context.Background(), cfg, templates)
 }
 
 func (a *AlertCommand) deleteConfig(k *kingpin.ParseContext) error {
