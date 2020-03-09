@@ -62,11 +62,18 @@ This command will load each rule group in the specified files and load them into
 
 # chunktool
 
-This repo also contains the `chunktool`. I client meant to interact with chunks stored and indexed in cortex backends.
+This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.
 
 ### Chunk Delete
 
 The delete command currently cleans all index entries pointing to chunks in the specified index. Only bigtable and the v10 schema are currently fully supported. This will not delete the entire index entry, only the corresponding chunk entries within the index row.
+
+### Chunk Migrate
+
+The migrate command helps with migrating chunks across cortex clusters. It also takes care of setting right index in the new cluster as per the specified schema config.
+
+As of now it only supports `Bigtable` or `GCS` as a source to read chunks from for migration while for writing it supports all the storages that Cortex supports.
+More details about it [here](./pkg/chunk/migrate/README.md)
 
 ## License
 
