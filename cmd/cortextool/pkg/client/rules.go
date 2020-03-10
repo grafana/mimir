@@ -2,9 +2,7 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
-	"net/http"
 	"net/url"
 
 	"github.com/pkg/errors"
@@ -36,27 +34,8 @@ func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName
 	escapedNamespace := url.PathEscape(namespace)
 	escapedGroupName := url.PathEscape(groupName)
 
-	res, err := r.doRequest("/api/prom/rules/"+escapedNamespace+"/"+escapedGroupName, "DELETE", nil)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return err
-	}
-
-	switch res.StatusCode {
-	case http.StatusAccepted, http.StatusOK:
-		return nil
-	case http.StatusNotFound:
-		log.Debugln("alertmanager config not found, already deleted")
-		return nil
-	}
-
-	return fmt.Errorf("error occured, %v", string(body))
+	_, err := r.doRequest("/api/prom/rules/"+escapedNamespace+"/"+escapedGroupName, "DELETE", nil)
+	return err
 }
 
 // GetRuleGroup retrieves a rule group

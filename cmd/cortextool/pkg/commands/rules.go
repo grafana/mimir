@@ -216,7 +216,7 @@ func (r *RuleCommand) getRuleGroup(k *kingpin.ParseContext) error {
 
 func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 	err := r.cli.DeleteRuleGroup(context.Background(), r.Namespace, r.RuleGroup)
-	if err != nil {
+	if err != nil && err != client.ErrResourceNotFound {
 		log.Fatalf("unable to delete rule group from cortex, %v", err)
 	}
 	return nil
@@ -409,7 +409,7 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 				"namespace": ch.Namespace,
 			}).Infof("deleting group")
 			err = r.cli.DeleteRuleGroup(ctx, ch.Namespace, g.Name)
-			if err != nil {
+			if err != nil && err != client.ErrResourceNotFound {
 				return err
 			}
 		}

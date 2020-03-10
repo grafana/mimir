@@ -2,9 +2,7 @@ package client
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
-	"net/http"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -26,47 +24,14 @@ func (r *CortexClient) CreateAlertmanagerConfig(ctx context.Context, cfg string,
 		return err
 	}
 
-	res, err := r.doRequest("/alertmanager/alerts", "POST", payload)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	_, err = r.doRequest("/alertmanager/alerts", "POST", payload)
+	return err
 }
 
 // DeleteAlermanagerConfig deletes the users alertmanagerconfig
 func (r *CortexClient) DeleteAlermanagerConfig(ctx context.Context) error {
-	res, err := r.doRequest("/alertmanager/alerts", "DELETE", nil)
-	if err != nil {
-		return err
-	}
-
-	defer res.Body.Close()
-	err = checkResponse(res)
-	if err != nil {
-		return err
-	}
-	body, err := ioutil.ReadAll(res.Body)
-
-	if err != nil {
-		return err
-	}
-
-	switch res.StatusCode {
-	case http.StatusAccepted, http.StatusOK:
-		return nil
-	case http.StatusNotFound:
-		log.Debugln("alertmanager config not found, already deleted")
-		return nil
-	}
-
-	return fmt.Errorf("error occured, %v", string(body))
+	_, err := r.doRequest("/alertmanager/alerts", "DELETE", nil)
+	return err
 }
 
 // GetAlertmanagerConfig retrieves a rule group
