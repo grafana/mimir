@@ -4,6 +4,7 @@
 
 ## v0.1.4 / 2020-03-10
 
+* [CHANGE] Ensure 404 deletes do not trigger an error for `rules` and `alertmanager` commands #28
 * [ENHANCEMENT] Add separate `chunktool` for operating on cortex chunk backends #23 #26
 * [ENHANCEMENT] Add `--disable-color` flag to `rules print`, `rules diff`, and `alertmanager get` command #25
 * [BUGFIX] `alertmanager load` command will ensure provided template files are also loaded #25

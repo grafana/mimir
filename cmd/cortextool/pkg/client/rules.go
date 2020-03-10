@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 
 	"github.com/pkg/errors"
@@ -47,11 +48,15 @@ func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName
 		return err
 	}
 
-	if res.StatusCode%2 > 0 {
-		return fmt.Errorf("error occured, %v", string(body))
+	switch res.StatusCode {
+	case http.StatusAccepted, http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		log.Debugln("alertmanager config not found, already deleted")
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("error occured, %v", string(body))
 }
 
 // GetRuleGroup retrieves a rule group
