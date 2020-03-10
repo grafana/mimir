@@ -2,14 +2,19 @@
 
 ## unreleased / master
 
+## v0.1.4 / 2020-02-04
+
+* [ENHANCEMENT] Add separate `chunktool` for operating on cortex chunk backends #23 #26
+* [ENHANCEMENT] Add `--disable-color` flag to `rules print`, `rules diff`, and `alertmanager get` command #25
+* [BUGFIX] `alertmanager load` command will ensure provided template files are also loaded #25
 * [BUGFIX] Ensure rules commands use escaped URLs when contacting cortex API #24
 
-## 0.1.3 / 2020-02-04
+## v0.1.3 / 2020-02-04
 
 * [FEATURE] Add `rules sync` command
 * [FEATURE] Add `rules diff` command
 
-## 0.1.2 / 2019-12-18
+## v0.1.2 / 2019-12-18
 
 * [CHANGE] Info log when a resource does not exist instead of exiting fatally
 * [FEATURE] Windows build during Makefile cross compilation
