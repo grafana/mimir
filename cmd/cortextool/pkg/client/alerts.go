@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -57,11 +58,15 @@ func (r *CortexClient) DeleteAlermanagerConfig(ctx context.Context) error {
 		return err
 	}
 
-	if res.StatusCode%2 > 0 {
-		return fmt.Errorf("error occured, %v", string(body))
+	switch res.StatusCode {
+	case http.StatusAccepted, http.StatusOK:
+		return nil
+	case http.StatusNotFound:
+		log.Debugln("alertmanager config not found, already deleted")
+		return nil
 	}
 
-	return nil
+	return fmt.Errorf("error occured, %v", string(body))
 }
 
 // GetAlertmanagerConfig retrieves a rule group
