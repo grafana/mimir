@@ -91,5 +91,9 @@ func (a *AlertCommand) loadConfig(k *kingpin.ParseContext) error {
 }
 
 func (a *AlertCommand) deleteConfig(k *kingpin.ParseContext) error {
-	return a.cli.DeleteAlermanagerConfig(context.Background())
+	err := a.cli.DeleteAlermanagerConfig(context.Background())
+	if err != nil && err != client.ErrResourceNotFound {
+		return err
+	}
+	return nil
 }
