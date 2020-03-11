@@ -431,7 +431,7 @@ local windows = [
           {
             alert: 'CortexGossipMembersMismatch',
             expr: |||
-              memberlist_client_cluster_members_count{%s},
+              memberlist_client_cluster_members_count{%s}
                 != on (cluster,namespace) group_left
               sum(up{job=~".+/(distributor|ingester|querier)"}) by (cluster,namespace)
             ||| % namespace_matcher(),
