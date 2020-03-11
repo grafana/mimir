@@ -9,6 +9,7 @@ local windows = [
 {
   _config+:: {
     cortex_p99_latency_threshold_seconds: 2.5,
+    alert_namespace_matcher: '.*',
   },
 
   prometheus_alerts+:: {
@@ -20,8 +21,8 @@ local windows = [
             alert: 'CortexIngesterUnhealthy',
             'for': '15m',
             expr: |||
-              min(cortex_ring_members{state="Unhealthy", job=~"[a-z]+/distributor"}) by (namespace, job) > 0
-            |||,
+              min(cortex_ring_members{state="Unhealthy", job=~"[a-z]+/distributor", namespace=~"%(alert_namespace_matcher)s"}) by (namespace, job) > 0
+            ||| % $._config,
             labels: {
               severity: 'critical',
             },
@@ -118,8 +119,8 @@ local windows = [
           {
             alert: 'CortexBadOverrides',
             expr: |||
-              cortex_overrides_last_reload_successful{job!~".+/table-manager|.+/alertmanager"} == 0
-            |||,
+              cortex_overrides_last_reload_successful{job!~".+/table-manager|.+/alertmanager", namespace=~"%(alert_namespace_matcher)s"} == 0
+            ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
@@ -148,8 +149,8 @@ local windows = [
           {
             alert: 'CortexFrontendQueriesStuck',
             expr: |||
-              sum by (namespace) (cortex_query_frontend_queue_length{job=~".+/query-frontend"}) > 1
-            |||,
+              sum by (namespace) (cortex_query_frontend_queue_length{job=~".+/query-frontend", namespace=~"%(alert_namespace_matcher)s"}) > 1
+            ||| % $._config,
             'for': '5m',  // We don't want to block for longer.
             labels: {
               severity: 'critical',
@@ -163,11 +164,11 @@ local windows = [
           {
             alert: 'CortexCacheRequestErrors',
             expr: |||
-              100 * sum(rate(cortex_cache_request_duration_seconds_count{status_code=~"5.."}[1m])) by (namespace, job, method)
+              100 * sum(rate(cortex_cache_request_duration_seconds_count{status_code=~"5..", namespace=~"%(alert_namespace_matcher)s"}[1m])) by (namespace, job, method)
                 /
-              sum(rate(cortex_cache_request_duration_seconds_count[1m])) by (namespace, job, method)
+              sum(rate(cortex_cache_request_duration_seconds_count{namespace=~"%(alert_namespace_matcher)s"}[1m])) by (namespace, job, method)
                 > 1
-            |||,
+            ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'warning',
@@ -181,8 +182,8 @@ local windows = [
           {
             alert: 'CortexIngesterRestarts',
             expr: |||
-              rate(kube_pod_container_status_restarts_total{container="ingester"}[30m]) > 0
-            |||,
+              rate(kube_pod_container_status_restarts_total{container="ingester", namespace=~"%(alert_namespace_matcher)s"}[30m]) > 0
+            ||| % $._config,
             labels: {
               severity: 'critical',
             },
@@ -193,8 +194,8 @@ local windows = [
           {
             alert: 'CortexTransferFailed',
             expr: |||
-              max_over_time(cortex_shutdown_duration_seconds_count{op="transfer",status!="success"}[15m])
-            |||,
+              max_over_time(cortex_shutdown_duration_seconds_count{op="transfer",status!="success", namespace=~"%(alert_namespace_matcher)s"}[15m])
+            ||| % $._config,
             'for': '5m',
             labels: {
               severity: 'critical',
@@ -345,8 +346,8 @@ local windows = [
           {
             alert: 'CortexProvisioningTooMuchMemory',
             expr: |||
-              avg by (cluster, namespace) (container_memory_working_set_bytes{container_name="ingester"} / container_spec_memory_limit_bytes{container_name="ingester"}) > 0.7
-            |||,
+              avg by (cluster, namespace) (container_memory_working_set_bytes{container_name="ingester", namespace=~"%(alert_namespace_matcher)s} / container_spec_memory_limit_bytes{container_name="ingester", namespace=~"%(alert_namespace_matcher)s}) > 0.7
+            ||| % $._config,
             'for': '15m',
             labels: {
               severity: 'critical',
@@ -426,10 +427,10 @@ local windows = [
           {
             alert: 'CortexGossipMembersMismatch',
             expr: |||
-              memberlist_client_cluster_members_count
+              memberlist_client_cluster_members_count{namespace=~"%(alert_namespace_matcher)s"},
                 != on (cluster,namespace) group_left
               sum(up{job=~".+/(distributor|ingester|querier)"}) by (cluster,namespace)
-            |||,
+            ||| % $._config,
             'for': '5m',
             labels: {
               severity: 'warning',
