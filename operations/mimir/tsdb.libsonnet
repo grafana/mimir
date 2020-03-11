@@ -9,6 +9,9 @@
     // Enforce TSDB storage
     storage_backend: 'none',
     storage_engine: 'tsdb',
+
+    // Allow to configure the querier disk size based on the cluster size.
+    cortex_querier_data_disk_size: '10Gi',
   },
 
   // The querier should run on a dedicated volume used to sync TSDB
@@ -19,7 +22,7 @@
   // 3. Replace the service switching it to the statefulset
   local querier_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: '10Gi' }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_querier_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
     pvc.mixin.spec.withStorageClassName('standard') +
     pvc.mixin.metadata.withName('querier-data'),
