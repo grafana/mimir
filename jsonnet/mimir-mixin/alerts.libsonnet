@@ -168,7 +168,7 @@ local windows = [
           {
             alert: 'CortexCacheRequestErrors',
             expr: |||
-              100 * sum(rate(cortex_cache_request_duration_seconds_count{status_code=~"5.." %s) by (namespace, job, method)
+              100 * sum(rate(cortex_cache_request_duration_seconds_count{status_code=~"5.." %s}[1m])) by (namespace, job, method)
                 /
               sum(rate(cortex_cache_request_duration_seconds_count{%s}[1m])) by (namespace, job, method)
                 > 1
