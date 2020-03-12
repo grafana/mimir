@@ -3,7 +3,6 @@
     // Various third-party images.
     memcached: 'memcached:1.5.17-alpine',
     memcachedExporter: 'prom/memcached-exporter:v0.6.0',
-    postgresql: 'postgres:9.6.11-alpine',
 
     // Our services.
     cortex: 'cortexproject/cortex:master-fdcd992f',
