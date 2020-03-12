@@ -10,8 +10,13 @@
     storage_backend: 'none',
     storage_engine: 'tsdb',
 
-    // Allow to configure the querier disk size based on the cluster size.
+    // Allow to configure the querier disk.
     cortex_querier_data_disk_size: '10Gi',
+    cortex_querier_data_disk_class: 'standard',
+
+    // Allow to configure the compactor disk.
+    cortex_compactor_data_disk_size: '250Gi',
+    cortex_compactor_data_disk_class: 'standard',
   },
 
   // The querier should run on a dedicated volume used to sync TSDB
@@ -24,7 +29,7 @@
     pvc.new() +
     pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_querier_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName('standard') +
+    pvc.mixin.spec.withStorageClassName($._config.cortex_querier_data_disk_class) +
     pvc.mixin.metadata.withName('querier-data'),
 
   querier_args+:: {
@@ -109,9 +114,9 @@
   // it does not support horizontal scalability yet.
   local compactor_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: '250Gi' }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_compactor_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName('standard') +
+    pvc.mixin.spec.withStorageClassName($._config.cortex_compactor_data_disk_class) +
     pvc.mixin.metadata.withName('compactor-data'),
 
   compactor_args::
