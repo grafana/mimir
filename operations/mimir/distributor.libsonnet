@@ -25,7 +25,7 @@
       // By adding a ballast of 1G, we can drastically reduce GC, but also keep the usage at
       // around 1.25G, reducing the 99%ile.
       'mem-ballast-size-bytes': 1 << 30,  // 1GB
-    } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+    } + (if !$._config.ingestion_rate_global_limit_enabled then {} else {
       'distributor.ingestion-rate-limit-strategy': 'global',
       'distributor.ingestion-rate-limit': 100000,  // 100K
       'distributor.ingestion-burst-size': 1000000,  // 1M
@@ -36,14 +36,14 @@
       'distributor.ring.consul.watch-rate-limit': 1,
       'distributor.ring.consul.watch-burst-size': 1,
       'distributor.ring.prefix': '',
-    } + if !$._config.distributor_short_grpc_keepalive_enabled then {} else {
+    }) + (if !$._config.distributor_short_grpc_keepalive_enabled then {} else {
       // The cortex-gateway should frequently reopen the connections towards the
       // distributors in order to guarantee that new distributors receive traffic
       // as soon as they're ready.
       'server.grpc.keepalive.max-connection-age': '2m',
       'server.grpc.keepalive.max-connection-age-grace': '5m',
       'server.grpc.keepalive.max-connection-idle': '1m',
-    },
+    }),
 
   distributor_ports:: $.util.defaultPorts,
 
