@@ -56,7 +56,7 @@
 
     ingestion_rate_global_limit_enabled: false,
 
-    sharded_queries_enabled: true,
+    sharded_queries_enabled: false,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
