@@ -29,7 +29,12 @@
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
 
-    querierConcurrency: 8,
+    // The expectation is that if sharding is enabled, we can force more (smaller)
+    // queries on the queriers. However this can't be extended too far because most queries
+    // concern recent (ingester) data, which isn't sharded. Therefore, we must strike a balance
+    // which allows us to process more sharded queries in parallel when requested, but not overload
+    // queriers during normal queries.
+    querierConcurrency: if self.sharded_queries_enabled then 16 else 8,
     querier_ingester_streaming_enabled: $._config.storage_engine != 'tsdb',
 
     jaeger_agent_host: null,
@@ -50,6 +55,8 @@
     memcached_chunks_enabled: $._config.storage_engine != 'tsdb',
 
     ingestion_rate_global_limit_enabled: false,
+
+    sharded_queries_enabled: true,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -122,8 +129,9 @@
       'querier.batch-iterators': true,
 
       // Don't query ingesters for older queries.
-      // Chunks are 6hrs right now.  Add some slack for safety.
-      'querier.query-ingesters-within': '12h',
+      // Chunks are 6hrs right now.  Add some slack for safety although not too much
+      // if sharded queries are enabled because they only shard non ingester queries.
+      'querier.query-ingesters-within': if self.sharded_queries_enabled then '6h15m' else '12h',
 
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
 
