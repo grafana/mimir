@@ -53,7 +53,7 @@
   querier_deployment_labels: {},
 
   querier_deployment:
-    deployment.new('querier', 3, [$.querier_container], $.querier_deployment_labels) +
+    deployment.new('querier', $.querier_params.replicas, [$.querier_container], $.querier_deployment_labels) +
     $.util.antiAffinity +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
     $.storage_config_mixin,

@@ -131,7 +131,7 @@
       // Don't query ingesters for older queries.
       // Chunks are 6hrs right now.  Add some slack for safety although not too much
       // if sharded queries are enabled because they only shard non ingester queries.
-      'querier.query-ingesters-within': if self.sharded_queries_enabled then '6h15m' else '12h',
+      'querier.query-ingesters-within': if $._config.sharded_queries_enabled then '6h15m' else '12h',
 
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
 

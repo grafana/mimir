@@ -14,7 +14,7 @@
     // (i.e. 30d) with a high split factor (i.e. 5) would result in
     // (day_splits * shard_factor * split_factor) or 30 * 16 * 5 = 2400 sharded queries, which may be
     // more than the max queue size and thus would always error.
-    query_split_factor:: 6,
+    query_split_factor:: 3,
   },
 
   query_frontend_args:: {
@@ -56,10 +56,8 @@
 
     // in process tenant queues on frontends. We divide by the number of frontends; 2 in this case in order to apply the global limit in aggregate.
     // basically base * shard_factor * query_split_factor / num_frontends where
-    'querier.max-outstanding-requests-per-tenant': std.floor(200 * self.query_frontend_params.shard_factor * self.query_frontend_params.query_split_factor / self.query_frontend_params.replicas),
+    'querier.max-outstanding-requests-per-tenant': std.floor(200 * $.query_frontend_params.shard_factor * $.query_frontend_params.query_split_factor / $.query_frontend_params.replicas),
 
-    // per request parallelism factor passed to doRequests -- not a good solution.
-    'querier.max-query-parallelism': 14 * self.query_frontend_params.shard_factor,
     'querier.query-ingesters-within': $._config.queryConfig['querier.query-ingesters-within'],
   } + $._config.storageConfig
   else {},
