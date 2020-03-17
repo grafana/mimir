@@ -34,8 +34,25 @@
     // concern recent (ingester) data, which isn't sharded. Therefore, we must strike a balance
     // which allows us to process more sharded queries in parallel when requested, but not overload
     // queriers during normal queries.
-    querierConcurrency: if self.sharded_queries_enabled then 16 else 8,
-    querier_ingester_streaming_enabled: $._config.storage_engine != 'tsdb',
+    querier: {
+      replicas: if $._config.queryFrontend.sharded_queries_enabled then 12 else 6,
+      concurrency: if $._config.queryFrontend.sharded_queries_enabled then 16 else 8,
+      ingester_streaming_enabled: $._config.storage_engine != 'tsdb',
+    },
+
+    queryFrontend: {
+      replicas: 2,
+      shard_factor: 16,  // v10 schema shard factor
+      sharded_queries_enabled: false,
+      // Queries can technically be sharded an arbitrary number of times. Thus query_split_factor is used
+      // as a coefficient to multiply the frontend tenant queues by. The idea is that this
+      // yields a bit of headroom so tenant queues aren't underprovisioned. Therefore the split factor
+      // should be represent the highest reasonable split factor for a query. If too low, a long query
+      // (i.e. 30d) with a high split factor (i.e. 5) would result in
+      // (day_splits * shard_factor * split_factor) or 30 * 16 * 5 = 2400 sharded queries, which may be
+      // more than the max queue size and thus would always error.
+      query_split_factor:: 3,
+    },
 
     jaeger_agent_host: null,
 
@@ -55,8 +72,6 @@
     memcached_chunks_enabled: $._config.storage_engine != 'tsdb',
 
     ingestion_rate_global_limit_enabled: false,
-
-    sharded_queries_enabled: false,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -125,13 +140,12 @@
     // Shared between the Ruler and Querier
     queryConfig: {
       // Use iterators to merge chunks, to reduce memory usage.
-      'querier.ingester-streaming': $._config.querier_ingester_streaming_enabled,
+      'querier.ingester-streaming': $._config.querier.ingester_streaming_enabled,
       'querier.batch-iterators': true,
 
       // Don't query ingesters for older queries.
-      // Chunks are 6hrs right now.  Add some slack for safety although not too much
-      // if sharded queries are enabled because they only shard non ingester queries.
-      'querier.query-ingesters-within': if $._config.sharded_queries_enabled then '6h15m' else '12h',
+      // Chunks are 6hrs right now.  Add some slack for safety.
+      'querier.query-ingesters-within': '12h',
 
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
 
