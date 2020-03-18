@@ -61,8 +61,6 @@
     storage_engine: 'chunks',
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
-    distributor_short_grpc_keepalive_enabled: false,
-
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
 
@@ -122,7 +120,7 @@
       $._config.client_configs.cassandra +
       $._config.client_configs.gcp +
       $._config.storageTSDBConfig +
-      { 'config-yaml': '/etc/cortex/schema/config.yaml' },
+      { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
     // TSDB blocks storage configuration, used only when 'tsdb' storage
     // engine is explicitly enabled.
