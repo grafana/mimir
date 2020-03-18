@@ -122,7 +122,7 @@
       $._config.client_configs.cassandra +
       $._config.client_configs.gcp +
       $._config.storageTSDBConfig +
-      { 'config-yaml': '/etc/cortex/schema/config.yaml' },
+      { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
     // TSDB blocks storage configuration, used only when 'tsdb' storage
     // engine is explicitly enabled.
