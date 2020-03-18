@@ -35,22 +35,41 @@
     // Limit queries to 500 days, allow this to be override per-user.
     'store.max-query-length': '12000h',  // 500 Days
     'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
-  },
+  } + if $._config.queryFrontend.sharded_queries_enabled then {
+    'querier.parallelise-shardable-queries': 'true',
+
+    // in process tenant queues on frontends. We divide by the number of frontends; 2 in this case in order to apply the global limit in aggregate.
+    // basically base * shard_factor * query_split_factor / num_frontends where
+    'querier.max-outstanding-requests-per-tenant': std.floor(200 * $._config.queryFrontend.shard_factor * $._config.queryFrontend.query_split_factor / $._config.queryFrontend.replicas),
+
+    'querier.query-ingesters-within': $._config.queryConfig['querier.query-ingesters-within'],
+  } + $._config.storageConfig
+  else {},
 
   query_frontend_container::
     container.new('query-frontend', $._images.query_frontend) +
     container.withPorts($.util.defaultPorts) +
     container.withArgsMixin($.util.mapToFlags($.query_frontend_args)) +
-    $.util.resourcesRequests('2', '600Mi') +
-    $.util.resourcesLimits(null, '1200Mi') +
-    $.jaeger_mixin,
+    $.jaeger_mixin +
+    if $._config.queryFrontend.sharded_queries_enabled then
+    $.util.resourcesRequests('2', '2Gi') +
+    $.util.resourcesLimits(null, '6Gi') +
+    container.withEnvMap({
+      JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
+    })
+    else $.util.resourcesRequests('2', '600Mi') +
+    $.util.resourcesLimits(null, '1200Mi'),
 
   local deployment = $.apps.v1beta1.deployment,
 
   query_frontend_deployment:
-    deployment.new('query-frontend', 2, [$.query_frontend_container]) +
+    deployment.new('query-frontend', $._config.queryFrontend.replicas, [$.query_frontend_container]) +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
-    $.util.antiAffinity,
+    $.util.antiAffinity +
+    // inject storage schema in order to know what/how to shard
+    if $._config.queryFrontend.sharded_queries_enabled then
+    $.storage_config_mixin
+    else {},
 
   local service = $.core.v1.service,
 
