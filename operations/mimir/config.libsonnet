@@ -69,8 +69,6 @@
     memcached_index_writes_enabled: $._config.storage_engine != 'tsdb',
     memcached_chunks_enabled: $._config.storage_engine != 'tsdb',
 
-    ingestion_rate_global_limit_enabled: false,
-
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
     // (comparing performances).
@@ -197,8 +195,8 @@
       // ingester limits are 6s (#replicas) / 3x (#replication factor) higher.
       //
       // small_user: {
-      //   ingestion_rate: 10,000
-      //   ingestion_burst_size: 20,000
+      //   ingestion_rate: 100,000
+      //   ingestion_burst_size: 1,000,000
       //
       //   max_series_per_user:   0 (disabled)
       //   max_series_per_metric: 0 (disabled)
@@ -211,9 +209,6 @@
       // },
 
       medium_user:: {
-        ingestion_rate: 25000,
-        ingestion_burst_size: 50000,
-
         max_series_per_metric: 0,  // Disabled in favour of the max global limit
         max_series_per_user: 0,  // Disabled in favour of the max global limit
 
@@ -222,15 +217,12 @@
 
         max_series_per_query: 100000,
         max_samples_per_query: 1000000,
-      } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+
         ingestion_rate: 350000,  // 350K
         ingestion_burst_size: 3500000,  // 3.5M
       },
 
       big_user:: {
-        ingestion_rate: 50000,
-        ingestion_burst_size: 70000,
-
         max_series_per_metric: 0,  // Disabled in favour of the max global limit
         max_series_per_user: 0,  // Disabled in favour of the max global limit
 
@@ -239,15 +231,12 @@
 
         max_global_series_per_user: 6000000,  // 6M
         max_global_series_per_metric: 600000,  // 600K
-      } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+
         ingestion_rate: 700000,  // 700K
         ingestion_burst_size: 7000000,  // 7M
       },
 
       super_user:: {
-        ingestion_rate: 200000,
-        ingestion_burst_size: 240000,
-
         max_series_per_metric: 0,  // Disabled in favour of the max global limit
         max_series_per_user: 0,  // Disabled in favour of the max global limit
 
@@ -256,7 +245,7 @@
 
         max_series_per_query: 100000,
         max_samples_per_query: 1000000,
-      } + if !$._config.ingestion_rate_global_limit_enabled then {} else {
+
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
       },

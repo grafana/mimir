@@ -8,8 +8,6 @@
     {
       target: 'distributor',
 
-      'distributor.ingestion-rate-limit': 10000,
-      'distributor.ingestion-burst-size': 20000,
       'validation.reject-old-samples': true,
       'validation.reject-old-samples.max-age': '12h',
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
@@ -32,7 +30,7 @@
       'server.grpc.keepalive.max-connection-age': '2m',
       'server.grpc.keepalive.max-connection-age-grace': '5m',
       'server.grpc.keepalive.max-connection-idle': '1m',
-    } + (if !$._config.ingestion_rate_global_limit_enabled then {} else {
+
       'distributor.ingestion-rate-limit-strategy': 'global',
       'distributor.ingestion-rate-limit': 100000,  // 100K
       'distributor.ingestion-burst-size': 1000000,  // 1M
