@@ -41,7 +41,7 @@
       'distributor.ring.consul.watch-rate-limit': 1,
       'distributor.ring.consul.watch-burst-size': 1,
       'distributor.ring.prefix': '',
-    }),
+    },
 
   distributor_ports:: $.util.defaultPorts,
 
