@@ -52,13 +52,14 @@
     container.withArgsMixin($.util.mapToFlags($.query_frontend_args)) +
     $.jaeger_mixin +
     if $._config.queryFrontend.sharded_queries_enabled then
-    $.util.resourcesRequests('2', '2Gi') +
-    $.util.resourcesLimits(null, '6Gi') +
-    container.withEnvMap({
-      JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
-    })
-    else $.util.resourcesRequests('2', '600Mi') +
-    $.util.resourcesLimits(null, '1200Mi'),
+      $.util.resourcesRequests('2', '2Gi') +
+      $.util.resourcesLimits(null, '6Gi') +
+      container.withEnvMap({
+        JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
+      })
+    else
+      $.util.resourcesRequests('2', '600Mi') +
+      $.util.resourcesLimits(null, '1200Mi'),
 
   local deployment = $.apps.v1beta1.deployment,
 
@@ -68,7 +69,7 @@
     $.util.antiAffinity +
     // inject storage schema in order to know what/how to shard
     if $._config.queryFrontend.sharded_queries_enabled then
-    $.storage_config_mixin
+      $.storage_config_mixin
     else {},
 
   local service = $.core.v1.service,
