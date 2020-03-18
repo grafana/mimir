@@ -61,8 +61,6 @@
     storage_engine: 'chunks',
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
-    distributor_short_grpc_keepalive_enabled: false,
-
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
 
