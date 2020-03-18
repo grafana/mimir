@@ -37,7 +37,7 @@
     querier: {
       replicas: if $._config.queryFrontend.sharded_queries_enabled then 12 else 6,
       concurrency: if $._config.queryFrontend.sharded_queries_enabled then 16 else 8,
-      ingester_streaming_enabled: $._config.storage_engine != 'tsdb',
+      ingester_streaming_enabled: true,
     },
 
     queryFrontend: {
