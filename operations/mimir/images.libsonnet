@@ -13,7 +13,7 @@
     query_frontend: self.cortex,
     tableManager: self.cortex,
     compactor: self.cortex,
-    flusher: 'ganeshve/cortex:flusher-target-5aac2d73',
+    flusher: self.cortex,
     query_tee: 'quay.io/cortexproject/query-tee:master-5d7b05c3',
     // TODO(gouthamve/jtlisi): Upstream the ruler and AM configs.
     ruler: 'jtlisi/cortex:20191122_ruler_with_api-4059a06d3',
