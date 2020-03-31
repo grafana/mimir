@@ -50,7 +50,7 @@
     container.withPorts($.distributor_ports) +
     container.withArgsMixin($.util.mapToFlags($.distributor_args)) +
     $.util.resourcesRequests('2', '2Gi') +
-    $.util.resourcesLimits('6', '4Gi') +
+    $.util.resourcesLimits(null, '4Gi') +
     $.jaeger_mixin,
 
   local deployment = $.apps.v1beta1.deployment,
