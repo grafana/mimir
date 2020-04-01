@@ -65,6 +65,7 @@
     deployment.new('ingester', 3, [$.ingester_container], $.ingester_deployment_labels) +
     $.util.antiAffinity +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
+    deployment.mixin.metadata.withLabels({ name: 'ingester' }) +
     deployment.mixin.spec.withMinReadySeconds(60) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
@@ -76,4 +77,13 @@
 
   ingester_service:
     $.util.serviceFor($.ingester_deployment, $.ingester_service_ignored_labels),
+
+  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+
+  ingester_pdb:
+    podDisruptionBudget.new() +
+    podDisruptionBudget.mixin.metadata.withName('ingester-pdb') +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-pdb' }) +
+    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: $.ingester_deployment.metadata.labels.name }) +
+    podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 }
