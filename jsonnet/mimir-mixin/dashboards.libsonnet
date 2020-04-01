@@ -249,6 +249,21 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         )
       )
       .addRow(
+        g.row('Query Frontend - Sharding/Splitting')
+        .addPanel(
+          g.panel('Intervals per Query') +
+          g.queryPanel('sum(rate(cortex_frontend_split_queries_total{cluster="$cluster", namespace="$namespace"}[1m])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{cluster="$cluster", namespace="$namespace", method="split_by_interval"}[1m]))', 'partition rate'),
+        )
+        .addPanel(
+          g.panel('Sharded Queries %') +
+          g.queryPanel('sum(rate(cortex_frontend_mapped_asts_total{cluster="$cluster", namespace="$namespace"}[1m])) / sum(rate(cortex_frontend_split_queries_total{cluster="$cluster", namespace="$namespace"}[1m])) * 100', 'shard rate'),
+        )
+        .addPanel(
+          g.panel('Sharding factor') +
+          g.queryPanel('sum(rate(cortex_frontend_sharded_queries_total{cluster="$cluster", namespace="$namespace"}[1m])) / sum(rate(cortex_frontend_mapped_asts_total{cluster="$cluster", namespace="$namespace"}[1m]))', 'Average'),
+        )
+      )
+      .addRow(
         g.row('Querier')
         .addPanel(
           g.panel('Stages') +
@@ -263,21 +278,6 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         .addPanel(
           g.panel('Chunk cache corruptions') +
           g.queryPanel('sum(rate(cortex_cache_corrupt_chunks_total{cluster=~"$cluster",job=~"($namespace)/querier"}[1m]))', 'Corrupt chunks'),
-        )
-      )
-      .addRow(
-        g.row('Query Frontend - Sharding/Splitting')
-        .addPanel(
-          g.panel('Intervals per Query') +
-          g.queryPanel('sum(rate(cortex_frontend_split_queries_total{cluster="$cluster", namespace="$namespace"}[1m])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{cluster="$cluster", namespace="$namespace", method="split_by_interval"}[1m]))', 'partition rate'),
-        )
-        .addPanel(
-          g.panel('Sharded Queries %') +
-          g.queryPanel('sum(rate(cortex_frontend_mapped_asts_total{cluster="$cluster", namespace="$namespace"}[1m])) / sum(rate(cortex_frontend_split_queries_total{cluster="$cluster", namespace="$namespace"}[1m])) * 100', 'shard rate'),
-        )
-        .addPanel(
-          g.panel('Sharding factor') +
-          g.queryPanel('sum(rate(cortex_frontend_sharded_queries_total{cluster="$cluster", namespace="$namespace"}[1m])) / sum(rate(cortex_frontend_mapped_asts_total{cluster="$cluster", namespace="$namespace"}[1m]))', 'Average'),
         )
       )
       .addRow(
