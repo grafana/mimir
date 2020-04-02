@@ -45,8 +45,10 @@
 
   ingester_ports:: $.util.defaultPorts,
 
+  local name = 'ingester',
+
   ingester_container::
-    container.new('ingester', $._images.ingester) +
+    container.new(name, $._images.ingester) +
     container.withPorts($.ingester_ports) +
     container.withArgsMixin($.util.mapToFlags($.ingester_args)) +
     container.mixin.readinessProbe.httpGet.withPath('/ready') +
@@ -62,10 +64,10 @@
   ingester_deployment_labels:: {},
 
   ingester_deployment:
-    deployment.new('ingester', 3, [$.ingester_container], $.ingester_deployment_labels) +
+    deployment.new(name, 3, [$.ingester_container], $.ingester_deployment_labels) +
     $.util.antiAffinity +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
-    deployment.mixin.metadata.withLabels({ name: 'ingester' }) +
+    deployment.mixin.metadata.withLabels({ name: name }) +
     deployment.mixin.spec.withMinReadySeconds(60) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
@@ -84,6 +86,6 @@
     podDisruptionBudget.new() +
     podDisruptionBudget.mixin.metadata.withName('ingester-pdb') +
     podDisruptionBudget.mixin.metadata.withLabels({ name: 'ingester-pdb' }) +
-    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: $.ingester_deployment.metadata.labels.name }) +
+    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: name }) +
     podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 }
