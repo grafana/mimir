@@ -49,7 +49,10 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       g.panel('Op: ObjectSize') +
       g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="objectsize"}'),
     )
-    // oper="iter" is also available, but not used.
+    .addPanel(
+      g.panel('Op: Iter') +
+      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="iter"}'),
+    )
     .addPanel(
       g.panel('Op: Exists') +
       g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="exists"}'),
