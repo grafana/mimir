@@ -81,11 +81,30 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
 };
 
 {
+  dashboardWithTagsAndLinks(title)::
+    g.dashboard(title) + {
+      tags: $._config.tags,
+
+      links: [
+        {
+          asDropdown: true,
+          icon: 'external link',
+          includeVars: true,
+          keepTime: true,
+          tags: $._config.tags,
+          targetBlank: false,
+          title: 'Cortex Dashboards',
+          type: 'dashboards',
+        },
+      ],
+    },
+
   _config+:: {
     storage_backend: error 'must specify storage backend (cassandra, gcp)',
     // may contain 'chunks', 'tsdb' or both. Enables chunks- or tsdb- specific panels and dashboards.
     storage_engine: ['chunks'],
     gcs_enabled: false,
+    tags: ['cortex'],
   },
 
   dashboards+: {
@@ -169,7 +188,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       addBlocksRows(addGcsRows($.cortex_reads_dashboard)),
 
     [if std.setMember('chunks', $._config.storage_engine) then 'cortex-chunks.json' else null]:
-      g.dashboard('Cortex / Chunks')
+      $.dashboardWithTagsAndLinks('Cortex / Chunks')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -220,7 +239,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     'cortex-queries.json':
-      g.dashboard('Cortex / Queries')
+      $.dashboardWithTagsAndLinks('Cortex / Queries')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -342,7 +361,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     'ruler.json':
-      g.dashboard('Cortex / Ruler')
+      $.dashboardWithTagsAndLinks('Cortex / Ruler')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -381,7 +400,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     'cortex-scaling.json':
-      g.dashboard('Cortex / Scaling')
+      $.dashboardWithTagsAndLinks('Cortex / Scaling')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -489,7 +508,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     [if std.setMember('tsdb', $._config.storage_engine) then 'cortex-blocks.json' else null]:
-      g.dashboard('Cortex / Blocks')
+      $.dashboardWithTagsAndLinks('Cortex / Blocks')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       // repeated from Cortex / Chunks
@@ -682,7 +701,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
 
   cortex_writes_dashboard::
     local out =
-      g.dashboard('Cortex / Writes')
+      $.dashboardWithTagsAndLinks('Cortex / Writes')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -819,7 +838,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
 
   cortex_reads_dashboard::
     local out =
-      g.dashboard('Cortex / Reads')
+      $.dashboardWithTagsAndLinks('Cortex / Reads')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
