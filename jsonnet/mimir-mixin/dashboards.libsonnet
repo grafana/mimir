@@ -899,6 +899,20 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
         )
       ) else dashboard;
 
+    local addBlocksRows(dashboard) = if std.setMember('tsdb', $._config.storage_engine) then
+      dashboard.addRow(
+        g.row('Memcached - Blocks Index')
+        .addPanel(
+          g.panel('QPS') +
+          g.qpsPanel('cortex_querier_blocks_index_cache_memcached_operation_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier",operation="getmulti"}')
+        )
+        .addPanel(
+          g.panel('Latency') +
+          g.latencyPanel('cortex_querier_blocks_index_cache_memcached_operation_duration_seconds', '{cluster=~"$cluster", job=~"($namespace)/querier", operation="getmulti"}')
+        )
+      )
+    else dashboard;
+
     local addStorageRows(dashboard) =
       if $._config.storage_backend == 'cassandra' then
         dashboard.addRow(
@@ -937,5 +951,5 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
           ),
         ) else dashboard;
 
-    addStorageRows(addChunksRows(out)),
+    addStorageRows(addBlocksRows(addChunksRows(out))),
 }
