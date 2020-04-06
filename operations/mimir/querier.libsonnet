@@ -36,6 +36,7 @@
     container.withPorts($.querier_ports) +
     container.withArgsMixin($.util.mapToFlags($.querier_args)) +
     $.jaeger_mixin +
+    $.util.readinessProbe +
     container.withEnvMap($.querier_env_map) +
     if $._config.queryFrontend.sharded_queries_enabled then
       $.util.resourcesRequests('3', '12Gi') +

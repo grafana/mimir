@@ -29,6 +29,7 @@
     container.withArgsMixin($.util.mapToFlags($.alertmanager_args)) +
     container.withVolumeMountsMixin([volumeMount.new('alertmanager-data', '/data')]) +
     $.util.resourcesRequests('100m', '1Gi') +
+    $.util.readinessProbe +
     $.jaeger_mixin,
 
 

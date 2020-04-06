@@ -51,6 +51,7 @@
     container.withPorts($.util.defaultPorts) +
     container.withArgsMixin($.util.mapToFlags($.query_frontend_args)) +
     $.jaeger_mixin +
+    $.util.readinessProbe +
     if $._config.queryFrontend.sharded_queries_enabled then
       $.util.resourcesRequests('2', '2Gi') +
       $.util.resourcesLimits(null, '6Gi') +

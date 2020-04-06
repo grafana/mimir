@@ -35,6 +35,7 @@
       container.withArgsMixin($.util.mapToFlags($.table_manager_args)) +
       $.util.resourcesRequests('100m', '100Mi') +
       $.util.resourcesLimits('200m', '200Mi') +
+      $.util.readinessProbe +
       $.jaeger_mixin
     else {},
 

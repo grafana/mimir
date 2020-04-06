@@ -51,12 +51,9 @@
     container.new(name, $._images.ingester) +
     container.withPorts($.ingester_ports) +
     container.withArgsMixin($.util.mapToFlags($.ingester_args)) +
-    container.mixin.readinessProbe.httpGet.withPath('/ready') +
-    container.mixin.readinessProbe.httpGet.withPort(80) +
-    container.mixin.readinessProbe.withInitialDelaySeconds(15) +
-    container.mixin.readinessProbe.withTimeoutSeconds(1) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
+    $.util.readinessProbe +
     $.jaeger_mixin,
 
   local deployment = $.apps.v1beta1.deployment,

@@ -41,10 +41,6 @@
   },
 
   querier_container+::
-    container.mixin.readinessProbe.httpGet.withPath('/ready') +
-    container.mixin.readinessProbe.httpGet.withPort(80) +
-    container.mixin.readinessProbe.withInitialDelaySeconds(5) +
-    container.mixin.readinessProbe.withTimeoutSeconds(1) +
     container.withVolumeMountsMixin([
       volumeMount.new('querier-data', '/data'),
     ]),
@@ -139,6 +135,7 @@
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
     $.util.resourcesRequests('1', '6Gi') +
     $.util.resourcesLimits('1', '6Gi') +
+    $.util.readinessProbe +
     $.jaeger_mixin,
 
   compactor_statefulset:

@@ -18,12 +18,9 @@
       target: 'flusher',
       'flusher.wal-dir': $._config.wal_dir,
     })) +
-    container.mixin.readinessProbe.httpGet.withPath('/ready') +
-    container.mixin.readinessProbe.httpGet.withPort(80) +
-    container.mixin.readinessProbe.withInitialDelaySeconds(15) +
-    container.mixin.readinessProbe.withTimeoutSeconds(1) +
     $.util.resourcesRequests('4', '15Gi') +
     $.util.resourcesLimits(null, '25Gi') +
+    $.util.readinessProbe +
     $.jaeger_mixin,
 
   flusher_job_storage_config_mixin::

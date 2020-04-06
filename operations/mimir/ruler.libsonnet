@@ -28,6 +28,7 @@
     container.withArgsMixin($.util.mapToFlags($.ruler_args)) +
     $.util.resourcesRequests('1', '6Gi') +
     $.util.resourcesLimits('16', '16Gi') +
+    $.util.readinessProbe +
     $.jaeger_mixin,
 
   local deployment = $.apps.v1beta1.deployment,
