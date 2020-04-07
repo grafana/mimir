@@ -1,11 +1,3 @@
-// According to https://developers.soundcloud.com/blog/alerting-on-slos :
-local windows = [
-  { long_period: '1h', short_period: '5m', for_period: '2m', factor: 14.4, severity: 'critical' },
-  { long_period: '6h', short_period: '30m', for_period: '15m', factor: 6, severity: 'critical' },
-  { long_period: '1d', short_period: '2h', for_period: '1h', factor: 3, severity: 'warning' },
-  { long_period: '3d', short_period: '6h', for_period: '3h', factor: 1, severity: 'warning' },
-];
-
 {
   _config+:: {
     cortex_p99_latency_threshold_seconds: 2.5,
@@ -226,64 +218,6 @@ local windows = [
               |||,
             },
           },
-        ],
-      },
-      {
-        name: 'cortex_slo_alerts',
-        rules: [
-          {
-            alert: 'CortexWriteErrorBudgetBurn',
-            expr: |||
-              (
-                (
-                100 * namespace_job:cortex_gateway_write_slo_errors_per_request:ratio_rate%(long_period)s
-                > 0.1 * %(factor)f
-                )
-              and
-                (
-                100 * namespace_job:cortex_gateway_write_slo_errors_per_request:ratio_rate%(short_period)s
-                > 0.1 * %(factor)f
-                )
-              )
-            ||| % window,
-            'for': window.for_period,
-            labels: {
-              severity: window.severity,
-              period: window.long_period,  // The annotation alone doesn't make this alert unique.
-            },
-            annotations: {
-              summary: 'Cortex burns its write error budget too fast.',
-              description: "{{ $value | printf `%%.2f` }}%% of {{ $labels.job }}'s write requests in the last %(long_period)s are failing or too slow to meet the SLO." % window,
-            },
-          }
-          for window in windows
-        ] + [
-          {
-            alert: 'CortexReadErrorBudgetBurn',
-            expr: |||
-              (
-                (
-                100 * namespace_job:cortex_gateway_read_slo_errors_per_request:ratio_rate%(long_period)s
-                > 0.5 * %(factor)f
-                )
-              and
-                (
-                100 * namespace_job:cortex_gateway_read_slo_errors_per_request:ratio_rate%(short_period)s
-                > 0.5 * %(factor)f
-                )
-              )
-            ||| % window,
-            'for': window.for_period,
-            labels: {
-              severity: window.severity,
-              period: window.long_period,  // The annotation alone doesn't make this alert unique.
-            },
-            annotations: {
-              summary: 'Cortex burns its read error budget too fast.',
-              description: "{{ $value | printf `%%.2f` }}%% of {{ $labels.job }}'s read requests in the last %(long_period)s are failing or too slow to meet the SLO." % window,
-            },
-          }
-          for window in windows
         ],
       },
       {
