@@ -10,7 +10,7 @@ local windows = [
 ];
 
 {
-  prometheus_rules+:: {
+  prometheusRules+:: {
     groups+: [{
       name: 'cortex_rules',
       rules:

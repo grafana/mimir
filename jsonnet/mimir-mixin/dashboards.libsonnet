@@ -107,7 +107,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
     tags: ['cortex'],
   },
 
-  dashboards+: {
+  grafanaDashboards+: {
     'cortex-writes.json':
       local addGcsRow(dashboard) = if $._config.gcs_enabled then
         dashboard.addRow(
