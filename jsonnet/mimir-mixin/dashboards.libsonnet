@@ -50,8 +50,9 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="objectsize"}'),
     )
     .addPanel(
+      // Cortex (Thanos) doesn't track timing for 'iter', so we use ops/sec instead.
       g.panel('Op: Iter') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="iter"}'),
+      g.queryPanel('sum(rate(%s{cluster=~"$cluster", operation="iter"}[$__interval]))' % [opsTotal], 'ops/sec')
     )
     .addPanel(
       g.panel('Op: Exists') +
