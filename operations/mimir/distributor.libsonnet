@@ -34,9 +34,6 @@
 
       // The ingestion rate global limit requires the distributors to form a ring.
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-      'distributor.ring.consul.consistent-reads': false,
-      'distributor.ring.consul.watch-rate-limit': 1,
-      'distributor.ring.consul.watch-burst-size': 1,
       'distributor.ring.prefix': '',
     },
 

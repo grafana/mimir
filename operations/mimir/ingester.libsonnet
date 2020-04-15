@@ -13,16 +13,13 @@
       'ingester.num-tokens': 512,
       'ingester.join-after': '30s',
       'ingester.max-transfer-retries': 60,  // Each retry is backed off by 5s, so 5mins for new ingester to come up.
-      'ingester.claim-on-rollout': true,
       'ingester.heartbeat-period': '15s',
       'ingester.max-stale-chunk-idle': '5m',
-      'ingester.normalise-tokens': true,
 
       // Chunk building/flushing config.
       'ingester.chunk-encoding': 3,  // Bigchunk encoding
       'ingester.retain-period': '15m',
       'ingester.max-chunk-age': '6h',
-      'ingester.spread-flushes': true,
 
       // Limits config.
       'ingester.max-chunk-idle': $._config.max_chunk_idle,
@@ -38,7 +35,6 @@
           // Setup index write deduping.
           'store.index-cache-write.memcached.hostname': 'memcached-index-writes.%(namespace)s.svc.cluster.local' % $._config,
           'store.index-cache-write.memcached.service': 'memcached-client',
-          'store.index-cache-write.memcached.consistent-hash': true,
         }
       else {}
     ),

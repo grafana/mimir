@@ -20,7 +20,6 @@
     'frontend.memcached.hostname': 'memcached-frontend.%s.svc.cluster.local' % $._config.namespace,
     'frontend.memcached.service': 'memcached-client',
     'frontend.memcached.timeout': '500ms',
-    'frontend.memcached.consistent-hash': true,
 
     // So that exporters like cloudwatch can still send in data and be un-cached.
     'frontend.max-cache-freshness': '10m',

@@ -37,7 +37,6 @@
     querier: {
       replicas: if $._config.queryFrontend.sharded_queries_enabled then 12 else 6,
       concurrency: if $._config.queryFrontend.sharded_queries_enabled then 16 else 8,
-      ingester_streaming_enabled: true,
     },
 
     queryFrontend: {
@@ -105,11 +104,9 @@
 
     storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled then
       {
-        'memcached.hostname': 'memcached.%s.svc.cluster.local' % $._config.namespace,
-        'memcached.service': 'memcached-client',
-        'memcached.timeout': '3s',
-        'memcached.batchsize': 1024,
-        'memcached.consistent-hash': true,
+        'store.chunks-cache.memcached.hostname': 'memcached.%s.svc.cluster.local' % $._config.namespace,
+        'store.chunks-cache.memcached.service': 'memcached-client',
+        'store.chunks-cache.memcached.timeout': '3s',
       }
     else {},
 
@@ -135,10 +132,6 @@
 
     // Shared between the Ruler and Querier
     queryConfig: {
-      // Use iterators to merge chunks, to reduce memory usage.
-      'querier.ingester-streaming': $._config.querier.ingester_streaming_enabled,
-      'querier.batch-iterators': true,
-
       // Don't query ingesters for older queries.
       // Chunks are 6hrs right now.  Add some slack for safety.
       'querier.query-ingesters-within': '12h',
@@ -165,7 +158,6 @@
           'store.index-cache-read.memcached.hostname': 'memcached-index-queries.%(namespace)s.svc.cluster.local' % $._config,
           'store.index-cache-read.memcached.service': 'memcached-client',
           'store.index-cache-read.memcached.timeout': '500ms',
-          'store.index-cache-read.memcached.consistent-hash': true,
           'store.cache-lookups-older-than': '36h',
         }
       else {}
@@ -173,10 +165,7 @@
 
     ringConfig: {
       'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-      'consul.consistent-reads': false,
       'ring.prefix': '',
-      'consul.watch-rate-limit': 1,
-      'consul.watch-burst-size': 5,
     },
 
     // Some distributor config is shared with the querier.
@@ -185,7 +174,6 @@
       'distributor.shard-by-all-labels': true,
       'distributor.health-check-ingesters': true,
       'ring.heartbeat-timeout': '10m',
-      'consul.consistent-reads': false,
     },
 
     overrides: {

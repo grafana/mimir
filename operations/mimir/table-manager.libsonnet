@@ -6,26 +6,16 @@
     {
       target: 'table-manager',
 
-      // Cassandra / BigTable doesn't use these fields, so set them to zero
-      'dynamodb.chunk-table.inactive-read-throughput': 0,
-      'dynamodb.chunk-table.inactive-write-throughput': 0,
-      'dynamodb.chunk-table.read-throughput': 0,
-      'dynamodb.chunk-table.write-throughput': 0,
-      'dynamodb.periodic-table.inactive-read-throughput': 0,
-      'dynamodb.periodic-table.inactive-write-throughput': 0,
-      'dynamodb.periodic-table.read-throughput': 0,
-      'dynamodb.periodic-table.write-throughput': 0,
-
       // Rate limit Bigtable Admin calls.  Google seem to limit to ~100QPS,
       // and given 2yrs worth of tables (~100) a sync will table 20s.  This
       // allows you to run upto 20 independant Cortex clusters on the same
       // Google project before running into issues.
-      'dynamodb.poll-interval': '10m',
-      'dynamodb.periodic-table.grace-period': '3h',
       'bigtable.grpc-client-rate-limit': 5.0,
       'bigtable.grpc-client-rate-limit-burst': 5,
       'bigtable.backoff-on-ratelimits': true,
       'bigtable.table-cache.enabled': true,
+      'table-manager.poll-interval': '10m',
+      'table-manager.periodic-table.grace-period': '3h',
     },
 
   table_manager_container::
