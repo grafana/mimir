@@ -16,6 +16,10 @@ In events you're looking for things like:
 28m         Normal    DeletingAllPods           Node   Node cloud-provider-node-01 event: Deleting all Pods from Node cloud-provider-node-01.
 ```
 
+If nothing obvious from the above, check for increased load:
+- If there is an increase in the number of active series and the memory provisioned is not enough, scale up the ingesters horizontally to have the same number of series as before per ingester.
+- If we had an outage and once Cortex is back up, the incoming traffic increases. (or) The clients have their Prometheus remote-write lagging and starts to send samples at a higher rate (again, an increase in traffic but in terms of number of samples). Scale up the ingester horizontally in this case too.
+
 ## CortexRequest Latency
 First establish if the alert is for read or write latency. The alert should say.
 
