@@ -15,6 +15,7 @@
     compactor: self.cortex,
     flusher: self.cortex,
     ruler: self.cortex,
+    store_gateway: self.cortex,
 
     query_tee: 'quay.io/cortexproject/query-tee:master-5d7b05c3',
     // TODO(gouthamve/jtlisi): Upstream the ruler and AM configs.
