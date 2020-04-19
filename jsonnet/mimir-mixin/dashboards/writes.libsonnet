@@ -12,7 +12,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
        })
       .addPanel(
         $.panel('Samples / s') +
-        $.statPanel('sum(cluster_namespace:cortex_distributor_received_samples:rate5m{%s})' % $.namespaceMatcher(), format='reqps')
+        $.statPanel('sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{%s})' % $.jobMatcher('distributor'), format='reqps')
       )
       .addPanel(
         $.panel('Active Series') +
@@ -53,7 +53,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Etcd (HA Dedupe)')
+      $.row('KV Store (HA Dedupe)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher('distributor'))
@@ -75,7 +75,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Consul (Ring)')
+      $.row('KV Store (Ring)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher('ingester'))

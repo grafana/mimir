@@ -50,7 +50,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     else 'cluster=~"$cluster", namespace=~"$namespace"',
 
   jobSelector(job)::
-    [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/%s' % job)],
+    if $._config.singleBinary
+    then [utils.selector.noop('cluster'), utils.selector.re('job', '$job')]
+    else [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/%s' % job)],
 
   qpsPanel(selector)::
     super.qpsPanel(selector) + {
