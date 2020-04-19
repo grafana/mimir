@@ -97,7 +97,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      $._config.storage_backend == 'cassandra',
+      std.setMember('chunks', $._config.storage_engine) &&
+      std.setMember('cassandra', $._config.chunk_index_backend + $._config.chunk_store_backend),
       $.row('Cassandra')
       .addPanel(
         $.panel('QPS') +
@@ -109,9 +110,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      // only show BigTable if chunks panels are enabled
-      $._config.storage_backend == 'gcp' && std.setMember('chunks', $._config.storage_engine),
-
+      std.setMember('chunks', $._config.storage_engine) &&
+      std.setMember('bigtable', $._config.chunk_index_backend + $._config.chunk_store_backend),
       $.row('BigTable')
       .addPanel(
         $.panel('QPS') +
@@ -123,7 +123,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
     .addRowIf(
-      $._config.storage_backend == 'dynamodb',
+      std.setMember('chunks', $._config.storage_engine) &&
+      std.setMember('dynamodb', $._config.chunk_index_backend + $._config.chunk_store_backend),
       $.row('DynamoDB')
       .addPanel(
         $.panel('QPS') +
@@ -135,9 +136,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
     .addRowIf(
-
-      $._config.gcs_enabled,
-
+      std.setMember('chunks', $._config.storage_engine) &&
+      std.setMember('gcs', $._config.chunk_store_backend),
       $.row('GCS')
       .addPanel(
         $.panel('QPS') +

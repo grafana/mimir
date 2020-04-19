@@ -1,11 +1,4 @@
-local mixin = (import 'mixin.libsonnet') {
-  _config: {
-    storage_backend: 'cassandra',
-    storage_engine: ['chunks'],
-    tags: 'cortex',
-    gcs_enabled: false,
-  },
-};
+local mixin = import 'mixin.libsonnet';
 
 {
   [name]: std.manifestJsonEx(mixin.grafanaDashboards[name], ' ')
