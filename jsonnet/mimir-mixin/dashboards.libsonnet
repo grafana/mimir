@@ -1,113 +1,7 @@
 local utils = (import 'mixin-utils/utils.libsonnet');
+local g =  (import 'dashboard-utils.libsonnet');
 
-local g = (import 'grafana-builder/grafana.libsonnet') + {
-  qpsPanel(selector)::
-    super.qpsPanel(selector) + {
-      targets: [
-        target {
-          interval: '1m',
-        }
-        for target in super.targets
-      ],
-    },
-
-  latencyPanel(metricName, selector, multiplier='1e3')::
-    super.latencyPanel(metricName, selector, multiplier) + {
-      targets: [
-        target {
-          interval: '1m',
-        }
-        for target in super.targets
-      ],
-    },
-
-  successFailurePanel(title, successMetric, failureMetric)::
-    g.panel(title) +
-    g.queryPanel([successMetric, failureMetric], ['successful', 'failed']) +
-    g.stack + {
-      aliasColors: {
-        successful: '#7EB26D',
-        failed: '#E24D42',
-      },
-    },
-
-  objectStorePanels1(title, metricPrefix)::
-    local opsTotal = '%s_thanos_objstore_bucket_operations_total' % [metricPrefix];
-    local opsTotalFailures = '%s_thanos_objstore_bucket_operation_failures_total' % [metricPrefix];
-    local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
-    local interval = '$__interval';
-    super.row(title)
-    .addPanel(
-      // We use 'up{cluster=~"$cluster", job="($namespace)/.+"}' to add 0 if there are no failed operations.
-      self.successFailurePanel(
-        'Operations/sec',
-        'sum(rate(%s{cluster=~"$cluster"}[%s])) - sum(rate(%s{cluster=~"$cluster"}[%s]) or (up{cluster=~"$cluster", job="($namespace)/.+"}*0))' % [opsTotal, interval, opsTotalFailures, interval],
-        'sum(rate(%s{cluster=~"$cluster"}[%s]) or (up{cluster=~"$cluster", job="($namespace)/.+"}*0))' % [opsTotalFailures, interval]
-      )
-    )
-    .addPanel(
-      g.panel('Op: ObjectSize') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="objectsize"}'),
-    )
-    .addPanel(
-      // Cortex (Thanos) doesn't track timing for 'iter', so we use ops/sec instead.
-      g.panel('Op: Iter') +
-      g.queryPanel('sum(rate(%s{cluster=~"$cluster", operation="iter"}[$__interval]))' % [opsTotal], 'ops/sec')
-    )
-    .addPanel(
-      g.panel('Op: Exists') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="exists"}'),
-    ),
-
-  // Second row of Object Store stats
-  objectStorePanels2(title, metricPrefix)::
-    local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
-    super.row(title)
-    .addPanel(
-      g.panel('Op: Get') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="get"}'),
-    )
-    .addPanel(
-      g.panel('Op: GetRange') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="get_range"}'),
-    )
-    .addPanel(
-      g.panel('Op: Upload') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="upload"}'),
-    )
-    .addPanel(
-      g.panel('Op: Delete') +
-      g.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="delete"}'),
-    ),
-};
-
-{
-  dashboardWithTagsAndLinks(title)::
-    g.dashboard(title) + {
-      tags: $._config.tags,
-
-      links: [
-        {
-          asDropdown: true,
-          icon: 'external link',
-          includeVars: true,
-          keepTime: true,
-          tags: $._config.tags,
-          targetBlank: false,
-          title: 'Cortex Dashboards',
-          type: 'dashboards',
-        },
-      ],
-    },
-
-  _config+:: {
-    storage_backend: error 'must specify storage backend (cassandra, gcp)',
-    // may contain 'chunks', 'tsdb' or both. Enables chunks- or tsdb- specific panels and dashboards.
-    storage_engine: ['chunks'],
-    gcs_enabled: false,
-    tags: ['cortex'],
-  },
-
+g {
   grafanaDashboards+: {
     'cortex-writes.json':
       local addGcsRow(dashboard) = if $._config.gcs_enabled then
@@ -189,7 +83,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       addBlocksRows(addGcsRows($.cortex_reads_dashboard)),
 
     [if std.setMember('chunks', $._config.storage_engine) then 'cortex-chunks.json' else null]:
-      $.dashboardWithTagsAndLinks('Cortex / Chunks')
+      $.dashboard('Cortex / Chunks')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -240,7 +134,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     'cortex-queries.json':
-      $.dashboardWithTagsAndLinks('Cortex / Queries')
+      $.dashboard('Cortex / Queries')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -362,7 +256,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     'ruler.json':
-      $.dashboardWithTagsAndLinks('Cortex / Ruler')
+      $.dashboard('Cortex / Ruler')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -401,7 +295,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     'cortex-scaling.json':
-      $.dashboardWithTagsAndLinks('Cortex / Scaling')
+      $.dashboard('Cortex / Scaling')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -509,7 +403,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
       ),
 
     [if std.setMember('tsdb', $._config.storage_engine) then 'cortex-blocks.json' else null]:
-      $.dashboardWithTagsAndLinks('Cortex / Blocks')
+      $.dashboard('Cortex / Blocks')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       // repeated from Cortex / Chunks
@@ -702,7 +596,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
 
   cortex_writes_dashboard::
     local out =
-      $.dashboardWithTagsAndLinks('Cortex / Writes')
+      $.dashboard('Cortex / Writes')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
@@ -839,7 +733,7 @@ local g = (import 'grafana-builder/grafana.libsonnet') + {
 
   cortex_reads_dashboard::
     local out =
-      $.dashboardWithTagsAndLinks('Cortex / Reads')
+      $.dashboard('Cortex / Reads')
       .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
       .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
       .addRow(
