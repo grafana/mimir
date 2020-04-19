@@ -1,6 +1,5 @@
 {
   grafanaDashboards+:
-    { _config:: $._config } +
     (import 'dashboards/queries.libsonnet') +
     (import 'dashboards/reads.libsonnet') +
     (import 'dashboards/ruler.libsonnet') +
@@ -18,5 +17,7 @@
     (if std.setMember('tsdb', $._config.storage_engine)
         && std.setMember('chunks', $._config.storage_engine)
      then import 'dashboards/comparison.libsonnet'
-     else {}),
+     else {}) +
+
+    { _config:: $._config },
 }

@@ -4,8 +4,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   'ruler.json':
     $.dashboard('Cortex / Ruler')
-    .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-    .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+    .addClusterSelectorTemplates()
     .addRow(
       $.row('Rule Evaluations')
       .addPanel(

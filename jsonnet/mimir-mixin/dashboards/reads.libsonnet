@@ -3,8 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'dashboard-utils.libsonnet') {
   'cortex-reads.json':
     $.dashboard('Cortex / Reads')
-    .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-    .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+    .addClusterSelectorTemplates()
     .addRow(
       $.row('Gateway')
       .addPanel(

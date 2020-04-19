@@ -1,6 +1,8 @@
+local utils = import 'mixin-utils/utils.libsonnet';
+
 (import 'grafana-builder/grafana.libsonnet') {
 
-  //_config:: error "must provide _config",
+  _config:: error 'must provide _config',
 
   // Override the dashboard constructor to add:
   // - default tags,
@@ -26,7 +28,29 @@
         if condition
         then self.addRow(row)
         else self,
+
+      addClusterSelectorTemplates()::
+        if $._config.singleBinary
+        then self.addMultiTemplate('job', 'cortex_build_info', 'job')
+        else self
+             .addMultiTemplate('cluster', 'cortex_build_info', 'cluster')
+             .addMultiTemplate('namespace', 'cortex_build_info', 'namespace'),
     },
+
+  // The ,ixin allow specialism of the job selector depending on if its a single binary
+  // deployment or a namespaced one.
+  jobMatcher(job)::
+    if $._config.singleBinary
+    then 'job=~"$job"'
+    else 'cluster=~"$cluster", job=~"($namespace)/%s"' % job,
+
+  namespaceMatcher()::
+    if $._config.singleBinary
+    then 'job=~"$job"'
+    else 'cluster=~"$cluster", namespace=~"$namespace"',
+
+  jobSelector(job)::
+    [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/%s' % job)],
 
   qpsPanel(selector)::
     super.qpsPanel(selector) + {

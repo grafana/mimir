@@ -4,8 +4,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   'cortex-queries.json':
     $.dashboard('Cortex / Queries')
-    .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-    .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+    .addClusterSelectorTemplates()
     .addRow(
       $.row('Query Frontend')
       .addPanel(

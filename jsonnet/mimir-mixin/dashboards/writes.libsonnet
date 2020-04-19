@@ -3,8 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'dashboard-utils.libsonnet') {
   'cortex-writes.json':
     $.dashboard('Cortex / Writes')
-    .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
-    .addMultiTemplate('namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
+    .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') +
        {
@@ -13,74 +12,77 @@ local utils = import 'mixin-utils/utils.libsonnet';
        })
       .addPanel(
         $.panel('Samples / s') +
-        $.statPanel('sum(cluster_namespace:cortex_distributor_received_samples:rate5m{cluster=~"$cluster", namespace=~"$namespace"})', format='reqps')
+        $.statPanel('sum(cluster_namespace:cortex_distributor_received_samples:rate5m{%s})' % $.namespaceMatcher(), format='reqps')
       )
       .addPanel(
         $.panel('Active Series') +
         $.statPanel(|||
-          sum(cortex_ingester_memory_series{cluster=~"$cluster", job=~"($namespace)/ingester"}
+          sum(cortex_ingester_memory_series{%(ingester)s}
           / on(namespace) group_left
-          max by (namespace) (cortex_distributor_replication_factor{cluster=~"$cluster", job=~"($namespace)/distributor"}))
-        |||, format='short')
+          max by (namespace) (cortex_distributor_replication_factor{%(distributor)s}))
+        ||| % {
+          ingester: $.jobMatcher('ingester'),
+          distributor: $.jobMatcher('distributor'),
+        }, format='short')
       )
       .addPanel(
         $.panel('QPS') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="api_prom_push"}[5m]))', format='reqps')
+        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route="api_prom_push"}[5m]))' % $.jobMatcher('cortex-gw'), format='reqps')
       )
     )
     .addRow(
       $.row('Gateway')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/cortex-gw", route="api_prom_push"}')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="api_prom_push"}' % $.jobMatcher('cortex-gw'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/cortex-gw'), utils.selector.eq('route', 'api_prom_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('cortex-gw') + [utils.selector.eq('route', 'api_prom_push')])
       )
     )
     .addRow(
       $.row('Distributor')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/distributor"}')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="api_prom_push"}' % $.jobMatcher('distributor'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/distributor')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('distributor') + [utils.selector.eq('route', 'api_prom_push')])
       )
     )
     .addRow(
       $.row('Etcd (HA Dedupe)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/distributor"}')
+        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher('distributor'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/distributor')])
+        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector('distributor'))
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",route="/cortex.Ingester/Push"}')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('route', '/cortex.Ingester/Push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
     )
     .addRow(
       $.row('Consul (Ring)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester"}')
+        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester')])
+        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector('ingester'))
       )
     )
     .addRowIf(
@@ -88,11 +90,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_memcache_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester",method="Memcache.Put"}')
+        $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('method', 'Memcache.Put')])
+        utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('method', 'Memcache.Put')])
       )
     )
     .addRowIf(
@@ -101,11 +103,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Cassandra')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester", operation="INSERT"}')
+        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('operation', 'INSERT')])
+        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', 'INSERT')])
       )
     )
     .addRowIf(
@@ -114,11 +116,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('BigTable')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester", operation="/google.bigtable.v2.Bigtable/MutateRows"}')
+        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/MutateRows')])
+        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/MutateRows')])
       )
     )
     .addRowIf(
@@ -127,11 +129,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('DynamoDB')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/ingester", operation="DynamoDB.BatchWriteItem"}')
+        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/ingester'), utils.selector.eq('operation', 'DynamoDB.BatchWriteItem')])
+        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', 'DynamoDB.BatchWriteItem')])
       )
     )
     .addRowIf(
@@ -140,11 +142,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('GCS')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_gcs_request_duration_seconds_count{cluster=~"$cluster", job=~"($namespace)/querier", operation="POST"}')
+        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher('ingester'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/querier'), utils.selector.eq('operation', 'POST')])
+        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', 'POST')])
       )
     )
     .addRowIf(
@@ -153,8 +155,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.successFailurePanel(
           'Uploaded blocks / sec',
-          'sum(rate(cortex_ingester_shipper_uploads_total{cluster=~"$cluster"}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{cluster=~"$cluster"}[$__interval]))',
-          'sum(rate(cortex_ingester_shipper_upload_failures_total{cluster=~"$cluster"}[$__interval]))'
+          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
+          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.namespaceMatcher()],
         ),
       )
     )
