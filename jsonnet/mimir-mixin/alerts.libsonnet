@@ -80,9 +80,9 @@
             // We also have a 3h grace-period for creation of tables which means the we can fail for 3h before it's an outage.
             alert: 'CortexTableSyncFailure',
             expr: |||
-              100 * rate(cortex_dynamo_sync_tables_seconds_count{status_code!~"2.."}[15m])
+              100 * rate(cortex_table_manager_sync_duration_seconds_count{status_code!~"2.."}[15m])
                 /
-              rate(cortex_dynamo_sync_tables_seconds_count[15m])
+              rate(cortex_table_manager_sync_duration_seconds_count[15m])
                 > 10
             |||,
             'for': '30m',
