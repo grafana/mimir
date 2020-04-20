@@ -11,28 +11,30 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.dashboard(title) + {
       tags: $._config.tags,
 
-      links: [
-        {
-          asDropdown: true,
-          icon: 'external link',
-          includeVars: true,
-          keepTime: true,
-          tags: $._config.tags,
-          targetBlank: false,
-          title: 'Cortex Dashboards',
-          type: 'dashboards',
-        },
-      ],
-
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
         else self,
 
       addClusterSelectorTemplates()::
+        local d = self {
+          links: [
+            {
+              asDropdown: true,
+              icon: 'external link',
+              includeVars: true,
+              keepTime: true,
+              tags: $._config.tags,
+              targetBlank: false,
+              title: 'Cortex Dashboards',
+              type: 'dashboards',
+            },
+          ],
+        };
+
         if $._config.singleBinary
-        then self.addMultiTemplate('job', 'cortex_build_info', 'job')
-        else self
+        then d.addMultiTemplate('job', 'cortex_build_info', 'job')
+        else d
              .addMultiTemplate('cluster', 'cortex_build_info', 'cluster')
              .addMultiTemplate('namespace', 'cortex_build_info', 'namespace'),
     },
