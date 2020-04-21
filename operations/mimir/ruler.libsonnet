@@ -7,6 +7,7 @@
     $._config.storageConfig +
     $._config.queryConfig +
     $._config.distributorConfig +
+    $._config.rulerClientConfig +
     {
       target: 'ruler',
       // Alertmanager configs
@@ -16,10 +17,6 @@
       // Ring Configs
       'ruler.enable-sharding': true,
       'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-
-      // Rule Storage Configs
-      'ruler.storage.type': 'gcs',
-      'rules.gcs.bucketname': '%(cluster)s-cortex-configdb-%(namespace)s' % $._config,
     },
 
   ruler_container::
