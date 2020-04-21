@@ -189,7 +189,7 @@
     },
 
     ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, configdb, gcs, s3)',
-    # TODO: Generic client generating functions would be nice.
+    // TODO: Generic client generating functions would be nice.
     ruler_s3_bucket_name: $._config.s3_bucket_name,
     ruler_gcs_bucket_name: error 'must specify a GCS bucket name',
 
@@ -198,16 +198,16 @@
         'ruler.storage.type': $._config.ruler_client_type,
       } +
       {
-        'configdb': {
-          'configs_api_url': 'config.%s.svc.cluster.local' % $._config.namespace,
+        configdb: {
+          configs_api_url: 'config.%s.svc.cluster.local' % $._config.namespace,
         },
-        'gcs': {
+        gcs: {
           'ruler.storage.gcs.bucketname': $._config.ruler_gcs_bucket_name,
         },
-        's3': {
+        s3: {
           's3.url': 'https://%s/%s' % [$._config.aws_region, $._config.s3_bucket_name],
         },
-      }[$._config.ruler_client_type], 
+      }[$._config.ruler_client_type],
 
     overrides: {
       // === Per-tenant usage limits. ===
