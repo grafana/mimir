@@ -9,8 +9,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
   // - some links that propagate the selectred cluster.
   dashboard(title)::
     super.dashboard(title) + {
-      tags: $._config.tags,
-
       addRowIf(condition, row)::
         if condition
         then self.addRow(row)
@@ -18,6 +16,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
       addClusterSelectorTemplates()::
         local d = self {
+          tags: $._config.tags,
           links: [
             {
               asDropdown: true,
