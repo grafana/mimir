@@ -218,6 +218,82 @@
               |||,
             },
           },
+          {
+            // Alert immediately if WAL is corrupt.
+            alert: 'CortexWALCorruption',
+            expr: |||
+              increase(cortex_ingester_wal_corruptions_total[5m]) > 0
+            |||,
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              message: |||
+                {{ $labels.namespace }}/{{ $labels.instance }} has a corrupted WAL or checkpoint.
+              |||,
+            },
+          },
+          {
+            // 1 failed checkpoint creation is a warning.
+            alert: 'CortexCheckpointCreationFailed',
+            expr: |||
+              increase(cortex_ingester_checkpoint_creations_failed_total[10m]) > 0
+            |||,
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              message: |||
+                {{ $labels.namespace }}/{{ $labels.instance }} failed to create checkpoint.
+              |||,
+            },
+          },
+          {
+            // 2 or more failed checkpoint creation in 1h means something is wrong.
+            alert: 'CortexCheckpointCreationFailing',
+            expr: |||
+              increase(cortex_ingester_checkpoint_creations_failed_total[1h]) > 1
+            |||,
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              message: |||
+                {{ $labels.namespace }}/{{ $labels.instance }} is failing to create checkpoint.
+              |||,
+            },
+          },
+          {
+            // 1 failed checkpoint deletion is a warning.
+            alert: 'CortexCheckpointDeletionFailed',
+            expr: |||
+              increase(cortex_ingester_checkpoint_deletions_failed_total[10m]) > 0
+            |||,
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              message: |||
+                {{ $labels.namespace }}/{{ $labels.instance }} failed to delete checkpoint.
+              |||,
+            },
+          },
+          {
+            // 2 or more failed checkpoint deletion in 2h means something is wrong.
+            // We give this more buffer than creation as this is a less critical operation.
+            alert: 'CortexCheckpointDeletionFailed',
+            expr: |||
+              increase(cortex_ingester_checkpoint_deletions_failed_total[2h]) > 1
+            |||,
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              message: |||
+                {{ $labels.namespace }}/{{ $labels.instance }} is failing to delete checkpoint.
+              |||,
+            },
+          },
         ],
       },
       {
