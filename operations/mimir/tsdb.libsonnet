@@ -82,6 +82,7 @@
   ingester_args+:: {
     // Disable TSDB blocks transfer because of persistent volumes
     'ingester.max-transfer-retries': 0,
+    'ingester.join-after': '0s',
 
     // Persist ring tokens so that when the ingester will be restarted
     // it will pick the same tokens
