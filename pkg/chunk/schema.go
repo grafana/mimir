@@ -36,6 +36,7 @@ const (
 var (
 	// ErrNotSupported when a schema doesn't support that particular lookup.
 	ErrNotSupported = errors.New("not supported")
+	empty           = []byte("-")
 )
 
 type hasChunksForIntervalFunc func(userID, seriesID string, from, through model.Time) (bool, error)
@@ -699,6 +700,7 @@ func (v9Entries) GetLabelWriteEntries(bucket Bucket, metricName string, labels l
 			TableName:  bucket.tableName,
 			HashValue:  bucket.hashKey + ":" + metricName,
 			RangeValue: encodeRangeKey(seriesRangeKeyV1, seriesID, nil, nil),
+			Value:      empty,
 		},
 	}
 
@@ -806,6 +808,7 @@ func (s v10Entries) GetLabelWriteEntries(bucket Bucket, metricName string, label
 			TableName:  bucket.tableName,
 			HashValue:  fmt.Sprintf("%02d:%s:%s", shard, bucket.hashKey, metricName),
 			RangeValue: encodeRangeKey(seriesRangeKeyV1, seriesID, nil, nil),
+			Value:      empty,
 		},
 	}
 
@@ -837,6 +840,7 @@ func (v10Entries) GetChunkWriteEntries(bucket Bucket, metricName string, labels 
 			TableName:  bucket.tableName,
 			HashValue:  bucket.hashKey + ":" + string(seriesID),
 			RangeValue: encodeRangeKey(chunkTimeRangeKeyV3, encodedThroughBytes, nil, []byte(chunkID)),
+			Value:      empty,
 		},
 	}
 
@@ -949,6 +953,7 @@ func (s v11Entries) GetLabelWriteEntries(bucket Bucket, metricName string, label
 			TableName:  bucket.tableName,
 			HashValue:  fmt.Sprintf("%02d:%s:%s", shard, bucket.hashKey, metricName),
 			RangeValue: encodeRangeKey(seriesRangeKeyV1, seriesID, nil, nil),
+			Value:      empty,
 		},
 		// Entry for seriesID -> label names
 		{
