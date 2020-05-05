@@ -58,8 +58,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        g.panel('Metadata Sync Duration') +
-        g.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{cluster=~"$cluster",job=~"($namespace)/compactor"}'),
+        $.panel('Metadata Sync Duration') +
+        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{cluster=~"$cluster",job=~"($namespace)/compactor"}'),
       )
     )
     .addRow(
