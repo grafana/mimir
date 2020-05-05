@@ -88,11 +88,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached - Blocks Index')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_querier_blocks_index_cache_memcached_operation_duration_seconds_count{%s,operation="getmulti"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds_count{%s,operation="getmulti"}' % $.jobMatcher('store-gateway'))
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel('cortex_querier_blocks_index_cache_memcached_operation_duration_seconds', '{%s,operation="getmulti"}' % $.jobMatcher('querier'))
+        $.latencyPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds', '{%s,operation="getmulti"}' % $.jobMatcher('store-gateway'))
       )
     )
     .addRowIf(
@@ -149,33 +149,43 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.row('Querier - Blocks Storage')
+      $.row('Store-gateway - Blocks')
       .addPanel(
         $.successFailurePanel(
           'Block Loads / sec',
-          'sum(rate(cortex_querier_bucket_store_block_loads_total{%s}[$__interval])) - sum(rate(cortex_querier_bucket_store_block_load_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
-          'sum(rate(cortex_querier_bucket_store_block_load_failures_total{%s}[$__interval]))' % $.namespaceMatcher(),
+          'sum(rate(cortex_storegateway_bucket_store_block_loads_total{%s}[$__interval])) - sum(rate(cortex_storegateway_bucket_store_block_load_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
+          'sum(rate(cortex_storegateway_bucket_store_block_load_failures_total{%s}[$__interval]))' % $.namespaceMatcher(),
         )
       )
       .addPanel(
         $.successFailurePanel(
           'Block Drops / sec',
-          'sum(rate(cortex_querier_bucket_store_block_drops_total{%s}[$__interval])) - sum(rate(cortex_querier_bucket_store_block_drop_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
-          'sum(rate(cortex_querier_bucket_store_block_drop_failures_total{%s}[$__interval]))' % $.namespaceMatcher(),
+          'sum(rate(cortex_storegateway_bucket_store_block_drops_total{%s}[$__interval])) - sum(rate(cortex_storegateway_bucket_store_block_drop_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
+          'sum(rate(cortex_storegateway_bucket_store_block_drop_failures_total{%s}[$__interval]))' % $.namespaceMatcher(),
         )
       )
       .addPanel(
         $.panel('Per-block prepares and preloads duration') +
-        $.latencyPanel('cortex_querier_bucket_store_series_get_all_duration_seconds', '{%s}' % $.namespaceMatcher()),
+        $.latencyPanel('cortex_storegateway_bucket_store_series_get_all_duration_seconds', '{%s}' % $.namespaceMatcher()),
       )
       .addPanel(
         $.panel('Series merge duration') +
-        $.latencyPanel('cortex_querier_bucket_store_series_merge_duration_seconds', '{%s}' % $.namespaceMatcher()),
+        $.latencyPanel('cortex_storegateway_bucket_store_series_merge_duration_seconds', '{%s}' % $.namespaceMatcher()),
       )
+    )
+    // Object store metrics for the store-gateway.
+    .addRowIf(
+      std.setMember('tsdb', $._config.storage_engine),
+      $.objectStorePanels1('Store-gateway - Blocks Object Store', 'cortex_storegateway'),
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels1('Blocks Object Store Stats (Querier)', 'cortex_querier'),
+      $.objectStorePanels2('', 'cortex_storegateway'),
+    )
+    // Object store metrics for the querier.
+    .addRowIf(
+      std.setMember('tsdb', $._config.storage_engine),
+      $.objectStorePanels1('Querier - Blocks Object Store', 'cortex_querier'),
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),

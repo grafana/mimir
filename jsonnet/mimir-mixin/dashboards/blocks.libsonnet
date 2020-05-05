@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addClusterSelectorTemplates()
     // repeated from Cortex / Chunks
     .addRow(
-      $.row('Active Series / Chunks')
+      $.row('Active Series')
       .addPanel(
         $.panel('Series') +
         $.queryPanel('sum(cortex_ingester_memory_series{cluster=~"$cluster", job=~"($namespace)/ingester"})', 'series'),
@@ -18,8 +18,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.successFailurePanel(
           'Compactor Runs / second',
-          'sum(rate(cortex_compactor_runs_completed_total{cluster=~"$cluster"}[$__interval]))',
-          'sum(rate(cortex_compactor_runs_failed_total{cluster=~"$cluster"}[$__interval]))'
+          'sum(rate(cortex_compactor_runs_completed_total{cluster=~"$cluster",job=~"($namespace)/compactor"}[$__interval]))',
+          'sum(rate(cortex_compactor_runs_failed_total{cluster=~"$cluster",job=~"($namespace)/compactor"}[$__interval]))'
         )
       )
       .addPanel(
@@ -45,21 +45,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Collected Blocks Rate') +
-        $.queryPanel('sum(rate(cortex_compactor_garbage_collected_blocks_total{cluster=~"$cluster"}[$__interval]))', 'blocks')
+        $.queryPanel('sum(rate(cortex_compactor_garbage_collected_blocks_total{cluster=~"$cluster",job=~"($namespace)/compactor"}[$__interval]))', 'blocks')
       )
     )
     .addRow(
-      $.row('Compactor - Meta Syncs')
+      $.row('Compactor - Metadata Sync')
       .addPanel(
         $.successFailurePanel(
-          'Meta Syncs / sec',
-          'sum(rate(cortex_compactor_sync_meta_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval])) - sum(rate(cortex_compactor_sync_meta_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
-          'sum(rate(cortex_compactor_sync_meta_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+          'Metadata Syncs / sec',
+          'sum(rate(cortex_compactor_meta_syncs_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
+          'sum(rate(cortex_compactor_meta_sync_failures_total{cluster=~"$cluster", job=~"($namespace)/compactor"}[$__interval]))',
         )
       )
       .addPanel(
-        $.panel('Meta Sync Durations') +
-        $.latencyPanel('cortex_compactor_sync_meta_duration_seconds', '{cluster=~"$cluster"}'),
+        $.panel('Metadata Sync Duration') +
+        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{cluster=~"$cluster",job=~"($namespace)/compactor"}'),
       )
     )
     .addRow(
