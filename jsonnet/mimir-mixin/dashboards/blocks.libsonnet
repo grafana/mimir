@@ -49,7 +49,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Compactor - Metadata Fetcher')
+      $.row('Compactor - Metadata Sync')
       .addPanel(
         $.successFailurePanel(
           'Metadata Syncs / sec',
