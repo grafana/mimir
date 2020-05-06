@@ -145,7 +145,8 @@
     // Shared between the Ruler and Querier
     queryConfig: {
       // Don't query ingesters for older queries.
-      // Chunks are 6hrs right now.  Add some slack for safety.
+      // Chunks are held in memory for up to 6hrs right now. Additional 6h are granted for safety reasons because
+      // the remote writing Prometheus may have a delay or write requests into the database are queued.
       'querier.query-ingesters-within': '12h',
 
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
