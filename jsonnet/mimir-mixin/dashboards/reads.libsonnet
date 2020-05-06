@@ -88,10 +88,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached - Blocks Index')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds_count{%s,operation="getmulti"}' % $.jobMatcher('store-gateway'))
+        $.queryPanel('sum by(operation) (rate(cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds_count{%s}[$__interval]))' % $.jobMatcher('store-gateway'), '{{operation}}') +
+        $.stack,
       )
       .addPanel(
-        $.panel('Latency') +
+        $.panel('Latency (getmulti)') +
         $.latencyPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds', '{%s,operation="getmulti"}' % $.jobMatcher('store-gateway'))
       )
     )
