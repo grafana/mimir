@@ -7,6 +7,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Compactions')
       .addPanel(
+        $.textPanel('', |||
+          - **Per-instance runs**: number of times a compactor instance triggers a compaction across all tenants its shard manage.
+          - **Per-tenant runs**: number of times a compactor instance triggers the compaction for a single tenant's blocks.
+        |||),
+      )
+      .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
           'sum(rate(cortex_compactor_runs_started_total{%s}[$__interval]))' % $.jobMatcher('compactor'),
@@ -29,12 +35,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('')
       .addPanel(
+        $.textPanel('', |||
+          - **Compacted blocks**: number of blocks generated as a result of a compaction operation.
+          - **Per-block compaction duration**: time taken to generate a single compacted block.
+        |||),
+      )
+      .addPanel(
         $.panel('Compacted blocks / sec') +
         $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__interval]))' % $.jobMatcher('compactor'), 'blocks') +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
-        $.panel('Compaction Duration') +
+        $.panel('Per-block compaction duration') +
         $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher('compactor'))
       )
     )

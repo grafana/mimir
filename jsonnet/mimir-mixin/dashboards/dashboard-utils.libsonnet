@@ -113,6 +113,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     lines: false,
   },
 
+  textPanel(title, content, options={}):: {
+    content: content,
+    datasource: null,
+    description: '',
+    mode: 'markdown',
+    title: title,
+    transparent: true,
+    type: 'text',
+  } + options,
+
   objectStorePanels1(title, metricPrefix)::
     local opsTotal = '%s_thanos_objstore_bucket_operations_total' % [metricPrefix];
     local opsTotalFailures = '%s_thanos_objstore_bucket_operation_failures_total' % [metricPrefix];
