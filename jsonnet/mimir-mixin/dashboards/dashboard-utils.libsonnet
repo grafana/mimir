@@ -55,6 +55,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then [utils.selector.noop('cluster'), utils.selector.re('job', '$job')]
     else [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/%s' % job)],
 
+  queryPanel(queries, legends, legendLink=null)::
+    super.queryPanel(queries, legends, legendLink) + {
+      targets: [
+        target {
+          interval: '1m',
+        }
+        for target in super.targets
+      ],
+    },
+
   qpsPanel(selector)::
     super.qpsPanel(selector) + {
       targets: [
@@ -84,6 +94,34 @@ local utils = import 'mixin-utils/utils.libsonnet';
         failed: '#E24D42',
       },
     },
+
+  // Displays started, completed and failed rate.
+  startedCompletedFailedPanel(title, startedMetric, completedMetric, failedMetric)::
+    $.panel(title) +
+    $.queryPanel([startedMetric, completedMetric, failedMetric], ['started', 'completed', 'failed']) +
+    $.stack + {
+      aliasColors: {
+        started: '#34CCEB',
+        completed: '#7EB26D',
+        failed: '#E24D42',
+      },
+    },
+
+  // Switches a panel from lines (default) to bars.
+  bars:: {
+    bars: true,
+    lines: false,
+  },
+
+  textPanel(title, content, options={}):: {
+    content: content,
+    datasource: null,
+    description: '',
+    mode: 'markdown',
+    title: title,
+    transparent: true,
+    type: 'text',
+  } + options,
 
   objectStorePanels1(title, metricPrefix)::
     local opsTotal = '%s_thanos_objstore_bucket_operations_total' % [metricPrefix];
