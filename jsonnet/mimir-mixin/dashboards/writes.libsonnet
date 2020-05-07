@@ -45,11 +45,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Distributor')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="api_prom_push"}' % $.jobMatcher('distributor'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/httpgrpc.*|api_prom_push"}' % $.jobMatcher('distributor'))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('distributor') + [utils.selector.eq('route', 'api_prom_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('distributor') + [utils.selector.re('route', '/httpgrpc.*|api_prom_push')])
       )
     )
     .addRow(
