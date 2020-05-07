@@ -127,28 +127,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
     local opsTotal = '%s_thanos_objstore_bucket_operations_total' % [metricPrefix];
     local opsTotalFailures = '%s_thanos_objstore_bucket_operation_failures_total' % [metricPrefix];
     local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
-    local interval = '$__interval';
     super.row(title)
     .addPanel(
-      // We use 'up{cluster=~"$cluster", job="($namespace)/.+"}' to add 0 if there are no failed operations.
+      // We use 'up' to add 0 if there are no failed operations.
       self.successFailurePanel(
         'Operations/sec',
-        'sum(rate(%s{cluster=~"$cluster"}[%s])) - sum(rate(%s{cluster=~"$cluster"}[%s]) or (up{cluster=~"$cluster", job="($namespace)/.+"}*0))' % [opsTotal, interval, opsTotalFailures, interval],
-        'sum(rate(%s{cluster=~"$cluster"}[%s]) or (up{cluster=~"$cluster", job="($namespace)/.+"}*0))' % [opsTotalFailures, interval]
+        'sum(rate(%s{%s}[$__interval])) - sum(rate(%s{%s}[$__interval]) or (up{%s}*0))' % [opsTotal, $.namespaceMatcher(), opsTotalFailures, $.namespaceMatcher(), $.namespaceMatcher()],
+        'sum(rate(%s{%s}[$__interval]) or (up{%s}*0))' % [opsTotalFailures, $.namespaceMatcher(), $.namespaceMatcher()]
       )
     )
     .addPanel(
       $.panel('Op: ObjectSize') +
-      $.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="objectsize"}'),
+      $.latencyPanel(operationDuration, '{%s, operation="objectsize"}' % $.namespaceMatcher()),
     )
     .addPanel(
       // Cortex (Thanos) doesn't track timing for 'iter', so we use ops/sec instead.
       $.panel('Op: Iter') +
-      $.queryPanel('sum(rate(%s{cluster=~"$cluster", operation="iter"}[$__interval]))' % [opsTotal], 'ops/sec')
+      $.queryPanel('sum(rate(%s{%s, operation="iter"}[$__interval]))' % [opsTotal, $.namespaceMatcher()], 'ops/sec')
     )
     .addPanel(
       $.panel('Op: Exists') +
-      $.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="exists"}'),
+      $.latencyPanel(operationDuration, '{%s, operation="exists"}' % $.namespaceMatcher()),
     ),
 
   // Second row of Object Store stats
@@ -157,18 +156,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.panel('Op: Get') +
-      $.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="get"}'),
+      $.latencyPanel(operationDuration, '{%s, operation="get"}' % $.namespaceMatcher()),
     )
     .addPanel(
       $.panel('Op: GetRange') +
-      $.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="get_range"}'),
+      $.latencyPanel(operationDuration, '{%s, operation="get_range"}' % $.namespaceMatcher()),
     )
     .addPanel(
       $.panel('Op: Upload') +
-      $.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="upload"}'),
+      $.latencyPanel(operationDuration, '{%s, operation="upload"}' % $.namespaceMatcher()),
     )
     .addPanel(
       $.panel('Op: Delete') +
-      $.latencyPanel(operationDuration, '{cluster=~"$cluster", operation="delete"}'),
+      $.latencyPanel(operationDuration, '{%s, operation="delete"}' % $.namespaceMatcher()),
     ),
 }

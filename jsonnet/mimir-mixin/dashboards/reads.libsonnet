@@ -60,8 +60,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
+      std.setMember('tsdb', $._config.storage_engine),
+      $.row('Store-gateway')
+      .addPanel(
+        $.panel('QPS') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher('store-gateway'))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('store-gateway') + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+      )
+    )
+    .addRowIf(
       std.setMember('chunks', $._config.storage_engine),
-      $.row('Memcached - Index')
+      $.row('Memcached - Chunks storage - Index')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="store.index-cache-read.memcache.fetch"}' % $.jobMatcher('querier'))
@@ -73,7 +85,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.setMember('chunks', $._config.storage_engine),
-      $.row('Memcached - Chunks')
+      $.row('Memcached - Chunks storage - Chunks')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="chunksmemcache.fetch"}' % $.jobMatcher('querier'))
@@ -85,15 +97,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.row('Memcached - Blocks Index')
+      $.row('Memcached - Blocks Storage - Index header')
       .addPanel(
         $.panel('QPS') +
         $.queryPanel('sum by(operation) (rate(cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds_count{%s}[$__interval]))' % $.jobMatcher('store-gateway'), '{{operation}}') +
-        $.stack,
+        $.stack +
+        { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Latency (getmulti)') +
         $.latencyPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds', '{%s,operation="getmulti"}' % $.jobMatcher('store-gateway'))
+      )
+      .addPanel(
+        $.panel('Hit ratio') +
+        $.queryPanel('sum by(item_type) (rate(cortex_storegateway_blocks_index_cache_hits_total{%s}[$__interval])) / sum by(item_type) (rate(cortex_storegateway_blocks_index_cache_requests_total{%s}[$__interval]))' % [$.jobMatcher('store-gateway'), $.jobMatcher('store-gateway')], '{{item_type}}') +
+        { yaxes: $.yaxes('percentunit') },
       )
     )
     .addRowIf(
@@ -146,32 +164,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('operation', 'GET')])
-      )
-    )
-    .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
-      $.row('Store-gateway - Blocks')
-      .addPanel(
-        $.successFailurePanel(
-          'Block Loads / sec',
-          'sum(rate(cortex_storegateway_bucket_store_block_loads_total{%s}[$__interval])) - sum(rate(cortex_storegateway_bucket_store_block_load_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
-          'sum(rate(cortex_storegateway_bucket_store_block_load_failures_total{%s}[$__interval]))' % $.namespaceMatcher(),
-        )
-      )
-      .addPanel(
-        $.successFailurePanel(
-          'Block Drops / sec',
-          'sum(rate(cortex_storegateway_bucket_store_block_drops_total{%s}[$__interval])) - sum(rate(cortex_storegateway_bucket_store_block_drop_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
-          'sum(rate(cortex_storegateway_bucket_store_block_drop_failures_total{%s}[$__interval]))' % $.namespaceMatcher(),
-        )
-      )
-      .addPanel(
-        $.panel('Per-block prepares and preloads duration') +
-        $.latencyPanel('cortex_storegateway_bucket_store_series_get_all_duration_seconds', '{%s}' % $.namespaceMatcher()),
-      )
-      .addPanel(
-        $.panel('Series merge duration') +
-        $.latencyPanel('cortex_storegateway_bucket_store_series_merge_duration_seconds', '{%s}' % $.namespaceMatcher()),
       )
     )
     // Object store metrics for the store-gateway.
