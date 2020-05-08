@@ -33,7 +33,7 @@
             message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not uploaded anything in the last 24 hours.',
           },
         },
-      ]
-    }
+      ],
+    },
   ],
 }

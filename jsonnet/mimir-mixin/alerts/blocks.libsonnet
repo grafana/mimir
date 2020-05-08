@@ -33,7 +33,7 @@
             message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} has not shipped any block in the last 4 hours.',
           },
         },
-      ]
-    }
+      ],
+    },
   ],
 }
