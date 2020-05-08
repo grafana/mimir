@@ -123,51 +123,45 @@ local utils = import 'mixin-utils/utils.libsonnet';
     type: 'text',
   } + options,
 
-  objectStorePanels1(title, metricPrefix)::
-    local opsTotal = '%s_thanos_objstore_bucket_operations_total' % [metricPrefix];
-    local opsTotalFailures = '%s_thanos_objstore_bucket_operation_failures_total' % [metricPrefix];
-    local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
+  objectStorePanels1(title, component)::
     super.row(title)
     .addPanel(
-      // We use 'up' to add 0 if there are no failed operations.
-      self.successFailurePanel(
-        'Operations/sec',
-        'sum(rate(%s{%s}[$__interval])) - sum(rate(%s{%s}[$__interval]) or (up{%s}*0))' % [opsTotal, $.namespaceMatcher(), opsTotalFailures, $.namespaceMatcher(), $.namespaceMatcher()],
-        'sum(rate(%s{%s}[$__interval]) or (up{%s}*0))' % [opsTotalFailures, $.namespaceMatcher(), $.namespaceMatcher()]
-      )
+      $.panel('Operations / sec') +
+      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
+      $.stack +
+      { yaxes: $.yaxes('rps') },
+    )
+    .addPanel(
+      $.panel('Error rate') +
+      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__interval]))' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
+      { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
       $.panel('Op: ObjectSize') +
-      $.latencyPanel(operationDuration, '{%s, operation="objectsize"}' % $.namespaceMatcher()),
-    )
-    .addPanel(
-      // Cortex (Thanos) doesn't track timing for 'iter', so we use ops/sec instead.
-      $.panel('Op: Iter') +
-      $.queryPanel('sum(rate(%s{%s, operation="iter"}[$__interval]))' % [opsTotal, $.namespaceMatcher()], 'ops/sec')
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="objectsize"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Op: Exists') +
-      $.latencyPanel(operationDuration, '{%s, operation="exists"}' % $.namespaceMatcher()),
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
     ),
 
   // Second row of Object Store stats
-  objectStorePanels2(title, metricPrefix)::
-    local operationDuration = '%s_thanos_objstore_bucket_operation_duration_seconds' % [metricPrefix];
+  objectStorePanels2(title, component)::
     super.row(title)
     .addPanel(
       $.panel('Op: Get') +
-      $.latencyPanel(operationDuration, '{%s, operation="get"}' % $.namespaceMatcher()),
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Op: GetRange') +
-      $.latencyPanel(operationDuration, '{%s, operation="get_range"}' % $.namespaceMatcher()),
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Op: Upload') +
-      $.latencyPanel(operationDuration, '{%s, operation="upload"}' % $.namespaceMatcher()),
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Op: Delete') +
-      $.latencyPanel(operationDuration, '{%s, operation="delete"}' % $.namespaceMatcher()),
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
     ),
 }

@@ -169,19 +169,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Object store metrics for the store-gateway.
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels1('Store-gateway - Blocks Object Store', 'cortex_storegateway'),
+      $.objectStorePanels1('Store-gateway - Blocks Object Store', 'store-gateway'),
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels2('', 'cortex_storegateway'),
+      $.objectStorePanels2('', 'store-gateway'),
     )
     // Object store metrics for the querier.
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels1('Querier - Blocks Object Store', 'cortex_querier'),
+      $.objectStorePanels1('Querier - Blocks Object Store', 'querier'),
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels2('', 'cortex_querier'),
+      $.objectStorePanels2('', 'querier'),
     ),
 }
