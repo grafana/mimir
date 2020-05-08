@@ -22,5 +22,8 @@
     // If Cortex is deployed as a single binary, set to true to
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
+
+    cortex_p99_latency_threshold_seconds: 2.5,
+    alert_namespace_matcher: '',
   },
 }
