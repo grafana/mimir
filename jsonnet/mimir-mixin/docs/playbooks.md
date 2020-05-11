@@ -69,3 +69,7 @@ This alert goes off when an ingester is marked as unhealthy. Check the ring web 
 
 ## MemcachedDown
 @todo
+
+## CortexRulerFailedRingCheck
+
+This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.

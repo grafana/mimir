@@ -423,6 +423,22 @@
             |||,
           },
         },
+        {
+          alert: 'CortexRulerFailedRingCheck',
+          expr: |||
+            sum(rate(cortex_ruler_ring_check_errors_total[5m]) by (namespace, job)
+               > 0
+          |||,
+          'for': '1m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% errors when checking the ring for rule group ownership.
+            |||,
+          },
+        },
       ],
     },
     {
