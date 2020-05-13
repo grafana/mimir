@@ -56,7 +56,7 @@
           expr: |||
             (time() - cortex_storegateway_blocks_last_successful_sync_timestamp_seconds{%s} > 60 * 30)
             and
-            cortex_storegateway_blocks_last_successful_sync_timestamp_seconds > 0
+            cortex_storegateway_blocks_last_successful_sync_timestamp_seconds{%s} > 0
           ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
           labels: {
             severity: 'critical',
