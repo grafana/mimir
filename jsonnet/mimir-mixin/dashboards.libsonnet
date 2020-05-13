@@ -2,9 +2,11 @@
   grafanaDashboards+:
     (import 'dashboards/queries.libsonnet') +
     (import 'dashboards/reads.libsonnet') +
+    (import 'dashboards/reads-resources.libsonnet') +
     (import 'dashboards/ruler.libsonnet') +
     (import 'dashboards/scaling.libsonnet') +
     (import 'dashboards/writes.libsonnet') +
+    (import 'dashboards/writes-resources.libsonnet') +
 
     (if std.setMember('tsdb', $._config.storage_engine)
      then import 'dashboards/compactor.libsonnet'
