@@ -20,8 +20,8 @@
      else {}) +
 
     (if !$._config.resources_dashboards_enabled then {} else
-      (import 'dashboards/reads-resources.libsonnet') +
-      (import 'dashboards/writes-resources.libsonnet')) +
+       (import 'dashboards/reads-resources.libsonnet') +
+       (import 'dashboards/writes-resources.libsonnet')) +
 
     { _config:: $._config },
 }
