@@ -426,7 +426,7 @@
         {
           alert: 'CortexRulerFailedRingCheck',
           expr: |||
-            sum(rate(cortex_ruler_ring_check_errors_total[5m]) by (namespace, job)
+            sum(rate(cortex_ruler_ring_check_errors_total[5m])) by (namespace, job)
                > 0
           |||,
           'for': '1m',
