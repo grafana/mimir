@@ -25,5 +25,8 @@
 
     cortex_p99_latency_threshold_seconds: 2.5,
     alert_namespace_matcher: '',
+
+    // Whether resources dashboards are enabled (based on cAdvisor metrics).
+    resources_dashboards_enabled: false,
   },
 }

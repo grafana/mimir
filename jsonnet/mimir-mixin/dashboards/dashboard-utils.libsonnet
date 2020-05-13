@@ -107,6 +107,44 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
     },
 
+  containerCPUUsagePanel(title, containerName)::
+    $.panel(title) +
+    $.queryPanel([
+      'sum by(pod_name) (rate(container_cpu_usage_seconds_total{%s,container_name="%s"}[$__interval]))' % [$.namespaceMatcher(), containerName],
+      'min(container_spec_cpu_quota{%s,container_name="%s"} / container_spec_cpu_period{%s,container_name="%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
+    ], ['{{pod_name}}', 'limit']) +
+    {
+      seriesOverrides: [
+        {
+          alias: 'limit',
+          color: '#E02F44',
+          fill: 0,
+        },
+      ],
+    },
+
+  containerMemoryWorkingSetPanel(title, containerName)::
+    $.panel(title) +
+    $.queryPanel([
+      'sum by(pod_name) (container_memory_working_set_bytes{%s,container_name="%s"})' % [$.namespaceMatcher(), containerName],
+      'min(container_spec_memory_limit_bytes{%s,container_name="%s"} > 0)' % [$.namespaceMatcher(), containerName],
+    ], ['{{pod_name}}', 'limit']) +
+    {
+      seriesOverrides: [
+        {
+          alias: 'limit',
+          color: '#E02F44',
+          fill: 0,
+        },
+      ],
+      yaxes: $.yaxes('bytes'),
+    },
+
+  goHeapInUsePanel(title, jobName)::
+    $.panel(title) +
+    $.queryPanel('sum by(instance) (go_memstats_heap_inuse_bytes{%s})' % $.jobMatcher(jobName), '{{instance}}') +
+    { yaxes: $.yaxes('bytes') },
+
   // Switches a panel from lines (default) to bars.
   bars:: {
     bars: true,
