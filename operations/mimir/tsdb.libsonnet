@@ -194,4 +194,7 @@
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120),
+
+  store_gateway_service:
+    $.util.serviceFor($.store_gateway_statefulset),
 }
