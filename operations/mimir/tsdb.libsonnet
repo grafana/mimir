@@ -195,6 +195,6 @@
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120),
 
-  store_gateway_service:
+  store_gateway_service: if !$._config.store_gateway_enabled then {} else
     $.util.serviceFor($.store_gateway_statefulset),
 }
