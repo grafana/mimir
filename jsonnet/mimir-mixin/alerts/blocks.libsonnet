@@ -21,7 +21,7 @@
         },
         {
           // Alert if the ingester has not shipped any block since start.
-          alert: 'CortexIngesterHasNotShippedBlocks',
+          alert: 'CortexIngesterHasNotShippedBlocksSinceStart',
           'for': '4h',
           expr: |||
             thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"%s} == 0

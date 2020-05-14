@@ -73,3 +73,55 @@ This alert goes off when an ingester is marked as unhealthy. Check the ring web 
 ## CortexRulerFailedRingCheck
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
+
+## CortexIngesterHasNotShippedBlocks
+
+This alert fires when a Cortex ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
+
+How to investigate:
+- Ensure the ingester is receiving write-path traffic (samples to ingest)
+- Look for any upload error in the ingester logs (ie. networking or authentication issues)
+
+## CortexIngesterHasNotShippedBlocksSinceStart
+
+Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks).
+
+## CortexQuerierHasNotScanTheBucket
+
+This alert fixes when a Cortex querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new/deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time it may end up querying only a subset of blocks, thus leading to potentially partial results.
+
+How to investigate:
+- Look for any scan error in the querier logs (ie. networking or rate limiting issues)
+
+## CortexStoreGatewayHasNotSyncTheBucket
+
+This alert fixes when a Cortex store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new/deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time it may end up querying only a subset of blocks, thus leading to potentially partial results.
+
+How to investigate:
+- Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
+
+## CortexCompactorHasNotSuccessfullyRun
+
+This alert fires when a Cortex compactor is not successfully completing a compaction run since a long time.
+
+How to investigate:
+- Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
+- Look for any error in the compactor logs
+
+## CortexCompactorHasNotSuccessfullyRunSinceStart
+
+Same as [`CortexCompactorHasNotSuccessfullyRun`](#CortexCompactorHasNotSuccessfullyRun).
+
+## CortexCompactorHasNotUploadedBlocks
+
+This alert fires when a Cortex compactor is not uploading any compacted blocks to the storage since a long time.
+
+How to investigate:
+- If the alert `CortexCompactorHasNotSuccessfullyRun` or `CortexCompactorHasNotSuccessfullyRunSinceStart` have fired as well, then investigate that issue first
+- If the alert `CortexIngesterHasNotShippedBlocks` or `CortexIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
+- Ensure ingesters are successfully shipping blocks to the storage
+- Look for any error in the compactor logs
+
+## CortexCompactorHasNotUploadedBlocksSinceStart
+
+Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
