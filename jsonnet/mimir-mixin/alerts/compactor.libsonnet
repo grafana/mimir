@@ -10,8 +10,8 @@
           expr: |||
             (time() - cortex_compactor_last_successful_run_timestamp_seconds{%s} > 60 * 60 * 24)
             and
-            (cortex_compactor_last_successful_run_timestamp_seconds > 0)
-          ||| % $.namespace_matcher(','),
+            (cortex_compactor_last_successful_run_timestamp_seconds{%s} > 0)
+          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
           labels: {
             severity: 'critical',
           },
@@ -40,8 +40,8 @@
           expr: |||
             (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"%s} > 60 * 60 * 24)
             and
-            (thanos_objstore_bucket_last_successful_upload_time > 0)
-          ||| % $.namespace_matcher(','),
+            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"%s} > 0)
+          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
           labels: {
             severity: 'critical',
           },
