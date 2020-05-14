@@ -88,14 +88,14 @@ Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks
 
 ## CortexQuerierHasNotScanTheBucket
 
-This alert fires when a Cortex querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new/deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time it may end up querying only a subset of blocks, thus leading to potentially partial results.
+This alert fires when a Cortex querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
 How to investigate:
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
 ## CortexStoreGatewayHasNotSyncTheBucket
 
-This alert fixes when a Cortex store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
+This alert fires when a Cortex store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
 How to investigate:
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
