@@ -84,6 +84,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher('compactor')),
       )
     )
-    .addRow($.objectStorePanels1('Object Store', 'cortex_compactor'))
-    .addRow($.objectStorePanels2('', 'cortex_compactor')),
+    .addRow($.objectStorePanels1('Object Store', 'compactor'))
+    .addRow($.objectStorePanels2('', 'compactor')),
 }

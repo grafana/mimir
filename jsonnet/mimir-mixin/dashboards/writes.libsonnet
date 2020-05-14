@@ -151,21 +151,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
-      $.row('Blocks Shipper')
+      $.row('Ingester - Blocks storage - Shipper')
       .addPanel(
         $.successFailurePanel(
           'Uploaded blocks / sec',
-          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()],
-          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.namespaceMatcher()],
+          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.jobMatcher('ingester'), $.jobMatcher('ingester')],
+          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % $.jobMatcher('ingester'),
         ),
       )
-    )
-    .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels1('Blocks Object Store Stats (Ingester)', 'cortex_ingester'),
-    )
-    .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
-      $.objectStorePanels2('', 'cortex_ingester'),
+      .addPanel(
+        $.panel('Upload latency') +
+        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher('ingester')),
+      )
     ),
 }
