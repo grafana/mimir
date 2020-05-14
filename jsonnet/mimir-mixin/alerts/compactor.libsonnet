@@ -11,7 +11,7 @@
             (time() - cortex_compactor_last_successful_run_timestamp_seconds{%s} > 60 * 60 * 24)
             and
             (cortex_compactor_last_successful_run_timestamp_seconds{%s} > 0)
-          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
+          ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
           labels: {
             severity: 'critical',
           },
@@ -25,7 +25,7 @@
           'for': '24h',
           expr: |||
             cortex_compactor_last_successful_run_timestamp_seconds{%s} == 0
-          ||| % $.namespace_matcher(','),
+          ||| % $.namespace_matcher(''),
           labels: {
             severity: 'critical',
           },

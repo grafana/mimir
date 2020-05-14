@@ -41,7 +41,7 @@
             (time() - cortex_querier_blocks_last_successful_scan_timestamp_seconds{%s} > 60 * 30)
             and
             cortex_querier_blocks_last_successful_scan_timestamp_seconds{%s} > 0
-          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
+          ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
           labels: {
             severity: 'critical',
           },
@@ -57,7 +57,7 @@
             (time() - cortex_storegateway_blocks_last_successful_sync_timestamp_seconds{%s} > 60 * 30)
             and
             cortex_storegateway_blocks_last_successful_sync_timestamp_seconds{%s} > 0
-          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
+          ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
           labels: {
             severity: 'critical',
           },
