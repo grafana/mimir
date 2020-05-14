@@ -129,7 +129,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Hit ratio') +
-        $.queryPanel('sum by(item_type) (rate(cortex_storegateway_thanos_cache_memcached_hits_total{%s,name="chunks-cache"}[$__interval])) / sum by(item_type) (rate(cortex_storegateway_thanos_cache_memcached_requests_total{%s,name="chunks-cache"}[$__interval]))' % [$.jobMatcher('store-gateway'), $.jobMatcher('store-gateway')], '{{item_type}}') +
+        $.queryPanel('sum(rate(cortex_storegateway_thanos_cache_memcached_hits_total{%s,name="chunks-cache"}[$__interval])) / sum(rate(cortex_storegateway_thanos_cache_memcached_requests_total{%s,name="chunks-cache"}[$__interval]))' % [$.jobMatcher('store-gateway'), $.jobMatcher('store-gateway')], 'chunks') +
         { yaxes: $.yaxes('percentunit') },
       )
     )
