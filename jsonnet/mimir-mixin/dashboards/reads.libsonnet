@@ -115,6 +115,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
+      std.setMember('tsdb', $._config.storage_engine),
+      $.row('Memcached - Blocks Storage - Chunks')
+      .addPanel(
+        $.panel('QPS') +
+        $.queryPanel('sum by(operation) (rate(cortex_storegateway_thanos_memcached_operations_total{%s,name="chunks-cache"}[$__interval]))' % $.jobMatcher('store-gateway'), '{{operation}}') +
+        $.stack +
+        { yaxes: $.yaxes('ops') },
+      )
+      .addPanel(
+        $.panel('Latency (getmulti)') +
+        $.latencyPanel('cortex_storegateway_thanos_memcached_operation_duration_seconds', '{%s,operation="getmulti",name="chunks-cache"}' % $.jobMatcher('store-gateway'))
+      )
+      .addPanel(
+        $.panel('Hit ratio') +
+        $.queryPanel('sum by(item_type) (rate(cortex_storegateway_thanos_cache_memcached_hits_total{%s,name="chunks-cache"}[$__interval])) / sum by(item_type) (rate(cortex_storegateway_thanos_cache_memcached_requests_total{%s,name="chunks-cache"}[$__interval]))' % [$.jobMatcher('store-gateway'), $.jobMatcher('store-gateway')], '{{item_type}}') +
+        { yaxes: $.yaxes('percentunit') },
+      )
+    )
+    .addRowIf(
       std.setMember('chunks', $._config.storage_engine) &&
       std.setMember('cassandra', $._config.chunk_index_backend + $._config.chunk_store_backend),
       $.row('Cassandra')
