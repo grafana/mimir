@@ -27,7 +27,7 @@
     'experimental.tsdb.bucket-store.index-cache.backend': 'memcached',
     'experimental.tsdb.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
     'experimental.tsdb.bucket-store.index-cache.memcached.timeout': '200ms',
-    'experimental.tsdb.bucket-store.index-cache.memcached.max-item-size': $._config._memcached_index_queries_max_item_size_mb * 1024 * 1024,
+    'experimental.tsdb.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
     'experimental.tsdb.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
     'experimental.tsdb.bucket-store.index-cache.memcached.max-async-concurrency': '50',
     'experimental.tsdb.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
