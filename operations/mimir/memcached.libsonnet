@@ -33,7 +33,7 @@ memcached {
   memcached_index_queries: if $._config.memcached_index_queries_enabled then
     $.memcached {
       name: 'memcached-index-queries',
-      max_item_size: '5m',
+      max_item_size: '%dm' % [$._config.memcached_index_queries_max_item_size_mb],
     }
   else {},
 
@@ -41,6 +41,7 @@ memcached {
   memcached_index_writes: if $._config.memcached_index_writes_enabled then
     $.memcached {
       name: 'memcached-index-writes',
+      max_item_size: '%dm' % [$._config.memcached_index_writes_max_item_size_mb],
     }
   else {},
 
@@ -48,6 +49,7 @@ memcached {
   memcached_chunks: if $._config.memcached_chunks_enabled then
     $.memcached {
       name: 'memcached',
+      max_item_size: '%dm' % [$._config.memcached_chunks_max_item_size_mb],
 
       // Save memory by more tightly provisioning memcached chunks.
       memory_limit_mb: 6 * 1024,

@@ -64,10 +64,16 @@
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
 
-    // TSDB storage engine doesn't require memcached for chunks or chunk indexes.
-    memcached_index_queries_enabled: $._config.storage_engine != 'tsdb',
+    // TSDB storage engine doesn't support index-writes (for writes deduplication) cache.
     memcached_index_writes_enabled: $._config.storage_engine != 'tsdb',
-    memcached_chunks_enabled: $._config.storage_engine != 'tsdb',
+    memcached_index_writes_max_item_size_mb: 1,
+
+    // Index and chunks caches are supported by both TSDB storage engine and chunks engine.
+    memcached_index_queries_enabled: true,
+    memcached_index_queries_max_item_size_mb: 5,
+
+    memcached_chunks_enabled: true,
+    memcached_chunks_max_item_size_mb: 1,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -103,7 +109,7 @@
 
     storeConfig: self.storeMemcachedChunksConfig,
 
-    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled then
+    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled && $._config.storage_engine == 'chunks' then
       {
         'store.chunks-cache.memcached.hostname': 'memcached.%s.svc.cluster.local' % $._config.namespace,
         'store.chunks-cache.memcached.service': 'memcached-client',
@@ -161,7 +167,7 @@
       // Don't query the chunk store for data younger than max_chunk_idle.
       'querier.query-store-after': $._config.max_chunk_idle,
     } + (
-      if $._config.memcached_index_queries_enabled then
+      if $._config.memcached_index_queries_enabled && $._config.storage_engine == 'chunks' then
         {
           // Setting for index cache.
           'store.index-cache-validity': '14m',  // ingester.retain-period=15m, 1m less for safety.
