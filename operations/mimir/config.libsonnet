@@ -132,7 +132,7 @@
         'experimental.tsdb.dir': '/data/tsdb',
         'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
         'experimental.tsdb.block-ranges-period': '2h',
-        'experimental.tsdb.retention-period': '1h',
+        'experimental.tsdb.retention-period': '6h',
         'experimental.tsdb.ship-interval': '1m',
         'experimental.tsdb.backend': 'gcs',
         'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
@@ -150,10 +150,6 @@
 
     // Shared between the Ruler and Querier
     queryConfig: {
-      // Don't query ingesters for older queries.
-      // Chunks are 6hrs right now.  Add some slack for safety.
-      'querier.query-ingesters-within': '12h',
-
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
 
       // Limit the size of the rows we read from the index.
@@ -163,10 +159,22 @@
       // splitting in the frontend, the reality is this only limits rate(foo[31d])
       // type queries.
       'store.max-query-length': '744h',
-
-      // Don't query the chunk store for data younger than max_chunk_idle.
-      'querier.query-store-after': $._config.max_chunk_idle,
     } + (
+      if $._config.storage_engine == 'chunks' then {
+        // Don't query ingesters for older queries.
+        // Chunks are 6hrs right now.  Add some slack for safety.
+        'querier.query-ingesters-within': '12h',
+
+        // Don't query the chunk store for data younger than max_chunk_idle.
+        'querier.query-store-after': $._config.max_chunk_idle,
+      } else if $._config.storage_engine == 'tsdb' then {
+        // Ingesters don't have data older than 6h, no need to ask them.
+        'querier.query-ingesters-within': '6h',
+
+        // No need to look at store for data younger than 4h, as ingesters have all of it.
+        'querier.query-store-after': '4h',
+      }
+    ) + (
       if $._config.memcached_index_queries_enabled && $._config.storage_engine == 'chunks' then
         {
           // Setting for index cache.
