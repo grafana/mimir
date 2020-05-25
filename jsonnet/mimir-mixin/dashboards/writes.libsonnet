@@ -12,7 +12,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
        })
       .addPanel(
         $.panel('Samples / s') +
-        $.statPanel('sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{%s})' % $.jobMatcher('distributor'), format='reqps')
+        $.statPanel('sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{%s})' % $.jobMatcher($._config.job_names.distributor), format='reqps')
       )
       .addPanel(
         $.panel('Active Series') +
@@ -21,68 +21,68 @@ local utils = import 'mixin-utils/utils.libsonnet';
           / on(namespace) group_left
           max by (namespace) (cortex_distributor_replication_factor{%(distributor)s}))
         ||| % {
-          ingester: $.jobMatcher('ingester'),
-          distributor: $.jobMatcher('distributor'),
+          ingester: $.jobMatcher($._config.job_names.ingester),
+          distributor: $.jobMatcher($._config.job_names.distributor),
         }, format='short')
       )
       .addPanel(
         $.panel('QPS') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route="api_prom_push"}[5m]))' % $.jobMatcher('cortex-gw'), format='reqps')
+        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route="api_prom_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
     .addRow(
       $.row('Gateway')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="api_prom_push"}' % $.jobMatcher('cortex-gw'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="api_prom_push"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('cortex-gw') + [utils.selector.eq('route', 'api_prom_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.eq('route', 'api_prom_push')])
       )
     )
     .addRow(
       $.row('Distributor')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/httpgrpc.*|api_prom_push"}' % $.jobMatcher('distributor'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/httpgrpc.*|api_prom_push"}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('distributor') + [utils.selector.re('route', '/httpgrpc.*|api_prom_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/httpgrpc.*|api_prom_push')])
       )
     )
     .addRow(
       $.row('KV Store (HA Dedupe)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher('distributor'))
+        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector('distributor'))
+        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.distributor))
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('route', '/cortex.Ingester/Push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('route', '/cortex.Ingester/Push')])
       )
     )
     .addRow(
       $.row('KV Store (Ring)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector('ingester'))
+        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.ingester))
       )
     )
     .addRowIf(
@@ -90,11 +90,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('method', 'Memcache.Put')])
+        utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('method', 'Memcache.Put')])
       )
     )
     .addRowIf(
@@ -103,11 +103,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Cassandra')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', 'INSERT')])
+        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', 'INSERT')])
       )
     )
     .addRowIf(
@@ -116,11 +116,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('BigTable')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/MutateRows')])
+        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/MutateRows')])
       )
     )
     .addRowIf(
@@ -129,11 +129,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('DynamoDB')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', 'DynamoDB.BatchWriteItem')])
+        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', 'DynamoDB.BatchWriteItem')])
       )
     )
     .addRowIf(
@@ -142,11 +142,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('GCS')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.eq('operation', 'POST')])
+        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', 'POST')])
       )
     )
     .addRowIf(
@@ -155,13 +155,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.successFailurePanel(
           'Uploaded blocks / sec',
-          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.jobMatcher('ingester'), $.jobMatcher('ingester')],
-          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % $.jobMatcher('ingester'),
+          'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
+          'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__interval]))' % $.jobMatcher($._config.job_names.ingester),
         ),
       )
       .addPanel(
         $.panel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher('ingester')),
+        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)),
       )
     ),
 }

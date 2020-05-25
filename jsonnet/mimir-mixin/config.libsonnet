@@ -23,6 +23,16 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    job_names: {
+      ingester: 'ingester',
+      distributor: 'distributor',
+      querier: 'querier',
+      query_frontend: 'query-frontend',
+      table_manager: 'table-manager',
+      store_gateway: 'store-gateway',
+      gateway: 'cortex-gw',
+    },
+
     cortex_p99_latency_threshold_seconds: 2.5,
     alert_namespace_matcher: '',
 

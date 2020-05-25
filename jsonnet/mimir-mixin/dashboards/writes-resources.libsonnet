@@ -32,7 +32,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester')
       .addPanel(
         $.panel('In-memory series') +
-        $.queryPanel('sum by(instance) (cortex_ingester_memory_series{%s})' % $.jobMatcher('ingester'), '{{instance}}'),
+        $.queryPanel('sum by(instance) (cortex_ingester_memory_series{%s})' % $.jobMatcher($._config.job_names.ingester), '{{instance}}'),
       )
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ingester'),
