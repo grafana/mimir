@@ -9,6 +9,7 @@
     (if std.setMember('tsdb', $._config.storage_engine)
      then
        (import 'dashboards/compactor.libsonnet') +
+       (import 'dashboards/compactor-resources.libsonnet') +
        (import 'dashboards/object-store.libsonnet')
      else {}) +
 
