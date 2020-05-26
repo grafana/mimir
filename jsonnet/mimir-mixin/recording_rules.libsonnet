@@ -15,7 +15,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         rules:
           utils.histogramRules('cortex_memcache_request_duration_seconds', ['cluster', 'job', 'method']) +
           utils.histogramRules('cortex_cache_request_duration_seconds', ['cluster', 'job']) +
-          utils.histogramRules('cortex_cache_request_duration_seconds', ['cluster', 'job', 'method'])
+          utils.histogramRules('cortex_cache_request_duration_seconds', ['cluster', 'job', 'method']),
       },
       {
         name: 'cortex_chunk_store',
@@ -33,12 +33,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       },
       {
         name: 'cortex_queries',
-        rules: 
+        rules:
           utils.histogramRules('cortex_query_frontend_retries', ['cluster', 'job']) +
           utils.histogramRules('cortex_query_frontend_queue_duration_seconds', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_series', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_chunks', ['cluster', 'job']) +
-          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job'])
+          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']),
       },
       {
         name: 'cortex_received_samples',
