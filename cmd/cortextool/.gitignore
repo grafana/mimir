@@ -6,3 +6,4 @@ cmd/chunktool/chunktool
 images/
 dist/
 .DS_STORE
+cmd/parselogs/parselogs
