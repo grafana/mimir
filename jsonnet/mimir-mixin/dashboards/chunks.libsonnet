@@ -36,7 +36,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Entries') +
-        $.queryPanel('sum(rate(cortex_chunk_store_index_entries_per_chunk_sum{%s}[5m])) / sum(rate(cortex_chunk_store_index_entries_per_chunk_count{%s}[5m])' % [$.jobMatcher('ingester'), $.jobMatcher('ingester')], 'entries'),
+        $.queryPanel('sum(rate(cortex_chunk_store_index_entries_per_chunk_sum{%s}[5m])) / sum(rate(cortex_chunk_store_index_entries_per_chunk_count{%s}[5m]))' % [$.jobMatcher('ingester'), $.jobMatcher('ingester')], 'entries'),
       ),
     )
     .addRow(
