@@ -47,7 +47,7 @@
       } else {}
     ),
 
-  blocks_metadata_caching_config:: if $.config.memcached_metadata_enabled then {
+  blocks_metadata_caching_config:: if $._config.memcached_metadata_enabled then {
     'experimental.tsdb.bucket-store.metadata-cache.backend': 'memcached',
     'experimental.tsdb.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
     'experimental.tsdb.bucket-store.metadata-cache.memcached.timeout': '200ms',
