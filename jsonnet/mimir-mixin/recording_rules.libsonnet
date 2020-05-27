@@ -18,7 +18,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_cache_request_duration_seconds', ['cluster', 'job', 'method']),
       },
       {
-        name: 'cortex_chunk_store',
+        name: 'cortex_storage',
         rules:
           utils.histogramRules('cortex_bigtable_request_duration_seconds', ['cluster', 'job', 'operation']) +
           utils.histogramRules('cortex_cassandra_request_duration_seconds', ['cluster', 'job', 'operation']) +
