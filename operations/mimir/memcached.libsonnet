@@ -62,4 +62,18 @@ memcached {
         container.withArgsMixin(['-c 4096']),
     }
   else {},
+
+  // Memcached instance for caching TSDB blocks metadata (meta.json files, deletion marks, list of users and blocks).
+  memcached_metadata: if $._config.memcached_metadata_enabled then
+    $.memcached {
+      name: 'memcached-metadata',
+      max_item_size: '%dm' % [$._config.memcached_metadata_max_item_size_mb],
+
+      // Metadata cache doesn't need much memory.
+      memory_limit_mb: 512,
+
+      local statefulSet = $.apps.v1beta1.statefulSet,
+      statefulSet+:
+        statefulSet.mixin.spec.withReplicas(1),
+    },
 }

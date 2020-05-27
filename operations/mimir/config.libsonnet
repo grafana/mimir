@@ -75,6 +75,9 @@
     memcached_chunks_enabled: true,
     memcached_chunks_max_item_size_mb: 1,
 
+    memcached_metadata_enabled: $._config.storage_engine == 'tsdb',
+    memcached_metadata_max_item_size_mb: 1,
+
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
     // (comparing performances).

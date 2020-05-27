@@ -42,6 +42,16 @@
     'experimental.tsdb.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
   },
 
+  blocks_metadata_caching_config:: {
+    'experimental.tsdb.bucket-store.metadata-cache.backend': 'memcached',
+    'experimental.tsdb.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+    'experimental.tsdb.bucket-store.metadata-cache.memcached.timeout': '200ms',
+    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
+    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
+    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
+    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
+  },
+
   // The querier should run on a dedicated volume used to sync TSDB
   // indexes, in order to not negatively affect the node performances
   // in case of sustained I/O or utilization. For this reason we:
@@ -61,7 +71,7 @@
     // is generated
     'experimental.tsdb.bucket-store.tenant-sync-concurrency': 2,
     'experimental.tsdb.bucket-store.block-sync-concurrency': 5,
-  } + (if !$._config.store_gateway_enabled then $.blocks_chunks_caching_config else {}),
+  } + $.blocks_metadata_caching_config + (if !$._config.store_gateway_enabled then $.blocks_chunks_caching_config else {}),
 
   querier_container+::
     container.withVolumeMountsMixin([
@@ -189,7 +199,7 @@
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
       'experimental.store-gateway.tokens-file-path': '/data/tokens',
-    } + (if $._config.store_gateway_enabled then $.blocks_chunks_caching_config else {}),
+    } + $.blocks_chunks_caching_config + $.blocks_metadata_caching_config,
 
   store_gateway_ports:: $.util.defaultPorts,
 
