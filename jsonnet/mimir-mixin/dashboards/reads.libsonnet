@@ -8,55 +8,55 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Gateway')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_api_v1_.+"}' % $.jobMatcher('cortex-gw'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_api_v1_.+"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('cortex-gw') + [utils.selector.re('route', 'api_prom_api_v1_.+')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_prom_api_v1_.+')])
       )
     )
     .addRow(
       $.row('Query Frontend')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_api_v1_.+"}' % $.jobMatcher('query-frontend'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_api_v1_.+"}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('query-frontend') + [utils.selector.re('route', 'api_prom_api_v1_.+')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', 'api_prom_api_v1_.+')])
       )
     )
     .addRow(
       $.row('Cache - Query Results')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s}' % $.jobMatcher('query-frontend'))
+        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector('query-frontend'))
+        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend))
       )
     )
     .addRow(
       $.row('Querier')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_api_v1_.+"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_api_v1_.+"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('querier') + [utils.selector.re('route', 'api_prom_api_v1_.+')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', 'api_prom_api_v1_.+')])
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher('ingester'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('ingester') + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
       )
     )
     .addRowIf(
@@ -64,11 +64,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Store-gateway')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher('store-gateway'))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector('store-gateway') + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
       )
     )
     .addRowIf(
@@ -76,11 +76,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached - Chunks storage - Index')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="store.index-cache-read.memcache.fetch"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="store.index-cache-read.memcache.fetch"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('method', 'store.index-cache-read.memcache.fetch')])
+        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('method', 'store.index-cache-read.memcache.fetch')])
       )
     )
     .addRowIf(
@@ -88,11 +88,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached - Chunks storage - Chunks')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="chunksmemcache.fetch"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="chunksmemcache.fetch"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('method', 'chunksmemcache.fetch')])
+        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('method', 'chunksmemcache.fetch')])
       )
     )
     .addRowIf(
@@ -100,17 +100,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached - Blocks Storage - Index header')
       .addPanel(
         $.panel('QPS') +
-        $.queryPanel('sum by(operation) (rate(cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds_count{%s}[$__interval]))' % $.jobMatcher('store-gateway'), '{{operation}}') +
+        $.queryPanel('sum by(operation) (rate(cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds_count{%s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Latency (getmulti)') +
-        $.latencyPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds', '{%s,operation="getmulti"}' % $.jobMatcher('store-gateway'))
+        $.latencyPanel('cortex_storegateway_blocks_index_cache_memcached_operation_duration_seconds', '{%s,operation="getmulti"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
         $.panel('Hit ratio') +
-        $.queryPanel('sum by(item_type) (rate(cortex_storegateway_blocks_index_cache_hits_total{%s}[$__interval])) / sum by(item_type) (rate(cortex_storegateway_blocks_index_cache_requests_total{%s}[$__interval]))' % [$.jobMatcher('store-gateway'), $.jobMatcher('store-gateway')], '{{item_type}}') +
+        $.queryPanel('sum by(item_type) (rate(cortex_storegateway_blocks_index_cache_hits_total{%s}[$__interval])) / sum by(item_type) (rate(cortex_storegateway_blocks_index_cache_requests_total{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{item_type}}') +
         { yaxes: $.yaxes('percentunit') },
       )
     )
@@ -119,17 +119,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached - Blocks Storage - Chunks')
       .addPanel(
         $.panel('QPS') +
-        $.queryPanel('sum by(operation) (rate(cortex_storegateway_thanos_memcached_operations_total{%s,name="chunks-cache"}[$__interval]))' % $.jobMatcher('store-gateway'), '{{operation}}') +
+        $.queryPanel('sum by(operation) (rate(cortex_storegateway_thanos_memcached_operations_total{%s,name="chunks-cache"}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Latency (getmulti)') +
-        $.latencyPanel('cortex_storegateway_thanos_memcached_operation_duration_seconds', '{%s,operation="getmulti",name="chunks-cache"}' % $.jobMatcher('store-gateway'))
+        $.latencyPanel('cortex_storegateway_thanos_memcached_operation_duration_seconds', '{%s,operation="getmulti",name="chunks-cache"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
         $.panel('Hit ratio') +
-        $.queryPanel('sum(rate(cortex_storegateway_thanos_cache_memcached_hits_total{%s,name="chunks-cache"}[$__interval])) / sum(rate(cortex_storegateway_thanos_cache_memcached_requests_total{%s,name="chunks-cache"}[$__interval]))' % [$.jobMatcher('store-gateway'), $.jobMatcher('store-gateway')], 'chunks') +
+        $.queryPanel('sum(rate(cortex_storegateway_thanos_cache_memcached_hits_total{%s,name="chunks-cache"}[$__interval])) / sum(rate(cortex_storegateway_thanos_cache_memcached_requests_total{%s,name="chunks-cache"}[$__interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'chunks') +
         { yaxes: $.yaxes('percentunit') },
       )
     )
@@ -139,11 +139,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Cassandra')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="SELECT"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="SELECT"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('operation', 'SELECT')])
+        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', 'SELECT')])
       )
     )
     .addRowIf(
@@ -152,11 +152,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('BigTable')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/ReadRows"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/ReadRows"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/ReadRows')])
+        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/ReadRows')])
       ),
     )
     .addRowIf(
@@ -165,11 +165,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('DynamoDB')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.QueryPages"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.QueryPages"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('operation', 'DynamoDB.QueryPages')])
+        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', 'DynamoDB.QueryPages')])
       ),
     )
     .addRowIf(
@@ -178,11 +178,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('GCS')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="GET"}' % $.jobMatcher('querier'))
+        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="GET"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector('querier') + [utils.selector.eq('operation', 'GET')])
+        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', 'GET')])
       )
     )
     // Object store metrics for the store-gateway.
