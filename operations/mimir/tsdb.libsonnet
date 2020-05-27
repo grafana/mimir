@@ -23,26 +23,31 @@
     cortex_compactor_data_disk_class: 'standard',
   },
 
-  blocks_chunks_caching_config:: {
-    'experimental.tsdb.bucket-store.index-cache.backend': 'memcached',
-    'experimental.tsdb.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
-    'experimental.tsdb.bucket-store.index-cache.memcached.timeout': '200ms',
-    'experimental.tsdb.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
-    'experimental.tsdb.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
-    'experimental.tsdb.bucket-store.index-cache.memcached.max-async-concurrency': '50',
-    'experimental.tsdb.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
-    'experimental.tsdb.bucket-store.index-cache.postings-compression-enabled': 'true',
+  blocks_chunks_caching_config::
+    (
+      if $._config.memcached_index_queries_enabled then {
+        'experimental.tsdb.bucket-store.index-cache.backend': 'memcached',
+        'experimental.tsdb.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'experimental.tsdb.bucket-store.index-cache.memcached.timeout': '200ms',
+        'experimental.tsdb.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
+        'experimental.tsdb.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
+        'experimental.tsdb.bucket-store.index-cache.memcached.max-async-concurrency': '50',
+        'experimental.tsdb.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
+        'experimental.tsdb.bucket-store.index-cache.postings-compression-enabled': 'true',
+      } else {}
+    ) + (
+      if $._config.memcached_chunks_enabled then {
+        'experimental.tsdb.bucket-store.chunks-cache.backend': 'memcached',
+        'experimental.tsdb.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'experimental.tsdb.bucket-store.chunks-cache.memcached.timeout': '200ms',
+        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
+        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
+        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
+        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
+      } else {}
+    ),
 
-    'experimental.tsdb.bucket-store.chunks-cache.backend': 'memcached',
-    'experimental.tsdb.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
-    'experimental.tsdb.bucket-store.chunks-cache.memcached.timeout': '200ms',
-    'experimental.tsdb.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
-    'experimental.tsdb.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
-    'experimental.tsdb.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
-    'experimental.tsdb.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
-  },
-
-  blocks_metadata_caching_config:: {
+  blocks_metadata_caching_config:: if $.config.memcached_metadata_enabled then {
     'experimental.tsdb.bucket-store.metadata-cache.backend': 'memcached',
     'experimental.tsdb.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
     'experimental.tsdb.bucket-store.metadata-cache.memcached.timeout': '200ms',
@@ -50,7 +55,7 @@
     'experimental.tsdb.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
     'experimental.tsdb.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
     'experimental.tsdb.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
-  },
+  } else {},
 
   // The querier should run on a dedicated volume used to sync TSDB
   // indexes, in order to not negatively affect the node performances
