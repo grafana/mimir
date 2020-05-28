@@ -30,6 +30,8 @@ func ParseFiles(files []string) (map[string]RuleNamespace, error) {
 			return nil, errFileReadError
 		}
 
+		ns.Filepath = f
+
 		// Determine if the namespace is explicitly set. If not
 		// the file name without the extension is used.
 		namespace := ns.Namespace
