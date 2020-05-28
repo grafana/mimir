@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.0 (Grafana 2) / 2020-06-08
+
+* [BUGFIX] Cassandra: fixed an edge case leading to an invalid CQL query when querying the index on a Cassandra store. #2639
+
 ## 1.1.0 / 2020-05-21
 
 This release brings the usual mix of bugfixes and improvements. The biggest change is that WAL support for chunks is now considered to be production-ready!
