@@ -20,7 +20,7 @@ type RuleNamespace struct {
 	Groups []rulefmt.RuleGroup `yaml:"groups"`
 }
 
-// Modifies the aggregation rules in groups to include a given Label.
+// AggregateBy Modifies the aggregation rules in groups to include a given Label.
 func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 	var count, mod int
 	for i, group := range r.Groups {

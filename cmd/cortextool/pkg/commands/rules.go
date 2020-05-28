@@ -11,7 +11,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 
 	"github.com/grafana/cortextool/pkg/client"
 	"github.com/grafana/cortextool/pkg/printer"
@@ -518,12 +517,4 @@ func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
 	log.Infof("SUCESS: %d rules found, %d modified expressions", count, mod)
 
 	return nil
-}
-
-func getRuleName(r rulefmt.Rule) string {
-	if r.Record != "" {
-		return r.Record
-	}
-
-	return r.Alert
 }
