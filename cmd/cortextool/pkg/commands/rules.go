@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,6 +17,11 @@ import (
 	"github.com/grafana/cortextool/pkg/rules"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
+	"gopkg.in/yaml.v2"
+)
+
+const (
+	defaultPrepareAggregationLabel = "cluster"
 )
 
 var (
@@ -31,7 +37,7 @@ var (
 	})
 )
 
-// RuleCommand configures and executes rule related cortex api operations
+// RuleCommand configures and executes rule related cortex operations
 type RuleCommand struct {
 	ClientConfig client.Config
 
@@ -41,7 +47,7 @@ type RuleCommand struct {
 	Namespace string
 	RuleGroup string
 
-	// Load Rules Configs
+	// Load Rules Config
 	RuleFilesList []string
 	RuleFiles     string
 	RuleFilesPath string
@@ -50,38 +56,73 @@ type RuleCommand struct {
 	IgnoredNamespaces    string
 	ignoredNamespacesMap map[string]struct{}
 
+	// Prepare Rules Config
+	InPlaceEdit      bool
+	AggregationLabel string
+
 	DisableColor bool
 }
 
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
-	rulesCmd.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").Envar("CORTEX_ADDRESS").Required().StringVar(&r.ClientConfig.Address)
-	rulesCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENANT_ID.").Envar("CORTEX_TENANT_ID").Required().StringVar(&r.ClientConfig.ID)
 	rulesCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&r.ClientConfig.Key)
 
-	// List Rules Command
-	rulesCmd.Command("list", "List the rules currently in the cortex ruler.").Action(r.listRules)
+	// Register rule commands
+	listCmd := rulesCmd.
+		Command("list", "List the rules currently in the cortex ruler.").
+		Action(r.listRules)
+	printRulesCmd := rulesCmd.
+		Command("print", "Print the rules currently in the cortex ruler.").
+		Action(r.printRules)
+	getRuleGroupCmd := rulesCmd.
+		Command("get", "Retreive a rulegroup from the ruler.").
+		Action(r.getRuleGroup)
+	deleteRuleGroupCmd := rulesCmd.
+		Command("delete", "Delete a rulegroup from the ruler.").
+		Action(r.deleteRuleGroup)
+	loadRulesCmd := rulesCmd.
+		Command("load", "load a set of rules to a designated cortex endpoint").
+		Action(r.loadRules)
+	diffRulesCmd := rulesCmd.
+		Command("diff", "diff a set of rules to a designated cortex endpoint").
+		Action(r.diffRules)
+	syncRulesCmd := rulesCmd.
+		Command("sync", "sync a set of rules to a designated cortex endpoint").
+		Action(r.syncRules)
+	prepareCmd := rulesCmd.
+		Command("prepare", "modifies a set of rules by including an specific label in aggregations.").
+		Action(r.prepare)
+
+	// Require Cortex cluster address and tentant ID on all these commands
+	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
+		c.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").
+			Envar("CORTEX_ADDRESS").
+			Required().
+			StringVar(&r.ClientConfig.Address)
+
+		c.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENANT_ID.").
+			Envar("CORTEX_TENANT_ID").
+			Required().
+			StringVar(&r.ClientConfig.ID)
+	}
 
 	// Print Rules Command
-	printRulesCmd := rulesCmd.Command("print", "Print the rules currently in the cortex ruler.").Action(r.printRules)
 	printRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
 	// Get RuleGroup Command
-	getRuleGroupCmd := rulesCmd.Command("get", "Retreive a rulegroup from the ruler.").Action(r.getRuleGroup)
 	getRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to retrieve.").Required().StringVar(&r.Namespace)
 	getRuleGroupCmd.Arg("group", "Name of the rulegroup ot retrieve.").Required().StringVar(&r.RuleGroup)
 	getRuleGroupCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
 	// Delete RuleGroup Command
-	deleteRuleGroupCmd := rulesCmd.Command("delete", "Delete a rulegroup from the ruler.").Action(r.deleteRuleGroup)
 	deleteRuleGroupCmd.Arg("namespace", "Namespace of the rulegroup to delete.").Required().StringVar(&r.Namespace)
 	deleteRuleGroupCmd.Arg("group", "Name of the rulegroup ot delete.").Required().StringVar(&r.RuleGroup)
 
-	loadRulesCmd := rulesCmd.Command("load", "load a set of rules to a designated cortex endpoint").Action(r.loadRules)
+	// Load Rules Command
 	loadRulesCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
 
-	diffRulesCmd := rulesCmd.Command("diff", "diff a set of rules to a designated cortex endpoint").Action(r.diffRules)
+	// Diff Command
 	diffRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a diff.").StringVar(&r.IgnoredNamespaces)
 	diffRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	diffRulesCmd.Flag(
@@ -90,13 +131,26 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	).StringVar(&r.RuleFilesPath)
 	diffRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
-	syncRulesCmd := rulesCmd.Command("sync", "sync a set of rules to a designated cortex endpoint").Action(r.syncRules)
+	// Sync Command
 	syncRulesCmd.Flag("ignored-namespaces", "comma-separated list of namespaces to ignore during a sync.").StringVar(&r.IgnoredNamespaces)
 	syncRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	syncRulesCmd.Flag(
 		"rule-dirs",
 		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
+
+	// Prepare Command
+	prepareCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
+	prepareCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	prepareCmd.Flag(
+		"rule-dirs",
+		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+	).StringVar(&r.RuleFilesPath)
+	prepareCmd.Flag(
+		"in-place",
+		"edits the rule file in place",
+	).Short('i').BoolVar(&r.InPlaceEdit)
+	prepareCmd.Flag("label", "label to include as part of the aggregations.").Default(defaultPrepareAggregationLabel).Short('l').StringVar(&r.AggregationLabel)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -418,5 +472,50 @@ func (r *RuleCommand) executeChanges(ctx context.Context, changes []rules.Namesp
 	updated, created, deleted := rules.SummarizeChanges(changes)
 	fmt.Println()
 	fmt.Printf("Sync Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
+	return nil
+}
+
+func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
+	}
+
+	namespaces, err := rules.ParseFiles(r.RuleFilesList)
+	if err != nil {
+		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
+	}
+
+	var count, mod int
+	for _, ruleNamespace := range namespaces {
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel)
+		if err != nil {
+			return err
+		}
+
+		count += c
+		mod += m
+	}
+
+	// now, save all the files
+	for _, ns := range namespaces {
+		payload, err := yaml.Marshal(ns)
+		if err != nil {
+			return err
+		}
+
+		filepath := ns.Filepath
+		if !r.InPlaceEdit {
+			filepath = filepath + ".result"
+		}
+
+		err = ioutil.WriteFile(filepath, payload, 0644)
+		if err != nil {
+			return err
+		}
+	}
+
+	log.Infof("SUCESS: %d rules found, %d modified expressions", count, mod)
+
 	return nil
 }

@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+* [FEATURE] Add `rules prepare` command. It allows you add a label to PromQL aggregations and lint your expressions in rule files.
+
 ## v0.1.4 / 2020-03-10
 
 * [CHANGE] Ensure 404 deletes do not trigger an error for `rules` and `alertmanager` commands #28
