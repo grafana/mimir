@@ -20,7 +20,38 @@ type RuleNamespace struct {
 	Groups []rulefmt.RuleGroup `yaml:"groups"`
 }
 
-// AggregateBy Modifies the aggregation rules in groups to include a given Label.
+// LintPromQLExpressions runs the `expr` from a rule through the PromQL parser and
+// compares its output. if it differs from the parser, it uses the parser's instead.
+func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
+	// `count` represents the number of rules we evalated.
+	// `mod` represents the number of rules linted.
+	var count, mod int
+	for i, group := range r.Groups {
+		for j, rule := range group.Rules {
+			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting PromQL")
+			exp, err := promql.ParseExpr(rule.Expr)
+			if err != nil {
+				return count, mod, err
+			}
+
+			count++
+			if rule.Expr != exp.String() {
+				log.WithFields(log.Fields{
+					"rule":        getRuleName(rule),
+					"currentExpr": rule.Expr,
+					"afterExpr":   exp.String(),
+				}).Debugf("expression differs")
+
+				mod++
+				r.Groups[i].Rules[j].Expr = exp.String()
+			}
+		}
+	}
+
+	return count, mod, nil
+}
+
+// AggregateBy modifies the aggregation rules in groups to include a given Label.
 func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 	// `count` represents the number of rules we evalated.
 	// `mod` represents the number of rules we modified - a modification can either be a lint or adding the
@@ -42,7 +73,12 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 			promql.Inspect(exp, f)
 
 			// Only modify the ones that actually changed.
-			if r.Groups[i].Rules[j].Expr != exp.String() {
+			if rule.Expr != exp.String() {
+				log.WithFields(log.Fields{
+					"rule":        getRuleName(rule),
+					"currentExpr": rule.Expr,
+					"afterExpr":   exp.String(),
+				}).Debugf("expression differs")
 				mod++
 				r.Groups[i].Rules[j].Expr = exp.String()
 			}
