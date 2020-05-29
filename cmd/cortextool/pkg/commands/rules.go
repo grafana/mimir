@@ -140,6 +140,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	).StringVar(&r.RuleFilesPath)
 
 	// Prepare Command
+	prepareCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
 	prepareCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	prepareCmd.Flag(
 		"rule-dirs",
