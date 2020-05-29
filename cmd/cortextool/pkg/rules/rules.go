@@ -22,7 +22,11 @@ type RuleNamespace struct {
 
 // AggregateBy Modifies the aggregation rules in groups to include a given Label.
 func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
+	// `count` represents the number of rules we evalated.
+	// `mod` represents the number of rules we modified - a modification can either be a lint or adding the
+	// label in the aggregation.
 	var count, mod int
+
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("evaluating...")
