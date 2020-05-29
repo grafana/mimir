@@ -60,6 +60,22 @@ This command will load each rule group in the specified files and load them into
 
     cortextool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 
+#### Rules Prepare
+
+This command prepares a rules file for upload to Cortex. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. Unlike, the previous command this one does not interact with your Cortex cluster.
+
+    cortextool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
+
+There are two flags of note for this command:
+- `-i` which allows you to edit in place, otherwise a a new file with a `.output` extension is created with the results of the run.
+- `-l` which allows you specify the label you want you add for your aggregations, it is `cluster` by default.
+
+At the end of the run, the command tells you whenever the operation was a success in the form of
+
+    INFO[0000] SUCESS: 194 rules found, 0 modified expressions
+
+It is important to note that a modification can be a PromQL expression lint or a label add to your aggregation.
+
 # chunktool
 
 This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.
