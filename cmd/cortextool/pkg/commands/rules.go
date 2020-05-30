@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/cortextool/pkg/rules"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
+	yamlv3 "gopkg.in/yaml.v3"
 )
 
 const (
@@ -60,6 +60,9 @@ type RuleCommand struct {
 	InPlaceEdit      bool
 	AggregationLabel string
 
+	// Lint Rules Config
+	LintDryRun bool
+
 	DisableColor bool
 }
 
@@ -93,6 +96,9 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	prepareCmd := rulesCmd.
 		Command("prepare", "modifies a set of rules by including an specific label in aggregations.").
 		Action(r.prepare)
+	lintCmd := rulesCmd.
+		Command("lint", "formats a set of rule files. It reorders keys alphabetically, uses 4 spaces as indentantion, and formats PromQL expressions to a single line.").
+		Action(r.lint)
 
 	// Require Cortex cluster address and tentant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
@@ -151,6 +157,15 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		"edits the rule file in place",
 	).Short('i').BoolVar(&r.InPlaceEdit)
 	prepareCmd.Flag("label", "label to include as part of the aggregations.").Default(defaultPrepareAggregationLabel).Short('l').StringVar(&r.AggregationLabel)
+
+	// Lint Command
+	lintCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
+	lintCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	lintCmd.Flag(
+		"rule-dirs",
+		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+	).StringVar(&r.RuleFilesPath)
+	lintCmd.Flag("dry-run", "Performs a trial run that doesn't make any changes and (mostly) produces the same outpupt as a real run.").Short('n').BoolVar(&r.LintDryRun)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -498,24 +513,67 @@ func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
 	}
 
 	// now, save all the files
-	for _, ns := range namespaces {
-		payload, err := yaml.Marshal(ns)
+	if err := save(namespaces, r.InPlaceEdit); err != nil {
+		return err
+	}
+
+	log.Infof("SUCCESS: %d rules found, %d modified expressions", count, mod)
+
+	return nil
+}
+
+func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
+	}
+
+	namespaces, err := rules.ParseFiles(r.RuleFilesList)
+	if err != nil {
+		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
+	}
+
+	var count, mod int
+	for _, ruleNamespace := range namespaces {
+		c, m, err := ruleNamespace.LintPromQLExpressions()
+		if err != nil {
+			return err
+		}
+
+		count += c
+		mod += m
+	}
+
+	if !r.LintDryRun {
+		// linting will always in-place edit unless is a dry-run.
+		if err := save(namespaces, true); err != nil {
+			return err
+		}
+	}
+
+	log.Infof("SUCCESS: %d rules found, %d linted expressions", count, mod)
+
+	return nil
+}
+
+// save saves a set of rule files to to disk. You can specify whenever you want the
+// file(s) to be edited in-place.
+func save(nss map[string]rules.RuleNamespace, i bool) error {
+	for _, ns := range nss {
+		payload, err := yamlv3.Marshal(ns)
 		if err != nil {
 			return err
 		}
 
 		filepath := ns.Filepath
-		if !r.InPlaceEdit {
+		if !i {
 			filepath = filepath + ".result"
 		}
 
-		err = ioutil.WriteFile(filepath, payload, 0644)
-		if err != nil {
+		if err := ioutil.WriteFile(filepath, payload, 0644); err != nil {
 			return err
 		}
 	}
-
-	log.Infof("SUCESS: %d rules found, %d modified expressions", count, mod)
 
 	return nil
 }
