@@ -1,9 +1,9 @@
 cmd/cortextool/cortextool
 cmd/chunktool/chunktool
+cmd/logtool/logtool
 .uptodate
 .pkg
 .cache
 images/
 dist/
 .DS_STORE
-cmd/parselogs/parselogs

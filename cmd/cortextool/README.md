@@ -4,7 +4,7 @@ This repo contains tools used for interacting with [Cortex](https://github.com/c
 
 * [cortextool](#cortextool): Interacts with user-facing Cortex APIs and backend storage components
 * [chunktool](#chunktool): Interacts with chunks stored and indexed in Cortex storage backends.
-* [parselogs](#parselogs): Tool which parses Cortex query-frontend logs and formats them for easy analysis.
+* [logtool](#logtool): Tool which parses Cortex query-frontend logs and formats them for easy analysis.
 
 ## cortextool
 
@@ -105,7 +105,7 @@ The migrate command helps with migrating chunks across cortex clusters. It also 
 As of now it only supports `Bigtable` or `GCS` as a source to read chunks from for migration while for writing it supports all the storages that Cortex supports.
 More details about it [here](./pkg/chunk/migrate/README.md)
 
-## parselogs
+## logtool
 
 A CLI tool to parse Cortex query-frontend logs and formats them for easy analysis.
 
@@ -123,7 +123,7 @@ Feed logs into it using [`logcli`](https://github.com/grafana/loki/blob/master/d
 
 Loki `logcli` example:
 ```
-$ logcli query '{cluster="us-central1", name="query-frontend", namespace="dev"}' --limit=5000 --since=3h --forward -o raw | ./parselogs -dur 5s
+$ logcli query '{cluster="us-central1", name="query-frontend", namespace="dev"}' --limit=5000 --since=3h --forward -o raw | ./logtool -dur 5s
 https://logs-dev-ops-tools1.grafana.net/loki/api/v1/query_range?direction=FORWARD&end=1591119479093405000&limit=5000&query=%7Bcluster%3D%22us-central1%22%2C+name%3D%22query-frontend%22%2C+namespace%3D%22dev%22%7D&start=1591108679093405000
 Common labels: {cluster="us-central1", container_name="query-frontend", job="dev/query-frontend", level="debug", name="query-frontend", namespace="dev", pod_template_hash="7cd4bf469d", stream="stderr"}
 
@@ -134,7 +134,7 @@ Timestamp                                TraceID           Length    Duration   
 ```
 
 ```
-$ cat query-frontend-logs.log | ./parselogs -dur 5s
+$ cat query-frontend-logs.log | ./logtool -dur 5s
 Timestamp                                TraceID           Length    Duration       Status  Path
 2020-05-26 13:51:15.0577354 -0400 EDT    76b9939fd5c78b8f  6h0m0s    10.249149614s  (200)   /api/prom/api/v1/query_range
 2020-05-26 13:52:15.771988849 -0400 EDT  2e7473ab10160630  10h33m0s  7.472855362s   (200)   /api/prom/api/v1/query_range
