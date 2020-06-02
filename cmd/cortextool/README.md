@@ -119,7 +119,19 @@ Options:
         show timestamp in UTC time
 ```
 
-Feed logs into it using `logcli` from Loki, `kubectl` from Kubernetes, `cat` from a file, or any other way to get raw logs:
+Feed logs into it using [`logcli`](https://github.com/grafana/loki/blob/master/docs/getting-started/logcli.md) from Loki, [`kubectl`](https://kubernetes.io/docs/reference/kubectl/overview/) for Kubernetes, `cat` from a file, or any other way to get raw logs:
+
+Loki `logcli` example:
+```
+$ logcli query '{cluster="us-central1", name="query-frontend", namespace="dev"}' --limit=5000 --since=3h --forward -o raw | ./parselogs -dur 5s
+https://logs-dev-ops-tools1.grafana.net/loki/api/v1/query_range?direction=FORWARD&end=1591119479093405000&limit=5000&query=%7Bcluster%3D%22us-central1%22%2C+name%3D%22query-frontend%22%2C+namespace%3D%22dev%22%7D&start=1591108679093405000
+Common labels: {cluster="us-central1", container_name="query-frontend", job="dev/query-frontend", level="debug", name="query-frontend", namespace="dev", pod_template_hash="7cd4bf469d", stream="stderr"}
+
+Timestamp                                TraceID           Length    Duration       Status  Path
+2020-06-02 10:38:40.34205349 -0400 EDT   1f2533b40f7711d3  12h0m0s   21.92465802s   (200)   /api/prom/api/v1/query_range
+2020-06-02 10:40:25.171649132 -0400 EDT  2ac59421db0000d8  168h0m0s  16.378698276s  (200)   /api/prom/api/v1/query_range
+2020-06-02 10:40:29.698167258 -0400 EDT  3fd088d900160ba8  168h0m0s  20.912864541s  (200)   /api/prom/api/v1/query_range
+```
 
 ```
 $ cat query-frontend-logs.log | ./parselogs -dur 5s
