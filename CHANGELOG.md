@@ -2,6 +2,7 @@
 
 ## 1.1.0 (Grafana 2) / 2020-06-08
 
+* [ENHANCEMENT] Add `-cassandra.num-connections` to allow increasing the number of TCP connections to each Cassandra server. #2666
 * [BUGFIX] Cassandra: fixed an edge case leading to an invalid CQL query when querying the index on a Cassandra store. #2639
 
 ## 1.1.0 / 2020-05-21
