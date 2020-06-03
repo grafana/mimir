@@ -1,7 +1,6 @@
 package rules
 
 import (
-	"errors"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/rulefmt"
@@ -25,7 +24,7 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "no modifcation",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{rulefmt.RuleGroup{Name: "WithoutAggregation", Rules: []rulefmt.Rule{
+				Groups: []rulefmt.RuleGroup{{Name: "WithoutAggregation", Rules: []rulefmt.Rule{
 					{Alert: "WithoutAggregation", Expr: "up != 1"},
 				}}},
 			},
@@ -35,7 +34,7 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "no change in the query but lints with 'without' in the aggregation",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{rulefmt.RuleGroup{Name: "SkipWithout", Rules: []rulefmt.Rule{
+				Groups: []rulefmt.RuleGroup{{Name: "SkipWithout", Rules: []rulefmt.Rule{
 					{Alert: "SkipWithout", Expr: `
 						min without(alertmanager) (
 							rate(prometheus_notifications_errors_total{job="default/prometheus"}[5m])
@@ -53,7 +52,7 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "with an aggregation modification",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{rulefmt.RuleGroup{Name: "WithAggregation", Rules: []rulefmt.Rule{
+				Groups: []rulefmt.RuleGroup{{Name: "WithAggregation", Rules: []rulefmt.Rule{
 					{Alert: "WithAggregation", Expr: `
 						sum(rate(cortex_prometheus_rule_evaluation_failures_total[1m])) by (namespace, job)
 						/
@@ -68,7 +67,7 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "with 'count' as the aggregation",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{rulefmt.RuleGroup{Name: "CountAggregation", Rules: []rulefmt.Rule{
+				Groups: []rulefmt.RuleGroup{{Name: "CountAggregation", Rules: []rulefmt.Rule{
 					{Alert: "CountAggregation", Expr: `
 						count(count by (gitVersion) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"},"gitVersion","$1","gitVersion","(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1	
 					`},
@@ -102,7 +101,7 @@ func TestLintPromQLExpressions(t *testing.T) {
 		name            string
 		expr            string
 		expected        string
-		err             error
+		err             string
 		count, modified int
 	}{
 		{
@@ -110,28 +109,28 @@ func TestLintPromQLExpressions(t *testing.T) {
 			expr:     "up                                   != 1",
 			expected: "up != 1",
 			count:    1, modified: 1,
-			err: nil,
+			err: "",
 		},
 		{
 			name:     "it lints aggregations expressions",
 			expr:     "avg (rate(prometheus_notifications_queue_capacity[5m])) by (cluster, job)",
 			expected: "avg by(cluster, job) (rate(prometheus_notifications_queue_capacity[5m]))",
 			count:    1, modified: 1,
-			err: nil,
+			err: "",
 		},
 		{
 			name:     "with no opinion",
 			expr:     "build_tag_info > 1",
 			expected: "build_tag_info > 1",
 			count:    1, modified: 0,
-			err: nil,
+			err: "",
 		},
 		{
 			name:     "with an invalid expression",
 			expr:     "it fails",
 			expected: "it fails",
 			count:    0, modified: 0,
-			err: errors.New(`parse error at char 4: could not parse remaining input "fails"...`),
+			err: "parse error at char 4: could not parse remaining input \"fails\"...",
 		},
 	}
 
@@ -148,10 +147,10 @@ func TestLintPromQLExpressions(t *testing.T) {
 			require.Equal(t, tc.modified, m)
 			require.Equal(t, tc.expected, rexpr)
 
-			if tc.err == nil {
+			if tc.err == "" {
 				require.NoError(t, err)
 			} else {
-				require.EqualError(t, err, tc.err.Error())
+				require.EqualError(t, err, tc.err)
 			}
 		})
 	}

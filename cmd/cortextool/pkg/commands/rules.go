@@ -11,13 +11,13 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	log "github.com/sirupsen/logrus"
+	"gopkg.in/alecthomas/kingpin.v2"
+	yamlv3 "gopkg.in/yaml.v3"
 
 	"github.com/grafana/cortextool/pkg/client"
 	"github.com/grafana/cortextool/pkg/printer"
 	"github.com/grafana/cortextool/pkg/rules"
-	log "github.com/sirupsen/logrus"
-	"gopkg.in/alecthomas/kingpin.v2"
-	yamlv3 "gopkg.in/yaml.v3"
 )
 
 const (
@@ -79,7 +79,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		Command("print", "Print the rules currently in the cortex ruler.").
 		Action(r.printRules)
 	getRuleGroupCmd := rulesCmd.
-		Command("get", "Retreive a rulegroup from the ruler.").
+		Command("get", "Retrieve a rulegroup from the ruler.").
 		Action(r.getRuleGroup)
 	deleteRuleGroupCmd := rulesCmd.
 		Command("delete", "Delete a rulegroup from the ruler.").
@@ -133,7 +133,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	diffRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	diffRulesCmd.Flag(
 		"rule-dirs",
-		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	diffRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 
@@ -142,7 +142,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	syncRulesCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	syncRulesCmd.Flag(
 		"rule-dirs",
-		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 
 	// Prepare Command
@@ -150,7 +150,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	prepareCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	prepareCmd.Flag(
 		"rule-dirs",
-		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	prepareCmd.Flag(
 		"in-place",
@@ -163,7 +163,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	lintCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	lintCmd.Flag(
 		"rule-dirs",
-		"Comma seperated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	lintCmd.Flag("dry-run", "Performs a trial run that doesn't make any changes and (mostly) produces the same outpupt as a real run.").Short('n').BoolVar(&r.LintDryRun)
 }

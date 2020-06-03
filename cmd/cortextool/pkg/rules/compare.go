@@ -174,14 +174,14 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 				// Print the full diff of the rules if verbose is set
 				if verbose {
 					newYaml, _ := yaml.Marshal(c.New)
-					seperated := strings.Split(string(newYaml), "\n")
-					for _, l := range seperated {
+					separated := strings.Split(string(newYaml), "\n")
+					for _, l := range separated {
 						colorstring.Printf("[green]+ %v\n", l)
 					}
 
 					oldYaml, _ := yaml.Marshal(c.Original)
-					seperated = strings.Split(string(oldYaml), "\n")
-					for _, l := range seperated {
+					separated = strings.Split(string(oldYaml), "\n")
+					for _, l := range separated {
 						colorstring.Printf("[red]+ %v\n", l)
 					}
 				}

@@ -3,8 +3,9 @@ package main
 import (
 	"os"
 
-	"github.com/grafana/cortextool/pkg/commands"
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/grafana/cortextool/pkg/commands"
 )
 
 var (

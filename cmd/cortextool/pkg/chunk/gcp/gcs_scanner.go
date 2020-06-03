@@ -8,10 +8,11 @@ import (
 	"cloud.google.com/go/storage"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	chunkTool "github.com/grafana/cortextool/pkg/chunk"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
+
+	chunkTool "github.com/grafana/cortextool/pkg/chunk"
 )
 
 type gcsScanner struct {

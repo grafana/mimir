@@ -20,13 +20,13 @@ func TestParseFiles(t *testing.T) {
 				"testdata/basic_namespace.yaml",
 			},
 			want: map[string]RuleNamespace{
-				"example_namespace": RuleNamespace{
+				"example_namespace": {
 					Namespace: "example_namespace",
 					Groups: []rulefmt.RuleGroup{
-						rulefmt.RuleGroup{
+						{
 							Name: "example_rule_group",
 							Rules: []rulefmt.Rule{
-								rulefmt.Rule{
+								{
 									Record: "summed_up",
 									Expr:   "sum(up)",
 								},

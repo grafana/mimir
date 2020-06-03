@@ -10,9 +10,6 @@ import (
 
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	chunkTool "github.com/grafana/cortextool/pkg/chunk"
-	"github.com/grafana/cortextool/pkg/chunk/filter"
-	toolGCP "github.com/grafana/cortextool/pkg/chunk/gcp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -21,6 +18,9 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
+	chunkTool "github.com/grafana/cortextool/pkg/chunk"
+	"github.com/grafana/cortextool/pkg/chunk/filter"
+	toolGCP "github.com/grafana/cortextool/pkg/chunk/gcp"
 	"github.com/grafana/cortextool/pkg/chunk/migrate"
 )
 
