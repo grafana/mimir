@@ -2,7 +2,10 @@
 
 ## unreleased / master
 
+## v0.2.0 / 2020-06-02
+
 * [FEATURE] Add `rules prepare` command. It allows you add a label to PromQL aggregations and lint your expressions in rule files.
+* [FEATURE] Add `logtool` tool. It parses Cortex query-frontend logs and formats them for easy analysis.
 
 ## v0.1.4 / 2020-03-10
 
