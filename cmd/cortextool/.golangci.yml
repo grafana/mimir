@@ -1,9 +1,22 @@
 run:
-  # timeout for analysis, e.g. 30s, 5m, default is 1m
-  deadline: 5m
-
+  timeout: 10m
   modules-download-mode: vendor
+  build-tags:
+    - netgo
+    - require_docker
+
+output:
+  format: line-number
+
+linters:
+  enable:
+    - goimports
+    - golint
+    - misspell
+    - gofmt
 
 linters-settings:
   errcheck:
-    exclude: .errcheck-exclude
+    exclude: ./.errcheck-exclude
+  goimports:
+    local-prefixes: "github.com/grafana/cortextool"
