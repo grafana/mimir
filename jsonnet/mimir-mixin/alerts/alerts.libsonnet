@@ -240,7 +240,7 @@
         },
         {
           // 2 or more failed checkpoint creation in 1h means something is wrong.
-          alert: 'CortexCheckpointCreationFailing',
+          alert: 'CortexCheckpointCreationFailed',
           expr: |||
             increase(cortex_ingester_checkpoint_creations_failed_total[1h]) > 1
           |||,
