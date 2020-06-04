@@ -3,6 +3,8 @@
 ## 1.1.0 (Grafana 2) / 2020-06-08
 
 * [ENHANCEMENT] Add `-cassandra.num-connections` to allow increasing the number of TCP connections to each Cassandra server. #2666
+* [ENHANCEMENT] Use separate Cassandra clients and connections for reads and writes. #2666
+* [ENHANCEMENT] Add `-cassandra.reconnect-interval` to allow specifying the reconnect interval to a Cassandra server that has been marked `DOWN` by the gocql driver. Also change the default value of the reconnect interval from `60s` to `1s`. #2687
 * [BUGFIX] Cassandra: fixed an edge case leading to an invalid CQL query when querying the index on a Cassandra store. #2639
 
 ## 1.1.0 / 2020-05-21
