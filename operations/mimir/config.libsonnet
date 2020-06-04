@@ -59,7 +59,6 @@
     // to switch to tsdb storage.
     storage_engine: 'chunks',
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
-    store_gateway_enabled: false,
 
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
@@ -139,10 +138,7 @@
         'experimental.tsdb.ship-interval': '1m',
         'experimental.tsdb.backend': 'gcs',
         'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
-        'experimental.tsdb.store-gateway-enabled': $._config.store_gateway_enabled,
-      }
-    ) + (
-      if $._config.storage_engine != 'tsdb' || !$._config.store_gateway_enabled then {} else {
+        'experimental.tsdb.store-gateway-enabled': true,
         'experimental.store-gateway.sharding-enabled': true,
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
