@@ -10,10 +10,6 @@
     storage_backend: 'none',
     storage_engine: 'tsdb',
 
-    // Allow to configure the querier disk.
-    cortex_querier_data_disk_size: '10Gi',
-    cortex_querier_data_disk_class: 'standard',
-
     // Allow to configure the store-gateway disk.
     cortex_store_gateway_data_disk_size: '50Gi',
     cortex_store_gateway_data_disk_class: 'standard',
@@ -57,50 +53,7 @@
     'experimental.tsdb.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
   } else {},
 
-  // The querier should run on a dedicated volume used to sync TSDB
-  // indexes, in order to not negatively affect the node performances
-  // in case of sustained I/O or utilization. For this reason we:
-  // 1. Remove default querier deployment
-  // 2. Run querier as statefulset with PVC
-  // 3. Replace the service switching it to the statefulset
-  local querier_data_pvc =
-    pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_querier_data_disk_size }) +
-    pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.cortex_querier_data_disk_class) +
-    pvc.mixin.metadata.withName('querier-data'),
-
-  querier_args+:: {
-    // Reduce the number of blocks synched simultaneously, in order to
-    // keep the memory utilization under control when the index header
-    // is generated
-    'experimental.tsdb.bucket-store.tenant-sync-concurrency': 2,
-    'experimental.tsdb.bucket-store.block-sync-concurrency': 5,
-  } + $.blocks_metadata_caching_config + (if !$._config.store_gateway_enabled then $.blocks_chunks_caching_config else {}),
-
-  querier_container+::
-    container.withVolumeMountsMixin([
-      volumeMount.new('querier-data', '/data'),
-    ]),
-
-  querier_deployment: {},
-
-  querier_statefulset:
-    statefulSet.new('querier', 3, [$.querier_container], querier_data_pvc)
-    .withServiceName('querier') +
-    statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: 'querier' }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: 'querier' } + $.querier_deployment_labels) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: 'querier' }) +
-    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(60) +
-    statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
-    $.util.antiAffinity,
-
-  querier_service:
-    $.util.serviceFor($.querier_statefulset, $.querier_service_ignored_labels) +
-    service.mixin.spec.withSelector({ name: 'query-frontend' }),
+  querier_args+:: $.blocks_metadata_caching_config,
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
@@ -218,7 +171,7 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  store_gateway_statefulset: if !$._config.store_gateway_enabled then {} else
+  store_gateway_statefulset:
     statefulSet.new('store-gateway', 3, [$.store_gateway_container], store_gateway_data_pvc)
     .withServiceName('store-gateway') +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
@@ -229,6 +182,6 @@
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120),
 
-  store_gateway_service: if !$._config.store_gateway_enabled then {} else
+  store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset),
 }
