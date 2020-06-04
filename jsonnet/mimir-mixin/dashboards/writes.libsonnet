@@ -56,11 +56,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('KV Store (HA Dedupe)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name="distributor-hatracker"}' % $.jobMatcher($._config.job_names.distributor))
+        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.eq('kv_name', 'distributor-hatracker')])
+        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.distributor))
       )
     )
     .addRow(
@@ -78,11 +78,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('KV Store (Ring)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name="ingester-lifecycler"}' % $.jobMatcher($._config.job_names.ingester))
+        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('kv_name', 'ingester-lifecycler')])
+        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.ingester))
       )
     )
     .addRowIf(
