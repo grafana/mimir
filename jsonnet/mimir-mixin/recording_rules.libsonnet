@@ -29,7 +29,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_chunk_store_chunks_per_query', ['cluster', 'job']) +
           utils.histogramRules('cortex_database_request_duration_seconds', ['cluster', 'job', 'method']) +
           utils.histogramRules('cortex_gcs_request_duration_seconds', ['cluster', 'job', 'operation']) +
-          utils.histogramRules('cortex_kv_request_duration_seconds', ['cluster', 'job', 'kv_name']),
+          utils.histogramRules('cortex_kv_request_duration_seconds', ['cluster', 'job']),
       },
       {
         name: 'cortex_queries',
