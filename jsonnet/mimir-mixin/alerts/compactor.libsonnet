@@ -4,33 +4,33 @@
       name: 'cortex_compactor_alerts',
       rules: [
         {
-          // Alert if the compactor has not successfully completed a run in the last 24h.
-          alert: 'CortexCompactorHasNotSuccessfullyRun',
+          // Alert if the compactor has not successfully cleaned up blocks in the last 24h.
+          alert: 'CortexCompactorHasNotSuccessfullyCleanedUpBlocks',
           'for': '15m',
           expr: |||
-            (time() - cortex_compactor_last_successful_run_timestamp_seconds{%s} > 60 * 60 * 24)
+            (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds{%s} > 60 * 60 * 24)
             and
-            (cortex_compactor_last_successful_run_timestamp_seconds{%s} > 0)
+            (cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds{%s} > 0)
           ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not successfully completed a run in the last 24 hours.',
+            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not successfully cleaned up blocks in the last 24 hours.',
           },
         },
         {
-          // Alert if the compactor has not successfully completed a run since its start.
-          alert: 'CortexCompactorHasNotSuccessfullyRunSinceStart',
+          // Alert if the compactor has not successfully cleaned up blocks since its start.
+          alert: 'CortexCompactorHasNotSuccessfullyCleanedUpBlocksSinceStart',
           'for': '24h',
           expr: |||
-            cortex_compactor_last_successful_run_timestamp_seconds{%s} == 0
+            cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds{%s} == 0
           ||| % $.namespace_matcher(''),
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not successfully completed a run in the last 24 hours.',
+            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not successfully cleaned up blocks in the last 24 hours.',
           },
         },
         {
