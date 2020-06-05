@@ -21,7 +21,7 @@ type RuleNamespace struct {
 }
 
 // LintPromQLExpressions runs the `expr` from a rule through the PromQL parser and
-// compares its output. if it differs from the parser, it uses the parser's instead.
+// compares its output. If it differs from the parser, it uses the parser's instead.
 func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
 	// `count` represents the number of rules we evalated.
 	// `mod` represents the number of rules linted.
@@ -49,6 +49,39 @@ func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
 	}
 
 	return count, mod, nil
+}
+
+// CheckRecordingRules checks that recording rules have at least one colon in their name, this is based
+// on the recording rules best practices here: https://prometheus.io/docs/practices/rules/
+// Returns the number of rules that don't match the requirements, and error if that number is not 0.
+func (r RuleNamespace) CheckRecordingRules(strict bool) int {
+	var name string
+	var count int
+	reqChunks := 2
+	if strict {
+		reqChunks = 3
+	}
+	for _, group := range r.Groups {
+		for _, rule := range group.Rules {
+			// Assume if there is a rule.Record that this is a recording rule.
+			if rule.Record == "" {
+				continue
+			}
+			name = rule.Record
+			log.WithFields(log.Fields{"rule": name}).Debugf("linting recording rule name")
+			chunks := strings.Split(name, ":")
+			if len(chunks) < reqChunks {
+				count++
+				log.WithFields(log.Fields{
+					"rule":      getRuleName(rule),
+					"ruleGroup": group.Name,
+					"file":      r.Filepath,
+					"error":     "recording rule name does not match level:metric:operation format, must contain at least one colon",
+				}).Errorf("bad recording rule name")
+			}
+		}
+	}
+	return count
 }
 
 // AggregateBy modifies the aggregation rules in groups to include a given Label.

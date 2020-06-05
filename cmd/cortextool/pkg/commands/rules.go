@@ -63,6 +63,9 @@ type RuleCommand struct {
 	// Lint Rules Config
 	LintDryRun bool
 
+	// Rules check flags
+	Strict bool
+
 	DisableColor bool
 }
 
@@ -99,6 +102,9 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	lintCmd := rulesCmd.
 		Command("lint", "formats a set of rule files. It reorders keys alphabetically, uses 4 spaces as indentantion, and formats PromQL expressions to a single line.").
 		Action(r.lint)
+	checkCmd := rulesCmd.
+		Command("check", "runs various best practice checks against rules.").
+		Action(r.checkRecordingRuleNames)
 
 	// Require Cortex cluster address and tentant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
@@ -166,6 +172,14 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	lintCmd.Flag("dry-run", "Performs a trial run that doesn't make any changes and (mostly) produces the same outpupt as a real run.").Short('n').BoolVar(&r.LintDryRun)
+
+	checkCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
+	checkCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
+	checkCmd.Flag(
+		"rule-dirs",
+		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
+	).StringVar(&r.RuleFilesPath)
+	checkCmd.Flag("strict", "fails rules checks that do not match best practices exactly").BoolVar(&r.Strict)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -552,6 +566,27 @@ func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
 	}
 
 	log.Infof("SUCCESS: %d rules found, %d linted expressions", count, mod)
+
+	return nil
+}
+
+func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
+	err := r.setupFiles()
+	if err != nil {
+		return errors.Wrap(err, "check operation unsuccessful, unable to load rules files")
+	}
+
+	namespaces, err := rules.ParseFiles(r.RuleFilesList)
+	if err != nil {
+		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
+	}
+
+	for _, ruleNamespace := range namespaces {
+		n := ruleNamespace.CheckRecordingRules(r.Strict)
+		if n != 0 {
+			return fmt.Errorf("%d erroneous recording rule names", n)
+		}
+	}
 
 	return nil
 }
