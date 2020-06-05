@@ -40,12 +40,12 @@ type Writer struct {
 
 // NewWriter returns a Writer object
 func NewWriter(cfg Config, mapper Mapper) (*Writer, error) {
-	overrides, err := validation.NewOverrides(validation.Limits{})
+	overrides, err := validation.NewOverrides(validation.Limits{}, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	chunkStore, err := storage.NewStore(cfg.StorageConfig, chunk.StoreConfig{}, cfg.SchemaConfig, overrides)
+	chunkStore, err := storage.NewStore(cfg.StorageConfig, chunk.StoreConfig{}, cfg.SchemaConfig, overrides, nil, nil)
 	if err != nil {
 		return nil, err
 	}

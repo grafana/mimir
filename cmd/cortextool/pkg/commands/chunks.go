@@ -148,7 +148,8 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 		return fmt.Errorf("no schema found for provided from timestamp")
 	}
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	fltr := filter.NewMetricFilter(c.FilterConfig)
 
 	var (
@@ -197,7 +198,23 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 	wg.Add(1)
 
 	go func() {
-		schema := schemaConfig.CreateSchema()
+		defer func() {
+			cancel()
+			wg.Done()
+		}()
+
+		baseSchema, err := schemaConfig.CreateSchema()
+		if err != nil {
+			logrus.WithError(err).Errorln("unable to create schema")
+			return
+		}
+
+		schema, ok := baseSchema.(chunk.SeriesStoreSchema)
+		if !ok {
+			logrus.Errorln("unable to cast BaseSchema as SeriesStoreSchema")
+			return
+		}
+
 		for chk := range outChan {
 			logrus.WithFields(logrus.Fields{
 				"chunkID": chk.ExternalKey(),
@@ -249,7 +266,6 @@ func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
 			}
 
 		}
-		wg.Done()
 	}()
 
 	table := schemaConfig.ChunkTables.TableFor(fltr.From)
@@ -314,11 +330,21 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 		return fmt.Errorf("index store type %v not supported for deletes", schemaConfig.IndexType)
 	}
 
-	schema := schemaConfig.CreateSchema()
+	baseSchema, err := schemaConfig.CreateSchema()
+	if err != nil {
+		logrus.WithError(err).Errorln("unable to create schema")
+		return err
+	}
+
+	schema, ok := baseSchema.(chunk.SeriesStoreSchema)
+	if !ok {
+		logrus.Errorln("unable to cast BaseSchema as SeriesStoreSchema")
+		return errors.New("unable to cast BaseSchema as SeriesStoreSchema")
+	}
 
 	deleteMetricNameRows, err := schema.GetReadQueriesForMetric(fltr.From, fltr.To, fltr.User, fltr.Name)
 	if err != nil {
-		logrus.Errorln(err)
+		return err
 	}
 
 	start := time.Now()

@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
@@ -93,7 +94,7 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	writeClient, err := remote.NewClient(0, &remote.ClientConfig{
+	writeClient, err := remote.NewClient("loadgen", &remote.ClientConfig{
 		URL:     &config.URL{URL: writeURL},
 		Timeout: model.Duration(c.writeTimeout),
 	})
@@ -111,7 +112,12 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 	c.queryClient = v1.NewAPI(queryClient)
 
 	http.Handle("/metrics", promhttp.Handler())
-	go http.ListenAndServe(c.metricsListenAddress, nil)
+	go func() {
+		err := http.ListenAndServe(c.metricsListenAddress, nil)
+		if err != nil {
+			logrus.WithError(err).Errorln("metrics listener failed")
+		}
+	}()
 
 	c.wg.Add(c.parallelism)
 	c.wg.Add(c.queryParallelism)
@@ -181,10 +187,10 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 
 	start := time.Now()
 	if err := c.writeClient.Store(context.Background(), compressed); err != nil {
-		writeRequestDuration.WithLabelValues("error").Observe(time.Now().Sub(start).Seconds())
+		writeRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		return err
 	}
-	writeRequestDuration.WithLabelValues("success").Observe(time.Now().Sub(start).Seconds())
+	writeRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 
 	return nil
 }
@@ -207,9 +213,9 @@ func (c *LoadgenCommand) runQuery() {
 	start := time.Now()
 	_, _, err := c.queryClient.QueryRange(ctx, c.query, r)
 	if err != nil {
-		queryRequestDuration.WithLabelValues("error").Observe(time.Now().Sub(start).Seconds())
+		queryRequestDuration.WithLabelValues("error").Observe(time.Since(start).Seconds())
 		log.Printf("error doing query: %v", err)
 		return
 	}
-	queryRequestDuration.WithLabelValues("success").Observe(time.Now().Sub(start).Seconds())
+	queryRequestDuration.WithLabelValues("success").Observe(time.Since(start).Seconds())
 }

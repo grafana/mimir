@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -130,7 +130,7 @@ func TestLintPromQLExpressions(t *testing.T) {
 			expr:     "it fails",
 			expected: "it fails",
 			count:    0, modified: 0,
-			err: "parse error at char 4: could not parse remaining input \"fails\"...",
+			err: "1:4: parse error: unexpected identifier \"fails\"",
 		},
 	}
 

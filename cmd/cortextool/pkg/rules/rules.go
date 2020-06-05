@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/promql"
+	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
+	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -29,7 +29,7 @@ func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting PromQL")
-			exp, err := promql.ParseExpr(rule.Expr)
+			exp, err := parser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
@@ -61,7 +61,7 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("evaluating...")
-			exp, err := promql.ParseExpr(rule.Expr)
+			exp, err := parser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}
@@ -70,7 +70,7 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 			// Given inspect will help us traverse every node in the AST, Let's create the
 			// function that will modify the labels.
 			f := exprNodeInspectorFunc(rule, label)
-			promql.Inspect(exp, f)
+			parser.Inspect(exp, f)
 
 			// Only modify the ones that actually changed.
 			if rule.Expr != exp.String() {
@@ -90,9 +90,9 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 
 // exprNodeInspectorFunc returns a PromQL inspector.
 // It modifies most PromQL aggregations to include a given label.
-func exprNodeInspectorFunc(rule rulefmt.Rule, label string) func(node promql.Node, path []promql.Node) error {
-	return func(node promql.Node, path []promql.Node) error {
-		aggregation, ok := node.(*promql.AggregateExpr)
+func exprNodeInspectorFunc(rule rulefmt.Rule, label string) func(node parser.Node, path []parser.Node) error {
+	return func(node parser.Node, path []parser.Node) error {
+		aggregation, ok := node.(*parser.AggregateExpr)
 		if !ok {
 			return nil
 		}

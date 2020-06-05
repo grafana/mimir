@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"strings"
 
+	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
 	"github.com/mitchellh/colorstring"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"sigs.k8s.io/yaml"
+	yaml "gopkg.in/yaml.v2"
 )
 
 var (
