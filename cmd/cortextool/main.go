@@ -9,10 +9,11 @@ import (
 )
 
 var (
-	ruleCommand  commands.RuleCommand
-	alertCommand commands.AlertCommand
-	logConfig    commands.LoggerConfig
-	pushGateway  commands.PushGatewayConfig
+	ruleCommand    commands.RuleCommand
+	alertCommand   commands.AlertCommand
+	logConfig      commands.LoggerConfig
+	pushGateway    commands.PushGatewayConfig
+	loadgenCommand commands.LoadgenCommand
 )
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	alertCommand.Register(app)
 	ruleCommand.Register(app)
 	pushGateway.Register(app)
+	loadgenCommand.Register(app)
 	kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	pushGateway.Stop()
