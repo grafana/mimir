@@ -2,10 +2,14 @@
 
 ## unreleased / master
 
-## v0.2.0 / 2020-06-02
+* [FEATURE] Add `rules check` command. It runs various [best practice](https://prometheus.io/docs/practices/rules/) checks against rules.
+* [ENHANCEMENT] Ensure `rules prepare` takes into account Vector Matching on PromQL Binary Expressions.
+
+## v0.2.0 / 2020-03-10
 
 * [FEATURE] Add `rules prepare` command. It allows you add a label to PromQL aggregations and lint your expressions in rule files.
-* [FEATURE] Add `logtool` tool. It parses Cortex query-frontend logs and formats them for easy analysis.
+* [FEATURE] Add `rules lint` command. It lints, rules YAML and PromQL expression formatting within the rule file
+* [FEATURE] Add `logtool` binary. It parses Loki/Cortex query-frontend logs and formats them for easy analysis.
 
 ## v0.1.4 / 2020-03-10
 

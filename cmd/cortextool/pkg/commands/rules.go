@@ -152,7 +152,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	).StringVar(&r.RuleFilesPath)
 
 	// Prepare Command
-	prepareCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
+	prepareCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
 	prepareCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	prepareCmd.Flag(
 		"rule-dirs",
@@ -165,7 +165,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	prepareCmd.Flag("label", "label to include as part of the aggregations.").Default(defaultPrepareAggregationLabel).Short('l').StringVar(&r.AggregationLabel)
 
 	// Lint Command
-	lintCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
+	lintCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
 	lintCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	lintCmd.Flag(
 		"rule-dirs",

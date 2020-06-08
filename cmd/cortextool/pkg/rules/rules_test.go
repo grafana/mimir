@@ -22,7 +22,7 @@ func TestAggregateBy(t *testing.T) {
 			count: 0, modified: 0, expect: nil,
 		},
 		{
-			name: "no modifcation",
+			name: "no modification",
 			rn: RuleNamespace{
 				Groups: []rulefmt.RuleGroup{{Name: "WithoutAggregation", Rules: []rulefmt.Rule{
 					{Alert: "WithoutAggregation", Expr: "up != 1"},
@@ -74,6 +74,18 @@ func TestAggregateBy(t *testing.T) {
 				}}},
 			},
 			expectedExpr: []string{`count by(cluster) (count by(gitVersion, cluster) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"}, "gitVersion", "$1", "gitVersion", "(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1`},
+			count:        1, modified: 1, expect: nil,
+		},
+		{
+			name: "with vector matching in binary operations",
+			rn: RuleNamespace{
+				Groups: []rulefmt.RuleGroup{{Name: "BinaryExpressions", Rules: []rulefmt.Rule{
+					{Alert: "VectorMatching", Expr: `
+						count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance) group_left(node) node_namespace_pod:kube_pod_info:))
+					`},
+				}}},
+			},
+			expectedExpr: []string{`count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance, cluster) group_left(node) node_namespace_pod:kube_pod_info:))`},
 			count:        1, modified: 1, expect: nil,
 		},
 	}
@@ -130,7 +142,7 @@ func TestLintPromQLExpressions(t *testing.T) {
 			expr:     "it fails",
 			expected: "it fails",
 			count:    0, modified: 0,
-			err: "1:4: parse error: unexpected identifier \"fails\"",
+			err: "parse error at char 4: could not parse remaining input \"fails\"...",
 		},
 	}
 

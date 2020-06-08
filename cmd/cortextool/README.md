@@ -90,6 +90,12 @@ At the end of the run, the command tells you whenever the operation was a succes
 
 It is important to note that a modification can be a PromQL expression lint or a label add to your aggregation.
 
+#### Rules Check
+
+This commands checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules.
+
+    cortextool rules check ./example_rules_one.yaml
+
 ## chunktool
 
 This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.
