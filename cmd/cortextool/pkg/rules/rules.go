@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	promql "github.com/cortexproject/cortex/pkg/configs/legacy_promql"
 	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
@@ -30,7 +29,7 @@ func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting PromQL")
-			exp, err := promql.ParseExpr(rule.Expr)
+			exp, err := parser.ParseExpr(rule.Expr)
 			if err != nil {
 				return count, mod, err
 			}

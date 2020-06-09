@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+* [BUGFIX] Fix usage of the old PromQL parser in `prepare lint`.
+
 ## v0.2.1 / 2020-06-08
 
 * [FEATURE] Add `rules check` command. It runs various [best practice](https://prometheus.io/docs/practices/rules/) checks against rules.
