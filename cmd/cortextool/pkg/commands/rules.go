@@ -173,7 +173,8 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 	).StringVar(&r.RuleFilesPath)
 	lintCmd.Flag("dry-run", "Performs a trial run that doesn't make any changes and (mostly) produces the same outpupt as a real run.").Short('n').BoolVar(&r.LintDryRun)
 
-	checkCmd.Arg("rule-files", "The rule files to check.").Required().ExistingFilesVar(&r.RuleFilesList)
+	// Check Command
+	checkCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
 	checkCmd.Flag("rule-files", "The rule files to check. Flag can be reused to load multiple files.").StringVar(&r.RuleFiles)
 	checkCmd.Flag(
 		"rule-dirs",
