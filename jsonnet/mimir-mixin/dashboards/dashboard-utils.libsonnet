@@ -175,8 +175,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
-      $.panel('Op: ObjectSize') +
-      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="objectsize"}' % [$.namespaceMatcher(), component]),
+      $.panel('Op: Attributes') +
+      $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
       $.panel('Op: Exists') +
@@ -202,4 +202,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.panel('Op: Delete') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
     ),
+
+  thanosMemcachedCache(title, jobName, component, cacheName)::
+    super.row(title)
+    .addPanel(
+      $.panel('QPS') +
+      $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{%s,component="%s",name="%s"}[$__interval]))' % [$.jobMatcher(jobName), component, cacheName], '{{operation}}') +
+      $.stack +
+      { yaxes: $.yaxes('ops') },
+    )
+    .addPanel(
+      $.panel('Latency (getmulti)') +
+      $.latencyPanel('thanos_memcached_operation_duration_seconds', '{%s,operation="getmulti",component="%s",name="%s"}' % [$.jobMatcher(jobName), component, cacheName])
+    )
+    .addPanel(
+      $.panel('Hit ratio') +
+      $.queryPanel('sum(rate(thanos_cache_memcached_hits_total{%s,component="%s",name="%s"}[$__interval])) / sum(rate(thanos_cache_memcached_requests_total{%s,component="%s",name="%s"}[$__interval]))' %
+                   [
+                     $.jobMatcher(jobName),
+                     component,
+                     cacheName,
+                     $.jobMatcher(jobName),
+                     component,
+                     cacheName,
+                   ], 'items') +
+      { yaxes: $.yaxes('percentunit') },
+    ),
+
 }

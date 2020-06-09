@@ -54,9 +54,9 @@
           alert: 'CortexStoreGatewayHasNotSyncTheBucket',
           'for': '5m',
           expr: |||
-            (time() - cortex_storegateway_blocks_last_successful_sync_timestamp_seconds{%s} > 60 * 30)
+            (time() - cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway",%s} > 60 * 30)
             and
-            cortex_storegateway_blocks_last_successful_sync_timestamp_seconds{%s} > 0
+            cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway",%s} > 0
           ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
           labels: {
             severity: 'critical',

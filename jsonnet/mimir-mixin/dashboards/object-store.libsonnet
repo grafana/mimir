@@ -50,8 +50,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Op: ObjectSize') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,operation="objectsize"}' % $.namespaceMatcher()),
+        $.panel('Op: Attributes') +
+        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,operation="attributes"}' % $.namespaceMatcher()),
       )
       .addPanel(
         $.panel('Op: Upload') +
