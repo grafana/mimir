@@ -2,12 +2,16 @@
 
 ## unreleased / master
 
-* [BUGFIX] Fix usage of the old PromQL parser in `prepare lint`.
+## v0.2.2 / 2020-06-09
+
+* [BUGFIX] Remove usage of alternate PromQL parser in `rules prepare lint`.
+* [BUGFIX] `rules check` does not require an argument.
 
 ## v0.2.1 / 2020-06-08
 
 * [FEATURE] Add `rules check` command. It runs various [best practice](https://prometheus.io/docs/practices/rules/) checks against rules.
 * [ENHANCEMENT] Ensure `rules prepare` takes into account Vector Matching on PromQL Binary Expressions.
+* [BUGFIX] `rules prepare` and `rules lint` do not require an argument.
 
 ## v0.2.0 / 2020-06-02
 
