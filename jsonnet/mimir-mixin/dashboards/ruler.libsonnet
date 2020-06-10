@@ -9,7 +9,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Rule Evaluations')
       .addPanel(
         $.panel('EPS') +
-        $.queryPanel('sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__interval]))' % $.jobMatcher('ruler'), 'rules processed'),
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__interval]))
+              - 
+              sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))
+            ||| % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
+            'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))' % $.jobMatcher('ruler'),
+          ],
+          ['sucess', 'failed'],
+        ),
       )
       .addPanel(
         $.panel('Latency') +
