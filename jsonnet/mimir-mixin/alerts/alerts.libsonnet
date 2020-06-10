@@ -7,7 +7,7 @@
           alert: 'CortexIngesterUnhealthy',
           'for': '15m',
           expr: |||
-            min(cortex_ring_members{state="Unhealthy", job=~"[a-z]+/distributor" %s}) by (namespace, job) > 0
+            min(cortex_ring_members{state="Unhealthy" %s}) by (namespace, job) > 0
           ||| % $.namespace_matcher(','),
           labels: {
             severity: 'critical',
@@ -120,7 +120,7 @@
         {
           alert: 'CortexQuerierCapacityFull',
           expr: |||
-            prometheus_engine_queries_concurrent_max{job=~".+/querier"} - prometheus_engine_queries{job=~".+/querier"} == 0
+            prometheus_engine_queries_concurrent_max - prometheus_engine_queries == 0
           |||,
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -135,7 +135,7 @@
         {
           alert: 'CortexFrontendQueriesStuck',
           expr: |||
-            sum by (namespace) (cortex_query_frontend_queue_length{job=~".+/query-frontend" %s}) > 1
+            sum by (namespace) (cortex_query_frontend_queue_length{%s}) > 1
           ||| % $.namespace_matcher(','),
           'for': '5m',  // We don't want to block for longer.
           labels: {
@@ -295,7 +295,7 @@
           expr: |||
             (
               4 *
-              sum by(cluster, namespace) (cortex_ingester_memory_series{job=~".+/ingester"} * cortex_ingester_chunk_size_bytes_sum{job=~".+/ingester"} / cortex_ingester_chunk_size_bytes_count{job=~".+/ingester"})
+              sum by(cluster, namespace) (cortex_ingester_memory_series * cortex_ingester_chunk_size_bytes_sum / cortex_ingester_chunk_size_bytes_count)
                / 1e9
             )
               >
@@ -317,9 +317,9 @@
           alert: 'CortexProvisioningTooManyActiveSeries',
           // 1 million active series per ingester max.
           expr: |||
-            avg by (cluster, namespace) (cortex_ingester_memory_series{job=~".+/ingester"}) > 1.1e6
+            avg by (cluster, namespace) (cortex_ingester_memory_series) > 1.1e6
               and
-            sum by (cluster, namespace) (rate(cortex_ingester_received_chunks{job=~".+/ingester"}[1h])) == 0
+            sum by (cluster, namespace) (rate(cortex_ingester_received_chunks[1h])) == 0
           |||,
           'for': '1h',
           labels: {
@@ -449,7 +449,7 @@
           expr: |||
             memberlist_client_cluster_members_count{%s}
               != on (cluster,namespace) group_left
-            sum(up{job=~".+/(distributor|ingester|querier)"}) by (cluster,namespace)
+            sum(up{job=~".+/(distributor|ingester|querier|cortex|ruler)"}) by (cluster,namespace)
           ||| % $.namespace_matcher(),
           'for': '5m',
           labels: {
