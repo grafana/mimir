@@ -7,7 +7,7 @@
           alert: 'CortexIngesterUnhealthy',
           'for': '15m',
           expr: |||
-            min(cortex_ring_members{state="Unhealthy" %s}) by (namespace, job) > 0
+            min(cortex_ring_members{state="Unhealthy", name="ingester" %s}) by (namespace, job) > 0
           ||| % $.namespace_matcher(','),
           labels: {
             severity: 'critical',
