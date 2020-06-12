@@ -30,11 +30,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Cache - Query Results')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_frontend))
+        $.qpsPanel('cortex_cache_request_duration_seconds_count{method=~"frontend.+", %s}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend))
+        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('method', 'frontend.+')])
       )
     )
     .addRow(
