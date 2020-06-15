@@ -34,8 +34,8 @@
 
 
   alertmanager_statefulset:
-    statefulSet.new('alertmanager', 1, [$.alertmanager_container], $.alertmanager_pvc)
-    .withServiceName('alertmanager') +
+    statefulSet.new('alertmanager', 1, [$.alertmanager_container], $.alertmanager_pvc) +
+    statefulSet.mixin.spec.withServiceName('alertmanager') +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: 'alertmanager' }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: 'alertmanager' }) +

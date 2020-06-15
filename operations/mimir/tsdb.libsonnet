@@ -82,8 +82,8 @@
     ]),
 
   ingester_statefulset:
-    statefulSet.new('ingester', 3, [$.ingester_container], ingester_data_pvc)
-    .withServiceName('ingester') +
+    statefulSet.new('ingester', 3, [$.ingester_container], ingester_data_pvc) +
+    statefulSet.mixin.spec.withServiceName('ingester') +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: 'ingester' }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: 'ingester' } + $.ingester_deployment_labels) +
@@ -131,8 +131,8 @@
     $.jaeger_mixin,
 
   compactor_statefulset:
-    statefulSet.new('compactor', 1, [$.compactor_container], compactor_data_pvc)
-    .withServiceName('compactor') +
+    statefulSet.new('compactor', 1, [$.compactor_container], compactor_data_pvc) +
+    statefulSet.mixin.spec.withServiceName('compactor') +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: 'compactor' }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: 'compactor' }) +
@@ -172,8 +172,8 @@
     $.jaeger_mixin,
 
   store_gateway_statefulset:
-    statefulSet.new('store-gateway', 3, [$.store_gateway_container], store_gateway_data_pvc)
-    .withServiceName('store-gateway') +
+    statefulSet.new('store-gateway', 3, [$.store_gateway_container], store_gateway_data_pvc) +
+    statefulSet.mixin.spec.withServiceName('store-gateway') +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: 'store-gateway' }) +
     statefulSet.mixin.spec.template.metadata.withLabels({ name: 'store-gateway' }) +
