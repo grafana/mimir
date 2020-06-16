@@ -120,7 +120,7 @@
         {
           alert: 'CortexQuerierCapacityFull',
           expr: |||
-            prometheus_engine_queries_concurrent_max{job=~".+/(cortex|ruler|querier)"}, - prometheus_engine_queries{job=~".+/(cortex|ruler|querier)"}, == 0
+            prometheus_engine_queries_concurrent_max{job=~".+/(cortex|ruler|querier)"} - prometheus_engine_queries{job=~".+/(cortex|ruler|querier)"} == 0
           |||,
           'for': '5m',  // We don't want to block for longer.
           labels: {
