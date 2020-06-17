@@ -17,6 +17,9 @@
     // Allow to configure the compactor disk.
     cortex_compactor_data_disk_size: '250Gi',
     cortex_compactor_data_disk_class: 'standard',
+
+    // Allow to fine tune compactor.
+    cortex_compactor_max_concurrency: 1,
   },
 
   blocks_chunks_caching_config::
@@ -116,6 +119,7 @@
       'compactor.block-ranges': '2h,12h,24h',
       'compactor.data-dir': '/data',
       'compactor.compaction-interval': '30m',
+      'compactor.compaction-concurrency': $._config.cortex_compactor_max_concurrency,
     },
 
   compactor_ports:: $.util.defaultPorts,
@@ -126,7 +130,7 @@
     container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
     $.util.resourcesRequests('1', '6Gi') +
-    $.util.resourcesLimits('1', '6Gi') +
+    $.util.resourcesLimits($._config.cortex_compactor_max_concurrency, '6Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
 
