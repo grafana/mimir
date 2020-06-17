@@ -133,8 +133,9 @@
         'store.engine': 'tsdb',
         'experimental.tsdb.dir': '/data/tsdb',
         'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
+        'experimental.tsdb.bucket-store.ignore-deletion-marks-delay': '1h',
         'experimental.tsdb.block-ranges-period': '2h',
-        'experimental.tsdb.retention-period': '6h',
+        'experimental.tsdb.retention-period': '13h',
         'experimental.tsdb.ship-interval': '1m',
         'experimental.tsdb.backend': 'gcs',
         'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
@@ -167,11 +168,11 @@
         // Don't query the chunk store for data younger than max_chunk_idle.
         'querier.query-store-after': $._config.max_chunk_idle,
       } else if $._config.storage_engine == 'tsdb' then {
-        // Ingesters don't have data older than 6h, no need to ask them.
-        'querier.query-ingesters-within': '6h',
+        // Ingesters don't have data older than 13h, no need to ask them.
+        'querier.query-ingesters-within': '13h',
 
-        // No need to look at store for data younger than 4h, as ingesters have all of it.
-        'querier.query-store-after': '4h',
+        // No need to look at store for data younger than 12h, as ingesters have all of it.
+        'querier.query-store-after': '12h',
       }
     ) + (
       if $._config.memcached_index_queries_enabled && $._config.storage_engine == 'chunks' then
