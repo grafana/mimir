@@ -25,12 +25,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Query Frontend - Results Cache')
       .addPanel(
         $.panel('Cache Hit %') +
-        $.queryPanel('sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m])) / sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Hit Rate') +
+        $.queryPanel('sum(rate(cortex_cache_hits{%s}[1m])) / sum(rate(cortex_cache_fetched_keys{%s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Hit Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
         $.panel('Cache misses') +
-        $.queryPanel('sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m])) - sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Miss Rate'),
+        $.queryPanel('sum(rate(cortex_cache_fetched_keys{%s}[1m])) - sum(rate(cortex_cache_hits{%s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Miss Rate'),
       )
     )
     .addRow(
@@ -122,6 +122,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Chunks per Query') +
         utils.latencyRecordingRulePanel('cortex_chunk_store_chunks_per_query', $.jobSelector($._config.job_names.querier), multiplier=1) +
         { yaxes: $.yaxes('short') },
+      )
+    )
+    .addRowIf(
+      std.setMember('chunks', $._config.storage_engine),
+      $.row('Querier - Blocks storage')
+      .addPanel(
+        $.panel('Number of store-gateways hit per Query') +
+        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Refetches of missing blocks per Query') +
+        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Consistency checks failed') +
+        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[1m])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )
     .addRowIf(
