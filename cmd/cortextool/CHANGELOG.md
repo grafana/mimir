@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+* [BUGFIX] When using `--disable-color` for `rules get`, it now actually prints rules instead of the bytes of the underlying string
+
 ## v0.2.2 / 2020-06-09
 
 * [BUGFIX] Remove usage of alternate PromQL parser in `rules prepare lint`.

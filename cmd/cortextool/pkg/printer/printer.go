@@ -101,7 +101,7 @@ func (p *Printer) PrintRuleGroup(rule rulefmt.RuleGroup) error {
 		return quick.Highlight(os.Stdout, string(encodedRule), "yaml", "terminal", "swapoff")
 	}
 
-	fmt.Println(encodedRule)
+	fmt.Println(string(encodedRule))
 
 	return nil
 }
