@@ -50,6 +50,30 @@
           },
         },
         {
+          // Alert if the number of queries for which we had to refetch series from different store-gateways
+          // (because of missing blocks) is greater than a %.
+          alert: 'CortexQuerierHighRefetchRate',
+          'for': '10m',
+          expr: |||
+            100 * (
+              (
+                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count{%s}[5m]))
+                -
+                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0" %s}[5m]))
+              )
+              /
+              sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count{%s}[5m]))
+            )
+            > 1
+          ||| % [$.namespace_matcher(''), $.namespace_matcher(','), $.namespace_matcher('')],
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: 'Cortex Queries in {{ $labels.namespace } are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%.0f" $value }}% of queries.',
+          },
+        },
+        {
           // Alert if the store-gateway is not successfully synching the bucket.
           alert: 'CortexStoreGatewayHasNotSyncTheBucket',
           'for': '5m',

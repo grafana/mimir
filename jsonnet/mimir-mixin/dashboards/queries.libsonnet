@@ -125,6 +125,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
+      std.setMember('chunks', $._config.storage_engine),
+      $.row('Querier - Blocks storage')
+      .addPanel(
+        $.panel('Number of store-gateways hit per Query') +
+        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Refetches of missing blocks per Query') +
+        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Consistency checks failed') +
+        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[1m])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Failure Rate') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
+    )
+    .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
       $.row('Store-gateway - Blocks')
       .addPanel(

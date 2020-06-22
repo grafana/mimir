@@ -13,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           [
             |||
               sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__interval]))
-              - 
+              -
               sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))
             ||| % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
             'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))' % $.jobMatcher('ruler'),
