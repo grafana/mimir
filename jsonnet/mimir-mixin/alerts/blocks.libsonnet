@@ -70,7 +70,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: 'Cortex Queries in {{ $labels.namespace } are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%.0f" $value }}% of queries.',
+            message: 'Cortex Queries in {{ $labels.namespace }} are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%.0f" $value }}% of queries.',
           },
         },
         {
