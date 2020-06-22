@@ -25,12 +25,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Query Frontend - Results Cache')
       .addPanel(
         $.panel('Cache Hit %') +
-        $.queryPanel('sum(rate(cortex_cache_hits{%s}[1m])) / sum(rate(cortex_cache_fetched_keys{%s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Hit Rate') +
+        $.queryPanel('sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m])) / sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Hit Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
         $.panel('Cache misses') +
-        $.queryPanel('sum(rate(cortex_cache_fetched_keys{%s}[1m])) - sum(rate(cortex_cache_hits{%s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Miss Rate'),
+        $.queryPanel('sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m])) - sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Miss Rate'),
       )
     )
     .addRow(
