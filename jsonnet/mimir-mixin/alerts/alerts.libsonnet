@@ -365,26 +365,6 @@
       ],
     },
     {
-      name: 'memcached',
-      rules: [
-        {
-          alert: 'MemcachedDown',
-          expr: |||
-            memcached_up == 0
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              Memcached Instance {{ $labels.instance }} is down for more than 15mins.
-            |||,
-          },
-        },
-      ],
-    },
-    {
       name: 'ruler_alerts',
       rules: [
         {
