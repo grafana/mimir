@@ -136,7 +136,7 @@
           alert: 'CortexFrontendQueriesStuck',
           expr: |||
             sum by (namespace) (cortex_query_frontend_queue_length{%s}) > 1
-          ||| % $.namespace_matcher(','),
+          ||| % $.namespace_matcher(''),
           'for': '5m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
