@@ -23,7 +23,7 @@
           expr: |||
             100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m])) 
               /
-            sum y (%s, job, route) (rate(cortex_request_duration_seconds_count[1m])) 
+            sum by (%s, job, route) (rate(cortex_request_duration_seconds_count[1m])) 
               > 1
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
