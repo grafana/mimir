@@ -25,7 +25,7 @@
 
     max_chunk_idle: '15m',
 
-    test_exporter_enabled: true,
+    test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
 
@@ -59,15 +59,23 @@
     // to switch to tsdb storage.
     storage_engine: 'chunks',
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
-    store_gateway_enabled: false,
 
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
 
-    // TSDB storage engine doesn't require memcached for chunks or chunk indexes.
-    memcached_index_queries_enabled: $._config.storage_engine != 'tsdb',
+    // TSDB storage engine doesn't support index-writes (for writes deduplication) cache.
     memcached_index_writes_enabled: $._config.storage_engine != 'tsdb',
-    memcached_chunks_enabled: $._config.storage_engine != 'tsdb',
+    memcached_index_writes_max_item_size_mb: 1,
+
+    // Index and chunks caches are supported by both TSDB storage engine and chunks engine.
+    memcached_index_queries_enabled: true,
+    memcached_index_queries_max_item_size_mb: 5,
+
+    memcached_chunks_enabled: true,
+    memcached_chunks_max_item_size_mb: 1,
+
+    memcached_metadata_enabled: $._config.storage_engine == 'tsdb',
+    memcached_metadata_max_item_size_mb: 1,
 
     // The query-tee is an optional service which can be used to send
     // the same input query to multiple backends and make them compete
@@ -103,7 +111,7 @@
 
     storeConfig: self.storeMemcachedChunksConfig,
 
-    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled then
+    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled && $._config.storage_engine == 'chunks' then
       {
         'store.chunks-cache.memcached.hostname': 'memcached.%s.svc.cluster.local' % $._config.namespace,
         'store.chunks-cache.memcached.service': 'memcached-client',
@@ -125,15 +133,13 @@
         'store.engine': 'tsdb',
         'experimental.tsdb.dir': '/data/tsdb',
         'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
+        'experimental.tsdb.bucket-store.ignore-deletion-marks-delay': '1h',
         'experimental.tsdb.block-ranges-period': '2h',
-        'experimental.tsdb.retention-period': '1h',
+        'experimental.tsdb.retention-period': '13h',
         'experimental.tsdb.ship-interval': '1m',
         'experimental.tsdb.backend': 'gcs',
         'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
-        'experimental.tsdb.store-gateway-enabled': $._config.store_gateway_enabled,
-      }
-    ) + (
-      if $._config.storage_engine != 'tsdb' || !$._config.store_gateway_enabled then {} else {
+        'experimental.tsdb.store-gateway-enabled': true,
         'experimental.store-gateway.sharding-enabled': true,
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
@@ -144,11 +150,6 @@
 
     // Shared between the Ruler and Querier
     queryConfig: {
-      // Don't query ingesters for older queries.
-      // Chunks are held in memory for up to 6hrs right now. Additional 6h are granted for safety reasons because
-      // the remote writing Prometheus may have a delay or write requests into the database are queued.
-      'querier.query-ingesters-within': '12h',
-
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
 
       // Limit the size of the rows we read from the index.
@@ -158,11 +159,24 @@
       // splitting in the frontend, the reality is this only limits rate(foo[31d])
       // type queries.
       'store.max-query-length': '744h',
-
-      // Don't query the chunk store for data younger than max_chunk_idle.
-      'querier.query-store-after': $._config.max_chunk_idle,
     } + (
-      if $._config.memcached_index_queries_enabled then
+      if $._config.storage_engine == 'chunks' then {
+        // Don't query ingesters for older queries.
+        // Chunks are held in memory for up to 6hrs right now. Additional 6h are granted for safety reasons because
+        // the remote writing Prometheus may have a delay or write requests into the database are queued.
+        'querier.query-ingesters-within': '12h',
+
+        // Don't query the chunk store for data younger than max_chunk_idle.
+        'querier.query-store-after': $._config.max_chunk_idle,
+      } else if $._config.storage_engine == 'tsdb' then {
+        // Ingesters don't have data older than 13h, no need to ask them.
+        'querier.query-ingesters-within': '13h',
+
+        // No need to look at store for data younger than 12h, as ingesters have all of it.
+        'querier.query-store-after': '12h',
+      }
+    ) + (
+      if $._config.memcached_index_queries_enabled && $._config.storage_engine == 'chunks' then
         {
           // Setting for index cache.
           'store.index-cache-validity': '14m',  // ingester.retain-period=15m, 1m less for safety.
@@ -270,6 +284,21 @@
 
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
+      },
+
+      // This user class has limits increased by +50% compared to the previous one.
+      mega_user+:: {
+        max_series_per_metric: 0,  // Disabled in favour of the max global limit
+        max_series_per_user: 0,  // Disabled in favour of the max global limit
+
+        max_global_series_per_user: 16000000,  // 16M
+        max_global_series_per_metric: 1600000,  // 1.6M
+
+        max_series_per_query: 100000,
+        max_samples_per_query: 1000000,
+
+        ingestion_rate: 2250000,  // 2.25M
+        ingestion_burst_size: 22500000,  // 22.5M
       },
     },
 
