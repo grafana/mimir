@@ -7,8 +7,8 @@
           alert: 'CortexIngesterUnhealthy',
           'for': '15m',
           expr: |||
-            min(cortex_ring_members{state="Unhealthy", name="ingester" %s}) by (namespace, job) > 0
-          ||| % $.namespace_matcher(','),
+            min(cortex_ring_members{state="Unhealthy", name="ingester" %s}) by (%s) > 0
+          ||| % [$.namespace_matcher(','), $.aggregation_labels('namespace, job')],
           labels: {
             severity: 'critical',
           },
@@ -17,26 +17,13 @@
           },
         },
         {
-          alert: 'CortexFlushStuck',
-          expr: |||
-            (cortex_ingester_memory_chunks / cortex_ingester_memory_series) > 1.3
-          |||,
-          'for': '15m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: '{{ $labels.job }}/{{ $labels.instance }} is stuck flushing chunks.',
-          },
-        },
-        {
           alert: 'CortexRequestErrors',
           expr: |||
-            100 * sum(rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m])) by (namespace, job, route)
+            100 * sum(rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m])) by (%s, route)
               /
-            sum(rate(cortex_request_duration_seconds_count[1m])) by (namespace, job, route)
+            sum(rate(cortex_request_duration_seconds_count[1m])) by (%s, route)
               > 1
-          |||,
+          ||| % [$.aggregation_labels('namespace, job'), $.aggregation_labels('namespace, job')],
           'for': '15m',
           labels: {
             severity: 'warning',
@@ -88,10 +75,10 @@
         {
           alert: 'CortexQueriesIncorrect',
           expr: |||
-            100 * sum by (job, namespace) (rate(test_exporter_test_case_result_total{result="fail"}[5m]))
+            100 * sum by (%s) (rate(test_exporter_test_case_result_total{result="fail"}[5m]))
               /
-            sum by (job, namespace) (rate(test_exporter_test_case_result_total[5m])) > 1
-          |||,
+            sum by (%s) (rate(test_exporter_test_case_result_total[5m])) > 1
+          ||| % [$.aggregation_labels('namespace, job'), $.aggregation_labels('namespace, job')],
           'for': '15m',
           labels: {
             severity: 'warning',
@@ -135,8 +122,8 @@
         {
           alert: 'CortexFrontendQueriesStuck',
           expr: |||
-            sum by (namespace) (cortex_query_frontend_queue_length{%s}) > 1
-          ||| % $.namespace_matcher(''),
+            sum by (%s) (cortex_query_frontend_queue_length{%s}) > 1
+          ||| % [$.aggregation_labels('namespace'), $.namespace_matcher('')],
           'for': '5m',  // We don't want to block for longer.
           labels: {
             severity: 'critical',
@@ -150,32 +137,32 @@
         {
           alert: 'CortexCacheRequestErrors',
           expr: |||
-            100 * sum(rate(cortex_cache_request_duration_seconds_count{status_code=~"5.." %s}[1m])) by (namespace, job, method)
+            100 * sum(rate(cortex_cache_request_duration_seconds_count{status_code=~"5.." %s}[1m])) by (%s, method)
               /
-            sum(rate(cortex_cache_request_duration_seconds_count{%s}[1m])) by (namespace, job, method)
+            sum(rate(cortex_cache_request_duration_seconds_count{%s}[1m])) by (%s, method)
               > 1
-          ||| % [$.namespace_matcher(','), $.namespace_matcher()],
+          ||| % [$.namespace_matcher(','), $.aggregation_labels('namespace, job'), $.namespace_matcher(), $.aggregation_labels('namespace, job')],
           'for': '15m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              {{ $labels.job }} cache {{ $labels.method }} is experiencing {{ printf "%.2f" $value }}% errors.
-            |||,
+              {{ %s }} cache {{ $labels.method }} is experiencing {{ printf "%.2f" $value }}% errors.
+            ||| % $.annotation_labels(),
           },
         },
         {
           alert: 'CortexIngesterRestarts',
           expr: |||
-            rate(kube_pod_container_status_restarts_total{container="ingester" %s}[30m]) > 0
+            rate(process_start_time_seconds{job=~".+(cortex|ingester)" %s}[30m]) > 0
           ||| % $.namespace_matcher(','),
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '{{ $labels.namespace }}/{{ $labels.pod }} is restarting',
-          },
+            message: '{{ %s }}/{{ %s }} is restarting',
+          } % [$.annotation_labels(), $.annotation_labels('$labels.pod')],
         },
         {
           alert: 'CortexTransferFailed',
@@ -187,8 +174,8 @@
             severity: 'critical',
           },
           annotations: {
-            message: '{{ $labels.namespace }}/{{ $labels.instance }} transfer failed.',
-          },
+            message: '{{ %s }}/{{ $labels.instance }} transfer failed.',
+          } % $.annotation_labels(),
         },
         {
           alert: 'CortexOldChunkInMemory',
@@ -204,8 +191,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.namespace }}/{{ $labels.instance }} has very old unflushed chunk in memory.
-            |||,
+              {{ %s }}/{{ $labels.instance }} has very old unflushed chunk in memory.
+            ||| % $.annotation_labels(),
           },
         },
         {
@@ -219,8 +206,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.namespace }}/{{ $labels.instance }} has a corrupted WAL or checkpoint.
-            |||,
+              {{ %s }}/{{ $labels.instance }} has a corrupted WAL or checkpoint.
+            ||| % $.annotation_labels(),
           },
         },
         {
@@ -234,8 +221,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.namespace }}/{{ $labels.instance }} failed to create checkpoint.
-            |||,
+              {{ %s }}/{{ $labels.instance }} failed to create checkpoint.
+            ||| % $.annotation_labels(),
           },
         },
         {
@@ -249,8 +236,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.namespace }}/{{ $labels.instance }} is failing to create checkpoint.
-            |||,
+              {{ %s }}/{{ $labels.instance }} is failing to create checkpoint.
+            ||| % $.annotation_labels(),
           },
         },
         {
@@ -264,8 +251,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.namespace }}/{{ $labels.instance }} failed to delete checkpoint.
-            |||,
+              {{ %s }}/{{ $labels.instance }} failed to delete checkpoint.
+            ||| % $.annotation_labels(),
           },
         },
         {
@@ -280,8 +267,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.namespace }}/{{ $labels.instance }} is failing to delete checkpoint.
-            |||,
+              {{ %s }}/{{ $labels.instance }} is failing to delete checkpoint.
+            ||| % $.annotation_labels(),
           },
         },
       ],
@@ -295,71 +282,71 @@
           expr: |||
             (
               4 *
-              sum by(cluster, namespace) (cortex_ingester_memory_series * cortex_ingester_chunk_size_bytes_sum / cortex_ingester_chunk_size_bytes_count)
+              sum by(%s) (cortex_ingester_memory_series * cortex_ingester_chunk_size_bytes_sum / cortex_ingester_chunk_size_bytes_count)
                / 1e9
             )
               >
             (
-              sum by (cluster, namespace) (memcached_limit_bytes{job=~".+/memcached"}) / 1e9
+              sum by(%s) (memcached_limit_bytes{job=~".+/memcached"}) / 1e9
             )
-          |||,
+          ||| % $.aggregation_labels('cluster, namespace'),
           'for': '15m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Chunk memcached cluster for namespace {{ $labels.namespace }} are too small, should be at least {{ printf "%.2f" $value }}GB.
-            |||,
+              Chunk memcached cluster for {{ %s }} are too small, should be at least {{ printf "%.2f" $value }}GB.
+            ||| % $.annotation_labels(),
           },
         },
         {
           alert: 'CortexProvisioningTooManyActiveSeries',
           // 1 million active series per ingester max.
           expr: |||
-            avg by (cluster, namespace) (cortex_ingester_memory_series) > 1.1e6
+            avg by (%s) (cortex_ingester_memory_series) > 1.1e6
               and
-            sum by (cluster, namespace) (rate(cortex_ingester_received_chunks[1h])) == 0
-          |||,
+            sum by (%s) (rate(cortex_ingester_received_chunks[1h])) == 0
+          ||| % $.aggregation_labels('cluster, namespace'),
           'for': '1h',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Too many active series for ingesters in namespace {{ $labels.namespace }}, add more ingesters.
-            |||,
+              Too many active series for ingesters in {{ %s }}, add more ingesters.
+            ||| % $.annotation_labels(),
           },
         },
         {
           alert: 'CortexProvisioningTooManyWrites',
           // 80k writes / s per ingester max.
           expr: |||
-            avg by (cluster,namespace) (rate(cortex_ingester_ingested_samples_total[1m])) > 80e3
-          |||,
+            avg by (%s) (rate(cortex_ingester_ingested_samples_total[1m])) > 80e3
+          ||| % $.aggregation_labels('cluster, namespace'),
           'for': '15m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Too much write QPS for ingesters in namespace {{ $labels.namespace }}, add more ingesters.
-            |||,
+              High QPS for ingesters in {{ %s }}, add more ingesters.
+            ||| % $.annotation_labels(),
           },
         },
         {
           alert: 'CortexProvisioningTooMuchMemory',
           expr: |||
-            avg by (cluster, namespace) (container_memory_working_set_bytes{container_name="ingester" %s} / container_spec_memory_limit_bytes{container_name="ingester" %s}) > 0.7
-          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
+            avg by (%s) (container_memory_working_set_bytes{container_name="ingester" %s} / container_spec_memory_limit_bytes{container_name="ingester" %s}) > 0.7
+          ||| % [$.aggregation_labels('cluster, namespace'), $.namespace_matcher(','), $.namespace_matcher(',')],
           'for': '15m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              Too much memory being used by ingesters in namespace {{ $labels.namespace }}, add more ingesters.
-            |||,
+              Too much memory being used by ingesters for {{ %s }}, add more ingesters.
+            ||| % $.annotation_labels(),
           },
         },
       ],
@@ -370,11 +357,11 @@
         {
           alert: 'CortexRulerFailedEvaluations',
           expr: |||
-            sum(rate(cortex_prometheus_rule_evaluation_failures_total[1m])) by (namespace, job)
+            sum(rate(cortex_prometheus_rule_evaluation_failures_total[1m])) by (%s)
               /
-            sum(rate(cortex_prometheus_rule_evaluations_total[1m])) by (namespace, job)
+            sum(rate(cortex_prometheus_rule_evaluations_total[1m])) by (%s)
               > 0.01
-          |||,
+          ||| % [$.aggregation_labels('namespace, job'), $.aggregation_labels('namespace, job')],
           'for': '5m',
           labels: {
             severity: 'warning',
@@ -388,11 +375,11 @@
         {
           alert: 'CortexRulerMissedEvaluations',
           expr: |||
-            sum(rate(cortex_prometheus_rule_group_iterations_missed_total[1m])) by (namespace, job)
+            sum(rate(cortex_prometheus_rule_group_iterations_missed_total[1m])) by (%s)
               /
-            sum(rate(cortex_prometheus_rule_group_iterations_total[1m])) by (namespace, job)
+            sum(rate(cortex_prometheus_rule_group_iterations_total[1m])) by (%s)
               > 0.01
-          |||,
+          |||  % [$.aggregation_labels('namespace, job'), $.aggregation_labels('namespace, job')],
           'for': '5m',
           labels: {
             severity: 'warning',
@@ -406,9 +393,9 @@
         {
           alert: 'CortexRulerFailedRingCheck',
           expr: |||
-            sum(rate(cortex_ruler_ring_check_errors_total[5m])) by (namespace, job)
+            sum(rate(cortex_ruler_ring_check_errors_total[5m])) by (%s)
                > 0
-          |||,
+          |||  % $.aggregation_labels('namespace, job'),
           'for': '1m',
           labels: {
             severity: 'critical',
@@ -428,9 +415,9 @@
           alert: 'CortexGossipMembersMismatch',
           expr: |||
             memberlist_client_cluster_members_count{%s}
-              != on (cluster,namespace) group_left
-            sum(up{job=~".+/(distributor|ingester|querier|cortex|ruler)"}) by (cluster,namespace)
-          ||| % $.namespace_matcher(),
+              != on (%s) group_left
+            sum(up{job=~".+/(distributor|ingester|querier|cortex|ruler)"}) by (%s)
+          ||| % [$.namespace_matcher(), $.aggregation_labels('namespace, job'), $.aggregation_labels('namespace, job')],
           'for': '5m',
           labels: {
             severity: 'warning',
