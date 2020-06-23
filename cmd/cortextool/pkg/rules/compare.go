@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
+	"github.com/google/go-cmp/cmp"
 	"github.com/mitchellh/colorstring"
 	yaml "gopkg.in/yaml.v2"
 )
@@ -80,13 +81,27 @@ func CompareGroups(groupOne, groupTwo rulefmt.RuleGroup) error {
 	}
 
 	for i := range groupOne.Rules {
-		eq := reflect.DeepEqual(&groupOne.Rules[i], &groupTwo.Rules[i])
+		eq := rulesEqual(&groupOne.Rules[i], &groupTwo.Rules[i])
 		if !eq {
 			return fmt.Errorf("rule #%v does not match %v != %v", i, groupOne.Rules[i], groupTwo.Rules[i])
 		}
 	}
 
 	return nil
+}
+
+func rulesEqual(a, b *rulefmt.Rule) bool {
+	// special option to consider nil == empty for map / slice.
+	// Code taken from https://pkg.go.dev/github.com/google/go-cmp/cmp?tab=doc#example-Option-EqualEmpty
+	alwaysEqual := cmp.Comparer(func(_, _ interface{}) bool { return true })
+	opt := cmp.FilterValues(func(x, y interface{}) bool {
+		vx, vy := reflect.ValueOf(x), reflect.ValueOf(y)
+		return (vx.IsValid() && vy.IsValid() && vx.Type() == vy.Type()) &&
+			(vx.Kind() == reflect.Slice || vx.Kind() == reflect.Map) &&
+			(vx.Len() == 0 && vy.Len() == 0)
+	}, alwaysEqual)
+
+	return cmp.Equal(a, b, opt)
 }
 
 // CompareNamespaces returns the differences between the two provided
