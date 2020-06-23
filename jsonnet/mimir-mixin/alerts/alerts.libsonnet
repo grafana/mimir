@@ -289,7 +289,7 @@
             (
               sum by(%s) (memcached_limit_bytes{job=~".+/memcached"}) / 1e9
             )
-          ||| % $.aggregation_labels('cluster, namespace'),
+          ||| % [$.aggregation_labels('cluster, namespace'), $.aggregation_labels('cluster, namespace')],
           'for': '15m',
           labels: {
             severity: 'warning',
@@ -307,7 +307,7 @@
             avg by (%s) (cortex_ingester_memory_series) > 1.1e6
               and
             sum by (%s) (rate(cortex_ingester_received_chunks[1h])) == 0
-          ||| % $.aggregation_labels('cluster, namespace'),
+          ||| % [$.aggregation_labels('cluster, namespace'), $.aggregation_labels('cluster, namespace')],
           'for': '1h',
           labels: {
             severity: 'warning',
@@ -417,7 +417,7 @@
             memberlist_client_cluster_members_count{%s}
               != on (%s) group_left
             sum(up{job=~".+/(distributor|ingester|querier|cortex|ruler)"}) by (%s)
-          ||| % [$.namespace_matcher(), $.aggregation_labels('namespace, job'), $.aggregation_labels('namespace, job')],
+          ||| % [$.namespace_matcher(), $.aggregation_labels('cluster, namespace'), $.aggregation_labels('cluster, namespace')],
           'for': '5m',
           labels: {
             severity: 'warning',
