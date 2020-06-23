@@ -18,10 +18,12 @@
         },
         {
           alert: 'CortexRequestErrors',
+          // Note is alert_aggregation_labels is "job", this will repeat the label.  But
+          // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%s, route) (rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m])) 
+            100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m])) 
               /
-            sum y (%s, route) (rate(cortex_request_duration_seconds_count[1m])) 
+            sum y (%s, job, route) (rate(cortex_request_duration_seconds_count[1m])) 
               > 1
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
@@ -30,7 +32,7 @@
           },
           annotations: {
             message: |||
-              {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}% errors.
+              {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}% errors.
             |||,
           },
         },
