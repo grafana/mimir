@@ -171,7 +171,7 @@
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
     $.util.resourcesRequests('1', '6Gi') +
-    $.util.resourcesLimits('1', '6Gi') +
+    $.util.resourcesLimits(null, '6Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
 
