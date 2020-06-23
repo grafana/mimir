@@ -1,4 +1,4 @@
-(import 'alert-utils.libsonnet') {
+{
   groups+: [
     {
       name: 'cortex_alerts',
@@ -23,7 +23,7 @@
               /
             sum y (%s, route) (rate(cortex_request_duration_seconds_count[1m])) 
               > 1
-          ||| % [$._config.alert_aggregation_labels],
+          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
           labels: {
             severity: 'warning',
@@ -140,9 +140,9 @@
         {
           alert: 'CortexCacheRequestErrors',
           expr: |||
-            100 * sum by (%s, method) (rate(cortex_cache_request_duration_seconds_count{status_code=~"5.." %s}[1m])) 
+            100 * sum by (%s, method) (rate(cortex_cache_request_duration_seconds_count{status_code=~"5.."}[1m])) 
               /
-            sum  by (%s, method) (rate(cortex_cache_request_duration_seconds_count{%s}[1m]))
+            sum  by (%s, method) (rate(cortex_cache_request_duration_seconds_count[1m]))
               > 1
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
@@ -306,8 +306,8 @@
           },
           annotations: {
             message: |||
-              Chunk memcached cluster for {{ %s }} are too small, should be at least {{ printf "%.2f" $value }}GB.
-            ||| % $.annotation_labels(),
+              Chunk memcached cluster is too small, should be at least {{ printf "%.2f" $value }}GB.
+            |||,
           },
         },
         {
@@ -324,8 +324,8 @@
           },
           annotations: {
             message: |||
-              Too many active series for ingesters in {{ %s }}, add more ingesters.
-            ||| % $.annotation_labels(),
+              Too many active series for ingesters, add more ingesters.
+            |||,
           },
         },
         {
@@ -340,8 +340,8 @@
           },
           annotations: {
             message: |||
-              High QPS for ingesters in {{ %s }}, add more ingesters.
-            ||| % $.annotation_labels(),
+              High QPS for ingesters, add more ingesters.
+            |||,
           },
         },
         {

@@ -1,4 +1,4 @@
-(import 'alert-utils.libsonnet') {
+{
   groups+: [
     {
       name: 'cortex_compactor_alerts',
@@ -8,10 +8,10 @@
           alert: 'CortexCompactorHasNotSuccessfullyCleanedUpBlocks',
           'for': '15m',
           expr: |||
-            (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds{%s} > 60 * 60 * 24)
+            (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 24)
             and
-            (cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds{%s} > 0)
-          ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
+            (cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 0)
+          |||,
           labels: {
             severity: 'critical',
           },
@@ -24,8 +24,8 @@
           alert: 'CortexCompactorHasNotSuccessfullyCleanedUpBlocksSinceStart',
           'for': '24h',
           expr: |||
-            cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds{%s} == 0
-          ||| % $.namespace_matcher(''),
+            cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds == 0
+          |||,
           labels: {
             severity: 'critical',
           },
@@ -38,10 +38,10 @@
           alert: 'CortexCompactorHasNotUploadedBlocks',
           'for': '15m',
           expr: |||
-            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"%s} > 60 * 60 * 24)
+            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} > 60 * 60 * 24)
             and
             (thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"%s} > 0)
-          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
+          |||,
           labels: {
             severity: 'critical',
           },
@@ -54,8 +54,8 @@
           alert: 'CortexCompactorHasNotUploadedBlocksSinceStart',
           'for': '24h',
           expr: |||
-            thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"%s} == 0
-          ||| % $.namespace_matcher(','),
+            thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} == 0
+          |||,
           labels: {
             severity: 'critical',
           },
