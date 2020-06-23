@@ -162,7 +162,8 @@
     } + (
       if $._config.storage_engine == 'chunks' then {
         // Don't query ingesters for older queries.
-        // Chunks are 6hrs right now.  Add some slack for safety.
+        // Chunks are held in memory for up to 6hrs right now. Additional 6h are granted for safety reasons because
+        // the remote writing Prometheus may have a delay or write requests into the database are queued.
         'querier.query-ingesters-within': '12h',
 
         // Don't query the chunk store for data younger than max_chunk_idle.
