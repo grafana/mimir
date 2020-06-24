@@ -33,8 +33,10 @@
       gateway: 'cortex-gw',
     },
 
+    // Labels used to in alert aggregations - should uniquely identify
+    // a single Cortex cluster.
+    alert_aggregation_labels: 'cluster, namespace',
     cortex_p99_latency_threshold_seconds: 2.5,
-    alert_namespace_matcher: '',
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: false,

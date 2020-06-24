@@ -1,4 +1,4 @@
-(import 'alert-utils.libsonnet') {
+{
   groups+: [
     {
       name: 'cortex_blocks_alerts',
@@ -8,10 +8,10 @@
           alert: 'CortexIngesterHasNotShippedBlocks',
           'for': '15m',
           expr: |||
-            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"%s} > 60 * 60 * 4)
+            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"} > 60 * 60 * 4)
             and
-            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"%s} > 0)
-          ||| % [$.namespace_matcher(','), $.namespace_matcher(',')],
+            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"} > 0)
+          |||,
           labels: {
             severity: 'critical',
           },
@@ -24,8 +24,8 @@
           alert: 'CortexIngesterHasNotShippedBlocksSinceStart',
           'for': '4h',
           expr: |||
-            thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"%s} == 0
-          ||| % $.namespace_matcher(','),
+            thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"} == 0
+          |||,
           labels: {
             severity: 'critical',
           },
@@ -38,10 +38,10 @@
           alert: 'CortexQuerierHasNotScanTheBucket',
           'for': '5m',
           expr: |||
-            (time() - cortex_querier_blocks_last_successful_scan_timestamp_seconds{%s} > 60 * 30)
+            (time() - cortex_querier_blocks_last_successful_scan_timestamp_seconds > 60 * 30)
             and
-            cortex_querier_blocks_last_successful_scan_timestamp_seconds{%s} > 0
-          ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
+            cortex_querier_blocks_last_successful_scan_timestamp_seconds > 0
+          |||,
           labels: {
             severity: 'critical',
           },
@@ -57,15 +57,15 @@
           expr: |||
             100 * (
               (
-                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count{%s}[5m]))
+                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
                 -
-                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0" %s}[5m]))
+                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0"}[5m]))
               )
               /
-              sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count{%s}[5m]))
+              sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
             )
             > 1
-          ||| % [$.namespace_matcher(''), $.namespace_matcher(','), $.namespace_matcher('')],
+          |||,
           labels: {
             severity: 'warning',
           },
@@ -78,10 +78,10 @@
           alert: 'CortexStoreGatewayHasNotSyncTheBucket',
           'for': '5m',
           expr: |||
-            (time() - cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway",%s} > 60 * 30)
+            (time() - cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway"} > 60 * 30)
             and
-            cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway",%s} > 0
-          ||| % [$.namespace_matcher(''), $.namespace_matcher('')],
+            cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds{component="store-gateway"} > 0
+          |||,
           labels: {
             severity: 'critical',
           },
