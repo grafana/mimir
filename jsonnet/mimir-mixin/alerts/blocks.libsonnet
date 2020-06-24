@@ -40,7 +40,7 @@
           expr: |||
             (time() - cortex_querier_blocks_last_successful_scan_timestamp_seconds > 60 * 30)
             and
-            cortex_querier_blocks_last_successful_scan_timestamp_seconds{%s} > 0
+            cortex_querier_blocks_last_successful_scan_timestamp_seconds > 0
           |||,
           labels: {
             severity: 'critical',

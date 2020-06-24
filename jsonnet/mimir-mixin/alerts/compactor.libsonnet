@@ -40,7 +40,7 @@
           expr: |||
             (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} > 60 * 60 * 24)
             and
-            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"%s} > 0)
+            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} > 0)
           |||,
           labels: {
             severity: 'critical',
