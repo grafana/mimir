@@ -181,7 +181,7 @@
           // Setting for index cache.
           'store.index-cache-validity': '14m',  // ingester.retain-period=15m, 1m less for safety.
           'store.index-cache-read.cache.enable-fifocache': true,
-          'store.index-cache-read.fifocache.size': 102400,
+          'store.index-cache-read.fifocache.max-size-items': 102400,
           'store.index-cache-read.memcached.hostname': 'memcached-index-queries.%(namespace)s.svc.cluster.local' % $._config,
           'store.index-cache-read.memcached.service': 'memcached-client',
           'store.index-cache-read.memcached.timeout': '500ms',
