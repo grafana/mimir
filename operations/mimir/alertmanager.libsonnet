@@ -2,7 +2,7 @@
   local pvc = $.core.v1.persistentVolumeClaim,
   local volumeMount = $.core.v1.volumeMount,
   local container = $.core.v1.container,
-  local statefulSet = $.apps.v1beta1.statefulSet,
+  local statefulSet = $.apps.v1.statefulSet,
   local service = $.core.v1.service,
 
 

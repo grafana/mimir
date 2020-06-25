@@ -332,7 +332,7 @@
       }),
     }),
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
   storage_config_mixin::
     deployment.mixin.spec.template.metadata.withAnnotationsMixin({ schemaID: $._config.schemaID },) +
     $.util.configVolumeMount('schema-' + $._config.schemaID, '/etc/cortex/schema'),

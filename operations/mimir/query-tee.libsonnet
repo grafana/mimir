@@ -1,7 +1,7 @@
 {
   local container = $.core.v1.container,
   local containerPort = $.core.v1.containerPort,
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
   local service = $.core.v1.service,
   local servicePort = $.core.v1.servicePort,
 

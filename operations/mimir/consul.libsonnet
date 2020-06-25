@@ -26,7 +26,7 @@ local consul = import 'consul/consul.libsonnet';
       ]) +
       $.util.resourcesRequests('4', '4Gi'),
 
-    local deployment = $.apps.v1beta1.deployment,
+    local deployment = $.apps.v1.deployment,
     local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
     local volume = $.core.v1.volume,
     consul_deployment+:

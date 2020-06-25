@@ -28,7 +28,7 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   ruler_deployment:
     deployment.new('ruler', 2, [$.ruler_container]) +

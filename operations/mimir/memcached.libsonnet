@@ -6,7 +6,7 @@ memcached {
 
     deployment: {},
 
-    local statefulSet = $.apps.v1beta1.statefulSet,
+    local statefulSet = $.apps.v1.statefulSet,
 
     statefulSet:
       statefulSet.new(self.name, 3, [
@@ -72,7 +72,7 @@ memcached {
       // Metadata cache doesn't need much memory.
       memory_limit_mb: 512,
 
-      local statefulSet = $.apps.v1beta1.statefulSet,
+      local statefulSet = $.apps.v1.statefulSet,
       statefulSet+:
         statefulSet.mixin.spec.withReplicas(1),
     },

@@ -48,7 +48,7 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   distributor_deployment_labels:: {},
 

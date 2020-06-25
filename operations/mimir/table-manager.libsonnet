@@ -29,7 +29,7 @@
       $.jaeger_mixin
     else {},
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   table_manager_deployment:
     if $._config.table_manager_enabled then

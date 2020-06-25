@@ -45,7 +45,7 @@
       $.util.resourcesRequests('1', '12Gi') +
       $.util.resourcesLimits(null, '24Gi'),
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   querier_deployment_labels: {},
 

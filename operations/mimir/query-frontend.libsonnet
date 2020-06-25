@@ -61,7 +61,7 @@
       $.util.resourcesRequests('2', '600Mi') +
       $.util.resourcesLimits(null, '1200Mi'),
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   query_frontend_deployment:
     deployment.new('query-frontend', $._config.queryFrontend.replicas, [$.query_frontend_container]) +

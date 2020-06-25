@@ -52,7 +52,7 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   ingester_deployment_labels:: {},
 

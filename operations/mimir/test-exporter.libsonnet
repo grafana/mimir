@@ -22,7 +22,7 @@
       $.util.resourcesLimits('100m', '100Mi') +
       $.jaeger_mixin,
 
-  local deployment = $.apps.v1beta1.deployment,
+  local deployment = $.apps.v1.deployment,
 
   test_exporter_deployment:
     if !($._config.test_exporter_enabled)
