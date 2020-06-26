@@ -21,9 +21,9 @@
           // Note is alert_aggregation_labels is "job", this will repeat the label.  But
           // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m])) 
+            100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m]))
               /
-            sum by (%s, job, route) (rate(cortex_request_duration_seconds_count[1m])) 
+            sum by (%s, job, route) (rate(cortex_request_duration_seconds_count[1m]))
               > 1
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
@@ -142,7 +142,7 @@
         {
           alert: 'CortexCacheRequestErrors',
           expr: |||
-            100 * sum by (%s, method) (rate(cortex_cache_request_duration_seconds_count{status_code=~"5.."}[1m])) 
+            100 * sum by (%s, method) (rate(cortex_cache_request_duration_seconds_count{status_code=~"5.."}[1m]))
               /
             sum  by (%s, method) (rate(cortex_cache_request_duration_seconds_count[1m]))
               > 1
@@ -350,8 +350,8 @@
           alert: 'CortexProvisioningTooMuchMemory',
           expr: |||
             avg by (%s) (
-              container_memory_working_set_bytes{container_name="ingester"} 
-                / 
+              container_memory_working_set_bytes{container_name="ingester"}
+                /
               container_spec_memory_limit_bytes{container_name="ingester"}
             ) > 0.7
           ||| % $._config.alert_aggregation_labels,
@@ -375,7 +375,7 @@
           expr: |||
             sum by (%s) (rate(cortex_prometheus_rule_evaluation_failures_total[1m]))
               /
-            sum by (%s) (rate(cortex_prometheus_rule_evaluations_total[1m])) 
+            sum by (%s) (rate(cortex_prometheus_rule_evaluations_total[1m]))
               > 0.01
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -409,7 +409,7 @@
         {
           alert: 'CortexRulerFailedRingCheck',
           expr: |||
-            sum by (%s) (rate(cortex_ruler_ring_check_errors_total[5m])) 
+            sum by (%s) (rate(cortex_ruler_ring_check_errors_total[5m]))
                > 0
           ||| % $._config.alert_aggregation_labels,
           'for': '1m',
