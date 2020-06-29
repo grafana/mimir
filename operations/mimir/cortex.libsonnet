@@ -12,6 +12,7 @@
 (import 'query-frontend.libsonnet') +
 (import 'table-manager.libsonnet') +
 (import 'ruler.libsonnet') +
+(import 'alertmanager.libsonnet') +
 
 // Supporting services
 (import 'etcd.libsonnet') +

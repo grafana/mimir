@@ -5,7 +5,6 @@
   local statefulSet = $.apps.v1.statefulSet,
   local service = $.core.v1.service,
 
-
   alertmanager_args::
     {
       target: 'alertmanager',
@@ -18,32 +17,39 @@
     },
 
   alertmanager_pvc::
-    pvc.new() +
-    pvc.mixin.metadata.withName('alertmanager-data') +
-    pvc.mixin.spec.withAccessModes('ReadWriteOnce') +
-    pvc.mixin.spec.resources.withRequests({ storage: '100Gi' }),
+    if $._config.alertmanager_enabled then
+      pvc.new() +
+      pvc.mixin.metadata.withName('alertmanager-data') +
+      pvc.mixin.spec.withAccessModes('ReadWriteOnce') +
+      pvc.mixin.spec.resources.withRequests({ storage: '100Gi' })
+    else {},
 
   alertmanager_container::
-    container.new('alertmanager', $._images.alertmanager) +
-    container.withPorts($.util.defaultPorts) +
-    container.withArgsMixin($.util.mapToFlags($.alertmanager_args)) +
-    container.withVolumeMountsMixin([volumeMount.new('alertmanager-data', '/data')]) +
-    $.util.resourcesRequests('100m', '1Gi') +
-    $.util.readinessProbe +
-    $.jaeger_mixin,
-
+    if $._config.alertmanager_enabled then
+      container.new('alertmanager', $._images.alertmanager) +
+      container.withPorts($.util.defaultPorts) +
+      container.withArgsMixin($.util.mapToFlags($.alertmanager_args)) +
+      container.withVolumeMountsMixin([volumeMount.new('alertmanager-data', '/data')]) +
+      $.util.resourcesRequests('100m', '1Gi') +
+      $.util.readinessProbe +
+      $.jaeger_mixin
+    else {},
 
   alertmanager_statefulset:
-    statefulSet.new('alertmanager', 1, [$.alertmanager_container], $.alertmanager_pvc) +
-    statefulSet.mixin.spec.withServiceName('alertmanager') +
-    statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: 'alertmanager' }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: 'alertmanager' }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: 'alertmanager' }) +
-    statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-    statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900),
+    if $._config.alertmanager_enabled then
+      statefulSet.new('alertmanager', 1, [$.alertmanager_container], $.alertmanager_pvc) +
+      statefulSet.mixin.spec.withServiceName('alertmanager') +
+      statefulSet.mixin.metadata.withNamespace($._config.namespace) +
+      statefulSet.mixin.metadata.withLabels({ name: 'alertmanager' }) +
+      statefulSet.mixin.spec.template.metadata.withLabels({ name: 'alertmanager' }) +
+      statefulSet.mixin.spec.selector.withMatchLabels({ name: 'alertmanager' }) +
+      statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
+      statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+      statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900)
+    else {},
 
   alertmanager_service:
-    $.util.serviceFor($.alertmanager_statefulset),
+    if $._config.alertmanager_enabled then
+      $.util.serviceFor($.alertmanager_statefulset)
+    else {},
 }

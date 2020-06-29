@@ -203,6 +203,7 @@
       'ring.heartbeat-timeout': '10m',
     },
 
+    ruler_enabled: false,
     ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, configdb, gcs, s3)',
     // TODO: Generic client generating functions would be nice.
     ruler_s3_bucket_name: $._config.s3_bucket_name,
@@ -308,6 +309,8 @@
     schemaID: std.md5(std.toString($._config.schema)),
 
     enable_pod_priorities: true,
+
+    alertmanager_enabled: false,
   },
 
   local configMap = $.core.v1.configMap,
