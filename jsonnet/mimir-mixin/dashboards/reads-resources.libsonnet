@@ -40,6 +40,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.goHeapInUsePanel('Memory (go heap inuse)', 'querier'),
       )
     )
+    .addRow(
+      $.row('Ingester')
+      .addPanel(
+        $.containerCPUUsagePanel('CPU', 'ingester'),
+      )
+      .addPanel(
+        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
+      )
+      .addPanel(
+        $.goHeapInUsePanel('Memory (go heap inuse)', 'ingester'),
+      )
+    )
     .addRowIf(
       std.setMember('tsdb', $._config.storage_engine),
       $.row('Store-gateway')
