@@ -80,5 +80,6 @@
     // each query-frontend pod IP and NOT the service IP. To make it, we do NOT
     // use the service cluster IP so that when the service DNS is resolved it
     // returns the set of query-frontend IPs.
+    service.mixin.spec.withPublishNotReadyAddresses(true) +
     service.mixin.spec.withClusterIp('None'),
 }
