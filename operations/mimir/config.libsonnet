@@ -139,7 +139,6 @@
         'experimental.tsdb.ship-interval': '1m',
         'experimental.tsdb.backend': 'gcs',
         'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
-        'experimental.tsdb.store-gateway-enabled': true,
         'experimental.store-gateway.sharding-enabled': true,
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
