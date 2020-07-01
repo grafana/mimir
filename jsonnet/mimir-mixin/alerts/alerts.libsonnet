@@ -160,13 +160,13 @@
         {
           alert: 'CortexIngesterRestarts',
           expr: |||
-            rate(process_start_time_seconds{job=~".+(cortex|ingester)"}[30m]) > 0
+            increase(process_start_time_seconds{job=~".+(cortex|ingester)"}[30m]) > 1
           |||,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: '{{ $labels.job }}/{{ $labels.instance }} is restarting',
+            message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.',
           },
         },
         {
