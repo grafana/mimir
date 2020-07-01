@@ -85,5 +85,5 @@
     // returns the set of query-frontend IPs.
     service.mixin.spec.withPublishNotReadyAddresses(true) +
     service.mixin.spec.withClusterIp('None') +
-    service.mixin.metadata.withName('query-frontend-discovery')
+    service.mixin.metadata.withName('query-frontend-discovery'),
 }
