@@ -160,7 +160,7 @@
         {
           alert: 'CortexIngesterRestarts',
           expr: |||
-            increase(process_start_time_seconds{job=~".+(cortex|ingester)"}[30m]) > 1
+            changes(process_start_time_seconds{job=~".+(cortex|ingester)"}[30m]) > 1
           |||,
           labels: {
             severity: 'critical',
