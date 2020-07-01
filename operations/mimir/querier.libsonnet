@@ -19,7 +19,7 @@
 
       // Limit to N/2 worker threads per frontend, as we have two frontends.
       'querier.worker-parallelism': $._config.querier.concurrency / $._config.queryFrontend.replicas,
-      'querier.frontend-address': 'query-frontend.%(namespace)s.svc.cluster.local:9095' % $._config,
+      'querier.frontend-address': 'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
 
       'log.level': 'debug',
@@ -57,9 +57,6 @@
 
   local service = $.core.v1.service,
 
-  querier_service_ignored_labels:: [],
-
   querier_service:
-    $.util.serviceFor($.querier_deployment, $.querier_service_ignored_labels) +
-    service.mixin.spec.withSelector({ name: 'query-frontend' }),
+    $.util.serviceFor($.querier_deployment),
 }
