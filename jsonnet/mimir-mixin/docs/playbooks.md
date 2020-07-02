@@ -108,17 +108,17 @@ This alert fires when a Cortex store-gateway is not successfully scanning blocks
 How to investigate:
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
 
-## CortexCompactorHasNotSuccessfullyRun
+## CortexCompactorHasNotSuccessfullyCleanedUpBlocks
 
-This alert fires when a Cortex compactor is not successfully completing a compaction run since a long time.
+This alert fires when a Cortex compactor is not successfully deleting blocks marked for deletion for a long time.
 
 How to investigate:
 - Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
-- Look for any error in the compactor logs
+- Look for any error in the compactor logs (ie. bucket Delete API errors)
 
-## CortexCompactorHasNotSuccessfullyRunSinceStart
+## CortexCompactorHasNotSuccessfullyCleanedUpBlocksSinceStart
 
-Same as [`CortexCompactorHasNotSuccessfullyRun`](#CortexCompactorHasNotSuccessfullyRun).
+Same as [`CortexCompactorHasNotSuccessfullyCleanedUpBlocks`](#CortexCompactorHasNotSuccessfullyCleanedUpBlocks).
 
 ## CortexCompactorHasNotUploadedBlocks
 
