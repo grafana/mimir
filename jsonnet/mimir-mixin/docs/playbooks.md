@@ -110,7 +110,7 @@ How to investigate:
 
 ## CortexCompactorHasNotSuccessfullyCleanedUpBlocks
 
-This alert fires when a Cortex compactor is not successfully deleting blocks marked for deletion since a long time.
+This alert fires when a Cortex compactor is not successfully deleting blocks marked for deletion for a long time.
 
 How to investigate:
 - Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
