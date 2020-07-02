@@ -196,5 +196,7 @@
     podDisruptionBudget.mixin.metadata.withName('store-gateway-pdb') +
     podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-pdb' }) +
     podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: 'store-gateway' }) +
-    podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
+    // To avoid any disruption in the read path we need at least 1 replica of each
+    // block available, so the disruption budget depends on the blocks replication factor.
+    podDisruptionBudget.mixin.spec.withMaxUnavailable(if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1),
 }

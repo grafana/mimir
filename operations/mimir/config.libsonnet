@@ -60,6 +60,8 @@
     storage_engine: 'chunks',
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
+    store_gateway_replication_factor: 3,
+
     // TSDB storage engine doesn't require the table manager.
     table_manager_enabled: $._config.storage_engine != 'tsdb',
 
@@ -144,7 +146,7 @@
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
         'experimental.store-gateway.sharding-ring.prefix': '',
-        'experimental.store-gateway.replication-factor': 3,
+        'experimental.store-gateway.replication-factor': $._config.store_gateway_replication_factor,
       }
     ),
 
