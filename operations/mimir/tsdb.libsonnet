@@ -188,4 +188,15 @@
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset),
+
+  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+
+  store_gateway_pdb:
+    podDisruptionBudget.new() +
+    podDisruptionBudget.mixin.metadata.withName('store-gateway-pdb') +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-pdb' }) +
+    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: 'store-gateway' }) +
+    // To avoid any disruption in the read path we need at least 1 replica of each
+    // block available, so the disruption budget depends on the blocks replication factor.
+    podDisruptionBudget.mixin.spec.withMaxUnavailable(if $._config.store_gateway_replication_factor > 1 then $._config.store_gateway_replication_factor - 1 else 1),
 }
