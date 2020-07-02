@@ -188,4 +188,13 @@
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset),
+
+  local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
+
+  store_gateway_pdb:
+    podDisruptionBudget.new() +
+    podDisruptionBudget.mixin.metadata.withName('store-gateway-pdb') +
+    podDisruptionBudget.mixin.metadata.withLabels({ name: 'store-gateway-pdb' }) +
+    podDisruptionBudget.mixin.spec.selector.withMatchLabels({ name: 'store-gateway' }) +
+    podDisruptionBudget.mixin.spec.withMaxUnavailable(1),
 }
