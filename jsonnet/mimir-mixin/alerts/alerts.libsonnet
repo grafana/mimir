@@ -468,7 +468,7 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% missed iterations.
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
             |||,
           },
         },
