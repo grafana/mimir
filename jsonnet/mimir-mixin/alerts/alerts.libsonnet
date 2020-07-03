@@ -399,6 +399,9 @@
           message: |||
             {{ printf "%.1f" $value }}% minimum errors while sending alerts from the Cortex Ruler {{$labels.instance}} to any Alertmanager.
           |||,
+          annotations: {
+            summary: 'Cortex Ruler has encountered more than 3% errors sending alerts to a any Alertmanager.',
+          },
         },
         {
           alert: 'CortexRulerErrorSendingAlertsToSomeAlertmanagers',
@@ -418,6 +421,9 @@
           message: |||
             {{ printf "%.1f" $value }}% minimum errors while sending alerts from the Cortex Ruler {{$labels.instance}} to Alertmanager {{ $labels.alertmanager }}.
           |||,
+          annotations: {
+            summary: 'Cortex Ruler has encountered more than 1% errors sending alerts to a specific Alertmanager.',
+          },
         },
         {
           alert: 'CortexRulerNotificationQueueRunningFull',
@@ -433,8 +439,11 @@
             severity: 'warning',
           },
           message: |||
-            Alert notification queue of Cortex Ruler {{$labels.instance}} is running full.
+            Alert notification queue of Cortex Ruler {{$labels.instance}} might run full, please investigate.
           |||,
+          annotations: {
+            summary: 'Cortex Ruler instance alert notification queue predicted to run full in 30m.',
+          },
         },
         {
           alert: 'CortexRulerFailedEvaluations',
