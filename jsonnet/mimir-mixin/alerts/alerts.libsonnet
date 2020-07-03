@@ -371,86 +371,11 @@
       name: 'ruler_alerts',
       rules: [
         {
-          alert: 'CortexRulerNotConnectedToAlertmanagers',
-          expr: 'max_over_time(cortex_prometheus_notifications_alertmanagers_discovered[1m]) < 1',
-          'for': '5m',
-          label: {
-            severity: 'warning',
-          },
-          message: |||
-            {{ $labels.instance }} is not connected to any Alertmanagers.
-          |||,
-        },
-        {
-          alert: 'CortexRulerErrorSendingAlertsToAnyAlertmanager',
-          expr: |||
-            min without(alertmanager) (
-              rate(cortex_prometheus_notifications_errors_total[1m])
-                /
-              rate(cortex_prometheus_notifications_sent_total[1m])
-            ) 
-            * 100 
-            > 3
-          |||,
-          'for': '5m',
-          label: {
-            severity: 'warning',
-          },
-          message: |||
-            {{ printf "%.1f" $value }}% minimum errors while sending alerts from the Cortex Ruler {{$labels.instance}} to any Alertmanager.
-          |||,
-          annotations: {
-            summary: 'Cortex Ruler has encountered more than 3% errors sending alerts to a any Alertmanager.',
-          },
-        },
-        {
-          alert: 'CortexRulerErrorSendingAlertsToSomeAlertmanagers',
-          expr: |||
-            (
-              rate(cortex_prometheus_notifications_errors_total[1m]) 
-                / 
-              rate(cortex_prometheus_notifications_sent_total[1m])
-            ) 
-            * 100 
-            > 1
-          |||,
-          'for': '5m',
-          label: {
-            severity: 'warning',
-          },
-          message: |||
-            {{ printf "%.1f" $value }}% minimum errors while sending alerts from the Cortex Ruler {{$labels.instance}} to Alertmanager {{ $labels.alertmanager }}.
-          |||,
-          annotations: {
-            summary: 'Cortex Ruler has encountered more than 1% errors sending alerts to a specific Alertmanager.',
-          },
-        },
-        {
-          alert: 'CortexRulerNotificationQueueRunningFull',
-          expr: |||
-            (
-              predict_linear(prometheus_notifications_queue_length[5m], 60 * 30)
-              >
-              min_over_time(prometheus_notifications_queue_capacity[5m])
-            )
-          |||,
-          'for': '5m',
-          label: {
-            severity: 'warning',
-          },
-          message: |||
-            Alert notification queue of Cortex Ruler {{$labels.instance}} might run full, please investigate.
-          |||,
-          annotations: {
-            summary: 'Cortex Ruler instance alert notification queue predicted to run full in 30m.',
-          },
-        },
-        {
           alert: 'CortexRulerFailedEvaluations',
           expr: |||
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total[1m]))
+            sum by (%s) (rate(cortex_prometheus_rule_evaluation_failures_total[1m]))
               /
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_evaluations_total[1m]))
+            sum by (%s) (rate(cortex_prometheus_rule_evaluations_total[1m]))
               > 0.01
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -459,16 +384,16 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% errors for the rule group {{ $labels.rule_group }}
+              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% errors.
             |||,
           },
         },
         {
           alert: 'CortexRulerMissedEvaluations',
           expr: |||
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+            sum by (%s) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            sum by (%s) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
               > 0.01
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -477,7 +402,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
+              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% missed iterations.
             |||,
           },
         },
