@@ -57,6 +57,7 @@
   } else {},
 
   querier_args+:: $.blocks_metadata_caching_config,
+  ruler_args+:: $.blocks_metadata_caching_config,
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
