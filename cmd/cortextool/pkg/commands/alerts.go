@@ -9,8 +9,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/cortextool/pkg/client"
-	"github.com/grafana/cortextool/pkg/printer"
+	"github.com/grafana/cortex-tools/pkg/client"
+	"github.com/grafana/cortex-tools/pkg/printer"
 )
 
 // AlertCommand configures and executes rule related cortex api operations

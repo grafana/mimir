@@ -5,7 +5,7 @@ import (
 
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/cortextool/pkg/commands"
+	"github.com/grafana/cortex-tools/pkg/commands"
 )
 
 var (

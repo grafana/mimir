@@ -12,7 +12,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
 
-	chunkTool "github.com/grafana/cortextool/pkg/chunk"
+	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
 )
 
 type gcsScanner struct {

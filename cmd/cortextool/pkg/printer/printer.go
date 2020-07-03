@@ -10,7 +10,7 @@ import (
 	"github.com/mitchellh/colorstring"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/cortextool/pkg/rules"
+	"github.com/grafana/cortex-tools/pkg/rules"
 )
 
 // Printer is  used for printing formatted output from the cortextool

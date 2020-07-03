@@ -15,9 +15,9 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	yamlv3 "gopkg.in/yaml.v3"
 
-	"github.com/grafana/cortextool/pkg/client"
-	"github.com/grafana/cortextool/pkg/printer"
-	"github.com/grafana/cortextool/pkg/rules"
+	"github.com/grafana/cortex-tools/pkg/client"
+	"github.com/grafana/cortex-tools/pkg/printer"
+	"github.com/grafana/cortex-tools/pkg/rules"
 )
 
 const (

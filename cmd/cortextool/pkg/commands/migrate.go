@@ -6,8 +6,8 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/cortextool/pkg/chunk/migrate"
-	"github.com/grafana/cortextool/pkg/chunk/migrate/reader"
+	"github.com/grafana/cortex-tools/pkg/chunk/migrate"
+	"github.com/grafana/cortex-tools/pkg/chunk/migrate/reader"
 )
 
 type migrateChunksCommandOptions struct {

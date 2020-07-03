@@ -2,6 +2,7 @@
 
 ## unreleased / master
 
+* [BUGFIX] Renamed module from cortextool to cortex-tools to ensure `go get` works properly.
 * [BUGFIX] When using `--disable-color` for `rules get`, it now actually prints rules instead of the bytes of the underlying string
 
 ## v0.2.2 / 2020-06-09

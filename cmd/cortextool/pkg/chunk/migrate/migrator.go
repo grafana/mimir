@@ -7,8 +7,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 
-	"github.com/grafana/cortextool/pkg/chunk/migrate/reader"
-	"github.com/grafana/cortextool/pkg/chunk/migrate/writer"
+	"github.com/grafana/cortex-tools/pkg/chunk/migrate/reader"
+	"github.com/grafana/cortex-tools/pkg/chunk/migrate/writer"
 )
 
 const chunkBufferSize = 1000

@@ -18,10 +18,10 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	"gopkg.in/yaml.v2"
 
-	chunkTool "github.com/grafana/cortextool/pkg/chunk"
-	"github.com/grafana/cortextool/pkg/chunk/filter"
-	toolGCP "github.com/grafana/cortextool/pkg/chunk/gcp"
-	"github.com/grafana/cortextool/pkg/chunk/migrate"
+	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
+	"github.com/grafana/cortex-tools/pkg/chunk/filter"
+	toolGCP "github.com/grafana/cortex-tools/pkg/chunk/gcp"
+	"github.com/grafana/cortex-tools/pkg/chunk/migrate"
 )
 
 var (

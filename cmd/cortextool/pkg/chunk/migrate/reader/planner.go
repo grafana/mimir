@@ -6,7 +6,7 @@ import (
 
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/cortextool/pkg/chunk"
+	"github.com/grafana/cortex-tools/pkg/chunk"
 )
 
 // PlannerConfig is used to configure the Planner

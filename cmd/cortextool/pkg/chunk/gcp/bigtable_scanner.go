@@ -8,7 +8,7 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/sirupsen/logrus"
 
-	chunkTool "github.com/grafana/cortextool/pkg/chunk"
+	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
 )
 
 type bigtableScanner struct {
