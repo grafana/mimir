@@ -1,6 +1,7 @@
 cmd/cortextool/cortextool
 cmd/chunktool/chunktool
 cmd/logtool/logtool
+cmd/rules-migrator/rules-migrator
 .uptodate
 .pkg
 .cache

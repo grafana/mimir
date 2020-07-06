@@ -34,6 +34,9 @@ cmd/chunktool/chunktool: $(APP_GO_FILES) cmd/chunktool/main.go
 cmd/logtool/logtool: $(APP_GO_FILES) cmd/logtool/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
+cmd/rules-migrator/rules-migrator: $(APP_GO_FILES) cmd/rules-migrator/main.go
+	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
+
 lint:
 	golangci-lint run -v
 
