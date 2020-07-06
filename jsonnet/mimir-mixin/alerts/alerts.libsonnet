@@ -373,9 +373,9 @@
         {
           alert: 'CortexRulerFailedEvaluations',
           expr: |||
-            sum by (%s) (rate(cortex_prometheus_rule_evaluation_failures_total[1m]))
+            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total[1m]))
               /
-            sum by (%s) (rate(cortex_prometheus_rule_evaluations_total[1m]))
+            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_evaluations_total[1m]))
               > 0.01
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -384,16 +384,16 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% errors.
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% errors for the rule group {{ $labels.rule_group }}.
             |||,
           },
         },
         {
           alert: 'CortexRulerMissedEvaluations',
           expr: |||
-            sum by (%s) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
+            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
-            sum by (%s) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
+            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_total[1m]))
               > 0.01
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
@@ -402,7 +402,7 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% missed iterations.
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
             |||,
           },
         },
