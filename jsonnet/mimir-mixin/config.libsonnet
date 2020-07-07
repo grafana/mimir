@@ -23,13 +23,15 @@
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 
+    // These are used by the dashboards and allow for the simultaneous display of
+    // microservice and single binary cortex clusters.
     job_names: {
-      ingester: 'ingester',
-      distributor: 'distributor',
-      querier: 'querier',
-      query_frontend: 'query-frontend',
-      table_manager: 'table-manager',
-      store_gateway: 'store-gateway',
+      ingester: '(ingester|cortex$)',
+      distributor: '(distributor|cortex$)',
+      querier: '(querier|cortex$)',
+      query_frontend: '(query-frontend|cortex$)',
+      table_manager: '(table-manager|cortex$)',
+      store_gateway: '(store-gateway|cortex$)',
       gateway: 'cortex-gw',
     },
 
