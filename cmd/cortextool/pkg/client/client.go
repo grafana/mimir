@@ -2,10 +2,12 @@ package client
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
@@ -49,6 +51,20 @@ func New(cfg Config) (*CortexClient, error) {
 		endpoint: endpoint,
 		client:   http.Client{},
 	}, nil
+}
+
+// Query executes a PromQL query against the Cortex cluster.
+func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response, error) {
+
+	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())
+	escapedQuery := url.PathEscape(query)
+
+	res, err := r.doRequest("/api/prom/api/v1/query?"+escapedQuery, "GET", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return res, nil
 }
 
 func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
