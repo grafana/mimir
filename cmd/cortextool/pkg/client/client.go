@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/cortexproject/cortex/pkg/util/tls"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )
@@ -23,6 +24,7 @@ type Config struct {
 	Key     string `yaml:"key"`
 	Address string `yaml:"address"`
 	ID      string `yaml:"id"`
+	TLS     tls.ClientConfig
 }
 
 // CortexClient is used to get and load rules into a cortex ruler
@@ -45,11 +47,29 @@ func New(cfg Config) (*CortexClient, error) {
 		"id":      cfg.ID,
 	}).Debugln("New ruler client created")
 
+	client := http.Client{}
+
+	// Setup TLS client
+	tlsConfig, err := cfg.TLS.GetTLSConfig()
+	if err != nil {
+		log.WithError(err).WithFields(log.Fields{
+			"tls-ca":   cfg.TLS.CAPath,
+			"tls-cert": cfg.TLS.CertPath,
+			"tls-key":  cfg.TLS.KeyPath,
+		}).Errorf("error loading tls files")
+		return nil, fmt.Errorf("client initialization unsuccessful")
+	}
+
+	if tlsConfig != nil {
+		transport := &http.Transport{TLSClientConfig: tlsConfig}
+		client = http.Client{Transport: transport}
+	}
+
 	return &CortexClient{
 		key:      cfg.Key,
 		id:       cfg.ID,
 		endpoint: endpoint,
-		client:   http.Client{},
+		client:   client,
 	}, nil
 }
 

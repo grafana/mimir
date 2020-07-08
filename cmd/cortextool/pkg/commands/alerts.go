@@ -49,6 +49,9 @@ func (a *AlertmanagerCommand) Register(app *kingpin.Application) {
 	alertCmd.Flag("address", "Address of the cortex cluster, alternatively set CORTEX_ADDRESS.").Envar("CORTEX_ADDRESS").Required().StringVar(&a.ClientConfig.Address)
 	alertCmd.Flag("id", "Cortex tenant id, alternatively set CORTEX_TENANT_ID.").Envar("CORTEX_TENANT_ID").Required().StringVar(&a.ClientConfig.ID)
 	alertCmd.Flag("key", "Api key to use when contacting cortex, alternatively set CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&a.ClientConfig.Key)
+	alertCmd.Flag("tls-ca-path", "TLS CA certificate to verify cortex API as part of mTLS, alternatively set CORTEX_TLS_CA_PATH.").Default("").Envar("CORTEX_TLS_CA_PATH").StringVar(&a.ClientConfig.TLS.CAPath)
+	alertCmd.Flag("tls-cert-path", "TLS client certificate to authenticate with cortex API as part of mTLS, alternatively set CORTEX_TLS_CERT_PATH.").Default("").Envar("CORTEX_TLS_CERT_PATH").StringVar(&a.ClientConfig.TLS.CertPath)
+	alertCmd.Flag("tls-key-path", "TLS client certificate private key to authenticate with cortex API as part of mTLS, alternatively set CORTEX_TLS_KEY_PATH.").Default("").Envar("CORTEX_TLS_KEY_PATH").StringVar(&a.ClientConfig.TLS.KeyPath)
 
 	// Get Alertmanager Configs Command
 	getAlertsCmd := alertCmd.Command("get", "Get the alertmanager config currently in the cortex alertmanager.").Action(a.getConfig)
