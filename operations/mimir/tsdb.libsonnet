@@ -10,6 +10,10 @@
     storage_backend: 'none',
     storage_engine: 'tsdb',
 
+    // Allow to configure the ingester disk.
+    cortex_ingester_data_disk_size: '100Gi',
+    cortex_ingester_data_disk_class: 'fast',
+
     // Allow to configure the store-gateway disk.
     cortex_store_gateway_data_disk_size: '50Gi',
     cortex_store_gateway_data_disk_class: 'standard',
@@ -63,9 +67,9 @@
   // volume in order to be crash resilient.
   local ingester_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: '100Gi' }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_ingester_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName('fast') +
+    pvc.mixin.spec.withStorageClassName($._config.cortex_ingester_data_disk_class) +
     pvc.mixin.metadata.withName('ingester-data'),
 
   ingester_deployment: {},
