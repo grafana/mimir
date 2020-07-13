@@ -82,6 +82,15 @@ How to investigate:
 - Ensure the ingester is receiving write-path traffic (samples to ingest)
 - Look for any upload error in the ingester logs (ie. networking or authentication issues)
 
+### Ingester hit the disk capacity
+
+If the ingester hit the disk capacity, any attempt to append samples will fail. You should:
+
+1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refers to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
+2. Investigate why the disk capacity has been hit
+  - Was the disk just too small?
+  - Was there an issue compacting TSDB head and the WAL is increasing indefinitely?
+
 ## CortexIngesterHasNotShippedBlocksSinceStart
 
 Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks).
@@ -130,6 +139,45 @@ How to investigate:
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
+### Compactor is failing because of `not healthy index found`
+
+The compactor may fail to compact blocks due a corrupted block index found in one of the source blocks:
+
+```
+level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=compactor msg="failed to compact user blocks" user=REDACTED err="compaction: group 0@6672437747845546250: block with not healthy index found /data/compact/0@6672437747845546250/REDACTED; Compaction level 1; Labels: map[__org_id__:REDACTED]: 1/1183085 series have an average of 1.000 out-of-order chunks: 0.000 of these are exact duplicates (in terms of data and time range)"
+```
+
+When this happen you should:
+1. Rename the block prefixing it with `corrupted-` so that it will be skipped by the compactor and queriers
+2. Ensure the compactor has recovered
+3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
+
+To rename a block stored on GCS you can use the `gsutil` CLI:
+
+```
+# Replace the placeholders:
+# - BUCKET: bucket name
+# - TENANT: tenant ID
+# - BLOCK:  block ID
+
+gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
+```
+
 ## CortexCompactorHasNotUploadedBlocksSinceStart
 
 Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
+
+## Resizing Persistent Volumes using Kubernetes
+
+This is the short version of an extensive documentation on [how to resize Kubernetes Persistent Volumes](https://kubernetes.io/blog/2018/07/12/resizing-persistent-volumes-using-kubernetes/).
+
+**Pre-requisites**:
+
+- Running Kubernetes v1.11 or above
+- The PV storage class has `allowVolumeExpansion: true`
+- The PV is backed by a supported block storage volume (eg. GCP-PD, AWS-EBS, ...)
+
+**How to increase the volume**:
+
+1. Edit the PVC (persistent volume claim) `spec` for the volume to resize and **increase** `resources` > `requests` > `storage`
+2. Restart the pod attached to the PVC for which the storage request has been increased
