@@ -181,3 +181,67 @@ This is the short version of an extensive documentation on [how to resize Kubern
 
 1. Edit the PVC (persistent volume claim) `spec` for the volume to resize and **increase** `resources` > `requests` > `storage`
 2. Restart the pod attached to the PVC for which the storage request has been increased
+
+## How to create clone volume (Google Cloud specific)
+
+In some scenarios, it may be useful to preserve current volume status for inspection, but keep using the volume.
+[Google Persistent Disk supports "Clone"](https://cloud.google.com/compute/docs/disks/add-persistent-disk#source-disk) operation that can be used to do that.
+Newly cloned disk is independant from its original, and can be used for further investigation by attaching it to a new Machine / Pod.
+
+When using Kubernetes, here is YAML file that creates PV (`clone-ingester-7-pv`) pointing to the new disk clone (`clone-pvc-80cc0efa-4996-11ea-ba79-42010a96008c` in this example),
+PVC (`clone-ingester-7-pvc`) pointing to PV, and finally Pod (`clone-ingester-7-dataaccess`) using the PVC to access the disk.
+
+```yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: clone-ingester-7-pv
+spec:
+  accessModes:
+  - ReadWriteOnce
+  capacity: 
+    storage: 150Gi
+  gcePersistentDisk:
+    fsType: ext4
+    pdName: clone-pvc-80cc0efa-4996-11ea-ba79-42010a96008c
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: fast
+  volumeMode: Filesystem
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: clone-ingester-7-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 150Gi
+  storageClassName: fast
+  volumeName: clone-ingester-7-pv
+  volumeMode: Filesystem
+---
+apiVersion: v1
+kind: Pod
+metadata:
+    name: clone-ingester-7-dataaccess
+spec:
+    containers:
+    - name: alpine
+      image: alpine:latest
+      command: ['sleep', 'infinity']
+      volumeMounts:
+      - name: mypvc
+        mountPath: /data
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1024Mi
+    volumes:
+    - name: mypvc
+      persistentVolumeClaim:
+        claimName: clone-ingester-7-pvc
+```
+
+After this preparation, one can use `kubectl exec -t -i clone-ingester-7-dataaccess /bin/sh` to inspect the disk mounted under `/data`.
