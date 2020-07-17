@@ -1,10 +1,10 @@
 {
+  "version": 1,
   "dependencies": [
     {
-      "name": "grafana-builder",
       "source": {
         "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs",
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "grafana-builder"
         }
       },
@@ -12,15 +12,15 @@
       "sum": "ELsYwK+kGdzX1mee2Yy+/b2mdO4Y503BOCDkFzwmGbE="
     },
     {
-      "name": "mixin-utils",
       "source": {
         "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs",
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "mixin-utils"
         }
       },
-      "version": "8f9d72b2e35b5f3cc1b7c2a8af9bbae7658804e2",
-      "sum": "J1iExBloZLjVEvdzHVjvP9AVTqDOJSfFOtBoeQ7EhKk="
+      "version": "21b638f4e4922c0b6fde12120ed45d8ef803edc7",
+      "sum": "Je2SxBKu+1WrKEEG60zjSKaY/6TPX8uRz5bsaw0a8oA="
     }
-  ]
+  ],
+  "legacyImports": false
 }
