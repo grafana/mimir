@@ -95,8 +95,15 @@
           // As of https://github.com/cortexproject/cortex/pull/2092, this metric is
           // only exposed when it is supposed to be non-zero, so we don't need to do
           // any special filtering on the job label.
-          alert: 'CortexBadOverrides',
+          // The metric itself was renamed in
+          // https://github.com/cortexproject/cortex/pull/2874
+          //
+          // TODO: Remove deprecated metric name of
+          // cortex_overrides_last_reload_successful in the future
+          alert: 'CortexBadRuntimeConfig',
           expr: |||
+            cortex_runtime_config_last_reload_successful == 0
+              or
             cortex_overrides_last_reload_successful == 0
           |||,
           'for': '15m',
@@ -105,7 +112,7 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} failed to reload overrides.
+              {{ $labels.job }} failed to reload runtime config.
             |||,
           },
         },
