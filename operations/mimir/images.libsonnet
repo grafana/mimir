@@ -5,7 +5,7 @@
     memcachedExporter: 'prom/memcached-exporter:v0.6.0',
 
     // Our services.
-    cortex: 'cortexproject/cortex:v1.1.0',
+    cortex: 'cortexproject/cortex:v1.2.0',
 
     distributor: self.cortex,
     ingester: self.cortex,
