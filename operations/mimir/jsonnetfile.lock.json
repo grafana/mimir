@@ -1,10 +1,10 @@
 {
+  "version": 1,
   "dependencies": [
     {
-      "name": "consul",
       "source": {
         "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs",
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "consul"
         }
       },
@@ -12,10 +12,9 @@
       "sum": "qlVBnIShhHEPglAl1xYIAmOP/W8LD0wQmHCT0m9sTLU="
     },
     {
-      "name": "etcd-operator",
       "source": {
         "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs",
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "etcd-operator"
         }
       },
@@ -23,10 +22,19 @@
       "sum": "RbSlOsk0EBAMOfMOKPBdD0joHN6UKZqeP3zy9LjBQTE="
     },
     {
-      "name": "ksonnet-util",
       "source": {
         "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs",
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
+          "subdir": "jaeger-agent-mixin"
+        }
+      },
+      "version": "65a623593025007ef54549550a3569c0e72f085d",
+      "sum": "DsdBoqgx5kE3zc6fMYnfiGjW2+9Mx2OXFieWm1oFHgY="
+    },
+    {
+      "source": {
+        "git": {
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "ksonnet-util"
         }
       },
@@ -34,15 +42,15 @@
       "sum": "LKsTTBcH8TXX5ANgRUu5I7Y1tf5le4nANFV3/W53I+c="
     },
     {
-      "name": "memcached",
       "source": {
         "git": {
-          "remote": "https://github.com/grafana/jsonnet-libs",
+          "remote": "https://github.com/grafana/jsonnet-libs.git",
           "subdir": "memcached"
         }
       },
       "version": "c19a92e586a6752f11745b47f309b13f02ef7147",
       "sum": "GQeyWFtqhwM+hGxQbdywWG1PFJ/KmSC1at0hai7AHXU="
     }
-  ]
+  ],
+  "legacyImports": false
 }
