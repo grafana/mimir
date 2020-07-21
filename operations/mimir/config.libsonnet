@@ -137,7 +137,7 @@
         'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
         'experimental.tsdb.bucket-store.ignore-deletion-marks-delay': '1h',
         'experimental.tsdb.block-ranges-period': '2h',
-        'experimental.tsdb.retention-period': '13h',
+        'experimental.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
         'experimental.tsdb.ship-interval': '1m',
         'experimental.tsdb.backend': 'gcs',
         'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,

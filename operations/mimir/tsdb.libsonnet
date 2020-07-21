@@ -101,7 +101,12 @@
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
     $.util.podPriority('high') +
-    $.util.antiAffinity,
+    $.util.antiAffinity +
+    // Parallelly scale up/down store-gateway instances instead of starting them
+    // one by one. This does NOT affect rolling updates: they will continue to be
+    // rolled out one by one (the next pod will be rolled out once the previous is
+    // ready).
+    statefulSet.mixin.spec.withPodManagementPolicy('Parallel'),
 
   ingester_service:
     $.util.serviceFor($.ingester_statefulset, $.ingester_service_ignored_labels),
