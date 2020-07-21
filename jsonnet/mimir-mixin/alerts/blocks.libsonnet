@@ -4,13 +4,16 @@
       name: 'cortex_blocks_alerts',
       rules: [
         {
-          // Alert if the ingester has not shipped any block in the last 4h.
+          // Alert if the ingester has not shipped any block in the last 4h. It also checks cortex_ingester_ingested_samples_total
+          // to avoid false positives on ingesters not receiving any traffic yet (eg. a newly created cluster).
           alert: 'CortexIngesterHasNotShippedBlocks',
           'for': '15m',
           expr: |||
-            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"} > 60 * 60 * 4)
+            (min by(namespace, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"}) > 60 * 60 * 4)
             and
-            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"} > 0)
+            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"}) > 0)
+            and
+            (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
           |||,
           labels: {
             severity: 'critical',
@@ -20,17 +23,35 @@
           },
         },
         {
-          // Alert if the ingester has not shipped any block since start.
+          // Alert if the ingester has not shipped any block since start. It also checks cortex_ingester_ingested_samples_total
+          // to avoid false positives on ingesters not receiving any traffic yet (eg. a newly created cluster).
           alert: 'CortexIngesterHasNotShippedBlocksSinceStart',
           'for': '4h',
           expr: |||
-            thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"} == 0
+            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"}) == 0)
+            and
+            (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
           |||,
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} has not shipped any block in the last 4 hours.',
+          },
+        },
+        {
+          // Alert if the ingester is failing to compact TSDB head into a block, for any opened TSDB. This is a critical
+          // condition that should never happen.
+          alert: 'CortexIngesterTSDBHeadCompactionFailed',
+          'for': '15m',
+          expr: |||
+            rate(cortex_ingester_tsdb_compactions_failed_total[5m]) > 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to compact TSDB head.',
           },
         },
         {

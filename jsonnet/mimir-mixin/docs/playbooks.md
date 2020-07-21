@@ -95,6 +95,13 @@ If the ingester hit the disk capacity, any attempt to append samples will fail. 
 
 Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks).
 
+## CortexIngesterTSDBHeadCompactionFailed
+
+This alert fires when a Cortex ingester is failing to compact the TSDB head into a block. A TSDB instance is opened for each tenant writing at least 1 series to the ingester and its head contains the in-memory series not flushed to a block yet. If the TSDB head compaction fails it means it's failing to compact a block from the in-memory series for at least 1 tenant.
+
+How to investigate:
+- Look for details in the ingester logs
+
 ## CortexQuerierHasNotScanTheBucket
 
 This alert fires when a Cortex querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
