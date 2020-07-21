@@ -97,7 +97,9 @@ Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks
 
 ## CortexIngesterTSDBHeadCompactionFailed
 
-This alert fires when a Cortex ingester is failing to compact the TSDB head into a block. A TSDB instance is opened for each tenant writing at least 1 series to the ingester and its head contains the in-memory series not flushed to a block yet. If the TSDB head compaction fails it means it's failing to compact a block from the in-memory series for at least 1 tenant.
+This alert fires when a Cortex ingester is failing to compact the TSDB head into a block.
+
+A TSDB instance is opened for each tenant writing at least 1 series to the ingester and its head contains the in-memory series not flushed to a block yet. Once the TSDB head is compactable, the ingester will try to compact it every 1 minute. If the TSDB head compaction repeatedly fails, it means it's failing to compact a block from the in-memory series for at least 1 tenant, and it's a critical condition that should be immediately investigated.
 
 How to investigate:
 - Look for details in the ingester logs

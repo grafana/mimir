@@ -40,8 +40,9 @@
           },
         },
         {
-          // Alert if the ingester is failing to compact TSDB head into a block, for any opened TSDB. This is a critical
-          // condition that should never happen.
+          // Alert if the ingester is failing to compact TSDB head into a block, for any opened TSDB. Once the TSDB head is
+          // compactable, the ingester will try to compact it every 1 minute. Repeatedly failing it is a critical condition
+          // that should never happen.
           alert: 'CortexIngesterTSDBHeadCompactionFailed',
           'for': '15m',
           expr: |||
