@@ -190,16 +190,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        $.panel('WAL truncations latency') +
-        $.queryPanel('sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg') +
-        { yaxes: $.yaxes('s') },
-      )
-      .addPanel(
         $.successFailurePanel(
           'Checkpoints created / sec',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__interval]))' % $.jobMatcher($._config.job_names.ingester),
         ),
+      )
+      .addPanel(
+        $.panel('WAL truncations latency (includes checkpointing)') +
+        $.queryPanel('sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg') +
+        { yaxes: $.yaxes('s') },
       )
       .addPanel(
         $.panel('Corruptions / sec') +
