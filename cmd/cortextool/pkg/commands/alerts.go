@@ -4,7 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"io/ioutil"
 	"net/url"
@@ -12,12 +16,23 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/alertmanager/config"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/grafana/cortex-tools/pkg/client"
 	"github.com/grafana/cortex-tools/pkg/printer"
+)
+
+var (
+	nonDuplicateAlerts = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "cortextool_alerts_single_source",
+			Help: "Alerts found by the alerts verify command that are coming from a single source rather than multiple sources..",
+		},
+	)
 )
 
 // AlertmanagerCommand configures and executes rule related cortex api operations
@@ -33,14 +48,15 @@ type AlertmanagerCommand struct {
 
 // AlertCommand configures and executes rule related PromQL queries for alerts comparison.
 type AlertCommand struct {
-	CortexURL    string
-	IgnoreString string
-	IgnoreAlerts map[string]interface{}
-	SourceLabel  string
-	NumSources   int
-	GracePeriod  int
-	ClientConfig client.Config
-	cli          *client.CortexClient
+	CortexURL      string
+	IgnoreString   string
+	IgnoreAlerts   map[string]interface{}
+	SourceLabel    string
+	NumSources     int
+	GracePeriod    int
+	CheckFrequency int
+	ClientConfig   client.Config
+	cli            *client.CortexClient
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -129,8 +145,9 @@ func (a *AlertCommand) Register(app *kingpin.Application) {
 
 	verifyAlertsCmd := alertCmd.Command("verify", "Verifies alerts in an alertmanager cluster are deduplicated; useful for verifying correct configuration when transferring from Prometheus to Cortex alert evaluation.").Action(a.verifyConfig)
 	verifyAlertsCmd.Flag("ignore-alerts", "A comma separated list of Alert names to ignore in deduplication checks.").StringVar(&a.IgnoreString)
-	verifyAlertsCmd.Flag("source-label", "Label to look for when deciding if two alerts are duplicates of eachother from separate sources.").Default("ruler").StringVar(&a.SourceLabel)
-	verifyAlertsCmd.Flag("grace-period", "Grace period, don't consider alert groups with the incorrect amount of alert replicas erroneous unless the alerts have existed for more than this amount of time, in minutes.").Default("5").IntVar(&a.GracePeriod)
+	verifyAlertsCmd.Flag("source-label", "Label to look for when deciding if two alerts are duplicates of eachother from separate sources.").Default("prometheus").StringVar(&a.SourceLabel)
+	verifyAlertsCmd.Flag("grace-period", "Grace period, don't consider alert groups with the incorrect amount of alert replicas erroneous unless the alerts have existed for more than this amount of time, in minutes.").Default("2").IntVar(&a.GracePeriod)
+	verifyAlertsCmd.Flag("frequency", "Setting this value will turn cortextool into a long-running process, running the alerts verify check every # of minutes specified").IntVar(&a.CheckFrequency)
 }
 
 func (a *AlertCommand) setup(k *kingpin.ParseContext) error {
@@ -176,22 +193,76 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 		a.SourceLabel,
 		a.GracePeriod,
 		a.SourceLabel)
-	res, err := a.cli.Query(context.Background(), fmt.Sprintf("%s or %s", lhs, rhs))
+
+	query := fmt.Sprintf("%s or %s", lhs, rhs)
+	if a.CheckFrequency <= 0 {
+		_, err := a.runVerifyQuery(context.Background(), query)
+		return err
+	}
+
+	// Use a different registerer than default so we don't get all the Cortex metrics, but include Go runtime metrics.
+	goStats := prometheus.NewGoCollector()
+	reg := prometheus.NewRegistry()
+	reg.MustRegister(nonDuplicateAlerts)
+	reg.MustRegister(goStats)
+
+	http.Handle("/metrics", promhttp.HandlerFor(
+		reg,
+		promhttp.HandlerOpts{},
+	))
+
+	go func() {
+		log.Fatal(http.ListenAndServe(":9090", nil))
+	}()
+
+	ctx := context.Background()
+
+	ctx, cancel := context.WithCancel(ctx)
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt)
+	defer func() {
+		signal.Stop(c)
+		cancel()
+	}()
+	var lastErr error
+	var n int
+
+	go func() {
+		ticker := time.NewTicker(time.Duration(a.CheckFrequency) * time.Minute)
+		for {
+			n, lastErr = a.runVerifyQuery(ctx, query)
+			nonDuplicateAlerts.Set(float64(n))
+			select {
+			case <-c:
+				cancel()
+				return
+			case <-ticker.C:
+				continue
+			}
+		}
+
+	}()
+	<-ctx.Done()
+	return lastErr
+}
+
+func (a *AlertCommand) runVerifyQuery(ctx context.Context, query string) (int, error) {
+	res, err := a.cli.Query(ctx, query)
 
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer res.Body.Close()
 
 	var data queryResult
 	err = json.Unmarshal(body, &data)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	for _, m := range data.Data.Result {
@@ -199,9 +270,9 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 			log.WithFields(log.Fields{
 				"alertname": m.Metric["alertname"],
 				"state":     m.Metric,
-			}).Infof("bad alert")
+			}).Infof("alert found that was not in both sources")
 		}
 	}
 	log.WithFields(log.Fields{"count": len(data.Data.Result)}).Infof("found mismatching alerts")
-	return nil
+	return len(data.Data.Result), nil
 }
