@@ -18,8 +18,7 @@
     store_gateway: self.cortex,
 
     query_tee: 'quay.io/cortexproject/query-tee:master-5d7b05c3',
-    // TODO(gouthamve/jtlisi): Upstream the ruler and AM configs.
-    alertmanager: 'jtlisi/cortex:20190819_alertmanager_update-faa66aa43',
+    alertmanager: 'quay.io/cortexproject/cortex:master-2b41aa38d',
     testExporter: 'cortexproject/test-exporter:master-be013707',
   },
 }
