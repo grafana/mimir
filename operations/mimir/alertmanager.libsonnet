@@ -7,7 +7,7 @@
   local isGossiping = $._config.alertmanager.replicas > 1,
   local peers = if isGossiping then
     [
-      'alertmanager-%d.alertmanager.%s.svc.%s.local:%s' % [i, $._config.namespace, $._config.cluster, $._config.alertmanager_gossip_port]
+      'alertmanager-%d.alertmanager.%s.svc.%s.local:%s' % [i, $._config.namespace, $._config.cluster, $._config.alertmanager.gossip_port]
       for i in std.range(0, $._config.alertmanager.replicas - 1)
     ]
   else [],
@@ -38,8 +38,8 @@
       container.withPorts(
         $.util.defaultPorts +
         if isGossiping then [
-          $.core.v1.containerPort.newUDP('gossip-udp', $._config.alertmanager_gossip_port),
-          $.core.v1.containerPort.new('gossip-tcp', $._config.alertmanager_gossip_port),
+          $.core.v1.containerPort.newUDP('gossip-udp', $._config.alertmanager.gossip_port),
+          $.core.v1.containerPort.new('gossip-tcp', $._config.alertmanager.gossip_port),
         ]
         else [],
       ) +
