@@ -2,6 +2,9 @@
 
 ## unreleased / master
 
+## v0.2.3
+
+* [FEATURE] Added `alerts verify` command, which can be used to compare `ALERTS` series in Cortex to verify if Prometheus and Cortex Ruler are firing the same alerts
 * [BUGFIX] Renamed module from cortextool to cortex-tools to ensure `go get` works properly.
 * [BUGFIX] When using `--disable-color` for `rules get`, it now actually prints rules instead of the bytes of the underlying string
 * [ENHANCEMENT] Allow mutualTLS for Cortex API client for `rules` and `alertmanager` cmds with:
