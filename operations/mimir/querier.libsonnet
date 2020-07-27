@@ -10,7 +10,7 @@
     {
       target: 'querier',
 
-      // Increase HTTP server response write timeout, as we were seeing some
+      // Increase HTTP server response write timeout, as we were seeing some
       // queries that return a lot of data timeing out.
       'server.http-write-timeout': '1m',
 
@@ -21,6 +21,8 @@
       'querier.worker-parallelism': $._config.querier.concurrency / $._config.queryFrontend.replicas,
       'querier.frontend-address': 'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
+
+      'querier.second-store-engine': $._config.querier_second_storage_engine,
 
       'log.level': 'debug',
     },

@@ -84,18 +84,17 @@
     'ingester.tokens-file-path': '/data/tokens',
   },
 
-  ingester_container+::
-    container.withVolumeMountsMixin([
-      volumeMount.new('ingester-data', '/data'),
-    ]),
-
-  ingester_statefulset:
-    statefulSet.new('ingester', 3, [$.ingester_container], ingester_data_pvc) +
-    statefulSet.mixin.spec.withServiceName('ingester') +
+  newIngesterStatefulSet(name, container)::
+    statefulSet.new(name, 3, [
+      container + $.core.v1.container.withVolumeMountsMixin([
+        volumeMount.new('ingester-data', '/data'),
+      ]),
+    ], ingester_data_pvc) +
+    statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: 'ingester' }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: 'ingester' } + $.ingester_deployment_labels) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: 'ingester' }) +
+    statefulSet.mixin.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name } + $.ingester_deployment_labels) +
+    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
@@ -107,6 +106,8 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel'),
+
+  ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container),
 
   ingester_service:
     $.util.serviceFor($.ingester_statefulset, $.ingester_service_ignored_labels),

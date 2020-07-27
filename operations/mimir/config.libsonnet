@@ -58,6 +58,8 @@
     // Use the Cortex chunks storage engine by default, while giving the ability
     // to switch to tsdb storage.
     storage_engine: 'chunks',
+    // Secondary storage engine is only used for querying.
+    querier_second_storage_engine: null,
     storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
     store_gateway_replication_factor: 3,
@@ -113,7 +115,7 @@
 
     storeConfig: self.storeMemcachedChunksConfig,
 
-    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled && $._config.storage_engine == 'chunks' then
+    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled && ($._config.storage_engine == 'chunks' || $._config.querier_second_storage_engine == 'chunks') then
       {
         'store.chunks-cache.memcached.hostname': 'memcached.%s.svc.cluster.local' % $._config.namespace,
         'store.chunks-cache.memcached.service': 'memcached-client',
@@ -131,8 +133,8 @@
     // TSDB blocks storage configuration, used only when 'tsdb' storage
     // engine is explicitly enabled.
     storageTSDBConfig: (
-      if $._config.storage_engine != 'tsdb' then {} else {
-        'store.engine': 'tsdb',
+      if $._config.storage_engine == 'tsdb' || $._config.querier_second_storage_engine == 'tsdb' then {
+        'store.engine': $._config.storage_engine,  // May still be chunks
         'experimental.tsdb.dir': '/data/tsdb',
         'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
         'experimental.tsdb.bucket-store.ignore-deletion-marks-delay': '1h',
@@ -147,7 +149,7 @@
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
         'experimental.store-gateway.sharding-ring.prefix': '',
         'experimental.store-gateway.replication-factor': $._config.store_gateway_replication_factor,
-      }
+      } else {}
     ),
 
     // Shared between the Ruler and Querier
