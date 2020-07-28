@@ -1,5 +1,6 @@
 {
   grafanaDashboards+:
+    (import 'dashboards/config.libsonnet') +
     (import 'dashboards/queries.libsonnet') +
     (import 'dashboards/reads.libsonnet') +
     (import 'dashboards/ruler.libsonnet') +
