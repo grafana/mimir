@@ -4,8 +4,8 @@
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
   local service = $.core.v1.service,
-  local isGossiping = $._config.alertmanager.replicas > 1,
-  local peers = if isGossiping then
+  local isHA = $._config.alertmanager.replicas > 1,
+  local peers = if isHA then
     [
       'alertmanager-%d.alertmanager.%s.svc.%s.local:%s' % [i, $._config.namespace, $._config.cluster, $._config.alertmanager.gossip_port]
       for i in std.range(0, $._config.alertmanager.replicas - 1)
@@ -37,7 +37,7 @@
       container.new('alertmanager', $._images.alertmanager) +
       container.withPorts(
         $.util.defaultPorts +
-        if isGossiping then [
+        if isHA then [
           $.core.v1.containerPort.newUDP('gossip-udp', $._config.alertmanager.gossip_port),
           $.core.v1.containerPort.new('gossip-tcp', $._config.alertmanager.gossip_port),
         ]
@@ -46,7 +46,7 @@
       container.withEnvMixin([container.envType.fromFieldPath('POD_IP', 'status.podIP')]) +
       container.withArgsMixin(
         $.util.mapToFlags($.alertmanager_args) +
-        if isGossiping then
+        if isHA then
           ['--cluster.listen-address=[$(POD_IP)]:%s' % $._config.alertmanager_gossip_port] +
           ['--cluster.peer=%s' % peer for peer in peers]
         else [],
@@ -72,7 +72,7 @@
 
   alertmanager_service:
     if $._config.alertmanager_enabled then
-      if $._config.alertmanager.replicas > 1 then
+      if isHA then
         $.util.serviceFor($.alertmanager_statefulset) +
         service.mixin.spec.withClusterIp('None')
       else
