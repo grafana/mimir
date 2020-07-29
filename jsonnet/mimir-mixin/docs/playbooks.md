@@ -82,6 +82,8 @@ How to investigate:
 - Ensure the ingester is receiving write-path traffic (samples to ingest)
 - Look for any upload error in the ingester logs (ie. networking or authentication issues)
 
+_If the alert `CortexIngesterTSDBHeadCompactionFailed` fired as well, then give priority to it because that could be the cause._
+
 ### Ingester hit the disk capacity
 
 If the ingester hit the disk capacity, any attempt to append samples will fail. You should:
@@ -101,7 +103,12 @@ This alert fires when a Cortex ingester is failing to compact the TSDB head into
 
 A TSDB instance is opened for each tenant writing at least 1 series to the ingester and its head contains the in-memory series not flushed to a block yet. Once the TSDB head is compactable, the ingester will try to compact it every 1 minute. If the TSDB head compaction repeatedly fails, it means it's failing to compact a block from the in-memory series for at least 1 tenant, and it's a critical condition that should be immediately investigated.
 
-How to investigate:
+The cause triggering this alert could **lead to**:
+- Ingesters run out of memory
+- Ingesters run out of disk space
+- Queries return partial results after `-querier.query-ingesters-within` time since the beginning of the incident
+
+How to **investigate**:
 - Look for details in the ingester logs
 
 ## CortexQuerierHasNotScanTheBucket
