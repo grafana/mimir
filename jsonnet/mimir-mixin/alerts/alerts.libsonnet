@@ -321,9 +321,9 @@
         },
         {
           alert: 'CortexProvisioningTooManyActiveSeries',
-          // 1 million active series per ingester max.
+          // 1.5 million active series per ingester max.
           expr: |||
-            avg by (%s) (cortex_ingester_memory_series) > 1.1e6
+            avg by (%s) (cortex_ingester_memory_series) > 1.6e6
               and
             sum by (%s) (rate(cortex_ingester_received_chunks[1h])) == 0
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
@@ -354,14 +354,33 @@
           },
         },
         {
-          alert: 'CortexProvisioningTooMuchMemory',
+          alert: 'CortexAllocatingTooMuchMemory',
           expr: |||
-            avg by (%s) (
+            (
+              container_memory_working_set_bytes{container_name="ingester"}
+                /
+              container_spec_memory_limit_bytes{container_name="ingester"}
+            ) > 0.5
+          |||,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Too much memory being used by ingesters - add more ingesters.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexAllocatingTooMuchMemory',
+          expr: |||
+            (
               container_memory_working_set_bytes{container_name="ingester"}
                 /
               container_spec_memory_limit_bytes{container_name="ingester"}
             ) > 0.7
-          ||| % $._config.alert_aggregation_labels,
+          |||,
           'for': '15m',
           labels: {
             severity: 'critical',
