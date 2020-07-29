@@ -368,7 +368,7 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by ingesters - add more ingesters.
+              Too much memory being used by {{ $labels.instance }} - add more ingesters.
             |||,
           },
         },
@@ -379,7 +379,7 @@
               container_memory_working_set_bytes{container_name="ingester"}
                 /
               container_spec_memory_limit_bytes{container_name="ingester"}
-            ) > 0.7
+            ) > 0.8
           |||,
           'for': '15m',
           labels: {
@@ -387,7 +387,7 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by ingesters - add more ingesters.
+              Too much memory being used by {{ $labels.instance }} - add more ingesters.
             |||,
           },
         },
