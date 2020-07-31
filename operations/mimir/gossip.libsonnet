@@ -63,7 +63,7 @@
   // During migration to gossip, it may be useful to use distributors instead, since they are restarted faster.
   gossip_ring_service:
     local service = $.core.v1.service;
-    local servicePort = service.mixin.spec.portsType;
+    local servicePort = $.core.v1.servicePort;
     local ports = [
       servicePort.newNamed('gossip-ring', gossipRingPort, gossipRingPort) +
       servicePort.withProtocol('TCP'),
