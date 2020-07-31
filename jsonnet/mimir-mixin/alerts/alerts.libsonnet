@@ -92,6 +92,21 @@
           },
         },
         {
+          alert: 'CortexInconsistentConfig',
+          expr: |||
+            count(count by(%s, job, sha256) (cortex_config_hash)) without(sha256) > 1
+          ||| % $._config.alert_aggregation_labels,
+          'for': '1h',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              An inconsistent config file hash is used across cluster {{ $labels.job }}.
+            |||,
+          },
+        },
+        {
           // As of https://github.com/cortexproject/cortex/pull/2092, this metric is
           // only exposed when it is supposed to be non-zero, so we don't need to do
           // any special filtering on the job label.
