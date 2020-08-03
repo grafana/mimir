@@ -353,3 +353,12 @@ After this preparation, one can use `kubectl exec -t -i clone-ingester-7-dataacc
    [Plugin]
    plugin_directory = /usr/lib/python3.8/site-packages/google_compute_engine/boto
    ```
+
+### Deleting a StatefulSet with persistent volumes
+
+When you delete a Kubernetes StatefulSet whose pods have persistent volume claims (PVC), the PVCs are not automatically deleted. This means that if the StatefulSet is recreated, the pods for which there was already a PVC will get the volume mounted previously.
+
+A PVC can be manually deleted by an operator. When a PVC claim is deleted, what happens to the volume depends on its [Reclaim Policy](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming):
+
+- `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
+- `Delete`: the volume will be automatically deleted
