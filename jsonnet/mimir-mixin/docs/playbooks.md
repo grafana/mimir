@@ -201,13 +201,13 @@ There could be several root causes leading to a potential data loss. In this doc
 
 ### Halt the compactor
 
-The Cortex cluster continues to successfully operate even if the compactor is not running, except that over a long period (12+ hours) this will lead to query performance degrade. The compactor could potentially be the cause of data loss because:
+The Cortex cluster continues to successfully operate even if the compactor is not running, except that over a long period (12+ hours) this will lead to query performance degradation. The compactor could potentially be the cause of data loss because:
 
-- It marks blocks for deletion (soft deletion)
+- It marks blocks for deletion (soft deletion). _This doesn't lead to any immediate deletion, but blocks marked for deletion will be hard deleted once a delay expires._
 - It permanently deletes blocks marked for deletion after `-compactor.deletion-delay` (hard deletion)
 - It could generate corrupted compacted blocks (eg. due to a bug or if a source block is corrupted and the automatic checks can't detect it)
 
-**If you suspect the compactor could be the cause of data loss, halt it**. It can be restarted anytime later.
+**If you suspect the compactor could be the cause of data loss, halt it** (delete the statefulset or scale down the replicas to 0). It can be restarted anytime later.
 
 When the compactor is **halted**:
 
@@ -223,10 +223,12 @@ The blocks retained in the ingesters can be used in case the compactor generates
 How to manually blocks from ingesters to the bucket:
 
 1. Ensure [`gsutil`](https://cloud.google.com/storage/docs/gsutil) is installed in the Cortex pod. If not, [install it](#install-gsutil-in-the-cortex-pod)
-2. Run `cd /data/tsdb && /path/to/gsutil -m rsync -r -x 'thanos.shipper.json|chunks_head|wal' . gs://<bucket>/recovered/`
+2. Run `cd /data/tsdb && /path/to/gsutil -m rsync -n -r -x 'thanos.shipper.json|chunks_head|wal' . gs://<bucket>/recovered/`
+   - `-n` enabled the **dry run** (remove it once you've verified the output matches your expectations)
    - `-m` enables parallel mode
    - `-r` enables recursive rsync
-   - `-x <pattern>` excludes specific patterns from sync
+   - `-x <pattern>` excludes specific patterns from sync (no WAL or shipper metadata file should be uploaded to the bucket)
+   - Don't use `-d` (dangerous) because it will delete from the bucket any block which is not in the local filesystem
 
 ### Freeze ingesters persistent disk
 
