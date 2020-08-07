@@ -6,9 +6,9 @@
   local service = $.core.v1.service,
 
   _config+:: {
-    // Enforce TSDB storage
+    // Enforce blocks storage
     storage_backend: 'none',
-    storage_engine: 'tsdb',
+    storage_engine: 'blocks',
 
     // Allow to configure the ingester disk.
     cortex_ingester_data_disk_size: '100Gi',
@@ -29,35 +29,35 @@
   blocks_chunks_caching_config::
     (
       if $._config.memcached_index_queries_enabled then {
-        'experimental.tsdb.bucket-store.index-cache.backend': 'memcached',
-        'experimental.tsdb.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
-        'experimental.tsdb.bucket-store.index-cache.memcached.timeout': '200ms',
-        'experimental.tsdb.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
-        'experimental.tsdb.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
-        'experimental.tsdb.bucket-store.index-cache.memcached.max-async-concurrency': '50',
-        'experimental.tsdb.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
-        'experimental.tsdb.bucket-store.index-cache.postings-compression-enabled': 'true',
+        'experimental.blocks-storage.bucket-store.index-cache.backend': 'memcached',
+        'experimental.blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'experimental.blocks-storage.bucket-store.index-cache.memcached.timeout': '200ms',
+        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
+        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
+        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': '50',
+        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
+        'experimental.blocks-storage.bucket-store.index-cache.postings-compression-enabled': 'true',
       } else {}
     ) + (
       if $._config.memcached_chunks_enabled then {
-        'experimental.tsdb.bucket-store.chunks-cache.backend': 'memcached',
-        'experimental.tsdb.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
-        'experimental.tsdb.bucket-store.chunks-cache.memcached.timeout': '200ms',
-        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
-        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
-        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
-        'experimental.tsdb.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
+        'experimental.blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
+        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.timeout': '200ms',
+        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
+        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
+        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
+        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
       } else {}
     ),
 
   blocks_metadata_caching_config:: if $._config.memcached_metadata_enabled then {
-    'experimental.tsdb.bucket-store.metadata-cache.backend': 'memcached',
-    'experimental.tsdb.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
-    'experimental.tsdb.bucket-store.metadata-cache.memcached.timeout': '200ms',
-    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
-    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
-    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
-    'experimental.tsdb.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
+    'experimental.blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
+    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.timeout': '200ms',
+    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
+    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
+    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
+    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
   } else {},
 
   querier_args+:: $.blocks_metadata_caching_config,
@@ -96,7 +96,9 @@
     statefulSet.mixin.spec.template.metadata.withLabels({ name: name } + $.ingester_deployment_labels) +
     statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
+    // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
+    // For this reason, we grant an high termination period (80 minutes).
+    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
     $.util.podPriority('high') +
