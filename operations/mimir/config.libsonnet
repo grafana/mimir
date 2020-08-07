@@ -59,7 +59,7 @@
     storage_engine: 'chunks',
     // Secondary storage engine is only used for querying.
     querier_second_storage_engine: null,
-    storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
+    blocks_storage_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
     store_gateway_replication_factor: 3,
 
@@ -126,12 +126,11 @@
       $._config.client_configs.aws +
       $._config.client_configs.cassandra +
       $._config.client_configs.gcp +
-      $._config.storageTSDBConfig +
       { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
-    storageTSDBConfig: (
+    blocksStorageConfig: (
       if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then {
         'store.engine': $._config.storage_engine,  // May still be chunks
         'experimental.blocks-storage.tsdb.dir': '/data/tsdb',
@@ -141,7 +140,7 @@
         'experimental.blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
         'experimental.blocks-storage.tsdb.ship-interval': '1m',
         'experimental.blocks-storage.backend': 'gcs',
-        'experimental.blocks-storage.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
+        'experimental.blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
         'experimental.store-gateway.sharding-enabled': true,
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,

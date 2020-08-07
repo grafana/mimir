@@ -5,6 +5,7 @@
     $._config.ringConfig +
     $._config.storeConfig +
     $._config.storageConfig +
+    $._config.blocksStorageConfig +
     $._config.distributorConfig +  // This adds the distributor ring flags to the ingester.
     {
       target: 'ingester',

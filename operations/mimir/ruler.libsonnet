@@ -5,6 +5,7 @@
     $._config.ringConfig +
     $._config.storeConfig +
     $._config.storageConfig +
+    $._config.blocksStorageConfig +
     $._config.queryConfig +
     $._config.distributorConfig +
     $._config.rulerClientConfig +
