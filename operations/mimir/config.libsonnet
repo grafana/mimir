@@ -59,7 +59,7 @@
     storage_engine: 'chunks',
     // Secondary storage engine is only used for querying.
     querier_second_storage_engine: null,
-    storage_tsdb_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
+    blocks_storage_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
     store_gateway_replication_factor: 3,
 
@@ -140,7 +140,7 @@
         'experimental.blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
         'experimental.blocks-storage.tsdb.ship-interval': '1m',
         'experimental.blocks-storage.backend': 'gcs',
-        'experimental.blocks-storage.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
+        'experimental.blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
         'experimental.store-gateway.sharding-enabled': true,
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
