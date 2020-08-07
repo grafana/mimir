@@ -7,7 +7,7 @@
     (import 'dashboards/scaling.libsonnet') +
     (import 'dashboards/writes.libsonnet') +
 
-    (if std.setMember('tsdb', $._config.storage_engine)
+    (if std.setMember('blocks', $._config.storage_engine)
      then
        (import 'dashboards/compactor.libsonnet') +
        (import 'dashboards/compactor-resources.libsonnet') +
@@ -18,7 +18,7 @@
      then import 'dashboards/chunks.libsonnet'
      else {}) +
 
-    (if std.setMember('tsdb', $._config.storage_engine)
+    (if std.setMember('blocks', $._config.storage_engine)
         && std.setMember('chunks', $._config.storage_engine)
      then import 'dashboards/comparison.libsonnet'
      else {}) +

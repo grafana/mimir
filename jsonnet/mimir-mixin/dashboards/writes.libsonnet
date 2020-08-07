@@ -150,7 +150,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Ingester - Blocks storage - Shipper')
       .addPanel(
         $.successFailurePanel(
@@ -165,7 +165,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Ingester - Blocks storage - TSDB Head')
       .addPanel(
         $.successFailurePanel(
@@ -180,7 +180,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Ingester - Blocks storage - TSDB WAL')
       .addPanel(
         $.successFailurePanel(

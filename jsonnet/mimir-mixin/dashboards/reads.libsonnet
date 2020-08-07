@@ -60,7 +60,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Store-gateway')
       .addPanel(
         $.panel('QPS') +
@@ -96,7 +96,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Memcached – Blocks Storage – Index header (Store-gateway)')
       .addPanel(
         $.panel('QPS') +
@@ -115,15 +115,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.thanosMemcachedCache('Memcached – Blocks Storage – Chunks (Store-gateway)', $._config.job_names.store_gateway, 'store-gateway', 'chunks-cache')
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.thanosMemcachedCache('Memcached – Blocks Storage – Metadada (Store-gateway)', $._config.job_names.store_gateway, 'store-gateway', 'metadata-cache')
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.thanosMemcachedCache('Memcached – Blocks Storage – Metadada (Querier)', $._config.job_names.querier, 'querier', 'metadata-cache')
     )
     .addRowIf(
@@ -180,20 +180,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     // Object store metrics for the store-gateway.
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.objectStorePanels1('Store-gateway - Blocks Object Store', 'store-gateway'),
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.objectStorePanels2('', 'store-gateway'),
     )
     // Object store metrics for the querier.
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.objectStorePanels1('Querier - Blocks Object Store', 'querier'),
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.objectStorePanels2('', 'querier'),
     ),
 }

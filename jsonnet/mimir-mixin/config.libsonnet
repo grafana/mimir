@@ -4,9 +4,9 @@
 
   _config+:: {
     // Switch for overall storage engine.
-    // May contain 'chunks', 'tsdb' or both.
-    // Enables chunks- or tsdb- specific panels and dashboards.
-    storage_engine: ['chunks', 'tsdb'],
+    // May contain 'chunks', 'blocks' or both.
+    // Enables chunks- or blocks- specific panels and dashboards.
+    storage_engine: ['chunks', 'blocks'],
 
     // For chunks backend, switch for chunk index type.
     // May contain 'bigtable', 'dynamodb' or 'cassandra'.
