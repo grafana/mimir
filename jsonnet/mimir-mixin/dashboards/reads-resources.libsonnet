@@ -53,7 +53,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Store-gateway')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'store-gateway'),

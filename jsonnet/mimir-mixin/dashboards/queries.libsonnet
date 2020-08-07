@@ -144,7 +144,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('Store-gateway - Blocks')
       .addPanel(
         $.panel('Blocks queried / sec') +
@@ -165,7 +165,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('')
       .addPanel(
         $.panel('Series fetch duration (per request)') +
@@ -181,7 +181,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('tsdb', $._config.storage_engine),
+      std.setMember('blocks', $._config.storage_engine),
       $.row('')
       .addPanel(
         $.panel('Blocks currently loaded') +
