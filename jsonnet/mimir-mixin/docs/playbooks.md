@@ -371,7 +371,7 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 This means a sample with the same timestamp as an existing one was received with a different value. The number of occurrences is recorded in the `prometheus_target_scrapes_sample_out_of_order_total` metric.
 
 Possible reasons for this are:
-- Multiple agents are scraping the same app without deduplication in place. Check the IP addresses mentioned in the log line for the agent that returned the deplicate sample. Change the labels of each sample generated per agent so they are unique.
+- Multiple agents are scraping the same app without deduplication in place. Check the IP addresses mentioned in the log line for the agent that returned the duplicate sample. Change the labels of each sample generated per agent so they are unique.
 - Incorrect relabelling rules can cause a label to be dropped from a sample so that multiple samples have the same labels. If these samples were collected at the same time they will cause this error.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
 - Prometheus scrapes at the millisecond level. If the scrapes are done very quickly the same sample could be returned. This is very unlikely.
