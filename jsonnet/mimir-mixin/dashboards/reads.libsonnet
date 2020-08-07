@@ -60,7 +60,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Store-gateway')
       .addPanel(
         $.panel('QPS') +
@@ -72,7 +72,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached - Chunks storage - Index')
       .addPanel(
         $.panel('QPS') +
@@ -84,7 +84,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached - Chunks storage - Chunks')
       .addPanel(
         $.panel('QPS') +
@@ -96,7 +96,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Memcached – Blocks Storage – Index header (Store-gateway)')
       .addPanel(
         $.panel('QPS') +
@@ -115,20 +115,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache('Memcached – Blocks Storage – Chunks (Store-gateway)', $._config.job_names.store_gateway, 'store-gateway', 'chunks-cache')
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache('Memcached – Blocks Storage – Metadada (Store-gateway)', $._config.job_names.store_gateway, 'store-gateway', 'metadata-cache')
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache('Memcached – Blocks Storage – Metadada (Querier)', $._config.job_names.querier, 'querier', 'metadata-cache')
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('cassandra', $._config.chunk_index_backend + $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
         $.panel('QPS') +
@@ -140,8 +140,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('bigtable', $._config.chunk_index_backend + $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
         $.panel('QPS') +
@@ -153,8 +153,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('dynamodb', $._config.chunk_index_backend + $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
         $.panel('QPS') +
@@ -166,8 +166,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('gcs', $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
         $.panel('QPS') +
@@ -180,20 +180,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     // Object store metrics for the store-gateway.
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.objectStorePanels1('Store-gateway - Blocks Object Store', 'store-gateway'),
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.objectStorePanels2('', 'store-gateway'),
     )
     // Object store metrics for the querier.
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.objectStorePanels1('Querier - Blocks Object Store', 'querier'),
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.objectStorePanels2('', 'querier'),
     ),
 }

@@ -2,7 +2,7 @@
   prometheusAlerts+::
     (import 'alerts/alerts.libsonnet') +
 
-    (if std.setMember('blocks', $._config.storage_engine)
+    (if std.member($._config.storage_engine, 'blocks')
      then
        (import 'alerts/blocks.libsonnet') +
        (import 'alerts/compactor.libsonnet')

@@ -53,7 +53,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Store-gateway')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'store-gateway'),

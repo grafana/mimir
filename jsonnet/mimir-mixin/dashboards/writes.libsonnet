@@ -86,7 +86,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached')
       .addPanel(
         $.panel('QPS') +
@@ -98,8 +98,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('cassandra', $._config.chunk_index_backend + $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
         $.panel('QPS') +
@@ -111,8 +111,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('bigtable', $._config.chunk_index_backend + $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
         $.panel('QPS') +
@@ -124,8 +124,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('dynamodb', $._config.chunk_index_backend + $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
         $.panel('QPS') +
@@ -137,8 +137,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine) &&
-      std.setMember('gcs', $._config.chunk_store_backend),
+      std.member($._config.storage_engine, 'chunks') &&
+      std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
         $.panel('QPS') +
@@ -150,7 +150,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Ingester - Blocks storage - Shipper')
       .addPanel(
         $.successFailurePanel(
@@ -165,7 +165,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Ingester - Blocks storage - TSDB Head')
       .addPanel(
         $.successFailurePanel(
@@ -180,7 +180,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Ingester - Blocks storage - TSDB WAL')
       .addPanel(
         $.successFailurePanel(

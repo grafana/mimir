@@ -66,7 +66,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'chunks'),
       $.row('Querier - Chunks storage - Index Cache')
       .addPanel(
         $.panel('Total entries') +
@@ -101,7 +101,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'chunks'),
       $.row('Querier - Chunks storage - Store')
       .addPanel(
         $.panel('Index Lookups per Query') +
@@ -125,7 +125,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('chunks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'chunks'),
       $.row('Querier - Blocks storage')
       .addPanel(
         $.panel('Number of store-gateways hit per Query') +
@@ -144,7 +144,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Store-gateway - Blocks')
       .addPanel(
         $.panel('Blocks queried / sec') +
@@ -165,7 +165,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('')
       .addPanel(
         $.panel('Series fetch duration (per request)') +
@@ -181,7 +181,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.setMember('blocks', $._config.storage_engine),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('')
       .addPanel(
         $.panel('Blocks currently loaded') +
