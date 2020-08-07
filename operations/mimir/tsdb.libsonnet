@@ -124,7 +124,8 @@
     pvc.mixin.metadata.withName('compactor-data'),
 
   compactor_args::
-    $._config.storageConfig
+    $._config.storageConfig +
+    $._config.blocksStorageConfig +
     {
       target: 'compactor',
 
@@ -167,7 +168,8 @@
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::
-    $._config.storageConfig
+    $._config.storageConfig +
+    $._config.blocksStorageConfig +
     {
       target: 'store-gateway',
 

@@ -126,12 +126,11 @@
       $._config.client_configs.aws +
       $._config.client_configs.cassandra +
       $._config.client_configs.gcp +
-      $._config.storageTSDBConfig +
       { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
-    storageTSDBConfig: (
+    blocksStorageConfig: (
       if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then {
         'store.engine': $._config.storage_engine,  // May still be chunks
         'experimental.blocks-storage.tsdb.dir': '/data/tsdb',
