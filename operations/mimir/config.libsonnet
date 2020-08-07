@@ -16,9 +16,8 @@
     // schema is used to generate the storage schema yaml file used by
     // the Cortex chunks storage:
     // - More information: https://github.com/cortexproject/cortex/pull/1072
-    // - TSDB integration doesn't rely on the Cortex chunks store, so doesn't
-    //   support the schema config.
-    schema: if $._config.storage_engine != 'tsdb' then
+    // - Blocks storage doesn't support / uses the schema config.
+    schema: if $._config.storage_engine != 'blocks' then
       error 'must specify a schema config'
     else
       [],
@@ -56,7 +55,7 @@
     jaeger_agent_host: null,
 
     // Use the Cortex chunks storage engine by default, while giving the ability
-    // to switch to tsdb storage.
+    // to switch to blocks storage.
     storage_engine: 'chunks',
     // Secondary storage engine is only used for querying.
     querier_second_storage_engine: null,
@@ -64,21 +63,21 @@
 
     store_gateway_replication_factor: 3,
 
-    // TSDB storage engine doesn't require the table manager.
-    table_manager_enabled: $._config.storage_engine != 'tsdb',
+    // Blocks storage engine doesn't require the table manager.
+    table_manager_enabled: $._config.storage_engine != 'blocks',
 
-    // TSDB storage engine doesn't support index-writes (for writes deduplication) cache.
-    memcached_index_writes_enabled: $._config.storage_engine != 'tsdb',
+    // Blocks storage engine doesn't support index-writes (for writes deduplication) cache.
+    memcached_index_writes_enabled: $._config.storage_engine != 'blocks',
     memcached_index_writes_max_item_size_mb: 1,
 
-    // Index and chunks caches are supported by both TSDB storage engine and chunks engine.
+    // Index and chunks caches are supported by both blocks storage engine and chunks engine.
     memcached_index_queries_enabled: true,
     memcached_index_queries_max_item_size_mb: 5,
 
     memcached_chunks_enabled: true,
     memcached_chunks_max_item_size_mb: 1,
 
-    memcached_metadata_enabled: $._config.storage_engine == 'tsdb',
+    memcached_metadata_enabled: $._config.storage_engine == 'blocks',
     memcached_metadata_max_item_size_mb: 1,
 
     // The query-tee is an optional service which can be used to send
@@ -130,19 +129,19 @@
       $._config.storageTSDBConfig +
       { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
-    // TSDB blocks storage configuration, used only when 'tsdb' storage
+    // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
     storageTSDBConfig: (
-      if $._config.storage_engine == 'tsdb' || $._config.querier_second_storage_engine == 'tsdb' then {
+      if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then {
         'store.engine': $._config.storage_engine,  // May still be chunks
-        'experimental.tsdb.dir': '/data/tsdb',
-        'experimental.tsdb.bucket-store.sync-dir': '/data/tsdb',
-        'experimental.tsdb.bucket-store.ignore-deletion-marks-delay': '1h',
-        'experimental.tsdb.block-ranges-period': '2h',
-        'experimental.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
-        'experimental.tsdb.ship-interval': '1m',
-        'experimental.tsdb.backend': 'gcs',
-        'experimental.tsdb.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
+        'experimental.blocks-storage.tsdb.dir': '/data/tsdb',
+        'experimental.blocks-storage.bucket-store.sync-dir': '/data/tsdb',
+        'experimental.blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
+        'experimental.blocks-storage.tsdb.block-ranges-period': '2h',
+        'experimental.blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
+        'experimental.blocks-storage.tsdb.ship-interval': '1m',
+        'experimental.blocks-storage.backend': 'gcs',
+        'experimental.blocks-storage.gcs.bucket-name': $._config.storage_tsdb_bucket_name,
         'experimental.store-gateway.sharding-enabled': true,
         'experimental.store-gateway.sharding-ring.store': 'consul',
         'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
@@ -171,7 +170,7 @@
 
         // Don't query the chunk store for data younger than max_chunk_idle.
         'querier.query-store-after': $._config.max_chunk_idle,
-      } else if $._config.storage_engine == 'tsdb' then {
+      } else if $._config.storage_engine == 'blocks' then {
         // Ingesters don't have data older than 13h, no need to ask them.
         'querier.query-ingesters-within': '13h',
 
