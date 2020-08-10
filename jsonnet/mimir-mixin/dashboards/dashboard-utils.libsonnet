@@ -78,6 +78,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ],
     },
 
+  // hiddenLegendQueryPanel is a standard query panel designed to handle a large number of series.  it hides the legend, doesn't fill the series and 
+  //  sorts the tooltip descending
+  hiddenLegendQueryPanel(queries, legends, legendLink=null)::
+    $.queryPanel(queries, legends, legendLink) + 
+    {
+      legend: { show: false },
+      fill: 0,
+      tooltip: { sort: 2 },
+    },
+
   qpsPanel(selector)::
     super.qpsPanel(selector) + {
       targets: [

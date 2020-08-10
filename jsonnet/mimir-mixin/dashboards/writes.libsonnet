@@ -42,11 +42,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanelIf(
         $._config.per_instance_label != '',
-        $.panel('Per %s Latency' % $._config.per_instance_label) +
-        $.queryPanel(
+        $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
+        $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="api_prom_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.gateway)], ''
         ) +
-        { yaxes: $.yaxes('s'), legend: { show: false }, fill: 0, tooltip: { sort: 2 } }
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRow(
