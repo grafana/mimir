@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+* [BUGFIX] Fix alertmanager registration subcommand and path for the configuration API #72
+
 ## v0.2.3
 
 * [FEATURE] Added `alerts verify` command, which can be used to compare `ALERTS` series in Cortex to verify if Prometheus and Cortex Ruler are firing the same alerts

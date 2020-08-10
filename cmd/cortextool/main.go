@@ -9,11 +9,12 @@ import (
 )
 
 var (
-	ruleCommand    commands.RuleCommand
-	alertCommand   commands.AlertCommand
-	logConfig      commands.LoggerConfig
-	pushGateway    commands.PushGatewayConfig
-	loadgenCommand commands.LoadgenCommand
+	ruleCommand         commands.RuleCommand
+	alertCommand        commands.AlertCommand
+	alertmanagerCommand commands.AlertmanagerCommand
+	logConfig           commands.LoggerConfig
+	pushGateway         commands.PushGatewayConfig
+	loadgenCommand      commands.LoadgenCommand
 )
 
 func main() {
@@ -21,6 +22,7 @@ func main() {
 	app := kingpin.New("cortextool", "A command-line tool to manage cortex.")
 	logConfig.Register(app)
 	alertCommand.Register(app)
+	alertmanagerCommand.Register(app)
 	ruleCommand.Register(app)
 	pushGateway.Register(app)
 	loadgenCommand.Register(app)

@@ -9,6 +9,8 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+const alertmanagerAPIPath = "/api/v1/alerts"
+
 type configCompat struct {
 	TemplateFiles      map[string]string `yaml:"template_files"`
 	AlertmanagerConfig string            `yaml:"alertmanager_config"`
@@ -24,19 +26,19 @@ func (r *CortexClient) CreateAlertmanagerConfig(ctx context.Context, cfg string,
 		return err
 	}
 
-	_, err = r.doRequest("/alertmanager/alerts", "POST", payload)
+	_, err = r.doRequest(alertmanagerAPIPath, "POST", payload)
 	return err
 }
 
 // DeleteAlermanagerConfig deletes the users alertmanagerconfig
 func (r *CortexClient) DeleteAlermanagerConfig(ctx context.Context) error {
-	_, err := r.doRequest("/alertmanager/alerts", "DELETE", nil)
+	_, err := r.doRequest(alertmanagerAPIPath, "DELETE", nil)
 	return err
 }
 
 // GetAlertmanagerConfig retrieves a rule group
 func (r *CortexClient) GetAlertmanagerConfig(ctx context.Context) (string, map[string]string, error) {
-	res, err := r.doRequest("/alertmanager/alerts", "GET", nil)
+	res, err := r.doRequest(alertmanagerAPIPath, "GET", nil)
 	if err != nil {
 		log.Debugln("no alert config present in response")
 		return "", nil, err
