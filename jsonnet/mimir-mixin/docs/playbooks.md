@@ -371,6 +371,5 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
 
 Possible reasons for this are:
-- Multiple Prometheus servers / Grafana agents are scraping the same target without deduplication in place. Check the IP addresses mentioned in the log line for the agent that returned the duplicate sample. Change the labels of each sample generated per agent so they are unique.
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
