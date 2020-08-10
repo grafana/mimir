@@ -1,6 +1,6 @@
 # Playbooks
 
-This document contains playbooks, or at least a checklist of what to look for, for alerts in the cortex-mixin. This document assumes that you are running a Cortex cluster:
+This document contains playbooks, or at least a checklist of what to look for, for alerts in the cortex-mixin and logs from Cortex. This document assumes that you are running a Cortex cluster:
 
 1. Using this mixin config
 2. Using GCS as object store (but similar procedures apply to other backends)
@@ -362,3 +362,14 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 - `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
 - `Delete`: the volume will be automatically deleted
+
+
+## Log lines
+
+### Log line containing 'sample with repeated timestamp but different value'
+
+This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
+
+Possible reasons for this are:
+- Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
+- The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
