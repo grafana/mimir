@@ -368,7 +368,7 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 ### Log line containing 'sample with repeated timestamp but different value'
 
-This means a sample with the same timestamp as an existing one was received with a different value. The number of occurrences is recorded in the `prometheus_target_scrapes_sample_out_of_order_total` metric.
+This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
 
 Possible reasons for this are:
 - Multiple agents are scraping the same app without deduplication in place. Check the IP addresses mentioned in the log line for the agent that returned the duplicate sample. Change the labels of each sample generated per agent so they are unique.
