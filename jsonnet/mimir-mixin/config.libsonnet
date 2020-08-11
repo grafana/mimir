@@ -44,6 +44,6 @@
     resources_dashboards_enabled: false,
 
     // If supplied adds additional panels that are broken down per instance.  i.e. 'pod' in a kubernetes install
-    per_instance_label: 'pod',
+    per_instance_label: '',
   },
 }
