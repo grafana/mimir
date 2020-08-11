@@ -43,7 +43,7 @@
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
     resources_dashboards_enabled: false,
 
-    // If supplied adds additional panels that are broken down per instance.  i.e. 'pod' in a kubernetes install
-    per_instance_label: '',
+    // Used on panels that show metrics per instance.  i.e. 'pod' in a kubernetes install
+    per_instance_label: 'pod',
   },
 }

@@ -14,8 +14,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_prom_api_v1_.+')])
       )
-      .addPanelIf(
-        $._config.per_instance_label != '',
+      .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_prom_api_v1_.+"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.gateway)], ''
@@ -33,8 +32,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', 'api_prom_api_v1_.+')])
       )
-      .addPanelIf(
-        $._config.per_instance_label != '',
+      .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_prom_api_v1_.+"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.query_frontend)], ''
@@ -63,8 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', 'api_prom_api_v1_.+')])
       )
-      .addPanelIf(
-        $._config.per_instance_label != '',
+      .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_prom_api_v1_.+"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.querier)], ''
@@ -82,8 +79,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
       )
-      .addPanelIf(
-        $._config.per_instance_label != '',
+      .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.ingester)], ''
@@ -102,8 +98,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
       )
-      .addPanelIf(
-        $._config.per_instance_label != '',
+      .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.store_gateway)], ''

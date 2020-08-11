@@ -38,14 +38,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
              .addMultiTemplate('namespace', 'cortex_build_info', 'namespace'),
     },
 
-  row(title)::
-    super.row(title) + {
-      addPanelIf(condition, panel)::
-        if condition
-        then self.addPanel(panel)
-        else self,
-    },
-
   // The mixin allow specialism of the job selector depending on if its a single binary
   // deployment or a namespaced one.
   jobMatcher(job)::
@@ -53,6 +45,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then 'job=~"$job"'
     else 'cluster=~"$cluster", job=~"($namespace)/%s"' % job,
 
+  // jobMatcherEquality performs exact matches on cluster and namespace.  Should be used on
+  //  panels that are expected to return too many series to be useful when multiplier
+  //  namespaces or clusters are selected.
   jobMatcherEquality(job)::
     if $._config.singleBinary
     then 'job=~"$job"'
