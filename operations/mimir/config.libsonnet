@@ -177,7 +177,7 @@
         'querier.query-store-after': '12h',
       }
     ) + (
-      if $._config.memcached_index_queries_enabled && $._config.storage_engine == 'chunks' then
+      if $._config.memcached_index_queries_enabled && ($._config.storage_engine == 'chunks' || $._config.querier_second_storage_engine == 'chunks') then
         {
           // Setting for index cache.
           'store.index-cache-validity': '14m',  // ingester.retain-period=15m, 1m less for safety.
