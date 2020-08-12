@@ -64,7 +64,9 @@
     store_gateway_replication_factor: 3,
 
     // Blocks storage engine doesn't require the table manager.
-    table_manager_enabled: $._config.storage_engine != 'blocks',
+    // When running blocks with chunks as secondary storage engine for querier only, we need table-manager to apply
+    // retention policies.
+    table_manager_enabled: $._config.storage_engine == 'chunks' || $._config.querier_second_storage_engine == 'chunks',
 
     // Blocks storage engine doesn't support index-writes (for writes deduplication) cache.
     memcached_index_writes_enabled: $._config.storage_engine != 'blocks',
