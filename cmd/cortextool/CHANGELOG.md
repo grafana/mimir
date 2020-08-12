@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+## v0.2.4
+
 * [BUGFIX] Fix alertmanager registration subcommand and path for the configuration API #72
 
 ## v0.2.3
