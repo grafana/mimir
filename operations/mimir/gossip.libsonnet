@@ -63,7 +63,13 @@
   // During migration to gossip, it may be useful to use distributors instead, since they are restarted faster.
   gossip_ring_service:
     local service = $.core.v1.service;
-    local servicePort = $.core.v1.servicePort;
+
+    // backwards compatibility with ksonnet
+    local servicePort =
+      if std.objectHasAll($.core.v1, 'servicePort')
+      then $.core.v1.servicePort
+      else service.mixin.spec.portsType;
+
     local ports = [
       servicePort.newNamed('gossip-ring', gossipRingPort, gossipRingPort) +
       servicePort.withProtocol('TCP'),
