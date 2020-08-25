@@ -383,7 +383,7 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by {{ $labels.instance }} - add more ingesters.
+              Too much memory being used by {{ $labels.pod }} - add more ingesters.
             |||,
           },
         },
@@ -402,7 +402,7 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by {{ $labels.instance }} - add more ingesters.
+              Too much memory being used by {{ $labels.pod }} - add more ingesters.
             |||,
           },
         },
