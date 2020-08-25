@@ -187,6 +187,24 @@ gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 
 Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
 
+### CortexWALCorruption
+
+This alert is only related to the chunks storage. This can happen because of 2 reasons: (1) Non graceful shutdown of ingesters. (2) Faulty storage or NFS.
+
+WAL corruptions are only detected at startups, so at this point the WAL/Checkpoint would have been repaired automatically. So we can only check what happened and if there was any data loss and take actions to avoid this happening in future.
+
+1. Check if there was any node restarts that force killed pods. If there is, then the corruption is from the non graceful shutdown of ingesters, which is generally fine. You can:
+  * Describe the pod to see the last state.
+  * Use `kube_pod_info` to check the node for the pod. `node_boot_time_seconds` to see if node just booted (which also indicates restart).
+  * You can use `eventrouter` logs to double check.
+  * Check ingester logs to check if the shutdown logs are missing at that time.
+2. To confirm this, in the logs, check the WAL segment on which the corruption happened (let's say `X`) and the last checkpoint attempt number (let's say `Y`, this is the last WAL segment that was present when checkpointing started).
+3. If `X > Y`, then it's most likely an abrupt restart of ingester and the corruption would be on the last few records of the last segment. To verify this, check the file timestamps of WAL segment `X` and `X - 1` if they were recent.
+4. If `X < Y`, then the corruption was in some WAL segment which was not the last one. This indicates faulty disk and some data loss on that ingester.
+5. In case of faulty disk corruption, if the number or ingesters that had corruption within the chunk flush age:
+  1. Less than the quorum number for your replication factor: No data loss, because there is a guarantee that the data is replicated. For example, if replication factor is 3, then it's fine if corruption was on 1 ingester.
+  2. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
+  3. Equal or more than the replication factor: Then there is definitely some data loss.
 
 ## Cortex blocks storage - What to do when things to wrong
 
