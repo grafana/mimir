@@ -63,6 +63,17 @@
 
     store_gateway_replication_factor: 3,
 
+    // By default ingesters will be run as StatefulSet with WAL.
+    // If this is set to true, ingesters will use staless deployments without WAL.
+    ingester_deployment_without_wal: false,
+
+    ingester: {
+      // These config options are only for the chunks storage.
+      wal_dir: '/wal_data',
+      statefulset_replicas: 3,
+      statefulset_disk: '150Gi',
+    },
+
     // Blocks storage engine doesn't require the table manager.
     // When running blocks with chunks as secondary storage engine for querier only, we need table-manager to apply
     // retention policies.

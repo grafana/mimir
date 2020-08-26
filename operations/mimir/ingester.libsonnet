@@ -1,6 +1,4 @@
 {
-  local container = $.core.v1.container,
-
   ingester_args::
     $._config.ringConfig +
     $._config.storeConfig +
@@ -40,9 +38,20 @@
       else {}
     ),
 
+  ingester_statefulset_args:: {
+    'ingester.wal-enabled': true,
+    'ingester.checkpoint-enabled': true,
+    'ingester.recover-from-wal': true,
+    'ingester.wal-dir': $._config.ingester.wal_dir,
+    'ingester.checkpoint-duration': '15m',
+    '-log.level': 'info',
+    'ingester.tokens-file-path': $._config.ingester.wal_dir + '/tokens',
+  },
+
   ingester_ports:: $.util.defaultPorts,
 
   local name = 'ingester',
+  local container = $.core.v1.container,
 
   ingester_container::
     container.new(name, $._images.ingester) +
@@ -53,26 +62,72 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  local deployment = $.apps.v1.deployment,
+  local volumeMount = $.core.v1.volumeMount,
+
+  ingester_statefulset_container::
+    $.ingester_container +
+    container.withArgsMixin($.util.mapToFlags($.ingester_statefulset_args)) +
+    container.withVolumeMountsMixin([
+      volumeMount.new('ingester-pvc', $._config.ingester.wal_dir),
+    ]),
 
   ingester_deployment_labels:: {},
 
+  local pvc = $.core.v1.persistentVolumeClaim,
+  local volume = $.core.v1.volume,
+  local statefulSet = $.apps.v1.statefulSet,
+
+  local ingester_pvc =
+    pvc.new('ingester-pvc') +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.ingester.statefulset_disk }) +
+    pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
+    pvc.mixin.spec.withStorageClassName('fast'),
+
+  statefulset_storage_config_mixin::
+    statefulSet.mixin.spec.template.metadata.withAnnotationsMixin({ schemaID: $._config.schemaID },) +
+    $.util.configVolumeMount('schema-' + $._config.schemaID, '/etc/cortex/schema'),
+
+  ingester_statefulset:
+    if $._config.ingester_deployment_without_wal == false then
+      statefulSet.new('ingester', $._config.ingester.statefulset_replicas, [$.ingester_statefulset_container], ingester_pvc) +
+      statefulSet.mixin.spec.withServiceName('ingester') +
+      statefulSet.mixin.spec.template.spec.withVolumes([volume.fromPersistentVolumeClaim('ingester-pvc', 'ingester-pvc')]) +
+      statefulSet.mixin.metadata.withNamespace($._config.namespace) +
+      statefulSet.mixin.metadata.withLabels({ name: 'ingester' }) +
+      statefulSet.mixin.spec.template.metadata.withLabels({ name: 'ingester' } + $.ingester_deployment_labels) +
+      statefulSet.mixin.spec.selector.withMatchLabels({ name: 'ingester' }) +
+      statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
+      statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
+      statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
+      $.statefulset_storage_config_mixin +
+      $.util.configVolumeMount('overrides', '/etc/cortex') +
+      $.util.podPriority('high') +
+      $.util.antiAffinityStatefulSet
+    else null,
+
+  local deployment = $.apps.v1.deployment,
+
   ingester_deployment:
-    deployment.new(name, 3, [$.ingester_container], $.ingester_deployment_labels) +
-    $.util.antiAffinity +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
-    deployment.mixin.metadata.withLabels({ name: name }) +
-    deployment.mixin.spec.withMinReadySeconds(60) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
-    deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
-    $.storage_config_mixin +
-    $.util.podPriority('high'),
+    if $._config.ingester_deployment_without_wal then
+      deployment.new(name, 3, [$.ingester_container], $.ingester_deployment_labels) +
+      $.util.antiAffinity +
+      $.util.configVolumeMount('overrides', '/etc/cortex') +
+      deployment.mixin.metadata.withLabels({ name: name }) +
+      deployment.mixin.spec.withMinReadySeconds(60) +
+      deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
+      deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
+      deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
+      $.storage_config_mixin +
+      $.util.podPriority('high')
+    else null,
 
   ingester_service_ignored_labels:: [],
 
   ingester_service:
-    $.util.serviceFor($.ingester_deployment, $.ingester_service_ignored_labels),
+    if $._config.ingester_deployment_without_wal then
+      $.util.serviceFor($.ingester_deployment, $.ingester_service_ignored_labels)
+    else
+      $.util.serviceFor($.ingester_statefulset, $.ingester_service_ignored_labels),
 
   local podDisruptionBudget = $.policy.v1beta1.podDisruptionBudget,
 
