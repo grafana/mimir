@@ -2,6 +2,33 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
 
+  rulerQueries+:: {
+    ruleEvaluations: {
+      success:
+        |||
+          sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__interval]))
+          -
+          sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))
+        |||,
+      failure: 'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))',
+      latency:
+        |||
+          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__interval]))
+            /
+          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__interval]))
+        |||,
+    },
+    groupEvaluations: {
+      missedIterations: 'sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__interval]))',
+      latency:
+        |||
+          sum (rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__interval]))
+            /
+          sum (rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__interval]))
+        |||,
+    },
+  },
+
   'ruler.json':
     $.dashboard('Cortex / Ruler')
     .addClusterSelectorTemplates()
@@ -11,12 +38,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('EPS') +
         $.queryPanel(
           [
-            |||
-              sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__interval]))
-              -
-              sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))
-            ||| % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
-            'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))' % $.jobMatcher('ruler'),
+            $.rulerQueries.ruleEvaluations.success % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
+            $.rulerQueries.ruleEvaluations.failure % $.jobMatcher('ruler'),
           ],
           ['sucess', 'failed'],
         ),
@@ -24,11 +47,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Latency') +
         $.queryPanel(
-          |||
-            sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__interval]))
-              /
-            sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__interval]))
-          ||| % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
+          $.rulerQueries.ruleEvaluations.latency % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
           'average'
         ),
       )
@@ -37,16 +56,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Group Evaluations')
       .addPanel(
         $.panel('Missed Iterations') +
-        $.queryPanel('sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__interval]))' % $.jobMatcher('ruler'), 'iterations missed'),
+        $.queryPanel($.rulerQueries.groupEvaluations.missedIterations % $.jobMatcher('ruler'), 'iterations missed'),
       )
       .addPanel(
         $.panel('Latency') +
         $.queryPanel(
-          |||
-            sum (rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__interval]))
-              /
-            sum (rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__interval]))
-          ||| % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
+          $.rulerQueries.groupEvaluations.latency % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
           'average'
         ),
       )
