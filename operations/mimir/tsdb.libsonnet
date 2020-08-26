@@ -172,6 +172,7 @@
     $._config.blocksStorageConfig +
     {
       target: 'store-gateway',
+      'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
 
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
@@ -204,7 +205,8 @@
     // one by one. This does NOT affect rolling updates: they will continue to be
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
-    statefulSet.mixin.spec.withPodManagementPolicy('Parallel'),
+    statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
+    $.util.configVolumeMount('overrides', '/etc/cortex'),
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset),
