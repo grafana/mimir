@@ -169,10 +169,11 @@
       // Limit the size of the rows we read from the index.
       'store.cardinality-limit': 1e6,
 
-      // Don't allow individual queries of longer than 31days.  Due to day query
-      // splitting in the frontend, the reality is this only limits rate(foo[31d])
-      // type queries.
-      'store.max-query-length': '744h',
+      // Don't allow individual queries of longer than 32days.  Due to day query
+      // splitting in the frontend, the reality is this only limits rate(foo[32d])
+      // type queries. 32 days to allow for comparision over the last month (31d) and
+      // then some.
+      'store.max-query-length': '768h',
     } + (
       if $._config.storage_engine == 'chunks' then {
         // Don't query ingesters for older queries.
