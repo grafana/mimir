@@ -3,9 +3,10 @@ package rules
 import (
 	"testing"
 
-	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
-	"github.com/stretchr/testify/assert"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/stretchr/testify/require"
+	yaml "gopkg.in/yaml.v3"
+	"gotest.tools/assert"
 )
 
 func TestAggregateBy(t *testing.T) {
@@ -24,8 +25,8 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "no modification",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{{Name: "WithoutAggregation", Rules: []rulefmt.Rule{
-					{Alert: "WithoutAggregation", Expr: "up != 1"},
+				Groups: []rulefmt.RuleGroup{{Name: "WithoutAggregation", Rules: []rulefmt.RuleNode{
+					{Alert: yaml.Node{Value: "WithoutAggregation"}, Expr: yaml.Node{Value: "up != 1"}},
 				}}},
 			},
 			expectedExpr: []string{"up != 1"},
@@ -34,8 +35,8 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "no change in the query but lints with 'without' in the aggregation",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{{Name: "SkipWithout", Rules: []rulefmt.Rule{
-					{Alert: "SkipWithout", Expr: `
+				Groups: []rulefmt.RuleGroup{{Name: "SkipWithout", Rules: []rulefmt.RuleNode{
+					{Alert: yaml.Node{Value: "SkipWithout"}, Expr: yaml.Node{Value: `
 						min without(alertmanager) (
 							rate(prometheus_notifications_errors_total{job="default/prometheus"}[5m])
 						/
@@ -43,7 +44,7 @@ func TestAggregateBy(t *testing.T) {
 						)
 						* 100
 						> 3
-					`},
+					`}},
 				}}},
 			},
 			expectedExpr: []string{`min without(alertmanager) (rate(prometheus_notifications_errors_total{job="default/prometheus"}[5m]) / rate(prometheus_notifications_sent_total{job="default/prometheus"}[5m])) * 100 > 3`},
@@ -52,13 +53,13 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "with an aggregation modification",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{{Name: "WithAggregation", Rules: []rulefmt.Rule{
-					{Alert: "WithAggregation", Expr: `
+				Groups: []rulefmt.RuleGroup{{Name: "WithAggregation", Rules: []rulefmt.RuleNode{
+					{Alert: yaml.Node{Value: "WithAggregation"}, Expr: yaml.Node{Value: `
 						sum(rate(cortex_prometheus_rule_evaluation_failures_total[1m])) by (namespace, job)
 						/
 						sum(rate(cortex_prometheus_rule_evaluations_total[1m])) by (namespace, job)
 						> 0.01
-					`},
+					`}},
 				}}},
 			},
 			expectedExpr: []string{"sum by(namespace, job, cluster) (rate(cortex_prometheus_rule_evaluation_failures_total[1m])) / sum by(namespace, job, cluster) (rate(cortex_prometheus_rule_evaluations_total[1m])) > 0.01"},
@@ -67,10 +68,10 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "with 'count' as the aggregation",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{{Name: "CountAggregation", Rules: []rulefmt.Rule{
-					{Alert: "CountAggregation", Expr: `
-						count(count by (gitVersion) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"},"gitVersion","$1","gitVersion","(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1	
-					`},
+				Groups: []rulefmt.RuleGroup{{Name: "CountAggregation", Rules: []rulefmt.RuleNode{
+					{Alert: yaml.Node{Value: "CountAggregation"}, Expr: yaml.Node{Value: `
+						count(count by (gitVersion) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"},"gitVersion","$1","gitVersion","(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1
+					`}},
 				}}},
 			},
 			expectedExpr: []string{`count by(cluster) (count by(gitVersion, cluster) (label_replace(kubernetes_build_info{job!~"kube-dns|coredns"}, "gitVersion", "$1", "gitVersion", "(v[0-9]*.[0-9]*.[0-9]*).*"))) > 1`},
@@ -79,10 +80,10 @@ func TestAggregateBy(t *testing.T) {
 		{
 			name: "with vector matching in binary operations",
 			rn: RuleNamespace{
-				Groups: []rulefmt.RuleGroup{{Name: "BinaryExpressions", Rules: []rulefmt.Rule{
-					{Alert: "VectorMatching", Expr: `
+				Groups: []rulefmt.RuleGroup{{Name: "BinaryExpressions", Rules: []rulefmt.RuleNode{
+					{Alert: yaml.Node{Value: "VectorMatching"}, Expr: yaml.Node{Value: `
 						count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance) group_left(node) node_namespace_pod:kube_pod_info:))
-					`},
+					`}},
 				}}},
 			},
 			expectedExpr: []string{`count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance, cluster) group_left(node) node_namespace_pod:kube_pod_info:))`},
@@ -101,7 +102,7 @@ func TestAggregateBy(t *testing.T) {
 			// Only verify the PromQL expression if it has been modified
 			for _, g := range tc.rn.Groups {
 				for i, r := range g.Rules {
-					require.Equal(t, tc.expectedExpr[i], r.Expr)
+					require.Equal(t, tc.expectedExpr[i], r.Expr.Value)
 				}
 			}
 		})
@@ -155,12 +156,12 @@ func TestLintPromQLExpressions(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
-			r := RuleNamespace{Groups: []rulefmt.RuleGroup{{Rules: []rulefmt.Rule{
-				{Alert: "AName", Expr: tc.expr},
+			r := RuleNamespace{Groups: []rulefmt.RuleGroup{{Rules: []rulefmt.RuleNode{
+				{Alert: yaml.Node{Value: "AName"}, Expr: yaml.Node{Value: tc.expr}},
 			}}}}
 
 			c, m, err := r.LintPromQLExpressions()
-			rexpr := r.Groups[0].Rules[0].Expr
+			rexpr := r.Groups[0].Rules[0].Expr.Value
 
 			require.Equal(t, tc.count, c)
 			require.Equal(t, tc.modified, m)
@@ -212,8 +213,8 @@ func TestCheckRecordingRules(t *testing.T) {
 
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
-			r := RuleNamespace{Groups: []rulefmt.RuleGroup{{Rules: []rulefmt.Rule{
-				{Record: tc.ruleName, Expr: "rate(some_metric_total)[5m]"},
+			r := RuleNamespace{Groups: []rulefmt.RuleGroup{{Rules: []rulefmt.RuleNode{
+				{Record: yaml.Node{Value: tc.ruleName}, Expr: yaml.Node{Value: "rate(some_metric_total)[5m]"}},
 			}}}}
 
 			n := r.CheckRecordingRules(tc.strict)

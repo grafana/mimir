@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func TestParseFiles(t *testing.T) {
@@ -25,10 +26,10 @@ func TestParseFiles(t *testing.T) {
 					Groups: []rulefmt.RuleGroup{
 						{
 							Name: "example_rule_group",
-							Rules: []rulefmt.Rule{
+							Rules: []rulefmt.RuleNode{
 								{
-									Record: "summed_up",
-									Expr:   "sum(up)",
+									Record: yaml.Node{Value: "summed_up"},
+									Expr:   yaml.Node{Value: "sum(up)"},
 								},
 							},
 						},

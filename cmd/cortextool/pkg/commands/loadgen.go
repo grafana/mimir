@@ -53,7 +53,7 @@ type LoadgenCommand struct {
 
 	// Runtime stuff.
 	wg          sync.WaitGroup
-	writeClient *remote.Client
+	writeClient remote.WriteClient
 	queryClient v1.API
 }
 
@@ -94,7 +94,7 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	writeClient, err := remote.NewClient("loadgen", &remote.ClientConfig{
+	writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
 		URL:     &config.URL{URL: writeURL},
 		Timeout: model.Duration(c.writeTimeout),
 	})

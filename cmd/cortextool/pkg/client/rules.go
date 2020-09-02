@@ -5,8 +5,8 @@ import (
 	"io/ioutil"
 	"net/url"
 
-	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )

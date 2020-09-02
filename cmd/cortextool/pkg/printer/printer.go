@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/alecthomas/chroma/quick"
-	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
 	"github.com/mitchellh/colorstring"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/cortex-tools/pkg/rules"

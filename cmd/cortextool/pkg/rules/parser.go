@@ -1,13 +1,14 @@
 package rules
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 var (
@@ -56,7 +57,9 @@ func ParseFiles(files []string) (map[string]RuleNamespace, error) {
 // Parse parses and validates a set of rules.
 func Parse(content []byte) (*RuleNamespace, []error) {
 	var ns RuleNamespace
-	if err := yaml.UnmarshalStrict(content, &ns); err != nil {
+	decoder := yaml.NewDecoder(bytes.NewReader(content))
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&ns); err != nil {
 		return nil, []error{err}
 	}
 	return &ns, ns.Validate()

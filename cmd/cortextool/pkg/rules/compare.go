@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"strings"
 
-	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
 	"github.com/google/go-cmp/cmp"
 	"github.com/mitchellh/colorstring"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	yaml "gopkg.in/yaml.v2"
 )
 
@@ -90,7 +90,7 @@ func CompareGroups(groupOne, groupTwo rulefmt.RuleGroup) error {
 	return nil
 }
 
-func rulesEqual(a, b *rulefmt.Rule) bool {
+func rulesEqual(a, b *rulefmt.RuleNode) bool {
 	// special option to consider nil == empty for map / slice.
 	// Code taken from https://pkg.go.dev/github.com/google/go-cmp/cmp?tab=doc#example-Option-EqualEmpty
 	alwaysEqual := cmp.Comparer(func(_, _ interface{}) bool { return true })

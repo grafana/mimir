@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	rulefmt "github.com/cortexproject/cortex/pkg/ruler/legacy_rulefmt"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 )
@@ -29,13 +29,13 @@ func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting PromQL")
-			exp, err := parser.ParseExpr(rule.Expr)
+			exp, err := parser.ParseExpr(rule.Expr.Value)
 			if err != nil {
 				return count, mod, err
 			}
 
 			count++
-			if rule.Expr != exp.String() {
+			if rule.Expr.Value != exp.String() {
 				log.WithFields(log.Fields{
 					"rule":        getRuleName(rule),
 					"currentExpr": rule.Expr,
@@ -43,7 +43,7 @@ func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
 				}).Debugf("expression differs")
 
 				mod++
-				r.Groups[i].Rules[j].Expr = exp.String()
+				r.Groups[i].Rules[j].Expr.Value = exp.String()
 			}
 		}
 	}
@@ -64,10 +64,10 @@ func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 	for _, group := range r.Groups {
 		for _, rule := range group.Rules {
 			// Assume if there is a rule.Record that this is a recording rule.
-			if rule.Record == "" {
+			if rule.Record.Value == "" {
 				continue
 			}
-			name = rule.Record
+			name = rule.Record.Value
 			log.WithFields(log.Fields{"rule": name}).Debugf("linting recording rule name")
 			chunks := strings.Split(name, ":")
 			if len(chunks) < reqChunks {
@@ -94,7 +94,7 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
 			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("evaluating...")
-			exp, err := parser.ParseExpr(rule.Expr)
+			exp, err := parser.ParseExpr(rule.Expr.Value)
 			if err != nil {
 				return count, mod, err
 			}
@@ -106,14 +106,14 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 			parser.Inspect(exp, f)
 
 			// Only modify the ones that actually changed.
-			if rule.Expr != exp.String() {
+			if rule.Expr.Value != exp.String() {
 				log.WithFields(log.Fields{
 					"rule":        getRuleName(rule),
 					"currentExpr": rule.Expr,
 					"afterExpr":   exp.String(),
 				}).Debugf("expression differs")
 				mod++
-				r.Groups[i].Rules[j].Expr = exp.String()
+				r.Groups[i].Rules[j].Expr.Value = exp.String()
 			}
 		}
 	}
@@ -123,7 +123,7 @@ func (r RuleNamespace) AggregateBy(label string) (int, int, error) {
 
 // exprNodeInspectorFunc returns a PromQL inspector.
 // It modifies most PromQL expressions to include a given label.
-func exprNodeInspectorFunc(rule rulefmt.Rule, label string) func(node parser.Node, path []parser.Node) error {
+func exprNodeInspectorFunc(rule rulefmt.RuleNode, label string) func(node parser.Node, path []parser.Node) error {
 	return func(node parser.Node, path []parser.Node) error {
 		var err error
 		switch n := node.(type) {
@@ -217,10 +217,10 @@ func ValidateRuleGroup(g rulefmt.RuleGroup) []error {
 	for i, r := range g.Rules {
 		for _, err := range r.Validate() {
 			var ruleName string
-			if r.Alert != "" {
-				ruleName = r.Alert
+			if r.Alert.Value != "" {
+				ruleName = r.Alert.Value
 			} else {
-				ruleName = r.Record
+				ruleName = r.Record.Value
 			}
 			errs = append(errs, &rulefmt.Error{
 				Group:    g.Name,
@@ -234,10 +234,10 @@ func ValidateRuleGroup(g rulefmt.RuleGroup) []error {
 	return errs
 }
 
-func getRuleName(r rulefmt.Rule) string {
-	if r.Record != "" {
-		return r.Record
+func getRuleName(r rulefmt.RuleNode) string {
+	if r.Record.Value != "" {
+		return r.Record.Value
 	}
 
-	return r.Alert
+	return r.Alert.Value
 }

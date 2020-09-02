@@ -45,7 +45,7 @@ func NewWriter(cfg Config, mapper Mapper) (*Writer, error) {
 		return nil, err
 	}
 
-	chunkStore, err := storage.NewStore(cfg.StorageConfig, chunk.StoreConfig{}, cfg.SchemaConfig, overrides, nil, nil)
+	chunkStore, err := storage.NewStore(cfg.StorageConfig, chunk.StoreConfig{}, cfg.SchemaConfig, overrides, nil, nil, nil)
 	if err != nil {
 		return nil, err
 	}
