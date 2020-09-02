@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
 	"github.com/grafana/cortex-tools/pkg/chunk/filter"
@@ -68,7 +68,7 @@ func (cfg *SchemaConfig) Load() error {
 	}
 
 	decoder := yaml.NewDecoder(f)
-	decoder.SetStrict(true)
+	decoder.KnownFields(true)
 	return decoder.Decode(&cfg)
 }
 

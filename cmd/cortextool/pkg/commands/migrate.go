@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"gopkg.in/alecthomas/kingpin.v2"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/cortex-tools/pkg/chunk/migrate"
 	"github.com/grafana/cortex-tools/pkg/chunk/migrate/reader"
@@ -30,7 +30,7 @@ func (c *migrateChunksCommandOptions) run(k *kingpin.ParseContext) error {
 	}
 
 	decoder := yaml.NewDecoder(f)
-	decoder.SetStrict(true)
+	decoder.KnownFields(true)
 
 	if err := decoder.Decode(&c.Config); err != nil {
 		return err

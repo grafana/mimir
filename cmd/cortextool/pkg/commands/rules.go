@@ -35,6 +35,8 @@ var (
 		Name:      "last_rule_load_success_timestamp_seconds",
 		Help:      "The timestamp of the last successful rule load.",
 	})
+
+	backends = []string{rules.CortexBackend, rules.LokiBackend} // list of supported backend types
 )
 
 // RuleCommand configures and executes rule related cortex operations
@@ -42,6 +44,9 @@ type RuleCommand struct {
 	ClientConfig client.Config
 
 	cli *client.CortexClient
+
+	// Backend type (cortex | loki)
+	Backend string
 
 	// Get Rule Groups Configs
 	Namespace string
@@ -73,6 +78,7 @@ type RuleCommand struct {
 func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
 	rulesCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&r.ClientConfig.Key)
+	rulesCmd.Flag("backend", "Backend type to interact with: <cortex|loki>").Default("cortex").EnumVar(&r.Backend, backends...)
 
 	// Register rule commands
 	listCmd := rulesCmd.
@@ -323,7 +329,7 @@ func (r *RuleCommand) deleteRuleGroup(k *kingpin.ParseContext) error {
 }
 
 func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
-	nss, err := rules.ParseFiles(r.RuleFilesList)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "load operation unsuccessful, unable to parse rules files")
 	}
@@ -372,7 +378,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to load rules files")
 	}
 
-	nss, err := rules.ParseFiles(r.RuleFilesList)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to parse rules files")
 	}
@@ -426,7 +432,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to load rules files")
 	}
 
-	nss, err := rules.ParseFiles(r.RuleFilesList)
+	nss, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to parse rules files")
 	}
@@ -527,7 +533,7 @@ func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
 	}
 
-	namespaces, err := rules.ParseFiles(r.RuleFilesList)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -559,7 +565,7 @@ func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to load rules files")
 	}
 
-	namespaces, err := rules.ParseFiles(r.RuleFilesList)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
@@ -593,7 +599,7 @@ func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "check operation unsuccessful, unable to load rules files")
 	}
 
-	namespaces, err := rules.ParseFiles(r.RuleFilesList)
+	namespaces, err := rules.ParseFiles(r.Backend, r.RuleFilesList)
 	if err != nil {
 		return errors.Wrap(err, "check operation unsuccessful, unable to parse rules files")
 	}

@@ -7,28 +7,51 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/grafana/loki/pkg/ruler/manager"
 	log "github.com/sirupsen/logrus"
+
 	yaml "gopkg.in/yaml.v3"
 )
 
+const (
+	CortexBackend = "cortex"
+	LokiBackend   = "loki"
+)
+
 var (
-	errFileReadError = errors.New("file read error")
+	errFileReadError  = errors.New("file read error")
+	errInvalidBackend = errors.New("invalid backend type")
 )
 
 // ParseFiles returns a formatted set of prometheus rule groups
-func ParseFiles(files []string) (map[string]RuleNamespace, error) {
+func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error) {
 	ruleSet := map[string]RuleNamespace{}
 	for _, f := range files {
-		d, err := loadFile(f)
-		if err != nil {
-			log.WithError(err).WithField("file", f).Errorln("unable load rules file")
-			return nil, errFileReadError
-		}
+		var ns *RuleNamespace
+		var errs []error
 
-		ns, errs := Parse(d)
-		for _, err := range errs {
-			log.WithError(err).WithField("file", f).Errorln("unable parse rules file")
-			return nil, errFileReadError
+		switch backend {
+		case CortexBackend:
+			ns, errs = Parse(f)
+			for _, err := range errs {
+				log.WithError(err).WithField("file", f).Errorln("unable parse rules file")
+				return nil, errFileReadError
+			}
+
+		case LokiBackend:
+			var loader manager.GroupLoader
+			rgs, errs := loader.Load(f)
+			for _, err := range errs {
+				log.WithError(err).WithField("file", f).Errorln("unable parse rules file")
+				return nil, errFileReadError
+			}
+
+			ns = &RuleNamespace{
+				Groups: rgs.Groups,
+			}
+
+		default:
+			return nil, errInvalidBackend
 		}
 
 		ns.Filepath = f
@@ -55,7 +78,13 @@ func ParseFiles(files []string) (map[string]RuleNamespace, error) {
 }
 
 // Parse parses and validates a set of rules.
-func Parse(content []byte) (*RuleNamespace, []error) {
+func Parse(f string) (*RuleNamespace, []error) {
+	content, err := loadFile(f)
+	if err != nil {
+		log.WithError(err).WithField("file", f).Errorln("unable load rules file")
+		return nil, []error{errFileReadError}
+	}
+
 	var ns RuleNamespace
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)

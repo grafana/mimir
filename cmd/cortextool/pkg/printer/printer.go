@@ -8,7 +8,7 @@ import (
 	"github.com/alecthomas/chroma/quick"
 	"github.com/mitchellh/colorstring"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/cortex-tools/pkg/rules"
 )

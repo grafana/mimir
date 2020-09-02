@@ -5,18 +5,19 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/rulefmt"
-	yaml "gopkg.in/yaml.v3"
 )
 
 func TestParseFiles(t *testing.T) {
 	tests := []struct {
 		name    string
+		backend string
 		files   []string
 		want    map[string]RuleNamespace
 		wantErr bool
 	}{
 		{
-			name: "basic_file",
+			name:    "basic_file",
+			backend: CortexBackend,
 			files: []string{
 				"testdata/basic_namespace.yaml",
 			},
@@ -28,8 +29,7 @@ func TestParseFiles(t *testing.T) {
 							Name: "example_rule_group",
 							Rules: []rulefmt.RuleNode{
 								{
-									Record: yaml.Node{Value: "summed_up"},
-									Expr:   yaml.Node{Value: "sum(up)"},
+									// currently the tests only check length
 								},
 							},
 						},
@@ -38,10 +38,41 @@ func TestParseFiles(t *testing.T) {
 			},
 		},
 		{
-			name: "file_namespace_overlap",
+			name:    "file_namespace_overlap",
+			backend: CortexBackend,
 			files: []string{
 				"testdata/basic_namespace.yaml",
 				"testdata/basic_namespace_repeated.yaml",
+			},
+			wantErr: true,
+		},
+		{
+			name:    "basic_loki_file",
+			backend: LokiBackend,
+			files: []string{
+				"testdata/loki_basic.yaml",
+			},
+			want: map[string]RuleNamespace{
+				"loki_basic": {
+					Namespace: "loki_basic",
+					Groups: []rulefmt.RuleGroup{
+						{
+							Name: "testgrp2",
+							Rules: []rulefmt.RuleNode{
+								{
+									// currently the tests only check length
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:    "basic_loki_failure",
+			backend: LokiBackend,
+			files: []string{
+				"testdata/loki_basic_failure.yaml",
 			},
 			wantErr: true,
 		},
@@ -49,7 +80,7 @@ func TestParseFiles(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := ParseFiles(tt.files)
+			got, err := ParseFiles(tt.backend, tt.files)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("ParseFiles() error = %v, wantErr %v", err, tt.wantErr)
 				return
