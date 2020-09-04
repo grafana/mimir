@@ -1,10 +1,14 @@
 {
   local pvc = $.core.v1.persistentVolumeClaim,
   local volumeMount = $.core.v1.volumeMount,
+  local volume = $.core.v1.volume,
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
   local service = $.core.v1.service,
+  local configMap = $.core.v1.configMap,
+
   local isHA = $._config.alertmanager.replicas > 1,
+  local hasFallbackConfig = std.length($._config.alertmanager.fallback_config) > 0,
   local peers = if isHA then
     [
       'alertmanager-%d.alertmanager.%s.svc.%s.local:%s' % [i, $._config.namespace, $._config.cluster, $._config.alertmanager.gossip_port]
@@ -22,7 +26,18 @@
       'alertmanager.storage.path': '/data',
       'alertmanager.storage.gcs.bucketname': '%(cluster)s-cortex-%(namespace)s' % $._config,
       'alertmanager.web.external-url': '%s/alertmanager' % $._config.external_url,
-    },
+    } + if hasFallbackConfig then {
+      'alertmanager.configs.fallback': '/configs/alertmanager_fallback_config.yaml',
+    } else {},
+
+  alertmanager_fallback_config_map:
+    if hasFallbackConfig then
+      configMap.new('alertmanager-fallback-config') +
+      configMap.withData({
+        'alertmanager_fallback_config.yaml': $.util.manifestYaml($._config.alertmanager.fallback_config),
+      })
+    else {},
+
 
   alertmanager_pvc::
     if $._config.alertmanager_enabled then
@@ -51,7 +66,12 @@
           ['--cluster.peer=%s' % peer for peer in peers]
         else [],
       ) +
-      container.withVolumeMountsMixin([volumeMount.new('alertmanager-data', '/data')]) +
+      container.withVolumeMountsMixin(
+        [volumeMount.new('alertmanager-data', '/data')] +
+        if hasFallbackConfig then
+          [volumeMount.new('alertmanager-fallback-config', '/configs')]
+        else []
+      ) +
       $.util.resourcesRequests('100m', '1Gi') +
       $.util.readinessProbe +
       $.jaeger_mixin
@@ -67,15 +87,22 @@
       statefulSet.mixin.spec.selector.withMatchLabels({ name: 'alertmanager' }) +
       statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
       statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
-      statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900)
+      statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
+      statefulSet.mixin.spec.template.spec.withVolumesMixin(
+        if hasFallbackConfig then
+          [volume.fromConfigMap('alertmanager-fallback-config', 'alertmanager-fallback-config')]
+        else []
+      )
     else {},
 
   alertmanager_service:
     if $._config.alertmanager_enabled then
       if isHA then
         $.util.serviceFor($.alertmanager_statefulset) +
+        service.mixin.metadata.withName('alertmanager-headless') +
         service.mixin.spec.withClusterIp('None')
       else
-        $.util.serviceFor($.alertmanager_statefulset)
+        $.util.serviceFor($.alertmanager_statefulset) +
+        service.mixin.metadata.withName('alertmanager')
     else {},
 }
