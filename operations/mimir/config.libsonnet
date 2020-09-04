@@ -219,7 +219,7 @@
     },
 
     ruler_enabled: false,
-    ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, configdb, gcs, s3)',
+    ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, configdb, gcs, s3, local)',
     // TODO: Generic client generating functions would be nice.
     ruler_s3_bucket_name: $._config.s3_bucket_name,
     ruler_gcs_bucket_name: error 'must specify a GCS bucket name',
@@ -237,6 +237,9 @@
         },
         s3: {
           's3.url': 'https://%s/%s' % [$._config.aws_region, $._config.ruler_s3_bucket_name],
+        },
+        'local': {
+          'ruler.storage.local.directory': $._config.ruler_local_directory,
         },
       }[$._config.ruler_client_type],
 
