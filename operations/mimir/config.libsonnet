@@ -246,6 +246,7 @@
     alertmanager: {
       replicas: 3,
       gossip_port: 9094,
+      fallback_config: {},
     },
 
     overrides: {
