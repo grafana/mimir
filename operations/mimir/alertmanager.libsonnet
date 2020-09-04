@@ -99,10 +99,8 @@
     if $._config.alertmanager_enabled then
       if isHA then
         $.util.serviceFor($.alertmanager_statefulset) +
-        service.mixin.metadata.withName('alertmanager-headless') +
         service.mixin.spec.withClusterIp('None')
       else
-        $.util.serviceFor($.alertmanager_statefulset) +
-        service.mixin.metadata.withName('alertmanager')
+        $.util.serviceFor($.alertmanager_statefulset)
     else {},
 }
