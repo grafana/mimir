@@ -244,7 +244,7 @@
       }[$._config.ruler_client_type],
 
     alertmanager: {
-      replicas: 1,
+      replicas: 3,
       gossip_port: 9094,
     },
 
