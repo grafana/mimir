@@ -243,6 +243,11 @@
         },
       }[$._config.ruler_client_type],
 
+    alertmanager: {
+      replicas: 3,
+      gossip_port: 9094,
+    },
+
     overrides: {
       // === Per-tenant usage limits. ===
       //
