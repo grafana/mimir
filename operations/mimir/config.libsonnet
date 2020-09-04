@@ -236,7 +236,7 @@
           'ruler.storage.gcs.bucketname': $._config.ruler_gcs_bucket_name,
         },
         s3: {
-          's3.url': 'https://%s/%s' % [$._config.aws_region, $._config.s3_bucket_name],
+          's3.url': 'https://%s/%s' % [$._config.aws_region, $._config.ruler_s3_bucket_name],
         },
       }[$._config.ruler_client_type],
 
