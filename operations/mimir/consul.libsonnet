@@ -29,6 +29,13 @@ local consul = import 'consul/consul.libsonnet';
     local deployment = $.apps.v1.deployment,
     local podAntiAffinity = deployment.mixin.spec.template.spec.affinity.podAntiAffinity,
     local volume = $.core.v1.volume,
+
+    // backwards compatibility with ksonnet
+    local podAffinityTerm =
+      if std.objectHasAll($.core.v1, 'podAffinityTerm')
+      then $.core.v1.podAffinityTerm
+      else podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType,
+
     consul_deployment+:
 
       // Keep the consul state on a ramdisk, as they are ephemeral to us.
@@ -41,10 +48,9 @@ local consul = import 'consul/consul.libsonnet';
       // Ensure Consul is not scheduled on the same host as an ingester
       // (in any namespace - hence other_namespaces).
       podAntiAffinity.withRequiredDuringSchedulingIgnoredDuringExecutionMixin([
-        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.new() +
-        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.mixin.labelSelector.withMatchLabels({ name: 'ingester' }) +
-        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withNamespaces([$._config.namespace] + $._config.other_namespaces) +
-        podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecutionType.withTopologyKey('kubernetes.io/hostname'),
+        podAffinityTerm.mixin.labelSelector.withMatchLabels({ name: 'ingester' }) +
+        podAffinityTerm.withNamespaces([$._config.namespace] + $._config.other_namespaces) +
+        podAffinityTerm.withTopologyKey('kubernetes.io/hostname'),
       ]) +
 
       $.util.podPriority('high'),
