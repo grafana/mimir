@@ -1,4 +1,21 @@
-# Steps to create the release:
+# Release processes
+
+## GoReleaser (`cortextool` only)
+
+1. Create a changelog file in `changelog/` with the name of the tag e.g. `changelog/v0.3.0.md`. This will be used as the template for the release page in GitHub.
+2. Create a new tag that follows semantic versioning:
+
+```bash
+$ tag=v0.3.0
+$ git tag -s "${tag}" -m "${tag}"
+$ git push origin "${tag}"
+```
+
+3. Run `$ goreleaser --release-notes=changelogs/v0.3.0.md --rm-dist` where the changelog file is the one created as part of step 1.
+4. The docker image will be pushed automatically.
+
+
+## Manual (all the other binaries)
 
 1. Manually build and test the new additions
 2. Create a new tag based on:  
