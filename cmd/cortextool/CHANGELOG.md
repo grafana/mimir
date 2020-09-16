@@ -5,6 +5,8 @@
 ## v0.3.0
 
 * [FEATURE] Added loki backend support for the rules commands, configurable with `--backend=loki` (defaults to cortex).
+* [FEATURE] Introduces a new `version` command. The command will also let you know if there's a new version available.
+
 ## v0.2.4
 
 * [BUGFIX] Fix alertmanager registration subcommand and path for the configuration API #72
