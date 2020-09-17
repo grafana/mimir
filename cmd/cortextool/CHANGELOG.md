@@ -2,6 +2,9 @@
 
 ## unreleased / master
 
+## v0.3.1
+
+* [FEATURE] Add support for GME remote-write rule groups. #82
 * [BUGFIX] Fix issue where rule comparisons would be affected by the format of the YAML file. #88
 
 ## v0.3.0
