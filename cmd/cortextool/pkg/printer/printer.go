@@ -7,10 +7,10 @@ import (
 
 	"github.com/alecthomas/chroma/quick"
 	"github.com/mitchellh/colorstring"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/cortex-tools/pkg/rules"
+	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
 )
 
 // Printer is  used for printing formatted output from the cortextool
@@ -73,7 +73,7 @@ func (p *Printer) PrintAlertmanagerConfig(config string, templates map[string]st
 }
 
 // PrintRuleGroups prints the current alertmanager config
-func (p *Printer) PrintRuleGroups(rules map[string][]rulefmt.RuleGroup) error {
+func (p *Printer) PrintRuleGroups(rules map[string][]rwrulefmt.RuleGroup) error {
 	encodedRules, err := yaml.Marshal(&rules)
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func (p *Printer) PrintRuleGroups(rules map[string][]rulefmt.RuleGroup) error {
 }
 
 // PrintRuleGroup prints the current alertmanager config
-func (p *Printer) PrintRuleGroup(rule rulefmt.RuleGroup) error {
+func (p *Printer) PrintRuleGroup(rule rwrulefmt.RuleGroup) error {
 	encodedRule, err := yaml.Marshal(&rule)
 	if err != nil {
 		return err

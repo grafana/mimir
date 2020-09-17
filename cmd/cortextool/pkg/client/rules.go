@@ -6,13 +6,14 @@ import (
 	"net/url"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
 )
 
 // CreateRuleGroup creates a new rule group
-func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg rulefmt.RuleGroup) error {
+func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg rwrulefmt.RuleGroup) error {
 	payload, err := yaml.Marshal(&rg)
 	if err != nil {
 		return err
@@ -39,7 +40,7 @@ func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName
 }
 
 // GetRuleGroup retrieves a rule group
-func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rulefmt.RuleGroup, error) {
+func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName string) (*rwrulefmt.RuleGroup, error) {
 	escapedNamespace := url.PathEscape(namespace)
 	escapedGroupName := url.PathEscape(groupName)
 	path := "/api/prom/rules/" + escapedNamespace + "/" + escapedGroupName
@@ -60,7 +61,7 @@ func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName st
 		return nil, err
 	}
 
-	rg := rulefmt.RuleGroup{}
+	rg := rwrulefmt.RuleGroup{}
 	err = yaml.Unmarshal(body, &rg)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -74,7 +75,7 @@ func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName st
 }
 
 // ListRules retrieves a rule group
-func (r *CortexClient) ListRules(ctx context.Context, namespace string) (map[string][]rulefmt.RuleGroup, error) {
+func (r *CortexClient) ListRules(ctx context.Context, namespace string) (map[string][]rwrulefmt.RuleGroup, error) {
 	path := "/api/prom/rules"
 	if namespace != "" {
 		path = path + "/" + namespace
@@ -92,7 +93,7 @@ func (r *CortexClient) ListRules(ctx context.Context, namespace string) (map[str
 		return nil, err
 	}
 
-	ruleSet := map[string][]rulefmt.RuleGroup{}
+	ruleSet := map[string][]rwrulefmt.RuleGroup{}
 	err = yaml.Unmarshal(body, &ruleSet)
 	if err != nil {
 		return nil, err

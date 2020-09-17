@@ -9,8 +9,9 @@ import (
 
 	"github.com/grafana/loki/pkg/ruler/manager"
 	log "github.com/sirupsen/logrus"
-
 	yaml "gopkg.in/yaml.v3"
+
+	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
 )
 
 const (
@@ -46,8 +47,16 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 				return nil, errFileReadError
 			}
 
+			rwRgs := []rwrulefmt.RuleGroup{}
+			for _, rg := range rgs.Groups {
+				rwRgs = append(rwRgs, rwrulefmt.RuleGroup{
+					RuleGroup: rg,
+					RWConfigs: nil,
+				})
+			}
+
 			ns = &RuleNamespace{
-				Groups: rgs.Groups,
+				Groups: rwRgs,
 			}
 
 		default:

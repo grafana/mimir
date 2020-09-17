@@ -7,6 +7,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
+
+	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
 )
 
 // RuleNamespace is used to parse a slightly modified prometheus
@@ -17,7 +19,7 @@ type RuleNamespace struct {
 	Namespace string `yaml:"namespace,omitempty"`
 	Filepath  string `yaml:"-"`
 
-	Groups []rulefmt.RuleGroup `yaml:"groups"`
+	Groups []rwrulefmt.RuleGroup `yaml:"groups"`
 }
 
 // LintPromQLExpressions runs the `expr` from a rule through the PromQL parser and
@@ -212,7 +214,7 @@ func (r RuleNamespace) Validate() []error {
 }
 
 // ValidateRuleGroup validates a rulegroup
-func ValidateRuleGroup(g rulefmt.RuleGroup) []error {
+func ValidateRuleGroup(g rwrulefmt.RuleGroup) []error {
 	var errs []error
 	for i, r := range g.Rules {
 		for _, err := range r.Validate() {

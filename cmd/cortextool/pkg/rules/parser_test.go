@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+
+	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
 )
 
 func TestParseFiles(t *testing.T) {
@@ -24,12 +26,14 @@ func TestParseFiles(t *testing.T) {
 			want: map[string]RuleNamespace{
 				"example_namespace": {
 					Namespace: "example_namespace",
-					Groups: []rulefmt.RuleGroup{
+					Groups: []rwrulefmt.RuleGroup{
 						{
-							Name: "example_rule_group",
-							Rules: []rulefmt.RuleNode{
-								{
-									// currently the tests only check length
+							RuleGroup: rulefmt.RuleGroup{
+								Name: "example_rule_group",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently the tests only check length
+									},
 								},
 							},
 						},
@@ -55,12 +59,14 @@ func TestParseFiles(t *testing.T) {
 			want: map[string]RuleNamespace{
 				"loki_basic": {
 					Namespace: "loki_basic",
-					Groups: []rulefmt.RuleGroup{
+					Groups: []rwrulefmt.RuleGroup{
 						{
-							Name: "testgrp2",
-							Rules: []rulefmt.RuleNode{
-								{
-									// currently the tests only check length
+							RuleGroup: rulefmt.RuleGroup{
+								Name: "testgrp2",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently the tests only check length
+									},
 								},
 							},
 						},
