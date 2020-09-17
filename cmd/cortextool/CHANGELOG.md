@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+* [BUGFIX] Fix issue where rule comparisons would be affected by the format of the YAML file. #88
+
 ## v0.3.0
 
 * [FEATURE] Added loki backend support for the rules commands, configurable with `--backend=loki` (defaults to cortex).

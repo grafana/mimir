@@ -6,7 +6,6 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/google/go-cmp/cmp"
 	"github.com/mitchellh/colorstring"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	yaml "gopkg.in/yaml.v3"
@@ -91,17 +90,30 @@ func CompareGroups(groupOne, groupTwo rulefmt.RuleGroup) error {
 }
 
 func rulesEqual(a, b *rulefmt.RuleNode) bool {
-	// special option to consider nil == empty for map / slice.
-	// Code taken from https://pkg.go.dev/github.com/google/go-cmp/cmp?tab=doc#example-Option-EqualEmpty
-	alwaysEqual := cmp.Comparer(func(_, _ interface{}) bool { return true })
-	opt := cmp.FilterValues(func(x, y interface{}) bool {
-		vx, vy := reflect.ValueOf(x), reflect.ValueOf(y)
-		return (vx.IsValid() && vy.IsValid() && vx.Type() == vy.Type()) &&
-			(vx.Kind() == reflect.Slice || vx.Kind() == reflect.Map) &&
-			(vx.Len() == 0 && vy.Len() == 0)
-	}, alwaysEqual)
+	if a.Alert.Value != b.Alert.Value ||
+		a.Record.Value != b.Record.Value ||
+		a.Expr.Value != b.Expr.Value ||
+		a.For != b.For {
+		return false
+	}
 
-	return cmp.Equal(a, b, opt)
+	if a.Annotations != nil && b.Annotations != nil {
+		if !reflect.DeepEqual(a.Annotations, b.Annotations) {
+			return false
+		}
+	} else if a.Annotations != nil || b.Annotations != nil {
+		return false
+	}
+
+	if a.Labels != nil && b.Labels != nil {
+		if !reflect.DeepEqual(a.Labels, b.Labels) {
+			return false
+		}
+	} else if a.Labels != nil || b.Labels != nil {
+		return false
+	}
+
+	return true
 }
 
 // CompareNamespaces returns the differences between the two provided
