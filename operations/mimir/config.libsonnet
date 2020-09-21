@@ -57,7 +57,7 @@
     // Use the Cortex chunks storage engine by default, while giving the ability
     // to switch to blocks storage.
     storage_engine: 'chunks',  // Available options are 'chunks' or 'blocks'
-    blocks_storage_backend: 'gcs', // Available options are 'gcs', 's3', 'azure'
+    blocks_storage_backend: 'gcs',  // Available options are 'gcs', 's3', 'azure'
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
     blocks_storage_s3_endpoint: 's3.dualstack.us-east-1.amazonaws.com',
     blocks_storage_azure_account_name: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account name' else '',
