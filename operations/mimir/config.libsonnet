@@ -5,7 +5,7 @@
     replication_factor: 3,
     external_url: error 'must define external url for cluster',
 
-    storage_backend: error 'must specify storage backend (cassandra, gcp)',
+    storage_backend: error 'must specify storage backend (cassandra, gcp, aws)',
     table_prefix: $._config.namespace,
     cassandra_addresses: error 'must specify cassandra addresses',
     bigtable_instance: error 'must specify bigtable instance',
@@ -56,10 +56,13 @@
 
     // Use the Cortex chunks storage engine by default, while giving the ability
     // to switch to blocks storage.
-    storage_engine: 'chunks',
+    storage_engine: 'chunks',  // Available options are 'chunks' or 'blocks'
+    blocks_storage_backend: 'gcs',
+    blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
+    blocks_storage_s3_endpoint: 's3.dualstack.us-east-1.amazonaws.com',
+
     // Secondary storage engine is only used for querying.
     querier_second_storage_engine: null,
-    blocks_storage_bucket_name: error 'must specify GCS bucket name to store TSDB blocks',
 
     store_gateway_replication_factor: 3,
 
@@ -141,25 +144,39 @@
       $._config.client_configs.gcp +
       { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
+    genericBlocksStorageConfig:: {
+      'store.engine': $._config.storage_engine,  // May still be chunks
+      'experimental.blocks-storage.tsdb.dir': '/data/tsdb',
+      'experimental.blocks-storage.bucket-store.sync-dir': '/data/tsdb',
+      'experimental.blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
+      'experimental.blocks-storage.tsdb.block-ranges-period': '2h',
+      'experimental.blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
+      'experimental.blocks-storage.tsdb.ship-interval': '1m',
+
+      'experimental.store-gateway.sharding-enabled': true,
+      'experimental.store-gateway.sharding-ring.store': 'consul',
+      'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'experimental.store-gateway.sharding-ring.prefix': '',
+      'experimental.store-gateway.replication-factor': $._config.store_gateway_replication_factor,
+
+    },
+    gcsBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
+      'experimental.blocks-storage.backend': 'gcs',
+      'experimental.blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
+    },
+    s3BlocksStorageConfig:: $._config.genericBlocksStorageConfig {
+      'experimental.blocks-storage.backend': 's3',
+      'experimental.blocks-storage.s3.bucket-name': $._config.blocks_storage_bucket_name,
+      'experimental.blocks-storage.s3.endpoint': $._config.blocks_storage_s3_endpoint,
+    },
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
     blocksStorageConfig: (
-      if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then {
-        'store.engine': $._config.storage_engine,  // May still be chunks
-        'experimental.blocks-storage.tsdb.dir': '/data/tsdb',
-        'experimental.blocks-storage.bucket-store.sync-dir': '/data/tsdb',
-        'experimental.blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
-        'experimental.blocks-storage.tsdb.block-ranges-period': '2h',
-        'experimental.blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
-        'experimental.blocks-storage.tsdb.ship-interval': '1m',
-        'experimental.blocks-storage.backend': 'gcs',
-        'experimental.blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
-        'experimental.store-gateway.sharding-enabled': true,
-        'experimental.store-gateway.sharding-ring.store': 'consul',
-        'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-        'experimental.store-gateway.sharding-ring.prefix': '',
-        'experimental.store-gateway.replication-factor': $._config.store_gateway_replication_factor,
-      } else {}
+      if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then (
+        if $._config.blocks_storage_backend == 'gcs' then $._config.gcsBlocksStorageConfig
+        else if $._config.blocks_storage_backend == 's3' then $._config.s3BlocksStorageConfig
+        else $._config.genericBlocksStorageConfig
+      ) else {}
     ),
 
     // Shared between the Ruler and Querier
