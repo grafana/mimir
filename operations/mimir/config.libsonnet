@@ -57,9 +57,11 @@
     // Use the Cortex chunks storage engine by default, while giving the ability
     // to switch to blocks storage.
     storage_engine: 'chunks',  // Available options are 'chunks' or 'blocks'
-    blocks_storage_backend: 'gcs',
+    blocks_storage_backend: 'gcs', // Available options are 'gcs', 's3', 'azure'
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
     blocks_storage_s3_endpoint: 's3.dualstack.us-east-1.amazonaws.com',
+    blocks_storage_azure_account_name: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account name' else '',
+    blocks_storage_azure_account_key: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account key' else '',
 
     // Secondary storage engine is only used for querying.
     querier_second_storage_engine: null,
@@ -169,12 +171,19 @@
       'experimental.blocks-storage.s3.bucket-name': $._config.blocks_storage_bucket_name,
       'experimental.blocks-storage.s3.endpoint': $._config.blocks_storage_s3_endpoint,
     },
+    azureBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
+      'experimental.blocks-storage.backend': 'azure',
+      'experimental.blocks-storage.azure.container-name': $._config.blocks_storage_bucket_name,
+      'experimental.blocks-storage.azure.account-name': $._config.blocks_storage_account_name,
+      'experimental.blocks-storage.azure.account-key': $._config.blocks_storage_account_key,
+    },
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
     blocksStorageConfig: (
       if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then (
         if $._config.blocks_storage_backend == 'gcs' then $._config.gcsBlocksStorageConfig
         else if $._config.blocks_storage_backend == 's3' then $._config.s3BlocksStorageConfig
+        else if $._config.blocks_storage_backend == 'azure' then $._config.azureBlocksStorageConfig
         else $._config.genericBlocksStorageConfig
       ) else {}
     ),
