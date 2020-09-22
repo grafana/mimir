@@ -30,13 +30,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('CPU per sample') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[$__interval]))', 'blocks') +
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[$__interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Memory per active series') +
-        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - working set') +
-        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - working set') +
+        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - working set') +
+        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - working set') +
         $.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - heap inuse') +
         $.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/ingester"}) / sum(cortex_ingester_memory_series{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - heap inuse') +
         { yaxes: $.yaxes('bytes') }
@@ -46,13 +46,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}[$__interval]))', 'blocks') +
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}[$__interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Memory') +
-        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container_name="ingester"})', 'blocks - working set') +
-        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="ingester"})', 'chunks - working set') +
+        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"})', 'blocks - working set') +
+        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"})', 'chunks - working set') +
         $.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/ingester"})', 'blocks - heap inuse') +
         $.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/ingester"})', 'chunks - heap inuse') +
         { yaxes: $.yaxes('bytes') }
@@ -90,13 +90,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container_name="querier"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container_name="querier"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="querier"}[$__interval]))', 'blocks') +
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="querier"}[$__interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Memory') +
-        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container_name="querier"})', 'blocks - working set') +
-        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container_name="querier"})', 'chunks - working set') +
+        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$blocks_namespace",container="querier"})', 'blocks - working set') +
+        $.queryPanel('sum(container_memory_working_set_bytes{cluster=~"$cluster",namespace="$chunks_namespace",container="querier"})', 'chunks - working set') +
         $.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$blocks_namespace/querier"})', 'blocks - heap inuse') +
         $.queryPanel('sum(go_memstats_heap_inuse_bytes{cluster=~"$cluster",job=~"$chunks_namespace/querier"})', 'chunks - heap inuse') +
         { yaxes: $.yaxes('bytes') }

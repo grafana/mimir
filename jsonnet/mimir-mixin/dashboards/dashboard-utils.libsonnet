@@ -128,9 +128,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(pod_name) (rate(container_cpu_usage_seconds_total{%s,container_name="%s"}[$__interval]))' % [$.namespaceMatcher(), containerName],
-      'min(container_spec_cpu_quota{%s,container_name="%s"} / container_spec_cpu_period{%s,container_name="%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
-    ], ['{{pod_name}}', 'limit']) +
+      'sum by(pod) (rate(container_cpu_usage_seconds_total{%s,container="%s"}[$__interval]))' % [$.namespaceMatcher(), containerName],
+      'min(container_spec_cpu_quota{%s,container="%s"} / container_spec_cpu_period{%s,container="%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
+    ], ['{{pod}}', 'limit']) +
     {
       seriesOverrides: [
         {
@@ -144,9 +144,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryWorkingSetPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(pod_name) (container_memory_working_set_bytes{%s,container_name="%s"})' % [$.namespaceMatcher(), containerName],
-      'min(container_spec_memory_limit_bytes{%s,container_name="%s"} > 0)' % [$.namespaceMatcher(), containerName],
-    ], ['{{pod_name}}', 'limit']) +
+      'sum by(pod) (container_memory_working_set_bytes{%s,container="%s"})' % [$.namespaceMatcher(), containerName],
+      'min(container_spec_memory_limit_bytes{%s,container="%s"} > 0)' % [$.namespaceMatcher(), containerName],
+    ], ['{{pod}}', 'limit']) +
     {
       seriesOverrides: [
         {

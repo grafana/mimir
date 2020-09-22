@@ -80,7 +80,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
             )
               *
-            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(rate(container_cpu_usage_seconds_total{cluster=~"$cluster", namespace=~"$namespace"}[1m]), "deployment", "$1", "pod_name", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))[24h:])
+            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(rate(container_cpu_usage_seconds_total{cluster=~"$cluster", namespace=~"$namespace"}[1m]), "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))[24h:])
               /
             sum by (cluster, namespace, deployment) (label_replace(kube_pod_container_resource_requests_cpu_cores{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))
           |||,
@@ -94,7 +94,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
             )
               *
-            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(container_memory_usage_bytes{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod_name", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))[24h:1m])
+            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(container_memory_usage_bytes{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))[24h:1m])
               /
             sum by (cluster, namespace, deployment) (label_replace(kube_pod_container_resource_requests_memory_bytes{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))
           |||,
