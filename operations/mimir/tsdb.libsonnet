@@ -29,35 +29,35 @@
   blocks_chunks_caching_config::
     (
       if $._config.memcached_index_queries_enabled then {
-        'experimental.blocks-storage.bucket-store.index-cache.backend': 'memcached',
-        'experimental.blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
-        'experimental.blocks-storage.bucket-store.index-cache.memcached.timeout': '200ms',
-        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
-        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
-        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': '50',
-        'experimental.blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
-        'experimental.blocks-storage.bucket-store.index-cache.postings-compression-enabled': 'true',
+        'blocks-storage.bucket-store.index-cache.backend': 'memcached',
+        'blocks-storage.bucket-store.index-cache.memcached.addresses': 'dnssrvnoa+memcached-index-queries.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'blocks-storage.bucket-store.index-cache.memcached.timeout': '200ms',
+        'blocks-storage.bucket-store.index-cache.memcached.max-item-size': $._config.memcached_index_queries_max_item_size_mb * 1024 * 1024,
+        'blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
+        'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': '50',
+        'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
+        'blocks-storage.bucket-store.index-cache.postings-compression-enabled': 'true',
       } else {}
     ) + (
       if $._config.memcached_chunks_enabled then {
-        'experimental.blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
-        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
-        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.timeout': '200ms',
-        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
-        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
-        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
-        'experimental.blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
+        'blocks-storage.bucket-store.chunks-cache.backend': 'memcached',
+        'blocks-storage.bucket-store.chunks-cache.memcached.addresses': 'dnssrvnoa+memcached.%(namespace)s.svc.cluster.local:11211' % $._config,
+        'blocks-storage.bucket-store.chunks-cache.memcached.timeout': '200ms',
+        'blocks-storage.bucket-store.chunks-cache.memcached.max-item-size': $._config.memcached_chunks_max_item_size_mb * 1024 * 1024,
+        'blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size': '25000',
+        'blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency': '50',
+        'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size': '100',
       } else {}
     ),
 
   blocks_metadata_caching_config:: if $._config.memcached_metadata_enabled then {
-    'experimental.blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
-    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
-    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.timeout': '200ms',
-    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
-    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
-    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
-    'experimental.blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
+    'blocks-storage.bucket-store.metadata-cache.backend': 'memcached',
+    'blocks-storage.bucket-store.metadata-cache.memcached.addresses': 'dnssrvnoa+memcached-metadata.%(namespace)s.svc.cluster.local:11211' % $._config,
+    'blocks-storage.bucket-store.metadata-cache.memcached.timeout': '200ms',
+    'blocks-storage.bucket-store.metadata-cache.memcached.max-item-size': $._config.memcached_metadata_max_item_size_mb * 1024 * 1024,
+    'blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size': '25000',
+    'blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency': '50',
+    'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size': '100',
   } else {},
 
   querier_args+:: $.blocks_metadata_caching_config,
@@ -176,7 +176,7 @@
 
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
-      'experimental.store-gateway.tokens-file-path': '/data/tokens',
+      'store-gateway.tokens-file-path': '/data/tokens',
     } + $.blocks_chunks_caching_config + $.blocks_metadata_caching_config,
 
   store_gateway_ports:: $.util.defaultPorts,

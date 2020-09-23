@@ -148,34 +148,33 @@
 
     genericBlocksStorageConfig:: {
       'store.engine': $._config.storage_engine,  // May still be chunks
-      'experimental.blocks-storage.tsdb.dir': '/data/tsdb',
-      'experimental.blocks-storage.bucket-store.sync-dir': '/data/tsdb',
-      'experimental.blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
-      'experimental.blocks-storage.tsdb.block-ranges-period': '2h',
-      'experimental.blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
-      'experimental.blocks-storage.tsdb.ship-interval': '1m',
+      'blocks-storage.tsdb.dir': '/data/tsdb',
+      'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
+      'blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
+      'blocks-storage.tsdb.block-ranges-period': '2h',
+      'blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
+      'blocks-storage.tsdb.ship-interval': '1m',
 
-      'experimental.store-gateway.sharding-enabled': true,
-      'experimental.store-gateway.sharding-ring.store': 'consul',
-      'experimental.store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-      'experimental.store-gateway.sharding-ring.prefix': '',
-      'experimental.store-gateway.replication-factor': $._config.store_gateway_replication_factor,
-
+      'store-gateway.sharding-enabled': true,
+      'store-gateway.sharding-ring.store': 'consul',
+      'store-gateway.sharding-ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'store-gateway.sharding-ring.prefix': '',
+      'store-gateway.replication-factor': $._config.store_gateway_replication_factor,
     },
     gcsBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
-      'experimental.blocks-storage.backend': 'gcs',
-      'experimental.blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
+      'blocks-storage.backend': 'gcs',
+      'blocks-storage.gcs.bucket-name': $._config.blocks_storage_bucket_name,
     },
     s3BlocksStorageConfig:: $._config.genericBlocksStorageConfig {
-      'experimental.blocks-storage.backend': 's3',
-      'experimental.blocks-storage.s3.bucket-name': $._config.blocks_storage_bucket_name,
-      'experimental.blocks-storage.s3.endpoint': $._config.blocks_storage_s3_endpoint,
+      'blocks-storage.backend': 's3',
+      'blocks-storage.s3.bucket-name': $._config.blocks_storage_bucket_name,
+      'blocks-storage.s3.endpoint': $._config.blocks_storage_s3_endpoint,
     },
     azureBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
-      'experimental.blocks-storage.backend': 'azure',
-      'experimental.blocks-storage.azure.container-name': $._config.blocks_storage_bucket_name,
-      'experimental.blocks-storage.azure.account-name': $._config.blocks_storage_account_name,
-      'experimental.blocks-storage.azure.account-key': $._config.blocks_storage_account_key,
+      'blocks-storage.backend': 'azure',
+      'blocks-storage.azure.container-name': $._config.blocks_storage_bucket_name,
+      'blocks-storage.azure.account-name': $._config.blocks_storage_account_name,
+      'blocks-storage.azure.account-key': $._config.blocks_storage_account_key,
     },
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
