@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/grafana/loki/pkg/logql"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
@@ -22,16 +23,34 @@ type RuleNamespace struct {
 	Groups []rwrulefmt.RuleGroup `yaml:"groups"`
 }
 
-// LintPromQLExpressions runs the `expr` from a rule through the PromQL parser and
+// LintExpressions runs the `expr` from a rule through the PromQL or LogQL parser and
 // compares its output. If it differs from the parser, it uses the parser's instead.
-func (r RuleNamespace) LintPromQLExpressions() (int, int, error) {
+func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
+	var parseFn func(string) (fmt.Stringer, error)
+	var queryLanguage string
+
+	switch backend {
+	case CortexBackend:
+		queryLanguage = "PromQL"
+		parseFn = func(s string) (fmt.Stringer, error) {
+			return parser.ParseExpr(s)
+		}
+	case LokiBackend:
+		queryLanguage = "LogQL"
+		parseFn = func(s string) (fmt.Stringer, error) {
+			return logql.ParseExpr(s)
+		}
+	default:
+		return 0, 0, errInvalidBackend
+	}
+
 	// `count` represents the number of rules we evalated.
 	// `mod` represents the number of rules linted.
 	var count, mod int
 	for i, group := range r.Groups {
 		for j, rule := range group.Rules {
-			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting PromQL")
-			exp, err := parser.ParseExpr(rule.Expr.Value)
+			log.WithFields(log.Fields{"rule": getRuleName(rule)}).Debugf("linting %s", queryLanguage)
+			exp, err := parseFn(rule.Expr.Value)
 			if err != nil {
 				return count, mod, err
 			}

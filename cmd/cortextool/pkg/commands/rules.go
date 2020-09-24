@@ -572,7 +572,7 @@ func (r *RuleCommand) lint(k *kingpin.ParseContext) error {
 
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.LintPromQLExpressions()
+		c, m, err := ruleNamespace.LintExpressions(r.Backend)
 		if err != nil {
 			return err
 		}

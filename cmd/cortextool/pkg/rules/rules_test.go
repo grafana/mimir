@@ -160,13 +160,14 @@ func TestAggregateBy(t *testing.T) {
 	}
 }
 
-func TestLintPromQLExpressions(t *testing.T) {
+func TestLintExpressions(t *testing.T) {
 	tt := []struct {
 		name            string
 		expr            string
 		expected        string
 		err             string
 		count, modified int
+		logql           bool
 	}{
 		{
 			name:     "it lints simple expressions",
@@ -203,6 +204,20 @@ func TestLintPromQLExpressions(t *testing.T) {
 			count:    0, modified: 0,
 			err: "1:4: parse error: unexpected identifier \"fails\"",
 		},
+		{
+			name:     "logql simple",
+			expr:     `count_over_time({ foo != "bar" }[12m]) > 1`,
+			expected: `count_over_time({foo!="bar"}[12m]) > 1`,
+			count:    1, modified: 1,
+			logql: true,
+		},
+		{
+			name:  "logql badExpr",
+			expr:  `count_over_time({ foo != "bar"%LKJ }[12m]) >         1`,
+			count: 0, modified: 0,
+			logql: true,
+			err:   "parse error at line 1, col 31: syntax error: unexpected %, expecting } or ,",
+		},
 	}
 
 	for _, tc := range tt {
@@ -221,12 +236,18 @@ func TestLintPromQLExpressions(t *testing.T) {
 			},
 			}
 
-			c, m, err := r.LintPromQLExpressions()
+			backend := CortexBackend
+			if tc.logql {
+				backend = LokiBackend
+			}
+			c, m, err := r.LintExpressions(backend)
 			rexpr := r.Groups[0].Rules[0].Expr.Value
 
 			require.Equal(t, tc.count, c)
 			require.Equal(t, tc.modified, m)
-			require.Equal(t, tc.expected, rexpr)
+			if err == nil {
+				require.Equal(t, tc.expected, rexpr)
+			}
 
 			if tc.err == "" {
 				require.NoError(t, err)
