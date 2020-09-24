@@ -2,6 +2,10 @@
 
 ## unreleased / master
 
+## v0.3.2
+
+* [BUGFIX] Supports `rules lint` with LogQL: [#92](https://github.com/grafana/cortex-tools/pull/92).
+
 ## v0.3.1
 
 * [FEATURE] Add support for GME remote-write rule groups. #82
