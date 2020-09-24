@@ -281,14 +281,14 @@
       // ingester limits are 6s (#replicas) / 3x (#replication factor) higher.
       //
       // extra_small_user: {
-      //   ingestion_rate: 60,000
-      //   ingestion_burst_size: 600,000
+      //   ingestion_rate: 10,000
+      //   ingestion_burst_size: 200,000
       //
       //   max_series_per_user:   0 (disabled)
       //   max_series_per_metric: 0 (disabled)
       //
-      //   max_global_series_per_user:   600,000
-      //   max_global_series_per_metric: 60,000
+      //   max_global_series_per_user:   100,000
+      //   max_global_series_per_metric: 20,000
       //
       //   max_series_per_query: 10,000
       //   max_samples_per_query: 100,000
