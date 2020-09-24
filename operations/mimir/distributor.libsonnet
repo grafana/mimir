@@ -29,8 +29,8 @@
       'server.grpc.keepalive.max-connection-idle': '1m',
 
       'distributor.ingestion-rate-limit-strategy': 'global',
-      'distributor.ingestion-rate-limit': 100000,  // 100K
-      'distributor.ingestion-burst-size': 1000000,  // 1M
+      'distributor.ingestion-rate-limit': 10000,  // 10K
+      'distributor.ingestion-burst-size': 200000,  // 200k
 
       // The ingestion rate global limit requires the distributors to form a ring.
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,

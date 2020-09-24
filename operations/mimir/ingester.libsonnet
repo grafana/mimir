@@ -22,8 +22,8 @@
 
       // Limits config.
       'ingester.max-chunk-idle': $._config.max_chunk_idle,
-      'ingester.max-global-series-per-user': 1000000,  // 1M
-      'ingester.max-global-series-per-metric': 100000,  // 100K
+      'ingester.max-global-series-per-user': 100000,  // 100K
+      'ingester.max-global-series-per-metric': 20000,  // 20K
       'ingester.max-series-per-user': 0,  // Disabled in favour of the max global limit
       'ingester.max-series-per-metric': 0,  // Disabled in favour of the max global limit
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',

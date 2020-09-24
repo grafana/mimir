@@ -280,19 +280,33 @@
       // These are the defaults. Distributor limits will be 5x (#replicas) higher,
       // ingester limits are 6s (#replicas) / 3x (#replication factor) higher.
       //
-      // small_user: {
-      //   ingestion_rate: 100,000
-      //   ingestion_burst_size: 1,000,000
+      // extra_small_user: {
+      //   ingestion_rate: 10,000
+      //   ingestion_burst_size: 200,000
       //
       //   max_series_per_user:   0 (disabled)
       //   max_series_per_metric: 0 (disabled)
       //
-      //   max_global_series_per_user:   1,000,000
-      //   max_global_series_per_metric: 100,000
+      //   max_global_series_per_user:   100,000
+      //   max_global_series_per_metric: 20,000
       //
       //   max_series_per_query: 10,000
       //   max_samples_per_query: 100,000
       // },
+
+      small_user:: {
+        ingestion_rate: 100000,
+        ingestion_burst_size: 1000000,
+
+        max_series_per_user: 0,
+        max_series_per_metric: 0,
+
+        max_global_series_per_user: 1000000,
+        max_global_series_per_metric: 100000,
+
+        max_series_per_query: 10000,
+        max_samples_per_query: 100000,
+      },
 
       medium_user:: {
         max_series_per_metric: 0,  // Disabled in favour of the max global limit
