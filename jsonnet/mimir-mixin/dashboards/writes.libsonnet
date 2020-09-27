@@ -27,23 +27,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('QPS') +
-        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route="api_prom_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
+        $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route="(api_v1|api_prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
     .addRow(
       $.row('Gateway')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="api_prom_push"}' % $.jobMatcher($._config.job_names.gateway))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route="(api_v1|api_prom)_push"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.eq('route', 'api_prom_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.eq('route', '(api_v1|api_prom)_push')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="api_prom_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.gateway)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="(api_v1|api_prom)_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.gateway)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -52,16 +52,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Distributor')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/httpgrpc.*|api_prom_push"}' % $.jobMatcher($._config.job_names.distributor))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/httpgrpc.*|(api_v1|api_prom)_push"}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/httpgrpc.*|api_prom_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.distributor) + [utils.selector.re('route', '/httpgrpc.*|(api_v1|api_prom)_push')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/httpgrpc.*|api_prom_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.distributor)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/httpgrpc.*|(api_v1|api_prom)_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.distributor)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
