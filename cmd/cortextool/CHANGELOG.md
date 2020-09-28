@@ -2,6 +2,8 @@
 
 ## unreleased / master
 
+* [ENHANCEMENT] Loadgen: Allow users to selectively disable query or write loadgen by leaving their respective URL configs empty. #95
+
 ## v0.3.2
 
 * [BUGFIX] Supports `rules lint` with LogQL: [#92](https://github.com/grafana/cortex-tools/pull/92).

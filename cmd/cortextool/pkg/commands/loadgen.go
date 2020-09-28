@@ -12,6 +12,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
@@ -61,7 +62,7 @@ func (c *LoadgenCommand) Register(app *kingpin.Application) {
 	loadgenCommand := &LoadgenCommand{}
 	cmd := app.Command("loadgen", "Simple load generator for Cortex.").Action(loadgenCommand.run)
 	cmd.Flag("write-url", "").
-		Required().StringVar(&loadgenCommand.writeURL)
+		Default("").StringVar(&loadgenCommand.writeURL)
 	cmd.Flag("active-series", "number of active series to send").
 		Default("1000").IntVar(&loadgenCommand.activeSeries)
 	cmd.Flag("scrape-interval", "period to send metrics").
@@ -74,7 +75,7 @@ func (c *LoadgenCommand) Register(app *kingpin.Application) {
 		Default("500ms").DurationVar(&loadgenCommand.writeTimeout)
 
 	cmd.Flag("query-url", "").
-		Required().StringVar(&loadgenCommand.queryURL)
+		Default("").StringVar(&loadgenCommand.queryURL)
 	cmd.Flag("query", "query to run").
 		Default("sum(node_cpu_seconds_total)").StringVar(&loadgenCommand.query)
 	cmd.Flag("query-parallelism", "number of queries to run in parallel").
@@ -89,27 +90,9 @@ func (c *LoadgenCommand) Register(app *kingpin.Application) {
 }
 
 func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
-	writeURL, err := url.Parse(c.writeURL)
-	if err != nil {
-		return err
+	if c.writeURL == "" && c.queryURL == "" {
+		return errors.New("either a -write-url or -query-url flag must be provided to run the loadgen command")
 	}
-
-	writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
-		URL:     &config.URL{URL: writeURL},
-		Timeout: model.Duration(c.writeTimeout),
-	})
-	if err != nil {
-		return err
-	}
-	c.writeClient = writeClient
-
-	queryClient, err := api.NewClient(api.Config{
-		Address: c.queryURL,
-	})
-	if err != nil {
-		return err
-	}
-	c.queryClient = v1.NewAPI(queryClient)
 
 	http.Handle("/metrics", promhttp.Handler())
 	go func() {
@@ -119,16 +102,49 @@ func (c *LoadgenCommand) run(k *kingpin.ParseContext) error {
 		}
 	}()
 
-	c.wg.Add(c.parallelism)
-	c.wg.Add(c.queryParallelism)
+	if c.writeURL != "" {
+		log.Printf("setting up write load gen:\n  url=%s\n  parallelism: %v\n  active_series: %d\n interval: %v\n", c.writeURL, c.parallelism, c.activeSeries, c.scrapeInterval)
+		writeURL, err := url.Parse(c.writeURL)
+		if err != nil {
+			return err
+		}
 
-	metricsPerShard := c.activeSeries / c.parallelism
-	for i := 0; i < c.activeSeries; i += metricsPerShard {
-		go c.runWriteShard(i, i+metricsPerShard)
+		writeClient, err := remote.NewWriteClient("loadgen", &remote.ClientConfig{
+			URL:     &config.URL{URL: writeURL},
+			Timeout: model.Duration(c.writeTimeout),
+		})
+		if err != nil {
+			return err
+		}
+		c.writeClient = writeClient
+
+		c.wg.Add(c.parallelism)
+
+		metricsPerShard := c.activeSeries / c.parallelism
+		for i := 0; i < c.activeSeries; i += metricsPerShard {
+			go c.runWriteShard(i, i+metricsPerShard)
+		}
+	} else {
+		log.Println("write load generation is disabled, -write-url flag has not been set")
 	}
 
-	for i := 0; i < c.queryParallelism; i++ {
-		go c.runQueryShard()
+	if c.queryURL != "" {
+		log.Printf("setting up query load gen:\n  url=%s\n  parallelism: %v\n  query: %s", c.queryURL, c.queryParallelism, c.query)
+		queryClient, err := api.NewClient(api.Config{
+			Address: c.queryURL,
+		})
+		if err != nil {
+			return err
+		}
+		c.queryClient = v1.NewAPI(queryClient)
+
+		c.wg.Add(c.queryParallelism)
+
+		for i := 0; i < c.queryParallelism; i++ {
+			go c.runQueryShard()
+		}
+	} else {
+		log.Println("query load generation is disabled, -query-url flag has not been set")
 	}
 
 	c.wg.Wait()
