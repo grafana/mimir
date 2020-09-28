@@ -173,8 +173,8 @@
     azureBlocksStorageConfig:: $._config.genericBlocksStorageConfig {
       'blocks-storage.backend': 'azure',
       'blocks-storage.azure.container-name': $._config.blocks_storage_bucket_name,
-      'blocks-storage.azure.account-name': $._config.blocks_storage_account_name,
-      'blocks-storage.azure.account-key': $._config.blocks_storage_account_key,
+      'blocks-storage.azure.account-name': $._config.blocks_storage_azure_account_name,
+      'blocks-storage.azure.account-key': $._config.blocks_storage_azure_account_key,
     },
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
