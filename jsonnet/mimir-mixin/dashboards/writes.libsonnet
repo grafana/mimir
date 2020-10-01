@@ -38,7 +38,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.eq('route', 'api_(v1|prom)_push')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_(v1|prom)_push')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
