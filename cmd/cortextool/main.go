@@ -11,12 +11,13 @@ import (
 )
 
 var (
-	ruleCommand         commands.RuleCommand
-	alertCommand        commands.AlertCommand
-	alertmanagerCommand commands.AlertmanagerCommand
-	logConfig           commands.LoggerConfig
-	pushGateway         commands.PushGatewayConfig
-	loadgenCommand      commands.LoadgenCommand
+	ruleCommand              commands.RuleCommand
+	alertCommand             commands.AlertCommand
+	alertmanagerCommand      commands.AlertmanagerCommand
+	logConfig                commands.LoggerConfig
+	pushGateway              commands.PushGatewayConfig
+	loadgenCommand           commands.LoadgenCommand
+	overridesExporterCommand = commands.NewOverridesExporterCommand()
 )
 
 func main() {
@@ -27,6 +28,7 @@ func main() {
 	ruleCommand.Register(app)
 	pushGateway.Register(app)
 	loadgenCommand.Register(app)
+	overridesExporterCommand.Register(app)
 
 	app.Command("version", "Get the version of the cortextool CLI").Action(func(k *kingpin.ParseContext) error {
 		fmt.Print(version.Template)

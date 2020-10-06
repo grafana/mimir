@@ -3,6 +3,7 @@
 ## unreleased / master
 
 * [ENHANCEMENT] Loadgen: Allow users to selectively disable query or write loadgen by leaving their respective URL configs empty. #95
+* [FEATURE] Add overrides-exporter to cortextool, which exports Cortex runtime configuration overrides as metrics. #91
 
 ## v0.3.2
 

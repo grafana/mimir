@@ -96,6 +96,17 @@ This commands checks rules against the recommended [best practices](https://prom
 
     cortextool rules check ./example_rules_one.yaml
 
+
+#### Overrides Exporter
+
+The Overrides Exporter allows to continuously export [per tenant configuration overrides][runtime-config] as metrics. Optionally it can also export a presets file (cf. example [override config file] and [presets file]).
+
+    cortextool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
+
+[override config file]:./pkg/commands/testdata/overrides.yaml
+[presets file]:./pkg/commands/testdata/presets.yaml
+[runtime-config]:https://cortexmetrics.io/docs/configuration/arguments/#runtime-configuration-file
+
 ## chunktool
 
 This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.
