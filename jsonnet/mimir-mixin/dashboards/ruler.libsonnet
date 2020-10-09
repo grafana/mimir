@@ -18,13 +18,42 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__interval]))
         |||,
     },
-    groupEvaluations: {
-      missedIterations: 'sum(rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__interval]))',
+    perUserPerGroupEvaluations: {
+      failure: 'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval])) > 0',
       latency:
         |||
-          sum (rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__interval]))
             /
-          sum (rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__interval]))
+        |||,
+    },
+    groupEvaluations: {
+      missedIterations: 'sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__interval])) > 0',
+      latency:
+        |||
+          rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__interval])
+            /
+          rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__interval])
+        |||,
+    },
+    notifications: {
+      failure:
+        |||
+          sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__interval]))
+            /
+          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__interval]))
+          > 0
+        |||,
+      queue:
+        |||
+          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__interval]))
+            /
+          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__interval]))  
+          > 0
+        |||,
+      dropped:
+        |||
+          sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__interval])) > 0
         |||,
     },
   },
@@ -33,7 +62,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.dashboard('Cortex / Ruler')
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('Rule Evaluations')
+      $.row('Rule Evaluations Global')
       .addPanel(
         $.panel('EPS') +
         $.queryPanel(
@@ -56,14 +85,45 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Group Evaluations')
       .addPanel(
         $.panel('Missed Iterations') +
-        $.queryPanel($.rulerQueries.groupEvaluations.missedIterations % $.jobMatcher('ruler'), 'iterations missed'),
+        $.queryPanel($.rulerQueries.groupEvaluations.missedIterations % $.jobMatcher('ruler'), '{{ user }}'),
       )
       .addPanel(
         $.panel('Latency') +
         $.queryPanel(
           $.rulerQueries.groupEvaluations.latency % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
-          'average'
+          '{{ user }}'
         ),
+      )
+      .addPanel(
+        $.panel('Failures') +
+        $.queryPanel(
+          $.rulerQueries.perUserPerGroupEvaluations.failure % [$.jobMatcher('ruler')], '{{ rule_group }}'
+        )
+      )
+    )
+    .addRow(
+      $.row('Rule Evaluation per User')
+      .addPanel(
+        $.panel('Latency') +
+        $.queryPanel(
+          $.rulerQueries.perUserPerGroupEvaluations.latency % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
+          '{{ user }}'
+        )
+      )
+    )
+    .addRow(
+      $.row('Notifications')
+      .addPanel(
+        $.panel('Delivery Errors') +
+        $.queryPanel($.rulerQueries.notifications.failure % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
+      )
+      .addPanel(
+        $.panel('Queue Length') +
+        $.queryPanel($.rulerQueries.notifications.queue % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
+      )
+      .addPanel(
+        $.panel('Dropped') +
+        $.queryPanel($.rulerQueries.notifications.dropped % $.jobMatcher('ruler'), '{{ user }}')
       )
     ),
 }
