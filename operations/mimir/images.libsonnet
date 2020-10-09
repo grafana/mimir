@@ -18,6 +18,7 @@
     ruler: self.cortex,
     store_gateway: self.cortex,
 
+    cortex_tools: 'grafana/cortex-tools:v0.4.0',
     query_tee: 'quay.io/cortexproject/query-tee:master-5d7b05c3',
     testExporter: 'cortexproject/test-exporter:master-be013707',
   },
