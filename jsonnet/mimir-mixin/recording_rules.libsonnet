@@ -11,6 +11,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
       },
       {
+        name: 'cortex_querier_api',
+        rules:
+          utils.histogramRules('cortex_querier_request_duration_seconds', ['cluster', 'job']) +
+          utils.histogramRules('cortex_querier_request_duration_seconds', ['cluster', 'job', 'route']) +
+          utils.histogramRules('cortex_querier_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
+      },
+      {
         name: 'cortex_cache',
         rules:
           utils.histogramRules('cortex_memcache_request_duration_seconds', ['cluster', 'job', 'method']) +
