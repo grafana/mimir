@@ -7,7 +7,10 @@
   _config+: {
     // overrides exporter can also make the configured presets available, this
     // list references entries within $._config.overrides
+
     overrides_exporter_presets:: [
+      'extra_small_user',
+      'small_user',
       'medium_user',
       'big_user',
       'super_user',

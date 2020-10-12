@@ -22,10 +22,12 @@
 
       // Limits config.
       'ingester.max-chunk-idle': $._config.max_chunk_idle,
-      'ingester.max-global-series-per-user': 150000,  // 150K
-      'ingester.max-global-series-per-metric': 20000,  // 20K
-      'ingester.max-series-per-user': 0,  // Disabled in favour of the max global limit
-      'ingester.max-series-per-metric': 0,  // Disabled in favour of the max global limit
+      'ingester.max-series-per-user': $._config.limits.max_series_per_user,
+      'ingester.max-series-per-metric': $._config.limits.max_series_per_metric,
+      'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
+      'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
+      'ingester.max-series-per-query': $._config.limits.max_series_per_query,
+      'ingester.max-samples-per-query': $._config.limits.max_samples_per_query,
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
       'server.grpc-max-concurrent-streams': 100000,
     } + (
