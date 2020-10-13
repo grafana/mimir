@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'dashboard-utils.libsonnet') {
 
   'cortex-scaling.json':
-    $.dashboard('Cortex / Scaling')
+    ($.dashboard('Cortex / Scaling') + { uid: '88c041017b96856c9176e07cf557bdcf' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Workload-based scaling')

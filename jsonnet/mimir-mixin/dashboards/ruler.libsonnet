@@ -30,7 +30,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   'ruler.json':
-    $.dashboard('Cortex / Ruler')
+    ($.dashboard('Cortex / Ruler') + { uid: '44d12bcb1f95661c6ab6bc946dfc3473' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Rule Evaluations')

@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'dashboard-utils.libsonnet')
 {
   'cortex-blocks-vs-chunks.json':
-    $.dashboard('Cortex / Blocks vs Chunks')
+    ($.dashboard('Cortex / Blocks vs Chunks') + { uid: '0e2b4dd23df9921972e3fb554c0fc483' })
     .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*cortex.*"}', 'cluster')
     .addTemplate('blocks_namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
     .addTemplate('chunks_namespace', 'kube_pod_container_info{image=~".*cortex.*"}', 'namespace')
