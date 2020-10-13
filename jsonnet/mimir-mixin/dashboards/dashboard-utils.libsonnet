@@ -45,14 +45,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then 'job=~"$job"'
     else 'cluster=~"$cluster", job=~"($namespace)/%s"' % job,
 
-  // jobMatcherEquality performs exact matches on cluster and namespace.  Should be used on
-  //  panels that are expected to return too many series to be useful when multiplier
-  //  namespaces or clusters are selected.
-  jobMatcherEquality(job)::
-    if $._config.singleBinary
-    then 'job=~"$job"'
-    else 'cluster="$cluster", namespace="$namespace", job=~"($namespace)/%s"' % job,
-
   namespaceMatcher()::
     if $._config.singleBinary
     then 'job=~"$job"'

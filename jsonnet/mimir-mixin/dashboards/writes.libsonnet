@@ -43,7 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_(v1|prom)_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.gateway)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"api_(v1|prom)_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -61,7 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/httpgrpc.*|api_(v1|prom)_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.distributor)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/httpgrpc.*|api_(v1|prom)_push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.distributor)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -90,7 +90,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcherEquality($._config.job_names.ingester)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route="/cortex.Ingester/Push"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
