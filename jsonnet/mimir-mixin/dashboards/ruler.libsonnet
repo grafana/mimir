@@ -82,6 +82,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
+      $.row('Gateway Latency')
+      .addPanel(
+        $.panel('QPS') +
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_rules.*|api_prom_api_v1_(rules|alerts)"}' % $.jobMatcher($._config.job_names.gateway))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_prom_rules.*|api_prom_api_v1_(rules|alerts)')])
+      )
+    )
+    .addRow(
       $.row('Group Evaluations')
       .addPanel(
         $.panel('Missed Iterations') +
