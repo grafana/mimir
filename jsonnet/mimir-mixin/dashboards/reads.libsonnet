@@ -155,11 +155,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.thanosMemcachedCache('Memcached – Blocks Storage – Metadada (Store-gateway)', $._config.job_names.store_gateway, 'store-gateway', 'metadata-cache')
+      $.thanosMemcachedCache('Memcached – Blocks Storage – Metadata (Store-gateway)', $._config.job_names.store_gateway, 'store-gateway', 'metadata-cache')
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.thanosMemcachedCache('Memcached – Blocks Storage – Metadada (Querier)', $._config.job_names.querier, 'querier', 'metadata-cache')
+      $.thanosMemcachedCache('Memcached – Blocks Storage – Metadata (Querier)', $._config.job_names.querier, 'querier', 'metadata-cache')
     )
     .addRowIf(
       std.member($._config.storage_engine, 'chunks') &&
