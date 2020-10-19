@@ -29,6 +29,7 @@
       ingester: '(ingester|cortex$)',
       distributor: '(distributor|cortex$)',
       querier: '(querier|cortex$)',
+      ruler: '(ruler|cortex$)',
       query_frontend: '(query-frontend|cortex$)',
       table_manager: '(table-manager|cortex$)',
       store_gateway: '(store-gateway|cortex$)',

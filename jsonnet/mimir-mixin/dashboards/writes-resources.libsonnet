@@ -46,7 +46,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.goHeapInUsePanel('Memory (go heap inuse)', 'ingester'),
       )
-    ) + {
+    )
+    + {
       templating+: {
         list: [
           // Do not allow to include all clusters/namespaces otherwise this dashboard
