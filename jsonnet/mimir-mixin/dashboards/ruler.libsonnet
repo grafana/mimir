@@ -62,6 +62,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.dashboard('Cortex / Ruler')
     .addClusterSelectorTemplates()
     .addRow(
+      ($.row('Headlines') + {
+         height: '100px',
+         showTitle: false,
+       })
+      .addPanel(
+        $.panel('Active Configurations') +
+        $.statPanel('sum(cortex_ruler_managers_total{%s})' % $.jobMatcher('ruler'), format='short')
+      )
+      .addPanel(
+        $.panel('Total Rules') +
+        $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher('ruler'), format='short')
+      )
+      .addPanel(
+        $.panel('Read QPS') +
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[5m]))' % $.jobMatcher('ruler'), format='reqps')
+      )
+      .addPanel(
+        $.panel('Write QPS') +
+        $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[5m]))' % $.jobMatcher('ruler'), format='reqps')
+      )
+    )
+    .addRow(
       $.row('Rule Evaluations Global')
       .addPanel(
         $.panel('EPS') +
@@ -82,7 +104,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Gateway Latency')
+      $.row('Configuration API (gateway)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_rules.*|api_prom_api_v1_(rules|alerts)"}' % $.jobMatcher($._config.job_names.gateway))
@@ -90,6 +112,28 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Latency') +
         utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_prom_rules.*|api_prom_api_v1_(rules|alerts)')])
+      )
+    )
+    .addRow(
+      $.row('Writes')
+      .addPanel(
+        $.panel('QPS') +
+        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher('ruler'))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobSelector('ruler'))
+      )
+    )
+    .addRow(
+      $.row('Reads')
+      .addPanel(
+        $.panel('QPS') +
+        $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher('ruler'))
+      )
+      .addPanel(
+        $.panel('Latency') +
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobSelector('ruler'))
       )
     )
     .addRow(
