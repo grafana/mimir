@@ -47,25 +47,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.goHeapInUsePanel('Memory (go heap inuse)', 'ingester'),
       )
     )
-    .addRow(
-      $.row('Ruler')
-      .addPanel(
-        $.panel('Rules') +
-        $.queryPanel('sum by(instance) (cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher($._config.job_names.ruler), '{{instance}}'),
-      )
-      .addPanel(
-        $.containerCPUUsagePanel('CPU', 'ruler'),
-      )
-    )
-    .addRow(
-      $.row('')
-      .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler'),
-      )
-      .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'ruler'),
-      )
-    ) + {
+    + {
       templating+: {
         list: [
           // Do not allow to include all clusters/namespaces otherwise this dashboard
