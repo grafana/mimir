@@ -75,11 +75,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.statPanel('sum(cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher('ruler'), format='short')
       )
       .addPanel(
-        $.panel('Read QPS') +
+        $.panel('Read from Ingesters - QPS') +
         $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}[5m]))' % $.jobMatcher('ruler'), format='reqps')
       )
       .addPanel(
-        $.panel('Write QPS') +
+        $.panel('Write to Ingesters - QPS') +
         $.statPanel('sum(rate(cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}[5m]))' % $.jobMatcher('ruler'), format='reqps')
       )
     )
@@ -115,25 +115,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Writes')
+      $.row('Writes (Ingesters)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher('ruler'))
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobSelector('ruler'))
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/Push"}' % $.jobMatcher('ruler'))
       )
     )
     .addRow(
-      $.row('Reads')
+      $.row('Reads (Ingesters)')
       .addPanel(
         $.panel('QPS') +
         $.qpsPanel('cortex_ingester_client_request_duration_seconds_count{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher('ruler'))
       )
       .addPanel(
         $.panel('Latency') +
-        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobSelector('ruler'))
+        $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher('ruler'))
       )
     )
     .addRow(
