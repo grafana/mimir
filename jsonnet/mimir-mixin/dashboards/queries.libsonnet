@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'dashboard-utils.libsonnet') {
 
   'cortex-queries.json':
-    $.dashboard('Cortex / Queries')
+    ($.dashboard('Cortex / Queries') + { uid: 'd9931b1054053c8b972d320774bb8f1d' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Query Frontend')

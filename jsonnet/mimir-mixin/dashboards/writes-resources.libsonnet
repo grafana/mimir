@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'cortex-writes-resources.json':
-    $.dashboard('Cortex / Writes Resources')
+    ($.dashboard('Cortex / Writes Resources') + { uid: 'c0464f0d8bd026f776c9006b0591bb0b' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Gateway')

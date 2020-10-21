@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'cortex-object-store.json':
-    $.dashboard('Cortex / Object Store')
+    ($.dashboard('Cortex / Object Store') + { uid: 'd5a3a4489d57c733b5677fb55370a723' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Components')

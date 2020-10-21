@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'cortex-chunks.json':
-    $.dashboard('Cortex / Chunks')
+    ($.dashboard('Cortex / Chunks') + { uid: 'a56a3fa6284064eb392a115f3acbf744' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Active Series / Chunks')
@@ -52,7 +52,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ),
 
   'cortex-wal.json':
-    $.dashboard('Cortex / WAL')
+    ($.dashboard('Cortex / WAL') + { uid: 'd4fb924cdc1581cd8e870e3eb0110bda' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('')

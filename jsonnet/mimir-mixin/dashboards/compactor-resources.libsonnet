@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ignoring(pod) group_right() (label_replace(count by(pod, instance, device) (container_fs_writes_bytes_total{%s,container="compactor",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
     ||| % $.namespaceMatcher();
 
-    $.dashboard('Cortex / Compactor Resources')
+    ($.dashboard('Cortex / Compactor Resources') + { uid: 'df9added6f1f4332f95848cca48ebd99' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('CPU and Memory')
