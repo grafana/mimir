@@ -122,6 +122,10 @@ The migrate command helps with migrating chunks across cortex clusters. It also 
 As of now it only supports `Bigtable` or `GCS` as a source to read chunks from for migration while for writing it supports all the storages that Cortex supports.
 More details about it [here](./pkg/chunk/migrate/README.md)
 
+##### Chunk Validate/Clean-Index
+
+The `chunk validate-index` and `chunk clean-index` command allows users to scan their index and chunk backends for invalid entries. The `validate-index` command will find invalid entries and ouput them to a CSV file. The `clean-index` command will take that CSV file as input and delete the invalid entries.
+
 ## logtool
 
 A CLI tool to parse Cortex query-frontend logs and formats them for easy analysis.

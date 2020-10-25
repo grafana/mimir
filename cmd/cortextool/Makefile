@@ -46,7 +46,7 @@ cross:
 	CGO_ENABLED=0 gox -output="dist/{{.Dir}}-{{.OS}}-{{.Arch}}" -ldflags=${LDFLAGS} -arch="amd64" -os="linux windows darwin" ./cmd/logtool
 
 test:
-	go test -mod=vendor -p=8 ./...
+	go test -mod=vendor -p=8 ./pkg/...
 
 clean:
 	rm -rf cmd/cortextool/cortextool

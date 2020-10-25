@@ -1,1 +1,2 @@
 (github.com/mitchellh/colorstring).Println
+(github.com/go-kit/kit/log.Logger).Log

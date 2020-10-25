@@ -1,24 +1,34 @@
 package commands
 
 import (
+	"bufio"
 	"context"
+	"encoding/hex"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/cortexproject/cortex/pkg/chunk/cassandra"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
+	"github.com/cortexproject/cortex/pkg/cortex"
+	"github.com/cortexproject/cortex/pkg/util/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/sirupsen/logrus"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/alecthomas/kingpin.v2"
+	yamlV2 "gopkg.in/yaml.v2"
 	"gopkg.in/yaml.v3"
 
 	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
+	toolCassandra "github.com/grafana/cortex-tools/pkg/chunk/cassandra"
 	"github.com/grafana/cortex-tools/pkg/chunk/filter"
 	toolGCP "github.com/grafana/cortex-tools/pkg/chunk/gcp"
 	"github.com/grafana/cortex-tools/pkg/chunk/migrate"
@@ -111,12 +121,52 @@ func registerDeleteSeriesCommandOptions(cmd *kingpin.CmdClause) {
 	deleteSeriesCommandOptions.FilterConfig.Register(deleteSeriesCommand)
 }
 
+type chunkCleanCommandOptions struct {
+	CortexConfigFile      string
+	InvalidIndexEntryFile string
+	Table                 string
+	BatchSize             int
+	Concurrency           int
+}
+
+func registerChunkCleanCommandOptions(cmd *kingpin.CmdClause) {
+	opts := &chunkCleanCommandOptions{}
+	chunkCleanCommand := cmd.Command("clean-index", "Deletes the index entries specified in the provided file from the specified index table.").Action(opts.run)
+	chunkCleanCommand.Flag("invalid-entry-file", "File with list of index entries to delete. This file is generated using the 'chunk validate-index` command.").Required().StringVar(&opts.InvalidIndexEntryFile)
+	chunkCleanCommand.Flag("table", "Cortex index table to delete index entries from").Required().StringVar(&opts.Table)
+	chunkCleanCommand.Flag("cortex-config-file", "Path to Cortex config file containing the Cassandra config").Required().StringVar(&opts.CortexConfigFile)
+	chunkCleanCommand.Flag("batch-size", "How many deletes to submit in one batch").Default("100").IntVar(&opts.BatchSize)
+	chunkCleanCommand.Flag("concurrency", "How many concurrent threads to run").Default("8").IntVar(&opts.Concurrency)
+}
+
+type validateIndexCommandOptions struct {
+	CortexConfigFile      string
+	Table                 string
+	FromTimestamp         int64
+	ToTimestamp           int64
+	InvalidIndexEntryFile string
+	TenantID              string
+}
+
+func registerValidateIndexCommandOptions(cmd *kingpin.CmdClause) {
+	opts := &validateIndexCommandOptions{}
+	validateIndexCommand := cmd.Command("validate-index", "Scans the provided Cortex index for invalid entries. Currently, only Cassandra is supported.").Action(opts.run)
+	validateIndexCommand.Flag("cortex-config-file", "Path to a valid Cortex config file.").Required().StringVar(&opts.CortexConfigFile)
+	validateIndexCommand.Flag("invalid-entry-file", "Path to file where the hash and range values of invalid index entries will be written.").Default("invalid-entries.txt").StringVar(&opts.InvalidIndexEntryFile)
+	validateIndexCommand.Flag("table", "Cortex index table to scan for invalid index entries").Required().StringVar(&opts.Table)
+	validateIndexCommand.Flag("from-unix-timestamp", "Set a valid unix timestamp in seconds to configure a minimum timestamp to scan for invalid entries.").Default("0").Int64Var(&opts.FromTimestamp)
+	validateIndexCommand.Flag("to-unix-timestamp", "Set a valid unix timestamp in seconds to configure a maximum timestamp to scan for invalid entries.").Int64Var(&opts.ToTimestamp)
+	validateIndexCommand.Flag("tenant-id", "Tenant ID to scan entries for.").Default("fake").StringVar(&opts.TenantID)
+}
+
 // RegisterChunkCommands registers the ChunkCommand flags with the kingpin applicattion
 func RegisterChunkCommands(app *kingpin.Application) {
 	chunkCommand := app.Command("chunk", "Chunk related operations").PreAction(setup)
 	registerDeleteChunkCommandOptions(chunkCommand)
 	registerDeleteSeriesCommandOptions(chunkCommand)
 	registerMigrateChunksCommandOptions(chunkCommand)
+	registerChunkCleanCommandOptions(chunkCommand)
+	registerValidateIndexCommandOptions(chunkCommand)
 }
 
 func setup(k *kingpin.ParseContext) error {
@@ -129,6 +179,167 @@ func setup(k *kingpin.ParseContext) error {
 		labelEntriesDeleted,
 	)
 	return nil
+}
+
+func (c *chunkCleanCommandOptions) run(k *kingpin.ParseContext) error {
+	cortexCfg := &cortex.Config{}
+	flagext.RegisterFlags(cortexCfg)
+	err := LoadConfig(c.CortexConfigFile, true, cortexCfg)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse Cortex config")
+	}
+
+	err = cortexCfg.Schema.Load()
+	if err != nil {
+		return errors.Wrap(err, "failed to load schemas")
+	}
+
+	logrus.Debug("Connecting to Cassandra")
+	client, err := cassandra.NewStorageClient(cortexCfg.Storage.CassandraStorageConfig, cortexCfg.Schema, nil)
+	if err != nil {
+		return errors.Wrap(err, "failed to connect to Cassandra")
+	}
+
+	logrus.Debug("Connected")
+
+	inputFile, err := os.Open(c.InvalidIndexEntryFile)
+	if err != nil {
+		return errors.Wrap(err, "failed opening input file")
+	}
+	scanner := bufio.NewScanner(inputFile)
+	scanner.Split(bufio.ScanLines)
+
+	// One channel message per input line.
+	lineCh := make(chan string, c.Concurrency)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	var totalLineCnt uint32
+
+	g, ctx := errgroup.WithContext(ctx)
+	for i := 0; i < c.Concurrency; i++ {
+		g.Go(func() error {
+			batch := client.NewWriteBatch()
+			lineCnt := 0
+			for line := range lineCh {
+				select {
+				case <-ctx.Done():
+					return nil
+				default:
+				}
+
+				logrus.Debugf("processing line: %s", line)
+				parts := strings.SplitN(line, ",", 2)
+				if len(parts) != 2 {
+					logrus.WithFields(logrus.Fields{
+						"line": line,
+					}).Errorln("invalid input format")
+					continue
+				}
+
+				parts[0], parts[1] = strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
+				if parts[1][:2] == "0x" {
+					parts[1] = parts[1][2:]
+				}
+
+				rangeVal, err := hex.DecodeString(parts[1])
+				if err != nil {
+					logrus.WithFields(logrus.Fields{
+						"hash":  parts[0],
+						"range": parts[1],
+					}).WithError(err).Errorln("invalid range value")
+					continue
+				}
+
+				batch.Delete(c.Table, parts[0], rangeVal)
+				lineCnt++
+
+				if lineCnt >= c.BatchSize {
+					writeBatch(ctx, client, batch)
+					batch = client.NewWriteBatch()
+					lineCnt = 0
+				}
+
+				newTotalLineCnt := atomic.AddUint32(&totalLineCnt, 1)
+				if newTotalLineCnt%25000 == 0 {
+					logrus.WithFields(logrus.Fields{
+						"entries_cleaned_up": newTotalLineCnt,
+					}).Infoln("cleanup progress")
+				}
+			}
+
+			writeBatch(ctx, client, batch)
+			return nil
+		})
+	}
+
+	go func() {
+		for scanner.Scan() {
+			lineCh <- scanner.Text()
+		}
+		close(lineCh)
+	}()
+
+	err = g.Wait()
+	if err != nil {
+		return errors.Wrap(err, "failed to delete invalid index entries")
+	}
+
+	logrus.WithFields(logrus.Fields{
+		"entries_cleaned_up": totalLineCnt,
+	}).Infoln("cleanup complete")
+
+	return nil
+}
+
+func writeBatch(ctx context.Context, client *cassandra.StorageClient, batch chunk.WriteBatch) {
+	logrus.Debugf("applying batch")
+	for retries := 5; retries > 0; retries-- {
+		err := client.BatchWrite(ctx, batch)
+		if err != nil {
+			if retries > 1 {
+				logrus.WithError(err).Warnln("failed to apply batch write, retrying")
+			} else {
+				logrus.WithError(err).Errorln("failed to apply batch write, giving up")
+			}
+		}
+	}
+}
+
+// LoadConfig read YAML-formatted config from filename into cfg.
+func LoadConfig(filename string, expandENV bool, cfg *cortex.Config) error {
+	buf, err := ioutil.ReadFile(filename)
+	if err != nil {
+		return errors.Wrap(err, "Error reading config file")
+	}
+
+	if expandENV {
+		buf = expandEnv(buf)
+	}
+
+	err = yamlV2.Unmarshal(buf, cfg)
+	if err != nil {
+		return errors.Wrap(err, "Error parsing config file")
+	}
+
+	return nil
+}
+
+// expandEnv replaces ${var} or $var in config according to the values of the current environment variables.
+// The replacement is case-sensitive. References to undefined variables are replaced by the empty string.
+// A default value can be given by using the form ${var:default value}.
+func expandEnv(config []byte) []byte {
+	return []byte(os.Expand(string(config), func(key string) string {
+		keyAndDefault := strings.SplitN(key, ":", 2)
+		key = keyAndDefault[0]
+
+		v := os.Getenv(key)
+		if v == "" && len(keyAndDefault) == 2 {
+			v = keyAndDefault[1] // Set value to the default.
+		}
+		return v
+	}))
 }
 
 func (c *deleteChunkCommandOptions) run(k *kingpin.ParseContext) error {
@@ -392,6 +603,57 @@ func (c *deleteSeriesCommandOptions) run(k *kingpin.ParseContext) error {
 	}
 
 	deletionDuration.Set(time.Since(start).Seconds())
+
+	return nil
+}
+
+func (v *validateIndexCommandOptions) run(k *kingpin.ParseContext) error {
+	cortexCfg := &cortex.Config{}
+	flagext.RegisterFlags(cortexCfg)
+	err := LoadConfig(v.CortexConfigFile, true, cortexCfg)
+	if err != nil {
+		return errors.Wrap(err, "failed to parse Cortex config")
+	}
+
+	err = cortexCfg.Schema.Load()
+	if err != nil {
+		return errors.Wrap(err, "failed to load schemas")
+	}
+
+	indexValidator, err := toolCassandra.NewIndexValidator(cortexCfg.Storage.CassandraStorageConfig, cortexCfg.Schema, v.TenantID)
+	if err != nil {
+		return err
+	}
+	defer indexValidator.Stop()
+
+	from := model.TimeFromUnix(v.FromTimestamp)
+	to := model.TimeFromUnix(v.ToTimestamp)
+
+	outputFile, err := os.Create(v.InvalidIndexEntryFile)
+	if err != nil {
+		return err
+	}
+	defer outputFile.Close()
+
+	outChan := make(chan string)
+	go func() {
+		defer close(outChan)
+		err = indexValidator.IndexScan(context.Background(), v.Table, from, to, outChan)
+		if err != nil {
+			logrus.WithError(err).Errorln("index validation scan terminated")
+		}
+	}()
+
+	foundInvalidEntriesTotal := 0
+	for s := range outChan {
+		_, err := outputFile.WriteString(s)
+		if err != nil {
+			logrus.WithField("entry", s).WithError(err).Errorln("unable to write invalid index entry to file")
+		}
+		foundInvalidEntriesTotal++
+	}
+
+	logrus.WithField("invalid_entries_total", foundInvalidEntriesTotal).Infoln("index-validation scan complete")
 
 	return nil
 }

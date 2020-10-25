@@ -43,6 +43,7 @@ type LoadgenCommand struct {
 	parallelism    int
 	batchSize      int
 	writeTimeout   time.Duration
+	metricName     string
 
 	queryURL         string
 	query            string
@@ -63,6 +64,8 @@ func (c *LoadgenCommand) Register(app *kingpin.Application) {
 	cmd := app.Command("loadgen", "Simple load generator for Cortex.").Action(loadgenCommand.run)
 	cmd.Flag("write-url", "").
 		Default("").StringVar(&loadgenCommand.writeURL)
+	cmd.Flag("series-name", "name of the metric that will be generated").
+		Default("node_cpu_seconds_total").StringVar(&loadgenCommand.metricName)
 	cmd.Flag("active-series", "number of active series to send").
 		Default("1000").IntVar(&loadgenCommand.activeSeries)
 	cmd.Flag("scrape-interval", "period to send metrics").
@@ -180,7 +183,7 @@ func (c *LoadgenCommand) runBatch(from, to int) error {
 	for i := from; i < to; i++ {
 		timeseries := prompb.TimeSeries{
 			Labels: []prompb.Label{
-				{Name: "__name__", Value: "node_cpu_seconds_total"},
+				{Name: "__name__", Value: c.metricName},
 				{Name: "job", Value: "node_exporter"},
 				{Name: "instance", Value: fmt.Sprintf("instance%000d", i)},
 				{Name: "cpu", Value: "0"},
