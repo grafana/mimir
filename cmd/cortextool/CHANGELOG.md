@@ -3,7 +3,8 @@
 
 ## Unreleased
 
-* [BUGFIX] Do not panic if we're unable to contact GitHub for the `version` command. #103
+* [FEATURE] Release `cortextool` via Homebrew for macOS #109
+* [BUGFIX] Do not panic if we're unable to contact GitHub for the `version` command. #107
 
 ## v0.4.1
 

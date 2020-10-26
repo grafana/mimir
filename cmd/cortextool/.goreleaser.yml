@@ -52,6 +52,11 @@ archives:
     files:
       - none*
     format: binary
+  - id: needed-for-homebrew
+    builds:
+      - cortextool-linux
+      - cortextool-darwin
+    format: 'tar.gz'
 checksum:
   name_template: 'checksums.txt'
 snapshot:
@@ -81,3 +86,15 @@ dockers:
     - "--label=org.opencontainers.image.version={{.Version}}"
     - "--label=repository=https://github.com/grafana/cortex-tools"
     - "--label=homepage=https://grafana.com"
+brews:
+  -
+    tap:
+      owner: grafana
+      name: homebrew-grafana
+    commit_author:
+      name: cortex-tools-ci
+      email: support@grafana.com
+    homepage:  https://grafana.com
+    description: Tools for interacting with Cortex
+    install: |
+      bin.install "cortextool"
