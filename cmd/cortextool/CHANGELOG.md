@@ -1,5 +1,10 @@
 # Changelog
 
+
+## Unreleased
+
+* [BUGFIX] Do not panic if we're unable to contact GitHub for the `version` command. #103
+
 ## v0.4.1
 
 * [ENHANCEMENT] Upgrade the Go version used in build images and tests to golang 1.14.9 to match upstream Cortex. #104
