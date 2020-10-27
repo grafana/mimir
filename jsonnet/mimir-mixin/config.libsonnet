@@ -26,7 +26,7 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary cortex clusters.
     job_names: {
-      ingester: '(ingester|ingester-blocks|cortex$)',  // Match also ingester-blocks, which is used during the migration from chunks to blocks.
+      ingester: '(ingester.*|cortex$)',  // Match also ingester-blocks, which is used during the migration from chunks to blocks.
       distributor: '(distributor|cortex$)',
       querier: '(querier|cortex$)',
       query_frontend: '(query-frontend|cortex$)',
