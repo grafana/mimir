@@ -63,6 +63,21 @@
             message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not uploaded any block in the last 24 hours.',
           },
         },
+        {
+          // Alert if compactor fails.
+          alert: 'CortexCompactorRunFailed',
+          expr: |||
+            increase(cortex_compactor_runs_failed_total[10m]) > 0
+          |||,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              {{ $labels.job }}/{{ $labels.instance }} failed to run compaction.
+            |||,
+          },
+        },
       ],
     },
   ],
