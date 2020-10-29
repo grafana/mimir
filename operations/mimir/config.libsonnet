@@ -75,7 +75,6 @@
     ingester: {
       // These config options are only for the chunks storage.
       wal_dir: '/wal_data',
-      statefulset_replicas: 3,
       statefulset_disk: '150Gi',
     },
 

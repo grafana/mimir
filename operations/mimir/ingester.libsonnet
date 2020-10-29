@@ -91,7 +91,7 @@
 
   ingester_statefulset:
     if $._config.ingester_deployment_without_wal == false then
-      statefulSet.new('ingester', $._config.ingester.statefulset_replicas, [$.ingester_statefulset_container], ingester_pvc) +
+      statefulSet.new('ingester', 3, [$.ingester_statefulset_container], ingester_pvc) +
       statefulSet.mixin.spec.withServiceName('ingester') +
       statefulSet.mixin.spec.template.spec.withVolumes([volume.fromPersistentVolumeClaim('ingester-pvc', 'ingester-pvc')]) +
       statefulSet.mixin.metadata.withNamespace($._config.namespace) +
