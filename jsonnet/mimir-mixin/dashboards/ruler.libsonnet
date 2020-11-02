@@ -92,7 +92,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             $.rulerQueries.ruleEvaluations.success % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
             $.rulerQueries.ruleEvaluations.failure % $.jobMatcher('ruler'),
           ],
-          ['sucess', 'failed'],
+          ['success', 'failed'],
         ),
       )
       .addPanel(
