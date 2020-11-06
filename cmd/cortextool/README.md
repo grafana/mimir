@@ -5,6 +5,7 @@ This repo contains tools used for interacting with [Cortex](https://github.com/c
 * [cortextool](#cortextool): Interacts with user-facing Cortex APIs and backend storage components
 * [chunktool](#chunktool): Interacts with chunks stored and indexed in Cortex storage backends.
 * [logtool](#logtool): Tool which parses Cortex query-frontend logs and formats them for easy analysis.
+* [e2ealerting](docs/e2ealerting.md): Tool that helps measure how long an alerts takes from scrape of sample to Alertmanager notifcation delivery.
 
 
 # Installation

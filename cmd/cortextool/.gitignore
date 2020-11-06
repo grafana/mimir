@@ -2,6 +2,7 @@ cmd/cortextool/cortextool
 cmd/chunktool/chunktool
 cmd/logtool/logtool
 cmd/rules-migrator/rules-migrator
+cmd/e2ealerting/e2ealerting
 .uptodate
 .pkg
 .cache
