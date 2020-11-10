@@ -56,6 +56,79 @@
           },
         },
         {
+          alert: 'CortexIngesterTSDBHeadTruncationFailed',
+          expr: |||
+            rate(cortex_ingester_tsdb_head_truncations_failed_total[5m]) > 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to truncate TSDB head.',
+          },
+        },
+        {
+          alert: 'CortexIngesterTSDBCheckpointCreationFailed',
+          expr: |||
+            rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[5m]) > 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to create TSDB checkpoint.',
+          },
+        },
+        {
+          alert: 'CortexIngesterTSDBCheckpointDeletionFailed',
+          expr: |||
+            rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[5m]) > 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to delete TSDB checkpoint.',
+          },
+        },
+        {
+          alert: 'CortexIngesterTSDBWALTruncationFailed',
+          expr: |||
+            rate(cortex_ingester_tsdb_wal_truncations_failed_total[5m]) > 0
+          |||,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to truncate TSDB WAL.',
+          },
+        },
+        {
+          alert: 'CortexIngesterTSDBWALCorrupted',
+          expr: |||
+            rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} got a corrupted TSDB WAL.',
+          },
+        },
+        {
+          alert: 'CortexIngesterTSDBWALWritesFailed',
+          'for': '3m',
+          expr: |||
+            rate(cortex_ingester_tsdb_wal_writes_failed_total[1m]) > 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to write to TSDB WAL.',
+          },
+        },
+        {
           // Alert if the querier is not successfully scanning the bucket.
           alert: 'CortexQuerierHasNotScanTheBucket',
           'for': '5m',
