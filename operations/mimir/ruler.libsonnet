@@ -36,6 +36,8 @@
   ruler_deployment:
     if $._config.ruler_enabled then
       deployment.new('ruler', 2, [$.ruler_container]) +
+      deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
+      deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
       $.util.antiAffinity +
       $.util.configVolumeMount('overrides', '/etc/cortex') +

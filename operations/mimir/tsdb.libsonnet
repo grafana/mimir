@@ -176,7 +176,7 @@
 
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
-      'store-gateway.tokens-file-path': '/data/tokens',
+      'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
     } + $.blocks_chunks_caching_config + $.blocks_metadata_caching_config,
 
   store_gateway_ports:: $.util.defaultPorts,
