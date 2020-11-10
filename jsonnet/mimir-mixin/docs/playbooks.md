@@ -82,7 +82,7 @@ This alert occurs when a ruler is unable to validate whether or not it should cl
 
 This alert fires when a Cortex ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
 
-How to investigate:
+How to **investigate**:
 - Ensure the ingester is receiving write-path traffic (samples to ingest)
 - Look for any upload error in the ingester logs (ie. networking or authentication issues)
 
@@ -115,18 +115,66 @@ The cause triggering this alert could **lead to**:
 How to **investigate**:
 - Look for details in the ingester logs
 
+### CortexIngesterTSDBHeadTruncationFailed
+
+This alert fires when a Cortex ingester fails to truncate the TSDB head.
+
+The TSDB head is the in-memory store used to keep series and samples not compacted into a block yet. If head truncation fails for a long time, the ingester disk might get full as it won't continue to the WAL truncation stage and the subsequent ingester restart may take a long time or even go into an OOMKilled crash loop because of the huge WAL to replay. For this reason, it's important to investigate and address the issue as soon as it happen.
+
+How to **investigate**:
+- Look for details in the ingester logs
+
+### CortexIngesterTSDBCheckpointCreationFailed
+
+This alert fires when a Cortex ingester fails to create a TSDB checkpoint.
+
+How to **investigate**:
+- Look for details in the ingester logs
+- If the checkpoint fails because of a `corruption in segment`, you can restart the ingester because at next startup TSDB will try to "repair" it. After restart, if the issue is repaired and the ingester is running, you should also get paged by `CortexIngesterTSDBWALCorrupted` to signal you the WAL was corrupted and manual investigation is required.
+
+### CortexIngesterTSDBCheckpointDeletionFailed
+
+This alert fires when a Cortex ingester fails to delete a TSDB checkpoint.
+
+Generally, this is not an urgent issue, but manual investigation is required to find the root cause of the issue and fix it.
+
+How to **investigate**:
+- Look for details in the ingester logs
+
+### CortexIngesterTSDBWALTruncationFailed
+
+This alert fires when a Cortex ingester fails to truncate the TSDB WAL.
+
+How to **investigate**:
+- Look for details in the ingester logs
+
+### CortexIngesterTSDBWALCorrupted
+
+This alert fires when a Cortex ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
+
+If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism cause data loss because all WAL records after the corrupted segment are discarded and so their samples lost while replaying the WAL. If this issue happen only on 1 ingester then Cortex doesn't suffer any data loss because of the replication factor, while if it happens on multiple ingesters then some data loss is possible.
+
+If this alert fires during a **checkpoint creation**, you should have also been paged with `CortexIngesterTSDBCheckpointCreationFailed`, and you can follow the steps under that alert.
+
+### CortexIngesterTSDBWALWritesFailed
+
+This alert fires when a Cortex ingester is failing to log records to the TSDB WAL on disk.
+
+How to **investigate**:
+- Look for details in the ingester logs
+
 ### CortexQuerierHasNotScanTheBucket
 
 This alert fires when a Cortex querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
-How to investigate:
+How to **investigate**:
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
 ### CortexQuerierHighRefetchRate
 
 This alert fires when there's an high number of queries for which series have been refetched from a different store-gateway because of missing blocks. This could happen for a short time whenever a store-gateway ring resharding occurs (e.g. during/after an outage or while rolling out store-gateway) but store-gateways should reconcile in a short time. This alert fires if the issue persist for an unexpected long time and thus it should be investigated.
 
-How to investigate:
+How to **investigate**:
 - Ensure there are no errors related to blocks scan or sync in the queriers and store-gateways
 - Check store-gateway logs to see if all store-gateway have successfully completed a blocks sync
 
@@ -134,14 +182,14 @@ How to investigate:
 
 This alert fires when a Cortex store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
-How to investigate:
+How to **investigate**:
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
 
 ### CortexCompactorHasNotSuccessfullyCleanedUpBlocks
 
 This alert fires when a Cortex compactor is not successfully deleting blocks marked for deletion for a long time.
 
-How to investigate:
+How to **investigate**:
 - Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
 - Look for any error in the compactor logs (ie. bucket Delete API errors)
 
@@ -153,7 +201,7 @@ Same as [`CortexCompactorHasNotSuccessfullyCleanedUpBlocks`](#CortexCompactorHas
 
 This alert fires when a Cortex compactor is not uploading any compacted blocks to the storage since a long time.
 
-How to investigate:
+How to **investigate**:
 - If the alert `CortexCompactorHasNotSuccessfullyRun` or `CortexCompactorHasNotSuccessfullyRunSinceStart` have fired as well, then investigate that issue first
 - If the alert `CortexIngesterHasNotShippedBlocks` or `CortexIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage

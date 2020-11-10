@@ -4,6 +4,7 @@
     (import 'dashboards/queries.libsonnet') +
     (import 'dashboards/reads.libsonnet') +
     (import 'dashboards/ruler.libsonnet') +
+    (import 'dashboards/alertmanager.libsonnet') +
     (import 'dashboards/scaling.libsonnet') +
     (import 'dashboards/writes.libsonnet') +
 
