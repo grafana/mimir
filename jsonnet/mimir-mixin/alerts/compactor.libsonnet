@@ -70,7 +70,7 @@
             increase(cortex_compactor_runs_failed_total[2h]) > 1
           |||,
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
