@@ -1,10 +1,10 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
+  'alertmanager-resources.json':
     local filterNodeDiskByCompactor = |||
       ignoring(pod) group_right() (label_replace(count by(pod, instance, device) (container_fs_writes_bytes_total{%s,container="alertmanager",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
     ||| % $.namespaceMatcher();
-  'alertmanager-resources.json':
     ($.dashboard('Alertmanager') + { uid: 'df9added6f1f4332f95848cca48ebd99' })
     .addClusterSelectorTemplates()
     .addRow(
