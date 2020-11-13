@@ -80,14 +80,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('max by(persistentvolumeclaim) (kubelet_volume_stats_used_bytes{%s} / kubelet_volume_stats_capacity_bytes{%s}) and count by(persistentvolumeclaim) (kube_persistentvolumeclaim_labels{%s,label_name="alertmanager"})' % [$.namespaceMatcher(), $.namespaceMatcher(), $.namespaceMatcher()], '{{persistentvolumeclaim}}') +
         { yaxes: $.yaxes('percentunit') },
       )
-    ) + {
-      templating+: {
-        list: [
-          // Do not allow to include all clusters/namespaces otherwise this dashboard
-          // risks to explode because it shows resources per pod.
-          l + (if (l.name == 'cluster' || l.name == 'namespace') then { includeAll: false } else {})
-          for l in super.list
-        ],
-      },
-    },
+    ),
 }
