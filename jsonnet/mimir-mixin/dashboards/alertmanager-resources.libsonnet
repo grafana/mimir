@@ -80,5 +80,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('max by(persistentvolumeclaim) (kubelet_volume_stats_used_bytes{%s} / kubelet_volume_stats_capacity_bytes{%s}) and count by(persistentvolumeclaim) (kube_persistentvolumeclaim_labels{%s,label_name="alertmanager"})' % [$.namespaceMatcher(), $.namespaceMatcher(), $.namespaceMatcher()], '{{persistentvolumeclaim}}') +
         { yaxes: $.yaxes('percentunit') },
       )
-    ) + {
+    ),
 }
