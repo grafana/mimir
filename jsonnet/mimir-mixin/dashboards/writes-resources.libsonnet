@@ -47,18 +47,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.goHeapInUsePanel('Memory (go heap inuse)', 'ingester'),
       )
     )
-    .addRow(
-      $.row('Alertmanager')
-      .addPanel(
-        $.containerCPUUsagePanel('CPU', 'alertmanager'),
-      )
-      .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'alertmanager'),
-      )
-      .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'alertmanager'),
-      )
-    )
     + {
       templating+: {
         list: [
