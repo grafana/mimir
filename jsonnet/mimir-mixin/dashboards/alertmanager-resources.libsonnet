@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'alertmanager-resources.json':
-    local filterNodeDiskByCompactor = |||
+    local filterNodeDiskByAlertmanager = |||
       ignoring(pod) group_right() (label_replace(count by(pod, instance, device) (container_fs_writes_bytes_total{%s,container="alertmanager",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
     ||| % $.namespaceMatcher();
     ($.dashboard('Cortex / Alertmanager Resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
@@ -62,13 +62,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Disk')
       .addPanel(
         $.panel('Writes') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__interval])) + %s' % filterNodeDiskByCompactor, '{{pod}} - {{device}}') +
+        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__interval])) + %s' % filterNodeDiskByAlertmanager, '{{pod}} - {{device}}') +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Reads') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__interval])) + %s' % filterNodeDiskByCompactor, '{{pod}} - {{device}}') +
+        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__interval])) + %s' % filterNodeDiskByAlertmanager, '{{pod}} - {{device}}') +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
@@ -80,5 +80,5 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('max by(persistentvolumeclaim) (kubelet_volume_stats_used_bytes{%s} / kubelet_volume_stats_capacity_bytes{%s}) and count by(persistentvolumeclaim) (kube_persistentvolumeclaim_labels{%s,label_name="alertmanager"})' % [$.namespaceMatcher(), $.namespaceMatcher(), $.namespaceMatcher()], '{{persistentvolumeclaim}}') +
         { yaxes: $.yaxes('percentunit') },
       )
-    ),
+    ) + {
 }
