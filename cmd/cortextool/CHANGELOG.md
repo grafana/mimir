@@ -4,7 +4,9 @@
 ## Unreleased
 
 * [FEATURE] Release `cortextool` via Homebrew for macOS #109
+* [FEATURE] Add new binary `e2ealerting` for measuring end to end alerting latency. #110
 * [BUGFIX] Do not panic if we're unable to contact GitHub for the `version` command. #107
+* [BUGFIX] Fix inaccuracy in `e2ealerting` caused by invalid purging condition on timestamps. #117
 
 ## v0.4.1
 

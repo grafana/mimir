@@ -194,7 +194,8 @@ func (r *Receiver) purgeTimestamps() {
 			r.mtx.Lock()
 			var deleted int
 			for t := range r.timestamps {
-				if deadline.Before(time.Unix(int64(t), 0)) {
+				// purge entry for the timestamp, when the deadline is after the timestamp t
+				if deadline.After(time.Unix(int64(t), 0)) {
 					delete(r.timestamps, t)
 					deleted++
 				}
