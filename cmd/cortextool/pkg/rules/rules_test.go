@@ -212,6 +212,20 @@ func TestLintExpressions(t *testing.T) {
 			logql: true,
 		},
 		{
+			name: "logql v2",
+			expr: `sum by (org_id) (
+  sum_over_time(
+  {job="loki-prod/query-frontend"}
+      |= "metrics.go"
+      | logfmt
+      | unwrap duration(duration) [1m])
+   )
+`,
+			expected: `sum by(org_id)(sum_over_time({job="loki-prod/query-frontend"} |= "metrics.go" | logfmt | unwrap duration(duration)[1m]))`,
+			count:    1, modified: 1,
+			logql: true,
+		},
+		{
 			name:  "logql badExpr",
 			expr:  `count_over_time({ foo != "bar"%LKJ }[12m]) >         1`,
 			count: 0, modified: 0,
