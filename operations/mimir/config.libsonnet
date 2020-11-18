@@ -385,6 +385,7 @@
         ingestion_rate: 2250000,  // 2.25M
         ingestion_burst_size: 22500000,  // 22.5M
 
+        // 1050 rules
         max_rules_per_rule_group: 15,
         max_rule_groups_per_tenant: 70,
       },
