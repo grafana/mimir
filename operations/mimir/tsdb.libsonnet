@@ -134,6 +134,12 @@
       'compactor.data-dir': '/data',
       'compactor.compaction-interval': '30m',
       'compactor.compaction-concurrency': $._config.cortex_compactor_max_concurrency,
+
+      // Enable sharding.
+      'compactor.sharding-enabled': true,
+      'compactor.ring.store': 'consul',
+      'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      'compactor.ring.prefix': '',
     },
 
   compactor_ports:: $.util.defaultPorts,
