@@ -295,8 +295,8 @@
         ingestion_burst_size: 200000,
 
         // 300 rules
-        max_rules_per_rule_group: 15,
-        max_rule_groups_per_tenant: 20,
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 20,
       },
 
       small_user:: {
@@ -313,8 +313,8 @@
         ingestion_burst_size: 1000000,
 
         // 450 rules
-        max_rules_per_rule_group: 15,
-        max_rule_groups_per_tenant: 30,
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 30,
       },
 
       medium_user:: {
@@ -331,8 +331,8 @@
         ingestion_burst_size: 3500000,  // 3.5M
 
         // 600 rules
-        max_rules_per_rule_group: 15,
-        max_rule_groups_per_tenant: 40,
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 40,
       },
 
       big_user:: {
@@ -349,8 +349,8 @@
         ingestion_burst_size: 7000000,  // 7M
 
         // 750 rules
-        max_rules_per_rule_group: 15,
-        max_rule_groups_per_tenant: 50,
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 50,
       },
 
       super_user:: {
@@ -367,8 +367,8 @@
         ingestion_burst_size: 15000000,  // 15M
 
         // 900 rules
-        max_rules_per_rule_group: 15,
-        max_rule_groups_per_tenant: 60,
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 60,
       },
 
       // This user class has limits increased by +50% compared to the previous one.
@@ -386,8 +386,8 @@
         ingestion_burst_size: 22500000,  // 22.5M
 
         // 1050 rules
-        max_rules_per_rule_group: 15,
-        max_rule_groups_per_tenant: 70,
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 70,
       },
     },
 
