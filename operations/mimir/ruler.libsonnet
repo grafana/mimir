@@ -18,10 +18,6 @@
       // Ring Configs
       'ruler.enable-sharding': true,
       'ruler.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
-
-      // Limits
-      'ruler.max-rules-per-rule-group': $._config.limits.max_rules_per_rule_group,
-      'ruler.max-rule-groups-per-tenant': $._config.limits.max_rule_groups_per_tenant,
     },
 
   ruler_container::
