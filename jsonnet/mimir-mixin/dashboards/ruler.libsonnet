@@ -6,54 +6,53 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ruleEvaluations: {
       success:
         |||
-          sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__interval]))
+          sum(rate(cortex_prometheus_rule_evaluations_total{%s}[$__rate_interval]))
           -
-          sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))
+          sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval]))
         |||,
-      failure: 'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval]))',
+      failure: 'sum(rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval]))',
       latency:
         |||
-          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__interval]))
+          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
             /
-          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__interval]))
+          sum (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
         |||,
     },
     perUserPerGroupEvaluations: {
-      failure: 'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__interval])) > 0',
+      failure: 'sum by(rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total{%s}[$__rate_interval])) > 0',
       latency:
         |||
-          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_sum{%s}[$__rate_interval]))
             /
-          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_rule_evaluation_duration_seconds_count{%s}[$__rate_interval]))
         |||,
     },
     groupEvaluations: {
-      missedIterations: 'sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__interval])) > 0',
+      missedIterations: 'sum by(user) (rate(cortex_prometheus_rule_group_iterations_missed_total{%s}[$__rate_interval])) > 0',
       latency:
         |||
-          rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__interval])
+          rate(cortex_prometheus_rule_group_duration_seconds_sum{%s}[$__rate_interval])
             /
-          rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__interval])
+          rate(cortex_prometheus_rule_group_duration_seconds_count{%s}[$__rate_interval])
         |||,
     },
     notifications: {
       failure:
         |||
-          sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_notifications_errors_total{%s}[$__rate_interval]))
             /
-          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_notifications_sent_total{%s}[$__rate_interval]))
           > 0
         |||,
       queue:
         |||
-          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__interval]))
+          sum by(user) (rate(cortex_prometheus_notifications_queue_length{%s}[$__rate_interval]))
             /
-          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__interval]))  
-          > 0
+          sum by(user) (rate(cortex_prometheus_notifications_queue_capacity{%s}[$__rate_interval])) > 0
         |||,
       dropped:
         |||
-          sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__interval])) > 0
+          sum by (user) (increase(cortex_prometheus_notifications_dropped_total{%s}[$__rate_interval])) > 0
         |||,
     },
   },
