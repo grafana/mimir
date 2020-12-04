@@ -148,18 +148,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Store-gateway - Blocks')
       .addPanel(
         $.panel('Blocks queried / sec') +
-        $.queryPanel('sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",%s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway), 'blocks') +
+        $.queryPanel('sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), 'blocks') +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Data fetched / sec') +
-        $.queryPanel('sum by(data_type) (rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway",%s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{data_type}}') +
+        $.queryPanel('sum by(data_type) (rate(cortex_bucket_store_series_data_fetched_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{data_type}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Data touched / sec') +
-        $.queryPanel('sum by(data_type) (rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway",%s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{data_type}}') +
+        $.queryPanel('sum by(data_type) (rate(cortex_bucket_store_series_data_touched_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{data_type}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
@@ -177,7 +177,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Series returned (per request)') +
-        $.queryPanel('sum(rate(cortex_bucket_store_series_result_series_sum{component="store-gateway",%s}[$__interval])) / sum(rate(cortex_bucket_store_series_result_series_count{component="store-gateway",%s}[$__interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'avg series returned'),
+        $.queryPanel('sum(rate(cortex_bucket_store_series_result_series_sum{component="store-gateway",%s}[$__rate_interval])) / sum(rate(cortex_bucket_store_series_result_series_count{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'avg series returned'),
       )
     )
     .addRowIf(
@@ -190,15 +190,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.successFailurePanel(
           'Blocks loaded / sec',
-          'sum(rate(cortex_bucket_store_block_loads_total{component="store-gateway",%s}[$__interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          'sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+          'sum(rate(cortex_bucket_store_block_loads_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          'sum(rate(cortex_bucket_store_block_load_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
         )
       )
       .addPanel(
         $.successFailurePanel(
           'Blocks dropped / sec',
-          'sum(rate(cortex_bucket_store_block_drops_total{component="store-gateway",%s}[$__interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
-          'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway),
+          'sum(rate(cortex_bucket_store_block_drops_total{component="store-gateway",%s}[$__rate_interval])) - sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)],
+          'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
         )
       )
     ),

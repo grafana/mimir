@@ -16,16 +16,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
-          'sum(rate(cortex_compactor_runs_started_total{%s}[$__interval]))' % $.jobMatcher('compactor'),
-          'sum(rate(cortex_compactor_runs_completed_total{%s}[$__interval]))' % $.jobMatcher('compactor'),
-          'sum(rate(cortex_compactor_runs_failed_total{%s}[$__interval]))' % $.jobMatcher('compactor')
+          'sum(rate(cortex_compactor_runs_started_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_runs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_runs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor')
         ) +
         $.bars +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Compacted blocks / sec') +
-        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__interval]))' % $.jobMatcher('compactor'), 'blocks') +
+        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'), 'blocks') +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
@@ -37,7 +37,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Garbage Collector')
       .addPanel(
         $.panel('Blocks marked for deletion / sec') +
-        $.queryPanel('sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%s}[$__interval]))' % $.jobMatcher('compactor'), 'blocks') +
+        $.queryPanel('sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'), 'blocks') +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
@@ -45,8 +45,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Blocks deletions / sec',
           // The cortex_compactor_blocks_cleaned_total tracks the number of successfully
           // deleted blocks.
-          'sum(rate(cortex_compactor_blocks_cleaned_total{%s}[$__interval]))' % $.jobMatcher('compactor'),
-          'sum(rate(cortex_compactor_block_cleanup_failures_total{%s}[$__interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_blocks_cleaned_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_block_cleanup_failures_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
         ) + { yaxes: $.yaxes('ops') }
       )
     )
@@ -57,8 +57,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Metadata Syncs / sec',
           // The cortex_compactor_meta_syncs_total metric is incremented each time a per-tenant
           // metadata sync is triggered.
-          'sum(rate(cortex_compactor_meta_syncs_total{%s}[$__interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__interval]))' % [$.jobMatcher('compactor'), $.jobMatcher('compactor')],
-          'sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_meta_syncs_total{%s}[$__rate_interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher('compactor'), $.jobMatcher('compactor')],
+          'sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
         ) + { yaxes: $.yaxes('ops') }
       )
       .addPanel(

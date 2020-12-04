@@ -25,11 +25,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           [
             |||
-              sum(rate(cortex_alertmanager_alerts_received_total{%s}[$__interval]))
+              sum(rate(cortex_alertmanager_alerts_received_total{%s}[$__rate_interval]))
               -
-              sum(rate(cortex_alertmanager_alerts_invalid_total{%s}[$__interval]))
+              sum(rate(cortex_alertmanager_alerts_invalid_total{%s}[$__rate_interval]))
             ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_alerts_invalid_total{%s}[$__interval]))' % $.jobMatcher('alertmanager'),
+            'sum(rate(cortex_alertmanager_alerts_invalid_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           ],
           ['success', 'failed']
         )
@@ -42,11 +42,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           [
             |||
-              sum(rate(cortex_alertmanager_notifications_total{%s}[$__interval]))
+              sum(rate(cortex_alertmanager_notifications_total{%s}[$__rate_interval]))
               -
-              sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__interval]))
+              sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__rate_interval]))
             ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__interval]))' % $.jobMatcher('alertmanager'),
+            'sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           ],
           ['success', 'failed']
         )
@@ -57,13 +57,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           [
             |||
               (
-              sum(rate(cortex_alertmanager_notifications_total{%s}[$__interval])) by(integration)
+              sum(rate(cortex_alertmanager_notifications_total{%s}[$__rate_interval])) by(integration)
               -
-              sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__interval])) by(integration)
+              sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__rate_interval])) by(integration)
               ) > 0
               or on () vector(0)
             ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__interval])) by(integration)' % $.jobMatcher('alertmanager'),
+            'sum(rate(cortex_alertmanager_notifications_failed_total{%s}[$__rate_interval])) by(integration)' % $.jobMatcher('alertmanager'),
           ],
           ['success - {{ integration }}', 'failed - {{ integration }}']
         )

@@ -24,13 +24,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Network')
       .addPanel(
         $.panel('Receive Bandwidth') +
-        $.queryPanel('sum by(pod) (rate(container_network_receive_bytes_total{%s,pod=~"compactor.*"}[$__interval]))' % $.namespaceMatcher(), '{{pod}}') +
+        $.queryPanel('sum by(pod) (rate(container_network_receive_bytes_total{%s,pod=~"compactor.*"}[$__rate_interval]))' % $.namespaceMatcher(), '{{pod}}') +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Transmit Bandwidth') +
-        $.queryPanel('sum by(pod) (rate(container_network_transmit_bytes_total{%s,pod=~"compactor.*"}[$__interval]))' % $.namespaceMatcher(), '{{pod}}') +
+        $.queryPanel('sum by(pod) (rate(container_network_transmit_bytes_total{%s,pod=~"compactor.*"}[$__rate_interval]))' % $.namespaceMatcher(), '{{pod}}') +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
@@ -39,13 +39,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Disk')
       .addPanel(
         $.panel('Writes') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__interval])) + %s' % filterNodeDiskByCompactor, '{{pod}} - {{device}}') +
+        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % filterNodeDiskByCompactor, '{{pod}} - {{device}}') +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Reads') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__interval])) + %s' % filterNodeDiskByCompactor, '{{pod}} - {{device}}') +
+        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % filterNodeDiskByCompactor, '{{pod}} - {{device}}') +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )

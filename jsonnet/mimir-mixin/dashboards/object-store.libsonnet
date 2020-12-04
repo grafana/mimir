@@ -8,13 +8,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Components')
       .addPanel(
         $.panel('RPS / component') +
-        $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__interval]))' % $.namespaceMatcher(), '{{component}}') +
+        $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % $.namespaceMatcher(), '{{component}}') +
         $.stack +
         { yaxes: $.yaxes('rps') },
       )
       .addPanel(
         $.panel('Error rate / component') +
-        $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__interval])) / sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{component}}') +
+        $.queryPanel('sum by(component) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval])) / sum by(component) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{component}}') +
         { yaxes: $.yaxes('percentunit') },
       )
     )
@@ -22,13 +22,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Operations')
       .addPanel(
         $.panel('RPS / operation') +
-        $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__interval]))' % $.namespaceMatcher(), '{{operation}}') +
+        $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % $.namespaceMatcher(), '{{operation}}') +
         $.stack +
         { yaxes: $.yaxes('rps') },
       )
       .addPanel(
         $.panel('Error rate / operation') +
-        $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{operation}}') +
+        $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s}[$__rate_interval]))' % [$.namespaceMatcher(), $.namespaceMatcher()], '{{operation}}') +
         { yaxes: $.yaxes('percentunit') },
       )
     )

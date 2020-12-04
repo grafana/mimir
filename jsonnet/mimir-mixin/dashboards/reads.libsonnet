@@ -17,7 +17,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -35,7 +35,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -64,7 +64,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.querier)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.querier)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -82,7 +82,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -101,7 +101,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
-          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
+          'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
         ) +
         { yaxes: $.yaxes('s') }
       )
@@ -135,7 +135,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Memcached – Blocks Storage – Index header (Store-gateway)')
       .addPanel(
         $.panel('QPS') +
-        $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{component="store-gateway",name="index-cache", %s}[$__interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}') +
+        $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{component="store-gateway",name="index-cache", %s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}') +
         $.stack +
         { yaxes: $.yaxes('ops') },
       )
@@ -145,7 +145,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Hit ratio') +
-        $.queryPanel('sum by(item_type) (rate(thanos_store_index_cache_hits_total{component="store-gateway",%s}[$__interval])) / sum by(item_type) (rate(thanos_store_index_cache_requests_total{component="store-gateway",%s}[$__interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{item_type}}') +
+        $.queryPanel('sum by(item_type) (rate(thanos_store_index_cache_hits_total{component="store-gateway",%s}[$__rate_interval])) / sum by(item_type) (rate(thanos_store_index_cache_requests_total{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{item_type}}') +
         { yaxes: $.yaxes('percentunit') },
       )
     )
