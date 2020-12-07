@@ -58,7 +58,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('Bytes Logged (WAL+Checkpoint) / ingester / second') +
-        $.queryPanel('avg(rate(cortex_ingester_wal_logged_bytes_total{%(m)s}[$__interval])) + avg(rate(cortex_ingester_checkpoint_logged_bytes_total{%(m)s}[$__interval]))' % { m: $.jobMatcher($._config.job_names.ingester) }, 'bytes') +
+        $.queryPanel('avg(rate(cortex_ingester_wal_logged_bytes_total{%(m)s}[$__rate_interval])) + avg(rate(cortex_ingester_checkpoint_logged_bytes_total{%(m)s}[$__rate_interval]))' % { m: $.jobMatcher($._config.job_names.ingester) }, 'bytes') +
         { yaxes: $.yaxes('bytes') },
       )
     )
@@ -66,16 +66,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('WAL')
       .addPanel(
         $.panel('Records logged / ingester / second') +
-        $.queryPanel('avg(rate(cortex_ingester_wal_records_logged_total{%s}[$__interval]))' % $.jobMatcher($._config.job_names.ingester), 'records'),
+        $.queryPanel('avg(rate(cortex_ingester_wal_records_logged_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester), 'records'),
       )
       .addPanel(
         $.panel('Bytes per record') +
-        $.queryPanel('avg(rate(cortex_ingester_wal_logged_bytes_total{%(m)s}[$__interval]) / rate(cortex_ingester_wal_records_logged_total{%(m)s}[$__interval]))' % { m: $.jobMatcher($._config.job_names.ingester) }, 'bytes') +
+        $.queryPanel('avg(rate(cortex_ingester_wal_logged_bytes_total{%(m)s}[$__rate_interval]) / rate(cortex_ingester_wal_records_logged_total{%(m)s}[$__rate_interval]))' % { m: $.jobMatcher($._config.job_names.ingester) }, 'bytes') +
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
         $.panel('Bytes per sample') +
-        $.queryPanel('avg(rate(cortex_ingester_wal_logged_bytes_total{%(m)s}[$__interval]) / rate(cortex_ingester_ingested_samples_total{%(m)s}[$__interval]))' % { m: $.jobMatcher($._config.job_names.ingester) }, 'bytes') +
+        $.queryPanel('avg(rate(cortex_ingester_wal_logged_bytes_total{%(m)s}[$__rate_interval]) / rate(cortex_ingester_ingested_samples_total{%(m)s}[$__rate_interval]))' % { m: $.jobMatcher($._config.job_names.ingester) }, 'bytes') +
         { yaxes: $.yaxes('bytes') },
       )
       .addPanel(
@@ -88,13 +88,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Checkpoint')
       .addPanel(
         $.panel('Checkpoint creation/deletion / sec') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_creations_total{%s}[$__interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-creation') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_total{%s}[$__interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-deletion'),
+        $.queryPanel('rate(cortex_ingester_checkpoint_creations_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-creation') +
+        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-deletion'),
       )
       .addPanel(
         $.panel('Checkpoint creation/deletion failed / sec') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_creations_failed_total{%s}[$__interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-creation') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_failed_total{%s}[$__interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-deletion'),
+        $.queryPanel('rate(cortex_ingester_checkpoint_creations_failed_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-creation') +
+        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_failed_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-deletion'),
       )
     ),
 }

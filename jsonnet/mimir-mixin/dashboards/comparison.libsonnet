@@ -11,8 +11,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingesters')
       .addPanel(
         $.panel('Samples / sec') +
-        $.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($blocks_namespace)/ingester"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($chunks_namespace)/ingester"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($blocks_namespace)/ingester"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job=~"($chunks_namespace)/ingester"}[$__rate_interval]))', 'chunks')
       )
     )
     .addRow(
@@ -30,8 +30,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('CPU per sample') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}[$__interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}[$__rate_interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$blocks_namespace/ingester"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}[$__rate_interval])) / sum(rate(cortex_ingester_ingested_samples_total{cluster=~"$cluster",job="$chunks_namespace/ingester"}[$__rate_interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Memory per active series') +
@@ -46,8 +46,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="ingester"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="ingester"}[$__rate_interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Memory') +
@@ -62,27 +62,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Queriers')
       .addPanel(
         $.panel('Queries / sec (query-frontend)') +
-        $.queryPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster",job="$blocks_namespace/query-frontend",route!="metrics"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster",job="$chunks_namespace/query-frontend",route!="metrics"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster",job="$blocks_namespace/query-frontend",route!="metrics"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum(rate(cortex_request_duration_seconds_count{cluster=~"$cluster",job="$chunks_namespace/query-frontend",route!="metrics"}[$__rate_interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Queries / sec (query-tee)') +
-        $.queryPanel('sum(rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum(rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__rate_interval]))', 'chunks')
       )
     )
     .addRow(
       $.row('')
       .addPanel(
         $.panel('Latency 99th') +
-        $.queryPanel('histogram_quantile(0.99, sum by(backend, le) (rate(cortex_querytee_request_duration_seconds_bucket{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval])))', 'blocks') +
-        $.queryPanel('histogram_quantile(0.99, sum by(backend, le) (rate(cortex_querytee_request_duration_seconds_bucket{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval])))', 'chunks') +
+        $.queryPanel('histogram_quantile(0.99, sum by(backend, le) (rate(cortex_querytee_request_duration_seconds_bucket{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__rate_interval])))', 'blocks') +
+        $.queryPanel('histogram_quantile(0.99, sum by(backend, le) (rate(cortex_querytee_request_duration_seconds_bucket{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__rate_interval])))', 'chunks') +
         { yaxes: $.yaxes('s') }
       )
       .addPanel(
         $.panel('Latency average') +
-        $.queryPanel('sum by(backend) (rate(cortex_querytee_request_duration_seconds_sum{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval])) / sum by(backend) (rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum by(backend) (rate(cortex_querytee_request_duration_seconds_sum{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval])) / sum by(backend) (rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__interval]))', 'chunks') +
+        $.queryPanel('sum by(backend) (rate(cortex_querytee_request_duration_seconds_sum{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__rate_interval])) / sum by(backend) (rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$blocks_namespace\\\\..*"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum by(backend) (rate(cortex_querytee_request_duration_seconds_sum{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__rate_interval])) / sum by(backend) (rate(cortex_querytee_request_duration_seconds_count{cluster=~"$cluster",backend=~".*\\\\.$chunks_namespace\\\\..*"}[$__rate_interval]))', 'chunks') +
         { yaxes: $.yaxes('s') }
       )
     )
@@ -90,8 +90,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('CPU') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="querier"}[$__interval]))', 'blocks') +
-        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="querier"}[$__interval]))', 'chunks')
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$blocks_namespace",container="querier"}[$__rate_interval]))', 'blocks') +
+        $.queryPanel('sum(rate(container_cpu_usage_seconds_total{cluster=~"$cluster",namespace="$chunks_namespace",container="querier"}[$__rate_interval]))', 'chunks')
       )
       .addPanel(
         $.panel('Memory') +

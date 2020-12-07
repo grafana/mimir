@@ -120,7 +120,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(pod) (rate(container_cpu_usage_seconds_total{%s,container="%s"}[$__interval]))' % [$.namespaceMatcher(), containerName],
+      'sum by(pod) (rate(container_cpu_usage_seconds_total{%s,container="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), containerName],
       'min(container_spec_cpu_quota{%s,container="%s"} / container_spec_cpu_period{%s,container="%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
     ], ['{{pod}}', 'limit']) +
     {
@@ -175,13 +175,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.panel('Operations / sec') +
-      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
+      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
       $.stack +
       { yaxes: $.yaxes('rps') },
     )
     .addPanel(
       $.panel('Error rate') +
-      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__interval]))' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
+      $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operation_failures_total{%s,component="%s"}[$__rate_interval])) / sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component, $.namespaceMatcher(), component], '{{operation}}') +
       { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
@@ -217,7 +217,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.row(title)
     .addPanel(
       $.panel('QPS') +
-      $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{%s,component="%s",name="%s"}[$__interval]))' % [$.jobMatcher(jobName), component, cacheName], '{{operation}}') +
+      $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{%s,component="%s",name="%s"}[$__rate_interval]))' % [$.jobMatcher(jobName), component, cacheName], '{{operation}}') +
       $.stack +
       { yaxes: $.yaxes('ops') },
     )
@@ -227,7 +227,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addPanel(
       $.panel('Hit ratio') +
-      $.queryPanel('sum(rate(thanos_cache_memcached_hits_total{%s,component="%s",name="%s"}[$__interval])) / sum(rate(thanos_cache_memcached_requests_total{%s,component="%s",name="%s"}[$__interval]))' %
+      $.queryPanel('sum(rate(thanos_cache_memcached_hits_total{%s,component="%s",name="%s"}[$__rate_interval])) / sum(rate(thanos_cache_memcached_requests_total{%s,component="%s",name="%s"}[$__rate_interval]))' %
                    [
                      $.jobMatcher(jobName),
                      component,
