@@ -88,13 +88,13 @@ This command will load each rule group in the specified files and load them into
 
 #### Rules Lint
 
-This command lints a rules file. The linter's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file. This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does not make any changes.
+This command lints a rules file. The linter's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file. This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does not make any changes. This command does not interact with your Cortex cluster.
 
     cortextool rules lint -n ./example_rules_one.yaml ./example_rules_two.yaml ...
 
 #### Rules Prepare
 
-This command prepares a rules file for upload to Cortex. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. Unlike, the previous command this one does not interact with your Cortex cluster.
+This command prepares a rules file for upload to Cortex. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. This command does not interact with your Cortex cluster.
 
     cortextool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
 
@@ -110,7 +110,7 @@ It is important to note that a modification can be a PromQL expression lint or a
 
 #### Rules Check
 
-This commands checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules.
+This commands checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules. This command does not interact with your Cortex cluster.
 
     cortextool rules check ./example_rules_one.yaml
 
