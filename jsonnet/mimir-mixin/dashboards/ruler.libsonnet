@@ -144,7 +144,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Cache Hit %') +
-        $.queryPanel('(sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m])) - sum(rate(querier_cache_misses_total{cache="store.index-cache-read.fifocache",%s}[1m]))) / sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'hit rate')
+        $.queryPanel('(sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m])) - sum(rate(querier_cache_misses_total{cache="store.index-cache-read.fifocache",%s}[1m]))) / sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'hit rate')
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
