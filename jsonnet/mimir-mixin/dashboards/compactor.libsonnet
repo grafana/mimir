@@ -9,8 +9,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.textPanel('', |||
           - **Per-instance runs**: number of times a compactor instance triggers a compaction across all tenants its shard manage.
-          - **Compacted blocks**: number of blocks generated as a result of a compaction operation.
-          - **Per-block compaction duration**: time taken to generate a single compacted block.
+          - **Tenants compaction progress**: in a multi-tenant cluster it shows the progress of tenants compacted while compaction is running. Reset to 0 once the compaction run is completed for all tenants in the shard.
         |||),
       )
       .addPanel(
@@ -22,6 +21,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ) +
         $.bars +
         { yaxes: $.yaxes('ops') },
+      )
+      .addPanel(
+        $.panel('Tenants compaction progress') +
+        $.queryPanel(|||
+          (
+            cortex_compactor_tenants_processing_succeeded{%s} +
+            cortex_compactor_tenants_processing_failed{%s} +
+            cortex_compactor_tenants_skipped{%s}
+          ) / cortex_compactor_tenants_discovered{%s}
+        ||| % [$.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor')], '{{instance}}') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.textPanel('', |||
+          - **Compacted blocks**: number of blocks generated as a result of a compaction operation.
+          - **Per-block compaction duration**: time taken to generate a single compacted block.
+        |||),
       )
       .addPanel(
         $.panel('Compacted blocks / sec') +

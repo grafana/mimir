@@ -239,4 +239,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') },
     ),
 
+
+  filterNodeDiskContainer(containerName)::
+    |||
+      ignoring(pod) group_right() (label_replace(count by(pod, instance, device) (container_fs_writes_bytes_total{%s,container="%s",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
+    ||| % [$.namespaceMatcher(), containerName],
 }

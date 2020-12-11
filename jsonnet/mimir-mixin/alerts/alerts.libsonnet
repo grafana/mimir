@@ -239,6 +239,19 @@
             |||,
           },
         },
+        {
+          alert: 'CortexMemoryMapAreasTooHigh',
+          expr: |||
+            process_memory_map_areas{job=~".+(cortex|ingester)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester)"} > 0.8
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: '{{ $labels.job }}/{{ $labels.instance }} has a number of mmap-ed areas close to the limit.',
+          },
+        },
       ],
     },
     {

@@ -95,6 +95,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.goHeapInUsePanel('Memory (go heap inuse)', 'store-gateway'),
       )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.row('')
+      .addPanel(
+        $.panel('Disk Writes') +
+        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('store-gateway'), '{{pod}} - {{device}}') +
+        $.stack +
+        { yaxes: $.yaxes('Bps') },
+      )
+      .addPanel(
+        $.panel('Disk Reads') +
+        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('store-gateway'), '{{pod}} - {{device}}') +
+        $.stack +
+        { yaxes: $.yaxes('Bps') },
+      )
+      .addPanel(
+        $.panel('Disk Space Utilization') +
+        $.queryPanel('max by(persistentvolumeclaim) (kubelet_volume_stats_used_bytes{%s} / kubelet_volume_stats_capacity_bytes{%s}) and count by(persistentvolumeclaim) (kube_persistentvolumeclaim_labels{%s,label_name="store-gateway"})' % [$.namespaceMatcher(), $.namespaceMatcher(), $.namespaceMatcher()], '{{persistentvolumeclaim}}') +
+        { yaxes: $.yaxes('percentunit') },
+      )
     ) + {
       templating+: {
         list: [
