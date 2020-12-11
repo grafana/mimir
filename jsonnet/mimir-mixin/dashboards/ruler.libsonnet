@@ -135,8 +135,83 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher('ruler'))
       )
     )
+    .addRowIf(
+      std.member($._config.storage_engine, 'chunks'),
+      $.row('Ruler - Chunks storage - Index Cache')
+      .addPanel(
+        $.panel('Total entries') +
+        $.queryPanel('sum(querier_cache_added_new_total{cache="store.index-cache-read.fifocache",%s}) - sum(querier_cache_evicted_total{cache="store.index-cache-read.fifocache",%s})' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Entries'),
+      )
+      .addPanel(
+        $.panel('Cache Hit %') +
+        $.queryPanel('(sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m])) - sum(rate(querier_cache_misses_total{cache="store.index-cache-read.fifocache",%s}[1m]))) / sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'hit rate')
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
+      .addPanel(
+        $.panel('Churn Rate') +
+        $.queryPanel('sum(rate(querier_cache_evicted_total{cache="store.index-cache-read.fifocache",%s}[1m]))' % $.jobMatcher($._config.job_names.ruler), 'churn rate'),
+      )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'chunks'),
+      $.row('Ruler - Chunks storage - Store')
+      .addPanel(
+        $.panel('Index Lookups per Query') +
+        utils.latencyRecordingRulePanel('cortex_chunk_store_index_lookups_per_query', $.jobSelector($._config.job_names.ruler), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Series (pre-intersection) per Query') +
+        utils.latencyRecordingRulePanel('cortex_chunk_store_series_pre_intersection_per_query', $.jobSelector($._config.job_names.ruler), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Series (post-intersection) per Query') +
+        utils.latencyRecordingRulePanel('cortex_chunk_store_series_post_intersection_per_query', $.jobSelector($._config.job_names.ruler), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Chunks per Query') +
+        utils.latencyRecordingRulePanel('cortex_chunk_store_chunks_per_query', $.jobSelector($._config.job_names.ruler), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.row('Ruler - Blocks storage')
+      .addPanel(
+        $.panel('Number of store-gateways hit per Query') +
+        $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Refetches of missing blocks per Query') +
+        $.latencyPanel('cortex_querier_storegateway_refetches_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.panel('Consistency checks failed') +
+        $.queryPanel('sum(rate(cortex_querier_blocks_consistency_checks_failed_total{%s}[1m])) / sum(rate(cortex_querier_blocks_consistency_checks_total{%s}[1m]))' % [$.jobMatcher($._config.job_names.ruler), $.jobMatcher($._config.job_names.ruler)], 'Failure Rate') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
+    )
     .addRow(
-      $.row('Group Evaluations')
+      $.row('Notifications')
+      .addPanel(
+        $.panel('Delivery Errors') +
+        $.queryPanel($.rulerQueries.notifications.failure % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
+      )
+      .addPanel(
+        $.panel('Queue Length') +
+        $.queryPanel($.rulerQueries.notifications.queue % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
+      )
+      .addPanel(
+        $.panel('Dropped') +
+        $.queryPanel($.rulerQueries.notifications.dropped % $.jobMatcher('ruler'), '{{ user }}')
+      )
+    )
+    .addRow(
+      ($.row('Group Evaluations') + { collapse: true })
       .addPanel(
         $.panel('Missed Iterations') +
         $.queryPanel($.rulerQueries.groupEvaluations.missedIterations % $.jobMatcher('ruler'), '{{ user }}'),
@@ -156,28 +231,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Rule Evaluation per User')
+      ($.row('Rule Evaluation per User') + { collapse: true })
       .addPanel(
         $.panel('Latency') +
         $.queryPanel(
           $.rulerQueries.perUserPerGroupEvaluations.latency % [$.jobMatcher('ruler'), $.jobMatcher('ruler')],
           '{{ user }}'
         )
-      )
-    )
-    .addRow(
-      $.row('Notifications')
-      .addPanel(
-        $.panel('Delivery Errors') +
-        $.queryPanel($.rulerQueries.notifications.failure % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
-      )
-      .addPanel(
-        $.panel('Queue Length') +
-        $.queryPanel($.rulerQueries.notifications.queue % [$.jobMatcher('ruler'), $.jobMatcher('ruler')], '{{ user }}')
-      )
-      .addPanel(
-        $.panel('Dropped') +
-        $.queryPanel($.rulerQueries.notifications.dropped % $.jobMatcher('ruler'), '{{ user }}')
       )
     ),
 }
