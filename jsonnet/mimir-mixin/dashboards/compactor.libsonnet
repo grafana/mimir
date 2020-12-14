@@ -5,7 +5,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Cortex / Compactor') + { uid: '9c408e1d55681ecb8a22c9fab46875cc' })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('Compactions')
+      $.row('Summary')
       .addPanel(
         $.textPanel('', |||
           - **Per-instance runs**: number of times a compactor instance triggers a compaction across all tenants its shard manage.
@@ -50,6 +50,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Per-block compaction duration') +
         $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher('compactor'))
+      )
+    )
+    .addRow(
+      $.row('')
+      .addPanel(
+        $.textPanel('', |||
+          - **Average blocks / tenant**: the average number of blocks per tenant.
+          - **Tenants with largest number of blocks**: the 10 tenants with the largest number of blocks.
+        |||),
+      )
+      .addPanel(
+        $.panel('Average blocks / tenant') +
+        $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher('compactor'), 'avg'),
+      )
+      .addPanel(
+        $.panel('Tenants with largest number of blocks') +
+        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher('compactor'), '{{user}}'),
       )
     )
     .addRow(
