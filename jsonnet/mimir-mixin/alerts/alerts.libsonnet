@@ -21,9 +21,9 @@
           // Note is alert_aggregation_labels is "job", this will repeat the label.  But
           // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5.."}[1m]))
+            100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"ready"}[1m]))
               /
-            sum by (%s, job, route) (rate(cortex_request_duration_seconds_count[1m]))
+            sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready"}[1m]))
               > 1
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
@@ -39,7 +39,7 @@
         {
           alert: 'CortexRequestLatency',
           expr: |||
-            cluster_namespace_job_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process"}
+            cluster_namespace_job_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready"}
                >
             %(cortex_p99_latency_threshold_seconds)s
           ||| % $._config,
