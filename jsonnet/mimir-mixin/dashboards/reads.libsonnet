@@ -41,6 +41,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
+      $.row('Query Scheduler')
+      .addPanel(
+        $.panel('QPS') +
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+      )
+      .addPanel(
+        $.panel('Latency (Time in Queue)') +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
+      )
+    )
+    .addRow(
       $.row('Cache - Query Results')
       .addPanel(
         $.panel('QPS') +

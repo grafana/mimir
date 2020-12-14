@@ -22,6 +22,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
+      $.row('Query Scheduler')
+      .addPanel(
+        $.panel('Queue Duration') +
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler)),
+      )
+      .addPanel(
+        $.panel('Queue Length') +
+        $.queryPanel('cortex_query_scheduler_queue_length{%s}' % $.jobMatcher($._config.job_names.query_scheduler), '{{cluster}} / {{namespace}} / {{instance}}'),
+      )
+    )
+    .addRow(
       $.row('Query Frontend - Results Cache')
       .addPanel(
         $.panel('Cache Hit %') +

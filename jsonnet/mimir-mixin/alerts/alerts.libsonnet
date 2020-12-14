@@ -157,7 +157,22 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries.
+              There are {{ $value }} queued up queries in query-frontend.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexSchedulerQueriesStuck',
+          expr: |||
+            sum by (%s) (cortex_query_scheduler_queue_length) > 1
+          ||| % $._config.alert_aggregation_labels,
+          'for': '5m',  // We don't want to block for longer.
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              There are {{ $value }} queued up queries in query-scheduler.
             |||,
           },
         },

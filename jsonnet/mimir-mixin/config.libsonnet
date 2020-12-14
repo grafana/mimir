@@ -31,6 +31,7 @@
       querier: '(querier|cortex$)',
       ruler: '(ruler|cortex$)',
       query_frontend: '(query-frontend|cortex$)',
+      query_scheduler: 'query-scheduler',  // Not part of single-binary.
       table_manager: '(table-manager|cortex$)',
       store_gateway: '(store-gateway|cortex$)',
       gateway: 'cortex-gw',
