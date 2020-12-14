@@ -136,7 +136,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerMemoryWorkingSetPanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(pod) (container_memory_working_set_bytes{%s,container="%s"})' % [$.namespaceMatcher(), containerName],
+      // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
+      // summing the memory of the old pod (whose metric will be stale for 5m) to the new pod.
+      'max by(pod) (container_memory_working_set_bytes{%s,container="%s"})' % [$.namespaceMatcher(), containerName],
       'min(container_spec_memory_limit_bytes{%s,container="%s"} > 0)' % [$.namespaceMatcher(), containerName],
     ], ['{{pod}}', 'limit']) +
     {
