@@ -212,5 +212,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'sum(rate(cortex_bucket_store_block_drop_failures_total{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway),
         )
       )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.row('')
+      .addPanel(
+        $.panel('Lazy loaded index-headers') +
+        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{instance}}')
+      )
+      .addPanel(
+        $.panel('Index-header lazy load duration') +
+        $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+      )
     ),
 }

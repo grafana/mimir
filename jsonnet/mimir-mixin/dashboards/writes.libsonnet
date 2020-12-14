@@ -26,6 +26,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         }, format='short')
       )
       .addPanel(
+        $.panel('Tenants') +
+        $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
+      )
+      .addPanel(
         $.panel('QPS') +
         $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
