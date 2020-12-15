@@ -1,13 +1,16 @@
 # Changelog
 
+Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## Unreleased
 
-* [ENHANCEMENT] Handle trailing slashes in URLs on `cortextool`. #128
-* [BUGFIX] Fix inaccuracy in `e2ealerting` caused by invalid purging condition on timestamps. #117
+## v0.6.0
+
+* [CHANGE] When using `rules` commands, cortex ruler API requests will now default to using the `/api/v1/` prefix. The `--use-legacy-routes` flag has been added to allow users to use the original `/api/prom/` routes. #99
 * [FEATURE] Add support for position rule-files arguments to `rules sync` and `rules diff` #125
 * [FEATURE] Add an allow-list of namespaces for `rules sync` and `rules diff` #125
-* [CHANGE] When using `rules` commands, cortex ruler API requests will now default to using the `/api/v1/` prefix. The `--use-legacy-routes` flag has been added to allow users to use the original `/api/prom/` routes. #99
+* [ENHANCEMENT] Handle trailing slashes in URLs on `cortextool`. #128
+* [BUGFIX] Fix inaccuracy in `e2ealerting` caused by invalid purging condition on timestamps. #117
 
 ## v0.5.0
 
