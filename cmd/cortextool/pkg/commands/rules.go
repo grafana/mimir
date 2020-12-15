@@ -418,6 +418,9 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 	}
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
+	//TODO: Skipping the 404s here might end up in an unsual scenario.
+	// If we're unable to reach the Cortex API due to a bad URL, we'll assume no rules are
+	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to contact cortex api")
 	}
@@ -478,6 +481,9 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 	}
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
+	//TODO: Skipping the 404s here might end up in an unsual scenario.
+	// If we're unable to reach the Cortex API due to a bad URL, we'll assume no rules are
+	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to contact cortex api")
 	}
