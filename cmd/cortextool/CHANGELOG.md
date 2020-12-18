@@ -4,6 +4,10 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## Unreleased
 
+## v0.6.1
+
+* [BUGFIX] Fix `cortextool` generating the wrong paths when executing multiple calls to the cortex API. In particular, commands like `load`, `sync` were affected. #133
+
 ## v0.6.0
 
 * [CHANGE] When using `rules` commands, cortex ruler API requests will now default to using the `/api/v1/` prefix. The `--use-legacy-routes` flag has been added to allow users to use the original `/api/prom/` routes. #99

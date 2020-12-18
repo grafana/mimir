@@ -102,7 +102,7 @@ func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response,
 }
 
 func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Response, error) {
-	req, err := buildRequest(path, method, r.endpoint, payload)
+	req, err := buildRequest(path, method, *r.endpoint, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -169,7 +169,7 @@ func checkResponse(r *http.Response) error {
 	return errors.New("failed request to the cortex api")
 }
 
-func buildRequest(p, m string, endpoint *url.URL, payload []byte) (*http.Request, error) {
+func buildRequest(p, m string, endpoint url.URL, payload []byte) (*http.Request, error) {
 	endpoint.Path = path.Join(endpoint.Path, p)
 	return http.NewRequest(m, endpoint.String(), bytes.NewBuffer(payload))
 }
