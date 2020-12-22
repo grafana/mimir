@@ -36,7 +36,6 @@
         'blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size': '25000',
         'blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency': '50',
         'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size': '100',
-        'blocks-storage.bucket-store.index-cache.postings-compression-enabled': 'true',
       } else {}
     ) + (
       if $._config.memcached_chunks_enabled then {
