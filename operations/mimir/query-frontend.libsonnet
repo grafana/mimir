@@ -2,7 +2,7 @@
   local container = $.core.v1.container,
 
   query_frontend_args::
-    $._config.ringConfig +
+    $._config.grpcConfig +
     {
       target: 'query-frontend',
 

@@ -41,15 +41,17 @@
       else {}
     ),
 
-  ingester_statefulset_args:: {
-    'ingester.wal-enabled': true,
-    'ingester.checkpoint-enabled': true,
-    'ingester.recover-from-wal': true,
-    'ingester.wal-dir': $._config.ingester.wal_dir,
-    'ingester.checkpoint-duration': '15m',
-    '-log.level': 'info',
-    'ingester.tokens-file-path': $._config.ingester.wal_dir + '/tokens',
-  },
+  ingester_statefulset_args::
+    $._config.grpcConfig +
+    {
+      'ingester.wal-enabled': true,
+      'ingester.checkpoint-enabled': true,
+      'ingester.recover-from-wal': true,
+      'ingester.wal-dir': $._config.ingester.wal_dir,
+      'ingester.checkpoint-duration': '15m',
+      '-log.level': 'info',
+      'ingester.tokens-file-path': $._config.ingester.wal_dir + '/tokens',
+    },
 
   ingester_ports:: $.util.defaultPorts,
 
