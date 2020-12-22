@@ -139,6 +139,11 @@
       }
     else {},
 
+    grpcConfig:: {
+      'server.grpc.keepalive.min-time-between-pings': '10s',
+      'server.grpc.keepalive.ping-without-stream-allowed': true,
+    },
+
     storageConfig:
       $._config.client_configs.aws +
       $._config.client_configs.cassandra +

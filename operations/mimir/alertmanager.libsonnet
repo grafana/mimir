@@ -17,6 +17,7 @@
   else [],
 
   alertmanager_args::
+    $._config.grpcConfig +
     {
       target: 'alertmanager',
       'log.level': 'debug',
