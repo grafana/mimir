@@ -3,6 +3,7 @@
   local containerPort = $.core.v1.containerPort,
 
   distributor_args::
+    $._config.grpcConfig +
     $._config.ringConfig +
     $._config.distributorConfig +
     {

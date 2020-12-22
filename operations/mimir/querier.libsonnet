@@ -2,6 +2,7 @@
   local container = $.core.v1.container,
 
   querier_args::
+    $._config.grpcConfig +
     $._config.ringConfig +
     $._config.storeConfig +
     $._config.storageConfig +
