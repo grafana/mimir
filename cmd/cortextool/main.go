@@ -17,6 +17,7 @@ var (
 	logConfig                commands.LoggerConfig
 	pushGateway              commands.PushGatewayConfig
 	loadgenCommand           commands.LoadgenCommand
+	remoteReadCommand        commands.RemoteReadCommand
 	overridesExporterCommand = commands.NewOverridesExporterCommand()
 )
 
@@ -28,6 +29,7 @@ func main() {
 	ruleCommand.Register(app)
 	pushGateway.Register(app)
 	loadgenCommand.Register(app)
+	remoteReadCommand.Register(app)
 	overridesExporterCommand.Register(app)
 
 	app.Command("version", "Get the version of the cortextool CLI").Action(func(k *kingpin.ParseContext) error {

@@ -115,6 +115,61 @@ This commands checks rules against the recommended [best practices](https://prom
     cortextool rules check ./example_rules_one.yaml
 
 
+#### Remote Read
+
+Cortex exposes a [Remote Read API] which allows access to the stored series. The `remote-read` subcommand of `cortextool` allows to interact with its API, to find out which series are stored.
+
+[Remote Read API]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
+
+##### Remote Read show statistics
+
+The `remote-read stats` command summarizes statistics of the stored series matching the selector.
+
+```sh
+cortextool remote-read stats --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
+INFO[0000] Querying time from=2020-12-30T14:00:00Z to=2020-12-30T15:00:00Z with selector={job="node"}
+INFO[0000] MIN TIME                           MAX TIME                           DURATION     NUM SAMPLES  NUM SERIES   NUM STALE NAN VALUES  NUM NAN VALUES
+INFO[0000] 2020-12-30 14:00:00.629 +0000 UTC  2020-12-30 14:59:59.629 +0000 UTC  59m59s       159480       425          0                     0
+```
+
+##### Remote Read dump series
+
+The `remote-read dump` command prints all series and samples matching the selector.
+
+```sh
+cortextool remote-read dump --selector 'up{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+{__name__="up", instance="demo.robustperception.io:9100", job="node"} 1 1609336914711
+{__name__="up", instance="demo.robustperception.io:9100", job="node"} NaN 1609336924709 # StaleNaN
+[...]
+```
+##### Remote Read export series into local TSDB
+
+The `remote-read export` command exports all series and samples matching the selector into a local TSDB. This TSDB can then be further analysed with local tooling like `prometheus` and `promtool`.
+
+```sh
+# Use Remote Read API to download all metrics with label job=name into local tsdb
+cortextool remote-read export --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
+INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
+INFO[0000] Created TSDB in path './local-tsdb'
+INFO[0000] Using existing TSDB in path './local-tsdb'
+INFO[0000] Querying time from=2020-12-30T13:53:59Z to=2020-12-30T14:53:59Z with selector={job="node"}
+INFO[0001] Store TSDB blocks in './local-tsdb'
+INFO[0001] BLOCK ULID                  MIN TIME                       MAX TIME                       DURATION     NUM SAMPLES  NUM CHUNKS   NUM SERIES   SIZE
+INFO[0001] 01ETT28D6B8948J87NZXY8VYD9  2020-12-30 13:53:59 +0000 UTC  2020-12-30 13:59:59 +0000 UTC  6m0.001s     15950        429          425          105KiB867B
+INFO[0001] 01ETT28D91Z9SVRYF3DY0KNV41  2020-12-30 14:00:00 +0000 UTC  2020-12-30 14:53:58 +0000 UTC  53m58.001s   143530       1325         425          509KiB679B
+
+# Examples for using local TSDB
+## Analyzing contents using promtool
+promtool tsdb analyze ./local-tsdb
+
+## Dump all values of the TSDB
+promtool tsdb dump ./local-tsdb
+
+## Run a local prometheus
+prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
+```
+
 #### Overrides Exporter
 
 The Overrides Exporter allows to continuously export [per tenant configuration overrides][runtime-config] as metrics. Optionally it can also export a presets file (cf. example [override config file] and [presets file]).

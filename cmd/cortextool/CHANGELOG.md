@@ -4,6 +4,11 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## Unreleased
 
+* [FEATURE] Add `remote-read` commands to investigate series through the remote-read API. #134
+   - `remote-read export`: Export metrics remote read series into a local TSDB.
+   - `remote-read dump`: Dump remote read series.
+   - `remote-read stats`: Show statistic of remote read series.
+
 ## v0.6.1
 
 * [BUGFIX] Fix `cortextool` generating the wrong paths when executing multiple calls to the cortex API. In particular, commands like `load`, `sync` were affected. #133
