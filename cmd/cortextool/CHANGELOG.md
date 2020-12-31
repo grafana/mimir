@@ -2,7 +2,7 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
-## Unreleased
+## v0.7.0
 
 * [FEATURE] Add `remote-read` commands to investigate series through the remote-read API. #134
    - `remote-read export`: Export metrics remote read series into a local TSDB.
