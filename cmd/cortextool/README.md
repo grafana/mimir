@@ -180,6 +180,14 @@ The Overrides Exporter allows to continuously export [per tenant configuration o
 [presets file]:./pkg/commands/testdata/presets.yaml
 [runtime-config]:https://cortexmetrics.io/docs/configuration/arguments/#runtime-configuration-file
 
+#### Generate ACL Headers
+
+This lets you generate the header which can then be used to enforce access control rules in GME / GrafanaCloud.
+
+```
+./cortextool acl generate-header --id=1234 --rule='{namespace="A"}'
+```
+
 ## chunktool
 
 This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.
