@@ -13,6 +13,13 @@
     aws_region: error 'must specify AWS region',
     s3_bucket_name: error 'must specify S3 bucket name',
 
+    // If false, ingesters are not unregistered on shutdown and left in the ring with
+    // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
+    // but requires to:
+    // 1. Either manually forget ingesters on scale down or invoke the /shutdown endpoint
+    // 2. Ensure ingester ID is preserved during rollouts
+    unregister_ingesters_on_shutdown: true,
+
     // schema is used to generate the storage schema yaml file used by
     // the Cortex chunks storage:
     // - More information: https://github.com/cortexproject/cortex/pull/1072

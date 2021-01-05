@@ -15,6 +15,7 @@
       'ingester.max-transfer-retries': 60,  // Each retry is backed off by 5s, so 5mins for new ingester to come up.
       'ingester.heartbeat-period': '15s',
       'ingester.max-stale-chunk-idle': '5m',
+      'ingester.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
       // Chunk building/flushing config.
       'ingester.chunk-encoding': 3,  // Bigchunk encoding
