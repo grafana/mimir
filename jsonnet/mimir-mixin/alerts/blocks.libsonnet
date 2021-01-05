@@ -184,6 +184,33 @@
             message: 'Cortex Store Gateway {{ $labels.namespace }}/{{ $labels.instance }} has not successfully synched the bucket since {{ $value | humanizeDuration }}.',
           },
         },
+        {
+          // Alert if the bucket index has not been updated for a given user.
+          alert: 'CortexBucketIndexNotUpdated',
+          expr: |||
+            min by(namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex bucket index for tenant {{ $labels.user }} in {{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.',
+          },
+        },
+        {
+          // Alert if a we consistently find partial blocks for a given tenant over a relatively large time range.
+          alert: 'CortexTenantHasPartialBlocks',
+          'for': '6h',
+          expr: |||
+            max by(namespace, user) (cortex_bucket_blocks_partials_count) > 0
+          |||,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: 'Cortex tenant {{ $labels.user }} in {{ $labels.namespace }} has {{ $value }} partial blocks.',
+          },
+        },
       ],
     },
   ],
