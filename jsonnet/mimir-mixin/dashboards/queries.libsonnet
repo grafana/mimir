@@ -136,7 +136,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
-      std.member($._config.storage_engine, 'chunks'),
+      std.member($._config.storage_engine, 'blocks'),
       $.row('Querier - Blocks storage')
       .addPanel(
         $.panel('Number of store-gateways hit per Query') +
@@ -156,7 +156,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Store-gateway - Blocks')
+      $.row('')
+      .addPanel(
+        $.panel('Bucket indexes loaded (per querier)') +
+        $.queryPanel([
+          'max(cortex_bucket_index_loaded{%s})' % $.jobMatcher($._config.job_names.querier),
+          'min(cortex_bucket_index_loaded{%s})' % $.jobMatcher($._config.job_names.querier),
+          'avg(cortex_bucket_index_loaded{%s})' % $.jobMatcher($._config.job_names.querier),
+        ], ['Max', 'Min', 'Average']) +
+        { yaxes: $.yaxes('short') },
+      )
+      .addPanel(
+        $.successFailurePanel(
+          'Bucket indexes load / sec',
+          'sum(rate(cortex_bucket_index_loads_total{%s}[$__rate_interval])) - sum(rate(cortex_bucket_index_load_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)],
+          'sum(rate(cortex_bucket_index_load_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.querier),
+        )
+      )
+      .addPanel(
+        $.panel('Bucket indexes load latency') +
+        $.latencyPanel('cortex_bucket_index_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.querier)),
+      )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.row('Store-gateway - Blocks storage')
       .addPanel(
         $.panel('Blocks queried / sec') +
         $.queryPanel('sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), 'blocks') +

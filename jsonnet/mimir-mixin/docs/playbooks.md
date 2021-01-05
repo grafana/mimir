@@ -226,6 +226,28 @@ gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 
 Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
 
+### CortexBucketIndexNotUpdated
+
+This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store. 
+
+How to **investigate**:
+- Ensure the compactor is successfully running
+- Look for any error in the compactor logs
+
+### CortexTenantHasPartialBlocks
+
+This alert fires when Cortex finds partial blocks for a given tenant. A partial block is a block missing the `meta.json` and this may usually happen in two circumstances:
+
+1. A block upload has been interrupted and not cleaned up or retried
+2. A block deletion has been interrupted and `deletion-mark.json` has been deleted before `meta.json`
+
+How to **investigate**:
+- Look for the block ID in the logs
+- Find out which Cortex component operated on the block at last (eg. uploaded by ingester/compactor, or deleted by compactor)
+- Investigate if was a partial upload or partial delete
+- Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor
+- Further investigate if was an upload failed by an ingester but not later retried (ingesters are expected to retry uploads until succeed)
+
 ### CortexWALCorruption
 
 This alert is only related to the chunks storage. This can happen because of 2 reasons: (1) Non graceful shutdown of ingesters. (2) Faulty storage or NFS.
