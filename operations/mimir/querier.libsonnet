@@ -27,7 +27,13 @@
       'querier.second-store-engine': $._config.querier_second_storage_engine,
 
       'log.level': 'debug',
-    },
+    } + (
+      if !$._config.unregister_ingesters_on_shutdown then
+        {
+          'distributor.extend-writes': false,
+        }
+      else {}
+    ),
 
   querier_ports:: $.util.defaultPorts,
 

@@ -39,6 +39,12 @@
           'store.index-cache-write.memcached.service': 'memcached-client',
         }
       else {}
+    ) + (
+      if !$._config.unregister_ingesters_on_shutdown then
+        {
+          'ingester.unregister-on-shutdown': false,
+        }
+      else {}
     ),
 
   ingester_statefulset_args::
