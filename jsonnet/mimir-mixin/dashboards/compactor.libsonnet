@@ -30,7 +30,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             cortex_compactor_tenants_processing_failed{%s} +
             cortex_compactor_tenants_skipped{%s}
           ) / cortex_compactor_tenants_discovered{%s}
-        ||| % [$.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor')], '{{instance}}') +
+        ||| % [$.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor')], '{{%s}}' % $._config.per_instance_label) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )

@@ -18,7 +18,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Queue Length') +
-        $.queryPanel('cortex_query_frontend_queue_length{%s}' % $.jobMatcher($._config.job_names.query_frontend), '{{cluster}} / {{namespace}} / {{instance}}'),
+        $.queryPanel('cortex_query_frontend_queue_length{%s}' % $.jobMatcher($._config.job_names.query_frontend), '{{cluster}} / {{namespace}} / {{%s}}' % $._config.per_instance_label),
       )
     )
     .addRow(
@@ -29,7 +29,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Queue Length') +
-        $.queryPanel('cortex_query_scheduler_queue_length{%s}' % $.jobMatcher($._config.job_names.query_scheduler), '{{cluster}} / {{namespace}} / {{instance}}'),
+        $.queryPanel('cortex_query_scheduler_queue_length{%s}' % $.jobMatcher($._config.job_names.query_scheduler), '{{cluster}} / {{namespace}} / {{%s}}' % $._config.per_instance_label),
       )
     )
     .addRow(
@@ -220,7 +220,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('Blocks currently loaded') +
-        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{instance}}')
+        $.queryPanel('cortex_bucket_store_blocks_loaded{component="store-gateway",%s}' % $.jobMatcher($._config.job_names.store_gateway), '{{%s}}' % $._config.per_instance_label)
       )
       .addPanel(
         $.successFailurePanel(
@@ -242,7 +242,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('Lazy loaded index-headers') +
-        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{instance}}')
+        $.queryPanel('cortex_bucket_store_indexheader_lazy_load_total{%s} - cortex_bucket_store_indexheader_lazy_unload_total{%s}' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], '{{%s}}' % $._config.per_instance_label)
       )
       .addPanel(
         $.panel('Index-header lazy load duration') +

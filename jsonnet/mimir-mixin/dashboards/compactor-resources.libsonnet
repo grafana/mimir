@@ -35,13 +35,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Disk')
       .addPanel(
         $.panel('Disk Writes') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('compactor'), '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('compactor')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Disk Reads') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('compactor'), '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('compactor')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )

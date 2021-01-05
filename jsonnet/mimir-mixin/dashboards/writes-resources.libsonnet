@@ -32,7 +32,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester')
       .addPanel(
         $.panel('In-memory series') +
-        $.queryPanel('sum by(instance) (cortex_ingester_memory_series{%s})' % $.jobMatcher($._config.job_names.ingester), '{{instance}}'),
+        $.queryPanel(
+          'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)],
+          '{{%s}}' % $._config.per_instance_label
+        ),
       )
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ingester'),
@@ -51,13 +54,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('Disk Writes') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('ingester'), '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('ingester')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Disk Reads') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('ingester'), '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('ingester')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
