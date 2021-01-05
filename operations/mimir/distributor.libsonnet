@@ -36,12 +36,10 @@
       // The ingestion rate global limit requires the distributors to form a ring.
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'distributor.ring.prefix': '',
-    } + (
-      if !$._config.unregister_ingesters_on_shutdown then
-        {
-          'distributor.extend-writes': false,
-        }
-      else {}
+
+      // Do not extend the replication set on unhealthy ingester when "unregister on shutdown"
+      // is disabled.
+      'distributor.extend-writes': $._config.unregister_ingesters_on_shutdown,
     ),
 
   distributor_ports:: $.util.defaultPorts,
