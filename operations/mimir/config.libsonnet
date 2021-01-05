@@ -15,8 +15,9 @@
 
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
-    // but requires to manually forget ingesters on scale down and that ingester ID is preserved
-    // during rollouts.
+    // but requires to:
+    // 1. Either manually forget ingesters on scale down or invoke the /shutdown endpoint
+    // 2. Ensure ingester ID is preserved during rollouts
     unregister_ingesters_on_shutdown: true,
 
     // schema is used to generate the storage schema yaml file used by
