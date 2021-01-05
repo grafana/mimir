@@ -2,9 +2,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'alertmanager-resources.json':
-    local filterNodeDiskByAlertmanager = |||
-      ignoring(pod) group_right() (label_replace(count by(pod, instance, device) (container_fs_writes_bytes_total{%s,container="alertmanager",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
-    ||| % $.namespaceMatcher();
     ($.dashboard('Cortex / Alertmanager Resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
     .addClusterSelectorTemplates()
     .addRow(
@@ -62,13 +59,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Disk')
       .addPanel(
         $.panel('Writes') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % filterNodeDiskByAlertmanager, '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('alertmanager')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Reads') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % filterNodeDiskByAlertmanager, '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('alertmanager')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )

@@ -68,7 +68,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ruler')
       .addPanel(
         $.panel('Rules') +
-        $.queryPanel('sum by(instance) (cortex_prometheus_rule_group_rules{%s})' % $.jobMatcher($._config.job_names.ruler), '{{instance}}'),
+        $.queryPanel(
+          'sum by(%s) (cortex_prometheus_rule_group_rules{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ruler)],
+          '{{%s}}' % $._config.per_instance_label
+        ),
       )
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ruler'),
@@ -101,13 +104,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('')
       .addPanel(
         $.panel('Disk Writes') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('store-gateway'), '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('store-gateway')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )
       .addPanel(
         $.panel('Disk Reads') +
-        $.queryPanel('sum by(instance, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % $.filterNodeDiskContainer('store-gateway'), '{{pod}} - {{device}}') +
+        $.queryPanel(
+          'sum by(%s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('store-gateway')],
+          '{{%s}} - {{device}}' % $._config.per_instance_label
+        ) +
         $.stack +
         { yaxes: $.yaxes('Bps') },
       )

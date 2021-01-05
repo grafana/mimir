@@ -43,7 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Flush Stats')
       .addPanel(
         $.panel('Queue Length') +
-        $.queryPanel('cortex_ingester_flush_queue_length{%s}' % $.jobMatcher($._config.job_names.ingester), '{{instance}}'),
+        $.queryPanel('cortex_ingester_flush_queue_length{%s}' % $.jobMatcher($._config.job_names.ingester), '{{%s}}' % $._config.per_instance_label),
       )
       .addPanel(
         $.panel('Flush Rate') +
@@ -88,13 +88,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Checkpoint')
       .addPanel(
         $.panel('Checkpoint creation/deletion / sec') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_creations_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-creation') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-deletion'),
+        $.queryPanel('rate(cortex_ingester_checkpoint_creations_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{%s}}-creation' % $._config.per_instance_label) +
+        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{%s}}-deletion' % $._config.per_instance_label),
       )
       .addPanel(
         $.panel('Checkpoint creation/deletion failed / sec') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_creations_failed_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-creation') +
-        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_failed_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{instance}}-deletion'),
+        $.queryPanel('rate(cortex_ingester_checkpoint_creations_failed_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{%s}}-creation' % $._config.per_instance_label) +
+        $.queryPanel('rate(cortex_ingester_checkpoint_deletions_failed_total{%s}[$__rate_interval])' % $.jobMatcher($._config.job_names.ingester), '{{%s}}-deletion' % $._config.per_instance_label),
       )
     ),
 }

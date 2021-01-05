@@ -154,7 +154,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   goHeapInUsePanel(title, jobName)::
     $.panel(title) +
-    $.queryPanel('sum by(instance) (go_memstats_heap_inuse_bytes{%s})' % $.jobMatcher(jobName), '{{instance}}') +
+    $.queryPanel(
+      'sum by(%s) (go_memstats_heap_inuse_bytes{%s})' % [$._config.per_instance_label, $.jobMatcher(jobName)],
+      '{{%s}}' % $._config.per_instance_label
+    ) +
     { yaxes: $.yaxes('bytes') },
 
   // Switches a panel from lines (default) to bars.
@@ -244,6 +247,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   filterNodeDiskContainer(containerName)::
     |||
-      ignoring(pod) group_right() (label_replace(count by(pod, instance, device) (container_fs_writes_bytes_total{%s,container="%s",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
-    ||| % [$.namespaceMatcher(), containerName],
+      ignoring(%s) group_right() (label_replace(count by(%s, device) (container_fs_writes_bytes_total{%s,container="%s",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
+    ||| % [$._config.per_instance_label, $._config.per_instance_label, $.namespaceMatcher(), containerName],
 }
