@@ -287,8 +287,7 @@
 
     // === Per-tenant usage limits. ===
     //
-    // These are the defaults. Distributor limits will be 5x (#replicas) higher,
-    // ingester limits are 6s (#replicas) / 3x (#replication factor) higher.
+    // These are the defaults.
     limits: $._config.overrides.extra_small_user,
 
     overrides: {
