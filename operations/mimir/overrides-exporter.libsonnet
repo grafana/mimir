@@ -58,7 +58,7 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.util.configVolumeMount('overrides-presets', '/etc/cortex_presets') +
     deployment.mixin.metadata.withLabels({ name: name }),
 

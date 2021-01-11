@@ -106,7 +106,7 @@
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
       statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
       $.statefulset_storage_config_mixin +
-      $.util.configVolumeMount('overrides', '/etc/cortex') +
+      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
       $.util.podPriority('high') +
       $.util.antiAffinityStatefulSet
     else null,
@@ -117,7 +117,7 @@
     if $._config.ingester_deployment_without_wal then
       deployment.new(name, 3, [$.ingester_container], $.ingester_deployment_labels) +
       $.util.antiAffinity +
-      $.util.configVolumeMount('overrides', '/etc/cortex') +
+      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
       deployment.mixin.metadata.withLabels({ name: name }) +
       deployment.mixin.spec.withMinReadySeconds(60) +
       deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
