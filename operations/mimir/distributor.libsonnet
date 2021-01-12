@@ -60,7 +60,7 @@
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
     $.util.antiAffinity +
-    $.util.configVolumeMount('overrides', '/etc/cortex'),
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
 
   local service = $.core.v1.service,
 

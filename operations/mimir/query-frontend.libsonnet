@@ -70,7 +70,7 @@
 
   query_frontend_deployment:
     deployment.new('query-frontend', $._config.queryFrontend.replicas, [$.query_frontend_container]) +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.util.antiAffinity +
     // inject storage schema in order to know what/how to shard
     if $._config.queryFrontend.sharded_queries_enabled then

@@ -45,7 +45,7 @@
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
       $.util.antiAffinity +
-      $.util.configVolumeMount('overrides', '/etc/cortex') +
+      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
       $.storage_config_mixin
     else {},
 

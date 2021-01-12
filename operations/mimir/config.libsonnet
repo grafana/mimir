@@ -290,6 +290,8 @@
     // These are the defaults.
     limits: $._config.overrides.extra_small_user,
 
+    overrides_configmap: 'overrides',
+
     overrides: {
       extra_small_user:: {
         max_series_per_user: 0,  // Disabled in favour of the max global limit
@@ -415,7 +417,7 @@
   local configMap = $.core.v1.configMap,
 
   overrides_config:
-    configMap.new('overrides') +
+    configMap.new($._config.overrides_configmap) +
     configMap.withData({
       'overrides.yaml': $.util.manifestYaml(
         {

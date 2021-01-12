@@ -99,7 +99,7 @@
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.util.podPriority('high') +
     $.util.antiAffinity +
     // Parallelly scale up/down ingester instances instead of starting them
@@ -218,7 +218,7 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
-    $.util.configVolumeMount('overrides', '/etc/cortex'),
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset),

@@ -56,7 +56,7 @@
   querier_deployment:
     deployment.new('querier', $._config.querier.replicas, [$.querier_container], $.querier_deployment_labels) +
     $.util.antiAffinity +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.storage_config_mixin,
 
   local service = $.core.v1.service,
