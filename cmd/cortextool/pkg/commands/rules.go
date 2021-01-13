@@ -222,6 +222,11 @@ func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
 		ruleLoadSuccessTimestamp,
 	)
 
+	// Loki's non-legacy route does not match Cortex, but the legacy one does.
+	if r.Backend == rules.LokiBackend {
+		r.ClientConfig.UseLegacyRoutes = true
+	}
+
 	cli, err := client.New(r.ClientConfig)
 	if err != nil {
 		return err
