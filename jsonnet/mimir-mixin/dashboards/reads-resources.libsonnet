@@ -13,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'cortex-gw'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'cortex-gw'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
       )
     )
     .addRow(
@@ -25,7 +25,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'query-frontend'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'query-frontend'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.query_frontend),
       )
     )
     .addRow(
@@ -37,7 +37,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'query-scheduler'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'query-scheduler'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.query_scheduler),
       )
     )
     .addRow(
@@ -49,7 +49,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'querier'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'querier'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.querier),
       )
     )
     .addRow(
@@ -61,7 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'ingester'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
       )
     )
     .addRow(
@@ -83,7 +83,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ruler'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'ruler'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler),
       )
     )
     .addRowIf(
@@ -96,7 +96,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'store-gateway'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'store-gateway'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.store_gateway),
       )
     )
     .addRowIf(

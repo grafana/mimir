@@ -143,7 +143,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Memcached – Blocks Storage – Index header (Store-gateway)')
+      $.row('Memcached – Blocks Storage – Block Index (Store-gateway)')
       .addPanel(
         $.panel('QPS') +
         $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{component="store-gateway",name="index-cache", %s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}') +

@@ -13,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'cortex-gw'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'cortex-gw'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
       )
     )
     .addRow(

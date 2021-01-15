@@ -13,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'cortex-gw'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'cortex-gw'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
       )
     )
     .addRow(
@@ -25,7 +25,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'distributor'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'distributor'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.distributor),
       )
     )
     .addRow(
@@ -47,7 +47,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'ingester'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'ingester'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ingester),
       )
     )
     .addRow(
