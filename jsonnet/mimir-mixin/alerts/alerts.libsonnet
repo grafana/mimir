@@ -121,7 +121,8 @@
               or
             cortex_overrides_last_reload_successful == 0
           |||,
-          'for': '15m',
+          // Alert quicker for human errors.
+          'for': '5m',
           labels: {
             severity: 'warning',
           },
