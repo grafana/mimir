@@ -9,9 +9,9 @@
           alert: 'CortexIngesterHasNotShippedBlocks',
           'for': '15m',
           expr: |||
-            (min by(namespace, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"}) > 60 * 60 * 4)
+            (min by(namespace, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 60 * 60 * 4)
             and
-            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"}) > 0)
+            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 0)
             and
             (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
           |||,
@@ -28,7 +28,7 @@
           alert: 'CortexIngesterHasNotShippedBlocksSinceStart',
           'for': '4h',
           expr: |||
-            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester"}) == 0)
+            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) == 0)
             and
             (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
           |||,
