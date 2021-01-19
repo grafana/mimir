@@ -198,7 +198,7 @@
         {
           alert: 'CortexIngesterRestarts',
           expr: |||
-            changes(process_start_time_seconds{job=~".+(cortex|ingester)"}[30m]) > 1
+            changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) > 1
           |||,
           labels: {
             severity: 'critical',
@@ -243,7 +243,7 @@
         {
           alert: 'CortexMemoryMapAreasTooHigh',
           expr: |||
-            process_memory_map_areas{job=~".+(cortex|ingester|store-gateway)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester|store-gateway)"} > 0.8
+            process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway)"} > 0.8
           |||,
           'for': '5m',
           labels: {
@@ -502,7 +502,7 @@
           expr: |||
             memberlist_client_cluster_members_count
               != on (%s) group_left
-            sum by (%s) (up{job=~".+/(distributor|ingester|querier|cortex|ruler)"})
+            sum by (%s) (up{job=~".+/(distributor|ingester.*|querier|cortex|ruler)"})
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
           labels: {
