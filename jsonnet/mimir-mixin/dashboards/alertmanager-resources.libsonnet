@@ -3,7 +3,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 (import 'dashboard-utils.libsonnet') {
   'alertmanager-resources.json':
     ($.dashboard('Cortex / Alertmanager Resources') + { uid: '68b66aed90ccab448009089544a8d6c6' })
-    .addClusterSelectorTemplates()
+    .addClusterSelectorTemplates(false)
     .addRow(
       $.row('Gateway')
       .addPanel(

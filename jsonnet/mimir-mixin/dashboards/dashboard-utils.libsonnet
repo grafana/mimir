@@ -14,7 +14,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         then self.addRow(row)
         else self,
 
-      addClusterSelectorTemplates()::
+      addClusterSelectorTemplates(multi=true)::
         local d = self {
           tags: $._config.tags,
           links: [
@@ -31,11 +31,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ],
         };
 
-        if $._config.singleBinary
-        then d.addMultiTemplate('job', 'cortex_build_info', 'job')
-        else d
-             .addMultiTemplate('cluster', 'cortex_build_info', 'cluster')
-             .addMultiTemplate('namespace', 'cortex_build_info', 'namespace'),
+        if multi then
+          if $._config.singleBinary
+          then d.addMultiTemplate('job', 'cortex_build_info', 'job')
+          else d
+               .addMultiTemplate('cluster', 'cortex_build_info', 'cluster')
+               .addMultiTemplate('namespace', 'cortex_build_info', 'namespace')
+        else
+          if $._config.singleBinary
+          then d.addTemplate('job', 'cortex_build_info', 'job')
+          else d
+               .addTemplate('cluster', 'cortex_build_info', 'cluster')
+               .addTemplate('namespace', 'cortex_build_info', 'namespace'),
+
     },
 
   // The mixin allow specialism of the job selector depending on if its a single binary
