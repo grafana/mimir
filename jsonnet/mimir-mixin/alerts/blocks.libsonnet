@@ -40,6 +40,24 @@
           },
         },
         {
+          // Alert if the ingester has compacted some blocks that haven't been successfully uploaded to the storage yet since
+          // more than 1 hour. The metric tracks the time of the oldest unshipped block, measured as the time when the
+          // TSDB head has been compacted to a block. The metric is 0 if all blocks have been shipped.
+          alert: 'CortexIngesterHasUnshippedBlocks',
+          'for': '15m',
+          expr: |||
+            (time() - cortex_ingester_oldest_unshipped_block_timestamp_seconds > 3600)
+            and
+            (cortex_ingester_oldest_unshipped_block_timestamp_seconds > 0)
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: "Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet.",
+          },
+        },
+        {
           // Alert if the ingester is failing to compact TSDB head into a block, for any opened TSDB. Once the TSDB head is
           // compactable, the ingester will try to compact it every 1 minute. Repeatedly failing it is a critical condition
           // that should never happen.
