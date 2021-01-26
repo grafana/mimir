@@ -92,6 +92,13 @@ If the ingester hit the disk capacity, any attempt to append samples will fail. 
 
 Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks).
 
+### CortexIngesterHasUnshippedBlocks
+
+This alert fires when a Cortex ingester has compacted some blocks but such blocks haven't been successfully uploaded to the storage yet.
+
+How to **investigate**:
+- Look for details in the ingester logs
+
 ### CortexIngesterTSDBHeadCompactionFailed
 
 This alert fires when a Cortex ingester is failing to compact the TSDB head into a block.
