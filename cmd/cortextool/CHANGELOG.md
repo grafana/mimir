@@ -2,16 +2,24 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## Unreleased
+
+## v0.7.2
+
+* [ENHANCEMENT] Add format for rules list command. #130
+* [ENHANCEMENT] Parse multiple YAML rules documents. #127
+* [BUGFIX] Fix double escaping of special characters in rule and namespace names. #140
+
+## v0.7.1
+
+* [BUGFIX] Rule commands use compatible routes with the Loki backend. #136
+
 ## v0.7.0
 
 * [FEATURE] Add `remote-read` commands to investigate series through the remote-read API. #134
    - `remote-read export`: Export metrics remote read series into a local TSDB.
    - `remote-read dump`: Dump remote read series.
    - `remote-read stats`: Show statistic of remote read series.
-
-* [ENHANCEMENT] Add format for rules list command. #130
-
-* [ENHANCEMENT] Parse multiple YAML rules documents. #127
 
 ## v0.6.1
 
