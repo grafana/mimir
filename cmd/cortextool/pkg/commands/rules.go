@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"text/tabwriter"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,6 +36,7 @@ var (
 	})
 
 	backends = []string{rules.CortexBackend, rules.LokiBackend} // list of supported backend types
+	formats  = []string{"json", "yaml", "table"}                // list of supported formats for the list command
 )
 
 // RuleCommand configures and executes rule related cortex operations
@@ -72,6 +72,9 @@ type RuleCommand struct {
 
 	// Rules check flags
 	Strict bool
+
+	// List Rules Config
+	Format string
 
 	DisableColor bool
 }
@@ -214,6 +217,10 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	checkCmd.Flag("strict", "fails rules checks that do not match best practices exactly").BoolVar(&r.Strict)
+
+	// List Command
+	listCmd.Flag("format", "Backend type to interact with: <json|yaml|table>").Default("table").EnumVar(&r.Format, formats...)
+	listCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
 }
 
 func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
@@ -310,18 +317,8 @@ func (r *RuleCommand) listRules(k *kingpin.ParseContext) error {
 
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-
-	fmt.Fprintln(w, "Namespace\t Rule Group")
-	for ns, rulegroups := range rules {
-		for _, rg := range rulegroups {
-			fmt.Fprintf(w, "%s\t %s\n", ns, rg.Name)
-		}
-	}
-
-	w.Flush()
-
-	return nil
+	p := printer.New(r.DisableColor)
+	return p.PrintRuleSet(rules, r.Format, os.Stdout)
 }
 
 func (r *RuleCommand) printRules(k *kingpin.ParseContext) error {

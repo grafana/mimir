@@ -1,9 +1,13 @@
 package printer
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/alecthomas/chroma/quick"
 	"github.com/mitchellh/colorstring"
@@ -175,5 +179,66 @@ func (p *Printer) PrintComparisonResult(results []rules.NamespaceChange, verbose
 
 	fmt.Println()
 	fmt.Printf("Diff Summary: %v Groups Created, %v Groups Updated, %v Groups Deleted\n", created, updated, deleted)
+	return nil
+}
+
+func (p *Printer) PrintRuleSet(rules map[string][]rwrulefmt.RuleGroup, format string, writer io.Writer) error {
+	nsKeys := make([]string, 0, len(rules))
+	for k := range rules {
+		nsKeys = append(nsKeys, k)
+	}
+	sort.Strings(nsKeys)
+
+	type namespaceAndRuleGroup struct {
+		Namespace string `json:"namespace" yaml:"namespace"`
+		RuleGroup string `json:"rulegroup" yaml:"rulegroup"`
+	}
+	var items []namespaceAndRuleGroup
+
+	for _, ns := range nsKeys {
+		for _, rg := range rules[ns] {
+			items = append(items, namespaceAndRuleGroup{
+				Namespace: ns,
+				RuleGroup: rg.Name,
+			})
+		}
+	}
+
+	switch format {
+	case "json":
+		output, err := json.Marshal(items)
+		if err != nil {
+			return err
+		}
+
+		// go-text-template
+		if !p.disableColor {
+			return quick.Highlight(writer, string(output), "json", "terminal", "swapoff")
+		}
+
+		fmt.Fprint(writer, string(output))
+	case "yaml":
+		output, err := yaml.Marshal(items)
+		if err != nil {
+			return err
+		}
+
+		// go-text-template
+		if !p.disableColor {
+			return quick.Highlight(writer, string(output), "yaml", "terminal", "swapoff")
+		}
+
+		fmt.Fprint(writer, string(output))
+	default:
+		w := tabwriter.NewWriter(writer, 0, 0, 1, ' ', tabwriter.Debug)
+
+		fmt.Fprintln(w, "Namespace\t Rule Group")
+		for _, item := range items {
+			fmt.Fprintf(w, "%s\t %s\n", item.Namespace, item.RuleGroup)
+		}
+
+		w.Flush()
+	}
+
 	return nil
 }

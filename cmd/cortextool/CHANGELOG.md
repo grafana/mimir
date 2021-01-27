@@ -9,6 +9,8 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
    - `remote-read dump`: Dump remote read series.
    - `remote-read stats`: Show statistic of remote read series.
 
+* [ENHANCEMENT] Add format for rules list command. #130
+
 ## v0.6.1
 
 * [BUGFIX] Fix `cortextool` generating the wrong paths when executing multiple calls to the cortex API. In particular, commands like `load`, `sync` were affected. #133
