@@ -3,6 +3,7 @@ package rules
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ var (
 // ParseFiles returns a formatted set of prometheus rule groups
 func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error) {
 	ruleSet := map[string]RuleNamespace{}
-	var parseFn func(f string) (*RuleNamespace, []error)
+	var parseFn func(f string) ([]RuleNamespace, []error)
 	switch backend {
 	case CortexBackend:
 		parseFn = Parse
@@ -37,73 +38,104 @@ func ParseFiles(backend string, files []string) (map[string]RuleNamespace, error
 	}
 
 	for _, f := range files {
-		ns, errs := parseFn(f)
+		nss, errs := parseFn(f)
 		for _, err := range errs {
 			log.WithError(err).WithField("file", f).Errorln("unable parse rules file")
 			return nil, errFileReadError
 		}
-		ns.Filepath = f
 
-		// Determine if the namespace is explicitly set. If not
-		// the file name without the extension is used.
-		namespace := ns.Namespace
-		if namespace == "" {
-			namespace = strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
-			ns.Namespace = namespace
-		}
+		for _, ns := range nss {
+			ns.Filepath = f
 
-		_, exists := ruleSet[namespace]
-		if exists {
-			log.WithFields(log.Fields{
-				"namespace": namespace,
-				"file":      f,
-			}).Errorln("repeated namespace attempted to be loaded")
-			return nil, errFileReadError
+			// Determine if the namespace is explicitly set. If not
+			// the file name without the extension is used.
+			namespace := ns.Namespace
+			if namespace == "" {
+				namespace = strings.TrimSuffix(filepath.Base(f), filepath.Ext(f))
+				ns.Namespace = namespace
+			}
+
+			_, exists := ruleSet[namespace]
+			if exists {
+				log.WithFields(log.Fields{
+					"namespace": namespace,
+					"file":      f,
+				}).Errorln("repeated namespace attempted to be loaded")
+				return nil, errFileReadError
+			}
+			ruleSet[namespace] = ns
 		}
-		ruleSet[namespace] = *ns
 	}
 	return ruleSet, nil
 }
 
 // Parse parses and validates a set of rules.
-func Parse(f string) (*RuleNamespace, []error) {
+func Parse(f string) ([]RuleNamespace, []error) {
 	content, err := loadFile(f)
 	if err != nil {
 		log.WithError(err).WithField("file", f).Errorln("unable load rules file")
 		return nil, []error{errFileReadError}
 	}
 
-	var ns RuleNamespace
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&ns); err != nil {
-		return nil, []error{err}
+
+	var nss []RuleNamespace
+	for {
+		var ns RuleNamespace
+		err := decoder.Decode(&ns)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, []error{err}
+		}
+
+		if errs := ns.Validate(); len(errs) > 0 {
+			return nil, errs
+		}
+
+		nss = append(nss, ns)
 	}
-	return &ns, ns.Validate()
+	return nss, nil
 }
 
-func ParseLoki(f string) (*RuleNamespace, []error) {
+func ParseLoki(f string) ([]RuleNamespace, []error) {
 	content, err := loadFile(f)
 	if err != nil {
 		log.WithError(err).WithField("file", f).Errorln("unable load rules file")
 		return nil, []error{errFileReadError}
 	}
 
-	var ns RuleNamespace
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
-	if err := decoder.Decode(&ns); err != nil {
-		return nil, []error{err}
-	}
 
-	// the upstream loki validator only validates the rulefmt rule groups,
-	// not the remote write configs this type attaches.
-	var grps []rulefmt.RuleGroup
-	for _, g := range ns.Groups {
-		grps = append(grps, g.RuleGroup)
-	}
+	var nss []RuleNamespace
+	for {
+		var ns RuleNamespace
+		err := decoder.Decode(&ns)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, []error{err}
+		}
 
-	return &ns, manager.ValidateGroups(grps...)
+		// the upstream loki validator only validates the rulefmt rule groups,
+		// not the remote write configs this type attaches.
+		var grps []rulefmt.RuleGroup
+		for _, g := range ns.Groups {
+			grps = append(grps, g.RuleGroup)
+		}
+
+		if errs := manager.ValidateGroups(grps...); len(errs) > 0 {
+			return nil, errs
+		}
+
+		nss = append(nss, ns)
+
+	}
+	return nss, nil
 }
 
 func loadFile(filename string) ([]byte, error) {

@@ -51,6 +51,45 @@ func TestParseFiles(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "multiple_namespace_file",
+			backend: CortexBackend,
+			files: []string{
+				"testdata/multiple_namespace.yaml",
+			},
+			want: map[string]RuleNamespace{
+				"example_namespace": {
+					Namespace: "example_namespace",
+					Groups: []rwrulefmt.RuleGroup{
+						{
+							RuleGroup: rulefmt.RuleGroup{
+								Name: "example_rule_group",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently the tests only check length
+									},
+								},
+							},
+						},
+					},
+				},
+				"other_example_namespace": {
+					Namespace: "other_example_namespace",
+					Groups: []rwrulefmt.RuleGroup{
+						{
+							RuleGroup: rulefmt.RuleGroup{
+								Name: "other_example_rule_group",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently the tests only check length
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
 			name:    "basic_loki_file",
 			backend: LokiBackend,
 			files: []string{
@@ -106,6 +145,45 @@ func TestParseFiles(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name:    "multiple_loki_namespace",
+			backend: LokiBackend,
+			files: []string{
+				"testdata/loki_multiple_namespace.yaml",
+			},
+			want: map[string]RuleNamespace{
+				"foo": {
+					Namespace: "foo",
+					Groups: []rwrulefmt.RuleGroup{
+						{
+							RuleGroup: rulefmt.RuleGroup{
+								Name: "testgrp2",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently the tests only check length
+									},
+								},
+							},
+						},
+					},
+				},
+				"other_foo": {
+					Namespace: "other_foo",
+					Groups: []rwrulefmt.RuleGroup{
+						{
+							RuleGroup: rulefmt.RuleGroup{
+								Name: "other_testgrp2",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently the tests only check length
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -124,6 +202,12 @@ func TestParseFiles(t *testing.T) {
 				err = compareNamespace(g, w)
 				if err != nil {
 					t.Errorf("ParseFiles() namespaces do not match, err=%v", err)
+					return
+				}
+			}
+			for k := range tt.want {
+				if _, exists := got[k]; !exists {
+					t.Errorf("ParseFiles() namespace %v wanted but not found", k)
 					return
 				}
 			}
