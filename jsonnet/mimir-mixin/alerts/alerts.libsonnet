@@ -404,7 +404,7 @@
               container_memory_working_set_bytes{container="ingester"}
                 /
               container_spec_memory_limit_bytes{container="ingester"}
-            ) > 0.5
+            ) > 0.65
           |||,
           'for': '15m',
           labels: {
