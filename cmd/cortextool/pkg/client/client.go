@@ -170,6 +170,16 @@ func checkResponse(r *http.Response) error {
 }
 
 func buildRequest(p, m string, endpoint url.URL, payload []byte) (*http.Request, error) {
-	endpoint.Path = path.Join(endpoint.Path, p)
+	// parse path parameter again (as it already contains escaped path information
+	pURL, err := url.Parse(p)
+	if err != nil {
+		return nil, err
+	}
+
+	// if path or endpoint contains escaping that requires RawPath to be populated, also join rawPath
+	if pURL.RawPath != "" || endpoint.RawPath != "" {
+		endpoint.RawPath = path.Join(endpoint.EscapedPath(), pURL.EscapedPath())
+	}
+	endpoint.Path = path.Join(endpoint.Path, pURL.Path)
 	return http.NewRequest(m, endpoint.String(), bytes.NewBuffer(payload))
 }
