@@ -39,7 +39,7 @@ type CortexClient struct {
 	key      string
 	id       string
 	endpoint *url.URL
-	client   http.Client
+	Client   http.Client
 	apiPath  string
 }
 
@@ -82,7 +82,7 @@ func New(cfg Config) (*CortexClient, error) {
 		key:      cfg.Key,
 		id:       cfg.ID,
 		endpoint: endpoint,
-		client:   client,
+		Client:   client,
 		apiPath:  path,
 	}, nil
 }
@@ -118,7 +118,7 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 		"method": req.Method,
 	}).Debugln("sending request to cortex api")
 
-	resp, err := r.client.Do(req)
+	resp, err := r.Client.Do(req)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"url":    req.URL.String(),
