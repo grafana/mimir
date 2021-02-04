@@ -1,10 +1,11 @@
 package client
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -145,28 +146,32 @@ func checkResponse(r *http.Response) error {
 		return nil
 	}
 
-	var msg string
-	data, err := ioutil.ReadAll(r.Body)
-	if err != nil {
-		msg = fmt.Sprintf("unable to decode body, %s", err.Error())
+	var msg, errMsg string
+	scanner := bufio.NewScanner(io.LimitReader(r.Body, 512))
+	if scanner.Scan() {
+		msg = scanner.Text()
+	}
+
+	if msg == "" {
+		errMsg = fmt.Sprintf("server returned HTTP status %s", r.Status)
 	} else {
-		msg = fmt.Sprintf("request failed with response body %v", string(data))
+		errMsg = fmt.Sprintf("server returned HTTP status %s: %s", r.Status, msg)
 	}
 
 	if r.StatusCode == http.StatusNotFound {
 		log.WithFields(log.Fields{
 			"status": r.Status,
 			"msg":    msg,
-		}).Debugln("resource not found")
+		}).Debugln(errMsg)
 		return ErrResourceNotFound
 	}
 
 	log.WithFields(log.Fields{
 		"status": r.Status,
 		"msg":    msg,
-	}).Errorln("requests failed")
+	}).Errorln(errMsg)
 
-	return errors.New("failed request to the cortex api")
+	return errors.New(errMsg)
 }
 
 func buildRequest(p, m string, endpoint url.URL, payload []byte) (*http.Request, error) {

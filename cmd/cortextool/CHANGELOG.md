@@ -4,6 +4,8 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## Unreleased
 
+* [ENHANCEMENT] Return detailed HTTP error messages. #146
+
 ## v0.7.2
 
 * [ENHANCEMENT] Add format for rules list command. #130
