@@ -159,12 +159,10 @@
 
     genericBlocksStorageConfig:: {
       'store.engine': $._config.storage_engine,  // May still be chunks
-      'blocks-storage.tsdb.dir': '/data/tsdb',
+    },
+    queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
       'blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
-      'blocks-storage.tsdb.block-ranges-period': '2h',
-      'blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
-      'blocks-storage.tsdb.ship-interval': '1m',
 
       'store-gateway.sharding-enabled': true,
       'store-gateway.sharding-ring.store': 'consul',

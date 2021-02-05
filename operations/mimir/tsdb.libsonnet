@@ -72,8 +72,8 @@
     'blocks-storage.bucket-store.sync-interval': $._config.cortex_compactor_cleanup_interval,
   } else {},
 
-  querier_args+:: $.blocks_metadata_caching_config + $.bucket_index_config,
-  ruler_args+:: $.blocks_metadata_caching_config + $.bucket_index_config,
+  querier_args+:: $._config.queryBlocksStorageConfig + $.blocks_metadata_caching_config + $.bucket_index_config,
+  ruler_args+:: $._config.queryBlocksStorageConfig + $.blocks_metadata_caching_config + $.bucket_index_config,
 
   // The ingesters should persist TSDB blocks and WAL on a persistent
   // volume in order to be crash resilient.
@@ -87,6 +87,11 @@
   ingester_deployment: {},
 
   ingester_args+:: {
+    'blocks-storage.tsdb.dir': '/data/tsdb',
+    'blocks-storage.tsdb.block-ranges-period': '2h',
+    'blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
+    'blocks-storage.tsdb.ship-interval': '1m',
+
     // Disable TSDB blocks transfer because of persistent volumes
     'ingester.max-transfer-retries': 0,
     'ingester.join-after': '0s',
@@ -196,6 +201,7 @@
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
+    $._config.queryBlocksStorageConfig +
     {
       target: 'store-gateway',
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
