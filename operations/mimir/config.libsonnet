@@ -287,7 +287,7 @@
     alertmanager_s3_bucket_name: $._config.s3_bucket_name,
     alertmanager_gcs_bucket_name: error 'must specify a GCS bucket name',
 
-    alertmanagerClientConfig:
+    alertmanagerStorageClientConfig:
       {
         'alertmanager.storage.type': $._config.alertmanager_client_type,
       } +
