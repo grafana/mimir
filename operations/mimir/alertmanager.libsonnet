@@ -18,14 +18,12 @@
 
   alertmanager_args::
     $._config.grpcConfig +
+    $._config. alertmanagerStorageClientConfig +
     {
       target: 'alertmanager',
       'log.level': 'debug',
-
       'experimental.alertmanager.enable-api': 'true',
-      'alertmanager.storage.type': 'gcs',
       'alertmanager.storage.path': '/data',
-      'alertmanager.storage.gcs.bucketname': '%(cluster)s-cortex-%(namespace)s' % $._config,
       'alertmanager.web.external-url': '%s/alertmanager' % $._config.external_url,
     } + if hasFallbackConfig then {
       'alertmanager.configs.fallback': '/configs/alertmanager_fallback_config.yaml',

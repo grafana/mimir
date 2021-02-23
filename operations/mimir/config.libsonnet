@@ -283,6 +283,29 @@
       fallback_config: {},
     },
 
+    alertmanager_client_type: error 'you must specify a storage backend type for the ruler (azure, configdb, gcs, s3, local)',
+    alertmanager_s3_bucket_name: $._config.s3_bucket_name,
+    alertmanager_gcs_bucket_name: error 'must specify a GCS bucket name',
+
+    alertmanagerStorageClientConfig:
+      {
+        'alertmanager.storage.type': $._config.alertmanager_client_type,
+      } +
+      {
+        configdb: {
+          configs_api_url: 'config.%s.svc.cluster.local' % $._config.namespace,
+        },
+        gcs: {
+          'alertmanager.storage.gcs.bucketname': $._config.alertmanager_gcs_bucket_name,
+        },
+        s3: {
+          'alertmanager.storage.s3.url': 'https://%s/%s' % [$._config.aws_region, $._config.alertmanager_s3_bucket_name],
+        },
+        'local': {
+          'alertmanager.storage.local.directory': $._config.alertmanager_local_directory,
+        },
+      }[$._config.alertmanager_client_type],
+
     // === Per-tenant usage limits. ===
     //
     // These are the defaults.
