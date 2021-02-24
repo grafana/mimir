@@ -74,7 +74,7 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 
 // CheckRecordingRules checks that recording rules have at least one colon in their name, this is based
 // on the recording rules best practices here: https://prometheus.io/docs/practices/rules/
-// Returns the number of rules that don't match the requirements, and error if that number is not 0.
+// Returns the number of rules that don't match the requirements.
 func (r RuleNamespace) CheckRecordingRules(strict bool) int {
 	var name string
 	var count int

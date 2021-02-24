@@ -5,6 +5,7 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 ## Unreleased
 
 * [ENHANCEMENT] Return detailed HTTP error messages. #146
+* [ENHANCEMENT] Check for duplicate rule records in `cortextool rules check`. #149
 
 ## v0.7.2
 

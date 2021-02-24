@@ -6,10 +6,12 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	yamlv3 "gopkg.in/yaml.v3"
@@ -17,6 +19,7 @@ import (
 	"github.com/grafana/cortex-tools/pkg/client"
 	"github.com/grafana/cortex-tools/pkg/printer"
 	"github.com/grafana/cortex-tools/pkg/rules"
+	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
 )
 
 const (
@@ -680,10 +683,59 @@ func (r *RuleCommand) checkRecordingRuleNames(k *kingpin.ParseContext) error {
 		if n != 0 {
 			return fmt.Errorf("%d erroneous recording rule names", n)
 		}
+		duplicateRules := checkDuplicates(ruleNamespace.Groups)
+		if len(duplicateRules) != 0 {
+			fmt.Printf("%d duplicate rule(s) found.\n", len(duplicateRules))
+			for _, n := range duplicateRules {
+				fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
+				for i, l := range n.label {
+					fmt.Printf("\t%s: %s\n", i, l)
+				}
+			}
+			fmt.Println("Might cause inconsistency while recording expressions.")
+		}
 	}
 
 	return nil
 }
+
+// Taken from https://github.com/prometheus/prometheus/blob/8c8de46003d1800c9d40121b4a5e5de8582ef6e1/cmd/promtool/main.go#L403
+type compareRuleType struct {
+	metric string
+	label  map[string]string
+}
+
+func checkDuplicates(groups []rwrulefmt.RuleGroup) []compareRuleType {
+	var duplicates []compareRuleType
+
+	for _, group := range groups {
+		for index, rule := range group.Rules {
+			inst := compareRuleType{
+				metric: ruleMetric(rule),
+				label:  rule.Labels,
+			}
+			for i := 0; i < index; i++ {
+				t := compareRuleType{
+					metric: ruleMetric(group.Rules[i]),
+					label:  group.Rules[i].Labels,
+				}
+				if reflect.DeepEqual(t, inst) {
+					duplicates = append(duplicates, t)
+				}
+			}
+		}
+	}
+	return duplicates
+}
+
+func ruleMetric(rule rulefmt.RuleNode) string {
+	if rule.Alert.Value != "" {
+		return rule.Alert.Value
+	}
+	return rule.Record.Value
+}
+
+// End taken from https://github.com/prometheus/prometheus/blob/8c8de46003d1800c9d40121b4a5e5de8582ef6e1/cmd/promtool/main.go#L403
 
 // save saves a set of rule files to to disk. You can specify whenever you want the
 // file(s) to be edited in-place.
