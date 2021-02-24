@@ -5,7 +5,7 @@
     memcachedExporter: 'prom/memcached-exporter:v0.6.0',
 
     // Our services.
-    cortex: 'cortexproject/cortex:v1.6.0',
+    cortex: 'cortexproject/cortex:v1.7.0',
 
     alertmanager: self.cortex,
     distributor: self.cortex,
@@ -19,7 +19,7 @@
     store_gateway: self.cortex,
 
     cortex_tools: 'grafana/cortex-tools:v0.4.0',
-    query_tee: 'quay.io/cortexproject/query-tee:master-5d7b05c3',
-    testExporter: 'cortexproject/test-exporter:master-be013707',
+    query_tee: 'quay.io/cortexproject/query-tee:v1.7.0',
+    testExporter: 'cortexproject/test-exporter:v1.7.0',
   },
 }
