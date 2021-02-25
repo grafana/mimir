@@ -274,6 +274,24 @@ WAL corruptions are only detected at startups, so at this point the WAL/Checkpoi
   2. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
   3. Equal or more than the replication factor: Then there is definitely some data loss.
 
+### EtcdAllocatingTooMuchMemory
+
+This can be triggered if there are too many HA dedupe keys in etcd. We saw this when one of our clusters hit 20K tenants that were using HA dedupe config. Raise the etcd limits via:
+
+```
+  etcd+: {
+    spec+: {
+      pod+: {
+        resources+: {
+          limits: {
+            memory: '2Gi',
+          },
+        },
+      },
+    },
+  },
+```
+
 ## Cortex blocks storage - What to do when things to wrong
 
 ## Recovering from a potential data loss incident

@@ -514,5 +514,48 @@
         },
       ],
     },
+    {
+      name: 'etcd_alerts',
+      rules: [
+        {
+          alert: 'EtcdAllocatingTooMuchMemory',
+          expr: |||
+            (
+              container_memory_working_set_bytes{container="etcd"}
+                /
+              container_spec_memory_limit_bytes{container="etcd"}
+            ) > 0.65 
+          |||,
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Too much memory being used by {{ $labels.namespace }}/{{ $labels.pod }} - bump memory limit.
+            |||,
+          },
+        },
+        {
+          alert: 'EtcdAllocatingTooMuchMemory',
+          expr: |||
+            (
+              container_memory_working_set_bytes{container="etcd"}
+                /
+              container_spec_memory_limit_bytes{container="etcd"}
+            ) > 0.8
+          |||,
+          'for': '15m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Too much memory being used by {{ $labels.namespace }}/{{ $labels.pod }} - bump memory limit.
+            |||,
+          },
+        },
+      ],
+    },
   ],
 }
