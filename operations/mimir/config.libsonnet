@@ -283,7 +283,7 @@
       fallback_config: {},
     },
 
-    alertmanager_client_type: error 'you must specify a storage backend type for the ruler (azure, configdb, gcs, s3, local)',
+    alertmanager_client_type: error 'you must specify a storage backend type for the alertmanager (azure, configdb, gcs, s3, local)',
     alertmanager_s3_bucket_name: $._config.s3_bucket_name,
     alertmanager_gcs_bucket_name: error 'must specify a GCS bucket name',
 
