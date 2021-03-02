@@ -18,7 +18,7 @@
 
   alertmanager_args::
     $._config.grpcConfig +
-    $._config. alertmanagerStorageClientConfig +
+    $._config.alertmanagerStorageClientConfig +
     {
       target: 'alertmanager',
       'log.level': 'debug',
