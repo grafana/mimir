@@ -54,12 +54,9 @@ memcached {
       // Save memory by more tightly provisioning memcached chunks.
       memory_limit_mb: 6 * 1024,
       overprovision_factor: 1.05,
+      connection_limit: 4096,
 
       local container = $.core.v1.container,
-
-      // Raise connection limits now our clusters are bigger.
-      memcached_container+::
-        container.withArgsMixin(['-c 4096']),
     }
   else {},
 
@@ -68,6 +65,7 @@ memcached {
     $.memcached {
       name: 'memcached-metadata',
       max_item_size: '%dm' % [$._config.memcached_metadata_max_item_size_mb],
+      connection_limit: 4096,
 
       // Metadata cache doesn't need much memory.
       memory_limit_mb: 512,
