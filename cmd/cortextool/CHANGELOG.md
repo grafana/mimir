@@ -4,8 +4,12 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## Unreleased
 
+* [CHANGE] Loadgen: Add `loadgen` namespace to loadgen metrics. #152
+  * `write_request_duration_seconds` --> `loadgen_write_request_duration_seconds`
+  * `query_request_duration_seconds` --> `loadgen_query_request_duration_seconds`
 * [ENHANCEMENT] Return detailed HTTP error messages. #146
 * [ENHANCEMENT] Check for duplicate rule records in `cortextool rules check`. #149
+* [ENHANCEMENT] Loadgen: Metrics now use histogram with an additional `15` bucket.
 
 ## v0.7.2
 

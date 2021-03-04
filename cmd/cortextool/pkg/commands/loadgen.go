@@ -26,14 +26,22 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 )
 
+var (
+	// 15 seconds is a common send interval. To provide useful metrics at high latencies we will
+	// add 15 to the default Prometheus buckets
+	defBuckets = append(prometheus.DefBuckets, 15)
+)
+
 var writeRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name:    "write_request_duration_seconds",
-	Buckets: prometheus.DefBuckets,
+	Namespace: "loadgen",
+	Name:      "write_request_duration_seconds",
+	Buckets:   defBuckets,
 }, []string{"success"})
 
 var queryRequestDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
-	Name:    "query_request_duration_seconds",
-	Buckets: prometheus.DefBuckets,
+	Namespace: "loadgen",
+	Name:      "query_request_duration_seconds",
+	Buckets:   defBuckets,
 }, []string{"success"})
 
 type LoadgenCommand struct {
