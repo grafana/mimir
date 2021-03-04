@@ -15,14 +15,14 @@ var (
 )
 
 // Version defines the version for the binary, this is actually set by GoReleaser.
-var Version = "master"
+var Version = "main"
 
 // Template controls how the version is displayed
 var Template = fmt.Sprintf("version %s\n", Version)
 
 // CheckLatest asks GitHub
 func CheckLatest() {
-	if Version != "master" {
+	if Version != "main" {
 		latest, err := getLatestFromGitHub()
 		if err != nil {
 			fmt.Println(err)
