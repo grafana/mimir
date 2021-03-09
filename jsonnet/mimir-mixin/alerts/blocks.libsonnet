@@ -172,7 +172,7 @@
               (
                 sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
                 -
-                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0"}[5m]))
+                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0(\\.0)?"}[5m]))
               )
               /
               sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
