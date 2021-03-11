@@ -188,6 +188,48 @@ This lets you generate the header which can then be used to enforce access contr
 ./cortextool acl generate-header --id=1234 --rule='{namespace="A"}'
 ```
 
+#### Analyse
+
+Run analysis against your Prometheus, Grafana and Cortex to see which metrics being used and exported.
+
+##### grafana-analyse 
+
+This command will be run against your Grafana instance and it will download the dashboards and pick the Prometheus metrics that are used in the queries. The output is a JSON file.
+
+###### Configuration
+
+| Env Variables     | Flag      | Description                                                                                                   |
+| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| GRAFANA_ADDRESS    | `address` | Address of the Grafana instance.                                                              |
+| GRAFANA_API_KEY    | `key`     | The API Key for the Grafana instance. Create a key using the following instructions: https://grafana.com/docs/grafana/latest/http_api/auth/ |
+| __ | `output`      | The output file path. metrics-in-grafana.json by default.  |
+
+###### Running the command
+
+```
+cortextool analyse grafana --address=<grafana-address> --key=<API-Key>
+```
+
+##### prometheus-analyse 
+
+This command will be run against your Prometheus / GrafanaCloud instance and it will use the output from `grafana-analyse` show you how many series in the Prometheus server are actually being used in dashboards. The output is a JSON file
+
+###### Configuration
+
+| Env Variables     | Flag      | Description                                                                                                   |
+| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| CORTEX_ADDRESS    | `address` | Address of the Prometheus  instance.                                                              |
+| CORTEX_TENANT_ID  | `id`   |  If you're using GrafanaCloud this is your instance ID. |
+|  CORTEX_API_KEY   | `key`   |  If you're using GrafanaCloud this is your API Key. |
+| __ | `grafana-metrics-file`      | The input file path. metrics-in-grafana.json by default.  |
+| __ | `output`      | The output file path. prometheus-metrics.json by default.  |
+
+###### Running the command
+
+```
+cortextool analyse prometheus --address=https://prometheus-us-central1.grafana.net/api/prom --username=<1234> --password=<API-Key> --log.level=debug
+```
+
 ## chunktool
 
 This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.

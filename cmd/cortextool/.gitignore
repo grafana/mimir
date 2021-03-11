@@ -9,3 +9,6 @@ cmd/e2ealerting/e2ealerting
 images/
 dist/
 .DS_STORE
+/cortextool
+/metrics-in-grafana.json
+/prometheus-metrics.json
