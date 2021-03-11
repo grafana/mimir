@@ -207,7 +207,7 @@ func TestLintExpressions(t *testing.T) {
 		{
 			name:     "logql simple",
 			expr:     `count_over_time({ foo != "bar" }[12m]) > 1`,
-			expected: `count_over_time({foo!="bar"}[12m]) > 1`,
+			expected: `(count_over_time({foo!="bar"}[12m]) > 1)`,
 			count:    1, modified: 1,
 			logql: true,
 		},

@@ -77,7 +77,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 		return err
 	}
 	defer func() {
-		var mErr tsdb_errors.MultiError
+		mErr := tsdb_errors.NewMulti()
 		mErr.Add(returnErr)
 		mErr.Add(db.Close())
 		returnErr = mErr.Err()
@@ -92,7 +92,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 				return errors.Wrap(err, "block writer")
 			}
 			defer func() {
-				var mErr tsdb_errors.MultiError
+				mErr := tsdb_errors.NewMulti()
 				mErr.Add(err)
 				mErr.Add(w.Close())
 				err = mErr.Err()
