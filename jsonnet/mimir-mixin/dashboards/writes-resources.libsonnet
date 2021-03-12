@@ -35,7 +35,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           'sum by(%s) (cortex_ingester_memory_series{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)],
           '{{%s}}' % $._config.per_instance_label
-        ),
+        ) +
+        {
+          tooltip: { sort: 2 },  // Sort descending.
+        },
       )
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'ingester'),
