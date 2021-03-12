@@ -12,6 +12,7 @@ import (
 
 	"github.com/grafana-tools/sdk"
 	"github.com/grafana/cortex-tools/pkg/analyse"
+	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
@@ -65,6 +66,10 @@ func (cmd *GrafanaAnalyseCommand) run(k *kingpin.ParseContext) error {
 		}
 
 		metrics, errs := parseMetricsInBoard(board)
+		parseErrs := make([]string, 0, len(errs))
+		for _, err := range errs {
+			parseErrs = append(parseErrs, err.Error())
+		}
 
 		metricsInBoard := make([]string, 0, len(metrics))
 		for metric := range metrics {
@@ -82,7 +87,7 @@ func (cmd *GrafanaAnalyseCommand) run(k *kingpin.ParseContext) error {
 			UID:         board.UID,
 			Title:       board.Title,
 			Metrics:     metricsInBoard,
-			ParseErrors: errs,
+			ParseErrors: parseErrs,
 		})
 	}
 
@@ -146,7 +151,7 @@ func metricsFromPanel(panel sdk.Panel, metrics map[string]struct{}) []error {
 		query = strings.ReplaceAll(query, "${__range_s}", "30")
 		expr, err := parser.ParseExpr(query)
 		if err != nil {
-			parseErrors = append(parseErrors, err)
+			parseErrors = append(parseErrors, errors.Wrapf(err, "query=%v", query))
 			log.Debugln("msg", "promql parse error", "err", err, "query", query)
 			continue
 		}

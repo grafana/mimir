@@ -10,5 +10,5 @@ type DashboardMetrics struct {
 	UID         string   `json:"uid,omitempty"`
 	Title       string   `json:"title"`
 	Metrics     []string `json:"metrics"`
-	ParseErrors []error  `json:"parse_errors"`
+	ParseErrors []string `json:"parse_errors"`
 }

@@ -212,7 +212,7 @@ cortextool analyse grafana --address=<grafana-address> --key=<API-Key>
 
 ##### prometheus-analyse 
 
-This command will be run against your Prometheus / GrafanaCloud instance and it will use the output from `grafana-analyse` show you how many series in the Prometheus server are actually being used in dashboards. The output is a JSON file
+This command will be run against your Prometheus / GrafanaCloud instance, then it will use the output from `grafana-analyse` show you how many series in the Prometheus server are actually being used in dashboards. Also, it'll show which metrics exist in Grafana Cloud that are **not** in dashboards. The output is a JSON file
 
 ###### Configuration
 

@@ -14,6 +14,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 )
@@ -29,7 +30,6 @@ type PrometheusAnalyseCommand struct {
 }
 
 func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
-	metrics := map[string]int{}
 	grafanaMetrics := analyse.MetricsInGrafana{}
 
 	byt, err := ioutil.ReadFile(cmd.grafanaMetricsFile)
@@ -54,6 +54,18 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 	}
 
 	v1api := v1.NewAPI(promClient)
+
+	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
+	defer cancel()
+	metricNames, _, err := v1api.LabelValues(ctx, labels.MetricName, time.Now().Add(-10*time.Minute), time.Now())
+	if err != nil {
+		return errors.Wrap(err, "error querying for metric names")
+	}
+	log.Infof("Found %d metric names\n", len(metricNames))
+
+	inUseMetrics := map[string]int{}
+	inUseCardinality := 0
+
 	for _, metric := range grafanaMetrics.MetricsUsed {
 		ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 		defer cancel()
@@ -66,23 +78,71 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 		vec := result.(model.Vector)
 		if len(vec) == 0 {
-			metrics[metric] += 0
+			inUseMetrics[metric] += 0
 			log.Debugln(metric, 0)
 
 			continue
 		}
 
-		metrics[metric] += int(vec[0].Value)
-		log.Debugln(metric, vec[0].Value)
+		inUseMetrics[metric] += int(vec[0].Value)
+		inUseCardinality += int(vec[0].Value)
+
+		log.Debugln("in use", metric, vec[0].Value)
 	}
 
-	output := analyse.MetricsInPrometheus{}
-	for metric, count := range metrics {
-		output.TotalActiveSeries += count
-		output.MetricCounts = append(output.MetricCounts, analyse.MetricCount{Metric: metric, Count: count})
+	log.Infof("%d active series are being used in dashboards", inUseCardinality)
+
+	// Count the not-in-use active series.
+	additionalMetrics := map[string]int{}
+	additionalMetricsCardinality := 0
+	for _, metricName := range metricNames {
+		metric := string(metricName)
+		if _, ok := inUseMetrics[metric]; ok {
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
+		defer cancel()
+
+		query := "count(" + metric + ")"
+		result, _, err := v1api.Query(ctx, query, time.Now())
+		if err != nil {
+			return errors.Wrap(err, "error querying "+query)
+		}
+
+		vec := result.(model.Vector)
+		if len(vec) == 0 {
+			additionalMetrics[metric] += 0
+			log.Debugln(metric, 0)
+
+			continue
+		}
+
+		additionalMetrics[metric] += int(vec[0].Value)
+		additionalMetricsCardinality += int(vec[0].Value)
+
+		log.Debugln("additional", metric, vec[0].Value)
 	}
-	sort.Slice(output.MetricCounts, func(i, j int) bool {
-		return output.MetricCounts[i].Count > output.MetricCounts[j].Count
+
+	log.Infof("%d active series are NOT being used in dashboards", additionalMetricsCardinality)
+
+	output := analyse.MetricsInPrometheus{}
+	output.TotalActiveSeries = inUseCardinality + additionalMetricsCardinality
+	output.InUseActiveSeries = inUseCardinality
+	output.AdditionalActiveSeries = additionalMetricsCardinality
+
+	for metric, count := range inUseMetrics {
+		output.InUseMetricCounts = append(output.InUseMetricCounts, analyse.MetricCount{Metric: metric, Count: count})
+	}
+	sort.Slice(output.InUseMetricCounts, func(i, j int) bool {
+		return output.InUseMetricCounts[i].Count > output.InUseMetricCounts[j].Count
+	})
+
+	for metric, count := range additionalMetrics {
+		output.AdditionalMetricCounts = append(output.AdditionalMetricCounts, analyse.MetricCount{Metric: metric, Count: count})
+	}
+	sort.Slice(output.AdditionalMetricCounts, func(i, j int) bool {
+		return output.AdditionalMetricCounts[i].Count > output.AdditionalMetricCounts[j].Count
 	})
 
 	out, err := json.MarshalIndent(output, "", "  ")
