@@ -139,6 +139,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           fill: 0,
         },
       ],
+      tooltip: { sort: 2 },  // Sort descending.
     },
 
   containerMemoryWorkingSetPanel(title, containerName)::
@@ -158,6 +159,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         },
       ],
       yaxes: $.yaxes('bytes'),
+      tooltip: { sort: 2 },  // Sort descending.
     },
 
   goHeapInUsePanel(title, jobName)::
@@ -166,7 +168,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       'sum by(%s) (go_memstats_heap_inuse_bytes{%s})' % [$._config.per_instance_label, $.jobMatcher(jobName)],
       '{{%s}}' % $._config.per_instance_label
     ) +
-    { yaxes: $.yaxes('bytes') },
+    {
+      yaxes: $.yaxes('bytes'),
+      tooltip: { sort: 2 },  // Sort descending.
+    },
 
   // Switches a panel from lines (default) to bars.
   bars:: {
