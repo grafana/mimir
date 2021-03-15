@@ -27,19 +27,27 @@ type OverridesExporterCommand struct {
 	presetsFilePath   string
 	refreshInterval   time.Duration
 
-	registry      *prometheus.Registry
-	overrideGauge *prometheus.GaugeVec
+	registry     *prometheus.Registry
+	presetsGauge *prometheus.GaugeVec
+
+	lastLimitsMtx sync.Mutex
+	lastLimits    map[string]*validation.Limits
 }
 
 func NewOverridesExporterCommand() *OverridesExporterCommand {
 	registry := prometheus.NewRegistry()
-	return &OverridesExporterCommand{
+	oc := &OverridesExporterCommand{
 		registry: registry,
-		overrideGauge: promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_overrides",
-			Help: "Various different limits.",
-		}, []string{"limit_type", "type", "user"}),
+		presetsGauge: promauto.With(registry).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_overrides_presets",
+			Help: "Preset limits.",
+		}, []string{"limit_name", "preset"}),
+		lastLimits: map[string]*validation.Limits{},
 	}
+
+	registry.MustRegister(validation.NewOverridesExporter(oc))
+
+	return oc
 }
 
 func (o *OverridesExporterCommand) Register(app *kingpin.Application) {
@@ -69,7 +77,7 @@ func (o *OverridesExporterCommand) updateOverridesMetrics() error {
 	if err := yaml.Unmarshal(bytes, overrides); err != nil {
 		return fmt.Errorf("failed to update overrides, err: %w", err)
 	}
-	o.updateMetrics("tenant", overrides.TenantLimits)
+	o.updateMetrics(overrides.TenantLimits)
 
 	return nil
 }
@@ -91,37 +99,43 @@ func (o *OverridesExporterCommand) updatePresetsMetrics() error {
 	if err := yaml.Unmarshal(bytes, presets); err != nil {
 		return fmt.Errorf("failed to update presets, error parsing YAML: %w", err)
 	}
-	o.updateMetrics("preset", presets.Presets)
+	o.updatePresets(presets.Presets)
 	return nil
 }
 
-func (o *OverridesExporterCommand) updateMetrics(typ string, limitsMap map[string]*validation.Limits) {
-	for user, limits := range limitsMap {
-		o.overrideGauge.WithLabelValues(
-			"max_series_per_query", typ, user,
+func (o *OverridesExporterCommand) updatePresets(presetsMap map[string]*validation.Limits) {
+	for preset, limits := range presetsMap {
+		o.presetsGauge.WithLabelValues(
+			"max_series_per_query", preset,
 		).Set(float64(limits.MaxSeriesPerQuery))
-		o.overrideGauge.WithLabelValues(
-			"max_samples_per_query", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"max_samples_per_query", preset,
 		).Set(float64(limits.MaxSamplesPerQuery))
-		o.overrideGauge.WithLabelValues(
-			"max_local_series_per_user", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"max_local_series_per_user", preset,
 		).Set(float64(limits.MaxLocalSeriesPerUser))
-		o.overrideGauge.WithLabelValues(
-			"max_local_series_per_metric", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"max_local_series_per_metric", preset,
 		).Set(float64(limits.MaxLocalSeriesPerMetric))
-		o.overrideGauge.WithLabelValues(
-			"max_global_series_per_user", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"max_global_series_per_user", preset,
 		).Set(float64(limits.MaxGlobalSeriesPerUser))
-		o.overrideGauge.WithLabelValues(
-			"max_global_series_per_metric", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"max_global_series_per_metric", preset,
 		).Set(float64(limits.MaxGlobalSeriesPerMetric))
-		o.overrideGauge.WithLabelValues(
-			"ingestion_rate", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"ingestion_rate", preset,
 		).Set(limits.IngestionRate)
-		o.overrideGauge.WithLabelValues(
-			"ingestion_burst_size", typ, user,
+		o.presetsGauge.WithLabelValues(
+			"ingestion_burst_size", preset,
 		).Set(float64(limits.IngestionBurstSize))
 	}
+}
+
+func (o *OverridesExporterCommand) updateMetrics(limitsMap map[string]*validation.Limits) {
+	o.lastLimitsMtx.Lock()
+	o.lastLimits = limitsMap
+	o.lastLimitsMtx.Unlock()
 }
 
 func (o *OverridesExporterCommand) run(k *kingpin.ParseContext) error {
@@ -210,4 +224,24 @@ func (o *OverridesExporterCommand) run(k *kingpin.ParseContext) error {
 	}
 
 	return nil
+}
+
+// ByUserID implements validation.TenantLimits.
+func (o *OverridesExporterCommand) ByUserID(userID string) *validation.Limits {
+	o.lastLimitsMtx.Lock()
+	defer o.lastLimitsMtx.Unlock()
+	return o.lastLimits[userID]
+}
+
+// AllByUserID implements validation.TenantLimits.
+func (o *OverridesExporterCommand) AllByUserID() map[string]*validation.Limits {
+	o.lastLimitsMtx.Lock()
+	defer o.lastLimitsMtx.Unlock()
+
+	limits := make(map[string]*validation.Limits, len(o.lastLimits))
+	for k, v := range o.lastLimits {
+		limits[k] = v
+	}
+
+	return limits
 }

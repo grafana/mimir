@@ -4,6 +4,11 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## Unreleased
 
+* [CHANGE] Overrides Exporter: `cortex_overrides_presets` added to expose the preset metrics. #154
+  * `limit_type` label has been renamed to `limit_name`.
+  * `type` label has been removed.
+  * `cortex_overrides` now only exposes overrides and doesn't expose preset limits.
+
 ## v0.8.0 
 
 * [CHANGE] Loadgen: Add `loadgen` namespace to loadgen metrics. #152
