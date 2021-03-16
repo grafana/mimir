@@ -51,7 +51,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               id: 'organize',
               options: {
                 // Hide fields we don't care.
-                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'org_id', 'param_end', 'param_start', 'param_time', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs'],
+                local hiddenFields = ['caller', 'cluster', 'container', 'host', 'id', 'job', 'level', 'line', 'method', 'msg', 'name', 'namespace', 'param_end', 'param_start', 'param_time', 'path', 'pod', 'pod_template_hash', 'query_wall_time_seconds', 'stream', 'traceID', 'tsNs'],
 
                 excludeByName: {
                   [field]: true
@@ -59,7 +59,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 },
 
                 // Order fields.
-                local orderedFields = ['ts', 'param_query', 'Time range', 'param_step', 'response_time'],
+                local orderedFields = ['ts', 'org_id', 'param_query', 'Time range', 'param_step', 'response_time'],
 
                 indexByName: {
                   [orderedFields[i]]: i
@@ -68,6 +68,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
                 // Rename fields.
                 renameByName: {
+                  org_id: 'Tenant ID',
                   param_query: 'Query',
                   param_step: 'Step',
                   response_time: 'Duration',
