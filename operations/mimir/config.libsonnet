@@ -433,6 +433,9 @@
     enable_pod_priorities: true,
 
     alertmanager_enabled: false,
+
+    // Enables streaming of chunks from ingesters using blocks.
+    ingester_stream_chunks_when_using_blocks: true,
   },
 
   local configMap = $.core.v1.configMap,
@@ -441,11 +444,9 @@
     configMap.new($._config.overrides_configmap) +
     configMap.withData({
       'overrides.yaml': $.util.manifestYaml(
-        {
-          overrides: $._config.overrides,
-        } + if std.length($._config.multi_kv_config) > 0 then {
-          multi_kv_config: $._config.multi_kv_config,
-        } else {}
+        { overrides: $._config.overrides }
+        + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
+        + (if $._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: true } else {})
       ),
     }),
 
