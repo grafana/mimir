@@ -2,7 +2,7 @@
   local container = $.core.v1.container,
 
   query_frontend_args::
-    $._config.grpcConfig +
+    $._config.grpcConfig
     {
       target: 'query-frontend',
 
@@ -38,17 +38,17 @@
       'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
     } + (
       if $._config.queryFrontend.sharded_queries_enabled then
-      {
-        'querier.parallelise-shardable-queries': 'true',
+        {
+          'querier.parallelise-shardable-queries': 'true',
 
-        // in process tenant queues on frontends. We divide by the number of frontends; 2 in this case in order to apply the global limit in aggregate.
-        // basically base * shard_factor * query_split_factor / num_frontends where
-        'querier.max-outstanding-requests-per-tenant': std.floor(200 * $._config.queryFrontend.shard_factor * $._config.queryFrontend.query_split_factor / $._config.queryFrontend.replicas),
+          // in process tenant queues on frontends. We divide by the number of frontends; 2 in this case in order to apply the global limit in aggregate.
+          // basically base * shard_factor * query_split_factor / num_frontends where
+          'querier.max-outstanding-requests-per-tenant': std.floor(200 * $._config.queryFrontend.shard_factor * $._config.queryFrontend.query_split_factor / $._config.queryFrontend.replicas),
 
-        'querier.query-ingesters-within': $._config.queryConfig['querier.query-ingesters-within'],
-      } + $._config.storageConfig
-    else {}
-  ),
+          'querier.query-ingesters-within': $._config.queryConfig['querier.query-ingesters-within'],
+        } + $._config.storageConfig
+      else {}
+    ),
 
   query_frontend_container::
     container.new('query-frontend', $._images.query_frontend) +

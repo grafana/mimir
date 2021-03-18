@@ -43,7 +43,7 @@
     ),
 
   ingester_statefulset_args::
-    $._config.grpcConfig +
+    $._config.grpcConfig
     {
       'ingester.wal-enabled': true,
       'ingester.checkpoint-enabled': true,
