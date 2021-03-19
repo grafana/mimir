@@ -6,105 +6,54 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Cortex / Scaling') + { uid: '88c041017b96856c9176e07cf557bdcf' })
     .addClusterSelectorTemplates()
     .addRow(
-      $.row('Workload-based scaling')
-      .addPanel(
-        $.panel('Workload-based scaling') + { sort: { col: 1, desc: false } } +
-        $.tablePanel([
-          |||
-            sum by (cluster, namespace, deployment) (
-              kube_deployment_spec_replicas{cluster=~"$cluster", namespace=~"$namespace", deployment=~"ingester|memcached"}
-              or
-              label_replace(
-                kube_statefulset_replicas{cluster=~"$cluster", namespace=~"$namespace", deployment=~"ingester|memcached"},
-                "deployment", "$1", "statefulset", "(.*)"
-              )
-            )
+      ($.row('Cortex Service Scaling') + { height: '200px' })
+      .addPanel({
+        type: 'text',
+        title: '',
+        options: {
+          content: |||
+            This dashboards shows any services which are not scaled correctly.
+            The table below gives the required number of replicas and the reason why.
+            We only show services without enough replicas.
+
+            Reasons:
+            - **sample_rate**: There are not enough replicas to handle the
+              sample rate.  Applies to distributor and ingesters.
+            - **active_series**: There are not enough replicas
+              to handle the number of active series.  Applies to ingesters.
+            - **cpu_usage**: There are not enough replicas
+              based on the CPU usage of the jobs vs the resource requests.
+              Applies to all jobs.
+            - **memory_usage**: There are not enough replicas based on the memory
+              usage vs the resource requests.  Applies to all jobs.
+            - **active_series_limits**: There are not enough replicas to hold 60% of the
+              sum of all the per tenant series limits.
+            - **sample_rate_limits**: There are not enough replicas to handle 60% of the
+              sum of all the per tenant rate limits.
           |||,
-          |||
-            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(rate(cortex_distributor_received_samples_total{cluster=~"$cluster", namespace=~"$namespace"}[1m]), "deployment", "ingester", "cluster", ".*"))[1h:])
-              * 3 / 80e3
-          |||,
-          |||
-            label_replace(
-              sum by(cluster, namespace) (
-                cortex_ingester_memory_series{cluster=~"$cluster", namespace=~"$namespace"}
-              ) / 1e+6,
-              "deployment", "ingester", "cluster", ".*"
-            )
-              or
-            label_replace(
-              sum by (cluster, namespace) (
-                4 * cortex_ingester_memory_series{cluster=~"$cluster", namespace=~"$namespace", job=~".+/ingester"}
-                  *
-                cortex_ingester_chunk_size_bytes_sum{cluster=~"$cluster", namespace=~"$namespace", job=~".+/ingester"}
-                  /
-                cortex_ingester_chunk_size_bytes_count{cluster=~"$cluster", namespace=~"$namespace", job=~".+/ingester"}
-              )
-                /
-              avg by (cluster, namespace) (memcached_limit_bytes{cluster=~"$cluster", namespace=~"$namespace", job=~".+/memcached"}),
-              "deployment", "memcached", "namespace", ".*"
-            )
-          |||,
-        ], {
-          cluster: { alias: 'Cluster' },
-          namespace: { alias: 'Namespace' },
-          deployment: { alias: 'Deployment' },
-          'Value #A': { alias: 'Current Replicas', decimals: 0 },
-          'Value #B': { alias: 'Required Replicas, by ingestion rate', decimals: 0 },
-          'Value #C': { alias: 'Required Replicas, by active series', decimals: 0 },
-        })
-      )
+          mode: 'markdown',
+        },
+      })
     )
     .addRow(
-      ($.row('Resource-based scaling') + { height: '500px' })
+      ($.row('Scaling') + { height: '400px' })
       .addPanel(
-        $.panel('Resource-based scaling') + { sort: { col: 1, desc: false } } +
+        $.panel('Workload-based scaling') + { sort: { col: 0, desc: false } } +
         $.tablePanel([
           |||
-            sum by (cluster, namespace, deployment) (
-              kube_deployment_spec_replicas{cluster=~"$cluster", namespace=~"$namespace"}
-              or
-              label_replace(
-                kube_statefulset_replicas{cluster=~"$cluster", namespace=~"$namespace"},
-                "deployment", "$1", "statefulset", "(.*)"
-              )
+            sort_desc(
+              cluster_namespace_deployment_reason:required_replicas:count{cluster=~"$cluster", namespace=~"$namespace"}
+                > ignoring(reason) group_left
+              cluster_namespace_deployment:actual_replicas:count{cluster=~"$cluster", namespace=~"$namespace"}
             )
-          |||,
-          |||
-            sum by (cluster, namespace, deployment) (
-              kube_deployment_spec_replicas{cluster=~"$cluster", namespace=~"$namespace"}
-              or
-              label_replace(
-                kube_statefulset_replicas{cluster=~"$cluster", namespace=~"$namespace"},
-                "deployment", "$1", "statefulset", "(.*)"
-              )
-            )
-              *
-            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(rate(container_cpu_usage_seconds_total{cluster=~"$cluster", namespace=~"$namespace"}[1m]), "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))[24h:])
-              /
-            sum by (cluster, namespace, deployment) (label_replace(kube_pod_container_resource_requests_cpu_cores{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))
-          |||,
-          |||
-            sum by (cluster, namespace, deployment) (
-              kube_deployment_spec_replicas{cluster=~"$cluster", namespace=~"$namespace"}
-              or
-              label_replace(
-                kube_statefulset_replicas{cluster=~"$cluster", namespace=~"$namespace"},
-                "deployment", "$1", "statefulset", "(.*)"
-              )
-            )
-              *
-            quantile_over_time(0.99, sum by (cluster, namespace, deployment) (label_replace(container_memory_usage_bytes{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))[24h:1m])
-              /
-            sum by (cluster, namespace, deployment) (label_replace(kube_pod_container_resource_requests_memory_bytes{cluster=~"$cluster", namespace=~"$namespace"}, "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"))
           |||,
         ], {
+          '__name__': { alias: 'Cluster', type: 'hidden' },
           cluster: { alias: 'Cluster' },
           namespace: { alias: 'Namespace' },
-          deployment: { alias: 'Deployment' },
-          'Value #A': { alias: 'Current Replicas', decimals: 0 },
-          'Value #B': { alias: 'Required Replicas, by CPU usage', decimals: 0 },
-          'Value #C': { alias: 'Required Replicas, by Memory usage', decimals: 0 },
+          deployment: { alias: 'Service' },
+          reason: { alias: 'Reason' },
+          'Value': { alias: 'Required Replicas', decimals: 0 },
         })
       )
     ),
