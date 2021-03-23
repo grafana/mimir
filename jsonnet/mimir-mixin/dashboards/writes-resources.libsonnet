@@ -58,7 +58,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Disk Writes') +
         $.queryPanel(
-          'sum by(%s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('ingester')],
+          'sum by(%s, %s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_node_label, $._config.per_instance_label, $.filterNodeDiskContainer('ingester')],
           '{{%s}} - {{device}}' % $._config.per_instance_label
         ) +
         $.stack +
@@ -67,7 +67,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Disk Reads') +
         $.queryPanel(
-          'sum by(%s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('ingester')],
+          'sum by(%s, %s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_node_label, $._config.per_instance_label, $.filterNodeDiskContainer('ingester')],
           '{{%s}} - {{device}}' % $._config.per_instance_label
         ) +
         $.stack +
