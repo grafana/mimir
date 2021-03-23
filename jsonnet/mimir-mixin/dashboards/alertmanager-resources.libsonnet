@@ -60,7 +60,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Writes') +
         $.queryPanel(
-          'sum by(%s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('alertmanager')],
+          'sum by(%s, %s, device) (rate(node_disk_written_bytes_total[$__rate_interval])) + %s' % [$._config.per_node_label, $._config.per_instance_label, $.filterNodeDiskContainer('alertmanager')],
           '{{%s}} - {{device}}' % $._config.per_instance_label
         ) +
         $.stack +
@@ -69,7 +69,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Reads') +
         $.queryPanel(
-          'sum by(%s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_instance_label, $.filterNodeDiskContainer('alertmanager')],
+          'sum by(%s, %s, device) (rate(node_disk_read_bytes_total[$__rate_interval])) + %s' % [$._config.per_node_label, $._config.per_instance_label, $.filterNodeDiskContainer('alertmanager')],
           '{{%s}} - {{device}}' % $._config.per_instance_label
         ) +
         $.stack +
