@@ -2,14 +2,15 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
-## Unreleased
+## v0.9.0
 
 * [CHANGE] Overrides Exporter: `cortex_overrides_presets` added to expose the preset metrics. #154
   * `limit_type` label has been renamed to `limit_name`.
   * `type` label has been removed.
   * `cortex_overrides` now only exposes overrides and doesn't expose preset limits.
+* [BUGFIX] Escape rule namespaces and groups containing slashes at the beginning and end of the name. #162
 
-## v0.8.0 
+## v0.8.0
 
 * [CHANGE] Loadgen: Add `loadgen` namespace to loadgen metrics. #152
   * `write_request_duration_seconds` --> `loadgen_write_request_duration_seconds`
