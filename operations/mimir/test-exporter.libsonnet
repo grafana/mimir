@@ -4,7 +4,7 @@
 
   test_exporter_args:: {
     'user-id': $._config.test_exporter_user_id,
-    'prometheus-address': 'http://query-frontend.%(namespace)s.svc.cluster.local/api/prom' % $._config,
+    'prometheus-address': 'http://query-frontend.%(namespace)s.svc.cluster.local/prometheus' % $._config,
     'test-query-start': $._config.test_exporter_start_time,
     'extra-selectors': 'job="%(namespace)s/test-exporter"' % $._config,
     'test-query-min-size': '1m',
