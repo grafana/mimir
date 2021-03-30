@@ -198,6 +198,30 @@ local utils = import 'mixin-utils/utils.libsonnet';
             |||,
           },
           {
+            // Convenience rule to get the CPU utilization for both a deployment and a statefulset.
+            record: 'cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate',
+            expr: |||
+              sum by (cluster, namespace, deployment) (
+                label_replace(
+                  node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate,
+                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                )
+              )
+            |||,
+          },
+          {
+            // Convenience rule to get the CPU request for both a deployment and a statefulset.
+            record: 'cluster_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum',
+            expr: |||
+              sum by (cluster, namespace, deployment) (
+                label_replace(
+                  kube_pod_container_resource_requests_cpu_cores,
+                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                )
+              )
+            |||,
+          },
+          {
             // Jobs should be sized to their CPU usage.
             // We do this by comparing 99th percentile usage over the last 24hrs to
             // their current provisioned #replicas and resource requests.
@@ -209,20 +233,32 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 cluster_namespace_deployment:actual_replicas:count
                   *
-                quantile_over_time(0.99,
-                  sum by (cluster, namespace, deployment) (
-                    label_replace(
-                      node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate,
-                      "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                    )
-                  )[24h:5m]
-                )
+                quantile_over_time(0.99, cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate[24h:5m])
                   /
-                sum by (cluster, namespace, deployment) (
-                  label_replace(
-                    kube_pod_container_resource_requests_cpu_cores,
-                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                  )
+                cluster_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum
+              )
+            |||,
+          },
+          {
+            // Convenience rule to get the Memory utilization for both a deployment and a statefulset.
+            record: 'cluster_namespace_deployment:container_memory_usage_bytes:sum',
+            expr: |||
+              sum by (cluster, namespace, deployment) (
+                label_replace(
+                  container_memory_usage_bytes,
+                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                )
+              )
+            |||,
+          },
+          {
+            // Convenience rule to get the Memory request for both a deployment and a statefulset.
+            record: 'cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum',
+            expr: |||
+              sum by (cluster, namespace, deployment) (
+                label_replace(
+                  kube_pod_container_resource_requests_memory_bytes,
+                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 )
               )
             |||,
@@ -239,21 +275,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 cluster_namespace_deployment:actual_replicas:count
                   *
-                quantile_over_time(0.99,
-                  sum by (cluster, namespace, deployment) (
-                    label_replace(
-                      container_memory_usage_bytes,
-                      "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                    )
-                  )[24h:5m]
-                )
+                quantile_over_time(0.99, cluster_namespace_deployment:container_memory_usage_bytes:sum[24h:5m])
                   /
-                sum by (cluster, namespace, deployment) (
-                  label_replace(
-                    kube_pod_container_resource_requests_memory_bytes,
-                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
-                  )
-                )
+                cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum
               )
             |||,
           },
