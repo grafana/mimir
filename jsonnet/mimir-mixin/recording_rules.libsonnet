@@ -233,7 +233,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 cluster_namespace_deployment:actual_replicas:count
                   *
-                quantile_over_time(0.99, cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate[24h:5m])
+                quantile_over_time(0.99, cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate[24h])
                   /
                 cluster_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum
               )
@@ -275,7 +275,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 cluster_namespace_deployment:actual_replicas:count
                   *
-                quantile_over_time(0.99, cluster_namespace_deployment:container_memory_usage_bytes:sum[24h:5m])
+                quantile_over_time(0.99, cluster_namespace_deployment:container_memory_usage_bytes:sum[24h])
                   /
                 cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum
               )
