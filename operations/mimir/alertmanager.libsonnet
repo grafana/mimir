@@ -61,8 +61,8 @@
       container.withArgsMixin(
         $.util.mapToFlags($.alertmanager_args) +
         if isHA then
-          ['--cluster.listen-address=[$(POD_IP)]:%s' % $._config.alertmanager.gossip_port] +
-          ['--cluster.peer=%s' % peer for peer in peers]
+          ['--alertmanager.cluster.listen-address=[$(POD_IP)]:%s' % $._config.alertmanager.gossip_port] +
+          ['--alertmanager.cluster.peers=%s' % peer for peer in peers]
         else [],
       ) +
       container.withVolumeMountsMixin(
