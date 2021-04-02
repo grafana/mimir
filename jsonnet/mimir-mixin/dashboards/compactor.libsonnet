@@ -15,9 +15,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
-          'sum(rate(cortex_compactor_runs_started_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
-          'sum(rate(cortex_compactor_runs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
-          'sum(rate(cortex_compactor_runs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor')
+          'sum(rate(cortex_compactor_runs_started_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
+          'sum(rate(cortex_compactor_runs_completed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
+          'sum(rate(cortex_compactor_runs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor)
         ) +
         $.bars +
         { yaxes: $.yaxes('ops') },
@@ -30,7 +30,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             cortex_compactor_tenants_processing_failed{%s} +
             cortex_compactor_tenants_skipped{%s}
           ) / cortex_compactor_tenants_discovered{%s}
-        ||| % [$.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor'), $.jobMatcher('compactor')], '{{%s}}' % $._config.per_instance_label) +
+        ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], '{{%s}}' % $._config.per_instance_label) +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )
@@ -44,12 +44,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Compacted blocks / sec') +
-        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'), 'blocks') +
+        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Per-block compaction duration') +
-        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher('compactor'))
+        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor))
       )
     )
     .addRow(
@@ -62,18 +62,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Average blocks / tenant') +
-        $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher('compactor'), 'avg'),
+        $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), 'avg'),
       )
       .addPanel(
         $.panel('Tenants with largest number of blocks') +
-        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher('compactor'), '{{user}}'),
+        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), '{{user}}'),
       )
     )
     .addRow(
       $.row('Garbage Collector')
       .addPanel(
         $.panel('Blocks marked for deletion / sec') +
-        $.queryPanel('sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'), 'blocks') +
+        $.queryPanel('sum(rate(cortex_compactor_blocks_marked_for_deletion_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
         { yaxes: $.yaxes('ops') },
       )
       .addPanel(
@@ -81,8 +81,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Blocks deletions / sec',
           // The cortex_compactor_blocks_cleaned_total tracks the number of successfully
           // deleted blocks.
-          'sum(rate(cortex_compactor_blocks_cleaned_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
-          'sum(rate(cortex_compactor_block_cleanup_failures_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_blocks_cleaned_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
+          'sum(rate(cortex_compactor_block_cleanup_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
         ) + { yaxes: $.yaxes('ops') }
       )
     )
@@ -93,14 +93,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Metadata Syncs / sec',
           // The cortex_compactor_meta_syncs_total metric is incremented each time a per-tenant
           // metadata sync is triggered.
-          'sum(rate(cortex_compactor_meta_syncs_total{%s}[$__rate_interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher('compactor'), $.jobMatcher('compactor')],
-          'sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % $.jobMatcher('compactor'),
+          'sum(rate(cortex_compactor_meta_syncs_total{%s}[$__rate_interval])) - sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)],
+          'sum(rate(cortex_compactor_meta_sync_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
         ) + { yaxes: $.yaxes('ops') }
       )
       .addPanel(
         $.panel('Metadata Sync Duration') +
         // This metric tracks the duration of a per-tenant metadata sync.
-        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher('compactor')),
+        $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
       )
     )
     .addRow($.objectStorePanels1('Object Store', 'compactor'))

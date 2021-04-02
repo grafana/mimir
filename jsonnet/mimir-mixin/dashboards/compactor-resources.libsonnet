@@ -13,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.containerMemoryWorkingSetPanel('Memory (workingset)', 'compactor'),
       )
       .addPanel(
-        $.goHeapInUsePanel('Memory (go heap inuse)', 'compactor'),
+        $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.compactor),
       )
     )
     .addRow(
