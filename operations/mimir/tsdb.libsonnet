@@ -173,13 +173,13 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  compactor_statefulset:
-    statefulSet.new('compactor', 1, [$.compactor_container], compactor_data_pvc) +
-    statefulSet.mixin.spec.withServiceName('compactor') +
+  newCompactorStatefulSet(name, container)::
+    statefulSet.new(name, 1, [container], compactor_data_pvc) +
+    statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: 'compactor' }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: 'compactor' }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: 'compactor' }) +
+    statefulSet.mixin.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
@@ -188,6 +188,9 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel'),
+
+  compactor_statefulset:
+    $.newCompactorStatefulSet('compactor', $.compactor_container),
 
   // The store-gateway runs a statefulset.
   local store_gateway_data_pvc =
