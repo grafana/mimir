@@ -8,6 +8,7 @@
     (import 'dashboards/scaling.libsonnet') +
     (import 'dashboards/writes.libsonnet') +
     (import 'dashboards/slow-queries.libsonnet') +
+    (import 'dashboards/rollout-progress.libsonnet') +
 
     (if std.member($._config.storage_engine, 'blocks')
      then

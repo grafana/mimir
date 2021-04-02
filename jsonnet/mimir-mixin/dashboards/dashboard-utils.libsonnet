@@ -173,6 +173,72 @@ local utils = import 'mixin-utils/utils.libsonnet';
       tooltip: { sort: 2 },  // Sort descending.
     },
 
+  newStatPanel(queries, legends='', unit='percentunit', thresholds=[], instant=false, novalue='')::
+    super.queryPanel(queries, legends) + {
+      type: 'stat',
+      targets: [
+        target {
+          instant: instant,
+          interval: '',
+
+          // Reset defaults from queryPanel().
+          format: null,
+          intervalFactor: null,
+          step: null,
+        }
+        for target in super.targets
+      ],
+      fieldConfig: {
+        defaults: {
+          color: { mode: 'thresholds' },
+          decimals: 1,
+          thresholds: {
+            mode: 'absolute',
+            steps: thresholds,
+          },
+          noValue: novalue,
+          unit: unit,
+        },
+        overrides: [],
+      },
+    },
+
+  barGauge(queries, legends='', thresholds=[], unit='short', min=null, max=null)::
+    super.queryPanel(queries, legends) + {
+      type: 'bargauge',
+      targets: [
+        target {
+          // Reset defaults from queryPanel().
+          format: null,
+          intervalFactor: null,
+          step: null,
+        }
+        for target in super.targets
+      ],
+      fieldConfig: {
+        defaults: {
+          color: { mode: 'thresholds' },
+          mappings: [],
+          max: max,
+          min: min,
+          thresholds: {
+            mode: 'absolute',
+            steps: thresholds,
+          },
+          unit: unit,
+        },
+      },
+      options: {
+        displayMode: 'basic',
+        orientation: 'horizontal',
+        reduceOptions: {
+          calcs: ['lastNotNull'],
+          fields: '',
+          values: false,
+        },
+      },
+    },
+
   // Switches a panel from lines (default) to bars.
   bars:: {
     bars: true,
