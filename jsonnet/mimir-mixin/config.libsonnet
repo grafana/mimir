@@ -35,6 +35,7 @@
       table_manager: '(table-manager|cortex$)',
       store_gateway: '(store-gateway|cortex$)',
       gateway: 'cortex-gw',
+      compactor: 'compactor.*',  // Match also custom compactor deployments.
     },
 
     // Labels used to in alert aggregations - should uniquely identify

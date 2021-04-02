@@ -38,10 +38,10 @@
           alert: 'CortexCompactorHasNotUploadedBlocks',
           'for': '15m',
           expr: |||
-            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} > 60 * 60 * 24)
+            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} > 60 * 60 * 24)
             and
-            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} > 0)
-          |||,
+            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} > 0)
+          ||| % $._config.job_names,
           labels: {
             severity: 'critical',
           },
@@ -54,8 +54,8 @@
           alert: 'CortexCompactorHasNotUploadedBlocksSinceStart',
           'for': '24h',
           expr: |||
-            thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor"} == 0
-          |||,
+            thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} == 0
+          ||| % $._config.job_names,
           labels: {
             severity: 'critical',
           },
