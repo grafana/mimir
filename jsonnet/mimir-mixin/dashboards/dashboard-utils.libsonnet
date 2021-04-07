@@ -173,7 +173,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       tooltip: { sort: 2 },  // Sort descending.
     },
 
-  newStatPanel(queries, legends='', unit='percentunit', thresholds=[], instant=false, novalue='')::
+  newStatPanel(queries, legends='', unit='percentunit', decimals=1, thresholds=[], instant=false, novalue='')::
     super.queryPanel(queries, legends) + {
       type: 'stat',
       targets: [
@@ -191,7 +191,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       fieldConfig: {
         defaults: {
           color: { mode: 'thresholds' },
-          decimals: 1,
+          decimals: decimals,
           thresholds: {
             mode: 'absolute',
             steps: thresholds,

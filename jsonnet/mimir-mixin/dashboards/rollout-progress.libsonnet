@@ -177,7 +177,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           { color: 'green', value: null },
           { color: 'orange', value: 1 },
           { color: 'red', value: 2 },
-        ], instant=true, novalue='All healthy') + {
+        ], instant=true, novalue='All healthy', unit='short', decimals=0) + {
           options: {
             text: {
               // Small font size since we may have many entries during a rollout.
