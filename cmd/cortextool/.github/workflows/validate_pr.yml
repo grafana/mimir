@@ -19,10 +19,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Set up Go 1.14
+      - name: Set up Go 1.16
         uses: actions/setup-go@v1
         with:
-          go-version: 1.14
+          go-version: 1.16
       - name: Unit Tests
         run: make test
   build:
@@ -30,9 +30,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
-      - name: Set up Go 1.14
+      - name: Set up Go 1.16
         uses: actions/setup-go@v1
         with:
-          go-version: 1.14
+          go-version: 1.16
       - name: Build All
         run: make all
