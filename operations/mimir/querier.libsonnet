@@ -61,6 +61,8 @@
 
   local service = $.core.v1.service,
 
+  querier_service_ignored_labels:: [],
+
   querier_service:
-    $.util.serviceFor($.querier_deployment),
+    $.util.serviceFor($.querier_deployment, $.querier_service_ignored_labels),
 }
