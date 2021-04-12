@@ -369,6 +369,7 @@ func (r *RuleCommand) loadRules(k *kingpin.ParseContext) error {
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
+			fmt.Printf("group: '%v', ns: '%v'\n", group.Name, ns.Namespace)
 			curGroup, err := r.cli.GetRuleGroup(context.Background(), ns.Namespace, group.Name)
 			if err != nil && err != client.ErrResourceNotFound {
 				return errors.Wrap(err, "load operation unsuccessful, unable to contact cortex api")

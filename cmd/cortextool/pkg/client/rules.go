@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/url"
 
@@ -48,6 +49,7 @@ func (r *CortexClient) GetRuleGroup(ctx context.Context, namespace, groupName st
 	escapedGroupName := url.PathEscape(groupName)
 	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
+	fmt.Println(path)
 	res, err := r.doRequest(path, "GET", nil)
 	if err != nil {
 		return nil, err

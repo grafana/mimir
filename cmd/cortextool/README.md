@@ -284,7 +284,11 @@ Timestamp                                TraceID           Length    Duration   
 2020-05-26 13:52:15.771988849 -0400 EDT  2e7473ab10160630  10h33m0s  7.472855362s   (200)   /api/prom/api/v1/query_range
 2020-05-26 13:53:46.712563497 -0400 EDT  761f3221dcdd85de  10h33m0s  11.874296689s  (200)   /api/prom/api/v1/query_range
 ```
+## benchtool
 
+A tool for benchmarking a Prometheus remote-write backend and PromQL compatible
+API. It allows for metrics to be generated using a [workload
+file](docs/benchtool.md).
 
 ### License
 

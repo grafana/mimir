@@ -8,11 +8,16 @@ GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 GO_FLAGS := -mod=vendor -ldflags "-extldflags \"-static\" -s -w -X $(VPREFIX).Branch=$(GIT_BRANCH) -X $(VPREFIX).Version=$(IMAGE_TAG) -X $(VPREFIX).Revision=$(GIT_REVISION)" -tags netgo
 
 all: cortextool chunktool logtool
-images: cortextool-image chunktool-image logtool-image
+images: cortextool-image chunktool-image logtool-image benchtool-image
+benchtool: cmd/benchtool/benchtool
 cortextool: cmd/cortextool/cortextool
 chunktool: cmd/chunktool/chunktool
 logtool: cmd/logtool/logtool
 e2ealerting: cmd/e2ealerting/e2ealerting
+
+benchtool-image:
+	$(SUDO) docker build -t $(IMAGE_PREFIX)/benchtool -f cmd/benchtool/Dockerfile .
+	$(SUDO) docker tag $(IMAGE_PREFIX)/benchtool $(IMAGE_PREFIX)/benchtool:$(IMAGE_TAG)
 
 cortextool-image:
 	$(SUDO) docker build -t $(IMAGE_PREFIX)/cortextool -f cmd/cortextool/Dockerfile .
@@ -31,6 +36,9 @@ e2ealerting-image:
 	$(SUDO) docker tag $(IMAGE_PREFIX)/e2ealerting $(IMAGE_PREFIX)/e2ealerting:$(IMAGE_TAG)
 push-e2ealerting-image: e2ealerting-image
 	$(SUDO) docker push $(IMAGE_PREFIX)/e2ealerting:$(IMAGE_TAG)
+
+cmd/benchtool/benchtool: $(APP_GO_FILES) cmd/benchtool/main.go
+	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
 cmd/cortextool/cortextool: $(APP_GO_FILES) cmd/cortextool/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
@@ -60,6 +68,7 @@ test:
 	go test -mod=vendor -p=8 ./pkg/...
 
 clean:
+	rm -rf cmd/benchtool/benchtool
 	rm -rf cmd/cortextool/cortextool
 	rm -rf cmd/chunktool/chunktool
 	rm -rf cmd/logtool/logtool
