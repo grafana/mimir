@@ -55,8 +55,7 @@ type WriteBenchmarkRunner struct {
 	reg    prometheus.Registerer
 	logger log.Logger
 
-	requestDuration  *prometheus.HistogramVec
-	missedIterations prometheus.Counter
+	requestDuration *prometheus.HistogramVec
 }
 
 func NewWriteBenchmarkRunner(id string, tenantName string, cfg WriteBenchConfig, workload *writeWorkload, logger log.Logger, reg prometheus.Registerer) (*WriteBenchmarkRunner, error) {
@@ -81,13 +80,6 @@ func NewWriteBenchmarkRunner(id string, tenantName string, cfg WriteBenchConfig,
 				Buckets:   []float64{0.001, 0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 120},
 			},
 			[]string{"code"},
-		),
-		missedIterations: promauto.With(reg).NewCounter(
-			prometheus.CounterOpts{
-				Namespace: "benchtool",
-				Name:      "write_iterations_late_total",
-				Help:      "Number of write intervals started late because the previous interval did not complete in time.",
-			},
 		),
 	}
 
@@ -143,50 +135,16 @@ func (w *WriteBenchmarkRunner) Run(ctx context.Context) error {
 	// Start a loop to re-resolve addresses every 5 minutes
 	go w.resolveAddrsLoop(ctx)
 
+	// Run replicas * 10 write client workers.
+	// This number will also be used for the number of series buffers to store at once.
+	numWorkers := w.workload.replicas * 10
+
 	batchChan := make(chan batchReq, 10)
-	for i := 0; i < w.workload.replicas*10; i++ {
+	for i := 0; i < numWorkers; i++ {
 		go w.writeWorker(batchChan)
 	}
 
-	ticker := time.NewTicker(w.workload.options.Interval)
-	for {
-		select {
-		case <-ctx.Done():
-			close(batchChan)
-			return nil
-		case now := <-ticker.C:
-			timeseries := w.workload.generateTimeSeries(w.id, now)
-			batchSize := w.workload.options.BatchSize
-			var batches [][]prompb.TimeSeries
-			if batchSize < len(timeseries) {
-				batches = make([][]prompb.TimeSeries, 0, (len(timeseries)+batchSize-1)/batchSize)
-
-				level.Info(w.logger).Log("msg", "sending timeseries", "num_series", strconv.Itoa(len(timeseries)))
-				for batchSize < len(timeseries) {
-					timeseries, batches = timeseries[batchSize:], append(batches, timeseries[0:batchSize:batchSize])
-				}
-			} else {
-				batches = [][]prompb.TimeSeries{timeseries}
-			}
-
-			wg := &sync.WaitGroup{}
-			for _, batch := range batches {
-				reqBatch := batch
-				wg.Add(1)
-				batchChan <- batchReq{reqBatch, wg}
-			}
-
-			wg.Wait()
-			if time.Since(now) > w.workload.options.Interval {
-				w.missedIterations.Inc()
-			}
-		}
-	}
-}
-
-type batchReq struct {
-	batch []prompb.TimeSeries
-	wg    *sync.WaitGroup
+	return w.workload.generateWriteBatch(ctx, w.id, numWorkers+10, batchChan)
 }
 
 func (w *WriteBenchmarkRunner) writeWorker(batchChan chan batchReq) {
@@ -195,6 +153,9 @@ func (w *WriteBenchmarkRunner) writeWorker(batchChan chan batchReq) {
 		if err != nil {
 			level.Warn(w.logger).Log("msg", "unable to send batch", "err", err)
 		}
+
+		// put back the series buffer
+		batchReq.putBack <- batchReq.batch
 		batchReq.wg.Done()
 	}
 }
