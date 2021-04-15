@@ -2,6 +2,10 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## unreleased/master
+
+* [ENHANCEMENT] Upgrade the Go version used in build images and tests to golang 1.16.3 to match upstream Cortex. #165
+
 ## v0.9.0
 
 * [CHANGE] Overrides Exporter: `cortex_overrides_presets` added to expose the preset metrics. #154
