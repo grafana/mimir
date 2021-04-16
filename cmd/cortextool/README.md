@@ -2,6 +2,8 @@
 
 This repo contains tools used for interacting with [Cortex](https://github.com/cortexproject/cortex).
 
+* [benchtool](docs/benchtool.md): A powerful YAML driven tool for benchmarking
+  Cortex write and query API.
 * [cortextool](#cortextool): Interacts with user-facing Cortex APIs and backend storage components
 * [chunktool](#chunktool): Interacts with chunks stored and indexed in Cortex storage backends.
 * [logtool](#logtool): Tool which parses Cortex query-frontend logs and formats them for easy analysis.

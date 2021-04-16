@@ -10,7 +10,10 @@ expanded functionality and this should not be consided stable.
 
 ## Workload file
 
-The workload file can be configured as a follows:
+The `benchtool` is designed to generate Prometheus remote-write and PromQL API
+query requests to a configured endpoint. The characteristics of the data used
+for these requests is driven by a YAML workload configuration file. The workload
+file can be configured as a follows:
 
 ```yaml
 replicas: "<int>"
@@ -165,3 +168,4 @@ value of the benchtool instance.
 
 This will ensure two `benchtool` processes run with the same id and workload
 config file will result in the same behavior between runs.
+
