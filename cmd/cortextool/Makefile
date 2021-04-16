@@ -14,6 +14,7 @@ cortextool: cmd/cortextool/cortextool
 chunktool: cmd/chunktool/chunktool
 logtool: cmd/logtool/logtool
 e2ealerting: cmd/e2ealerting/e2ealerting
+blockscopy: cmd/blockscopy/blockscopy
 
 benchtool-image:
 	$(SUDO) docker build -t $(IMAGE_PREFIX)/benchtool -f cmd/benchtool/Dockerfile .
@@ -37,6 +38,10 @@ e2ealerting-image:
 push-e2ealerting-image: e2ealerting-image
 	$(SUDO) docker push $(IMAGE_PREFIX)/e2ealerting:$(IMAGE_TAG)
 
+blockscopy-image:
+	$(SUDO) docker build -t $(IMAGE_PREFIX)/blockscopy -f cmd/blockscopy/Dockerfile .
+	$(SUDO) docker tag $(IMAGE_PREFIX)/blockscopy $(IMAGE_PREFIX)/blockscopy:$(IMAGE_TAG)
+
 cmd/benchtool/benchtool: $(APP_GO_FILES) cmd/benchtool/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
@@ -53,6 +58,9 @@ cmd/e2ealerting/e2ealerting: $(APP_GO_FILES) cmd/e2ealerting/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
 cmd/rules-migrator/rules-migrator: $(APP_GO_FILES) cmd/rules-migrator/main.go
+	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
+
+cmd/blockscopy/blockscopy: $(APP_GO_FILES) cmd/blockscopy/main.go
 	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
 
 lint:
@@ -73,3 +81,4 @@ clean:
 	rm -rf cmd/chunktool/chunktool
 	rm -rf cmd/logtool/logtool
 	rm -rf cmd/e2ealerting/e2ealerting
+	rm -rf cmd/blockscopy/blockscopy
