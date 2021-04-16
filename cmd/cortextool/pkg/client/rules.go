@@ -28,7 +28,7 @@ func (r *CortexClient) CreateRuleGroup(ctx context.Context, namespace string, rg
 		return err
 	}
 
-	defer res.Body.Close()
+	res.Body.Close()
 
 	return nil
 }
@@ -39,8 +39,14 @@ func (r *CortexClient) DeleteRuleGroup(ctx context.Context, namespace, groupName
 	escapedGroupName := url.PathEscape(groupName)
 	path := r.apiPath + "/" + escapedNamespace + "/" + escapedGroupName
 
-	_, err := r.doRequest(path, "DELETE", nil)
-	return err
+	res, err := r.doRequest(path, "DELETE", nil)
+	if err != nil {
+		return err
+	}
+
+	res.Body.Close()
+
+	return nil
 }
 
 // GetRuleGroup retrieves a rule group
