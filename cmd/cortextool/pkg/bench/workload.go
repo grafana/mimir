@@ -235,63 +235,72 @@ func (w *writeWorkload) generateWriteBatch(ctx context.Context, id string, numBu
 
 	defer close(seriesChan)
 
-	for {
+	tick := func() {
 		select {
 		case <-ctx.Done():
-			return nil
-		case timeNow := <-ticker.C:
-			now := timeNow.UnixNano() / int64(time.Millisecond)
-			wg := &sync.WaitGroup{}
-			for replicaNum := 0; replicaNum < w.replicas; replicaNum++ {
-				replicaLabel := prompb.Label{Name: "bench_replica", Value: fmt.Sprintf("replica-%05d", replicaNum)}
-				idLabel := prompb.Label{Name: "bench_id", Value: id}
-				for _, series := range w.series {
-					var value float64
-					switch series.seriesType {
-					case GaugeZero:
-						value = 0
-					case GaugeRandom:
-						value = rand.Float64()
-					case CounterOne:
-						value = series.lastValue + 1
-					case CounterRandom:
-						value = series.lastValue + float64(rand.Int())
-					default:
-						return fmt.Errorf("unknown series type %v", series.seriesType)
-					}
-					series.lastValue = value
-					for _, labelSet := range series.labelSets {
-						if len(seriesBuffer) == w.options.BatchSize {
-							wg.Add(1)
-							seriesChan <- batchReq{seriesBuffer, wg, w.seriesBufferChan}
-							seriesBuffer = w.getSeriesBuffer(ctx)
-						}
-						newLabelSet := make([]prompb.Label, len(labelSet)+2)
-						copy(newLabelSet, labelSet)
-
-						newLabelSet[len(newLabelSet)-2] = replicaLabel
-						newLabelSet[len(newLabelSet)-1] = idLabel
-						seriesBuffer = append(seriesBuffer, prompb.TimeSeries{
-							Labels: newLabelSet,
-							Samples: []prompb.Sample{{
-								Timestamp: now,
-								Value:     value,
-							}},
-						})
-					}
-				}
-			}
-			if len(seriesBuffer) > 0 {
-				wg.Add(1)
-				seriesChan <- batchReq{seriesBuffer, wg, w.seriesBufferChan}
-				seriesBuffer = w.getSeriesBuffer(ctx)
-			}
-			wg.Wait()
-			if time.Since(timeNow) > w.options.Interval {
-				w.missedIterations.Inc()
-			}
+		case <-ticker.C:
 		}
 	}
+
+	for ; true; tick() {
+		if ctx.Err() != nil {
+			// cancelled
+			break
+		}
+		timeNow := time.Now()
+		timeNowMillis := timeNow.UnixNano() / int64(time.Millisecond)
+		wg := &sync.WaitGroup{}
+		for replicaNum := 0; replicaNum < w.replicas; replicaNum++ {
+			replicaLabel := prompb.Label{Name: "bench_replica", Value: fmt.Sprintf("replica-%05d", replicaNum)}
+			idLabel := prompb.Label{Name: "bench_id", Value: id}
+			for _, series := range w.series {
+				var value float64
+				switch series.seriesType {
+				case GaugeZero:
+					value = 0
+				case GaugeRandom:
+					value = rand.Float64()
+				case CounterOne:
+					value = series.lastValue + 1
+				case CounterRandom:
+					value = series.lastValue + float64(rand.Int())
+				default:
+					return fmt.Errorf("unknown series type %v", series.seriesType)
+				}
+				series.lastValue = value
+				for _, labelSet := range series.labelSets {
+					if len(seriesBuffer) == w.options.BatchSize {
+						wg.Add(1)
+						seriesChan <- batchReq{seriesBuffer, wg, w.seriesBufferChan}
+						seriesBuffer = w.getSeriesBuffer(ctx)
+					}
+					newLabelSet := make([]prompb.Label, len(labelSet)+2)
+					copy(newLabelSet, labelSet)
+
+					newLabelSet[len(newLabelSet)-2] = replicaLabel
+					newLabelSet[len(newLabelSet)-1] = idLabel
+					seriesBuffer = append(seriesBuffer, prompb.TimeSeries{
+						Labels: newLabelSet,
+						Samples: []prompb.Sample{{
+							Timestamp: timeNowMillis,
+							Value:     value,
+						}},
+					})
+				}
+			}
+		}
+		if len(seriesBuffer) > 0 {
+			wg.Add(1)
+			seriesChan <- batchReq{seriesBuffer, wg, w.seriesBufferChan}
+			seriesBuffer = w.getSeriesBuffer(ctx)
+		}
+		wg.Wait()
+		if time.Since(timeNow) > w.options.Interval {
+			w.missedIterations.Inc()
+		}
+	}
+
+	return nil
 }
 
 type queryWorkload struct {
