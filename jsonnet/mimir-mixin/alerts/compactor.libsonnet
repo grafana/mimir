@@ -4,17 +4,17 @@
       name: 'cortex_compactor_alerts',
       rules: [
         {
-          // Alert if the compactor has not successfully cleaned up blocks in the last 24h.
+          // Alert if the compactor has not successfully cleaned up blocks in the last 6h.
           alert: 'CortexCompactorHasNotSuccessfullyCleanedUpBlocks',
           'for': '1h',
           expr: |||
-            (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 24)
+            (time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6)
           |||,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not successfully cleaned up blocks in the last 24 hours.',
+            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not successfully cleaned up blocks in the last 6 hours.',
           },
         },
         {
