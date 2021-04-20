@@ -4,6 +4,9 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## unreleased/master
 
+
+## v0.10.0
+
 * [FEATURE] Add `--label-excluded-rule-groups` support to `cortextool rules prepare` command. #174
 * [ENHANCEMENT] Upgrade the Go version used in build images and tests to golang 1.16.3 to match upstream Cortex. #165
 
