@@ -67,8 +67,10 @@ type RuleCommand struct {
 	ignoredNamespacesMap map[string]struct{}
 
 	// Prepare Rules Config
-	InPlaceEdit      bool
-	AggregationLabel string
+	InPlaceEdit                            bool
+	AggregationLabel                       string
+	AggregationLabelExcludedRuleGroups     string
+	aggregationLabelExcludedRuleGroupsList map[string]struct{}
 
 	// Lint Rules Config
 	LintDryRun bool
@@ -202,6 +204,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		"edits the rule file in place",
 	).Short('i').BoolVar(&r.InPlaceEdit)
 	prepareCmd.Flag("label", "label to include as part of the aggregations.").Default(defaultPrepareAggregationLabel).Short('l').StringVar(&r.AggregationLabel)
+	prepareCmd.Flag("label-excluded-rule-groups", "Comma separated list of rule group names to exclude when including the configured label to aggregations.").StringVar(&r.AggregationLabelExcludedRuleGroups)
 
 	// Lint Command
 	lintCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
@@ -268,6 +271,14 @@ func (r *RuleCommand) setupFiles() error {
 			if ns != "" {
 				r.namespacesMap[ns] = struct{}{}
 			}
+		}
+	}
+
+	// Set up rule groups excluded from label aggregation.
+	r.aggregationLabelExcludedRuleGroupsList = map[string]struct{}{}
+	for _, name := range strings.Split(r.AggregationLabelExcludedRuleGroups, ",") {
+		if name = strings.TrimSpace(name); name != "" {
+			r.aggregationLabelExcludedRuleGroupsList[name] = struct{}{}
 		}
 	}
 
@@ -613,9 +624,15 @@ func (r *RuleCommand) prepare(k *kingpin.ParseContext) error {
 		return errors.Wrap(err, "prepare operation unsuccessful, unable to parse rules files")
 	}
 
+	// Do not apply the aggregation label to excluded rule groups.
+	applyTo := func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool {
+		_, excluded := r.aggregationLabelExcludedRuleGroupsList[group.Name]
+		return !excluded
+	}
+
 	var count, mod int
 	for _, ruleNamespace := range namespaces {
-		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel)
+		c, m, err := ruleNamespace.AggregateBy(r.AggregationLabel, applyTo)
 		if err != nil {
 			return err
 		}

@@ -15,6 +15,7 @@ func TestAggregateBy(t *testing.T) {
 	tt := []struct {
 		name            string
 		rn              RuleNamespace
+		applyTo         func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool
 		expectedExpr    []string
 		count, modified int
 		expect          error
@@ -140,20 +141,63 @@ func TestAggregateBy(t *testing.T) {
 			expectedExpr: []string{`count by(cluster, node) (sum by(node, cpu, cluster) (node_cpu_seconds_total{job="default/node-exporter"} * on(namespace, instance, cluster) group_left(node) node_namespace_pod:kube_pod_info:))`},
 			count:        1, modified: 1, expect: nil,
 		},
+		{
+			name: "with a query skipped",
+			rn: RuleNamespace{
+				Groups: []rwrulefmt.RuleGroup{
+					{
+						RuleGroup: rulefmt.RuleGroup{
+							Name: "CountAggregation",
+							Rules: []rulefmt.RuleNode{
+								{
+									Alert: yaml.Node{
+										Value: "CountAggregation",
+									},
+									Expr: yaml.Node{
+										Value: `count by(namespace) (test_series) > 1`,
+									},
+								},
+							},
+						},
+					}, {
+						RuleGroup: rulefmt.RuleGroup{
+							Name: "CountSkipped",
+							Rules: []rulefmt.RuleNode{
+								{
+									Alert: yaml.Node{
+										Value: "CountSkipped",
+									},
+									Expr: yaml.Node{
+										Value: `count by(namespace) (test_series) > 1`,
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			applyTo: func(group rwrulefmt.RuleGroup, rule rulefmt.RuleNode) bool {
+				return group.Name != "CountSkipped"
+			},
+			expectedExpr: []string{`count by(namespace, cluster) (test_series) > 1`, `count by(namespace) (test_series) > 1`},
+			count:        2, modified: 1, expect: nil,
+		},
 	}
 
 	for _, tc := range tt {
 		t.Run(tc.name, func(t *testing.T) {
-			c, m, err := tc.rn.AggregateBy("cluster")
+			c, m, err := tc.rn.AggregateBy("cluster", tc.applyTo)
 
 			require.Equal(t, tc.expect, err)
 			assert.Equal(t, tc.count, c)
 			assert.Equal(t, tc.modified, m)
 
 			// Only verify the PromQL expression if it has been modified
+			expectedIdx := 0
 			for _, g := range tc.rn.Groups {
-				for i, r := range g.Rules {
-					require.Equal(t, tc.expectedExpr[i], r.Expr.Value)
+				for _, r := range g.Rules {
+					require.Equal(t, tc.expectedExpr[expectedIdx], r.Expr.Value)
+					expectedIdx++
 				}
 			}
 		})
