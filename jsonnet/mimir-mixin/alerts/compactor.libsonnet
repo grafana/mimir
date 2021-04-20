@@ -22,7 +22,7 @@
           alert: 'CortexCompactorHasNotSuccessfullyRunCompaction',
           'for': '1h',
           expr: |||
-            time() - cortex_compactor_block_cleanup_last_successful_run_timestamp_seconds > 60 * 60 * 6
+            time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 6
           |||,
           labels: {
             severity: 'critical',
