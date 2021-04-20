@@ -70,9 +70,7 @@ changelog:
 dockers:
   - goos: linux
     goarch: amd64
-    binaries:
-      - cortextool
-    builds:
+    ids:
       - cortextool-linux
     dockerfile: cmd/cortextool/GR.Dockerfile
     image_templates:

@@ -11,7 +11,7 @@ $ git tag -s "${tag}" -m "${tag}"
 $ git push origin "${tag}"
 ```
 
-3. Run `$ goreleaser --release-notes=changelogs/v0.3.0.md --rm-dist` where the changelog file is the one created as part of step 1.
+3. Run `$ goreleaser release --release-notes=changelogs/v0.3.0.md --rm-dist` where the changelog file is the one created as part of step 1.
 4. The docker image will be pushed automatically.
 
 
