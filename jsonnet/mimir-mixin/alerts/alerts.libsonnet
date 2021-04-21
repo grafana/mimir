@@ -18,7 +18,7 @@
         },
         {
           alert: 'CortexRequestErrors',
-          // Note is alert_aggregation_labels is "job", this will repeat the label.  But
+          // Note if alert_aggregation_labels is "job", this will repeat the label. But
           // prometheus seems to tolerate that.
           expr: |||
             100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"ready"}[1m]))
@@ -28,7 +28,7 @@
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '15m',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
