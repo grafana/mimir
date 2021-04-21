@@ -18,17 +18,33 @@
           },
         },
         {
-          // Alert if the compactor has not successfully run compaction in the last 6h.
+          // Alert if the compactor has not successfully run compaction in the last 24h.
           alert: 'CortexCompactorHasNotSuccessfullyRunCompaction',
           'for': '1h',
           expr: |||
-            time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 6
+            (time() - cortex_compactor_last_successful_run_timestamp_seconds > 60 * 60 * 24)
+            and
+            (cortex_compactor_last_successful_run_timestamp_seconds > 0)
           |||,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not run compaction in the last 6 hours.',
+            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not run compaction in the last 24 hours.',
+          },
+        },
+        {
+          // Alert if the compactor has not successfully run compaction in the last 24h since startup.
+          alert: 'CortexCompactorHasNotSuccessfullyRunCompaction',
+          'for': '24h',
+          expr: |||
+            cortex_compactor_last_successful_run_timestamp_seconds == 0
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not run compaction in the last 24 hours.',
           },
         },
         {
