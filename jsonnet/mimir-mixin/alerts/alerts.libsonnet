@@ -256,6 +256,87 @@
       ],
     },
     {
+      name: 'cortex_ingester_instance_alerts',
+      rules: [
+        {
+          alert: 'CortexIngesterReachingSeriesLimit',
+          expr: |||
+            (
+                (cortex_ingester_memory_series / ignoring(limit) cortex_ingester_instance_limits{limit="max_series"})
+                and ignoring (limit)
+                (cortex_ingester_instance_limits{limit="max_series"} > 0)
+            ) > 0.7
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexIngesterReachingSeriesLimit',
+          expr: |||
+            (
+                (cortex_ingester_memory_series / ignoring(limit) cortex_ingester_instance_limits{limit="max_series"})
+                and ignoring (limit)
+                (cortex_ingester_instance_limits{limit="max_series"} > 0)
+            ) > 0.8
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexIngesterReachingTenantsLimit',
+          expr: |||
+            (
+                (cortex_ingester_memory_users / ignoring(limit) cortex_ingester_instance_limits{limit="max_tenants"})
+                and ignoring (limit)
+                (cortex_ingester_instance_limits{limit="max_tenants"} > 0)
+            ) > 0.7
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexIngesterReachingTenantsLimit',
+          expr: |||
+            (
+                (cortex_ingester_memory_users / ignoring(limit) cortex_ingester_instance_limits{limit="max_tenants"})
+                and ignoring (limit)
+                (cortex_ingester_instance_limits{limit="max_tenants"} > 0)
+            ) > 0.8
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
+            |||,
+          },
+        },
+      ],
+    },
+    {
       name: 'cortex_wal_alerts',
       rules: [
         {
