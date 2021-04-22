@@ -434,6 +434,9 @@
 
     alertmanager_enabled: false,
 
+    // Enables query-scheduler component, and reconfigures querier and query-frontend to use it.
+    query_scheduler_enabled: false,
+
     // Enables streaming of chunks from ingesters using blocks.
     ingester_stream_chunks_when_using_blocks: true,
 
