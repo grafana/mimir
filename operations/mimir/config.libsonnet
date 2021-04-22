@@ -436,6 +436,15 @@
 
     // Enables streaming of chunks from ingesters using blocks.
     ingester_stream_chunks_when_using_blocks: true,
+
+    // Ingester limits are put directly into runtime config, if not null. Available limits:
+    //    ingester_instance_limits: {
+    //      max_inflight_push_requests: 0,  // Max inflight push requests per ingester. 0 = no limit.
+    //      max_ingestion_rate: 0,  // Max ingestion rate (samples/second) per ingester. 0 = no limit.
+    //      max_series: 0,  // Max number of series per ingester. 0 = no limit.
+    //      max_tenants: 0,  // Max number of tenants per ingester. 0 = no limit.
+    //    },
+    ingester_instance_limits: null,
   },
 
   local configMap = $.core.v1.configMap,
@@ -447,6 +456,7 @@
         { overrides: $._config.overrides }
         + (if std.length($._config.multi_kv_config) > 0 then { multi_kv_config: $._config.multi_kv_config } else {})
         + (if $._config.ingester_stream_chunks_when_using_blocks then { ingester_stream_chunks_when_using_blocks: true } else {})
+        + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {}),
       ),
     }),
 
