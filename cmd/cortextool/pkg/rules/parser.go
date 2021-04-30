@@ -77,6 +77,10 @@ func Parse(f string) ([]RuleNamespace, []error) {
 		return nil, []error{errFileReadError}
 	}
 
+	return ParseBytes(content)
+}
+
+func ParseBytes(content []byte) ([]RuleNamespace, []error) {
 	decoder := yaml.NewDecoder(bytes.NewReader(content))
 	decoder.KnownFields(true)
 
