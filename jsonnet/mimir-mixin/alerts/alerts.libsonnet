@@ -560,16 +560,16 @@
         {
           alert: 'CortexRulerFailedRingCheck',
           expr: |||
-            sum by (%s) (rate(cortex_ruler_ring_check_errors_total[5m]))
+            sum by (%s, job) (rate(cortex_ruler_ring_check_errors_total[1m]))
                > 0
           ||| % $._config.alert_aggregation_labels,
-          'for': '1m',
+          'for': '5m',
           labels: {
             severity: 'critical',
           },
           annotations: {
             message: |||
-              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% errors when checking the ring for rule group ownership.
+              Cortex Rulers {{ $labels.job }} are experiencing errors when checking the ring for rule group ownership.
             |||,
           },
         },
