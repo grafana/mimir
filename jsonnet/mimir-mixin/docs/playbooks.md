@@ -249,7 +249,10 @@ This alert fires when Cortex finds partial blocks for a given tenant. A partial 
 2. A block deletion has been interrupted and `deletion-mark.json` has been deleted before `meta.json`
 
 How to **investigate**:
-- Look for the block ID in the logs
+- Look for the block ID in the logs. Example Loki query:
+  ```
+  {cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"
+  ```
 - Find out which Cortex component operated on the block at last (eg. uploaded by ingester/compactor, or deleted by compactor)
 - Investigate if was a partial upload or partial delete
 - Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor
