@@ -10,6 +10,12 @@ type MetricsInPrometheus struct {
 }
 
 type MetricCount struct {
-	Metric string `string:"metric"`
-	Count  int    `int:"count"`
+	Metric    string     `json:"metric"`
+	Count     int        `json:"count"`
+	JobCounts []JobCount `json:"job_counts"`
+}
+
+type JobCount struct {
+	Job   string `json:"job"`
+	Count int    `json:"count"`
 }

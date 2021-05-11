@@ -63,14 +63,17 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 	}
 	log.Infof("Found %d metric names\n", len(metricNames))
 
-	inUseMetrics := map[string]int{}
+	inUseMetrics := map[string]struct {
+		totalCount int
+		jobCount   map[string]int
+	}{}
 	inUseCardinality := 0
 
 	for _, metric := range grafanaMetrics.MetricsUsed {
 		ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 		defer cancel()
 
-		query := "count(" + metric + ")"
+		query := "count by (job) (" + metric + ")"
 		result, _, err := v1api.Query(ctx, query, time.Now())
 		if err != nil {
 			return errors.Wrap(err, "error querying "+query)
@@ -78,14 +81,26 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 		vec := result.(model.Vector)
 		if len(vec) == 0 {
-			inUseMetrics[metric] += 0
-			log.Debugln(metric, 0)
+			counts := inUseMetrics[metric]
+			counts.totalCount += 0
+			inUseMetrics[metric] = counts
+			log.Debugln("in use", metric, 0)
 
 			continue
 		}
 
-		inUseMetrics[metric] += int(vec[0].Value)
-		inUseCardinality += int(vec[0].Value)
+		for _, sample := range vec {
+			counts := inUseMetrics[metric]
+			if counts.jobCount == nil {
+				counts.jobCount = make(map[string]int)
+			}
+
+			counts.totalCount += int(sample.Value)
+			counts.jobCount[string(sample.Metric["job"])] += int(sample.Value)
+			inUseMetrics[metric] = counts
+
+			inUseCardinality += int(sample.Value)
+		}
 
 		log.Debugln("in use", metric, vec[0].Value)
 	}
@@ -93,7 +108,10 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 	log.Infof("%d active series are being used in dashboards", inUseCardinality)
 
 	// Count the not-in-use active series.
-	additionalMetrics := map[string]int{}
+	additionalMetrics := map[string]struct {
+		totalCount int
+		jobCount   map[string]int
+	}{}
 	additionalMetricsCardinality := 0
 	for _, metricName := range metricNames {
 		metric := string(metricName)
@@ -104,7 +122,7 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 		ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 		defer cancel()
 
-		query := "count(" + metric + ")"
+		query := "count by (job) (" + metric + ")"
 		result, _, err := v1api.Query(ctx, query, time.Now())
 		if err != nil {
 			return errors.Wrap(err, "error querying "+query)
@@ -112,14 +130,27 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 		vec := result.(model.Vector)
 		if len(vec) == 0 {
-			additionalMetrics[metric] += 0
-			log.Debugln(metric, 0)
+			counts := additionalMetrics[metric]
+			counts.totalCount += 0
+			additionalMetrics[metric] = counts
+
+			log.Debugln("additional", metric, 0)
 
 			continue
 		}
 
-		additionalMetrics[metric] += int(vec[0].Value)
-		additionalMetricsCardinality += int(vec[0].Value)
+		for _, sample := range vec {
+			counts := additionalMetrics[metric]
+			if counts.jobCount == nil {
+				counts.jobCount = make(map[string]int)
+			}
+
+			counts.totalCount += int(sample.Value)
+			counts.jobCount[string(sample.Metric["job"])] += int(sample.Value)
+			additionalMetrics[metric] = counts
+
+			additionalMetricsCardinality += int(sample.Value)
+		}
 
 		log.Debugln("additional", metric, vec[0].Value)
 	}
@@ -131,15 +162,36 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 	output.InUseActiveSeries = inUseCardinality
 	output.AdditionalActiveSeries = additionalMetricsCardinality
 
-	for metric, count := range inUseMetrics {
-		output.InUseMetricCounts = append(output.InUseMetricCounts, analyse.MetricCount{Metric: metric, Count: count})
+	for metric, counts := range inUseMetrics {
+		jobCounts := make([]analyse.JobCount, 0, len(counts.jobCount))
+		for job, count := range counts.jobCount {
+			jobCounts = append(jobCounts, analyse.JobCount{
+				Job:   job,
+				Count: count,
+			})
+		}
+		sort.Slice(jobCounts, func(i, j int) bool {
+			return jobCounts[i].Count > jobCounts[j].Count
+		})
+
+		output.InUseMetricCounts = append(output.InUseMetricCounts, analyse.MetricCount{Metric: metric, Count: counts.totalCount, JobCounts: jobCounts})
 	}
 	sort.Slice(output.InUseMetricCounts, func(i, j int) bool {
 		return output.InUseMetricCounts[i].Count > output.InUseMetricCounts[j].Count
 	})
 
-	for metric, count := range additionalMetrics {
-		output.AdditionalMetricCounts = append(output.AdditionalMetricCounts, analyse.MetricCount{Metric: metric, Count: count})
+	for metric, counts := range additionalMetrics {
+		jobCounts := make([]analyse.JobCount, 0, len(counts.jobCount))
+		for job, count := range counts.jobCount {
+			jobCounts = append(jobCounts, analyse.JobCount{
+				Job:   job,
+				Count: count,
+			})
+		}
+		sort.Slice(jobCounts, func(i, j int) bool {
+			return jobCounts[i].Count > jobCounts[j].Count
+		})
+		output.AdditionalMetricCounts = append(output.AdditionalMetricCounts, analyse.MetricCount{Metric: metric, Count: counts.totalCount, JobCounts: jobCounts})
 	}
 	sort.Slice(output.AdditionalMetricCounts, func(i, j int) bool {
 		return output.AdditionalMetricCounts[i].Count > output.AdditionalMetricCounts[j].Count
