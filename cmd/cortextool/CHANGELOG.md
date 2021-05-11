@@ -4,6 +4,9 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## unreleased/master
 
+## v0.10.1
+
+* [ENHANCEMENT] `cortextool analyse prometheus` now records cardinality by metric and job labels. #178
 
 ## v0.10.0
 
