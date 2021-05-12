@@ -6,7 +6,7 @@
     // Switch for overall storage engine.
     // May contain 'chunks', 'blocks' or both.
     // Enables chunks- or blocks- specific panels and dashboards.
-    storage_engine: ['chunks', 'blocks'],
+    storage_engine: ['blocks'],
 
     // For chunks backend, switch for chunk index type.
     // May contain 'bigtable', 'dynamodb' or 'cassandra'.
