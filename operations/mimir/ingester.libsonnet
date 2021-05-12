@@ -30,7 +30,7 @@
       'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
       'ingester.max-series-per-query': $._config.limits.max_series_per_query,
       'ingester.max-samples-per-query': $._config.limits.max_samples_per_query,
-      'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '/etc/cortex/overrides.yaml',
       'server.grpc-max-concurrent-streams': 100000,
     } + (
       if $._config.memcached_index_writes_enabled then

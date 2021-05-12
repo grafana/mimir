@@ -35,7 +35,7 @@
 
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
-      'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '/etc/cortex/overrides.yaml',
     } + (
       if $._config.queryFrontend.sharded_queries_enabled then
         {
