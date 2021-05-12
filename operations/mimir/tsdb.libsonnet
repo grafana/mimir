@@ -212,6 +212,10 @@
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
       'store-gateway.sharding-ring.tokens-file-path': '/data/tokens',
+
+      // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
+      'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
+      'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
