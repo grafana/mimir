@@ -207,7 +207,7 @@
     $._config.queryBlocksStorageConfig +
     {
       target: 'store-gateway',
-      'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '/etc/cortex/overrides.yaml',
 
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens

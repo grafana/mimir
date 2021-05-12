@@ -198,7 +198,7 @@
 
     // Shared between the Ruler and Querier
     queryConfig: {
-      'limits.per-user-override-config': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '/etc/cortex/overrides.yaml',
 
       // Limit the size of the rows we read from the index.
       'store.cardinality-limit': 1e6,
