@@ -583,7 +583,7 @@
           expr: |||
             memberlist_client_cluster_members_count
               != on (%s) group_left
-            sum by (%s) (up{job=~".+/(distributor|ingester.*|querier|cortex|ruler)"})
+            sum by (%s) (up{job=~".+/(admin-api|compactor|store-gateway|distributor|ingester.*|querier|cortex|ruler)"})
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
           labels: {
