@@ -260,20 +260,21 @@
 
     rulerClientConfig:
       {
-        'ruler.storage.type': $._config.ruler_client_type,
+        'ruler-storage.backend': $._config.ruler_client_type,
       } +
       {
         configdb: {
           configs_api_url: 'config.%s.svc.cluster.local' % $._config.namespace,
         },
         gcs: {
-          'ruler.storage.gcs.bucketname': $._config.ruler_gcs_bucket_name,
+          'ruler-storage.gcs.bucket-name': $._config.ruler_gcs_bucket_name,
         },
         s3: {
-          'ruler.storage.s3.url': 'https://%s/%s' % [$._config.aws_region, $._config.ruler_s3_bucket_name],
+          'ruler-storage.s3.region': $._config.aws_region,
+          'ruler-storage.s3.bucket-name': $._config.ruler_s3_bucket_name,
         },
         'local': {
-          'ruler.storage.local.directory': $._config.ruler_local_directory,
+          'ruler-storage.local.directory': $._config.ruler_local_directory,
         },
       }[$._config.ruler_client_type],
 
