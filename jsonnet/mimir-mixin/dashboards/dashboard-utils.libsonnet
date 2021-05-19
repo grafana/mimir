@@ -36,13 +36,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           then d.addMultiTemplate('job', 'cortex_build_info', 'job')
           else d
                .addMultiTemplate('cluster', 'cortex_build_info', 'cluster')
-               .addMultiTemplate('namespace', 'cortex_build_info', 'namespace')
+               .addMultiTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace')
         else
           if $._config.singleBinary
           then d.addTemplate('job', 'cortex_build_info', 'job')
           else d
                .addTemplate('cluster', 'cortex_build_info', 'cluster')
-               .addTemplate('namespace', 'cortex_build_info', 'namespace'),
+               .addTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace'),
 
     },
 
