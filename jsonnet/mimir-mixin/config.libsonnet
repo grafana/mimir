@@ -34,7 +34,7 @@
       query_scheduler: 'query-scheduler',  // Not part of single-binary.
       table_manager: '(table-manager|cortex$)',
       store_gateway: '(store-gateway|cortex$)',
-      gateway: 'cortex-gw',
+      gateway: '(gateway|cortex-gw)',
       compactor: 'compactor.*',  // Match also custom compactor deployments.
     },
 
