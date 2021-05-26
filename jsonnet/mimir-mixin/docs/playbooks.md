@@ -24,7 +24,15 @@ If nothing obvious from the above, check for increased load:
 - If there is an increase in the number of active series and the memory provisioned is not enough, scale up the ingesters horizontally to have the same number of series as before per ingester.
 - If we had an outage and once Cortex is back up, the incoming traffic increases. (or) The clients have their Prometheus remote-write lagging and starts to send samples at a higher rate (again, an increase in traffic but in terms of number of samples). Scale up the ingester horizontally in this case too.
 
-### CortexRequest Latency
+### CortexIngesterReachingSeriesLimit
+
+_TODO: this playbook has not been written yet._
+
+### CortexIngesterReachingTenantsLimit
+
+_TODO: this playbook has not been written yet._
+
+### CortexRequestLatency
 First establish if the alert is for read or write latency. The alert should say.
 
 #### Write Latency
@@ -47,6 +55,10 @@ If you think its provisioning / scaling is the problem, consult the scaling dash
 
 Right now most of the execution time will be spent in PromQL's innerEval. NB that the prepare (index and chunk fetch) are now interleaved with Eval, so you need to expand both to confirm if its flow execution of slow fetching.
 
+### CortexRequestErrors
+
+_TODO: this playbook has not been written yet._
+
 ### CortexTransferFailed
 This alert goes off when an ingester fails to find another node to transfer its data to when it was shutting down. If there is both a pod stuck terminating and one stuck joining, look at the kubernetes events. This may be due to scheduling problems caused by some combination of anti affinity rules/resource utilization. Adding a new node can help in these circumstances. You can see recent events associated with a resource via kubectl describe, ex: `kubectl -n <namespace> describe pod <pod>`
 
@@ -68,6 +80,14 @@ More information:
 ### CortexRulerFailedRingCheck
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
+
+### CortexRulerFailedEvaluations
+
+_TODO: this playbook has not been written yet._
+
+### CortexRulerMissedEvaluations
+
+_TODO: this playbook has not been written yet._
 
 ### CortexIngesterHasNotShippedBlocks
 
@@ -233,6 +253,14 @@ gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 
 Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
 
+### CortexCompactorHasNotSuccessfullyRunCompaction
+
+_TODO: this playbook has not been written yet._
+
+### CortexCompactorRunFailed
+
+_TODO: this playbook has not been written yet._
+
 ### CortexBucketIndexNotUpdated
 
 This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store. 
@@ -276,6 +304,74 @@ WAL corruptions are only detected at startups, so at this point the WAL/Checkpoi
   1. Less than the quorum number for your replication factor: No data loss, because there is a guarantee that the data is replicated. For example, if replication factor is 3, then it's fine if corruption was on 1 ingester.
   2. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
   3. Equal or more than the replication factor: Then there is definitely some data loss.
+
+### CortexRequestErrors
+
+_TODO: this playbook has not been written yet._
+
+### CortexTableSyncFailure
+
+_TODO: this playbook has not been written yet._
+
+### CortexQueriesIncorrect
+
+_TODO: this playbook has not been written yet._
+
+### CortexInconsistentConfig
+
+_TODO: this playbook has not been written yet._
+
+### CortexBadRuntimeConfig
+
+_TODO: this playbook has not been written yet._
+
+### CortexQuerierCapacityFull
+
+_TODO: this playbook has not been written yet._
+
+### CortexFrontendQueriesStuck
+
+_TODO: this playbook has not been written yet._
+
+### CortexSchedulerQueriesStuck
+
+_TODO: this playbook has not been written yet._
+
+### CortexCacheRequestErrors
+
+_TODO: this playbook has not been written yet._
+
+### CortexOldChunkInMemory
+
+_TODO: this playbook has not been written yet._
+
+### CortexCheckpointCreationFailed
+
+_TODO: this playbook has not been written yet._
+
+### CortexCheckpointDeletionFailed
+
+_TODO: this playbook has not been written yet._
+
+### CortexProvisioningMemcachedTooSmall
+
+_TODO: this playbook has not been written yet._
+
+### CortexProvisioningTooManyActiveSeries
+
+_TODO: this playbook has not been written yet._
+
+### CortexProvisioningTooManyWrites
+
+_TODO: this playbook has not been written yet._
+
+### CortexAllocatingTooMuchMemory
+
+_TODO: this playbook has not been written yet._
+
+### CortexGossipMembersMismatch
+
+_TODO: this playbook has not been written yet._
 
 ### EtcdAllocatingTooMuchMemory
 
