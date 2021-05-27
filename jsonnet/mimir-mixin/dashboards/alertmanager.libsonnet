@@ -94,26 +94,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Replication')
       .addPanel(
-        $.panel('Tenants (By Instance)') +
+        $.panel('Per %s Tenants' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(pod) (cortex_alertmanager_tenants_owned{%s})' % $.jobMatcher('alertmanager'),
-          '{{pod}}'
+          'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
       )
       .addPanel(
-        $.panel('Alerts (By Instance)') +
+        $.panel('Per %s Alerts' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(pod) (cortex_alertmanager_alerts{%s})' % $.jobMatcher('alertmanager'),
-          '{{pod}}'
+          'sum by(%s) (cortex_alertmanager_alerts{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
       )
       .addPanel(
-        $.panel('Silences (By Instance)') +
+        $.panel('Per %s Silences' % $._config.per_instance_label) +
         $.queryPanel(
-          'sum by(pod) (cortex_alertmanager_silences{%s})' % $.jobMatcher('alertmanager'),
-          '{{pod}}'
+          'sum by(%s) (cortex_alertmanager_silences{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          '{{%s}}' % $._config.per_instance_label
         ) +
         $.stack
       )
@@ -150,37 +150,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Sharding Initial State Sync')
+      $.row('Sharding Runtime State Sync')
       .addPanel(
         $.panel('Syncs/sec') +
-        $.queryPanel(
-          [
-            |||
-              sum(rate(cortex_alertmanager_state_initial_sync_total{%s}[$__rate_interval]))
-              -
-              sum(rate(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed",%s}[$__rate_interval]))
-            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(rate(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed",%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
-          ],
-          ['success', 'failed']
-        )
-      )
-      .addPanel(
-        $.panel('Syncs/sec (By Outcome)') +
         $.queryPanel(
           'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           '{{outcome}}'
         )
       )
       .addPanel(
-        $.panel('Duration') +
-        utils.latencyRecordingRulePanel('cortex_alertmanager_state_initial_sync_duration_seconds', $.jobSelector('alertmanager'))
+        $.panel('Sync duration') +
+        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher('alertmanager'))
       )
-    )
-    .addRow(
-      $.row('Sharding State Operations')
       .addPanel(
-        $.panel('Replica Fetches/sec') +
+        $.panel('Fetch state from other alertmanagers /sec') +
         $.queryPanel(
           [
             |||
@@ -193,8 +176,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ['success', 'failed']
         )
       )
+    )
+    .addRow(
+      $.row('Sharding State Operations')
       .addPanel(
-        $.panel('Replica Updates/sec') +
+        $.panel('Replicate state to other alertmanagers /sec') +
         $.queryPanel(
           [
             |||
@@ -208,7 +194,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('Partial Merges/sec') +
+        $.panel('Merge state from other alertmanagers /sec') +
         $.queryPanel(
           [
             |||
@@ -222,7 +208,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('Remote Storage Persists/sec') +
+        $.panel('Persist state to remote storage /sec') +
         $.queryPanel(
           [
             |||
