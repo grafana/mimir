@@ -22,6 +22,7 @@
     {
       target: 'alertmanager',
       'log.level': 'debug',
+      'runtime-config.file': '/etc/cortex/overrides.yaml',
       'experimental.alertmanager.enable-api': 'true',
       'alertmanager.storage.path': '/data',
       'alertmanager.web.external-url': '%s/alertmanager' % $._config.external_url,
@@ -87,6 +88,7 @@
       statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
       statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
       statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(900) +
+      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
       statefulSet.mixin.spec.template.spec.withVolumesMixin(
         if hasFallbackConfig then
           [volume.fromConfigMap('alertmanager-fallback-config', 'alertmanager-fallback-config')]
