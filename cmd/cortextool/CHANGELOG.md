@@ -4,6 +4,8 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## unreleased/master
 
+* [ENHANCEMENT] Added the ability to set an explicit user when Cortex is behind basic auth. #187
+
 ## v0.10.1
 
 * [ENHANCEMENT] `cortextool analyse prometheus` now records cardinality by metric and job labels. #178

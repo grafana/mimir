@@ -87,7 +87,8 @@ type RuleCommand struct {
 // Register rule related commands and flags with the kingpin application
 func (r *RuleCommand) Register(app *kingpin.Application) {
 	rulesCmd := app.Command("rules", "View & edit rules stored in cortex.").PreAction(r.setup)
-	rulesCmd.Flag("key", "Api key to use when contacting cortex, alternatively set $CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&r.ClientConfig.Key)
+	rulesCmd.Flag("user", "API user to use when contacting cortex, alternatively set CORTEX_API_USER. If empty, CORTEX_TENANT_ID will be used instead.").Default("").Envar("CORTEX_API_USER").StringVar(&r.ClientConfig.User)
+	rulesCmd.Flag("key", "API key to use when contacting cortex, alternatively set CORTEX_API_KEY.").Default("").Envar("CORTEX_API_KEY").StringVar(&r.ClientConfig.Key)
 	rulesCmd.Flag("backend", "Backend type to interact with: <cortex|loki>").Default("cortex").EnumVar(&r.Backend, backends...)
 
 	// Register rule commands

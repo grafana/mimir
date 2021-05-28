@@ -28,6 +28,7 @@ var (
 
 // Config is used to configure a Ruler Client
 type Config struct {
+	User            string `yaml:"user"`
 	Key             string `yaml:"key"`
 	Address         string `yaml:"address"`
 	ID              string `yaml:"id"`
@@ -37,6 +38,7 @@ type Config struct {
 
 // CortexClient is used to get and load rules into a cortex ruler
 type CortexClient struct {
+	user     string
 	key      string
 	id       string
 	endpoint *url.URL
@@ -80,6 +82,7 @@ func New(cfg Config) (*CortexClient, error) {
 	}
 
 	return &CortexClient{
+		user:     cfg.User,
 		key:      cfg.Key,
 		id:       cfg.ID,
 		endpoint: endpoint,
@@ -108,7 +111,9 @@ func (r *CortexClient) doRequest(path, method string, payload []byte) (*http.Res
 		return nil, err
 	}
 
-	if r.key != "" {
+	if r.user != "" {
+		req.SetBasicAuth(r.user, r.key)
+	} else if r.key != "" {
 		req.SetBasicAuth(r.id, r.key)
 	}
 

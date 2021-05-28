@@ -46,6 +46,7 @@ type RunnerConfig struct {
 	AlertmanagerID  string
 	RulerURL        string
 	RulerID         string
+	User            string
 	Key             string
 
 	RulesConfigFile        string
@@ -62,6 +63,7 @@ func (cfg *RunnerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.RulerURL, "configs.ruler-url", "", "The URL under the Ruler is reachable")
 	f.StringVar(&cfg.RulerID, "configs.ruler-id", "", "The user ID of the Ruler tenant")
 
+	f.StringVar(&cfg.User, "configs.user", "", "The API user to use for syncing configuration. The same user is used for both the alertmanager and ruler. If empty, configs.ruler-id is used instead.")
 	f.StringVar(&cfg.Key, "configs.key", "", "The API key to use for syncing configuration. The same key is used for both the alertmanager and ruler.")
 	f.DurationVar(&cfg.ConfigSyncInterval, "configs.sync-interval", 30*time.Minute, "How often should we sync the configuration with the ruler and alertmanager")
 }
@@ -88,6 +90,7 @@ func NewRunner(cfg RunnerConfig, logger log.Logger) (*Runner, error) {
 	amClient, err := client.New(client.Config{
 		Address: cfg.AlertmanagerURL,
 		ID:      cfg.AlertmanagerID,
+		User:    cfg.User,
 		Key:     cfg.Key,
 	})
 	if err != nil {
@@ -98,6 +101,7 @@ func NewRunner(cfg RunnerConfig, logger log.Logger) (*Runner, error) {
 	rulerClient, err := client.New(client.Config{
 		Address: cfg.RulerURL,
 		ID:      cfg.RulerID,
+		User:    cfg.User,
 		Key:     cfg.Key,
 	})
 	if err != nil {
