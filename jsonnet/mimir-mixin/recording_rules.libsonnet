@@ -215,7 +215,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               sum by (cluster, namespace, deployment) (
                 label_replace(
-                  kube_pod_container_resource_requests_cpu_cores,
+                  kube_pod_container_resource_requests{resource="cpu"},
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 )
               )
@@ -257,7 +257,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               sum by (cluster, namespace, deployment) (
                 label_replace(
-                  kube_pod_container_resource_requests_memory_bytes,
+                  kube_pod_container_resource_requests{resource="memory"},
                   "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                 )
               )
