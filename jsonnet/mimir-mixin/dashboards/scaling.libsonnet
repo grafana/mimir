@@ -48,12 +48,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
             )
           |||,
         ], {
-          '__name__': { alias: 'Cluster', type: 'hidden' },
+          __name__: { alias: 'Cluster', type: 'hidden' },
           cluster: { alias: 'Cluster' },
           namespace: { alias: 'Namespace' },
           deployment: { alias: 'Service' },
           reason: { alias: 'Reason' },
-          'Value': { alias: 'Required Replicas', decimals: 0 },
+          Value: { alias: 'Required Replicas', decimals: 0 },
         })
       )
     ),
