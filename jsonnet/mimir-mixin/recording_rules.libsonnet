@@ -213,10 +213,30 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Convenience rule to get the CPU request for both a deployment and a statefulset.
             record: 'cluster_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum',
             expr: |||
-              sum by (cluster, namespace, deployment) (
-                label_replace(
-                  kube_pod_container_resource_requests{resource="cpu"},
-                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+              # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
+              # that remove resource metrics, ref:
+              # - https://github.com/kubernetes/kube-state-metrics/blob/master/CHANGELOG.md#v200-alpha--2020-09-16
+              # - https://github.com/kubernetes/kube-state-metrics/pull/1004
+              #
+              # This is the old expression, compatible with kube-state-metrics < v2.0.0,
+              # where kube_pod_container_resource_requests_cpu_cores was removed:
+              (
+                sum by (cluster, namespace, deployment) (
+                  label_replace(
+                    kube_pod_container_resource_requests_cpu_cores,
+                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  )
+                )
+              )
+              or
+              # This expression is compatible with kube-state-metrics >= v1.4.0,
+              # where kube_pod_container_resource_requests was introduced.
+              (
+                sum by (cluster, namespace, deployment) (
+                  label_replace(
+                    kube_pod_container_resource_requests{resource="cpu"},
+                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  )
                 )
               )
             |||,
@@ -255,10 +275,30 @@ local utils = import 'mixin-utils/utils.libsonnet';
             // Convenience rule to get the Memory request for both a deployment and a statefulset.
             record: 'cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum',
             expr: |||
-              sum by (cluster, namespace, deployment) (
-                label_replace(
-                  kube_pod_container_resource_requests{resource="memory"},
-                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+              # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
+              # that remove resource metrics, ref:
+              # - https://github.com/kubernetes/kube-state-metrics/blob/master/CHANGELOG.md#v200-alpha--2020-09-16
+              # - https://github.com/kubernetes/kube-state-metrics/pull/1004
+              #
+              # This is the old expression, compatible with kube-state-metrics < v2.0.0,
+              # where kube_pod_container_resource_requests_memory_bytes was removed:
+              (
+                sum by (cluster, namespace, deployment) (
+                  label_replace(
+                    kube_pod_container_resource_requests_memory_bytes,
+                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  )
+                )
+              )
+              or
+              # This expression is compatible with kube-state-metrics >= v1.4.0,
+              # where kube_pod_container_resource_requests was introduced.
+              (
+                sum by (cluster, namespace, deployment) (
+                  label_replace(
+                    kube_pod_container_resource_requests{resource="memory"},
+                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  )
                 )
               )
             |||,
