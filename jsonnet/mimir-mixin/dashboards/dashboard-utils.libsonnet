@@ -128,9 +128,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(pod) (rate(container_cpu_usage_seconds_total{%s,container="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), containerName],
+      'sum by(%s) (rate(container_cpu_usage_seconds_total{%s,container="%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
       'min(container_spec_cpu_quota{%s,container="%s"} / container_spec_cpu_period{%s,container="%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
-    ], ['{{pod}}', 'limit']) +
+    ], ['{{%s}}' % $._config.per_instance_label, 'limit']) +
     {
       seriesOverrides: [
         {
@@ -146,10 +146,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.panel(title) +
     $.queryPanel([
       // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
-      // summing the memory of the old pod (whose metric will be stale for 5m) to the new pod.
-      'max by(pod) (container_memory_working_set_bytes{%s,container="%s"})' % [$.namespaceMatcher(), containerName],
+      // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
+      'max by(%s) (container_memory_working_set_bytes{%s,container="%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
       'min(container_spec_memory_limit_bytes{%s,container="%s"} > 0)' % [$.namespaceMatcher(), containerName],
-    ], ['{{pod}}', 'limit']) +
+    ], ['{{%s}}' % $._config.per_instance_label, 'limit']) +
     {
       seriesOverrides: [
         {
@@ -161,6 +161,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
       yaxes: $.yaxes('bytes'),
       tooltip: { sort: 2 },  // Sort descending.
     },
+
+  containerNetworkPanel(title, metric, instanceName)::
+    $.panel(title) +
+    $.queryPanel(
+      'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))' % {
+        namespace: $.namespaceMatcher(),
+        metric: metric,
+        instance: $._config.per_instance_label,
+        instanceName: instanceName,
+      }, '{{%s}}' % $._config.per_instance_label
+    ) +
+    $.stack +
+    { yaxes: $.yaxes('Bps') },
+
+  containerNetworkReceiveBytesPanel(instanceName)::
+    $.containerNetworkPanel('Receive Bandwidth', 'container_network_receive_bytes_total', instanceName),
+
+  containerNetworkTransmitBytesPanel(instanceName)::
+    $.containerNetworkPanel('Transmit Bandwidth', 'container_network_transmit_bytes_total', instanceName),
 
   goHeapInUsePanel(title, jobName)::
     $.panel(title) +
