@@ -43,16 +43,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Network')
       .addPanel(
-        $.panel('Receive Bandwidth') +
-        $.queryPanel('sum by(pod) (rate(container_network_receive_bytes_total{%s,pod=~"alertmanager.*"}[$__rate_interval]))' % $.namespaceMatcher(), '{{pod}}') +
-        $.stack +
-        { yaxes: $.yaxes('Bps') },
+        $.containerNetworkReceiveBytesPanel($._config.instance_names.alertmanager),
       )
       .addPanel(
-        $.panel('Transmit Bandwidth') +
-        $.queryPanel('sum by(pod) (rate(container_network_transmit_bytes_total{%s,pod=~"alertmanager.*"}[$__rate_interval]))' % $.namespaceMatcher(), '{{pod}}') +
-        $.stack +
-        { yaxes: $.yaxes('Bps') },
+        $.containerNetworkTransmitBytesPanel($._config.instance_names.alertmanager),
       )
     )
     .addRow(

@@ -49,6 +49,12 @@
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
 
+    // Name selectors for different application instances, using the "per_instance_label".
+    instance_names: {
+      compactor: 'compactor.*',
+      alertmanager: 'alertmanager.*',
+    },
+
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
   },
