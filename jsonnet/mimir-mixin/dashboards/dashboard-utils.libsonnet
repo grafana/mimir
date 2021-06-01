@@ -162,15 +162,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       tooltip: { sort: 2 },  // Sort descending.
     },
 
-  containerNetworkPanel(title, metric, instanceName):: 
+  containerNetworkPanel(title, metric, instanceName)::
     $.panel(title) +
     $.queryPanel(
       'sum by(%(instance)s) (rate(%(metric)s{%(namespace)s,%(instance)s=~"%(instanceName)s"}[$__rate_interval]))' % {
-        namespace: $.namespaceMatcher(), 
+        namespace: $.namespaceMatcher(),
         metric: metric,
-        instance: $._config.per_instance_label, 
-        instanceName: instanceName, 
-      }, '{{%s}}' % $._config.per_instance_label) +
+        instance: $._config.per_instance_label,
+        instanceName: instanceName,
+      }, '{{%s}}' % $._config.per_instance_label
+    ) +
     $.stack +
     { yaxes: $.yaxes('Bps') },
 
