@@ -51,10 +51,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         name: 'cortex_received_samples',
         rules: [
           {
-            record: 'cluster_namespace_job:cortex_distributor_received_samples:rate5m',
+            record: '%(job_aggregation_prefix)s:cortex_distributor_received_samples:rate5m' % $._config,
             expr: |||
-              sum by (cluster, namespace, job) (rate(cortex_distributor_received_samples_total[5m]))
-            |||,
+              sum by (%(job_aggregation_labels_recording_rules)s) (rate(cortex_distributor_received_samples_total[5m]))
+            ||| % $._config,
           },
         ],
       },
@@ -64,6 +64,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           max_samples_per_sec_per_ingester: 80e3,
           max_samples_per_sec_per_distributor: 240e3,
           limit_utilisation_target: 0.6,
+          job_aggregation_prefix: $._config.job_aggregation_prefix,
         },
         name: 'cortex_scaling_rules',
         rules: [
@@ -89,7 +90,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 quantile_over_time(0.99,
                   sum by (cluster, namespace) (
-                    cluster_namespace_job:cortex_distributor_received_samples:rate5m
+                    %(job_aggregation_prefix)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
                 / %(max_samples_per_sec_per_distributor)s
@@ -123,7 +124,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 quantile_over_time(0.99,
                   sum by (cluster, namespace) (
-                    cluster_namespace_job:cortex_distributor_received_samples:rate5m
+                    %(job_aggregation_prefix)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
                 * 3 / %(max_samples_per_sec_per_ingester)s

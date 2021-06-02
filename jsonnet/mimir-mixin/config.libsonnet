@@ -38,6 +38,11 @@
       compactor: 'compactor.*',  // Match also custom compactor deployments.
     },
 
+    // Aggregation strings related to "jobs"
+    job_aggregation_prefix: 'cluster_namespace_job',
+    job_aggregation_labels_recording_rules: 'cluster, namespace, job',
+    job_aggregation_labels_active_series: 'namespace',
+
     // Labels used to in alert aggregations - should uniquely identify
     // a single Cortex cluster.
     alert_aggregation_labels: 'cluster, namespace',
