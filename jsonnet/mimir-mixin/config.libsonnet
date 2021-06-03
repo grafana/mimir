@@ -33,9 +33,13 @@
       query_frontend: '(query-frontend.*|cortex$)',  // Match also custom query-frontend deployments.
       query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
       table_manager: '(table-manager|cortex$)',
+      // If non-null, this list is joined together to form the regexp for the ring_members matcher value.
+      // to completely, override the matcher value, you can make this null and override the `ring_members`
+      // field instead of this.
       // ingester-.* accommodates multiple ingester StatefulSets or Deployments.
       // cortex$ prevents matching the cortex-gateway.
-      ring_members: '(compactor|distributor|ingester-.*|querier|ruler|store-gateway|cortex$)',
+      ring_members_list: ['compactor', 'distributor', 'ingester-.*', 'querier', 'ruler', 'store-gateway', 'cortex$'],
+      ring_members: if self.ring_members_list != null then '(%s)' % std.join('|', self.ring_members_list) else '',
       store_gateway: '(store-gateway|cortex$)',
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
       compactor: 'compactor.*',  // Match also custom compactor deployments.
