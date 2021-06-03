@@ -13,9 +13,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Samples / s') +
         $.statPanel(
-          'sum(%(jobAggregationPrefix)s:cortex_distributor_received_samples:rate5m{%(job)s})' % {
+          'sum(%(job_aggregation_prefix)s:cortex_distributor_received_samples:rate5m{%(job)s})' % $._config + {
             job: $.jobMatcher($._config.job_names.distributor),
-            jobAggregationPrefix: $._config.job_aggregation_prefix,
           },
           format='reqps'
         )
