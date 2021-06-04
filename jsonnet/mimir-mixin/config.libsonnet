@@ -38,14 +38,10 @@
       compactor: 'compactor.*',  // Match also custom compactor deployments.
     },
 
-    // Aggregation strings related to "jobs"
-    job_aggregation_prefix: 'cluster_namespace_job',
-    job_aggregation_labels_recording_rules: 'cluster, namespace, job',
-    job_aggregation_labels_active_series: 'namespace',
+    // Grouping labels, to uniquely identify and group by {jobs, clusters}
+    job_labels: ['cluster', 'namespace', 'job'],
+    cluster_labels: ['cluster', 'namespace'],
 
-    // Labels used to in alert aggregations - should uniquely identify
-    // a single Cortex cluster.
-    alert_aggregation_labels: 'cluster, namespace',
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).

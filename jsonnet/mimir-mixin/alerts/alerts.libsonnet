@@ -39,7 +39,7 @@
         {
           alert: 'CortexRequestLatency',
           expr: |||
-            %(job_aggregation_prefix)s_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop"}
+            %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop"}
                >
             %(cortex_p99_latency_threshold_seconds)s
           ||| % $._config,

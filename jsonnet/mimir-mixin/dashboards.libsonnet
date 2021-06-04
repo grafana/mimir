@@ -31,5 +31,5 @@
        (import 'dashboards/writes-resources.libsonnet') +
        (import 'dashboards/alertmanager-resources.libsonnet')) +
 
-    { _config:: $._config },
+    { _config:: $._config + $._group_config },
 }
