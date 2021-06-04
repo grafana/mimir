@@ -40,6 +40,6 @@
         ],
         alert_aggregation_labels_override
       )
-      else std.trace('All good with group by cluster', group_by_cluster),
+      group_by_cluster,
   },
 }
