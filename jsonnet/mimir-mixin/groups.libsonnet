@@ -40,6 +40,6 @@
         ],
         alert_aggregation_labels_override
       )
-      group_by_cluster,
+      else group_by_cluster,
   },
 }
