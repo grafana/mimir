@@ -64,7 +64,7 @@ func newQueryRunner(id string, tenantName string, cfg QueryConfig, workload *que
 		clientPool: map[string]v1.API{},
 		dnsProvider: dns.NewProvider(
 			logger,
-			extprom.WrapRegistererWithPrefix("benchtool_", reg),
+			extprom.WrapRegistererWithPrefix("benchtool_query_", reg),
 			dns.GolangResolverType,
 		),
 

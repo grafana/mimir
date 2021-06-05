@@ -67,7 +67,7 @@ func NewWriteBenchmarkRunner(id string, tenantName string, cfg WriteBenchConfig,
 		workload: workload,
 		dnsProvider: dns.NewProvider(
 			logger,
-			extprom.WrapRegistererWithPrefix("benchtool_", reg),
+			extprom.WrapRegistererWithPrefix("benchtool_write_", reg),
 			dns.GolangResolverType,
 		),
 		clientPool: map[string]*writeClient{},
