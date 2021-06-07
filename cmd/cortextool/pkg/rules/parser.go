@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grafana/loki/pkg/ruler/manager"
+	"github.com/grafana/loki/pkg/ruler"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
@@ -132,7 +132,7 @@ func ParseLoki(f string) ([]RuleNamespace, []error) {
 			grps = append(grps, g.RuleGroup)
 		}
 
-		if errs := manager.ValidateGroups(grps...); len(errs) > 0 {
+		if errs := ruler.ValidateGroups(grps...); len(errs) > 0 {
 			return nil, errs
 		}
 

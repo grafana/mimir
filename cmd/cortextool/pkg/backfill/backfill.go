@@ -118,7 +118,7 @@ func CreateBlocks(input IteratorCreator, mint, maxt int64, maxSamplesInAppender 
 				}
 
 				l := i.Labels()
-				if _, err := app.Add(i.Labels(), ts, v); err != nil {
+				if _, err := app.Append(0, i.Labels(), ts, v); err != nil {
 					return errors.Wrap(err, fmt.Sprintf("add sample for metric=%s ts=%s value=%f", l, model.Time(ts).Time().Format(time.RFC3339Nano), v))
 				}
 

@@ -57,7 +57,7 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 	defer cancel()
-	metricNames, _, err := v1api.LabelValues(ctx, labels.MetricName, time.Now().Add(-10*time.Minute), time.Now())
+	metricNames, _, err := v1api.LabelValues(ctx, labels.MetricName, nil, time.Now().Add(-10*time.Minute), time.Now())
 	if err != nil {
 		return errors.Wrap(err, "error querying for metric names")
 	}
