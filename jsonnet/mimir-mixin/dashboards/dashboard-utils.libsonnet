@@ -14,6 +14,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
         then self.addRow(row)
         else self,
 
+      addRowsIf(condition, rows)::
+        if condition
+        then
+          local reduceRows(dashboard, remainingRows) =
+            if (std.length(remainingRows) == 0)
+            then dashboard
+            else
+              reduceRows(
+                dashboard.addRow(remainingRows[0]),
+                std.slice(remainingRows, 1, std.length(remainingRows), 1)
+              )
+          ;
+          reduceRows(self, rows)
+        else self,
+
+      addRows(rows)::
+        addRowsIf(true, rows),
+
       addClusterSelectorTemplates(multi=true)::
         local d = self {
           tags: $._config.tags,
@@ -43,7 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           else d
                .addTemplate('cluster', 'cortex_build_info', 'cluster')
                .addTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace'),
-
+      editable: true,
     },
 
   // The mixin allow specialism of the job selector depending on if its a single binary
@@ -274,8 +292,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
     type: 'text',
   } + options,
 
-  objectStorePanels1(title, component)::
-    super.row(title)
+
+  getObjectStoreRows(title, component):: [
+    ($.row(title) { height: '25px' })
+    .addPanel(
+      $.textPanel(
+        '',
+        |||
+          - The panels below summarize the rate of requests issued by %s
+            to object storage, separated by operation type. 
+          - It also includes the average, median, and 99th percentile latency 
+            of each operation and the error rate of each operation. 
+        ||| % component
+      )
+    ),
+    $.row('')
     .addPanel(
       $.panel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
@@ -288,62 +319,163 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { yaxes: $.yaxes('percentunit') },
     )
     .addPanel(
-      $.panel('Op: Attributes') +
+      $.panel('Latency of Op: Attributes') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="attributes"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Op: Exists') +
+      $.panel('Latency of Op: Exists') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="exists"}' % [$.namespaceMatcher(), component]),
     ),
-
-  // Second row of Object Store stats
-  objectStorePanels2(title, component)::
-    super.row(title)
+    $.row('')
     .addPanel(
-      $.panel('Op: Get') +
+      $.panel('Latency of Op: Get') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Op: GetRange') +
+      $.panel('Latency of Op: GetRange') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="get_range"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Op: Upload') +
+      $.panel('Latency of Op: Upload') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="upload"}' % [$.namespaceMatcher(), component]),
     )
     .addPanel(
-      $.panel('Op: Delete') +
+      $.panel('Latency of Op: Delete') +
       $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="%s",operation="delete"}' % [$.namespaceMatcher(), component]),
     ),
+  ],
 
   thanosMemcachedCache(title, jobName, component, cacheName)::
+    local config = {
+      jobMatcher: $.jobMatcher(jobName),
+      component: component,
+      cacheName: cacheName,
+      cacheNameReadable: std.strReplace(cacheName, '-', ' '),
+    };
+    local panelText = {
+      'metadata-cache':
+        |||
+          The metadata cache
+          is an optional component that the
+          store-gateway and querier
+          will check before going to object storage.
+          This set of panels focuses on the
+          %s’s use of the metadata cache.
+        ||| % component,
+      'chunks-cache':
+        |||
+          The chunks cache
+          is an optional component that the
+          store-gateway
+          will check before going to object storage.
+          This helps reduce calls to the object store.
+        |||,
+    }[cacheName];
+
     super.row(title)
     .addPanel(
+      $.textPanel(
+        '', panelText
+      )
+    )
+    .addPanel(
       $.panel('QPS') +
-      $.queryPanel('sum by(operation) (rate(thanos_memcached_operations_total{%s,component="%s",name="%s"}[$__rate_interval]))' % [$.jobMatcher(jobName), component, cacheName], '{{operation}}') +
+      $.queryPanel(
+        |||
+          sum by(operation) (
+            rate(
+              thanos_memcached_operations_total{
+                %(jobMatcher)s,
+                component="%(component)s",
+                name="%(cacheName)s"
+              }[$__rate_interval]
+            )
+          )
+        ||| % config,
+        '{{operation}}'
+      ) +
       $.stack +
-      { yaxes: $.yaxes('ops') },
+      { yaxes: $.yaxes('ops') } +
+      $.panelDescription(
+        'Requests Per Second',
+        |||
+          Requests per second made to 
+          the %(cacheNameReadable)s
+          from the %(component)s, 
+          separated into request type.
+        ||| % config
+      ),
     )
     .addPanel(
       $.panel('Latency (getmulti)') +
-      $.latencyPanel('thanos_memcached_operation_duration_seconds', '{%s,operation="getmulti",component="%s",name="%s"}' % [$.jobMatcher(jobName), component, cacheName])
+      $.latencyPanel(
+        'thanos_memcached_operation_duration_seconds',
+        |||
+          {
+            %(jobMatcher)s,
+            operation="getmulti",
+            component="%(component)s",
+            name="%(cacheName)s"
+          }
+        ||| % config
+      ) +
+      $.panelDescription(
+        'Latency (getmulti)',
+        |||
+          The average, median (50th percentile) and 99th percentile 
+          time to satisfy a “getmulti” request 
+          made by the %(component)s,
+          which retrieves multiple items from the cache.
+        ||| % config
+      )
     )
     .addPanel(
       $.panel('Hit ratio') +
-      $.queryPanel('sum(rate(thanos_cache_memcached_hits_total{%s,component="%s",name="%s"}[$__rate_interval])) / sum(rate(thanos_cache_memcached_requests_total{%s,component="%s",name="%s"}[$__rate_interval]))' %
-                   [
-                     $.jobMatcher(jobName),
-                     component,
-                     cacheName,
-                     $.jobMatcher(jobName),
-                     component,
-                     cacheName,
-                   ], 'items') +
-      { yaxes: $.yaxes('percentunit') },
+      $.queryPanel(
+        |||
+          sum(
+            rate(
+              thanos_cache_memcached_hits_total{
+                %(jobMatcher)s,
+                component="%(component)s",
+                name="%(cacheName)s"
+              }[$__rate_interval]
+            )
+          ) 
+          / 
+          sum(
+            rate(
+              thanos_cache_memcached_requests_total{
+                %(jobMatcher)s,
+                component="%(component)s",
+                name="%(cacheName)s"
+              }[$__rate_interval]
+            )
+          )
+        ||| % config,
+        'items'
+      ) +
+      { yaxes: $.yaxes('percentunit') } +
+      $.panelDescription(
+        'Hit Ratio',
+        |||
+          The fraction of %(component)s requests to the 
+          %(cacheNameReadable)s that successfully return data. 
+          Requests that miss the cache must go to 
+          object storage for the underlying data. 
+        ||| % config
+      ),
     ),
 
   filterNodeDiskContainer(containerName)::
     |||
       ignoring(%s) group_right() (label_replace(count by(%s, %s, device) (container_fs_writes_bytes_total{%s,container="%s",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
     ||| % [$._config.per_instance_label, $._config.per_node_label, $._config.per_instance_label, $.namespaceMatcher(), containerName],
+
+  panelDescription(title, description):: {
+    description: |||
+      ### %s
+      %s
+    ||| % [title, description],
+  },
 }
