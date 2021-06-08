@@ -230,8 +230,8 @@
     container.withPorts($.store_gateway_ports) +
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
-    k.util.resourcesRequests('1', '12Gi') +
-    k.util.resourcesLimits(null, '18Gi') +
+    $.util.resourcesRequests('1', '12Gi') +
+    $.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
 
