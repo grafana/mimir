@@ -216,6 +216,8 @@
       // Block index-headers are pre-downloaded but lazy mmaped and loaded at query time.
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
+
+      'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
@@ -228,8 +230,8 @@
     container.withPorts($.store_gateway_ports) +
     container.withArgsMixin($.util.mapToFlags($.store_gateway_args)) +
     container.withVolumeMountsMixin([volumeMount.new('store-gateway-data', '/data')]) +
-    $.util.resourcesRequests('1', '6Gi') +
-    $.util.resourcesLimits(null, '6Gi') +
+    k.util.resourcesRequests('1', '12Gi') +
+    k.util.resourcesLimits(null, '18Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
 
