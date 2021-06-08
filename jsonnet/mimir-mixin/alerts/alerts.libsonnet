@@ -198,10 +198,13 @@
         {
           alert: 'CortexIngesterRestarts',
           expr: |||
-            changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) > 1
+            changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
           |||,
           labels: {
-            severity: 'critical',
+            // This alert is on a cause not symptom. A couple of ingesters restarts may be suspicious but
+            // not necessarily an issue (eg. may happen because of the K8S node autoscaler), so we're
+            // keeping the alert as warning as a signal in case of an outage.
+            severity: 'warning',
           },
           annotations: {
             message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.',
