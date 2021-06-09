@@ -61,7 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Gateway')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.gateway)) +
         $.panelDescriptionRps('gateway')
       )
@@ -82,7 +82,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.distributor)) +
         $.panelDescriptionRps('distributor')
       )
@@ -103,7 +103,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('KV Store (HA Dedupe)')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor)) +
         $.panelDescriptionRpsKvStoreDedupe()
       )
@@ -116,7 +116,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescriptionRps('ingester')
       )
@@ -137,7 +137,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('KV Store (Ring)')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescriptionRpsKvStoreRing()
       )
@@ -151,7 +151,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -164,7 +164,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -177,7 +177,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -190,7 +190,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -203,7 +203,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests Per Second') +
         $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(

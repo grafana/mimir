@@ -30,7 +30,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         else self,
 
       addRows(rows)::
-        addRowsIf(true, rows),
+        self.addRowsIf(true, rows),
 
       addClusterSelectorTemplates(multi=true)::
         local d = self {
@@ -379,7 +379,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addPanel(
-      $.panel('QPS') +
+      $.panel('Requests Per Second') +
       $.queryPanel(
         |||
           sum by(operation) (
