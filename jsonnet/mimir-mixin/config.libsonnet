@@ -38,9 +38,10 @@
       compactor: 'compactor.*',  // Match also custom compactor deployments.
     },
 
-    // Labels used to in alert aggregations - should uniquely identify
-    // a single Cortex cluster.
-    alert_aggregation_labels: 'cluster, namespace',
+    // Grouping labels, to uniquely identify and group by {jobs, clusters}
+    job_labels: ['cluster', 'namespace', 'job'],
+    cluster_labels: ['cluster', 'namespace'],
+
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).

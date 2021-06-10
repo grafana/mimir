@@ -1,6 +1,12 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 {
+  local _config = {
+    max_series_per_ingester: 1.5e6,
+    max_samples_per_sec_per_ingester: 80e3,
+    max_samples_per_sec_per_distributor: 240e3,
+    limit_utilisation_target: 0.6,
+  } + $._config + $._group_config,
   prometheusRules+:: {
     groups+: [
       {
@@ -51,20 +57,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         name: 'cortex_received_samples',
         rules: [
           {
-            record: 'cluster_namespace_job:cortex_distributor_received_samples:rate5m',
+            record: '%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m' % _config,
             expr: |||
-              sum by (cluster, namespace, job) (rate(cortex_distributor_received_samples_total[5m]))
-            |||,
+              sum by (%(group_by_job)s) (rate(cortex_distributor_received_samples_total[5m]))
+            ||| % _config,
           },
         ],
       },
       {
-        local _config = {
-          max_series_per_ingester: 1.5e6,
-          max_samples_per_sec_per_ingester: 80e3,
-          max_samples_per_sec_per_distributor: 240e3,
-          limit_utilisation_target: 0.6,
-        },
         name: 'cortex_scaling_rules',
         rules: [
           {
@@ -89,7 +89,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 quantile_over_time(0.99,
                   sum by (cluster, namespace) (
-                    cluster_namespace_job:cortex_distributor_received_samples:rate5m
+                    %(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
                 / %(max_samples_per_sec_per_distributor)s
@@ -123,7 +123,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               ceil(
                 quantile_over_time(0.99,
                   sum by (cluster, namespace) (
-                    cluster_namespace_job:cortex_distributor_received_samples:rate5m
+                    %(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m
                   )[24h:]
                 )
                 * 3 / %(max_samples_per_sec_per_ingester)s

@@ -12,15 +12,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
        })
       .addPanel(
         $.panel('Samples / s') +
-        $.statPanel('sum(cluster_namespace_job:cortex_distributor_received_samples:rate5m{%s})' % $.jobMatcher($._config.job_names.distributor), format='reqps')
+        $.statPanel(
+          'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
+            $._config {
+              job: $.jobMatcher($._config.job_names.distributor),
+            }
+          ),
+          format='reqps'
+        )
       )
       .addPanel(
         $.panel('Active Series') +
         $.statPanel(|||
           sum(cortex_ingester_memory_series{%(ingester)s}
-          / on(namespace) group_left
-          max by (namespace) (cortex_distributor_replication_factor{%(distributor)s}))
-        ||| % {
+          / on(%(group_by_cluster)s) group_left
+          max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s}))
+        ||| % ($._config) {
           ingester: $.jobMatcher($._config.job_names.ingester),
           distributor: $.jobMatcher($._config.job_names.distributor),
         }, format='short')

@@ -8,5 +8,5 @@
        (import 'alerts/compactor.libsonnet')
      else {}) +
 
-    { _config:: $._config },
+    { _config:: $._config + $._group_config },
 }
