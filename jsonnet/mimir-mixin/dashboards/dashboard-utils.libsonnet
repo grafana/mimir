@@ -294,19 +294,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 
   getObjectStoreRows(title, component):: [
-    ($.row(title) { height: '25px' })
-    .addPanel(
-      $.textPanel(
-        '',
-        |||
-          - The panels below summarize the latency and rate of requests issued by %s
-            to object storage, separated by operation type. 
-          - It also includes the average, median, and 99th percentile latency 
-            of each operation and the error rate of each operation. 
-        ||| % component
-      )
-    ),
-    $.row('')
+    ($.row(title))
     .addPanel(
       $.panel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
@@ -346,39 +334,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
   ],
 
   thanosMemcachedCache(title, jobName, component, cacheName)::
-    local config = {
-      jobMatcher: $.jobMatcher(jobName),
-      component: component,
-      cacheName: cacheName,
-      cacheNameReadable: std.strReplace(cacheName, '-', ' '),
-    };
-    local panelText = {
-      'metadata-cache':
-        |||
-          The metadata cache
-          is an optional component that the
-          store-gateway and querier
-          will check before going to object storage.
-          This set of panels focuses on the
-          %s’s use of the metadata cache.
-        ||| % component,
-      'chunks-cache':
-        |||
-          The chunks cache
-          is an optional component that the
-          store-gateway
-          will check before going to object storage.
-          This helps reduce calls to the object store.
-        |||,
-    }[cacheName];
-
+        local config = {
+          jobMatcher: $.jobMatcher(jobName),
+          component: component,
+          cacheName: cacheName,
+          cacheNameReadable: std.strReplace(cacheName, '-', ' '),
+        };
     super.row(title)
-    .addPanel(
-      $.textPanel(
-        '', panelText
-      )
-    )
-    .addPanel(
+     .addPanel(
       $.panel('Requests Per Second') +
       $.queryPanel(
         |||
@@ -395,16 +358,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         '{{operation}}'
       ) +
       $.stack +
-      { yaxes: $.yaxes('ops') } +
-      $.panelDescription(
-        'Requests Per Second',
-        |||
-          Requests per second made to 
-          the %(cacheNameReadable)s
-          from the %(component)s, 
-          separated into request type.
-        ||| % config
-      ),
+      { yaxes: $.yaxes('ops') }
     )
     .addPanel(
       $.panel('Latency (getmulti)') +
@@ -417,15 +371,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
             component="%(component)s",
             name="%(cacheName)s"
           }
-        ||| % config
-      ) +
-      $.panelDescription(
-        'Latency (getmulti)',
-        |||
-          The average, median (50th percentile) and 99th percentile 
-          time to satisfy a “getmulti” request 
-          made by the %(component)s,
-          which retrieves multiple items from the cache.
         ||| % config
       )
     )
@@ -455,16 +400,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % config,
         'items'
       ) +
-      { yaxes: $.yaxes('percentunit') } +
-      $.panelDescription(
-        'Hit Ratio',
-        |||
-          The fraction of %(component)s requests to the 
-          %(cacheNameReadable)s that successfully return data. 
-          Requests that miss the cache must go to 
-          object storage for the underlying data. 
-        ||| % config
-      ),
+      { yaxes: $.yaxes('percentunit') }
     ),
 
   filterNodeDiskContainer(containerName)::
