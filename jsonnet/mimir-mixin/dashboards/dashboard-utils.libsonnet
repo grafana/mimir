@@ -299,7 +299,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.textPanel(
         '',
         |||
-          - The panels below summarize the rate of requests issued by %s
+          - The panels below summarize the latency and rate of requests issued by %s
             to object storage, separated by operation type. 
           - It also includes the average, median, and 99th percentile latency 
             of each operation and the error rate of each operation. 
