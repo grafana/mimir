@@ -292,9 +292,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     type: 'text',
   } + options,
 
-
   getObjectStoreRows(title, component):: [
-    ($.row(title))
+    super.row(title)
     .addPanel(
       $.panel('Operations / sec') +
       $.queryPanel('sum by(operation) (rate(thanos_objstore_bucket_operations_total{%s,component="%s"}[$__rate_interval]))' % [$.namespaceMatcher(), component], '{{operation}}') +
