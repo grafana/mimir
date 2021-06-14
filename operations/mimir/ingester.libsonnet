@@ -32,6 +32,8 @@
       'ingester.max-samples-per-query': $._config.limits.max_samples_per_query,
       'runtime-config.file': '/etc/cortex/overrides.yaml',
       'server.grpc-max-concurrent-streams': 100000,
+      'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
+      'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
     } + (
       if $._config.memcached_index_writes_enabled then
         {
