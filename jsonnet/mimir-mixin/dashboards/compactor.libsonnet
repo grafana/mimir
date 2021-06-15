@@ -7,12 +7,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Summary')
       .addPanel(
-        $.textPanel('', |||
-          - **Per-instance runs**: number of times a compactor instance triggers a compaction across all tenants its shard manage.
-          - **Tenants compaction progress**: in a multi-tenant cluster it shows the progress of tenants compacted while compaction is running. Reset to 0 once the compaction run is completed for all tenants in the shard.
-        |||),
-      )
-      .addPanel(
         $.startedCompletedFailedPanel(
           'Per-instance runs / sec',
           'sum(rate(cortex_compactor_runs_started_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor),
@@ -20,7 +14,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'sum(rate(cortex_compactor_runs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor)
         ) +
         $.bars +
-        { yaxes: $.yaxes('ops') },
+        { yaxes: $.yaxes('ops') } +
+        $.panelDescription(
+          'Per-instance runs',
+          |||
+            Number of times a compactor instance triggers a compaction across all tenants its shard manage.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Tenants compaction progress') +
@@ -31,42 +31,55 @@ local utils = import 'mixin-utils/utils.libsonnet';
             cortex_compactor_tenants_skipped{%s}
           ) / cortex_compactor_tenants_discovered{%s}
         ||| % [$.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor), $.jobMatcher($._config.job_names.compactor)], '{{%s}}' % $._config.per_instance_label) +
-        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Tenants compaction progress',
+          |||
+            In a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.
+            Reset to `0` after the compaction run is completed for all tenants in the shard.
+          |||
+        ),
       )
     )
     .addRow(
       $.row('')
-      .addPanel(
-        $.textPanel('', |||
-          - **Compacted blocks**: number of blocks generated as a result of a compaction operation.
-          - **Per-block compaction duration**: time taken to generate a single compacted block.
-        |||),
-      )
       .addPanel(
         $.panel('Compacted blocks / sec') +
         $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
-        { yaxes: $.yaxes('ops') },
+        { yaxes: $.yaxes('ops') } +
+        $.panelDescription(
+          'Compacted blocks / sec',
+          |||
+            Display the amount of time that it’s taken to generate a single compacted block.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Per-block compaction duration') +
-        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor))
+        $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
+        $.panelDescription(
+          'Per-block compaction duration',
+          |||
+            Rate of blocks that are generated as a result of a compaction operation.
+          |||
+        ),
       )
     )
     .addRow(
       $.row('')
-      .addPanel(
-        $.textPanel('', |||
-          - **Average blocks / tenant**: the average number of blocks per tenant.
-          - **Tenants with largest number of blocks**: the 10 tenants with the largest number of blocks.
-        |||),
-      )
       .addPanel(
         $.panel('Average blocks / tenant') +
         $.queryPanel('avg(max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), 'avg'),
       )
       .addPanel(
         $.panel('Tenants with largest number of blocks') +
-        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), '{{user}}'),
+        $.queryPanel('topk(10, max by(user) (cortex_bucket_blocks_count{%s}))' % $.jobMatcher($._config.job_names.compactor), '{{user}}') +
+        $.panelDescription(
+          'Tenants with largest number of blocks',
+          |||
+            The 10 tenants with the largest number of blocks.
+          |||
+        ),
       )
     )
     .addRow(

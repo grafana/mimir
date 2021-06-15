@@ -5,17 +5,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Cortex / Reads') + { uid: '8d6ba60eccc4b6eedfa329b24b1bd339' })
     .addClusterSelectorTemplates()
     .addRow(
-      ($.row('Reads Summary') { height: '175px', showTitle: false })
+      ($.row('Reads Dashboard Description') { height: '175px', showTitle: false })
       .addPanel(
         $.textPanel('', |||
           <p>
-            This dashboard shows various health metrics for the Cortex read path.
+            This dashboard shows health metrics for the Cortex read path.
             It is broken into sections for each service on the read path, and organized by the order in which the read request flows.
             <br/>
             Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the age of the query).
+            <br/>
+            For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.
           </p> 
           <p>
-            The dashboard shows metrics for the 4 optional caches that can be deployed with Cortex: 
+            The dashboard also shows metrics for the 4 optional caches that can be deployed with Cortex: 
             the query results cache, the metadata cache, the chunks cache, and the index cache. 
             <br/>
             These panels will show “no data” if the caches are not deployed. 
@@ -82,7 +84,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           |||
             Rate of range queries per second being made to 
             Cortex via the <tt>/prometheus</tt> API. 
-            (The ruler does not issue range queries).
           |||
         ),
       )
@@ -91,42 +92,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.gateway)) +
-        $.panelDescriptionRps('gateway')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.gateway)) 
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')]) +
-        $.panelDescriptionLatency('gateway')
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.gateway)], ''
         ) +
-        { yaxes: $.yaxes('s') } +
-        $.panelDescriptionP99Latency('gateway')
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRow(
       $.row('Query Frontend')
       .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.query_frontend)) +
-        $.panelDescriptionRps('query frontend')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')]) +
-        $.panelDescriptionLatency('query frontend')
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')]) 
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend)], ''
         ) +
-        { yaxes: $.yaxes('s') } +
-        $.panelDescriptionP99Latency('query frontend')
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRow(
@@ -147,125 +142,77 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) +
-        $.panelDescriptionRps('query scheduler')
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) 
       )
       .addPanel(
         $.panel('Latency (Time in Queue)') +
-        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) +
-        $.panelDescriptionLatency('query scheduler')
+        $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
     )
     .addRow(
       $.row('Cache - Query Results')
       .addPanel(
-        $.textPanel('', |||
-          <p>
-            The query results cache is one of 4 optional caches
-            that can be deployed as part of a GEM cluster to improve query performance. 
-            It is used by the query-frontend to cache entire results of queries.
-          </p>
-        |||)
-      )
-      .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{method=~"frontend.+", %s}' % $.jobMatcher($._config.job_names.query_frontend)) +
-        $.panelDescriptionRps('query results')
+        $.qpsPanel('cortex_cache_request_duration_seconds_count{method=~"frontend.+", %s}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('method', 'frontend.+')]) +
-        $.panelDescriptionLatency('query results')
+        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('method', 'frontend.+')])
       )
     )
     .addRow(
       $.row('Querier')
       .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.querier)) +
-        $.panelDescriptionRps(
-          'querier'
-        )
+        $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')]) +
-        $.panelDescriptionLatency('querier')
+        utils.latencyRecordingRulePanel('cortex_querier_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_querier_request_duration_seconds_bucket{%s, route=~"(prometheus|api_prom)_api_v1_.+"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.querier)], ''
         ) +
-        { yaxes: $.yaxes('s') } +
-        $.panelDescriptionP99Latency('querier')
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.textPanel(
-          '',
-          |||
-            <p>
-              For short term queries, queriers go 
-              to the ingester to fetch the data. 
-            </p>
-          |||
-        )
-      )
-      .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester)) +
-        $.panelDescriptionRps('ingester')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')]) +
-        $.panelDescriptionLatency('ingester')
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.re('route', '/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.ingester)], ''
         ) +
-        { yaxes: $.yaxes('s') } +
-        $.panelDescriptionP99Latency('ingester')
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.row('Store-gateway')
       .addPanel(
-        $.textPanel(
-          '',
-          |||
-            <p>
-              For longer term queries, queriers go to the store-gateways to 
-              fetch the data. 
-              Store-gateways are responsible for fetching the data from object 
-              storage. 
-            </p>
-          |||
-        )
-      )
-      .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway)) +
-        $.panelDescriptionRps('store gateway')
+        $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')]) +
-        $.panelDescriptionLatency('store gateway')
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.store_gateway) + [utils.selector.re('route', '/gatewaypb.StoreGateway/.*')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
         $.hiddenLegendQueryPanel(
           'histogram_quantile(0.99, sum by(le, %s) (rate(cortex_request_duration_seconds_bucket{%s, route=~"/gatewaypb.StoreGateway/.*"}[$__rate_interval])))' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.store_gateway)], ''
         ) +
-        { yaxes: $.yaxes('s') } +
-        $.panelDescriptionP99Latency('store gateway')
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRowIf(
@@ -294,19 +241,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Memcached – Blocks Storage – Block Index (Store-gateway)')  // Resembles thanosMemcachedCache
-      .addPanel(
-        $.textPanel(
-          '',
-          |||
-            <p>
-              The block index cache is an optional component that the 
-              store-gateway will check before going to object storage.
-              This helps reduce calls to the object store.
-            </p>
-          |||
-        )
-      )
+      $.row('Memcached – Blocks Storage – Block Index Cache (Store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
         $.panel('Requests Per Second') +
         $.queryPanel(
@@ -323,16 +258,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % $.jobMatcher($._config.job_names.store_gateway), '{{operation}}'
         ) +
         $.stack +
-        { yaxes: $.yaxes('ops') } +
-        $.panelDescription(
-          'Requests Per Second',
-          |||
-            Requests per second made to 
-            the block index cache
-            from the store-gateway,
-            separated into request type.
-          |||
-        ),
+        { yaxes: $.yaxes('ops') },
       )
       .addPanel(
         $.panel('Latency (getmulti)') +
@@ -346,15 +272,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
               name="index-cache"
             }
           ||| % $.jobMatcher($._config.job_names.store_gateway)
-        ) +
-        $.panelDescription(
-          'Latency (getmulti)',
-          |||
-            The average, median (50th percentile) and 99th percentile
-            time to satisfy a “getmulti” request 
-            from the store-gateway, 
-            which retrieves multiple items from the cache. 
-          |||
         )
       )
       .addPanel(
@@ -384,14 +301,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ],
           '{{item_type}}'
         ) +
-        { yaxes: $.yaxes('percentunit') } +
+        { yaxes: $.yaxes('percentunit') }  +
         $.panelDescription(
           'Hit Ratio',
           |||
-            The fraction of requests to the 
-            block index cache that successfully return data. 
-            Requests that miss the cache must go to 
-            object storage for the underlying data. 
+            Even if you do not set up memcached for the blocks index cache, you will still see data in this panel because Cortex by default has an
+            in-memory blocks index cache. 
           |||
         ),
       )
@@ -399,7 +314,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Chunks (Store-gateway)',
+        'Memcached – Blocks Storage – Chunks Cache (Store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'chunks-cache'
@@ -408,7 +323,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Metadata (Store-gateway)',
+        'Memcached – Blocks Storage – Metadata Cache (Store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'metadata-cache'
@@ -417,7 +332,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Metadata (Querier)',
+        'Memcached – Blocks Storage – Metadata Cache (Querier accesses)',
         $._config.job_names.querier,
         'querier',
         'metadata-cache'
@@ -478,41 +393,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
     // Object store metrics for the store-gateway.
     .addRowsIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.getObjectStoreRows('Store-gateway - Blocks Object Store', 'store-gateway')
+      $.getObjectStoreRows('Blocks Object Store (Store-gateway accesses)', 'store-gateway')
     )
     // Object store metrics for the querier.
     .addRowsIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.getObjectStoreRows('Querier - Blocks Object Store', 'querier')
+      $.getObjectStoreRows('Blocks Object Store  (Querier accesses)', 'querier')
     ),
-} +
-(
-  {
-    panelDescriptionRps(service)::
-      $.panelDescription(
-        'Requests Per Second',
-        |||
-          Read requests per second made to the %s(s).
-        ||| % service
-      ),
-
-    panelDescriptionLatency(service)::
-      $.panelDescription(
-        'Latency',
-        |||
-          Across all %s instances, the average, median 
-          (50th percentile), and 99th percentile time to respond 
-          to a request.  
-        ||| % service
-      ),
-
-    panelDescriptionP99Latency(service)::
-      $.panelDescription(
-        'Per Instance P99 Latency',
-        |||
-          The 99th percentile latency for each individual 
-          instance of the %s service.
-        ||| % service
-      ),
-  }
-)
+}
