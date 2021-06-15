@@ -80,7 +80,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
         }, format='reqps') +
         $.panelDescription(
-          'Range Queries Per Second',
+          'Range queries per second',
           |||
             Rate of range queries per second being made to 
             Cortex via the <tt>/prometheus</tt> API. 
@@ -135,7 +135,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               the internal queue from the query frontend into a
               separate component.
               If this service is not deployed, 
-              these panels will show "No Data."
+              these panels will show "No data."
             </p>
           |||
         )
@@ -241,7 +241,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Memcached – Blocks Storage – Block Index Cache (Store-gateway accesses)')  // Resembles thanosMemcachedCache
+      $.row('Memcached – blocks storage – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
         $.panel('Requests per second') +
         $.queryPanel(
@@ -314,7 +314,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Chunks Cache (Store-gateway accesses)',
+        'Memcached – blocks storage – chunks cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'chunks-cache'
@@ -323,7 +323,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Metadata Cache (Store-gateway accesses)',
+        'Memcached – blocks storage – metadata cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'metadata-cache'
@@ -332,7 +332,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Metadata Cache (Querier accesses)',
+        'Memcached – blocks storage – metadata cache (querier accesses)',
         $._config.job_names.querier,
         'querier',
         'metadata-cache'
