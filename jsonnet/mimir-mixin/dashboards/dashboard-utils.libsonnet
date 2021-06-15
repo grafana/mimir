@@ -61,7 +61,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
           else d
                .addTemplate('cluster', 'cortex_build_info', 'cluster')
                .addTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace'),
-      editable: true,
     },
 
   // The mixin allow specialism of the job selector depending on if its a single binary
