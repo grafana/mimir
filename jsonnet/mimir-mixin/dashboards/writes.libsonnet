@@ -59,14 +59,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
       )
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
     .addRow(
       $.row('Gateway')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
@@ -84,7 +84,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
@@ -102,7 +102,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Key-Value store for high-availability (HA) deduplication')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
@@ -113,7 +113,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -131,7 +131,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Key-Value store for the ingester ring')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -143,7 +143,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -156,7 +156,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -169,7 +169,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -182,7 +182,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
