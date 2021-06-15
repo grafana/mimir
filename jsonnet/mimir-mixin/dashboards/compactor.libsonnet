@@ -77,7 +77,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Tenants with largest number of blocks',
           |||
-            The 10 tenants with the largest number of blocks
+            The 10 tenants with the largest number of blocks.
           |||
         ),
       )
