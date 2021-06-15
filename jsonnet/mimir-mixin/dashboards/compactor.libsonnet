@@ -35,7 +35,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Tenants compaction progress',
           |||
-            In a multi-tenant cluster this shows the progress of tenants compacted while compaction is running. 
+            In a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.
             Reset to 0 once the compaction run is completed for all tenants in the shard.
           |||
         ),
