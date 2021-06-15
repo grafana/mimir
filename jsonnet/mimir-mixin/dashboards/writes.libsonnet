@@ -195,7 +195,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
-        $.panel('Requests Per Second') +
+        $.panel('Requests per second') +
         $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
