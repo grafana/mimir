@@ -57,7 +57,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ruler: $.jobMatcher($._config.job_names.ruler),
         }, format='reqps') +
         $.panelDescription(
-          'Instant Queries Per Second',
+          'Instant Queries per second',
           |||
             Rate of instant queries per second being made to the system.
             Includes both queries made to the <tt>/prometheus</tt> API as 
