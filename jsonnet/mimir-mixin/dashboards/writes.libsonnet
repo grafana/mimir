@@ -298,7 +298,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg') +
         { yaxes: $.yaxes('s') } +
         $.panelDescription(
-          'WAL Truncations Latency (including checkpointing)',
+          'WAL truncations latency (including checkpointing)',
           |||
             Average time taken to perform a full WAL truncation, 
             including the time taken for the checkpointing to complete.
