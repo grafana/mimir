@@ -50,7 +50,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Compacted blocks / sec',
           |||
-            Time taken to generate a single compacted block
+            Display the amount of time that it’s taken to generate a single compacted block.
           |||
         ),
       )
