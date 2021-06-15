@@ -264,7 +264,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - Blocks storage - TSDB Write Ahead Log (WAL)')
+      $.row('Ingester - blocks storage - TSDB write ahead log (WAL)')
       .addPanel(
         $.successFailurePanel(
           'WAL truncations / sec',
