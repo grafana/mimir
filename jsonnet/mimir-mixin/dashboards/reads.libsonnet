@@ -5,7 +5,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Cortex / Reads') + { uid: '8d6ba60eccc4b6eedfa329b24b1bd339' })
     .addClusterSelectorTemplates()
     .addRow(
-      ($.row('Reads Dashboard Description') { height: '175px', showTitle: false })
+      ($.row('Reads dashboard description') { height: '175px', showTitle: false })
       .addPanel(
         $.textPanel('', |||
           <p>
