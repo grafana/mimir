@@ -340,7 +340,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     };
     super.row(title)
     .addPanel(
-      $.panel('Requests Per Second') +
+      $.panel('Requests per second') +
       $.queryPanel(
         |||
           sum by(operation) (
