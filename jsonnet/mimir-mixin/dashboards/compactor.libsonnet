@@ -48,7 +48,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
         { yaxes: $.yaxes('ops') } +
         $.panelDescription(
-          'Compacted Blocks / Sec',
+          'Compacted blocks / sec',
           |||
             Time taken to generate a single compacted block
           |||
