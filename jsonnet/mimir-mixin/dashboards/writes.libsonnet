@@ -5,7 +5,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Cortex / Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
     .addClusterSelectorTemplates()
     .addRow(
-      ($.row('Writes Dashboard Description') { height: '125px', showTitle: false })
+      ($.row('Writes dashboard description') { height: '125px', showTitle: false })
       .addPanel(
         $.textPanel('', |||
           <p>
@@ -22,7 +22,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           </p> 
           <p>
             It also includes metrics for the key-value (KV) stores used to manage
-            the High Availability Tracker and the Ingesters.
+            the high-availability tracker and the ingesters.
           </p>
         |||),
       )
@@ -100,7 +100,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Key-Value store for high-availability (HA) deduplication')
+      $.row('Key-value store for high-availability (HA) deduplication')
       .addPanel(
         $.panel('Requests per second') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
@@ -129,7 +129,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Key-Value store for the ingester ring')
+      $.row('Key-value store for the ingester ring')
       .addPanel(
         $.panel('Requests per second') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))

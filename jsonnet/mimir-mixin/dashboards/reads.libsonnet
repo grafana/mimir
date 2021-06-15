@@ -80,7 +80,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           queryFrontend: $.jobMatcher($._config.job_names.query_frontend),
         }, format='reqps') +
         $.panelDescription(
-          'Range Queries Per Second',
+          'Range queries per second',
           |||
             Rate of range queries per second being made to 
             Cortex via the <tt>/prometheus</tt> API. 
@@ -135,7 +135,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               the internal queue from the query frontend into a
               separate component.
               If this service is not deployed, 
-              these panels will show "No Data."
+              these panels will show "No data."
             </p>
           |||
         )
