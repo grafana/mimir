@@ -35,7 +35,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Instant Queries / s') +
+        $.panel('Instant queries / sec') +
         $.statPanel(|||
           sum(
             rate(
