@@ -254,7 +254,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Compactions latency') +
         $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)) +
         $.panelDescription(
-          'Compaction Latency',
+          'Compaction latency',
           |||
             The average, median (50th percentile), and 99th percentile time ingesters take to compact head blocks
             on the local filesystem.
