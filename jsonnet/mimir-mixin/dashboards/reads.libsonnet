@@ -92,7 +92,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Gateway')
       .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.gateway)) 
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
         $.panel('Latency') +
@@ -114,7 +114,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')]) 
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('route', '(prometheus|api_prom)_api_v1_.+')])
       )
       .addPanel(
         $.panel('Per %s p99 Latency' % $._config.per_instance_label) +
@@ -142,7 +142,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.panel('Requests Per Second') +
-        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler)) 
+        $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
       .addPanel(
         $.panel('Latency (Time in Queue)') +
@@ -301,7 +301,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ],
           '{{item_type}}'
         ) +
-        { yaxes: $.yaxes('percentunit') }  +
+        { yaxes: $.yaxes('percentunit') } +
         $.panelDescription(
           'Hit Ratio',
           |||

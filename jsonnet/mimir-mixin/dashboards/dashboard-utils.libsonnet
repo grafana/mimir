@@ -333,14 +333,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
   ],
 
   thanosMemcachedCache(title, jobName, component, cacheName)::
-        local config = {
-          jobMatcher: $.jobMatcher(jobName),
-          component: component,
-          cacheName: cacheName,
-          cacheNameReadable: std.strReplace(cacheName, '-', ' '),
-        };
+    local config = {
+      jobMatcher: $.jobMatcher(jobName),
+      component: component,
+      cacheName: cacheName,
+      cacheNameReadable: std.strReplace(cacheName, '-', ' '),
+    };
     super.row(title)
-     .addPanel(
+    .addPanel(
       $.panel('Requests Per Second') +
       $.queryPanel(
         |||
