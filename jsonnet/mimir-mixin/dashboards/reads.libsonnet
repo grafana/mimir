@@ -241,7 +241,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Memcached – Blocks Storage – Block Index Cache (Store-gateway accesses)')  // Resembles thanosMemcachedCache
+      $.row('Memcached – blocks storage – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
         $.panel('Requests per second') +
         $.queryPanel(
@@ -314,7 +314,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Chunks Cache (Store-gateway accesses)',
+        'Memcached – blocks storage – chunks cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'chunks-cache'
@@ -323,7 +323,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Metadata Cache (Store-gateway accesses)',
+        'Memcached – blocks storage – metadata cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'metadata-cache'
@@ -332,7 +332,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – Blocks Storage – Metadata Cache (Querier accesses)',
+        'Memcached – blocks storage – metadata cache (querier accesses)',
         $._config.job_names.querier,
         'querier',
         'metadata-cache'
