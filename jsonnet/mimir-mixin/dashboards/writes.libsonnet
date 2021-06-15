@@ -282,7 +282,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - Blocks storage - TSDB WAL')
+      ($.row('Ingester - Blocks storage - TSDB WAL') {height: "32px"})
       .addPanel(
         $.textPanel('', |||
           <p>
@@ -291,6 +291,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
           </p> 
         |||),
       )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      ($.row('') {showTitle: false})
       .addPanel(
         $.successFailurePanel(
           'WAL truncations / sec',
