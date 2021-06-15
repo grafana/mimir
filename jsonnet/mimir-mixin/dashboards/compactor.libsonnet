@@ -60,7 +60,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Per-block compaction duration',
           |||
-            Rate of blocks generated as a result of a compaction operation
+            Rate of blocks that are generated as a result of a compaction operation.
           |||
         ),
       )
