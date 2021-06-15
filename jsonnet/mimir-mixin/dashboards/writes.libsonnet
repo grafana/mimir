@@ -272,7 +272,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
         $.panelDescription(
-          'WAL Truncations / sec',
+          'WAL truncations / sec',
           |||
             The WAL is truncated each time a new TSDB block is written. This panel measures the rate of 
             truncations.
