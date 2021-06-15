@@ -18,7 +18,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Per-instance runs',
           |||
-            Number of times a compactor instance triggers a compaction across all tenants its shard manage.
+            Number of times a compactor instance triggers a compaction across all tenants that it manages.
           |||
         ),
       )
