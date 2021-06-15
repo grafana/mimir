@@ -36,7 +36,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Tenants compaction progress',
           |||
             In a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.
-            Reset to 0 once the compaction run is completed for all tenants in the shard.
+            Reset to `0` after the compaction run is completed for all tenants in the shard.
           |||
         ),
       )
