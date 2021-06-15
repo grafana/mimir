@@ -61,17 +61,17 @@ type WorkloadDesc struct {
 	Write     WriteDesc    `yaml:"write_options"`
 }
 
-type timeseries struct {
+type Timeseries struct {
 	labelSets  [][]prompb.Label
 	lastValue  float64
 	seriesType SeriesType
 }
 
-type writeWorkload struct {
-	replicas           int
-	series             []*timeseries
-	totalSeries        int
-	totalSeriesTypeMap map[SeriesType]int
+type WriteWorkload struct {
+	Replicas           int
+	Series             []*Timeseries
+	TotalSeries        int
+	TotalSeriesTypeMap map[SeriesType]int
 
 	missedIterations prometheus.Counter
 
@@ -80,42 +80,12 @@ type writeWorkload struct {
 	seriesBufferChan chan []prompb.TimeSeries
 }
 
-func newWriteWorkload(workloadDesc WorkloadDesc, reg prometheus.Registerer) *writeWorkload {
+func newWriteWorkload(workloadDesc WorkloadDesc, reg prometheus.Registerer) *WriteWorkload {
+	series, totalSeriesTypeMap := SeriesDescToSeries(workloadDesc.Series)
+
 	totalSeries := 0
-	totalSeriesTypeMap := map[SeriesType]int{
-		GaugeZero:     0,
-		GaugeRandom:   0,
-		CounterOne:    0,
-		CounterRandom: 0,
-	}
-
-	series := []*timeseries{}
-
-	for _, seriesDesc := range workloadDesc.Series {
-		// Create the metric with a name value
-		labelSets := [][]prompb.Label{
-			{
-				prompb.Label{Name: "__name__", Value: seriesDesc.Name},
-			},
-		}
-
-		// Add any configured static labels
-		for labelName, labelValue := range seriesDesc.StaticLabels {
-			labelSets[0] = append(labelSets[0], prompb.Label{Name: labelName, Value: labelValue})
-		}
-
-		// Create the dynamic label set
-		for _, lbl := range seriesDesc.Labels {
-			labelSets = addLabelToLabelSet(labelSets, lbl)
-		}
-
-		series = append(series, &timeseries{
-			labelSets:  labelSets,
-			seriesType: seriesDesc.Type,
-		})
-		numSeries := len(labelSets)
-		totalSeries += numSeries
-		totalSeriesTypeMap[seriesDesc.Type] += numSeries
+	for _, typeTotal := range totalSeriesTypeMap {
+		totalSeries += typeTotal
 	}
 
 	// Set batch size to 500 samples if not set
@@ -133,11 +103,11 @@ func newWriteWorkload(workloadDesc WorkloadDesc, reg prometheus.Registerer) *wri
 		workloadDesc.Write.Timeout = time.Second * 15
 	}
 
-	return &writeWorkload{
-		replicas:           workloadDesc.Replicas,
-		series:             series,
-		totalSeries:        totalSeries,
-		totalSeriesTypeMap: totalSeriesTypeMap,
+	return &WriteWorkload{
+		Replicas:           workloadDesc.Replicas,
+		Series:             series,
+		TotalSeries:        totalSeries,
+		TotalSeriesTypeMap: totalSeriesTypeMap,
 		options:            workloadDesc.Write,
 
 		missedIterations: promauto.With(reg).NewCounter(
@@ -148,6 +118,44 @@ func newWriteWorkload(workloadDesc WorkloadDesc, reg prometheus.Registerer) *wri
 			},
 		),
 	}
+}
+
+func SeriesDescToSeries(seriesDescs []SeriesDesc) ([]*Timeseries, map[SeriesType]int) {
+	series := []*Timeseries{}
+	totalSeriesTypeMap := map[SeriesType]int{
+		GaugeZero:     0,
+		GaugeRandom:   0,
+		CounterOne:    0,
+		CounterRandom: 0,
+	}
+
+	for _, seriesDesc := range seriesDescs {
+		// Create the metric with a name value
+		labelSets := [][]prompb.Label{
+			{
+				prompb.Label{Name: "__name__", Value: seriesDesc.Name},
+			},
+		}
+
+		// Add any configured static labels
+		for labelName, labelValue := range seriesDesc.StaticLabels {
+			labelSets[0] = append(labelSets[0], prompb.Label{Name: labelName, Value: labelValue})
+		}
+
+		// Create the dynamic label set
+		for _, lbl := range seriesDesc.Labels {
+			labelSets = addLabelToLabelSet(labelSets, lbl)
+		}
+
+		series = append(series, &Timeseries{
+			labelSets:  labelSets,
+			seriesType: seriesDesc.Type,
+		})
+		numSeries := len(labelSets)
+		totalSeriesTypeMap[seriesDesc.Type] += numSeries
+	}
+
+	return series, totalSeriesTypeMap
 }
 
 func addLabelToLabelSet(labelSets [][]prompb.Label, lbl LabelDesc) [][]prompb.Label {
@@ -167,14 +175,14 @@ func addLabelToLabelSet(labelSets [][]prompb.Label, lbl LabelDesc) [][]prompb.La
 	return newLabelSets
 }
 
-func (w *writeWorkload) generateTimeSeries(id string, t time.Time) []prompb.TimeSeries {
+func (w *WriteWorkload) GenerateTimeSeries(id string, t time.Time) []prompb.TimeSeries {
 	now := t.UnixNano() / int64(time.Millisecond)
 
-	timeseries := make([]prompb.TimeSeries, 0, w.replicas*w.totalSeries)
-	for replicaNum := 0; replicaNum < w.replicas; replicaNum++ {
+	timeseries := make([]prompb.TimeSeries, 0, w.Replicas*w.TotalSeries)
+	for replicaNum := 0; replicaNum < w.Replicas; replicaNum++ {
 		replicaLabel := prompb.Label{Name: "bench_replica", Value: fmt.Sprintf("replica-%05d", replicaNum)}
 		idLabel := prompb.Label{Name: "bench_id", Value: id}
-		for _, series := range w.series {
+		for _, series := range w.Series {
 			var value float64
 			switch series.seriesType {
 			case GaugeZero:
@@ -215,7 +223,7 @@ type batchReq struct {
 	putBack chan []prompb.TimeSeries
 }
 
-func (w *writeWorkload) getSeriesBuffer(ctx context.Context) []prompb.TimeSeries {
+func (w *WriteWorkload) getSeriesBuffer(ctx context.Context) []prompb.TimeSeries {
 	select {
 	case <-ctx.Done():
 		return nil
@@ -224,7 +232,7 @@ func (w *writeWorkload) getSeriesBuffer(ctx context.Context) []prompb.TimeSeries
 	}
 }
 
-func (w *writeWorkload) generateWriteBatch(ctx context.Context, id string, numBuffers int, seriesChan chan batchReq) error {
+func (w *WriteWorkload) generateWriteBatch(ctx context.Context, id string, numBuffers int, seriesChan chan batchReq) error {
 	w.seriesBufferChan = make(chan []prompb.TimeSeries, numBuffers)
 	for i := 0; i < numBuffers; i++ {
 		w.seriesBufferChan <- make([]prompb.TimeSeries, 0, w.options.BatchSize)
@@ -250,10 +258,10 @@ func (w *writeWorkload) generateWriteBatch(ctx context.Context, id string, numBu
 		timeNow := time.Now()
 		timeNowMillis := timeNow.UnixNano() / int64(time.Millisecond)
 		wg := &sync.WaitGroup{}
-		for replicaNum := 0; replicaNum < w.replicas; replicaNum++ {
+		for replicaNum := 0; replicaNum < w.Replicas; replicaNum++ {
 			replicaLabel := prompb.Label{Name: "bench_replica", Value: fmt.Sprintf("replica-%05d", replicaNum)}
 			idLabel := prompb.Label{Name: "bench_id", Value: id}
-			for _, series := range w.series {
+			for _, series := range w.Series {
 				var value float64
 				switch series.seriesType {
 				case GaugeZero:

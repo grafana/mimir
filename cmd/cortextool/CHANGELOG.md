@@ -4,6 +4,7 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
 ## unreleased/master
 
+* [FEATURE] Blockgen: adding a new tool to generate blocks of mock data.
 * [BUGFIX] Benchtool: avoid duplicate DNS metrics registration when enabling both query and write benchmarking. #188
 * [ENHANCEMENT] Added the ability to set an explicit user when Cortex is behind basic auth. #187
 

@@ -50,7 +50,7 @@ type WriteBenchmarkRunner struct {
 
 	dnsProvider *dns.Provider
 
-	workload *writeWorkload
+	workload *WriteWorkload
 
 	reg    prometheus.Registerer
 	logger log.Logger
@@ -58,7 +58,7 @@ type WriteBenchmarkRunner struct {
 	requestDuration *prometheus.HistogramVec
 }
 
-func NewWriteBenchmarkRunner(id string, tenantName string, cfg WriteBenchConfig, workload *writeWorkload, logger log.Logger, reg prometheus.Registerer) (*WriteBenchmarkRunner, error) {
+func NewWriteBenchmarkRunner(id string, tenantName string, cfg WriteBenchConfig, workload *WriteWorkload, logger log.Logger, reg prometheus.Registerer) (*WriteBenchmarkRunner, error) {
 	writeBench := &WriteBenchmarkRunner{
 		id:         id,
 		tenantName: tenantName,
@@ -137,7 +137,7 @@ func (w *WriteBenchmarkRunner) Run(ctx context.Context) error {
 
 	// Run replicas * 10 write client workers.
 	// This number will also be used for the number of series buffers to store at once.
-	numWorkers := w.workload.replicas * 10
+	numWorkers := w.workload.Replicas * 10
 
 	batchChan := make(chan batchReq, 10)
 	for i := 0; i < numWorkers; i++ {

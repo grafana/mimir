@@ -40,11 +40,11 @@ type RingChecker struct {
 
 	Ring         *ring.Ring
 	MemberlistKV *memberlist.KVInitService
-	workload     *writeWorkload
+	workload     *WriteWorkload
 	logger       log.Logger
 }
 
-func NewRingChecker(id string, instanceName string, cfg RingCheckConfig, workload *writeWorkload, logger log.Logger) (*RingChecker, error) {
+func NewRingChecker(id string, instanceName string, cfg RingCheckConfig, workload *WriteWorkload, logger log.Logger) (*RingChecker, error) {
 	r := RingChecker{
 		id:           id,
 		instanceName: instanceName,
@@ -86,7 +86,7 @@ func (r *RingChecker) Run(ctx context.Context) error {
 }
 
 func (r *RingChecker) check() {
-	timeseries := r.workload.generateTimeSeries(r.id, time.Now())
+	timeseries := r.workload.GenerateTimeSeries(r.id, time.Now())
 
 	addrMap := map[string]int{}
 	for _, s := range timeseries {
@@ -97,7 +97,6 @@ func (r *RingChecker) check() {
 		token := shardByAllLabels(r.instanceName, s.Labels)
 
 		rs, err := r.Ring.Get(token, ring.Write, []ring.InstanceDesc{}, nil, nil)
-
 		if err != nil {
 			level.Warn(r.logger).Log("msg", "unable to get token for metric", "err", err)
 			continue
