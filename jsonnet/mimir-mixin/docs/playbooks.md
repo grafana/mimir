@@ -26,7 +26,9 @@ If nothing obvious from the above, check for increased load:
 
 ### CortexIngesterReachingSeriesLimit
 
-_TODO: this playbook has not been written yet._
+First check the writes resources dashboard and scaling dashboard. The usual target is 1.5M active series per ingester and a max of 2.5M.
+
+Scaling up the ingesters will help, but it won't resolve the alert immediately, as series are active until the next TSDB Head compaction (every 2h or so). You may also want to temporarily increase the per ingester series limit (this is a runtime reloadable config option) until that next Head compaction occurs.
 
 ### CortexIngesterReachingTenantsLimit
 
