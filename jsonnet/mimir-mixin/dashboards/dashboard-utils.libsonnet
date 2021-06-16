@@ -198,6 +198,73 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerNetworkTransmitBytesPanel(instanceName)::
     $.containerNetworkPanel('Transmit Bandwidth', 'container_network_transmit_bytes_total', instanceName),
 
+  containerDiskWritesPanel(title, containerName)::
+    $.panel(title) +
+    $.queryPanel(
+      |||
+        sum by(%s, %s, device) (
+          rate(
+            node_disk_written_bytes_total[$__rate_interval]
+          )
+        ) 
+        + 
+        %s
+      ||| % [
+        $._config.per_node_label,
+        $._config.per_instance_label,
+        $.filterNodeDiskContainer(containerName),
+      ],
+      '{{%s}} - {{device}}' % $._config.per_instance_label
+    ) +
+    $.stack +
+    { yaxes: $.yaxes('Bps') },
+
+  containerDiskReadsPanel(title, containerName)::
+    $.panel(title) +
+    $.queryPanel(
+      |||
+        sum by(%s, %s, device) (
+          rate(
+            node_disk_read_bytes_total[$__rate_interval]
+          )
+        ) + %s
+      ||| % [
+        $._config.per_node_label,
+        $._config.per_instance_label,
+        $.filterNodeDiskContainer(containerName),
+      ],
+      '{{%s}} - {{device}}' % $._config.per_instance_label
+    ) +
+    $.stack +
+    { yaxes: $.yaxes('Bps') },
+
+  containerDiskSpaceUtilization(title, containerName)::
+    $.panel(title) +
+    $.queryPanel(
+      |||
+        max by(persistentvolumeclaim) (
+          kubelet_volume_stats_used_bytes{%(namespace)s} / 
+          kubelet_volume_stats_capacity_bytes{%(namespace)s}
+        ) 
+        and 
+        count by(persistentvolumeclaim) (
+          kube_persistentvolumeclaim_labels{
+            %(namespace)s,
+            %(label)s
+          }
+        )
+      ||| % {
+        namespace: $.namespaceMatcher(),
+        label: $.containerLabelMatcher(containerName),
+      }, '{{persistentvolumeclaim}}'
+    ) +
+    { yaxes: $.yaxes('percentunit') },
+
+  containerLabelMatcher(containerName)::
+    if containerName == 'ingester'
+    then 'label_name=~"ingester.*"'
+    else 'label_name="%s"' % containerName,
+
   goHeapInUsePanel(title, jobName)::
     $.panel(title) +
     $.queryPanel(
@@ -402,33 +469,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
   filterNodeDiskContainer(containerName)::
     |||
-      ignoring(%s) group_right() (
-        label_replace(
-          count by(
-            %s,
-            %s,
-            device
-          )
-          (
-            container_fs_writes_bytes_total{
-              %s,
-              container="%s",
-              device!~".*sda.*"
-            }
-          ),
-          "device",
-          "$1",
-          "device",
-          "/dev/(.*)"
-        ) * 0
-      )
-    ||| % [
-      $._config.per_instance_label,
-      $._config.per_node_label,
-      $._config.per_instance_label,
-      $.namespaceMatcher(),
-      containerName,
-    ],
+      ignoring(%s) group_right() (label_replace(count by(%s, %s, device) (container_fs_writes_bytes_total{%s,container="%s",device!~".*sda.*"}), "device", "$1", "device", "/dev/(.*)") * 0)
+    ||| % [$._config.per_instance_label, $._config.per_node_label, $._config.per_instance_label, $.namespaceMatcher(), containerName],
 
   panelDescription(title, description):: {
     description: |||
