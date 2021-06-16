@@ -63,7 +63,7 @@
         $.util.mapToFlags($.alertmanager_args) +
         if isHA then
           ['--alertmanager.cluster.listen-address=[$(POD_IP)]:%s' % $._config.alertmanager.gossip_port] +
-          ['--alertmanager.cluster.peers=%s' % peer for peer in peers]
+          ['--alertmanager.cluster.peers=%s' % std.join(',', peers)]
         else [],
       ) +
       container.withVolumeMountsMixin(
