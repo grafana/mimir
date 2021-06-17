@@ -423,7 +423,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
           "/dev/(.*)"
         ) * 0
       )
-    ||| % [$._config.per_instance_label, $._config.per_node_label, $._config.per_instance_label, $.namespaceMatcher(), containerName],
+    ||| % [
+      $._config.per_instance_label,
+      $._config.per_node_label,
+      $._config.per_instance_label,
+      $.namespaceMatcher(),
+      containerName,
+    ],
 
   panelDescription(title, description):: {
     description: |||
