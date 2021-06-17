@@ -33,7 +33,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Samples per second') +
+        $.panel('Samples / sec') +
         $.statPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
             $._config {
@@ -59,14 +59,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
       )
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
     .addRow(
       $.row('Gateway')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
@@ -84,7 +84,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
@@ -102,7 +102,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Key-value store for high-availability (HA) deduplication')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
@@ -113,7 +113,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -131,7 +131,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Key-value store for the ingester ring')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -143,7 +143,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -156,7 +156,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -169,7 +169,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -182,7 +182,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -195,7 +195,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -208,12 +208,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester - Blocks storage - Shipper')
       .addPanel(
         $.successFailurePanel(
-          'Uploaded blocks per second',
+          'Uploaded blocks / sec',
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
         $.panelDescription(
-          'Uploaded blocks per second',
+          'Uploaded blocks / sec',
           |||
             The rate of blocks being uploaded from the ingesters 
             to object storage.
@@ -237,7 +237,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester - Blocks storage - TSDB Head')
       .addPanel(
         $.successFailurePanel(
-          'Compactions per second',
+          'Compactions / sec',
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -267,7 +267,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester - blocks storage - TSDB write ahead log (WAL)')
       .addPanel(
         $.successFailurePanel(
-          'WAL truncations per second',
+          'WAL truncations / sec',
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -281,7 +281,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.successFailurePanel(
-          'Checkpoints created per second',
+          'Checkpoints created / sec',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
@@ -306,7 +306,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        $.panel('Corruptions per second') +
+        $.panel('Corruptions / sec') +
         $.queryPanel([
           'sum(rate(cortex_ingester_wal_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
           'sum(rate(cortex_ingester_tsdb_mmap_chunk_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),

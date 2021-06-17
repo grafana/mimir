@@ -35,7 +35,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Instant queries per second') +
+        $.panel('Instant queries / sec') +
         $.statPanel(|||
           sum(
             rate(
@@ -66,7 +66,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        $.panel('Range queries per second') +
+        $.panel('Range queries / sec') +
         $.statPanel(|||
           sum(
             rate(
@@ -91,7 +91,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Gateway')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
@@ -109,7 +109,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Query Frontend')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
@@ -141,7 +141,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_query_scheduler_queue_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.query_scheduler))
       )
       .addPanel(
@@ -152,7 +152,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Cache - Query Results')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_cache_request_duration_seconds_count{method=~"frontend.+", %s}' % $.jobMatcher($._config.job_names.query_frontend))
       )
       .addPanel(
@@ -163,7 +163,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Querier')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_querier_request_duration_seconds_count{%s, route=~"(prometheus|api_prom)_api_v1_.+"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
@@ -181,7 +181,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/cortex.Ingester/Query(Stream)?|/cortex.Ingester/MetricsForLabelMatchers|/cortex.Ingester/LabelValues|/cortex.Ingester/MetricsMetadata"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -200,7 +200,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'blocks'),
       $.row('Store-gateway')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route=~"/gatewaypb.StoreGateway/.*"}' % $.jobMatcher($._config.job_names.store_gateway))
       )
       .addPanel(
@@ -219,7 +219,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached - Chunks storage - Index')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="store.index-cache-read.memcache.fetch"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
@@ -231,7 +231,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached - Chunks storage - Chunks')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="chunksmemcache.fetch"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
@@ -243,7 +243,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'blocks'),
       $.row('Memcached – blocks storage – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.queryPanel(
           |||
             sum by(operation) (
@@ -343,7 +343,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="SELECT"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
@@ -356,7 +356,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/ReadRows"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
@@ -369,7 +369,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.QueryPages"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
@@ -382,7 +382,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
-        $.panel('Requests per second') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="GET"}' % $.jobMatcher($._config.job_names.querier))
       )
       .addPanel(
