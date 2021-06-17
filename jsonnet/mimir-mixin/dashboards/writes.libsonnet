@@ -33,7 +33,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Samples / s') +
+        $.panel('Samples per second') +
         $.statPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
             $._config {
@@ -208,12 +208,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester - Blocks storage - Shipper')
       .addPanel(
         $.successFailurePanel(
-          'Uploaded blocks / sec',
+          'Uploaded blocks per second',
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
         $.panelDescription(
-          'Uploaded blocks / sec',
+          'Uploaded blocks per second',
           |||
             The rate of blocks being uploaded from the ingesters 
             to object storage.
@@ -237,12 +237,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester - Blocks storage - TSDB Head')
       .addPanel(
         $.successFailurePanel(
-          'Compactions / sec',
+          'Compactions per second',
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
         $.panelDescription(
-          'Compactions / sec',
+          'Compactions per second',
           |||
             Ingesters maintain a local TSDB per-tenant on disk. Each TSDB maintains a head block for each
             active time series; these blocks get periodically compacted (by default, every 2h).
@@ -267,12 +267,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Ingester - blocks storage - TSDB write ahead log (WAL)')
       .addPanel(
         $.successFailurePanel(
-          'WAL truncations / sec',
+          'WAL truncations per second',
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
         $.panelDescription(
-          'WAL truncations / sec',
+          'WAL truncations per second',
           |||
             The WAL is truncated each time a new TSDB block is written. This panel measures the rate of 
             truncations.
@@ -281,12 +281,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
       .addPanel(
         $.successFailurePanel(
-          'Checkpoints created / sec',
+          'Checkpoints created per second',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
         ) +
         $.panelDescription(
-          'Checkpoints created / sec',
+          'Checkpoints created per second',
           |||
             Checkpoints are created as part of the WAL truncation process. 
             This metric measures the rate of checkpoint creation.
@@ -306,7 +306,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        $.panel('Corruptions / sec') +
+        $.panel('Corruptions per second') +
         $.queryPanel([
           'sum(rate(cortex_ingester_wal_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
           'sum(rate(cortex_ingester_tsdb_mmap_chunk_corruptions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),

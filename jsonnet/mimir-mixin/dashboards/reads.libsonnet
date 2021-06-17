@@ -35,7 +35,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
          showTitle: false,
        })
       .addPanel(
-        $.panel('Instant queries / sec') +
+        $.panel('Instant queries per second') +
         $.statPanel(|||
           sum(
             rate(
@@ -57,7 +57,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ruler: $.jobMatcher($._config.job_names.ruler),
         }, format='reqps') +
         $.panelDescription(
-          'Instant Queries per second',
+          'Instant queries per second',
           |||
             Rate of instant queries per second being made to the system.
             Includes both queries made to the <tt>/prometheus</tt> API as 
@@ -66,7 +66,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        $.panel('Range queries / s') +
+        $.panel('Range queries per second') +
         $.statPanel(|||
           sum(
             rate(
