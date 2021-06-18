@@ -2,11 +2,12 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
-## unreleased/master
+## v0.10.2
 
 * [FEATURE] Blockgen: adding a new tool to generate blocks of mock data.
-* [BUGFIX] Benchtool: avoid duplicate DNS metrics registration when enabling both query and write benchmarking. #188
+* [FEATURE] Support Arm64 on Darwin.
 * [ENHANCEMENT] Added the ability to set an explicit user when Cortex is behind basic auth. #187
+* [BUGFIX] Benchtool: avoid duplicate DNS metrics registration when enabling both query and write benchmarking. #188
 
 ## v0.10.1
 
