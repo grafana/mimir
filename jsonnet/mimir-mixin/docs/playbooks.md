@@ -349,15 +349,15 @@ _TODO: this playbook has not been written yet._
 
 ### CortexCheckpointCreationFailed
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexCheckpointDeletionFailed
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexProvisioningMemcachedTooSmall
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexProvisioningTooManyActiveSeries
 
