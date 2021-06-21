@@ -272,10 +272,20 @@ Same as [`CortexCompactorHasNotSuccessfullyCleanedUpBlocks`](#CortexCompactorHas
 This alert fires when a Cortex compactor is not uploading any compacted blocks to the storage since a long time.
 
 How to **investigate**:
-- If the alert `CortexCompactorHasNotSuccessfullyRun` or `CortexCompactorHasNotSuccessfullyRunSinceStart` have fired as well, then investigate that issue first
+- If the alert `CortexCompactorHasNotSuccessfullyRunCompaction` have fired as well, then investigate that issue first
 - If the alert `CortexIngesterHasNotShippedBlocks` or `CortexIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
+
+### CortexCompactorHasNotSuccessfullyRunCompaction
+
+This alert fires if the compactor is not able to successfully run a full compaction.
+
+When this alert fires, the compactor may still have successfully compacted some blocks but, for some reason, other blocks compaction is consistently failing. A common case is when the compactor is trying to compact a corrupted block for a single tenant: in this case the compaction of blocks for other tenants is still working, but compaction for the affected tenant is blocked by the corrupted block.
+
+How to **investigate**:
+- Look for any error in the compactor logs
+  - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
 
 #### Compactor is failing because of `not healthy index found`
 
@@ -300,18 +310,6 @@ To rename a block stored on GCS you can use the `gsutil` CLI:
 
 gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 ```
-
-### CortexCompactorHasNotUploadedBlocksSinceStart
-
-Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
-
-### CortexCompactorHasNotSuccessfullyRunCompaction
-
-_TODO: this playbook has not been written yet._
-
-### CortexCompactorRunFailed
-
-_TODO: this playbook has not been written yet._
 
 ### CortexBucketIndexNotUpdated
 
