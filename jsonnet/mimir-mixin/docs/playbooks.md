@@ -38,7 +38,14 @@ How the limit is **configured**:
   ingester_limits:
     max_series: <int>
   ```
-- The mixin configures the limit in the runtime config and can be fine-tuned via `_config+:: { ingester_instance_limits+:: { ... } }`
+- The mixin configures the limit in the runtime config and can be fine-tuned via:
+  ```
+  _config+:: {
+    ingester_instance_limits+:: {
+      max_series: <int>
+    }
+  }
+  ```
 - When configured in the runtime config, changes are applied live without requiring an ingester restart
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
 
@@ -62,7 +69,14 @@ How the limit is **configured**:
   ingester_limits:
     max_tenants: <int>
   ```
-- The mixin configures the limit in the runtime config and can be fine-tuned via `_config+:: { ingester_instance_limits+:: { ... } }`
+- The mixin configures the limit in the runtime config and can be fine-tuned via:
+  ```
+  _config+:: {
+    ingester_instance_limits+:: {
+      max_tenants: <int>
+    }
+  }
+  ```
 - When configured in the runtime config, changes are applied live without requiring an ingester restart
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_tenants"}`
 
