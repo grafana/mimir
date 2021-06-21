@@ -36,7 +36,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Tenants compaction progress',
           |||
             In a multi-tenant cluster, display the progress of tenants that are compacted while compaction is running.
-            Reset to `0` after the compaction run is completed for all tenants in the shard.
+            Reset to <tt>0</tt> after the compaction run is completed for all tenants in the shard.
           |||
         ),
       )
@@ -50,7 +50,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Compacted blocks / sec',
           |||
-            Display the amount of time that it’s taken to generate a single compacted block.
+            Rate of blocks that are generated as a result of a compaction operation.
           |||
         ),
       )
@@ -60,7 +60,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Per-block compaction duration',
           |||
-            Rate of blocks that are generated as a result of a compaction operation.
+            Display the amount of time that it has taken to generate a single compacted block.
           |||
         ),
       )

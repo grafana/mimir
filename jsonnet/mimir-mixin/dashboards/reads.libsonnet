@@ -4,7 +4,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   'cortex-reads.json':
     ($.dashboard('Cortex / Reads') + { uid: '8d6ba60eccc4b6eedfa329b24b1bd339' })
     .addClusterSelectorTemplates()
-    .addRow(
+    .addRowIf(
+      $._config.show_dashboard_descriptions.reads,
       ($.row('Reads dashboard description') { height: '175px', showTitle: false })
       .addPanel(
         $.textPanel('', |||
@@ -12,7 +13,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             This dashboard shows health metrics for the Cortex read path.
             It is broken into sections for each service on the read path, and organized by the order in which the read request flows.
             <br/>
-            Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the age of the query).
+            Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the time range of the query).
             <br/>
             For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.
           </p> 
@@ -42,14 +43,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
               cortex_request_duration_seconds_count{
                 %(queryFrontend)s,
                 route=~"(prometheus|api_prom)_api_v1_query"
-              }[1h]
+              }[$__rate_interval]
             )
           ) + 
           sum(
             rate(
               cortex_prometheus_rule_evaluations_total{
                 %(ruler)s
-              }[1h]
+              }[$__rate_interval]
             )
           )
         ||| % {
@@ -73,7 +74,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               cortex_request_duration_seconds_count{
                 %(queryFrontend)s,
                 route=~"(prometheus|api_prom)_api_v1_query_range"
-              }[1h]
+              }[$__rate_interval]
             )
           )
         ||| % {
@@ -132,7 +133,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           |||
             <p>
               The query scheduler is an optional service that moves
-              the internal queue from the query frontend into a
+              the internal queue from the query-frontend into a
               separate component.
               If this service is not deployed, 
               these panels will show "No data."
@@ -241,7 +242,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Memcached – blocks storage – block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
+      $.row('Memcached – Blocks storage – Block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
         $.panel('Requests / sec') +
         $.queryPanel(
@@ -314,7 +315,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – blocks storage – chunks cache (store-gateway accesses)',
+        'Memcached – Blocks storage – Chunks cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'chunks-cache'
@@ -323,7 +324,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – blocks storage – metadata cache (store-gateway accesses)',
+        'Memcached – Blocks storage – Metadata cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'metadata-cache'
@@ -332,7 +333,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
       $.thanosMemcachedCache(
-        'Memcached – blocks storage – metadata cache (querier accesses)',
+        'Memcached – Blocks storage – Metadata cache (querier accesses)',
         $._config.job_names.querier,
         'querier',
         'metadata-cache'

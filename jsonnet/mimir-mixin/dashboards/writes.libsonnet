@@ -4,7 +4,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   'cortex-writes.json':
     ($.dashboard('Cortex / Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
     .addClusterSelectorTemplates()
-    .addRow(
+    .addRowIf(
+      $._config.show_dashboard_descriptions.writes,
       ($.row('Writes dashboard description') { height: '125px', showTitle: false })
       .addPanel(
         $.textPanel('', |||
@@ -129,7 +130,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Key-value store for the ingester ring')
+      $.row('Key-value store for the ingesters ring')
       .addPanel(
         $.panel('Requests / sec') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
@@ -227,7 +228,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Upload latency',
           |||
             The average, median (50th percentile), and 99th percentile time 
-            the ingester takes to upload blocks to object storage.
+            the ingesters take to upload blocks to object storage.
           |||
         ),
       )
@@ -256,7 +257,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Compaction latency',
           |||
-            The average, median (50th percentile), and 99th percentile time ingesters take to compact head blocks
+            The average, median (50th percentile), and 99th percentile time ingesters take to compact TSDB head blocks
             on the local filesystem.
           |||
         ),
@@ -264,7 +265,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - blocks storage - TSDB write ahead log (WAL)')
+      $.row('Ingester - Blocks storage - TSDB write ahead log (WAL)')
       .addPanel(
         $.successFailurePanel(
           'WAL truncations / sec',

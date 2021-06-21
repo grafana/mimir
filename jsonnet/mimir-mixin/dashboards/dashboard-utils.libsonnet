@@ -336,11 +336,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       jobMatcher: $.jobMatcher(jobName),
       component: component,
       cacheName: cacheName,
-      cacheNameReadable: std.strReplace(cacheName, '-', ' '),
     };
     super.row(title)
     .addPanel(
-      $.panel('Requests per second') +
+      $.panel('Requests / sec') +
       $.queryPanel(
         |||
           sum by(operation) (
