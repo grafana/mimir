@@ -279,7 +279,7 @@ How to **investigate**:
 
 ### CortexCompactorHasNotSuccessfullyRunCompaction
 
-This alert fires if the compactor is not able to successfully compact all discovered compactable blocks.
+This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
 
 When this alert fires, the compactor may still have successfully compacted some blocks but, for some reason, other blocks compaction is consistently failing. A common case is when the compactor is trying to compact a corrupted block for a single tenant: in this case the compaction of blocks for other tenants is still working, but compaction for the affected tenant is blocked by the corrupted block.
 
