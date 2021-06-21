@@ -26,13 +26,63 @@ If nothing obvious from the above, check for increased load:
 
 ### CortexIngesterReachingSeriesLimit
 
-First check the writes resources dashboard and scaling dashboard. The usual target is 1.5M active series per ingester and a max of 2.5M.
+This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in a ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
 
-Scaling up the ingesters will help, but it won't resolve the alert immediately, as series are active until the next TSDB Head compaction (every 2h or so). You may also want to temporarily increase the per ingester series limit (this is a runtime reloadable config option) until that next Head compaction occurs.
+In case of **emergency**:
+- If the actual number of series is very close or already hit the limit, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the ingesters memory utilization. Please monitor the ingesters memory utilization via the `Cortex / Writes Resources` dashboard
+
+How the limit is **configured**:
+- The limit can be configured either on CLI (`-ingester.instance-limits.max-series`) or in the runtime config:
+  ```
+  ingester_limits:
+    max_series: <int>
+  ```
+- The mixin configures the limit in the runtime config and can be fine-tuned via:
+  ```
+  _config+:: {
+    ingester_instance_limits+:: {
+      max_series: <int>
+    }
+  }
+  ```
+- When configured in the runtime config, changes are applied live without requiring an ingester restart
+- The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
+
+How to **fix**:
+1. **Scale up ingesters**<br />
+   Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
+2. **Temporarily increase the limit**<br />
+   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
 
 ### CortexIngesterReachingTenantsLimit
 
-_TODO: this playbook has not been written yet._
+This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in a ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
+
+In case of **emergency**:
+- If the actual number of tenants is very close or already hit the limit, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the ingesters memory utilization. Please monitor the ingesters memory utilization via the `Cortex / Writes Resources` dashboard
+
+How the limit is **configured**:
+- The limit can be configured either on CLI (`-ingester.instance-limits.max-tenants`) or in the runtime config:
+  ```
+  ingester_limits:
+    max_tenants: <int>
+  ```
+- The mixin configures the limit in the runtime config and can be fine-tuned via:
+  ```
+  _config+:: {
+    ingester_instance_limits+:: {
+      max_tenants: <int>
+    }
+  }
+  ```
+- When configured in the runtime config, changes are applied live without requiring an ingester restart
+- The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_tenants"}`
+
+How to **fix**:
+1. Ensure shuffle-sharding is enabled in the Cortex cluster
+1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
 ### CortexRequestLatency
 First establish if the alert is for read or write latency. The alert should say.
