@@ -58,5 +58,11 @@
 
     // The label used to differentiate between different nodes (i.e. servers).
     per_node_label: 'instance',
+
+    // Whether certain dashboard description headers should be shown
+    show_dashboard_descriptions: {
+      writes: true,
+      reads: true,
+    },
   },
 }

@@ -4,21 +4,44 @@ local utils = import 'mixin-utils/utils.libsonnet';
   'cortex-writes.json':
     ($.dashboard('Cortex / Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
     .addClusterSelectorTemplates()
-    .addRow(
+    .addRowIf(
+      $._config.show_dashboard_descriptions.writes,
+      ($.row('Writes dashboard description') { height: '125px', showTitle: false })
+      .addPanel(
+        $.textPanel('', |||
+          <p>
+            This dashboard shows various health metrics for the Cortex write path.
+            It is broken into sections for each service on the write path, 
+            and organized by the order in which the write request flows.
+            <br/>
+            Incoming metrics data travels from the gateway → distributor → ingester.
+            <br/>
+            For each service, there are 3 panels showing
+            (1) requests per second to that service, 
+            (2) average, median, and p99 latency of requests to that service, and 
+            (3) p99 latency of requests to each instance of that service.
+          </p> 
+          <p>
+            It also includes metrics for the key-value (KV) stores used to manage
+            the high-availability tracker and the ingesters.
+          </p>
+        |||),
+      )
+    ).addRow(
       ($.row('Headlines') +
        {
          height: '100px',
          showTitle: false,
        })
       .addPanel(
-        $.panel('Samples / s') +
+        $.panel('Samples / sec') +
         $.statPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m{%(job)s})' % (
             $._config {
               job: $.jobMatcher($._config.job_names.distributor),
             }
           ),
-          format='reqps'
+          format='short'
         )
       )
       .addPanel(
@@ -37,14 +60,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.statPanel('count(count by(user) (cortex_ingester_active_series{%s}))' % $.jobMatcher($._config.job_names.ingester), format='short')
       )
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.statPanel('sum(rate(cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}[5m]))' % $.jobMatcher($._config.job_names.gateway), format='reqps')
       )
     )
     .addRow(
       $.row('Gateway')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.gateway))
       )
       .addPanel(
@@ -62,7 +85,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Distributor')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"/distributor.Distributor/Push|/httpgrpc.*|api_(v1|prom)_push"}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
@@ -78,9 +101,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('KV Store (HA Dedupe)')
+      $.row('Key-value store for high-availability (HA) deduplication')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
       )
       .addPanel(
@@ -91,7 +114,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Ingester')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_request_duration_seconds_count{%s,route="/cortex.Ingester/Push"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -107,9 +130,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('KV Store (Ring)')
+      $.row('Key-value store for the ingesters ring')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -121,7 +144,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -134,7 +157,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
       $.row('Cassandra')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -147,7 +170,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
       $.row('BigTable')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -160,7 +183,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
       $.row('DynamoDB')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -173,7 +196,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       std.member($._config.chunk_store_backend, 'gcs'),
       $.row('GCS')
       .addPanel(
-        $.panel('QPS') +
+        $.panel('Requests / sec') +
         $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher($._config.job_names.ingester))
       )
       .addPanel(
@@ -189,11 +212,25 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Uploaded blocks / sec',
           'sum(rate(cortex_ingester_shipper_uploads_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_shipper_upload_failures_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+        ) +
+        $.panelDescription(
+          'Uploaded blocks / sec',
+          |||
+            The rate of blocks being uploaded from the ingesters 
+            to object storage.
+          |||
         ),
       )
       .addPanel(
         $.panel('Upload latency') +
-        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)),
+        $.latencyPanel('thanos_objstore_bucket_operation_duration_seconds', '{%s,component="ingester",operation="upload"}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.panelDescription(
+          'Upload latency',
+          |||
+            The average, median (50th percentile), and 99th percentile time 
+            the ingesters take to upload blocks to object storage.
+          |||
+        ),
       )
     )
     .addRowIf(
@@ -204,21 +241,43 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Compactions / sec',
           'sum(rate(cortex_ingester_tsdb_compactions_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_compactions_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+        ) +
+        $.panelDescription(
+          'Compactions per second',
+          |||
+            Ingesters maintain a local TSDB per-tenant on disk. Each TSDB maintains a head block for each
+            active time series; these blocks get periodically compacted (by default, every 2h).
+            This panel shows the rate of compaction operations across all TSDBs on all ingesters. 
+          |||
         ),
       )
       .addPanel(
         $.panel('Compactions latency') +
-        $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)),
+        $.latencyPanel('cortex_ingester_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.ingester)) +
+        $.panelDescription(
+          'Compaction latency',
+          |||
+            The average, median (50th percentile), and 99th percentile time ingesters take to compact TSDB head blocks
+            on the local filesystem.
+          |||
+        ),
       )
     )
     .addRowIf(
       std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - Blocks storage - TSDB WAL')
+      $.row('Ingester - Blocks storage - TSDB write ahead log (WAL)')
       .addPanel(
         $.successFailurePanel(
           'WAL truncations / sec',
           'sum(rate(cortex_ingester_tsdb_wal_truncations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_wal_truncations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+        ) +
+        $.panelDescription(
+          'WAL truncations per second',
+          |||
+            The WAL is truncated each time a new TSDB block is written. This panel measures the rate of 
+            truncations.
+          |||
         ),
       )
       .addPanel(
@@ -226,12 +285,26 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Checkpoints created / sec',
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_total{%s}[$__rate_interval])) - sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)],
           'sum(rate(cortex_ingester_tsdb_checkpoint_creations_failed_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.ingester),
+        ) +
+        $.panelDescription(
+          'Checkpoints created per second',
+          |||
+            Checkpoints are created as part of the WAL truncation process. 
+            This metric measures the rate of checkpoint creation.
+          |||
         ),
       )
       .addPanel(
         $.panel('WAL truncations latency (includes checkpointing)') +
         $.queryPanel('sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_sum{%s}[$__rate_interval])) / sum(rate(cortex_ingester_tsdb_wal_truncate_duration_seconds_count{%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.ingester), $.jobMatcher($._config.job_names.ingester)], 'avg') +
-        { yaxes: $.yaxes('s') },
+        { yaxes: $.yaxes('s') } +
+        $.panelDescription(
+          'WAL truncations latency (including checkpointing)',
+          |||
+            Average time taken to perform a full WAL truncation, 
+            including the time taken for the checkpointing to complete.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Corruptions / sec') +
