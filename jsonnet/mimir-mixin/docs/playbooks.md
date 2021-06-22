@@ -382,7 +382,7 @@ How to **investigate**:
   ```
   cortex_runtime_config_hash{namespace="<namespace>",sha256="<unexpected>"}
   ```
-- Check if the runtime config has been updated on the affected replicas' filesystem
+- Check if the runtime config has been updated on the affected replicas' filesystem. Check `-runtime-config.file` command line argument to find the location of the file.
 - Check the affected replicas logs and look for any error loading the runtime config
 
 ### CortexBadRuntimeConfig
