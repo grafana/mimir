@@ -26,11 +26,63 @@ If nothing obvious from the above, check for increased load:
 
 ### CortexIngesterReachingSeriesLimit
 
-_TODO: this playbook has not been written yet._
+This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in a ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
+
+In case of **emergency**:
+- If the actual number of series is very close or already hit the limit, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the ingesters memory utilization. Please monitor the ingesters memory utilization via the `Cortex / Writes Resources` dashboard
+
+How the limit is **configured**:
+- The limit can be configured either on CLI (`-ingester.instance-limits.max-series`) or in the runtime config:
+  ```
+  ingester_limits:
+    max_series: <int>
+  ```
+- The mixin configures the limit in the runtime config and can be fine-tuned via:
+  ```
+  _config+:: {
+    ingester_instance_limits+:: {
+      max_series: <int>
+    }
+  }
+  ```
+- When configured in the runtime config, changes are applied live without requiring an ingester restart
+- The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
+
+How to **fix**:
+1. **Scale up ingesters**<br />
+   Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
+2. **Temporarily increase the limit**<br />
+   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
 
 ### CortexIngesterReachingTenantsLimit
 
-_TODO: this playbook has not been written yet._
+This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in a ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
+
+In case of **emergency**:
+- If the actual number of tenants is very close or already hit the limit, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the ingesters memory utilization. Please monitor the ingesters memory utilization via the `Cortex / Writes Resources` dashboard
+
+How the limit is **configured**:
+- The limit can be configured either on CLI (`-ingester.instance-limits.max-tenants`) or in the runtime config:
+  ```
+  ingester_limits:
+    max_tenants: <int>
+  ```
+- The mixin configures the limit in the runtime config and can be fine-tuned via:
+  ```
+  _config+:: {
+    ingester_instance_limits+:: {
+      max_tenants: <int>
+    }
+  }
+  ```
+- When configured in the runtime config, changes are applied live without requiring an ingester restart
+- The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_tenants"}`
+
+How to **fix**:
+1. Ensure shuffle-sharding is enabled in the Cortex cluster
+1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
 ### CortexRequestLatency
 First establish if the alert is for read or write latency. The alert should say.
@@ -220,10 +272,20 @@ Same as [`CortexCompactorHasNotSuccessfullyCleanedUpBlocks`](#CortexCompactorHas
 This alert fires when a Cortex compactor is not uploading any compacted blocks to the storage since a long time.
 
 How to **investigate**:
-- If the alert `CortexCompactorHasNotSuccessfullyRun` or `CortexCompactorHasNotSuccessfullyRunSinceStart` have fired as well, then investigate that issue first
+- If the alert `CortexCompactorHasNotSuccessfullyRunCompaction` has fired as well, then investigate that issue first
 - If the alert `CortexIngesterHasNotShippedBlocks` or `CortexIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
+
+### CortexCompactorHasNotSuccessfullyRunCompaction
+
+This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
+
+When this alert fires, the compactor may still have successfully compacted some blocks but, for some reason, other blocks compaction is consistently failing. A common case is when the compactor is trying to compact a corrupted block for a single tenant: in this case the compaction of blocks for other tenants is still working, but compaction for the affected tenant is blocked by the corrupted block.
+
+How to **investigate**:
+- Look for any error in the compactor logs
+  - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
 
 #### Compactor is failing because of `not healthy index found`
 
@@ -248,18 +310,6 @@ To rename a block stored on GCS you can use the `gsutil` CLI:
 
 gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 ```
-
-### CortexCompactorHasNotUploadedBlocksSinceStart
-
-Same as [`CortexCompactorHasNotUploadedBlocks`](#CortexCompactorHasNotUploadedBlocks).
-
-### CortexCompactorHasNotSuccessfullyRunCompaction
-
-_TODO: this playbook has not been written yet._
-
-### CortexCompactorRunFailed
-
-_TODO: this playbook has not been written yet._
 
 ### CortexBucketIndexNotUpdated
 
@@ -317,13 +367,33 @@ _TODO: this playbook has not been written yet._
 
 _TODO: this playbook has not been written yet._
 
-### CortexInconsistentConfig
+### CortexInconsistentRuntimeConfig
 
-_TODO: this playbook has not been written yet._
+This alert fires if multiple replicas of the same Cortex service are using a different runtime config for a longer period of time.
+
+The Cortex runtime config is a config file which gets live reloaded by Cortex at runtime. In order for Cortex to work properly, the loaded config is expected to be the exact same across multiple replicas of the same Cortex service (eg. distributors, ingesters, ...). When the config changes, there may be short periods of time during which some replicas have loaded the new config and others are still running on the previous one, but it shouldn't last for more than few minutes.
+
+How to **investigate**:
+- Check how many different config file versions (hashes) are reported
+  ```
+  count by (sha256) (cortex_runtime_config_hash{namespace="<namespace>"})
+  ```
+- Check which replicas are running a different version
+  ```
+  cortex_runtime_config_hash{namespace="<namespace>",sha256="<unexpected>"}
+  ```
+- Check if the runtime config has been updated on the affected replicas' filesystem. Check `-runtime-config.file` command line argument to find the location of the file.
+- Check the affected replicas logs and look for any error loading the runtime config
 
 ### CortexBadRuntimeConfig
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex is unable to reload the runtime config.
+
+This typically means an invalid runtime config was deployed. Cortex keeps running with the previous (valid) version of the runtime config; running Cortex replicas and the system availability shouldn't be affected, but new replicas won't be able to startup until the runtime config is fixed.
+
+How to **investigate**:
+- Check the latest runtime config update (it's likely to be broken)
+- Check Cortex logs to get more details about what's wrong with the config
 
 ### CortexQuerierCapacityFull
 
@@ -347,15 +417,15 @@ _TODO: this playbook has not been written yet._
 
 ### CortexCheckpointCreationFailed
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexCheckpointDeletionFailed
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexProvisioningMemcachedTooSmall
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexProvisioningTooManyActiveSeries
 

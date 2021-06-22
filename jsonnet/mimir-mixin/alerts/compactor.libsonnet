@@ -48,6 +48,19 @@
           },
         },
         {
+          // Alert if compactor failed to run 2 consecutive compactions.
+          alert: 'CortexCompactorHasNotSuccessfullyRunCompaction',
+          expr: |||
+            increase(cortex_compactor_runs_failed_total[2h]) >= 2
+          |||,
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} failed to run 2 consecutive compactions.',
+          },
+        },
+        {
           // Alert if the compactor has not uploaded anything in the last 24h.
           alert: 'CortexCompactorHasNotUploadedBlocks',
           'for': '15m',
@@ -65,7 +78,7 @@
         },
         {
           // Alert if the compactor has not uploaded anything since its start.
-          alert: 'CortexCompactorHasNotUploadedBlocksSinceStart',
+          alert: 'CortexCompactorHasNotUploadedBlocks',
           'for': '24h',
           expr: |||
             thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} == 0
@@ -75,21 +88,6 @@
           },
           annotations: {
             message: 'Cortex Compactor {{ $labels.namespace }}/{{ $labels.instance }} has not uploaded any block in the last 24 hours.',
-          },
-        },
-        {
-          // Alert if compactor fails.
-          alert: 'CortexCompactorRunFailed',
-          expr: |||
-            increase(cortex_compactor_runs_failed_total[2h]) >= 2
-          |||,
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }}/{{ $labels.instance }} failed to run compaction.
-            |||,
           },
         },
       ],
