@@ -367,13 +367,33 @@ _TODO: this playbook has not been written yet._
 
 _TODO: this playbook has not been written yet._
 
-### CortexInconsistentConfig
+### CortexInconsistentRuntimeConfig
 
-_TODO: this playbook has not been written yet._
+This alert fires if multiple replicas of the same Cortex service are using a different runtime config for a longer period of time.
+
+The Cortex runtime config is a config file which gets live reloaded by Cortex at runtime. In order for Cortex to work properly, the loaded config is expected to be the exact same across multiple replicas of the same Cortex service (eg. distributors, ingesters, ...). When the config changes, there may be short periods of time during which some replicas have loaded the new config and others are still running on the previous one, but it shouldn't last for more than few minutes.
+
+How to **investigate**:
+- Check how many different config file versions (hashes) are reported
+  ```
+  count by (sha256) (cortex_runtime_config_hash{namespace="<namespace>"})
+  ```
+- Check which replicas are running a different version
+  ```
+  cortex_runtime_config_hash{namespace="<namespace>",sha256="<unexpected>"}
+  ```
+- Check if the runtime config has been updated on the affected replicas' filesystem. Check `-runtime-config.file` command line argument to find the location of the file.
+- Check the affected replicas logs and look for any error loading the runtime config
 
 ### CortexBadRuntimeConfig
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex is unable to reload the runtime config.
+
+This typically means an invalid runtime config was deployed. Cortex keeps running with the previous (valid) version of the runtime config; running Cortex replicas and the system availability shouldn't be affected, but new replicas won't be able to startup until the runtime config is fixed.
+
+How to **investigate**:
+- Check the latest runtime config update (it's likely to be broken)
+- Check Cortex logs to get more details about what's wrong with the config
 
 ### CortexQuerierCapacityFull
 

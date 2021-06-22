@@ -92,39 +92,30 @@
           },
         },
         {
-          alert: 'CortexInconsistentConfig',
+          alert: 'CortexInconsistentRuntimeConfig',
           expr: |||
-            count(count by(%s, job, sha256) (cortex_config_hash)) without(sha256) > 1
+            count(count by(%s, job, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
           ||| % $._config.alert_aggregation_labels,
           'for': '1h',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
-              An inconsistent config file hash is used across cluster {{ $labels.job }}.
+              An inconsistent runtime config file is used across cluster {{ $labels.job }}.
             |||,
           },
         },
         {
-          // As of https://github.com/cortexproject/cortex/pull/2092, this metric is
-          // only exposed when it is supposed to be non-zero, so we don't need to do
-          // any special filtering on the job label.
-          // The metric itself was renamed in
-          // https://github.com/cortexproject/cortex/pull/2874
-          //
-          // TODO: Remove deprecated metric name of
-          // cortex_overrides_last_reload_successful in the future
           alert: 'CortexBadRuntimeConfig',
           expr: |||
+            # The metric value is reset to 0 on error while reloading the config at runtime.
             cortex_runtime_config_last_reload_successful == 0
-              or
-            cortex_overrides_last_reload_successful == 0
           |||,
           // Alert quicker for human errors.
           'for': '5m',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
