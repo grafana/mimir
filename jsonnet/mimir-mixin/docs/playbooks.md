@@ -361,7 +361,7 @@ _TODO: this playbook has not been written yet._
 
 ### CortexTableSyncFailure
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexQueriesIncorrect
 
@@ -413,7 +413,7 @@ _TODO: this playbook has not been written yet._
 
 ### CortexOldChunkInMemory
 
-_TODO: this playbook has not been written yet._
+_This alert applies to Cortex chunks storage only._
 
 ### CortexCheckpointCreationFailed
 
