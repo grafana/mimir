@@ -383,8 +383,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 name="%(cacheName)s"
               }[$__rate_interval]
             )
-          ) 
-          / 
+          )
+          /
           sum(
             rate(
               thanos_cache_memcached_requests_total{
@@ -405,20 +405,20 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ignoring(%s) group_right() (
         label_replace(
           count by(
-            %s, 
-            %s, 
+            %s,
+            %s,
             device
-          ) 
+          )
           (
             container_fs_writes_bytes_total{
               %s,
               container="%s",
               device!~".*sda.*"
             }
-          ), 
-          "device", 
-          "$1", 
-          "device", 
+          ),
+          "device",
+          "$1",
+          "device",
           "/dev/(.*)"
         ) * 0
       )

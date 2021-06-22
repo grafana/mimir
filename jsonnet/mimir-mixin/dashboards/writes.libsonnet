@@ -11,16 +11,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.textPanel('', |||
           <p>
             This dashboard shows various health metrics for the Cortex write path.
-            It is broken into sections for each service on the write path, 
+            It is broken into sections for each service on the write path,
             and organized by the order in which the write request flows.
             <br/>
             Incoming metrics data travels from the gateway → distributor → ingester.
             <br/>
             For each service, there are 3 panels showing
-            (1) requests per second to that service, 
-            (2) average, median, and p99 latency of requests to that service, and 
+            (1) requests per second to that service,
+            (2) average, median, and p99 latency of requests to that service, and
             (3) p99 latency of requests to each instance of that service.
-          </p> 
+          </p>
           <p>
             It also includes metrics for the key-value (KV) stores used to manage
             the high-availability tracker and the ingesters.
@@ -216,7 +216,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Uploaded blocks / sec',
           |||
-            The rate of blocks being uploaded from the ingesters 
+            The rate of blocks being uploaded from the ingesters
             to object storage.
           |||
         ),
@@ -227,7 +227,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Upload latency',
           |||
-            The average, median (50th percentile), and 99th percentile time 
+            The average, median (50th percentile), and 99th percentile time
             the ingesters take to upload blocks to object storage.
           |||
         ),
@@ -247,7 +247,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           |||
             Ingesters maintain a local TSDB per-tenant on disk. Each TSDB maintains a head block for each
             active time series; these blocks get periodically compacted (by default, every 2h).
-            This panel shows the rate of compaction operations across all TSDBs on all ingesters. 
+            This panel shows the rate of compaction operations across all TSDBs on all ingesters.
           |||
         ),
       )
@@ -275,7 +275,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'WAL truncations per second',
           |||
-            The WAL is truncated each time a new TSDB block is written. This panel measures the rate of 
+            The WAL is truncated each time a new TSDB block is written. This panel measures the rate of
             truncations.
           |||
         ),
@@ -289,7 +289,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Checkpoints created per second',
           |||
-            Checkpoints are created as part of the WAL truncation process. 
+            Checkpoints are created as part of the WAL truncation process.
             This metric measures the rate of checkpoint creation.
           |||
         ),
@@ -301,7 +301,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'WAL truncations latency (including checkpointing)',
           |||
-            Average time taken to perform a full WAL truncation, 
+            Average time taken to perform a full WAL truncation,
             including the time taken for the checkpointing to complete.
           |||
         ),

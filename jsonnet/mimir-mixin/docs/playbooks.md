@@ -16,7 +16,7 @@ In events you're looking for things like:
 ```
 57m Normal NodeControllerEviction Pod Marking for deletion Pod ingester-01 from Node cloud-provider-node-01
 37m Normal SuccessfulDelete ReplicaSet (combined from similar events): Deleted pod: ingester-01
-32m         Normal    NodeNotReady              Node   Node cloud-provider-node-01 status is now: NodeNotReady 
+32m         Normal    NodeNotReady              Node   Node cloud-provider-node-01 status is now: NodeNotReady
 28m         Normal    DeletingAllPods           Node   Node cloud-provider-node-01 event: Deleting all Pods from Node cloud-provider-node-01.
 ```
 
@@ -313,7 +313,7 @@ gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 
 ### CortexBucketIndexNotUpdated
 
-This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store. 
+This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store.
 
 How to **investigate**:
 - Ensure the compactor is successfully running
@@ -557,7 +557,7 @@ metadata:
 spec:
   accessModes:
   - ReadWriteOnce
-  capacity: 
+  capacity:
     storage: 150Gi
   gcePersistentDisk:
     fsType: ext4
