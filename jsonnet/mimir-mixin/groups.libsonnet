@@ -29,7 +29,7 @@
       if alert_aggregation_labels_override != null
       then std.trace(
         |||
-          Deprecated: _config.alert_aggregation_labels 
+          Deprecated: _config.alert_aggregation_labels
             This field has been explicitly overridden to "%s".
             Instead, express the override in terms of _config.cluster_labels.
               E.g., cluster_labels: %s will automatically convert to "%s".

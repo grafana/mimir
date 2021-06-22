@@ -16,15 +16,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
             Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the time range of the query).
             <br/>
             For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.
-          </p> 
-          <p>
-            The dashboard also shows metrics for the 4 optional caches that can be deployed with Cortex: 
-            the query results cache, the metadata cache, the chunks cache, and the index cache. 
-            <br/>
-            These panels will show “no data” if the caches are not deployed. 
           </p>
           <p>
-            Lastly, it also includes metrics for how the ingester and store-gateway interact with object storage. 
+            The dashboard also shows metrics for the 4 optional caches that can be deployed with Cortex:
+            the query results cache, the metadata cache, the chunks cache, and the index cache.
+            <br/>
+            These panels will show “no data” if the caches are not deployed.
+          </p>
+          <p>
+            Lastly, it also includes metrics for how the ingester and store-gateway interact with object storage.
           </p>
         |||),
       )
@@ -45,7 +45,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 route=~"(prometheus|api_prom)_api_v1_query"
               }[$__rate_interval]
             )
-          ) + 
+          ) +
           sum(
             rate(
               cortex_prometheus_rule_evaluations_total{
@@ -61,7 +61,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Instant queries per second',
           |||
             Rate of instant queries per second being made to the system.
-            Includes both queries made to the <tt>/prometheus</tt> API as 
+            Includes both queries made to the <tt>/prometheus</tt> API as
             well as queries from the ruler.
           |||
         ),
@@ -83,8 +83,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Range queries per second',
           |||
-            Rate of range queries per second being made to 
-            Cortex via the <tt>/prometheus</tt> API. 
+            Rate of range queries per second being made to
+            Cortex via the <tt>/prometheus</tt> API.
           |||
         ),
       )
@@ -135,7 +135,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               The query scheduler is an optional service that moves
               the internal queue from the query-frontend into a
               separate component.
-              If this service is not deployed, 
+              If this service is not deployed,
               these panels will show "No data."
             </p>
           |||
@@ -286,8 +286,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                   %s
                 }[$__rate_interval]
               )
-            ) 
-            / 
+            )
+            /
             sum by(item_type) (
               rate(
                 thanos_store_index_cache_requests_total{
@@ -307,7 +307,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Hit Ratio',
           |||
             Even if you do not set up memcached for the blocks index cache, you will still see data in this panel because Cortex by default has an
-            in-memory blocks index cache. 
+            in-memory blocks index cache.
           |||
         ),
       )
