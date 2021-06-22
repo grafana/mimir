@@ -206,8 +206,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           rate(
             node_disk_written_bytes_total[$__rate_interval]
           )
-        ) 
-        + 
+        )
+        +
         %s
       ||| % [
         $._config.per_node_label,
@@ -243,10 +243,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel(
       |||
         max by(persistentvolumeclaim) (
-          kubelet_volume_stats_used_bytes{%(namespace)s} / 
+          kubelet_volume_stats_used_bytes{%(namespace)s} /
           kubelet_volume_stats_capacity_bytes{%(namespace)s}
-        ) 
-        and 
+        )
+        and
         count by(persistentvolumeclaim) (
           kube_persistentvolumeclaim_labels{
             %(namespace)s,
