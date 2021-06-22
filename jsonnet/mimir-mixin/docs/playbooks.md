@@ -369,7 +369,7 @@ _TODO: this playbook has not been written yet._
 
 ### CortexInconsistentRuntimeConfig
 
-This alert fires if multiple replicas of the same Cortex service are loading a different runtime config.
+This alert fires if multiple replicas of the same Cortex service are using a different runtime config for a longer period of time.
 
 The Cortex runtime config is a config file which gets live reloaded by Cortex at runtime. In order for Cortex to work properly, the loaded config is expected to be the exact same across multiple replicas of the same Cortex service (eg. distributors, ingesters, ...). When the config changes, there may be short periods of time during which some replicas have loaded the new config and others are still running on the previous one, but it shouldn't last for more than few minutes.
 
