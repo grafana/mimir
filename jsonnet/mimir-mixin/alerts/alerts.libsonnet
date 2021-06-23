@@ -21,11 +21,14 @@
           // Note if alert_aggregation_labels is "job", this will repeat the label. But
           // prometheus seems to tolerate that.
           expr: |||
-            100 * sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"ready"}[1m]))
+            100 * sum by (%(group_by)s, job, route) (rate(cortex_request_duration_seconds_count{status_code=~"5..",route!~"%(excluded_routes)s"}[1m]))
               /
-            sum by (%s, job, route) (rate(cortex_request_duration_seconds_count{route!~"ready"}[1m]))
+            sum by (%(group_by)s, job, route) (rate(cortex_request_duration_seconds_count{route!~"%(excluded_routes)s"}[1m]))
               > 1
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % {
+            group_by: $._config.alert_aggregation_labels,
+            excluded_routes: std.join('|', ['ready'] + $._config.alert_excluded_routes),
+          },
           'for': '15m',
           labels: {
             severity: 'critical',
@@ -39,10 +42,18 @@
         {
           alert: 'CortexRequestLatency',
           expr: |||
-            %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"metrics|/frontend.Frontend/Process|ready|/schedulerpb.SchedulerForFrontend/FrontendLoop|/schedulerpb.SchedulerForQuerier/QuerierLoop"}
+            %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}
                >
             %(cortex_p99_latency_threshold_seconds)s
-          ||| % $._config,
+          ||| % $._config {
+            excluded_routes: std.join('|', [
+              'metrics',
+              '/frontend.Frontend/Process',
+              'ready',
+              '/schedulerpb.SchedulerForFrontend/FrontendLoop',
+              '/schedulerpb.SchedulerForQuerier/QuerierLoop',
+            ] + $._config.alert_excluded_routes),
+          },
           'for': '15m',
           labels: {
             severity: 'warning',

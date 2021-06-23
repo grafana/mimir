@@ -109,7 +109,18 @@ Right now most of the execution time will be spent in PromQL's innerEval. NB tha
 
 ### CortexRequestErrors
 
-_TODO: this playbook has not been written yet._
+This alert fires when the rate of 5xx errors of a specific route is > 1% for some time.
+
+This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one.
+
+How to **investigate**:
+- Check for which route the alert fired
+  - Write path: open the `Cortex / Writes` dashboard
+  - Read path: open the `Cortex / Reads` dashboard
+- Looking at the dashboard you should see in which Cortex service the error originates
+  - The panels in the dashboard are vertically sorted by the network path (eg. on the write path: cortex-gw -> distributor -> ingester)
+- If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
+- If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
 
 ### CortexTransferFailed
 This alert goes off when an ingester fails to find another node to transfer its data to when it was shutting down. If there is both a pod stuck terminating and one stuck joining, look at the kubernetes events. This may be due to scheduling problems caused by some combination of anti affinity rules/resource utilization. Adding a new node can help in these circumstances. You can see recent events associated with a resource via kubectl describe, ex: `kubectl -n <namespace> describe pod <pod>`
@@ -354,10 +365,6 @@ WAL corruptions are only detected at startups, so at this point the WAL/Checkpoi
   1. Less than the quorum number for your replication factor: No data loss, because there is a guarantee that the data is replicated. For example, if replication factor is 3, then it's fine if corruption was on 1 ingester.
   2. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
   3. Equal or more than the replication factor: Then there is definitely some data loss.
-
-### CortexRequestErrors
-
-_TODO: this playbook has not been written yet._
 
 ### CortexTableSyncFailure
 
