@@ -64,5 +64,8 @@
       writes: true,
       reads: true,
     },
+
+    // The routes to exclude from alerts.
+    alert_excluded_routes: [],
   },
 }
