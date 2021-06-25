@@ -84,7 +84,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.queryPanel(queries, legends, legendLink) + {
       targets: [
         target {
-          interval: '1m',
+          interval: '15s',
         }
         for target in super.targets
       ],
@@ -104,7 +104,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.qpsPanel(selector) + {
       targets: [
         target {
-          interval: '1m',
+          interval: '15s',
         }
         for target in super.targets
       ],
@@ -114,7 +114,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     super.latencyPanel(metricName, selector, multiplier) + {
       targets: [
         target {
-          interval: '1m',
+          interval: '15s',
         }
         for target in super.targets
       ],
