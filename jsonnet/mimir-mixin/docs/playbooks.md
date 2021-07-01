@@ -408,11 +408,31 @@ _TODO: this playbook has not been written yet._
 
 ### CortexFrontendQueriesStuck
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex is running without query-scheduler and queries are piling up in the query-frontend queue.
+
+The procedure to investigate it is the same as the one for [`CortexSchedulerQueriesStuck`](#CortexSchedulerQueriesStuck): please see the other playbook for more details.
 
 ### CortexSchedulerQueriesStuck
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex is queries are piling up in the query-scheduler.
+
+How it **works**:
+- A query-frontend API endpoint is called to execute a query
+- The query-frontend enqueues the request to the query-scheduler
+- The query-scheduler is responsible to dispatch enqueued queries to idle querier workers
+- The querier runs the query, sends the response back directly to the query-frontend and notifies the query-scheduler
+
+How to **investigate**:
+- Are queriers in a crash loop (eg. OOMKilled)?
+  - `OOMKilled`: temporarily increase queriers memory request/limit
+  - `panic`: look for the stack trace in the logs and investigate from there
+- Is QPS increased?
+  - Scale up queriers to satisfy the increased workload
+- Is query latency increased?
+  - An increased latency reduces the number of queries we can run / sec: once all workers are busy, new queries will pile up in the queue
+  - Temporarily scale up queriers to try to stop the bleed
+  - Check the `Cortex / Slow Queries` dashboard to see if a specific tenant is running heavy queries
+    - If it's a multi-tenant Cortex cluster and shuffle-sharing is disabled for queriers, you may consider to enable it only for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
 
 ### CortexCacheRequestErrors
 
