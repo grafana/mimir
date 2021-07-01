@@ -440,7 +440,14 @@ _TODO: this playbook has not been written yet._
 
 ### CortexProvisioningTooManyWrites
 
-_TODO: this playbook has not been written yet._
+This alert fires if the average number of samples ingested / sec in ingesters is above our target.
+
+How to **fix**:
+- Scale up ingesters
+  - To compute the desired number of ingesters to satisfy the average samples rate you can run the following query, replacing `<namespace>` with the namespace to analyse and `<target>` with the target number of samples/sec per ingester (check out the alert threshold to see the current target):
+    ```
+    sum(rate(cortex_ingester_ingested_samples_total{namespace="<namespace>"}[$__rate_interval])) / (<target> * 0.9)
+    ```
 
 ### CortexAllocatingTooMuchMemory
 
