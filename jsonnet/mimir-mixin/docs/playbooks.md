@@ -451,7 +451,25 @@ How to **fix**:
 
 ### CortexAllocatingTooMuchMemory
 
-_TODO: this playbook has not been written yet._
+This alert fires when an ingester memory utilization is getting closer to the limit.
+
+How it **works**:
+- Cortex ingesters are a stateful service
+- Having 2+ ingesters `OOMKilled` may cause a cluster outage
+- Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly go heap) and mmap-ed files (used by TSDB)
+- Ingester memory short spikes are primarily influenced by queries
+- A pod gets `OOMKilled` once it's working set memory reaches the configured limit, so it's important to prevent ingesters memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
+
+How to **fix**:
+- Check if the issue occurs only for few ingesters. If so:
+  - Restart affected ingesters 1 by 1 (proceed with the next one once the previous pod has restarted and it's Ready)
+    ```
+    kubectl -n <namespace> delete pod ingester-XXX
+    ```
+  - Restarting an ingester typically reduces the memory allocated by mmap-ed files. Such memory could be reallocated again, but may let you gain more time while working on a longer term solution
+- Check the `Cortex / Writes Resources` dashboard to see if the number of series per ingester is above the target (1.5M). If so:
+  - Scale up ingesters
+  - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
 ### CortexGossipMembersMismatch
 

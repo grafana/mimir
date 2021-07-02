@@ -479,7 +479,7 @@
           },
           annotations: {
             message: |||
-              High QPS for ingesters, add more ingesters.
+              Ingesters in {{ $labels.namespace }} have an high samples/sec rate.
             |||,
           },
         },
@@ -498,7 +498,7 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by {{ $labels.namespace }}/{{ $labels.pod }} - add more ingesters.
+              Ingester {{ $labels.namespace }}/{{ $labels.pod }} is using too much memory.
             |||,
           },
         },
@@ -517,7 +517,7 @@
           },
           annotations: {
             message: |||
-              Too much memory being used by {{ $labels.namespace }}/{{ $labels.pod }} - add more ingesters.
+              Ingester {{ $labels.namespace }}/{{ $labels.pod }} is using too much memory.
             |||,
           },
         },
