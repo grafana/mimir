@@ -50,10 +50,12 @@ How the limit is **configured**:
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
 
 How to **fix**:
+1. **Temporarily increase the limit**<br />
+   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
+1. **Check if shuffle-sharding shard size is correct**<br />
+   When shuffle-sharding is enabled, we target to 100K series / tenant / ingester. You can run `avg by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}) > 100000` to find out tenants with > 100K series / ingester. You may want to increase the shard size for these tenants.
 1. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
-2. **Temporarily increase the limit**<br />
-   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
 
 ### CortexIngesterReachingTenantsLimit
 
@@ -402,17 +404,36 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Cortex logs to get more details about what's wrong with the config
 
-### CortexQuerierCapacityFull
-
-_TODO: this playbook has not been written yet._
-
 ### CortexFrontendQueriesStuck
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex is running without query-scheduler and queries are piling up in the query-frontend queue.
+
+The procedure to investigate it is the same as the one for [`CortexSchedulerQueriesStuck`](#CortexSchedulerQueriesStuck): please see the other playbook for more details.
 
 ### CortexSchedulerQueriesStuck
 
-_TODO: this playbook has not been written yet._
+This alert fires if queries are piling up in the query-scheduler.
+
+How it **works**:
+- A query-frontend API endpoint is called to execute a query
+- The query-frontend enqueues the request to the query-scheduler
+- The query-scheduler is responsible for dispatching enqueued queries to idle querier workers
+- The querier runs the query, sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query
+
+How to **investigate**:
+- Are queriers in a crash loop (eg. OOMKilled)?
+  - `OOMKilled`: temporarily increase queriers memory request/limit
+  - `panic`: look for the stack trace in the logs and investigate from there
+- Is QPS increased?
+  - Scale up queriers to satisfy the increased workload
+- Is query latency increased?
+  - An increased latency reduces the number of queries we can run / sec: once all workers are busy, new queries will pile up in the queue
+  - Temporarily scale up queriers to try to stop the bleed
+  - Check if a specific tenant is running heavy queries
+    - Run `sum by (user) (cortex_query_scheduler_queue_length{namespace="<namespace>"}) > 0` to find tenants with enqueued queries
+    - Check the `Cortex / Slow Queries` dashboard to find slow queries
+  - On multi-tenant Cortex cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
+  - On multi-tenant Cortex cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Cortex return errors for that given user once the per-tenant queue is full.
 
 ### CortexMemcachedRequestErrors
 
