@@ -541,7 +541,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% write errors.
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% write (push) errors.
             |||,
           },
         },
@@ -560,7 +560,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% write errors.
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% errors while evaluating rules.
             |||,
           },
         },
