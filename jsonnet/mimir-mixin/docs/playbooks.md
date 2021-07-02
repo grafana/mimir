@@ -414,9 +414,33 @@ _TODO: this playbook has not been written yet._
 
 _TODO: this playbook has not been written yet._
 
-### CortexCacheRequestErrors
+### CortexMemcachedRequestErrors
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex memcached client is experiencing an high error rate for a specific cache and operation.
+
+How to **investigate**:
+- The alert reports which cache is experiencing issue
+  - `metadata-cache`: object store metadata cache
+  - `index-cache`: TSDB index cache
+  - `chunks-cache`: TSDB chunks cache
+- Check which specific error is occurring
+  - Run the following query to find out the reason (replace `<namespace>` with the actual Cortex cluster namespace)
+    ```
+    sum by(name, operation, reason) (rate(thanos_memcached_operation_failures_total{namespace="<namespace>"}[1m])) > 0
+    ```
+- Based on the **`reason`**:
+  - `timeout`
+    - Scale up the memcached replicas
+  - `server-error`
+    - Check both Cortex and memcached logs to find more details
+  - `network-error`
+    - Check Cortex logs to find more details
+  - `malformed-key`
+    - The key is too long or contains invalid characters
+    - Check Cortex logs to find the offending key
+    - Fixing this will require changes to the application code
+  - `other`
+    - Check both Cortex and memcached logs to find more details
 
 ### CortexOldChunkInMemory
 
