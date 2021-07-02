@@ -479,7 +479,7 @@
           },
           annotations: {
             message: |||
-              Ingesters in {{ $labels.namespace }} have an high samples/sec rate.
+              Ingesters in {{ $labels.namespace }} ingest too many samples per second.
             |||,
           },
         },
