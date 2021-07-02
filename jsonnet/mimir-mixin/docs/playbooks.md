@@ -402,10 +402,6 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Cortex logs to get more details about what's wrong with the config
 
-### CortexQuerierCapacityFull
-
-_TODO: this playbook has not been written yet._
-
 ### CortexFrontendQueriesStuck
 
 This alert fires if Cortex is running without query-scheduler and queries are piling up in the query-frontend queue.
