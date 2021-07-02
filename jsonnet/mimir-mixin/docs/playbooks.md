@@ -146,9 +146,26 @@ More information:
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
 
-### CortexRulerFailedEvaluations
+### CortexRulerTooManyFailedPushes
 
-_TODO: this playbook has not been written yet._
+This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters.
+
+In general, pushing samples can fail due to problems with Cortex operations (eg. too many ingesters have crashed, and ruler cannot write samples to them), or due to problems with resulting data (eg. user hitting limit for number of series, out of order samples, etc.).
+This alert fires only for first kind of problems, and not for problems caused by limits or invalid rules.
+
+How to **fix**:
+- Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
+
+### CortexRulerTooManyFailedQueries
+
+This alert fires when rulers fail to evaluate rule queries.
+
+Each rule evaluation may fail due to many reasons, eg. due to invalid PromQL expression, or query hits limits on number of chunks. These are "user errors", and this alert ignores them.
+
+There is a category of errors that is more important: errors due to failure to read data from store-gateways or ingesters. These errors would result in 500 when run from querier. This alert fires if there is too many of such failures.
+
+How to **fix**:
+- Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 
 ### CortexRulerMissedEvaluations
 
