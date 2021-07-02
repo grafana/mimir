@@ -435,9 +435,33 @@ How to **investigate**:
   - On multi-tenant Cortex cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Cortex cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Cortex return errors for that given user once the per-tenant queue is full.
 
-### CortexCacheRequestErrors
+### CortexMemcachedRequestErrors
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex memcached client is experiencing an high error rate for a specific cache and operation.
+
+How to **investigate**:
+- The alert reports which cache is experiencing issue
+  - `metadata-cache`: object store metadata cache
+  - `index-cache`: TSDB index cache
+  - `chunks-cache`: TSDB chunks cache
+- Check which specific error is occurring
+  - Run the following query to find out the reason (replace `<namespace>` with the actual Cortex cluster namespace)
+    ```
+    sum by(name, operation, reason) (rate(thanos_memcached_operation_failures_total{namespace="<namespace>"}[1m])) > 0
+    ```
+- Based on the **`reason`**:
+  - `timeout`
+    - Scale up the memcached replicas
+  - `server-error`
+    - Check both Cortex and memcached logs to find more details
+  - `network-error`
+    - Check Cortex logs to find more details
+  - `malformed-key`
+    - The key is too long or contains invalid characters
+    - Check Cortex logs to find the offending key
+    - Fixing this will require changes to the application code
+  - `other`
+    - Check both Cortex and memcached logs to find more details
 
 ### CortexOldChunkInMemory
 

@@ -165,20 +165,20 @@
           },
         },
         {
-          alert: 'CortexCacheRequestErrors',
+          alert: 'CortexMemcachedRequestErrors',
           expr: |||
-            100 * sum by (%s, method) (rate(cortex_cache_request_duration_seconds_count{status_code=~"5.."}[1m]))
-              /
-            sum  by (%s, method) (rate(cortex_cache_request_duration_seconds_count[1m]))
-              > 1
+            (
+              sum by(%s, name, operation) (rate(thanos_memcached_operation_failures_total[1m])) /
+              sum by(%s, name, operation) (rate(thanos_memcached_operations_total[1m]))
+            ) * 100 > 5
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
-          'for': '15m',
+          'for': '5m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Cache {{ $labels.method }} is experiencing {{ printf "%.2f" $value }}% errors.
+              Memcached {{ $labels.name }} used by Cortex in {{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors for {{ $labels.operation }} operation.
             |||,
           },
         },
