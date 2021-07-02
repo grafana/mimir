@@ -41,5 +41,22 @@
         alert_aggregation_labels_override
       )
       else group_by_cluster,
+
+    // This field contains contains the Prometheus template variables that should
+    // be used to display values of the configured "group_by_cluster" (or the
+    // deprecated "alert_aggregation_labels").
+    alert_aggregation_variables:
+      std.join(
+        '/',
+        // Generate the variable replacement for each label.
+        std.map(
+          function(l) '{{ $labels.%s }}' % l,
+          // Split the configured labels by comma and remove whitespaces.
+          std.map(
+            function(l) std.strReplace(l, ' ', ''),
+            std.split($._config.alert_aggregation_labels, ',')
+          ),
+        ),
+      ),
   },
 }

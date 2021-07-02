@@ -9,24 +9,24 @@
           alert: 'CortexIngesterHasNotShippedBlocks',
           'for': '15m',
           expr: |||
-            (min by(namespace, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 60 * 60 * 4)
+            (min by(%(alert_aggregation_labels)s, instance) (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 60 * 60 * 4)
             and
-            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 0)
+            (max by(%(alert_aggregation_labels)s, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) > 0)
             and
             # Only if the ingester has ingested samples over the last 4h.
-            (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
+            (max by(%(alert_aggregation_labels)s, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
             and
             # Only if the ingester was ingesting samples 4h ago. This protects from the case the ingester instance
             # had ingested samples in the past, then no traffic was received for a long period and then it starts
             # receiving samples again. Without this check, the alert would fire as soon as it gets back receiving
             # samples, while the a block shipping is expected within the next 4h.
-            (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[1h] offset 4h)) > 0)
-          |||,
+            (max by(%(alert_aggregation_labels)s, instance) (rate(cortex_ingester_ingested_samples_total[1h] offset 4h)) > 0)
+          ||| % $._config,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} has not shipped any block in the last 4 hours.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s has not shipped any block in the last 4 hours.' % $._config,
           },
         },
         {
@@ -35,15 +35,15 @@
           alert: 'CortexIngesterHasNotShippedBlocksSinceStart',
           'for': '4h',
           expr: |||
-            (max by(namespace, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) == 0)
+            (max by(%(alert_aggregation_labels)s, instance) (thanos_objstore_bucket_last_successful_upload_time{job=~".+/ingester.*"}) == 0)
             and
-            (max by(namespace, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
-          |||,
+            (max by(%(alert_aggregation_labels)s, instance) (rate(cortex_ingester_ingested_samples_total[4h])) > 0)
+          ||| % $._config,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} has not shipped any block in the last 4 hours.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s has not shipped any block in the last 4 hours.' % $._config,
           },
         },
         {
@@ -61,7 +61,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: "Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet.",
+            message: "Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet." % $._config,
           },
         },
         {
@@ -77,7 +77,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to compact TSDB head.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to compact TSDB head.' % $._config,
           },
         },
         {
@@ -89,7 +89,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to truncate TSDB head.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to truncate TSDB head.' % $._config,
           },
         },
         {
@@ -101,7 +101,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to create TSDB checkpoint.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to create TSDB checkpoint.' % $._config,
           },
         },
         {
@@ -113,7 +113,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to delete TSDB checkpoint.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to delete TSDB checkpoint.' % $._config,
           },
         },
         {
@@ -125,7 +125,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to truncate TSDB WAL.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to truncate TSDB WAL.' % $._config,
           },
         },
         {
@@ -137,7 +137,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} got a corrupted TSDB WAL.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s got a corrupted TSDB WAL.' % $._config,
           },
         },
         {
@@ -150,7 +150,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Ingester {{ $labels.namespace }}/{{ $labels.instance }} is failing to write to TSDB WAL.',
+            message: 'Cortex Ingester {{ $labels.instance }} in %(alert_aggregation_variables)s is failing to write to TSDB WAL.' % $._config,
           },
         },
         {
@@ -166,7 +166,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Querier {{ $labels.namespace }}/{{ $labels.instance }} has not successfully scanned the bucket since {{ $value | humanizeDuration }}.',
+            message: 'Cortex Querier {{ $labels.instance }} in %(alert_aggregation_variables)s has not successfully scanned the bucket since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {
@@ -177,20 +177,20 @@
           expr: |||
             100 * (
               (
-                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
+                sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
                 -
-                sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0.0"}[5m]))
+                sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_bucket{le="0.0"}[5m]))
               )
               /
-              sum by(namespace) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
+              sum by(%(alert_aggregation_labels)s) (rate(cortex_querier_storegateway_refetches_per_query_count[5m]))
             )
             > 1
-          |||,
+          ||| % $._config,
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: 'Cortex Queries in {{ $labels.namespace }} are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%.0f" $value }}% of queries.',
+            message: 'Cortex Queries in %(alert_aggregation_variables)s are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%%.0f" $value }}%% of queries.' % $._config,
           },
         },
         {
@@ -206,20 +206,20 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex Store Gateway {{ $labels.namespace }}/{{ $labels.instance }} has not successfully synched the bucket since {{ $value | humanizeDuration }}.',
+            message: 'Cortex Store Gateway {{ $labels.instance }} in %(alert_aggregation_variables)s has not successfully synched the bucket since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {
           // Alert if the bucket index has not been updated for a given user.
           alert: 'CortexBucketIndexNotUpdated',
           expr: |||
-            min by(namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
-          |||,
+            min by(%(alert_aggregation_labels)s, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
+          ||| % $._config,
           labels: {
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex bucket index for tenant {{ $labels.user }} in {{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.',
+            message: 'Cortex bucket index for tenant {{ $labels.user }} in %(alert_aggregation_variables)s has not been updated since {{ $value | humanizeDuration }}.' % $._config,
           },
         },
         {
@@ -227,13 +227,13 @@
           alert: 'CortexTenantHasPartialBlocks',
           'for': '6h',
           expr: |||
-            max by(namespace, user) (cortex_bucket_blocks_partials_count) > 0
-          |||,
+            max by(%(alert_aggregation_labels)s, user) (cortex_bucket_blocks_partials_count) > 0
+          ||| % $._config,
           labels: {
             severity: 'warning',
           },
           annotations: {
-            message: 'Cortex tenant {{ $labels.user }} in {{ $labels.namespace }} has {{ $value }} partial blocks.',
+            message: 'Cortex tenant {{ $labels.user }} in %(alert_aggregation_variables)s has {{ $value }} partial blocks.' % $._config,
           },
         },
       ],
