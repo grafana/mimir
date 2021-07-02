@@ -457,7 +457,16 @@ _This alert applies to Cortex chunks storage only._
 
 ### CortexProvisioningTooManyActiveSeries
 
-_TODO: this playbook has not been written yet._
+This alert fires if the average number of in-memory series per ingester is above our target (1.5M).
+
+How to **fix**:
+- Scale up ingesters
+  - To find out the Cortex clusters where ingesters should be scaled up and how many minimum replicas are expected:
+    ```
+    ceil(sum by(cluster, namespace) (cortex_ingester_memory_series) / 1.5e6) >
+    count by(cluster, namespace) (cortex_ingester_memory_series)
+    ```
+- After the scale up, the in-memory series are expected to be reduced at the next TSDB head compaction (occurring every 2h)
 
 ### CortexProvisioningTooManyWrites
 
