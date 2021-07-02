@@ -527,12 +527,32 @@
       name: 'ruler_alerts',
       rules: [
         {
-          alert: 'CortexRulerFailedEvaluations',
+          alert: 'CortexRulerTooManyFailedPushes',
           expr: |||
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_evaluation_failures_total[1m]))
+            100 * (
+            sum by (%s, instance) (rate(cortex_ruler_write_requests_failed_total[1m]))
               /
-            sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_evaluations_total[1m]))
-              > 0.01
+            sum by (%s, instance) (rate(cortex_ruler_write_requests_total[1m]))
+            ) > 1
+          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% write errors.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexRulerTooManyFailedQueries',
+          expr: |||
+            100 * (
+            sum by (%s, instance) (rate(cortex_ruler_queries_failed_total[1m]))
+              /
+            sum by (%s, instance) (rate(cortex_ruler_queries_total[1m]))
+            ) > 1
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
           labels: {
@@ -540,7 +560,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% errors for the rule group {{ $labels.rule_group }}.
+              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% write errors.
             |||,
           },
         },
