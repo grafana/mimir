@@ -13,7 +13,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'There are {{ printf "%f" $value }} unhealthy ingester(s).',
+            message: 'Cortex cluster %(alert_aggregation_variables)s has {{ printf "%%f" $value }} unhealthy ingester(s).' % $._config,
           },
         },
         {
@@ -35,8 +35,8 @@
           },
           annotations: {
             message: |||
-              {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}% errors.
-            |||,
+              The route {{ $labels.route }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors.
+            ||| % $._config,
           },
         },
         {
@@ -98,8 +98,8 @@
           },
           annotations: {
             message: |||
-              Incorrect results for {{ printf "%.2f" $value }}% of queries.
-            |||,
+              The Cortex cluster %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% incorrect query results.
+            ||| % $._config,
           },
         },
         {
@@ -113,8 +113,8 @@
           },
           annotations: {
             message: |||
-              An inconsistent runtime config file is used across cluster {{ $labels.job }}.
-            |||,
+              An inconsistent runtime config file is used across cluster %(alert_aggregation_variables)s.
+            ||| % $._config,
           },
         },
         {
@@ -145,8 +145,8 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in query-frontend.
-            |||,
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s query-frontend.
+            ||| % $._config,
           },
         },
         {
@@ -160,8 +160,8 @@
           },
           annotations: {
             message: |||
-              There are {{ $value }} queued up queries in query-scheduler.
-            |||,
+              There are {{ $value }} queued up queries in %(alert_aggregation_variables)s query-scheduler.
+            ||| % $._config,
           },
         },
         {
@@ -178,8 +178,8 @@
           },
           annotations: {
             message: |||
-              Memcached {{ $labels.name }} used by Cortex in {{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors for {{ $labels.operation }} operation.
-            |||,
+              Memcached {{ $labels.name }} used by Cortex %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
+            ||| % $._config,
           },
         },
         {
@@ -430,8 +430,8 @@
           },
           annotations: {
             message: |||
-              Chunk memcached cluster is too small, should be at least {{ printf "%.2f" $value }}GB.
-            |||,
+              Chunk memcached cluster in %(alert_aggregation_variables)s is too small, should be at least {{ printf "%%.2f" $value }}GB.
+            ||| % $._config,
           },
         },
         {
@@ -448,8 +448,8 @@
           },
           annotations: {
             message: |||
-              The number of in-memory series per ingester in {{ $labels.namespace }} is too high.
-            |||,
+              The number of in-memory series per ingester in %(alert_aggregation_variables)s is too high.
+            ||| % $._config,
           },
         },
         {
@@ -464,8 +464,8 @@
           },
           annotations: {
             message: |||
-              Ingesters in {{ $labels.namespace }} ingest too many samples per second.
-            |||,
+              Ingesters in %(alert_aggregation_variables)s ingest too many samples per second.
+            ||| % $._config,
           },
         },
         {
@@ -483,8 +483,8 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.namespace }}/{{ $labels.pod }} is using too much memory.
-            |||,
+              Ingester {{ $labels.pod }} in %(alert_aggregation_variables)s is using too much memory.
+            ||| % $._config,
           },
         },
         {
@@ -502,8 +502,8 @@
           },
           annotations: {
             message: |||
-              Ingester {{ $labels.namespace }}/{{ $labels.pod }} is using too much memory.
-            |||,
+              Ingester {{ $labels.pod }} in %(alert_aggregation_variables)s is using too much memory.
+            ||| % $._config,
           },
         },
       ],
@@ -526,8 +526,8 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% write (push) errors.
-            |||,
+              Cortex Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% write (push) errors.
+            ||| % $._config,
           },
         },
         {
@@ -545,8 +545,8 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% errors while evaluating rules.
-            |||,
+              Cortex Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
+            ||| % $._config,
           },
         },
         {
@@ -563,8 +563,8 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
-            |||,
+              Cortex Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+            ||| % $._config,
           },
         },
         {
@@ -579,8 +579,8 @@
           },
           annotations: {
             message: |||
-              Cortex Rulers {{ $labels.job }} are experiencing errors when checking the ring for rule group ownership.
-            |||,
+              Cortex Rulers in %(alert_aggregation_variables)s are experiencing errors when checking the ring for rule group ownership.
+            ||| % $._config,
           },
         },
       ],
@@ -600,7 +600,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: '{{ $labels.job }}/{{ $labels.instance }} sees incorrect number of gossip members.',
+            message: 'Cortex instance {{ $labels.instance }} in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
           },
         },
       ],
