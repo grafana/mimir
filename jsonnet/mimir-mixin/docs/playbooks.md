@@ -50,10 +50,12 @@ How the limit is **configured**:
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
 
 How to **fix**:
+1. **Temporarily increase the limit**<br />
+   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
+1. **Check if shuffle-sharding shard size is correct**<br />
+   When shuffle-sharding is enabled, we target to 100K series / tenant / ingester. You can run `avg by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}) > 100000` to find out tenants with > 100K series / ingester. You may want to increase the shard size for these tenants.
 1. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
-2. **Temporarily increase the limit**<br />
-   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
 
 ### CortexIngesterReachingTenantsLimit
 
