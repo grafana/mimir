@@ -436,19 +436,19 @@
         },
         {
           alert: 'CortexProvisioningTooManyActiveSeries',
-          // 1.5 million active series per ingester max.
+          // We target each ingester to 1.5M in-memory series. This alert fires if the average
+          // number of series / ingester in a Cortex cluster is > 1.6M for 2h (we compact
+          // the TSDB head every 2h).
           expr: |||
             avg by (%s) (cortex_ingester_memory_series) > 1.6e6
-              and
-            sum by (%s) (rate(cortex_ingester_received_chunks[1h])) == 0
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
-          'for': '1h',
+          ||| % [$._config.alert_aggregation_labels],
+          'for': '2h',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              Too many active series for ingesters, add more ingesters.
+              The number of in-memory series per ingester in {{ $labels.namespace }} is too high.
             |||,
           },
         },
