@@ -135,21 +135,6 @@
           },
         },
         {
-          alert: 'CortexQuerierCapacityFull',
-          expr: |||
-            prometheus_engine_queries_concurrent_max{job=~".+/(cortex|ruler|querier)"} - prometheus_engine_queries{job=~".+/(cortex|ruler|querier)"} == 0
-          |||,
-          'for': '5m',  // We don't want to block for longer.
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }} is at capacity processing queries.
-            |||,
-          },
-        },
-        {
           alert: 'CortexFrontendQueriesStuck',
           expr: |||
             sum by (%s) (cortex_query_frontend_queue_length) > 1
