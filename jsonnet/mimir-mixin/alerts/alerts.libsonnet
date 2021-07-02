@@ -441,7 +441,7 @@
           // the TSDB head every 2h).
           expr: |||
             avg by (%s) (cortex_ingester_memory_series) > 1.6e6
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          ||| % [$._config.alert_aggregation_labels],
           'for': '2h',
           labels: {
             severity: 'warning',
