@@ -163,7 +163,7 @@ Each rule evaluation may fail due to many reasons, eg. due to invalid PromQL exp
 There is a category of errors that is more important: errors due to failure to read data from store-gateways or ingesters. These errors would result in 500 when run from querier. This alert fires if there is too many of such failures.
 
 How to **fix**:
-- Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that rule logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways. 
+- Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that rule logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 
 ### CortexRulerMissedEvaluations
 
