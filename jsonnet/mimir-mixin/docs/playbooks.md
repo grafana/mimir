@@ -50,10 +50,12 @@ How the limit is **configured**:
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
 
 How to **fix**:
+1. **Temporarily increase the limit**<br />
+   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
+1. **Check if shuffle-sharding shard size is correct**<br />
+   When shuffle-sharding is enabled, we target to 100K series / tenant / ingester. You can run `avg by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}) > 100000` to find out tenants with > 100K series / ingester. You may want to increase the shard size for these tenants.
 1. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
-2. **Temporarily increase the limit**<br />
-   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
 
 ### CortexIngesterReachingTenantsLimit
 
@@ -450,9 +452,33 @@ How to **investigate**:
   - On multi-tenant Cortex cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Cortex cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Cortex return errors for that given user once the per-tenant queue is full.
 
-### CortexCacheRequestErrors
+### CortexMemcachedRequestErrors
 
-_TODO: this playbook has not been written yet._
+This alert fires if Cortex memcached client is experiencing an high error rate for a specific cache and operation.
+
+How to **investigate**:
+- The alert reports which cache is experiencing issue
+  - `metadata-cache`: object store metadata cache
+  - `index-cache`: TSDB index cache
+  - `chunks-cache`: TSDB chunks cache
+- Check which specific error is occurring
+  - Run the following query to find out the reason (replace `<namespace>` with the actual Cortex cluster namespace)
+    ```
+    sum by(name, operation, reason) (rate(thanos_memcached_operation_failures_total{namespace="<namespace>"}[1m])) > 0
+    ```
+- Based on the **`reason`**:
+  - `timeout`
+    - Scale up the memcached replicas
+  - `server-error`
+    - Check both Cortex and memcached logs to find more details
+  - `network-error`
+    - Check Cortex logs to find more details
+  - `malformed-key`
+    - The key is too long or contains invalid characters
+    - Check Cortex logs to find the offending key
+    - Fixing this will require changes to the application code
+  - `other`
+    - Check both Cortex and memcached logs to find more details
 
 ### CortexOldChunkInMemory
 
