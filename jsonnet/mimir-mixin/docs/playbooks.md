@@ -87,36 +87,64 @@ How to **fix**:
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
 ### CortexRequestLatency
-First establish if the alert is for read or write latency. The alert should say.
+
+This alert fires when a specific Cortex route is experiencing an high latency.
+
+The alert message includes both the Cortex service and route experiencing the high latency. Establish if the alert is about the read or write path based on that (see [Cortex routes by path](#cortex-routes-by-path)).
 
 #### Write Latency
-Using the Cortex write dashboard, find the cluster which reported the high write latency and deduce where in the stack the latency is being introduced:
 
-distributor: It is quite normal for the distributor P99 latency to be 50-100ms, and for the ingesters to be ~5ms. If the distributor latency is higher than this, you may need to scale up the distributors. If there is a high error rate being introduced at the distributors (400s or 500s) this has been know to induce latency.
-
-ingesters: It is very unusual for ingester latency to be high, as they just write to memory. They probably needs scaling up, but it is worth investigating what is going on first.
+How to **investigate**:
+- Check the `Cortex / Writes` dashboard
+  - Looking at the dashboard you should see in which Cortex service the high latency originates
+  - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> distributor -> ingester)
+- Deduce where in the stack the latency is being introduced
+  - **`cortex-gw`**
+    - The cortex-gw may need to be scaled up. Use the `Cortex / Scaling` dashboard to check for CPU usage vs requests.
+    - There could be a problem with authentication (eg. slow to run auth layer)
+  - **`distributor`**
+    - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the distributors.
+  - **`ingester`**
+    - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
+    - Check out the following alerts and fix them if firing:
+      - `CortexProvisioningTooManyActiveSeries`
+      - `CortexProvisioningTooManyWrites`
 
 #### Read Latency
-Query performance is an known problem. When you get this alert, you need to work out if: (a) this is a operation issue / configuration (b) this is because of algorithms and inherently limited (c) this is a bug
 
-Using the Cortex read dashboard, find the cluster which reported the high read latency and deduce where in the stack the latency is being introduced.
+Query performance is a known issue. A query may be slow because of high cardinality, large time range and/or because not leveraging on cache (eg. querying series data not cached yet). When investigating this alert, you should check if it's caused by few slow queries or there's an operational / config issue to be fixed.
 
-query_frontend: If there is a significant P99 or avg latency difference between the frontend and the querier, you can't scale them up - we rely on their being two frontend. Is this latency coming from the cache? Scale that up. What the CPU usage of the query frontend service? Do we need to increase the CPU requests and have it scheduled to a less busy box? Note QPS on the querier will be higher than on the frontend as it splits queries into multiple smaller ones.
-
-ingesters: Latency should be in the ~100ms - queries are in memory. If its more, check the CPU usage and consider scaling it up. NB scale ingesters slowly, 1-2 new replicas an hour.
-
-If you think its provisioning / scaling is the problem, consult the scaling dashboard. These are just recommendations - make reasonable adjustments.
-
-Right now most of the execution time will be spent in PromQL's innerEval. NB that the prepare (index and chunk fetch) are now interleaved with Eval, so you need to expand both to confirm if its flow execution of slow fetching.
+How to **investigate**:
+- Check the `Cortex / Reads` dashboard
+  - Looking at the dashboard you should see in which Cortex service the high latency originates
+  - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> query-frontend -> query->scheduler -> querier -> store-gateway)
+- Check the `Cortex / Slow Queries` dashboard to find out if it's caused by few slow queries
+- Deduce where in the stack the latency is being introduced
+  - **`cortex-gw`**
+    - The cortex-gw may need to be scaled up. Use the `Cortex / Scaling` dashboard to check for CPU usage vs requests.
+    - There could be a problem with authentication (eg. slow to run auth layer)
+  - **`query-frontend`**
+    - The query-frontend may beed to be scaled up. If the Cortex cluster is running with the query-scheduler, the query-frontend can be scaled up with no side effects, otherwise the maximum number of query-frontend replicas should be the configured `-querier.worker-parallelism`.
+  - **`querier`**
+    - Look at slow queries traces to find out where it's slow.
+    - Typically, slowness either comes from running PromQL engine (`innerEval`) or fetching chunks from ingesters and/or store-gateways.
+    - If slowness comes from running PromQL engine, typically there's not much we can do. Scaling up queriers may help only if querier nodes are overloaded.
+    - If slowness comes from fetching chunks from ingesters and/or store-gateways you should investigate deeper on the root cause. Common causes:
+      - High CPU utilization in ingesters
+        - Scale up ingesters
+      - Low cache hit ratio in the store-gateways
+        - Check `Memcached Overview` dashboard
+        - If memcached eviction rate is high, then you should scale up memcached replicas. Check the recommendations by `Cortex / Scaling` dashboard and make reasonable adjustments as necessary.
+        - If memcached eviction rate is zero or very low, then it may be caused by "first time" queries
 
 ### CortexRequestErrors
 
 This alert fires when the rate of 5xx errors of a specific route is > 1% for some time.
 
-This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one.
+This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one (but the investigation procedure is typically the same).
 
 How to **investigate**:
-- Check for which route the alert fired
+- Check for which route the alert fired (see [Cortex routes by path](#cortex-routes-by-path))
   - Write path: open the `Cortex / Writes` dashboard
   - Read path: open the `Cortex / Reads` dashboard
 - Looking at the dashboard you should see in which Cortex service the error originates
@@ -563,6 +591,28 @@ This can be triggered if there are too many HA dedupe keys in etcd. We saw this 
     },
   },
 ```
+
+## Cortex routes by path
+
+**Write path**:
+- `/distributor.Distributor/Push`
+- `/cortex.Ingester/Push`
+- `api_v1_push`
+- `api_prom_push`
+- `api_v1_push_influx_write`
+
+**Read path**:
+- `/schedulerpb.SchedulerForFrontend/FrontendLoop`
+- `/cortex.Ingester/QueryStream`
+- `/cortex.Ingester/QueryExemplars`
+- `/gatewaypb.StoreGateway/Series`
+- `api_prom_label`
+- `api_prom_api_v1_query_exemplars`
+
+**Ruler / rules path**:
+- `api_v1_rules`
+- `api_v1_rules_namespace`
+- `api_prom_rules_namespace`
 
 ## Cortex blocks storage - What to do when things to wrong
 
