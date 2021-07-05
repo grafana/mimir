@@ -1,6 +1,7 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
+  local ruler_config_api_routes_re = 'api_prom_rules.*|api_prom_api_v1_(rules|alerts)',
 
   rulerQueries+:: {
     ruleEvaluations: {
@@ -106,11 +107,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Configuration API (gateway)')
       .addPanel(
         $.panel('QPS') +
-        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"api_prom_rules.*|api_prom_api_v1_(rules|alerts)"}' % $.jobMatcher($._config.job_names.gateway))
+        $.qpsPanel('cortex_request_duration_seconds_count{%s, route=~"%s"}' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re])
       )
       .addPanel(
         $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', 'api_prom_rules.*|api_prom_api_v1_(rules|alerts)')])
+        utils.latencyRecordingRulePanel('cortex_request_duration_seconds', $.jobSelector($._config.job_names.gateway) + [utils.selector.re('route', ruler_config_api_routes_re)])
+      )
+      .addPanel(
+        $.panel('Per route p99 Latency') +
+        $.queryPanel(
+          'histogram_quantile(0.99, sum by (route, le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{%s, route=~"%s"}))' % [$.jobMatcher($._config.job_names.gateway), ruler_config_api_routes_re],
+          '{{ route }}'
+        ) +
+        { yaxes: $.yaxes('s') }
       )
     )
     .addRow(
