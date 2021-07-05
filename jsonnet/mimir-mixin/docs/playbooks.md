@@ -90,7 +90,7 @@ How to **fix**:
 
 This alert fires when a specific Cortex route is experiencing an high latency.
 
-The alert message includes both the Cortex service and route experiencing the high latency. Establish if the alert is about the read or write path based on that.
+The alert message includes both the Cortex service and route experiencing the high latency. Establish if the alert is about the read or write path based on that (see [Cortex routes by path](#cortex-routes-by-path)).
 
 #### Write Latency
 
@@ -106,6 +106,9 @@ How to **investigate**:
     - Typically, distributor p99 latency is in the range 50-100ms. If the distributor latency is higher than this, you may need to scale up the distributors.
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
+    - Check out the following alerts and fix them if firing:
+      - `CortexProvisioningTooManyActiveSeries`
+      - `CortexProvisioningTooManyWrites`
 
 #### Read Latency
 
@@ -130,6 +133,7 @@ How to **investigate**:
       - High CPU utilization in ingesters
         - Scale up ingesters
       - Low cache hit ratio in the store-gateways
+        - Check `Memcached Overview` dashboard
         - If memcached eviction rate is high, then you should scale up memcached replicas. Check the recommendations by `Cortex / Scaling` dashboard and make reasonable adjustments as necessary.
         - If memcached eviction rate is zero or very low, then it may be caused by "first time" queries
 
@@ -140,7 +144,7 @@ This alert fires when the rate of 5xx errors of a specific route is > 1% for som
 This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one (but the investigation procedure is typically the same).
 
 How to **investigate**:
-- Check for which route the alert fired
+- Check for which route the alert fired (see [Cortex routes by path](#cortex-routes-by-path))
   - Write path: open the `Cortex / Writes` dashboard
   - Read path: open the `Cortex / Reads` dashboard
 - Looking at the dashboard you should see in which Cortex service the error originates
@@ -587,6 +591,28 @@ This can be triggered if there are too many HA dedupe keys in etcd. We saw this 
     },
   },
 ```
+
+## Cortex routes by path
+
+**Write path**:
+- `/distributor.Distributor/Push`
+- `/cortex.Ingester/Push`
+- `api_v1_push`
+- `api_prom_push`
+- `api_v1_push_influx_write`
+
+**Read path**:
+- `/schedulerpb.SchedulerForFrontend/FrontendLoop`
+- `/cortex.Ingester/QueryStream`
+- `/cortex.Ingester/QueryExemplars`
+- `/gatewaypb.StoreGateway/Series`
+- `api_prom_label`
+- `api_prom_api_v1_query_exemplars`
+
+**Ruler / rules path**:
+- `api_v1_rules`
+- `api_v1_rules_namespace`
+- `api_prom_rules_namespace`
 
 ## Cortex blocks storage - What to do when things to wrong
 
