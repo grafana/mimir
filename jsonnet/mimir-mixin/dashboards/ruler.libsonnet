@@ -248,5 +248,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           '{{ user }}'
         )
       )
+    )
+    .addRows(
+      $.getObjectStoreRows('Ruler Configuration Object Store (Ruler accesses)', 'ruler-storage')
     ),
 }
