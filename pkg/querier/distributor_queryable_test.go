@@ -46,7 +46,7 @@ func TestDistributorQuerier(t *testing.T) {
 		},
 		nil)
 
-	queryable := newDistributorQueryable(d, false, nil, 0)
+	queryable := newDistributorQueryable(d, false, nil, 0, true)
 	querier, err := queryable.Querier(context.Background(), mint, maxt)
 	require.NoError(t, err)
 
@@ -123,7 +123,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
 
 				ctx := user.InjectOrgID(context.Background(), "test")
-				queryable := newDistributorQueryable(distributor, streamingEnabled, nil, testData.queryIngestersWithin)
+				queryable := newDistributorQueryable(distributor, streamingEnabled, nil, testData.queryIngestersWithin, true)
 				querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 				require.NoError(t, err)
 
@@ -150,7 +150,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 
 func TestDistributorQueryableFilter(t *testing.T) {
 	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, false, nil, 1*time.Hour)
+	dq := newDistributorQueryable(d, false, nil, 1*time.Hour, true)
 
 	now := time.Now()
 
@@ -196,7 +196,7 @@ func TestIngesterStreaming(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, true, mergeChunks, 0)
+	queryable := newDistributorQueryable(d, true, mergeChunks, 0, true)
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -272,7 +272,7 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, true, mergeChunks, 0)
+	queryable := newDistributorQueryable(d, true, mergeChunks, 0, true)
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 

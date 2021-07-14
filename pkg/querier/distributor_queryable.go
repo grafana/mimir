@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -36,12 +35,13 @@ type Distributor interface {
 	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
 }
 
-func newDistributorQueryable(distributor Distributor, streaming bool, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, streaming bool, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, queryLabelNamesWithMatchers bool) QueryableWithFilter {
 	return distributorQueryable{
-		distributor:          distributor,
-		streaming:            streaming,
-		iteratorFn:           iteratorFn,
-		queryIngestersWithin: queryIngestersWithin,
+		distributor:                 distributor,
+		streaming:                   streaming,
+		iteratorFn:                  iteratorFn,
+		queryIngestersWithin:        queryIngestersWithin,
+		queryLabelNamesWithMatchers: queryLabelNamesWithMatchers,
 	}
 }
 
@@ -50,6 +50,8 @@ type distributorQueryable struct {
 	streaming            bool
 	iteratorFn           chunkIteratorFunc
 	queryIngestersWithin time.Duration
+
+	queryLabelNamesWithMatchers bool
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -61,6 +63,8 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		streaming:            d.streaming,
 		chunkIterFn:          d.iteratorFn,
 		queryIngestersWithin: d.queryIngestersWithin,
+
+		queryLabelNamesWithMatchers: d.queryLabelNamesWithMatchers,
 	}, nil
 }
 
@@ -76,6 +80,8 @@ type distributorQuerier struct {
 	streaming            bool
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
+
+	queryLabelNamesWithMatchers bool
 }
 
 // Select implements storage.Querier interface.
@@ -194,13 +200,41 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 }
 
 func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if len(matchers) > 0 {
-		// FIXME(colega) implement matchers
-		// FIXME(colega) use a flag here to call the q.Select() if we're not sure yet whether the feature is deployed or not
-		return nil, nil, errors.New("label names are not implemented")
+	log, ctx := spanlogger.New(q.ctx, "distributorQuerier.LabelNames")
+	defer log.Span.Finish()
+
+	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
+		return q.legacyLabelNamesWithMatchersThroughMetricsCall(ctx, matchers...)
 	}
-	ln, err := q.distributor.LabelNames(q.ctx, model.Time(q.mint), model.Time(q.maxt))
+
+	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt))
 	return ln, nil, err
+}
+
+// legacyLabelNamesWithMatchersThroughMetricsCall performs the LabelNames call in _the old way_, by calling ingester's MetricsForLabelMatchers method
+// this is used when the LabelNames with matchers feature is first deployed, and some ingesters may have not been updated yet, so they could be ignoring
+// the matchers, leading to wrong results.
+func (q *distributorQuerier) legacyLabelNamesWithMatchersThroughMetricsCall(ctx context.Context, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	log, ctx := spanlogger.New(q.ctx, "distributorQuerier.LabelNames/legacy")
+	defer log.Span.Finish()
+	ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
+	if err != nil {
+		return nil, nil, err
+	}
+	namesMap := make(map[string]struct{})
+
+	for _, m := range ms {
+		for name := range m.Metric {
+			namesMap[string(name)] = struct{}{}
+		}
+	}
+
+	names := make([]string, 0, len(namesMap))
+	for name := range namesMap {
+		names = append(names, name)
+	}
+
+	return names, nil, nil
 }
 
 func (q *distributorQuerier) Close() error {
