@@ -1130,7 +1130,12 @@ func (i *Ingester) v2LabelNames(ctx context.Context, req *client.LabelNamesReque
 		return &client.LabelNamesResponse{}, nil
 	}
 
-	mint, maxt, err := metadataQueryRange(req.StartTimestampMs, req.EndTimestampMs, db)
+	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	mint, maxt, err = metadataQueryRange(mint, maxt, db)
 	if err != nil {
 		return nil, err
 	}
@@ -1141,7 +1146,7 @@ func (i *Ingester) v2LabelNames(ctx context.Context, req *client.LabelNamesReque
 	}
 	defer q.Close()
 
-	names, _, err := q.LabelNames()
+	names, _, err := q.LabelNames(matchers...)
 	if err != nil {
 		return nil, err
 	}

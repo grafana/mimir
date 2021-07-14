@@ -347,8 +347,9 @@ func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to 
 	args := m.Called(ctx, from, to, lbl, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time) ([]string, error) {
-	args := m.Called(ctx, from, to)
+func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
+	// TODO(colega): this should be m.Called(append([]interface{}{ctx, from, to}, matchers...) but I'm trying to be consistent with the rest of the methods
+	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
 func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {

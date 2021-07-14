@@ -968,6 +968,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return &client.LabelNamesResponse{}, nil
 	}
 
+	// FIXME(colega): use matchers in this call below
 	resp := &client.LabelNamesResponse{}
 	resp.LabelNames = append(resp.LabelNames, state.index.LabelNames()...)
 

@@ -881,16 +881,17 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 }
 
 // LabelNames returns all of the label names.
-func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time) ([]string, error) {
+func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
 	replicationSet, err := d.GetIngestersForMetadata(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	req := &ingester_client.LabelNamesRequest{
-		StartTimestampMs: int64(from),
-		EndTimestampMs:   int64(to),
+	req, err := ingester_client.ToLabelNamesRequest(from, to, matchers)
+	if err != nil {
+		return nil, err
 	}
+
 	resps, err := d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		return client.LabelNames(ctx, req)
 	})

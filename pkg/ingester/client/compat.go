@@ -172,6 +172,35 @@ func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, []*l
 	return req.LabelName, req.StartTimestampMs, req.EndTimestampMs, matchers, nil
 }
 
+// ToLabelNamesRequest builds a LabelNamesRequest proto
+func ToLabelNamesRequest(from, to model.Time, matchers []*labels.Matcher) (*LabelNamesRequest, error) {
+	ms, err := toLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	return &LabelNamesRequest{
+		StartTimestampMs: int64(from),
+		EndTimestampMs:   int64(to),
+		Matchers:         &LabelMatchers{Matchers: ms},
+	}, nil
+}
+
+// FromLabelNamesRequest unpacks a LabelNamesRequest proto
+func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, []*labels.Matcher, error) {
+	var err error
+	var matchers []*labels.Matcher
+
+	if req.Matchers != nil {
+		matchers, err = FromLabelMatchers(req.Matchers.Matchers)
+		if err != nil {
+			return 0, 0, nil, err
+		}
+	}
+
+	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
+}
+
 func toLabelMatchers(matchers []*labels.Matcher) ([]*LabelMatcher, error) {
 	result := make([]*LabelMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
