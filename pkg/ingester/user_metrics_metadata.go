@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/labels"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -54,7 +56,7 @@ func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetada
 
 	if err := mm.limiter.AssertMaxMetadataPerMetric(mm.userID, len(set)); err != nil {
 		validation.DiscardedMetadata.WithLabelValues(mm.userID, perMetricMetadataLimit).Inc()
-		return makeLimitError(perMetricMetadataLimit, mm.limiter.FormatError(mm.userID, err))
+		return makeMetricLimitError(perMetricMetadataLimit, labels.FromStrings(labels.MetricName, metric), mm.limiter.FormatError(mm.userID, err))
 	}
 
 	// if we have seen this metadata before, it is a no-op and we don't need to change our metrics.
