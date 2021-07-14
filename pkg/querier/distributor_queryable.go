@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -192,7 +193,12 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return lvs, nil, err
 }
 
-func (q *distributorQuerier) LabelNames() ([]string, storage.Warnings, error) {
+func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	if len(matchers) > 0 {
+		// FIXME(colega) implement matchers
+		// FIXME(colega) use a flag here to call the q.Select() if we're not sure yet whether the feature is deployed or not
+		return nil, nil, errors.New("label names are not implemented")
+	}
 	ln, err := q.distributor.LabelNames(q.ctx, model.Time(q.mint), model.Time(q.maxt))
 	return ln, nil, err
 }

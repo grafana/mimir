@@ -203,7 +203,11 @@ func (m mockTenantQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 
 // LabelNames implements the storage.LabelQuerier interface.
 // It returns a sorted slice of all label names in the querier.
-func (m mockTenantQuerier) LabelNames() ([]string, storage.Warnings, error) {
+func (m mockTenantQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	if len(matchers) > 0 {
+		m.warnings = append(m.warnings, errors.New(mockMatchersNotImplemented))
+	}
+
 	if m.queryErr != nil {
 		return nil, nil, m.queryErr
 	}

@@ -316,7 +316,12 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	return q.selectSorted(sp, matchers...)
 }
 
-func (q *blocksStoreQuerier) LabelNames() ([]string, storage.Warnings, error) {
+func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	if len(matchers) > 0 {
+		// FIXME(colega) implement matchers
+		// FIXME(colega) if feature not enabled, call the q.Select() method above
+		return nil, nil, errors.New("label names are not implemented")
+	}
 	spanLog, spanCtx := spanlogger.New(q.ctx, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 

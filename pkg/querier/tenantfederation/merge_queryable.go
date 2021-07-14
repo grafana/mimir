@@ -166,11 +166,11 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 // LabelNames returns all the unique label names present in the underlying
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
-func (m *mergeQuerier) LabelNames() ([]string, storage.Warnings, error) {
+func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	log, _ := spanlogger.New(m.ctx, "mergeQuerier.LabelNames")
 	defer log.Span.Finish()
 	labelNames, warnings, err := m.mergeDistinctStringSlice(func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
-		return q.LabelNames()
+		return q.LabelNames(matchers...)
 	})
 	if err != nil {
 		return nil, nil, err
