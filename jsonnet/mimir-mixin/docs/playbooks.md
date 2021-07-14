@@ -354,7 +354,7 @@ level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=
 ```
 
 When this happen you should:
-1. Rename the block prefixing it with `corrupted-` so that it will be skipped by the compactor and queriers. Keep in mind that doing so the block will become invisible to the queriers too, so its series/samples will not be queried. It's safe to do it on a single block with compaction level 1 (because of the samples replication), but not on multiple overlapping level 1 blocks or any block with a compaction level > 1.
+1. Rename the block prefixing it with `corrupted-` so that it will be skipped by the compactor and queriers. Keep in mind that doing so the block will become invisible to the queriers too, so its series/samples will not be queried. If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Cortex guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss once you rename the block and stop querying it.
 2. Ensure the compactor has recovered
 3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
 
