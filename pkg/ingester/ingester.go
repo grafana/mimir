@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -991,6 +992,7 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 			names = append(names, name)
 		}
 		resp.LabelNames = names
+		sort.Strings(resp.LabelNames)
 
 		return resp, nil
 	}

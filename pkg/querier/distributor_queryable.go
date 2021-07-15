@@ -233,6 +233,7 @@ func (q *distributorQuerier) legacyLabelNamesWithMatchersThroughMetricsCall(ctx 
 	for name := range namesMap {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 
 	return names, nil, nil
 }
