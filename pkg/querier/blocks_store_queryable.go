@@ -133,9 +133,20 @@ type BlocksStoreQueryable struct {
 	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
+
+	queryLabelNamesWithMatchers bool
 }
 
-func NewBlocksStoreQueryable(stores BlocksStoreSet, finder BlocksFinder, consistency *BlocksConsistencyChecker, limits BlocksStoreLimits, queryStoreAfter time.Duration, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
+func NewBlocksStoreQueryable(
+	stores BlocksStoreSet,
+	finder BlocksFinder,
+	consistency *BlocksConsistencyChecker,
+	limits BlocksStoreLimits,
+	queryStoreAfter time.Duration,
+	logger log.Logger,
+	reg prometheus.Registerer,
+	queryLabelNamesWithMatchers bool,
+) (*BlocksStoreQueryable, error) {
 	manager, err := services.NewManager(stores, finder)
 	if err != nil {
 		return nil, errors.Wrap(err, "register blocks storage queryable subservices")
@@ -151,6 +162,8 @@ func NewBlocksStoreQueryable(stores BlocksStoreSet, finder BlocksFinder, consist
 		subservicesWatcher: services.NewFailureWatcher(),
 		metrics:            newBlocksStoreQueryableMetrics(reg),
 		limits:             limits,
+
+		queryLabelNamesWithMatchers: queryLabelNamesWithMatchers,
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stopping)
@@ -240,7 +253,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, logger, reg)
+	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, logger, reg, querierCfg.QueryLabelNamesWithMatchers)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -291,6 +304,8 @@ func (q *BlocksStoreQueryable) Querier(ctx context.Context, mint, maxt int64) (s
 		consistency:     q.consistency,
 		logger:          q.logger,
 		queryStoreAfter: q.queryStoreAfter,
+
+		queryLabelNamesWithMatchers: q.queryLabelNamesWithMatchers,
 	}, nil
 }
 
@@ -308,6 +323,8 @@ type blocksStoreQuerier struct {
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
+
+	queryLabelNamesWithMatchers bool
 }
 
 // Select implements storage.Querier interface.
@@ -317,24 +334,24 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if len(matchers) > 0 {
-		// FIXME(colega) implement matchers
-		// FIXME(colega) if feature not enabled, call the q.Select() method above
-		return nil, nil, errors.New("label names are not implemented")
+	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
+		return q.legacyLabelNamesWithMatchersThroughSelectCall(matchers...)
 	}
+
 	spanLog, spanCtx := spanlogger.New(q.ctx, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
 
 	var (
-		resMtx      sync.Mutex
-		resNameSets = [][]string{}
-		resWarnings = storage.Warnings(nil)
+		resMtx            sync.Mutex
+		resNameSets       = [][]string{}
+		resWarnings       = storage.Warnings(nil)
+		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 	)
 
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
-		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(spanCtx, clients, minT, maxT)
+		nameSets, warnings, queriedBlocks, err := q.fetchLabelNamesFromStore(spanCtx, clients, minT, maxT, convertedMatchers)
 		if err != nil {
 			return nil, err
 		}
@@ -353,6 +370,33 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	}
 
 	return strutil.MergeSlices(resNameSets...), resWarnings, nil
+}
+
+// legacyLabelNamesWithMatchersThroughSelectCall uses a Series() call to retrieve labels with matchers
+// this is used when the LabelNames with matchers feature is first deployed, and some StoreGateway-s may have not been updated yet,
+// so they could be ignoring the matchers, leading to wrong results.
+func (q *blocksStoreQuerier) legacyLabelNamesWithMatchersThroughSelectCall(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	hints := &storage.SelectHints{
+		Start: q.minT,
+		End:   q.maxT,
+		Func:  "series", // we don't want the samples, only series
+	}
+	seriesSet := q.selectSorted(hints, matchers...)
+
+	namesMap := make(map[string]struct{})
+	for seriesSet.Next() {
+		for _, lbl := range seriesSet.At().Labels() {
+			namesMap[lbl.Name] = struct{}{}
+		}
+	}
+
+	names := make([]string, 0, len(namesMap))
+	for name := range namesMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	return names, seriesSet.Warnings(), seriesSet.Err()
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -693,6 +737,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	clients map[BlocksStoreClient][]ulid.ULID,
 	minT int64,
 	maxT int64,
+	matchers []storepb.LabelMatcher,
 ) ([][]string, storage.Warnings, []ulid.ULID, error) {
 	var (
 		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, cortex_tsdb.TenantIDExternalLabel, q.userID)
@@ -711,11 +756,12 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 		blockIDs := blockIDs
 
 		g.Go(func() error {
-			req, err := createLabelNamesRequest(minT, maxT, blockIDs)
+			req, err := createLabelNamesRequest(minT, maxT, blockIDs, matchers)
 			if err != nil {
 				return errors.Wrapf(err, "failed to create label names request")
 			}
 
+			// FIXME(colega): make sure that StoreGateway implementations here support matchers
 			namesResp, err := c.LabelNames(gCtx, req)
 			if err != nil {
 				return errors.Wrapf(err, "failed to fetch series from %s", c.RemoteAddress())
@@ -870,10 +916,11 @@ func createSeriesRequest(minT, maxT int64, matchers []storepb.LabelMatcher, skip
 	}, nil
 }
 
-func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID) (*storepb.LabelNamesRequest, error) {
+func createLabelNamesRequest(minT, maxT int64, blockIDs []ulid.ULID, matchers []storepb.LabelMatcher) (*storepb.LabelNamesRequest, error) {
 	req := &storepb.LabelNamesRequest{
-		Start: minT,
-		End:   maxT,
+		Start:    minT,
+		End:      maxT,
+		Matchers: matchers,
 	}
 
 	// Selectively query only specific blocks.
