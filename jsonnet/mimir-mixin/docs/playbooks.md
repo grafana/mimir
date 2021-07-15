@@ -572,7 +572,31 @@ How to **fix**:
 
 ### CortexGossipMembersMismatch
 
-_TODO: this playbook has not been written yet._
+This alert fires when any instance does not register all other instances as members of the memberlist cluster.
+
+How it **works**:
+- This alert applies when memberlist is used for the ring backing store.
+- All Cortex instances using the ring, regardless of type, join a single memberlist cluster.
+- Each instance (=memberlist cluster member) should be able to see all others.
+- Therefore the following should be equal for every instance:
+  - The reported number of cluster members (`memberlist_client_cluster_members_count`)
+  - The total number of currently responsive instances.
+
+How to **investigate**:
+- The instance which has the incomplete view of the cluster (too few members) is specified in the alert.
+- If the count is zero:
+  - It is possible that the joining the cluster has yet to succeed.
+  - The following log message indicates that the _initial_ initial join did not succeed: `failed to join memberlist cluster`
+  - The following log message indicates that subsequent re-join attempts are failing: `re-joining memberlist cluster failed`
+  - If it is the case that the initial join failed, take action according to the reason given.
+- Verify communication with other members by checking memberlist traffic is being sent and received by the instance using the following metrics:
+  - `memberlist_tcp_transport_packets_received_total`
+  - `memberlist_tcp_transport_packets_sent_total`
+- If traffic is present, then verify there are no errors sending or receiving packets using the following metrics:
+  - `memberlist_tcp_transport_packets_sent_errors_total`
+  - `memberlist_tcp_transport_packets_received_errors_total`
+  - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
+- Logs coming directly from memberlist are also logged by Cortex; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:xyz`.
 
 ### EtcdAllocatingTooMuchMemory
 
