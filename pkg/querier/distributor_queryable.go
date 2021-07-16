@@ -207,7 +207,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return q.legacyLabelNamesWithMatchersThroughMetricsCall(ctx, matchers...)
 	}
 
-	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt))
+	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
 	return ln, nil, err
 }
 
