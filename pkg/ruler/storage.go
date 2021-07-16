@@ -25,7 +25,7 @@ import (
 // RuleStoreConfig configures a rule store.
 // TODO remove this legacy config in Cortex 1.11.
 type RuleStoreConfig struct {
-	Type     string        `yaml:"type"`
+	Type string `yaml:"type"`
 
 	// Object Storage Configs
 	Azure azure.BlobStorageConfig `yaml:"azure"`

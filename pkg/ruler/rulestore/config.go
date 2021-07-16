@@ -12,7 +12,7 @@ import (
 // Config configures a rule store.
 type Config struct {
 	bucket.Config `yaml:",inline"`
-	Local         local.Config  `yaml:"local"`
+	Local         local.Config `yaml:"local"`
 }
 
 // RegisterFlags registers the backend storage config.
