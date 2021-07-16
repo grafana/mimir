@@ -632,7 +632,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 
 				t.Run("label names", func(t *testing.T) {
 					distributor := &mockDistributor{}
-					distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
+					distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, []*labels.Matcher(nil)).Return([]string{}, nil)
 
 					queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
 					q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
