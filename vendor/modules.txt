@@ -22,9 +22,6 @@ github.com/Azure/azure-pipeline-go/pipeline
 # github.com/Azure/azure-storage-blob-go v0.8.0
 ## explicit
 github.com/Azure/azure-storage-blob-go/azblob
-# github.com/Masterminds/squirrel v0.0.0-20161115235646-20f192218cf5
-## explicit
-github.com/Masterminds/squirrel
 # github.com/NYTimes/gziphandler v1.1.1
 ## explicit
 github.com/NYTimes/gziphandler
@@ -221,14 +218,6 @@ github.com/gogo/protobuf/types
 # github.com/gogo/status v1.0.3
 ## explicit
 github.com/gogo/status
-# github.com/golang-migrate/migrate/v4 v4.7.0
-## explicit
-github.com/golang-migrate/migrate/v4
-github.com/golang-migrate/migrate/v4/database
-github.com/golang-migrate/migrate/v4/database/postgres
-github.com/golang-migrate/migrate/v4/internal/url
-github.com/golang-migrate/migrate/v4/source
-github.com/golang-migrate/migrate/v4/source/file
 # github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e
 github.com/golang/groupcache/lru
 github.com/golang/groupcache/singleflight
@@ -334,15 +323,6 @@ github.com/jstemmer/go-junit-report/parser
 github.com/julienschmidt/httprouter
 # github.com/klauspost/cpuid v1.3.1
 github.com/klauspost/cpuid
-# github.com/lann/builder v0.0.0-20180802200727-47ae307949d0
-github.com/lann/builder
-# github.com/lann/ps v0.0.0-20150810152359-62de8c46ede0
-github.com/lann/ps
-# github.com/lib/pq v1.3.0
-## explicit
-github.com/lib/pq
-github.com/lib/pq/oid
-github.com/lib/pq/scram
 # github.com/mailru/easyjson v0.7.6
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
