@@ -139,13 +139,6 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			},
 			expected: errShardingUnsupportedStorage,
 		},
-		"should fail if sharding enabled and new storage store configuration given with configdb type": {
-			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
-				cfg.ShardingEnabled = true
-				storageCfg.Backend = "configdb"
-			},
-			expected: errShardingUnsupportedStorage,
-		},
 		"should fail if sharding enabled and legacy store configuration given": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
 				cfg.ShardingEnabled = true

@@ -156,9 +156,6 @@ tenant_federation:
 # The ruler_storage_config configures the Cortex ruler storage backend.
 [ruler_storage: <ruler_storage_config>]
 
-# The configs_config configures the Cortex Configs DB and API.
-[configs: <configs_config>]
-
 # The alertmanager_config configures the Cortex alertmanager.
 [alertmanager: <alertmanager_config>]
 
@@ -1232,15 +1229,9 @@ ruler_client:
 # Deprecated. Use -ruler-storage.* CLI flags and their respective YAML config
 # options instead.
 storage:
-  # Method to use for backend rule storage (configdb, azure, gcs, s3, swift,
-  # local)
+  # Method to use for backend rule storage (azure, gcs, s3, swift, local)
   # CLI flag: -ruler.storage.type
-  [type: <string> | default = "configdb"]
-
-  # The configstore_config configures the config database storing rules and
-  # alerts, and is used by the Cortex alertmanager.
-  # The CLI flags prefix for this block config is: ruler
-  [configdb: <configstore_config>]
+  [type: <string> | default = "local"]
 
   azure:
     # Azure Cloud environment. Supported values are: AzureGlobal,
@@ -1630,7 +1621,7 @@ The `ruler_storage_config` configures the Cortex ruler storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
-# filesystem, configdb, local.
+# filesystem, local.
 # CLI flag: -ruler-storage.backend
 [backend: <string> | default = "s3"]
 
@@ -1826,11 +1817,6 @@ filesystem:
   # CLI flag: -ruler-storage.filesystem.dir
   [dir: <string> | default = ""]
 
-# The configstore_config configures the config database storing rules and
-# alerts, and is used by the Cortex alertmanager.
-# The CLI flags prefix for this block config is: ruler-storage
-[configdb: <configstore_config>]
-
 local:
   # Directory to scan for rules
   # CLI flag: -ruler-storage.local.directory
@@ -1946,14 +1932,9 @@ sharding_ring:
 # config options instead.
 storage:
   # Type of backend to use to store alertmanager configs. Supported values are:
-  # "configdb", "gcs", "s3", "local".
+  # "gcs", "s3", "local".
   # CLI flag: -alertmanager.storage.type
-  [type: <string> | default = "configdb"]
-
-  # The configstore_config configures the config database storing rules and
-  # alerts, and is used by the Cortex alertmanager.
-  # The CLI flags prefix for this block config is: alertmanager
-  [configdb: <configstore_config>]
+  [type: <string> | default = "local"]
 
   azure:
     # Azure Cloud environment. Supported values are: AzureGlobal,
@@ -2174,7 +2155,7 @@ The `alertmanager_storage_config` configures the Cortex alertmanager storage bac
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
-# filesystem, configdb, local.
+# filesystem, local.
 # CLI flag: -alertmanager-storage.backend
 [backend: <string> | default = "s3"]
 
@@ -2369,11 +2350,6 @@ filesystem:
   # Local filesystem storage directory.
   # CLI flag: -alertmanager-storage.filesystem.dir
   [dir: <string> | default = ""]
-
-# The configstore_config configures the config database storing rules and
-# alerts, and is used by the Cortex alertmanager.
-# The CLI flags prefix for this block config is: alertmanager-storage
-[configdb: <configstore_config>]
 
 local:
   # Path at which alertmanager configurations are stored.
@@ -4392,79 +4368,6 @@ The `fifo_cache_config` configures the local in-memory cache. The supported CLI 
 # entries to cache.
 # CLI flag: -<prefix>.fifocache.size
 [size: <int> | default = 0]
-```
-
-### `configs_config`
-
-The `configs_config` configures the Cortex Configs DB and API.
-
-```yaml
-database:
-  # URI where the database can be found (for dev you can use memory://)
-  # CLI flag: -configs.database.uri
-  [uri: <string> | default = "postgres://postgres@configs-db.weave.local/configs?sslmode=disable"]
-
-  # Path where the database migration files can be found
-  # CLI flag: -configs.database.migrations-dir
-  [migrations_dir: <string> | default = ""]
-
-  # File containing password (username goes in URI)
-  # CLI flag: -configs.database.password-file
-  [password_file: <string> | default = ""]
-
-api:
-  notifications:
-    # Disable Email notifications for Alertmanager.
-    # CLI flag: -configs.notifications.disable-email
-    [disable_email: <boolean> | default = false]
-
-    # Disable WebHook notifications for Alertmanager.
-    # CLI flag: -configs.notifications.disable-webhook
-    [disable_webhook: <boolean> | default = false]
-```
-
-### `configstore_config`
-
-The `configstore_config` configures the config database storing rules and alerts, and is used by the Cortex alertmanager. The supported CLI flags `<prefix>` used to reference this config block are:
-
-- `alertmanager`
-- `alertmanager-storage`
-- `ruler`
-- `ruler-storage`
-
-&nbsp;
-
-```yaml
-# URL of configs API server.
-# CLI flag: -<prefix>.configs.url
-[configs_api_url: <url> | default = ]
-
-# Timeout for requests to Weave Cloud configs service.
-# CLI flag: -<prefix>.configs.client-timeout
-[client_timeout: <duration> | default = 5s]
-
-# Path to the client certificate file, which will be used for authenticating
-# with the server. Also requires the key path to be configured.
-# CLI flag: -<prefix>.configs.tls-cert-path
-[tls_cert_path: <string> | default = ""]
-
-# Path to the key file for the client certificate. Also requires the client
-# certificate to be configured.
-# CLI flag: -<prefix>.configs.tls-key-path
-[tls_key_path: <string> | default = ""]
-
-# Path to the CA certificates file to validate server certificate against. If
-# not set, the host's root CA certificates are used.
-# CLI flag: -<prefix>.configs.tls-ca-path
-[tls_ca_path: <string> | default = ""]
-
-# Override the expected name on the server certificate.
-# CLI flag: -<prefix>.configs.tls-server-name
-[tls_server_name: <string> | default = ""]
-
-# Skip validating server certificate.
-# CLI flag: -<prefix>.configs.tls-insecure-skip-verify
-[tls_insecure_skip_verify: <boolean> | default = false]
 ```
 
 ### `blocks_storage_config`

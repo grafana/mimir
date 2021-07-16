@@ -9,14 +9,12 @@ import (
 
 	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
 	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/bucketclient"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/configdb"
 	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/local"
 	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/objectclient"
 	"github.com/cortexproject/cortex/pkg/chunk"
 	"github.com/cortexproject/cortex/pkg/chunk/aws"
 	"github.com/cortexproject/cortex/pkg/chunk/azure"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	"github.com/cortexproject/cortex/pkg/configs/client"
 	"github.com/cortexproject/cortex/pkg/storage/bucket"
 )
 
@@ -56,14 +54,6 @@ type AlertStore interface {
 
 // NewLegacyAlertStore returns a new alertmanager storage backend poller and store
 func NewLegacyAlertStore(cfg LegacyConfig, logger log.Logger) (AlertStore, error) {
-	if cfg.Type == configdb.Name {
-		c, err := client.New(cfg.ConfigDB)
-		if err != nil {
-			return nil, err
-		}
-		return configdb.NewStore(c), nil
-	}
-
 	if cfg.Type == local.Name {
 		return local.NewStore(cfg.Local)
 	}
@@ -79,7 +69,7 @@ func NewLegacyAlertStore(cfg LegacyConfig, logger log.Logger) (AlertStore, error
 	case "s3":
 		client, err = aws.NewS3ObjectClient(cfg.S3)
 	default:
-		return nil, fmt.Errorf("unrecognized alertmanager storage backend %v, choose one of: azure, configdb, gcs, local, s3", cfg.Type)
+		return nil, fmt.Errorf("unrecognized alertmanager storage backend %v, choose one of: azure, gcs, local, s3", cfg.Type)
 	}
 	if err != nil {
 		return nil, err
@@ -90,14 +80,6 @@ func NewLegacyAlertStore(cfg LegacyConfig, logger log.Logger) (AlertStore, error
 
 // NewAlertStore returns a alertmanager store backend client based on the provided cfg.
 func NewAlertStore(ctx context.Context, cfg Config, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (AlertStore, error) {
-	if cfg.Backend == configdb.Name {
-		c, err := client.New(cfg.ConfigDB)
-		if err != nil {
-			return nil, err
-		}
-		return configdb.NewStore(c), nil
-	}
-
 	if cfg.Backend == local.Name {
 		return local.NewStore(cfg.Local)
 	}

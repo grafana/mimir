@@ -30,9 +30,6 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk/storage"
 	chunk_util "github.com/cortexproject/cortex/pkg/chunk/util"
 	"github.com/cortexproject/cortex/pkg/compactor"
-	"github.com/cortexproject/cortex/pkg/configs"
-	configAPI "github.com/cortexproject/cortex/pkg/configs/api"
-	"github.com/cortexproject/cortex/pkg/configs/db"
 	"github.com/cortexproject/cortex/pkg/cortexpb"
 	"github.com/cortexproject/cortex/pkg/distributor"
 	"github.com/cortexproject/cortex/pkg/flusher"
@@ -117,7 +114,6 @@ type Config struct {
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
-	Configs             configs.Config                             `yaml:"configs"`
 	Alertmanager        alertmanager.MultitenantAlertmanagerConfig `yaml:"alertmanager"`
 	AlertmanagerStorage alertstore.Config                          `yaml:"alertmanager_storage"`
 	RuntimeConfig       runtimeconfig.ManagerConfig                `yaml:"runtime_config"`
@@ -166,7 +162,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 
 	c.Ruler.RegisterFlags(f)
 	c.RulerStorage.RegisterFlags(f)
-	c.Configs.RegisterFlags(f)
 	c.Alertmanager.RegisterFlags(f)
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
@@ -332,8 +327,6 @@ type Cortex struct {
 
 	Ruler        *ruler.Ruler
 	RulerStorage rulestore.RuleStore
-	ConfigAPI    *configAPI.API
-	ConfigDB     db.DB
 	Alertmanager *alertmanager.MultitenantAlertmanager
 	Compactor    *compactor.Compactor
 	StoreGateway *storegateway.StoreGateway
