@@ -1106,9 +1106,8 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}, {Name: "route", Value: "get_user"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "route", Value: "get_user"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_3"}, {Name: "status", Value: "500"}}, 2, 200000},
 	}
-
-	expected := []string{"__name__", "status", "route"}
 
 	// Create ingester
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(), nil)
@@ -1130,10 +1129,31 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	// Get label names
-	res, err := i.v2LabelNames(ctx, &client.LabelNamesRequest{})
-	require.NoError(t, err)
-	assert.ElementsMatch(t, expected, res.LabelNames)
+	t.Run("without matchers", func(t *testing.T) {
+		expected := []string{"__name__", "status", "route"}
+
+		// Get label names
+		res, err := i.v2LabelNames(ctx, &client.LabelNamesRequest{})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
+
+	t.Run("with matchers", func(t *testing.T) {
+		// test_2 and test_3 are selected in this test, they don't have the "route" label
+		expected := []string{"__name__", "status"}
+
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchNotEqual, "route", "get_user"),
+		}
+
+		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
+		require.NoError(t, err)
+
+		// Get label names
+		res, err := i.v2LabelNames(ctx, req)
+		require.NoError(t, err)
+		assert.ElementsMatch(t, expected, res.LabelNames)
+	})
 }
 
 func Test_Ingester_v2LabelValues(t *testing.T) {
