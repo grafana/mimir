@@ -8,6 +8,7 @@
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 
 ## master / unreleased
+* [CHANGE] Querier now can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. This can be enabled by enabling the `-querier.query-label-names-with-matchers` flag once the ingesters are updated to this version. In the future this is expected to become the default behavior.
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. #4317
 
 * [CHANGE] Update Go version to 1.16.6. #4362
