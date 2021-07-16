@@ -215,7 +215,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 // this is used when the LabelNames with matchers feature is first deployed, and some ingesters may have not been updated yet, so they could be ignoring
 // the matchers, leading to wrong results.
 func (q *distributorQuerier) legacyLabelNamesWithMatchersThroughMetricsCall(ctx context.Context, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.New(q.ctx, "distributorQuerier.LabelNames/legacy")
+	log, ctx := spanlogger.New(ctx, "distributorQuerier.LabelNames/legacy")
 	defer log.Span.Finish()
 	ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
 	if err != nil {
