@@ -7,6 +7,9 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
@@ -57,6 +60,24 @@ func TestQueryRequest(t *testing.T) {
 	if !reflect.DeepEqual(haveMatchers, matchers) {
 		t.Fatalf("Bad have FromQueryRequest(ToQueryRequest) round trip - %v != %v", haveMatchers, matchers)
 	}
+}
+
+func TestLabelNamesRequest(t *testing.T) {
+	const (
+		mint, maxt = 0, 10
+	)
+
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+
+	req, err := ToLabelNamesRequest(mint, maxt, matchers)
+	require.NoError(t, err)
+
+	actualMinT, actualMaxT, actualMatchers, err := FromLabelNamesRequest(req)
+	require.NoError(t, err)
+
+	assert.Equal(t, int64(mint), actualMinT)
+	assert.Equal(t, int64(maxt), actualMaxT)
+	assert.Equal(t, matchers, actualMatchers)
 }
 
 func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matrix {

@@ -1808,6 +1808,115 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 	}
 }
 
+func TestDistributor_LabelNames(t *testing.T) {
+	const numIngesters = 5
+
+	fixtures := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
+		// The two following series have the same FastFingerprint=e002a3a451262627
+		{labels.Labels{{Name: labels.MetricName, Value: "fast_fingerprint_collision"}, {Name: "app", Value: "l"}, {Name: "uniq0", Value: "0"}, {Name: "uniq1", Value: "1"}}, 1, 300000},
+		{labels.Labels{{Name: labels.MetricName, Value: "fast_fingerprint_collision"}, {Name: "app", Value: "m"}, {Name: "uniq0", Value: "1"}, {Name: "uniq1", Value: "1"}}, 1, 300000},
+	}
+
+	tests := map[string]struct {
+		shuffleShardEnabled bool
+		shuffleShardSize    int
+		matchers            []*labels.Matcher
+		expectedResult      []string
+		expectedIngesters   int
+	}{
+		"should return an empty response if no metric match": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
+			},
+			expectedResult:    []string{},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by single matcher": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "status"},
+			expectedIngesters: numIngesters,
+		},
+		"should filter metrics by multiple matchers": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, "status", "200"),
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "status"},
+			expectedIngesters: numIngesters,
+		},
+		"should return all matching metrics even if their FastFingerprint collide": {
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
+			},
+			expectedResult:    []string{labels.MetricName, "app", "uniq0", "uniq1"},
+			expectedIngesters: numIngesters,
+		},
+		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled": {
+			shuffleShardEnabled: true,
+			shuffleShardSize:    3,
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "status"},
+			expectedIngesters: 3,
+		},
+		"should query all ingesters if shuffle sharding is enabled but shard size is 0": {
+			shuffleShardEnabled: true,
+			shuffleShardSize:    0,
+			matchers: []*labels.Matcher{
+				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
+			},
+			expectedResult:    []string{labels.MetricName, "status"},
+			expectedIngesters: numIngesters,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			now := model.Now()
+
+			// Create distributor
+			ds, ingesters, r, _ := prepare(t, prepConfig{
+				numIngesters:        numIngesters,
+				happyIngesters:      numIngesters,
+				numDistributors:     1,
+				shardByAllLabels:    true,
+				shuffleShardEnabled: testData.shuffleShardEnabled,
+				shuffleShardSize:    testData.shuffleShardSize,
+			})
+			defer stopAll(ds, r)
+
+			// Push fixtures
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			names, err := ds[0].LabelNames(ctx, now, now, testData.matchers...)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, testData.expectedResult, names)
+
+			// Check how many ingesters have been queried.
+			// Due to the quorum the distributor could cancel the last request towards ingesters
+			// if all other ones are successful, so we're good either has been queried X or X-1
+			// ingesters.
+			assert.Contains(t, []int{testData.expectedIngesters, testData.expectedIngesters - 1}, countMockIngestersCalls(ingesters, "LabelNames"))
+		})
+	}
+}
+
 func TestDistributor_MetricsMetadata(t *testing.T) {
 	const numIngesters = 5
 
@@ -2343,6 +2452,34 @@ func (i *mockIngester) MetricsForLabelMatchers(ctx context.Context, req *client.
 			}
 		}
 	}
+	return &response, nil
+}
+
+func (i *mockIngester) LabelNames(ctx context.Context, req *client.LabelNamesRequest, opts ...grpc.CallOption) (*client.LabelNamesResponse, error) {
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("LabelNames")
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	_, _, matchers, err := client.FromLabelNamesRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
+	response := client.LabelNamesResponse{}
+	for _, ts := range i.timeseries {
+		if match(ts.Labels, matchers) {
+			for _, lbl := range ts.Labels {
+				response.LabelNames = append(response.LabelNames, lbl.Name)
+			}
+		}
+	}
+	sort.Strings(response.LabelNames)
+
 	return &response, nil
 }
 
