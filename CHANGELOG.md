@@ -1,7 +1,6 @@
 # Changelog
 
 ## master / unreleased
-* [ENHANCEMENT] Prometheus upgraded. #4
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. #4317
 
 * [CHANGE] Update Go version to 1.16.6. #4362
