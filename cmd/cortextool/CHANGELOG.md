@@ -2,6 +2,10 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## v0.10.3
+
+* [BUGFIX] Fix `cortextool analyse grafana` failure on certain dashboards that use templating and/or panel heights due to unmarshalling errors with the underlying `grafana-tools/sdk` library. #192
+
 ## v0.10.2
 
 * [FEATURE] Blockgen: adding a new tool to generate blocks of mock data.
