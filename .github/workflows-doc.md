@@ -17,7 +17,6 @@ test-build-deploy.yml specifies a workflow that runs all Cortex continuous integ
 |------------------------|-------------------------------------------------------------------------------------------------------------------------------|------|
 | lint                   | Runs linting and ensures vendor directory, protos and generated documentation are consistent.                                 | CI   |
 | test                   | Runs units tests on Cassandra testing framework.                                                                              | CI   |
-| integration-configs-db | Integration tests for database configurations.                                                                                | CI   |
 | integration            | Runs integration tests after upgrading golang, pulling necessary docker images and downloading necessary module dependencies. | CI   |
 | build                  | Builds and saves an up-to-date Cortex image and website.                                                                      | CI   |
 | deploy_website         | Deploys the latest version of Cortex website to gh-pages branch. Triggered within workflow.                                   | CD   |

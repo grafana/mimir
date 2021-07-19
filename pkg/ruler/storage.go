@@ -15,11 +15,8 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk/azure"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
 	"github.com/cortexproject/cortex/pkg/chunk/openstack"
-	"github.com/cortexproject/cortex/pkg/configs/client"
-	configClient "github.com/cortexproject/cortex/pkg/configs/client"
 	"github.com/cortexproject/cortex/pkg/ruler/rulestore"
 	"github.com/cortexproject/cortex/pkg/ruler/rulestore/bucketclient"
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore/configdb"
 	"github.com/cortexproject/cortex/pkg/ruler/rulestore/local"
 	"github.com/cortexproject/cortex/pkg/ruler/rulestore/objectclient"
 	"github.com/cortexproject/cortex/pkg/storage/bucket"
@@ -28,8 +25,7 @@ import (
 // RuleStoreConfig configures a rule store.
 // TODO remove this legacy config in Cortex 1.11.
 type RuleStoreConfig struct {
-	Type     string        `yaml:"type"`
-	ConfigDB client.Config `yaml:"configdb"`
+	Type string `yaml:"type"`
 
 	// Object Storage Configs
 	Azure azure.BlobStorageConfig `yaml:"azure"`
@@ -43,14 +39,13 @@ type RuleStoreConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *RuleStoreConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.ConfigDB.RegisterFlagsWithPrefix("ruler.", f)
 	cfg.Azure.RegisterFlagsWithPrefix("ruler.storage.", f)
 	cfg.GCS.RegisterFlagsWithPrefix("ruler.storage.", f)
 	cfg.S3.RegisterFlagsWithPrefix("ruler.storage.", f)
 	cfg.Swift.RegisterFlagsWithPrefix("ruler.storage.", f)
 	cfg.Local.RegisterFlagsWithPrefix("ruler.storage.", f)
 
-	f.StringVar(&cfg.Type, "ruler.storage.type", "configdb", "Method to use for backend rule storage (configdb, azure, gcs, s3, swift, local)")
+	f.StringVar(&cfg.Type, "ruler.storage.type", local.Name, "Method to use for backend rule storage (azure, gcs, s3, swift, local)")
 }
 
 // Validate config and returns error on failure
@@ -69,7 +64,7 @@ func (cfg *RuleStoreConfig) Validate() error {
 
 // IsDefaults returns true if the storage options have not been set
 func (cfg *RuleStoreConfig) IsDefaults() bool {
-	return cfg.Type == "configdb" && cfg.ConfigDB.ConfigsAPIURL.URL == nil
+	return cfg.Type == local.Name && cfg.Local.Directory == ""
 }
 
 // NewLegacyRuleStore returns a rule store backend client based on the provided cfg.
@@ -88,12 +83,6 @@ func NewLegacyRuleStore(cfg RuleStoreConfig, loader promRules.GroupLoader, logge
 	var client chunk.ObjectClient
 
 	switch cfg.Type {
-	case "configdb":
-		c, err := configClient.New(cfg.ConfigDB)
-		if err != nil {
-			return nil, err
-		}
-		return configdb.NewConfigRuleStore(c), nil
 	case "azure":
 		client, err = azure.NewBlobStorage(&cfg.Azure)
 	case "gcs":
@@ -105,7 +94,7 @@ func NewLegacyRuleStore(cfg RuleStoreConfig, loader promRules.GroupLoader, logge
 	case "local":
 		return local.NewLocalRulesClient(cfg.Local, loader)
 	default:
-		return nil, fmt.Errorf("unrecognized rule storage mode %v, choose one of: configdb, gcs, s3, swift, azure, local", cfg.Type)
+		return nil, fmt.Errorf("unrecognized rule storage mode %v, choose one of: gcs, s3, swift, azure, local", cfg.Type)
 	}
 
 	if err != nil {
@@ -117,16 +106,6 @@ func NewLegacyRuleStore(cfg RuleStoreConfig, loader promRules.GroupLoader, logge
 
 // NewRuleStore returns a rule store backend client based on the provided cfg.
 func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, logger log.Logger, reg prometheus.Registerer) (rulestore.RuleStore, error) {
-	if cfg.Backend == configdb.Name {
-		c, err := client.New(cfg.ConfigDB)
-
-		if err != nil {
-			return nil, err
-		}
-
-		return configdb.NewConfigRuleStore(c), nil
-	}
-
 	if cfg.Backend == local.Name {
 		return local.NewLocalRulesClient(cfg.Local, loader)
 	}

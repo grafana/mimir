@@ -26,8 +26,6 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk/purger"
 	"github.com/cortexproject/cortex/pkg/chunk/storage"
 	"github.com/cortexproject/cortex/pkg/compactor"
-	configAPI "github.com/cortexproject/cortex/pkg/configs/api"
-	"github.com/cortexproject/cortex/pkg/configs/db"
 	"github.com/cortexproject/cortex/pkg/distributor"
 	"github.com/cortexproject/cortex/pkg/flusher"
 	frontend "github.com/cortexproject/cortex/pkg/frontend"
@@ -73,7 +71,6 @@ const (
 	TableManager             string = "table-manager"
 	RulerStorage             string = "ruler-storage"
 	Ruler                    string = "ruler"
-	Configs                  string = "configs"
 	AlertManager             string = "alertmanager"
 	Compactor                string = "compactor"
 	StoreGateway             string = "store-gateway"
@@ -691,20 +688,6 @@ func (t *Cortex) initRuler() (serv services.Service, err error) {
 	return t.Ruler, nil
 }
 
-func (t *Cortex) initConfig() (serv services.Service, err error) {
-	t.ConfigDB, err = db.New(t.Cfg.Configs.DB)
-	if err != nil {
-		return
-	}
-
-	t.ConfigAPI = configAPI.New(t.ConfigDB, t.Cfg.Configs.API)
-	t.ConfigAPI.RegisterRoutes(t.Server.HTTP)
-	return services.NewIdleService(nil, func(_ error) error {
-		t.ConfigDB.Close()
-		return nil
-	}), nil
-}
-
 func (t *Cortex) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
@@ -853,7 +836,6 @@ func (t *Cortex) setupModuleManager() error {
 	mm.RegisterModule(TableManager, t.initTableManager)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
-	mm.RegisterModule(Configs, t.initConfig)
 	mm.RegisterModule(AlertManager, t.initAlertManager)
 	mm.RegisterModule(Compactor, t.initCompactor)
 	mm.RegisterModule(StoreGateway, t.initStoreGateway)
@@ -887,7 +869,6 @@ func (t *Cortex) setupModuleManager() error {
 		TableManager:             {API},
 		Ruler:                    {DistributorService, Store, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
-		Configs:                  {API},
 		AlertManager:             {API, MemberlistKV, Overrides},
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},

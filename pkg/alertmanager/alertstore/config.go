@@ -5,20 +5,17 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/configdb"
 	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/local"
 	"github.com/cortexproject/cortex/pkg/chunk/aws"
 	"github.com/cortexproject/cortex/pkg/chunk/azure"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	"github.com/cortexproject/cortex/pkg/configs/client"
 	"github.com/cortexproject/cortex/pkg/storage/bucket"
 )
 
 // LegacyConfig configures the alertmanager storage backend using the legacy storage clients.
 // TODO remove this legacy config in Cortex 1.11.
 type LegacyConfig struct {
-	Type     string        `yaml:"type"`
-	ConfigDB client.Config `yaml:"configdb"`
+	Type string `yaml:"type"`
 
 	// Object Storage Configs
 	Azure azure.BlobStorageConfig `yaml:"azure"`
@@ -29,8 +26,7 @@ type LegacyConfig struct {
 
 // RegisterFlags registers flags.
 func (cfg *LegacyConfig) RegisterFlags(f *flag.FlagSet) {
-	cfg.ConfigDB.RegisterFlagsWithPrefix("alertmanager.", f)
-	f.StringVar(&cfg.Type, "alertmanager.storage.type", configdb.Name, "Type of backend to use to store alertmanager configs. Supported values are: \"configdb\", \"gcs\", \"s3\", \"local\".")
+	f.StringVar(&cfg.Type, "alertmanager.storage.type", local.Name, "Type of backend to use to store alertmanager configs. Supported values are: \"gcs\", \"s3\", \"local\".")
 
 	cfg.Azure.RegisterFlagsWithPrefix("alertmanager.storage.", f)
 	cfg.GCS.RegisterFlagsWithPrefix("alertmanager.storage.", f)
@@ -51,13 +47,12 @@ func (cfg *LegacyConfig) Validate() error {
 
 // IsDefaults returns true if the storage options have not been set.
 func (cfg *LegacyConfig) IsDefaults() bool {
-	return cfg.Type == configdb.Name && cfg.ConfigDB.ConfigsAPIURL.URL == nil
+	return cfg.Type == local.Name && cfg.Local.Path == ""
 }
 
 // Config configures a the alertmanager storage backend.
 type Config struct {
 	bucket.Config `yaml:",inline"`
-	ConfigDB      client.Config     `yaml:"configdb"`
 	Local         local.StoreConfig `yaml:"local"`
 }
 
@@ -65,8 +60,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	prefix := "alertmanager-storage."
 
-	cfg.ExtraBackends = []string{configdb.Name, local.Name}
-	cfg.ConfigDB.RegisterFlagsWithPrefix(prefix, f)
+	cfg.ExtraBackends = []string{local.Name}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
 	cfg.RegisterFlagsWithPrefix(prefix, f)
 }

@@ -111,7 +111,6 @@ pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 all: $(UPTODATE_FILES)
 test: protos
 mod-check: protos
-configs-integration-test: protos
 lint: protos
 build-image/$(UPTODATE): build-image/*
 
@@ -139,22 +138,6 @@ exes $(EXES) protos $(PROTO_GOS) lint test cover shell mod-check check-protos we
 	@echo
 	@echo ">>>> Entering build container: $@"
 	@$(SUDO) time docker run --rm $(TTY) -i $(GOVOLUMES) $(BUILD_IMAGE) $@;
-
-configs-integration-test: build-image/$(UPTODATE)
-	@mkdir -p $(shell pwd)/.pkg
-	@mkdir -p $(shell pwd)/.cache
-	@DB_CONTAINER="$$(docker run -d -e 'POSTGRES_DB=configs_test' postgres:9.6.16)"; \
-	echo ; \
-	echo ">>>> Entering build container: $@"; \
-	$(SUDO) docker run --rm $(TTY) -i $(GOVOLUMES) \
-		-v $(shell pwd)/cmd/cortex/migrations:/migrations:z \
-		--workdir /go/src/github.com/cortexproject/cortex \
-		--link "$$DB_CONTAINER":configs-db.cortex.local \
-		-e DB_ADDR=configs-db.cortex.local \
-		$(BUILD_IMAGE) $@; \
-	status=$$?; \
-	docker rm -f "$$DB_CONTAINER"; \
-	exit $$status
 
 else
 
@@ -225,9 +208,6 @@ cover:
 
 shell:
 	bash
-
-configs-integration-test:
-	/bin/bash -c "go test -v -tags 'netgo integration' -timeout 30s ./pkg/configs/... ./pkg/ruler/..."
 
 mod-check:
 	GO111MODULE=on go mod download

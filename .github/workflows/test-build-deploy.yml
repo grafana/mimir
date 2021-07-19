@@ -145,24 +145,3 @@ jobs:
           go test -tags=requires_docker -timeout 2400s -v -count=1 ./integration/...
         env:
           IMAGE_PREFIX: ${{ secrets.IMAGE_PREFIX }}
-
-  integration-configs-db:
-    needs: build
-    runs-on: ubuntu-20.04
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Install Docker Client
-        run: sudo ./.github/workflows/scripts/install-docker.sh
-      - name: Download Docker Images Artifact
-        uses: actions/download-artifact@v2
-        with:
-          name: Docker Images
-      - name: Extract Docker Images Archive
-        run: tar -xvf images.tar -C /
-      - name: Run Integration Configs Tests
-        # Github Actions does not support TTY in their default runners yet
-        run: |
-          touch build-image/.uptodate
-          MIGRATIONS_DIR=$(pwd)/cmd/cortex/migrations
-          make BUILD_IMAGE=quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f TTY='' configs-integration-test
