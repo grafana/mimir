@@ -5,6 +5,7 @@
 * [CHANGE] Removed `configdb` support from Ruler and Alertmanager backend storages. #15
 * [CHANGE] Changed `-ruler.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
+* [ENHANCEMENT] Prometheus upgraded. #4 #16
 
 ## master / unreleased
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. #4317
