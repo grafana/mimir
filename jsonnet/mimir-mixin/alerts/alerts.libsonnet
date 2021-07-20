@@ -1,4 +1,9 @@
 {
+  // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
+  local simpleRegexpOpt(strings) =
+    assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
+    '(' + std.join('|', strings) + ')',
+
   groups+: [
     {
       name: 'cortex_alerts',
@@ -590,11 +595,12 @@
       rules: [
         {
           alert: 'CortexGossipMembersMismatch',
-          expr: |||
-            memberlist_client_cluster_members_count
-              != on (%s) group_left
-            sum by (%s) (up{job=~".+/%s"})
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, $._config.job_names.ring_members],
+          expr:
+            |||
+              memberlist_client_cluster_members_count
+                != on (%s) group_left
+              sum by (%s) (up{job=~".+/%s"})
+            ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels, simpleRegexpOpt($._config.job_names.ring_members)],
           'for': '5m',
           labels: {
             severity: 'warning',
