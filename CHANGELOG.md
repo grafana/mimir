@@ -5,7 +5,7 @@
 * [CHANGE] Removed `configdb` support from Ruler and Alertmanager backend storages. #15
 * [CHANGE] Changed `-ruler.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
-* [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157)
+* [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20
   * Users only have control of the HTTP header when Mimir is not frontend by an auth proxy validating the tenant IDs
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 
