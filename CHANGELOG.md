@@ -7,6 +7,7 @@
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20
   * Users only have control of the HTTP header when Mimir is not frontend by an auth proxy validating the tenant IDs
+* [ENHANCEMENT] Include additional limits in the per-tenant override exporter. #21
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 
 
