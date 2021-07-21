@@ -671,6 +671,11 @@ lifecycler:
     # CLI flag: -distributor.zone-awareness-enabled
     [zone_awareness_enabled: <boolean> | default = false]
 
+    # Comma-separated list of zones to exclude from the ring. Instances in
+    # excluded zones will be filtered out from the ring.
+    # CLI flag: -distributor.excluded-zones
+    [excluded_zones: <string> | default = ""]
+
   # Number of tokens for each ingester.
   # CLI flag: -ingester.num-tokens
   [num_tokens: <int> | default = 128]
