@@ -96,14 +96,14 @@ func (tc *simpleTestCase) Query(ctx context.Context, client v1.API, selectors st
 
 	metricName := prometheus.BuildFQName(namespace, subsystem, tc.name)
 	query := fmt.Sprintf("%s{%s}[%dm]", metricName, selectors, duration/time.Minute)
-	level.Info(log).Log("query", query)
+	_ = level.Info(log).Log("query", query)
 
 	value, wrngs, err := client.Query(ctx, query, start)
 	if err != nil {
 		return nil, err
 	}
 	if wrngs != nil {
-		level.Warn(log).Log(
+		_ = level.Warn(log).Log(
 			"query", query,
 			"start", start,
 			"warnings", wrngs,
@@ -141,7 +141,7 @@ func (tc *simpleTestCase) Test(ctx context.Context, client v1.API, selectors str
 	log := spanlogger.FromContext(ctx)
 	pairs, err := tc.Query(ctx, client, selectors, start, duration)
 	if err != nil {
-		level.Info(log).Log("err", err)
+		_ = level.Info(log).Log("err", err)
 		return false, err
 	}
 
@@ -159,8 +159,8 @@ func verifySamples(log *spanlogger.SpanLogger, tc Case, pairs []model.SamplePair
 			sampleResult.WithLabelValues(tc.Name(), success).Inc()
 		} else {
 			sampleResult.WithLabelValues(tc.Name(), fail).Inc()
-			level.Error(log).Log("msg", "wrong value", "at", pair.Timestamp, "expected", tc.ExpectedValueAt(pair.Timestamp.Time()), "actual", pair.Value)
-			log.Error(fmt.Errorf("wrong value"))
+			_ = level.Error(log).Log("msg", "wrong value", "at", pair.Timestamp, "expected", tc.ExpectedValueAt(pair.Timestamp.Time()), "actual", pair.Value)
+			_ = log.Error(fmt.Errorf("wrong value"))
 			return false
 		}
 	}
@@ -169,15 +169,15 @@ func verifySamples(log *spanlogger.SpanLogger, tc Case, pairs []model.SamplePair
 	if duration > 5*time.Minute {
 		expectedNumSamples := int(duration / cfg.ScrapeInterval)
 		if !epsilonCorrect(float64(len(pairs)), float64(expectedNumSamples), cfg.samplesEpsilon) {
-			level.Error(log).Log("msg", "wrong number of samples", "expected", expectedNumSamples, "actual", len(pairs))
-			log.Error(fmt.Errorf("wrong number of samples"))
+			_ = level.Error(log).Log("msg", "wrong number of samples", "expected", expectedNumSamples, "actual", len(pairs))
+			_ = log.Error(fmt.Errorf("wrong number of samples"))
 			return false
 		}
 	} else {
 		expectedNumSamples := int(duration / cfg.ScrapeInterval)
 		if math.Abs(float64(expectedNumSamples-len(pairs))) > 2 {
-			level.Error(log).Log("msg", "wrong number of samples", "expected", expectedNumSamples, "actual", len(pairs))
-			log.Error(fmt.Errorf("wrong number of samples"))
+			_ = level.Error(log).Log("msg", "wrong number of samples", "expected", expectedNumSamples, "actual", len(pairs))
+			_ = log.Error(fmt.Errorf("wrong number of samples"))
 			return false
 		}
 	}

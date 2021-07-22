@@ -158,8 +158,8 @@ func (c *Memcached) fetch(ctx context.Context, keys []string) (found []string, b
 
 		// Memcached returns partial results even on error.
 		if err != nil {
-			log.Error(err)
-			level.Error(log).Log("msg", "Failed to get keys from memcached", "err", err)
+			_ = log.Error(err)
+			_ = level.Error(log).Log("msg", "Failed to get keys from memcached", "err", err)
 		}
 		return err
 	})

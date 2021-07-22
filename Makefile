@@ -59,7 +59,7 @@ push-multiarch-build-image:
 	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)build-image:$(IMAGE_TAG) build-image/
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
-# 'make: Entering directory '/go/src/github.com/cortexproject/cortex' phase.
+# 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o
 
 # Get a list of directories containing Dockerfiles
@@ -130,7 +130,7 @@ ifeq ($(BUILD_IN_CONTAINER),true)
 
 GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 			-v $(shell pwd)/.pkg:/go/pkg:delegated,z \
-			-v $(shell pwd):/go/src/github.com/cortexproject/cortex:delegated,z
+			-v $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z
 
 exes $(EXES) protos $(PROTO_GOS) lint test cover shell mod-check check-protos web-build web-pre web-deploy doc: build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
@@ -164,32 +164,32 @@ lint:
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
-		github.com/weaveworks/common/user.{ExtractOrgID}=github.com/cortexproject/cortex/pkg/tenant.{TenantID,TenantIDs},\
-		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/cortexproject/cortex/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
+		github.com/weaveworks/common/user.{ExtractOrgID}=github.com/grafana/mimir/pkg/tenant.{TenantID,TenantIDs},\
+		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
 
 	# Ensure clean pkg structure.
 	faillint -paths "\
-		github.com/cortexproject/cortex/pkg/scheduler,\
-		github.com/cortexproject/cortex/pkg/frontend,\
-		github.com/cortexproject/cortex/pkg/frontend/transport,\
-		github.com/cortexproject/cortex/pkg/frontend/v1,\
-		github.com/cortexproject/cortex/pkg/frontend/v2" \
+		github.com/grafana/mimir/pkg/scheduler,\
+		github.com/grafana/mimir/pkg/frontend,\
+		github.com/grafana/mimir/pkg/frontend/transport,\
+		github.com/grafana/mimir/pkg/frontend/v1,\
+		github.com/grafana/mimir/pkg/frontend/v2" \
 		./pkg/querier/...
-	faillint -paths "github.com/cortexproject/cortex/pkg/querier/..." ./pkg/scheduler/...
-	faillint -paths "github.com/cortexproject/cortex/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
-	faillint -paths "github.com/cortexproject/cortex/pkg/..." ./pkg/alertmanager/alertspb/...
-	faillint -paths "github.com/cortexproject/cortex/pkg/..." ./pkg/ruler/rulespb/...
+	faillint -paths "github.com/grafana/mimir/pkg/querier/..." ./pkg/scheduler/...
+	faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
-		github.com/cortexproject/cortex/pkg/tenant.{TenantID}=github.com/cortexproject/cortex/pkg/tenant.{TenantIDs}" \
+		github.com/grafana/mimir/pkg/tenant.{TenantID}=github.com/grafana/mimir/pkg/tenant.{TenantIDs}" \
 		./pkg/scheduler/... \
 		./pkg/frontend/... \
 		./pkg/querier/tenantfederation/... \
 		./pkg/querier/queryrange/...
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
-	faillint -paths "github.com/cortexproject/cortex/pkg/util/log.{Logger}" \
+	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \
 		./pkg/alertmanager/alertstore/... \
 		./pkg/ingester/... \
 		./pkg/flusher/... \
@@ -303,10 +303,10 @@ dist/$(UPTODATE):
     done; \
     touch $@
 
-# Generate packages for a Cortex release.
+# Generate packages for a Mimir release.
 FPM_OPTS := fpm -s dir -v $(VERSION) -n cortex -f \
 	--license "Apache 2.0" \
-	--url "https://github.com/cortexproject/cortex"
+	--url "https://github.com/grafana/mimir"
 
 PACKAGE_IN_CONTAINER := true
 PACKAGE_IMAGE ?= $(IMAGE_PREFIX)fpm
@@ -318,7 +318,7 @@ packages: dist packaging/fpm/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
 	@$(SUDO) time docker run --rm $(TTY) \
-		-v  $(shell pwd):/src/github.com/cortexproject/cortex:delegated,z \
+		-v  $(shell pwd):/src/github.com/grafana/mimir:delegated,z \
 		-i $(PACKAGE_IMAGE) $@;
 
 else
