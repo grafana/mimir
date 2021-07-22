@@ -1819,9 +1819,6 @@ func TestDistributor_LabelNames(t *testing.T) {
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "reason", Value: "broken"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
-		// The two following series have the same FastFingerprint=e002a3a451262627
-		{labels.Labels{{Name: labels.MetricName, Value: "fast_fingerprint_collision"}, {Name: "app", Value: "l"}, {Name: "uniq0", Value: "0"}, {Name: "uniq1", Value: "1"}}, 1, 300000},
-		{labels.Labels{{Name: labels.MetricName, Value: "fast_fingerprint_collision"}, {Name: "app", Value: "m"}, {Name: "uniq0", Value: "1"}, {Name: "uniq1", Value: "1"}}, 1, 300000},
 	}
 
 	tests := map[string]struct {
@@ -1851,13 +1848,6 @@ func TestDistributor_LabelNames(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
 			expectedResult:    []string{labels.MetricName, "status"},
-			expectedIngesters: numIngesters,
-		},
-		"should return all matching metrics even if their FastFingerprint collide": {
-			matchers: []*labels.Matcher{
-				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
-			},
-			expectedResult:    []string{labels.MetricName, "app", "uniq0", "uniq1"},
 			expectedIngesters: numIngesters,
 		},
 		"should query only ingesters belonging to tenant's subring if shuffle sharding is enabled": {
