@@ -9,6 +9,7 @@
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20
   * Users only have control of the HTTP header when Mimir is not frontend by an auth proxy validating the tenant IDs
+* [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #TBD
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`

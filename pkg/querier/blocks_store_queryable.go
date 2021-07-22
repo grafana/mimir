@@ -604,6 +604,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			mySeries := []*storepb.Series(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
+			chunksFetched := 0
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -629,6 +630,11 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 					if limitErr != nil {
 						return validation.LimitError(limitErr.Error())
 					}
+
+					// Add number of chunks fetched for stat purposes regardless of whether or not a limit
+					// will be applied to the number of chunks fetched as part of this query. Keep track in
+					// a local variable (instead of `numChunks`) to avoid double counting.
+					chunksFetched += len(s.Chunks)
 
 					// Ensure the max number of chunks limit hasn't been reached (max == 0 means disabled).
 					if maxChunksLimit > 0 {
@@ -670,11 +676,13 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
+			reqStats.AddFetchedChunks(uint64(chunksFetched))
 
 			level.Debug(spanLog).Log("msg", "received series from store-gateway",
 				"instance", c.RemoteAddress(),
 				"fetched series", numSeries,
 				"fetched chunk bytes", chunkBytes,
+				"fetched chunks", chunksFetched,
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
