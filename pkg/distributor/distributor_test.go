@@ -1817,7 +1817,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 		timestamp int64
 	}{
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}, 1, 100000},
-		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "reason", Value: "broken"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
 		// The two following series have the same FastFingerprint=e002a3a451262627
 		{labels.Labels{{Name: labels.MetricName, Value: "fast_fingerprint_collision"}, {Name: "app", Value: "l"}, {Name: "uniq0", Value: "0"}, {Name: "uniq1", Value: "1"}}, 1, 300000},
@@ -1842,7 +1842,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult:    []string{labels.MetricName, "status"},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by multiple matchers": {
@@ -1866,7 +1866,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult:    []string{labels.MetricName, "status"},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
 			expectedIngesters: 3,
 		},
 		"should query all ingesters if shuffle sharding is enabled but shard size is 0": {
@@ -1875,7 +1875,7 @@ func TestDistributor_LabelNames(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult:    []string{labels.MetricName, "status"},
+			expectedResult:    []string{labels.MetricName, "reason", "status"},
 			expectedIngesters: numIngesters,
 		},
 	}
