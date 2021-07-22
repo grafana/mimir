@@ -1293,7 +1293,7 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 
 	// Instance the querier that will be executed to run the query.
 	logger := log.NewNopLogger()
-	queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, logger, nil, true)
+	queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, logger, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
 	defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck

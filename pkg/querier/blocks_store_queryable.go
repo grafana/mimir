@@ -134,8 +134,6 @@ type BlocksStoreQueryable struct {
 	// Subservices manager.
 	subservices        *services.Manager
 	subservicesWatcher *services.FailureWatcher
-
-	queryLabelNamesWithMatchers bool
 }
 
 func NewBlocksStoreQueryable(
@@ -146,7 +144,6 @@ func NewBlocksStoreQueryable(
 	queryStoreAfter time.Duration,
 	logger log.Logger,
 	reg prometheus.Registerer,
-	queryLabelNamesWithMatchers bool,
 ) (*BlocksStoreQueryable, error) {
 	manager, err := services.NewManager(stores, finder)
 	if err != nil {
@@ -163,8 +160,6 @@ func NewBlocksStoreQueryable(
 		subservicesWatcher: services.NewFailureWatcher(),
 		metrics:            newBlocksStoreQueryableMetrics(reg),
 		limits:             limits,
-
-		queryLabelNamesWithMatchers: queryLabelNamesWithMatchers,
 	}
 
 	q.Service = services.NewBasicService(q.starting, q.running, q.stopping)
@@ -254,7 +249,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		reg,
 	)
 
-	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, logger, reg, querierCfg.QueryLabelNamesWithMatchers)
+	return NewBlocksStoreQueryable(stores, finder, consistency, limits, querierCfg.QueryStoreAfter, logger, reg)
 }
 
 func (q *BlocksStoreQueryable) starting(ctx context.Context) error {
@@ -305,8 +300,6 @@ func (q *BlocksStoreQueryable) Querier(ctx context.Context, mint, maxt int64) (s
 		consistency:     q.consistency,
 		logger:          q.logger,
 		queryStoreAfter: q.queryStoreAfter,
-
-		queryLabelNamesWithMatchers: q.queryLabelNamesWithMatchers,
 	}, nil
 }
 
@@ -324,8 +317,6 @@ type blocksStoreQuerier struct {
 	// If set, the querier manipulates the max time to not be greater than
 	// "now - queryStoreAfter" so that most recent blocks are not queried.
 	queryStoreAfter time.Duration
-
-	queryLabelNamesWithMatchers bool
 }
 
 // Select implements storage.Querier interface.
