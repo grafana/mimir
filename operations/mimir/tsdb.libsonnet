@@ -101,7 +101,7 @@
     'ingester.tokens-file-path': '/data/tokens',
   },
 
-  newIngesterStatefulSet(name, container)::
+  newIngesterStatefulSet(name, container, with_anti_affinity=true)::
     statefulSet.new(name, 3, [
       container + $.core.v1.container.withVolumeMountsMixin([
         volumeMount.new('ingester-data', '/data'),
@@ -119,12 +119,12 @@
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.util.podPriority('high') +
-    $.util.antiAffinity +
     // Parallelly scale up/down ingester instances instead of starting them
     // one by one. This does NOT affect rolling updates: they will continue to be
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
-    statefulSet.mixin.spec.withPodManagementPolicy('Parallel'),
+    statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
+    (if with_anti_affinity then $.util.antiAffinity else {}),
 
   ingester_statefulset: self.newIngesterStatefulSet('ingester', $.ingester_container),
 
