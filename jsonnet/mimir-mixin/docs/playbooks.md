@@ -53,7 +53,29 @@ How to **fix**:
 1. **Temporarily increase the limit**<br />
    If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
 1. **Check if shuffle-sharding shard size is correct**<br />
-   When shuffle-sharding is enabled, we target to 100K series / tenant / ingester. You can run `avg by (user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>"}) > 100000` to find out tenants with > 100K series / ingester. You may want to increase the shard size for these tenants.
+  - When shuffle-sharding is enabled, we target to 100K series / tenant / ingester assuming tenants on average uses 50% of their max series limit.
+  - Run the following **instant query** to find tenants that may cause an higher pressure on some ingesters:
+    ```
+    (
+      sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
+      -
+      cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
+    )
+    >
+    (
+      max by(user) (cortex_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
+      *
+      scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
+      *
+      0.5
+    )
+    > 200000
+
+    # Decomment the following to show only tenants beloging to a specific ingester's shard.
+    # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
+    ```
+  - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
+  - The in-memory series in the ingesters will be effectively reduced at the TSDB Head compaction happening at least 1h after you increased the shard size for the affected tenants
 1. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
