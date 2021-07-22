@@ -334,10 +334,6 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
-		return q.legacyLabelNamesWithMatchersThroughSelectCall(matchers...)
-	}
-
 	spanLog, spanCtx := spanlogger.New(q.ctx, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
@@ -370,33 +366,6 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	}
 
 	return strutil.MergeSlices(resNameSets...), resWarnings, nil
-}
-
-// legacyLabelNamesWithMatchersThroughSelectCall uses a Series() call to retrieve labels with matchers
-// this is used when the LabelNames with matchers feature is first deployed, and some StoreGateway-s may have not been updated yet,
-// so they could be ignoring the matchers, leading to wrong results.
-func (q *blocksStoreQuerier) legacyLabelNamesWithMatchersThroughSelectCall(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	hints := &storage.SelectHints{
-		Start: q.minT,
-		End:   q.maxT,
-		Func:  "series", // we don't want the samples, only series
-	}
-	seriesSet := q.selectSorted(hints, matchers...)
-
-	namesMap := make(map[string]struct{})
-	for seriesSet.Next() {
-		for _, lbl := range seriesSet.At().Labels() {
-			namesMap[lbl.Name] = struct{}{}
-		}
-	}
-
-	names := make([]string, 0, len(namesMap))
-	for name := range namesMap {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-
-	return names, seriesSet.Warnings(), seriesSet.Err()
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -761,7 +730,6 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 				return errors.Wrapf(err, "failed to create label names request")
 			}
 
-			// FIXME(colega): make sure that StoreGateway implementations here support matchers
 			namesResp, err := c.LabelNames(gCtx, req)
 			if err != nil {
 				return errors.Wrapf(err, "failed to fetch series from %s", c.RemoteAddress())
