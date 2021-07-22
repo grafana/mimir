@@ -272,7 +272,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	// internally works.
 	buf := bytes.NewBuffer(make([]byte, 0, r.ContentLength+bytes.MinRead))
 	if _, err := buf.ReadFrom(r.Body); err != nil {
-		log.Error(err)
+		_ = log.Error(err)
 		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error decoding response: %v", err)
 	}
 

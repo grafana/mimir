@@ -234,7 +234,7 @@ func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Re
 	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
 	for _, v := range headerValues {
 		if v == noStoreValue {
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
+			_ = level.Debug(s.logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
 			return false
 		}
 	}
@@ -251,13 +251,13 @@ func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Re
 	genNumberFromCtx := cache.ExtractCacheGenNumber(ctx)
 
 	if len(genNumbersFromResp) == 0 && genNumberFromCtx != "" {
-		level.Debug(s.logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
+		_ = level.Debug(s.logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
 		return false
 	}
 
 	for _, gen := range genNumbersFromResp {
 		if gen != genNumberFromCtx {
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
+			_ = level.Debug(s.logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
 			return false
 		}
 	}
@@ -569,8 +569,8 @@ func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
 	log.LogFields(otlog.Int("bytes", len(bufs[0])))
 
 	if err := proto.Unmarshal(bufs[0], &resp); err != nil {
-		level.Error(log).Log("msg", "error unmarshalling cached value", "err", err)
-		log.Error(err)
+		_ = level.Error(log).Log("msg", "error unmarshalling cached value", "err", err)
+		_ = log.Error(err)
 		return nil, false
 	}
 
@@ -594,7 +594,7 @@ func (s resultsCache) put(ctx context.Context, key string, extents []Extent) {
 		Extents: extents,
 	})
 	if err != nil {
-		level.Error(s.logger).Log("msg", "error marshalling cached value", "err", err)
+		_ = level.Error(s.logger).Log("msg", "error marshalling cached value", "err", err)
 		return
 	}
 
