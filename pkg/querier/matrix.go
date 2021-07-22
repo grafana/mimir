@@ -4,9 +4,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/querier/series"
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func mergeChunks(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator {

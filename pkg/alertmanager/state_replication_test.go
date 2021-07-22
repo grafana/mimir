@@ -18,9 +18,9 @@ import (
 
 	"github.com/go-kit/kit/log"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 type fakeState struct {

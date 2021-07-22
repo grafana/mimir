@@ -6,7 +6,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // GenerateTokens make numTokens unique random tokens, none of which clash

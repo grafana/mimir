@@ -9,7 +9,7 @@ package frontendv1pb
 import (
 	context "context"
 	fmt "fmt"
-	stats "github.com/cortexproject/cortex/pkg/querier/stats"
+	stats "github.com/grafana/mimir/pkg/querier/stats"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	httpgrpc "github.com/weaveworks/common/httpgrpc"

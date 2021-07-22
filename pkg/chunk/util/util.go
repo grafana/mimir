@@ -10,8 +10,8 @@ import (
 
 	ot "github.com/opentracing/opentracing-go"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/util/math"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 // Callback from an IndexQuery.

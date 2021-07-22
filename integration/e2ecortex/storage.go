@@ -9,10 +9,10 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
-	"github.com/cortexproject/cortex/pkg/storage/bucket/s3"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 type S3Client struct {

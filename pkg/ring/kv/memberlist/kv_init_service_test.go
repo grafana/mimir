@@ -8,7 +8,7 @@ import (
 	"github.com/hashicorp/memberlist"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestPage(t *testing.T) {

@@ -24,7 +24,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/cortexproject/cortex/pkg/ruler"
+	"github.com/grafana/mimir/pkg/ruler"
 )
 
 var ErrNotFound = errors.New("not found")

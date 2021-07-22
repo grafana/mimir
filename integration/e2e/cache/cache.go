@@ -1,8 +1,8 @@
 package e2ecache
 
 import (
-	"github.com/cortexproject/cortex/integration/e2e"
-	"github.com/cortexproject/cortex/integration/e2e/images"
+	"github.com/grafana/mimir/integration/e2e"
+	"github.com/grafana/mimir/integration/e2e/images"
 )
 
 const (

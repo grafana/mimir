@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // The mockClient does not anything.

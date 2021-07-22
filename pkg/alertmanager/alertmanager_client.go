@@ -11,10 +11,10 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertmanagerpb"
-	"github.com/cortexproject/cortex/pkg/ring/client"
-	"github.com/cortexproject/cortex/pkg/util/grpcclient"
-	"github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
+	"github.com/grafana/mimir/pkg/ring/client"
+	"github.com/grafana/mimir/pkg/util/grpcclient"
+	"github.com/grafana/mimir/pkg/util/tls"
 )
 
 // ClientsPool is the interface used to get the client from the pool for a specified address.

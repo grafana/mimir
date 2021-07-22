@@ -5,7 +5,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/cortexproject/cortex/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/chunk/encoding"
 )
 
 func TestNonOverlappingIter(t *testing.T) {

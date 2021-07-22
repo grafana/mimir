@@ -13,8 +13,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 
-	grpc_util "github.com/cortexproject/cortex/pkg/util/grpc"
-	"github.com/cortexproject/cortex/pkg/util/test"
+	grpc_util "github.com/grafana/mimir/pkg/util/grpc"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSendQueryStream(t *testing.T) {

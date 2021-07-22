@@ -5,9 +5,9 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/ring/kv"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/ring/kv"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // NumTokens determines the number of tokens owned by the specified

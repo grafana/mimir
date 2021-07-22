@@ -14,7 +14,7 @@ import (
 	google_http "google.golang.org/api/transport/http"
 	"google.golang.org/grpc"
 
-	"github.com/cortexproject/cortex/pkg/util/middleware"
+	"github.com/grafana/mimir/pkg/util/middleware"
 )
 
 var (

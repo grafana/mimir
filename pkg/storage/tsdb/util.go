@@ -3,7 +3,7 @@ package tsdb
 import (
 	"github.com/oklog/ulid"
 
-	"github.com/cortexproject/cortex/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 // HashBlockID returns a 32-bit hash of the block ID useful for

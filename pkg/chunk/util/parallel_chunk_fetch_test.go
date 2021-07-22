@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 func BenchmarkGetParallelChunks(b *testing.B) {

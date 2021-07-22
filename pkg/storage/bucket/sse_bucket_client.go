@@ -9,7 +9,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/s3"
 
-	cortex_s3 "github.com/cortexproject/cortex/pkg/storage/bucket/s3"
+	cortex_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
 // TenantConfigProvider defines a per-tenant config provider.

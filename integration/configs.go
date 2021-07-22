@@ -10,8 +10,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
 )
 
 type storeConfig struct {

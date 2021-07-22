@@ -88,6 +88,6 @@ func addPRLinks(content string) string {
 			return ref
 		}
 		ref = ref[1:]
-		return fmt.Sprintf("[#%s](https://github.com/cortexproject/cortex/pull/%s)", ref, ref)
+		return fmt.Sprintf("[#%s](https://github.com/grafana/mimir/pull/%s)", ref, ref)
 	})
 }

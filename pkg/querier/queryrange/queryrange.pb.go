@@ -5,8 +5,8 @@ package queryrange
 
 import (
 	fmt "fmt"
-	cortexpb "github.com/cortexproject/cortex/pkg/cortexpb"
-	github_com_cortexproject_cortex_pkg_cortexpb "github.com/cortexproject/cortex/pkg/cortexpb"
+	cortexpb "github.com/grafana/mimir/pkg/cortexpb"
+	github_com_cortexproject_cortex_pkg_cortexpb "github.com/grafana/mimir/pkg/cortexpb"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
@@ -301,7 +301,7 @@ func (m *PrometheusData) GetResult() []SampleStream {
 }
 
 type SampleStream struct {
-	Labels  []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/cortexproject/cortex/pkg/cortexpb.LabelAdapter" json:"metric"`
+	Labels  []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/cortexpb.LabelAdapter" json:"metric"`
 	Samples []cortexpb.Sample                                           `protobuf:"bytes,2,rep,name=samples,proto3" json:"values"`
 }
 

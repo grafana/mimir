@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 )
 
 const (

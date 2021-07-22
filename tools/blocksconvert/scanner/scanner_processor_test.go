@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 func TestProcessorError(t *testing.T) {

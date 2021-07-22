@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 )
 
 func PrepareFilesystemBucket(t testing.TB) (objstore.Bucket, string) {

@@ -12,14 +12,14 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 
-	"github.com/cortexproject/cortex/pkg/cortex"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
-	"github.com/cortexproject/cortex/tools/blocksconvert/builder"
-	"github.com/cortexproject/cortex/tools/blocksconvert/cleaner"
-	"github.com/cortexproject/cortex/tools/blocksconvert/scanner"
-	"github.com/cortexproject/cortex/tools/blocksconvert/scheduler"
+	"github.com/grafana/mimir/pkg/cortex"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/tools/blocksconvert"
+	"github.com/grafana/mimir/tools/blocksconvert/builder"
+	"github.com/grafana/mimir/tools/blocksconvert/cleaner"
+	"github.com/grafana/mimir/tools/blocksconvert/scanner"
+	"github.com/grafana/mimir/tools/blocksconvert/scheduler"
 )
 
 type Config struct {

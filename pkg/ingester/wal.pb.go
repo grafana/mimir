@@ -5,9 +5,9 @@ package ingester
 
 import (
 	fmt "fmt"
-	_ "github.com/cortexproject/cortex/pkg/cortexpb"
-	github_com_cortexproject_cortex_pkg_cortexpb "github.com/cortexproject/cortex/pkg/cortexpb"
-	client "github.com/cortexproject/cortex/pkg/ingester/client"
+	_ "github.com/grafana/mimir/pkg/cortexpb"
+	github_com_cortexproject_cortex_pkg_cortexpb "github.com/grafana/mimir/pkg/cortexpb"
+	client "github.com/grafana/mimir/pkg/ingester/client"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	io "io"
@@ -31,7 +31,7 @@ const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 type Series struct {
 	UserId      string                                                      `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Fingerprint uint64                                                      `protobuf:"varint,2,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	Labels      []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,3,rep,name=labels,proto3,customtype=github.com/cortexproject/cortex/pkg/cortexpb.LabelAdapter" json:"labels"`
+	Labels      []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,3,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/cortexpb.LabelAdapter" json:"labels"`
 	Chunks      []client.Chunk                                              `protobuf:"bytes,4,rep,name=chunks,proto3" json:"chunks"`
 }
 

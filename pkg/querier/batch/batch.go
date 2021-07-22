@@ -4,9 +4,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/encoding"
-	promchunk "github.com/cortexproject/cortex/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/encoding"
+	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 )
 
 // GenericChunk is a generic chunk used by the batch iterator, in order to make the batch

@@ -11,7 +11,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 
-	"github.com/cortexproject/cortex/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/querier/series"
 )
 
 func convertMatchersToLabelMatcher(matchers []*labels.Matcher) []storepb.LabelMatcher {

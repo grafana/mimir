@@ -5,8 +5,8 @@ package purger
 
 import (
 	fmt "fmt"
-	_ "github.com/cortexproject/cortex/pkg/cortexpb"
-	github_com_cortexproject_cortex_pkg_cortexpb "github.com/cortexproject/cortex/pkg/cortexpb"
+	_ "github.com/grafana/mimir/pkg/cortexpb"
+	github_com_cortexproject_cortex_pkg_cortexpb "github.com/grafana/mimir/pkg/cortexpb"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	io "io"
@@ -82,7 +82,7 @@ func (m *DeletePlan) GetChunksGroup() []ChunksGroup {
 
 // ChunksGroup holds ChunkDetails and Labels for a group of chunks which have same series ID
 type ChunksGroup struct {
-	Labels []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/cortexproject/cortex/pkg/cortexpb.LabelAdapter" json:"labels"`
+	Labels []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/cortexpb.LabelAdapter" json:"labels"`
 	Chunks []ChunkDetails                                              `protobuf:"bytes,2,rep,name=chunks,proto3" json:"chunks"`
 }
 

@@ -3,7 +3,7 @@ package querier
 import (
 	"net/http"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type metricMetadata struct {

@@ -6,7 +6,7 @@ package distributorpb
 import (
 	context "context"
 	fmt "fmt"
-	cortexpb "github.com/cortexproject/cortex/pkg/cortexpb"
+	cortexpb "github.com/grafana/mimir/pkg/cortexpb"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	grpc "google.golang.org/grpc"

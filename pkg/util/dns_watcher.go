@@ -7,8 +7,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/cortexproject/cortex/pkg/util/grpc/naming"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/grpc/naming"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 // Notifications about address resolution. All notifications are sent on the same goroutine.

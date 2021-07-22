@@ -19,16 +19,16 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/cortexproject/cortex/pkg/frontend/v2/frontendv2pb"
-	querier_stats "github.com/cortexproject/cortex/pkg/querier/stats"
-	"github.com/cortexproject/cortex/pkg/ring/client"
-	"github.com/cortexproject/cortex/pkg/scheduler/schedulerpb"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/grpcclient"
-	"github.com/cortexproject/cortex/pkg/util/grpcutil"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	cortex_middleware "github.com/cortexproject/cortex/pkg/util/middleware"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
+	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/ring/client"
+	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/grpcclient"
+	"github.com/grafana/mimir/pkg/util/grpcutil"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	cortex_middleware "github.com/grafana/mimir/pkg/util/middleware"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {

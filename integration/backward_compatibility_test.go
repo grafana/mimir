@@ -11,25 +11,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
-	"github.com/cortexproject/cortex/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/mimir/integration/e2ecortex"
 )
 
 var (
 	// If you change the image tag, remember to update it in the preloading done
 	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
 	previousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.0.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.1.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.2.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.3.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.4.0": preCortex16Flags,
-		"quay.io/cortexproject/cortex:v1.5.0": preCortex16Flags,
-		"quay.io/cortexproject/cortex:v1.6.0": preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.7.0": preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.8.0": preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.9.0": preCortex110Flags,
+		"quay.io/grafana/mimir:v1.0.0": preCortex14Flags,
+		"quay.io/grafana/mimir:v1.1.0": preCortex14Flags,
+		"quay.io/grafana/mimir:v1.2.0": preCortex14Flags,
+		"quay.io/grafana/mimir:v1.3.0": preCortex14Flags,
+		"quay.io/grafana/mimir:v1.4.0": preCortex16Flags,
+		"quay.io/grafana/mimir:v1.5.0": preCortex16Flags,
+		"quay.io/grafana/mimir:v1.6.0": preCortex110Flags,
+		"quay.io/grafana/mimir:v1.7.0": preCortex110Flags,
+		"quay.io/grafana/mimir:v1.8.0": preCortex110Flags,
+		"quay.io/grafana/mimir:v1.9.0": preCortex110Flags,
 	}
 )
 
@@ -153,7 +153,7 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	)
 }
 
-// Check for issues like https://github.com/cortexproject/cortex/issues/2356
+// Check for issues like https://github.com/grafana/mimir/issues/2356
 func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previousImage string, flagsForPreviousImage map[string]string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)

@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	errs "github.com/weaveworks/common/errors"
 
-	prom_chunk "github.com/cortexproject/cortex/pkg/chunk/encoding"
-	"github.com/cortexproject/cortex/pkg/prom1/storage/metric"
+	prom_chunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 )
 
 const (

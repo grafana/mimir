@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 func TestMergeSamplesIntoFirstDuplicates(t *testing.T) {

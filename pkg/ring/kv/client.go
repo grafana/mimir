@@ -8,10 +8,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	"github.com/cortexproject/cortex/pkg/ring/kv/etcd"
-	"github.com/cortexproject/cortex/pkg/ring/kv/memberlist"
+	"github.com/grafana/mimir/pkg/ring/kv/codec"
+	"github.com/grafana/mimir/pkg/ring/kv/consul"
+	"github.com/grafana/mimir/pkg/ring/kv/etcd"
+	"github.com/grafana/mimir/pkg/ring/kv/memberlist"
 )
 
 const (

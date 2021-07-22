@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	"github.com/cortexproject/cortex/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // userMetricsMetadata allows metric metadata of a tenant to be held by the ingester.

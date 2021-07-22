@@ -1,7 +1,7 @@
 package storage
 
 import (
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 // ByKey allow you to sort chunks by ID

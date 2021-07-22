@@ -1,6 +1,6 @@
 package e2ecortex
 
-import "github.com/cortexproject/cortex/integration/e2e"
+import "github.com/grafana/mimir/integration/e2e"
 
 // CortexService represents a Cortex service with at least an HTTP and GRPC port exposed.
 type CortexService struct {

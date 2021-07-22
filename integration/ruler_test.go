@@ -25,10 +25,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/cortexproject/cortex/integration/ca"
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
-	"github.com/cortexproject/cortex/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/ca"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/mimir/integration/e2ecortex"
 )
 
 func TestRulerAPI(t *testing.T) {

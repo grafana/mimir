@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cortexproject/cortex/integration/e2e"
+	"github.com/grafana/mimir/integration/e2e"
 )
 
 const (
@@ -16,12 +16,12 @@ const (
 // GetDefaultImage returns the Docker image to use to run Cortex.
 func GetDefaultImage() string {
 	// Get the cortex image from the CORTEX_IMAGE env variable,
-	// falling back to "quay.io/cortexproject/cortex:latest"
+	// falling back to "quay.io/grafana/mimir:latest"
 	if os.Getenv("CORTEX_IMAGE") != "" {
 		return os.Getenv("CORTEX_IMAGE")
 	}
 
-	return "quay.io/cortexproject/cortex:latest"
+	return "quay.io/grafana/mimir:latest"
 }
 
 func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *CortexService {

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2ecortex"
 )
 
 type ServiceType int

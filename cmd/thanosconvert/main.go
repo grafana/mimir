@@ -11,9 +11,9 @@ import (
 	"github.com/weaveworks/common/logging"
 	"gopkg.in/yaml.v2"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	"github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/tools/thanosconvert"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/tools/thanosconvert"
 )
 
 func main() {

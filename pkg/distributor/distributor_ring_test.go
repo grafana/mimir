@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {

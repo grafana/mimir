@@ -7,7 +7,7 @@ import (
 	kitlog "github.com/go-kit/kit/log"
 	"github.com/weaveworks/common/middleware"
 
-	"github.com/cortexproject/cortex/pkg/tenant"
+	"github.com/grafana/mimir/pkg/tenant"
 )
 
 // WithUserID returns a Logger that has information about the current user in

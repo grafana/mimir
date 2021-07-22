@@ -6,7 +6,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	cortex_s3 "github.com/cortexproject/cortex/pkg/storage/bucket/s3"
+	cortex_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
 const (

@@ -16,8 +16,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (

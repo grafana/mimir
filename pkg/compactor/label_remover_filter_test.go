@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestLabelRemoverFilter(t *testing.T) {

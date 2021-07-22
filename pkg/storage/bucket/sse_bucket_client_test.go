@@ -13,8 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket/s3"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/storage/bucket/s3"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestSSEBucketClient_Upload_ShouldInjectCustomSSEConfig(t *testing.T) {

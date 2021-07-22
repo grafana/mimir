@@ -7,9 +7,9 @@ import (
 	context "context"
 	encoding_binary "encoding/binary"
 	fmt "fmt"
-	_ "github.com/cortexproject/cortex/pkg/cortexpb"
-	github_com_cortexproject_cortex_pkg_cortexpb "github.com/cortexproject/cortex/pkg/cortexpb"
-	rulespb "github.com/cortexproject/cortex/pkg/ruler/rulespb"
+	_ "github.com/grafana/mimir/pkg/cortexpb"
+	github_com_cortexproject_cortex_pkg_cortexpb "github.com/grafana/mimir/pkg/cortexpb"
+	rulespb "github.com/grafana/mimir/pkg/ruler/rulespb"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
 	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
@@ -278,8 +278,8 @@ func (m *RuleStateDesc) GetEvaluationDuration() time.Duration {
 
 type AlertStateDesc struct {
 	State       string                                                      `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
-	Labels      []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,2,rep,name=labels,proto3,customtype=github.com/cortexproject/cortex/pkg/cortexpb.LabelAdapter" json:"labels"`
-	Annotations []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,3,rep,name=annotations,proto3,customtype=github.com/cortexproject/cortex/pkg/cortexpb.LabelAdapter" json:"annotations"`
+	Labels      []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,2,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/cortexpb.LabelAdapter" json:"labels"`
+	Annotations []github_com_cortexproject_cortex_pkg_cortexpb.LabelAdapter `protobuf:"bytes,3,rep,name=annotations,proto3,customtype=github.com/grafana/mimir/pkg/cortexpb.LabelAdapter" json:"annotations"`
 	Value       float64                                                     `protobuf:"fixed64,4,opt,name=value,proto3" json:"value,omitempty"`
 	ActiveAt    time.Time                                                   `protobuf:"bytes,5,opt,name=active_at,json=activeAt,proto3,stdtime" json:"active_at"`
 	FiredAt     time.Time                                                   `protobuf:"bytes,6,opt,name=fired_at,json=firedAt,proto3,stdtime" json:"fired_at"`

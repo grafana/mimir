@@ -26,10 +26,10 @@ import (
 	awscommon "github.com/weaveworks/common/aws"
 	"github.com/weaveworks/common/instrument"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	cortex_s3 "github.com/cortexproject/cortex/pkg/storage/bucket/s3"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/chunk"
+	cortex_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 const (

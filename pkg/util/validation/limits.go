@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"golang.org/x/time/rate"
 
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 var errMaxGlobalSeriesPerUserValidation = errors.New("The ingester.max-global-series-per-user limit is unsupported if distributor.shard-by-all-labels is disabled")

@@ -10,9 +10,9 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/tracing"
 
-	"github.com/cortexproject/cortex/pkg/testexporter/correctness"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/testexporter/correctness"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
