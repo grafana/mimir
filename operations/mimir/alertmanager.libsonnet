@@ -29,13 +29,7 @@
     } +
     (if hasFallbackConfig then {
        'alertmanager.configs.fallback': '/configs/alertmanager_fallback_config.yaml',
-     } else {}) +
-    (if isHA then {
-       'alertmanager.cluster.listen-address': '[$(POD_IP)]:%s' % $._config.alertmanager.gossip_port,
-       'alertmanager.cluster.peers': std.join(',', peers),
-     } else {
-       'alertmanager.cluster.listen-address': '',
-     }),
+     } else {}),
 
   alertmanager_fallback_config_map:
     if hasFallbackConfig then
@@ -66,7 +60,16 @@
         else [],
       ) +
       container.withEnvMixin([container.envType.fromFieldPath('POD_IP', 'status.podIP')]) +
-      container.withArgsMixin($.util.mapToFlags($.alertmanager_args)) +
+      container.withArgsMixin(
+        $.util.mapToFlags($.alertmanager_args) +
+        (
+          if isHA then
+            ['--alertmanager.cluster.listen-address=[$(POD_IP)]:%s' % $._config.alertmanager.gossip_port] +
+            ['--alertmanager.cluster.peers=%s' % std.join(',', peers)]
+          else
+            ['-alertmanager.cluster.listen-address=""']
+        )
+      ) +
       container.withVolumeMountsMixin(
         [volumeMount.new('alertmanager-data', '/data')] +
         if hasFallbackConfig then
