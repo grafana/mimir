@@ -76,6 +76,7 @@ message LabelValuesResponse {
 message LabelNamesRequest {
   int64 start_timestamp_ms = 1;
   int64 end_timestamp_ms = 2;
+  LabelMatchers matchers = 3;
 }
 
 message LabelNamesResponse {

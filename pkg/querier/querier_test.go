@@ -559,6 +559,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				var cfg Config
 				flagext.DefaultValues(&cfg)
 				cfg.IngesterStreaming = ingesterStreaming
+				cfg.QueryLabelNamesWithMatchers = true
 
 				limits := defaultLimitsConfig()
 				limits.MaxQueryLookback = testData.maxQueryLookback
@@ -631,14 +632,17 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				})
 
 				t.Run("label names", func(t *testing.T) {
+					matchers := []*labels.Matcher{
+						labels.MustNewMatcher(labels.MatchNotEqual, "route", "get_user"),
+					}
 					distributor := &mockDistributor{}
-					distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
+					distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
 					queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
 					q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
 					require.NoError(t, err)
 
-					_, _, err = q.LabelNames()
+					_, _, err = q.LabelNames(matchers...)
 					require.NoError(t, err)
 
 					if !testData.expectedSkipped {
@@ -646,8 +650,10 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 						delta := float64(5000)
 						require.Len(t, distributor.Calls, 1)
 						assert.Equal(t, "LabelNames", distributor.Calls[0].Method)
-						assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-						assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+						args := distributor.Calls[0].Arguments
+						assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(args.Get(1).(model.Time)), delta)
+						assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(args.Get(2).(model.Time)), delta)
+						assert.Equal(t, matchers, args.Get(3).([]*labels.Matcher))
 					} else {
 						// Ensure no query has been executed executed (because skipped).
 						assert.Len(t, distributor.Calls, 0)
@@ -752,7 +758,7 @@ func (m *errDistributor) QueryExemplars(ctx context.Context, from, to model.Time
 func (m *errDistributor) LabelValuesForLabelName(context.Context, model.Time, model.Time, model.LabelName, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
-func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time) ([]string, error) {
+func (m *errDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, errDistributorError
 }
 func (m *errDistributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
@@ -799,7 +805,7 @@ func (d *emptyDistributor) LabelValuesForLabelName(context.Context, model.Time, 
 	return nil, nil
 }
 
-func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time) ([]string, error) {
+func (d *emptyDistributor) LabelNames(context.Context, model.Time, model.Time, ...*labels.Matcher) ([]string, error) {
 	return nil, nil
 }
 

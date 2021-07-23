@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -968,9 +969,35 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 		return &client.LabelNamesResponse{}, nil
 	}
 
-	resp := &client.LabelNamesResponse{}
-	resp.LabelNames = append(resp.LabelNames, state.index.LabelNames()...)
+	_, _, matchers, err := client.FromLabelNamesRequest(req)
+	if err != nil {
+		return nil, err
+	}
 
+	resp := &client.LabelNamesResponse{}
+
+	if len(matchers) > 0 {
+		namesMap := make(map[string]struct{})
+		if err := state.forSeriesMatching(ctx, matchers, func(ctx context.Context, fp model.Fingerprint, series *memorySeries) error {
+			for _, lbl := range series.metric {
+				namesMap[lbl.Name] = struct{}{}
+			}
+			return nil
+		}, nil, 0); err != nil {
+			return nil, err
+		}
+
+		names := make([]string, 0, len(namesMap))
+		for name := range namesMap {
+			names = append(names, name)
+		}
+		resp.LabelNames = names
+		sort.Strings(resp.LabelNames)
+
+		return resp, nil
+	}
+
+	resp.LabelNames = append(resp.LabelNames, state.index.LabelNames()...)
 	return resp, nil
 }
 

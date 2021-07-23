@@ -46,6 +46,11 @@ type Config struct {
 	QueryStoreForLabels  bool          `yaml:"query_store_for_labels_enabled"`
 	AtModifierEnabled    bool          `yaml:"at_modifier_enabled"`
 
+	// QueryLabelNamesWithMatchers enables the usage of matchers in the LabelNames call.
+	// Can be enabled once this code is deployed on all ingesters, so they correctly read that request param.
+	// When disabled, the MetricsForLabelMatchers method is used to retrieve label names when matchers are provided.
+	QueryLabelNamesWithMatchers bool `yaml:"query_label_names_with_matchers_enabled"`
+
 	// QueryStoreAfter the time after which queries should also be sent to the store and not just ingesters.
 	QueryStoreAfter    time.Duration `yaml:"query_store_after"`
 	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future"`
@@ -92,6 +97,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.QueryIngestersWithin, "querier.query-ingesters-within", 0, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
 	f.BoolVar(&cfg.QueryStoreForLabels, "querier.query-store-for-labels-enabled", false, "Query long-term store for series, label values and label names APIs. Works only with blocks engine.")
 	f.BoolVar(&cfg.AtModifierEnabled, "querier.at-modifier-enabled", false, "Enable the @ modifier in PromQL.")
+	f.BoolVar(&cfg.QueryLabelNamesWithMatchers, "querier.query-label-names-with-matchers-enabled", false, "True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.DefaultEvaluationInterval, "querier.default-evaluation-interval", time.Minute, "The default evaluation interval or step size for subqueries.")
 	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 0, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. When running the blocks storage, if this option is enabled, the time range of the query sent to the store will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
@@ -147,7 +153,7 @@ func NewChunkStoreQueryable(cfg Config, chunkStore chunkstore.ChunkStore) storag
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, tombstonesLoader *purger.TombstonesLoader, reg prometheus.Registerer, logger log.Logger) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, cfg.IngesterStreaming, iteratorFunc, cfg.QueryIngestersWithin)
+	distributorQueryable := newDistributorQueryable(distributor, cfg.IngesterStreaming, iteratorFunc, cfg.QueryIngestersWithin, cfg.QueryLabelNamesWithMatchers)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {
@@ -431,13 +437,13 @@ func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 	return strutil.MergeSlices(sets...), warnings, nil
 }
 
-func (q querier) LabelNames() ([]string, storage.Warnings, error) {
+func (q querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	if !q.queryStoreForLabels {
-		return q.metadataQuerier.LabelNames()
+		return q.metadataQuerier.LabelNames(matchers...)
 	}
 
 	if len(q.queriers) == 1 {
-		return q.queriers[0].LabelNames()
+		return q.queriers[0].LabelNames(matchers...)
 	}
 
 	var (
@@ -453,7 +459,7 @@ func (q querier) LabelNames() ([]string, storage.Warnings, error) {
 		querier := querier
 		g.Go(func() error {
 			// NB: Names are sorted in Cortex already.
-			myNames, myWarnings, err := querier.LabelNames()
+			myNames, myWarnings, err := querier.LabelNames(matchers...)
 			if err != nil {
 				return err
 			}
