@@ -169,9 +169,12 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	log, _ := spanlogger.New(m.ctx, "mergeQuerier.LabelNames")
 	defer log.Span.Finish()
-	labelNames, warnings, err := m.mergeDistinctStringSlice(func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
-		return q.LabelNames(matchers...)
-	})
+
+	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
+
+	labelNames, warnings, err := m.mergeDistinctStringSliceWithTenants(func(ctx context.Context, q storage.Querier) ([]string, storage.Warnings, error) {
+		return q.LabelNames(filteredMatchers...)
+	}, matchedTenants)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -274,12 +277,6 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 	}
 	sort.Strings(result)
 	return result, warnings, nil
-}
-
-// mergeDistinctStringSlice aggregates results from all stringSliceFunc calls
-// for all queriers, in parallel.
-func (m *mergeQuerier) mergeDistinctStringSlice(f stringSliceFunc) ([]string, storage.Warnings, error) {
-	return m.mergeDistinctStringSliceWithTenants(f, nil)
 }
 
 // Close releases the resources of the Querier.
