@@ -7,12 +7,12 @@ RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
 RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Install website builder dependencies. Whenever you change these version, please also change website/package.json
-# and viceversa.
+# and vice versa.
 RUN npm install -g postcss-cli@5.0.1 autoprefixer@9.8.5
 
 ENV HUGO_VERSION=v0.72.0
 RUN git clone https://github.com/gohugoio/hugo.git --branch ${HUGO_VERSION} --depth 1 && \
-	cd hugo  && go install --tags extended && cd ../ && \
+	cd hugo && go install --tags extended && cd ../ && \
 	rm -rf hugo/ && rm -rf /go/pkg /go/src /root/.cache
 
 ENV SHFMT_VERSION=3.2.4
@@ -24,7 +24,7 @@ RUN GOARCH=$(go env GOARCH) && \
     fi && \
     URL=https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_${GOARCH}; \
     curl -fsSLo shfmt "${URL}" && \
-	echo "$DIGEST  shfmt" | sha256sum -c && \
+	echo "$DIGEST shfmt" | sha256sum -c && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
@@ -47,5 +47,5 @@ ENTRYPOINT ["/build.sh"]
 
 ARG revision
 LABEL org.opencontainers.image.title="build-image" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/master/build-image" \
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/build-image" \
       org.opencontainers.image.revision="${revision}"

@@ -10,16 +10,16 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
+      image: us.gcr.io/kubernetes-dev/mimir-build-image
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
         # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
         # Symlink ensures paths specified in previous commands don’t break
-      - name: Sym Link Expected Path to Workspace
+      - name: Symlink Expected Path to Workspace
         run: |
-          mkdir -p /go/src/github.com/cortexproject/cortex
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/cortexproject/cortex
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Lint
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
@@ -34,7 +34,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
+      image: us.gcr.io/kubernetes-dev/mimir-build-image
     services:
       cassandra:
         image: cassandra:3.11
@@ -45,26 +45,26 @@ jobs:
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
-      - name: Sym Link Expected Path to Workspace
+      - name: Symlink Expected Path to Workspace
         run: |
-          mkdir -p /go/src/github.com/cortexproject/cortex
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/cortexproject/cortex
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Run Tests
         run: CASSANDRA_TEST_ADDRESSES=cassandra:9042 make BUILD_IN_CONTAINER=false test
 
   build:
     runs-on: ubuntu-20.04
     container:
-      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
+      image: us.gcr.io/kubernetes-dev/mimir-build-image
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: ./.github/workflows/scripts/install-docker.sh
-      - name: Sym Link Expected Path to Workspace
+      - name: Symlink Expected Path to Workspace
         run: |
-          mkdir -p /go/src/github.com/cortexproject/cortex
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/cortexproject/cortex
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Build Image
         run: |
           touch build-image/.uptodate
@@ -98,10 +98,10 @@ jobs:
         uses: actions/checkout@v2
       - name: Install Docker Client
         run: sudo ./.github/workflows/scripts/install-docker.sh
-      - name: Sym Link Expected Path to Workspace
+      - name: Symlink Expected Path to Workspace
         run: |
-          sudo mkdir -p /go/src/github.com/cortexproject/cortex
-          sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/cortexproject/cortex
+          sudo mkdir -p /go/src/github.com/grafana/mimir
+          sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Download Docker Images Artifacts
         uses: actions/download-artifact@v2
         with:
@@ -121,27 +121,24 @@ jobs:
           docker pull amazon/dynamodb-local:1.11.477
           docker pull consul:1.8.4
           docker pull gcr.io/etcd-development/etcd:v3.4.7
-          docker pull quay.io/cortexproject/cortex:v1.0.0
-          docker pull quay.io/cortexproject/cortex:v1.1.0
-          docker pull quay.io/cortexproject/cortex:v1.2.0
-          docker pull quay.io/cortexproject/cortex:v1.3.0
-          docker pull quay.io/cortexproject/cortex:v1.4.0
-          docker pull quay.io/cortexproject/cortex:v1.5.0
-          docker pull quay.io/cortexproject/cortex:v1.6.0
-          docker pull quay.io/cortexproject/cortex:v1.7.0
-          docker pull quay.io/cortexproject/cortex:v1.8.0
-          docker pull quay.io/cortexproject/cortex:v1.9.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.0.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.1.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.2.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.3.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.4.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.5.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.6.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.7.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.8.0
+          docker pull us.gcr.io/kubernetes-dev/mimir:v1.9.0
           docker pull shopify/bigtable-emulator:0.1.0
           docker pull rinscy/cassandra:3.11.0
           docker pull memcached:1.6.1
           docker pull bouncestorage/swift-aio:55ba4331
       - name: Integration Tests
         run: |
-          export CORTEX_IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/cortexproject/}"
           export IMAGE_TAG=$(make image-tag)
-          export CORTEX_IMAGE="${CORTEX_IMAGE_PREFIX}cortex:$IMAGE_TAG"
-          export CORTEX_CHECKOUT_DIR="/go/src/github.com/cortexproject/cortex"
-          echo "Running integration tests with image: $CORTEX_IMAGE"
+          export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
+          export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+          echo "Running integration tests with image: $MIMIR_IMAGE"
           go test -tags=requires_docker -timeout 2400s -v -count=1 ./integration/...
-        env:
-          IMAGE_PREFIX: ${{ secrets.IMAGE_PREFIX }}

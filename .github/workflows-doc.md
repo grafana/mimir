@@ -1,6 +1,6 @@
 # GitHub Actions CI/CD
 
-The purpose of this workflow is to run all continuous integration (CI) and continuous deployment (CD) jobs when needed while respecting their internal dependencies. The continuous integration jobs serve to ensure new code passes linting, unit tests and integration tests before reaching the master branch. The continuous deployment jobs serve to deploy the latest version of the code to cortex and the website when merged with master.
+The purpose of this workflow is to run all continuous integration (CI) and continuous deployment (CD) jobs when needed while respecting their internal dependencies. The continuous integration jobs serve to ensure new code passes linting, unit tests and integration tests before reaching the master branch. The continuous deployment jobs serve to deploy the latest version of the code to mimir and the website when merged with master.
 
 ## Contributing
 
@@ -8,7 +8,7 @@ If you wish to add a new CI or CD job, add it to the existing current test-build
 
 ## Test, Build and Deploy
 
-test-build-deploy.yml specifies a workflow that runs all Cortex continuous integration and continuous deployment jobs. The workflow is triggered on every pull request and commit to master, however the CD jobs only run when changes are merged onto master . The workflow combines both CI and CD jobs, because the CD jobs are dependent on artifacts produced the CI jobs.
+test-build-deploy.yml specifies a workflow that runs all Mimir continuous integration and continuous deployment jobs. The workflow is triggered on every pull request and commit to master, however the CD jobs only run when changes are merged onto master . The workflow combines both CI and CD jobs, because the CD jobs are dependent on artifacts produced the CI jobs.
 
 
 ## Specific Jobs
@@ -18,16 +18,16 @@ test-build-deploy.yml specifies a workflow that runs all Cortex continuous integ
 | lint                   | Runs linting and ensures vendor directory, protos and generated documentation are consistent.                                 | CI   |
 | test                   | Runs units tests on Cassandra testing framework.                                                                              | CI   |
 | integration            | Runs integration tests after upgrading golang, pulling necessary docker images and downloading necessary module dependencies. | CI   |
-| build                  | Builds and saves an up-to-date Cortex image and website.                                                                      | CI   |
-| deploy_website         | Deploys the latest version of Cortex website to gh-pages branch. Triggered within workflow.                                   | CD   |
-| deploy                 | Deploys the latest Cortex image.                                                                                              | CD   |
+| build                  | Builds and saves an up-to-date Mimir image and website.                                                                       | CI   |
+| deploy_website         | Deploys the latest version of Mimir website to gh-pages branch. Triggered within workflow.                                    | CD   |
+| deploy                 | Deploys the latest Mimir image.                                                                                               | CD   |
 
 ## Job Dependency Graph
 
 Internal dependencies between jobs illustrated below. Jobs run concurrently where possible but do not start until all jobs they depend on have completed successfully.
 
 
-![cortex_test-build-deploy](https://user-images.githubusercontent.com/20804975/95492784-9b7feb80-0969-11eb-9934-f44a4b1da498.png)
+![mimir_test-build-deploy](https://user-images.githubusercontent.com/20804975/95492784-9b7feb80-0969-11eb-9934-f44a4b1da498.png)
 
 ### Key Details
 
@@ -44,13 +44,13 @@ Each step in a job has a clear name that encapsulates the purpose of the command
 
 **Symbolic Link to Expected Workspace**
 
-A significant number of commands in the Makefile are hardcoded with an assumed file structure of the CI container. To ensure paths specified in previous commands don’t break, a symlink was created from the hardcoded “expected” working directory `/go/src/github.com/cortexproject/cortex` to the actual working directory `$GITHUB_WORKSPACE`.
+A significant number of commands in the Makefile are hardcoded with an assumed file structure of the CI container. To ensure paths specified in previous commands don’t break, a symlink was created from the hardcoded “expected” working directory `/go/src/github.com/grafana/mimir` to the actual working directory `$GITHUB_WORKSPACE`.
 
 ```yaml
 - name: Sym link expected path to github workspace
   run: |
-    mkdir -p /go/src/github.com/cortexproject/cortex
-    ln -s $GITHUB_WORKSPACE/* /go/src/github.com/cortexproject/cortex
+    mkdir -p /go/src/github.com/grafana/mimir
+    ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
 ```
 
 **Sharing Artifacts Between Jobs**
