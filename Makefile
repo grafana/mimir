@@ -11,7 +11,7 @@ GOPROXY_VALUE=$(shell go env GOPROXY)
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
-IMAGE_PREFIX ?= quay.io/cortexproject/
+IMAGE_PREFIX ?= quay.io/grafana/
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
 # If finding refs/tags/ does not equal emptystring then use
@@ -33,7 +33,7 @@ image-tag:
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 # Building Docker images is now automated. The convention is every directory
-# with a Dockerfile in it builds an image calls quay.io/cortexproject/<dirname>.
+# with a Dockerfile in it builds an image calls quay.io/grafana/<dirname>.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 %/$(UPTODATE): %/Dockerfile
