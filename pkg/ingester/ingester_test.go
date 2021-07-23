@@ -788,6 +788,70 @@ func TestIngesterValidation(t *testing.T) {
 	}
 }
 
+func TestIngesterLabelNames(t *testing.T) {
+	_, ing := newDefaultTestStore(t)
+	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing)) }()
+
+	const (
+		userID           = "1"
+		numSeries        = 5
+		samplesPerSeries = 1
+	)
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// Create test samples.
+	m := make(model.Matrix, 0)
+	for i := 0; i < numSeries; i++ {
+		ss := model.SampleStream{
+			Metric: model.Metric{
+				model.MetricNameLabel: model.LabelValue(fmt.Sprintf("testmetric_%d", i)),
+				model.JobLabel:        model.LabelValue(fmt.Sprintf("testjob%d", i%2)),
+			},
+			Values: make([]model.SamplePair, 0, samplesPerSeries),
+		}
+		// Each testmetric_N has extra label names [lbl_0, ..., lbl_N]
+		for j := 0; j <= i; j++ {
+			ss.Metric[model.LabelName(fmt.Sprintf("lbl_%d", j))] = "foo"
+		}
+		for j := 0; j < samplesPerSeries; j++ {
+			ss.Values = append(ss.Values, model.SamplePair{
+				Timestamp: model.Time(i + j),
+				Value:     model.SampleValue(i + j),
+			})
+		}
+		m = append(m, &ss)
+	}
+	sort.Sort(m)
+
+	// Append samples.
+	_, err := ing.Push(ctx, cortexpb.ToWriteRequest(matrixToLables(m), matrixToSamples(m), nil, cortexpb.API))
+	require.NoError(t, err)
+
+	t.Run("without matchers", func(t *testing.T) {
+		var matchers []*labels.Matcher
+		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
+		require.NoError(t, err)
+
+		resp, err := ing.LabelNames(ctx, req)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"__name__", "job", "lbl_0", "lbl_1", "lbl_2", "lbl_3", "lbl_4"}, resp.LabelNames)
+	})
+
+	t.Run("with matchers", func(t *testing.T) {
+		matchers := []*labels.Matcher{
+			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "testmetric_[0-3]"),
+		}
+		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
+		require.NoError(t, err)
+
+		resp, err := ing.LabelNames(ctx, req)
+		require.NoError(t, err)
+
+		assert.Equal(t, []string{"__name__", "job", "lbl_0", "lbl_1", "lbl_2", "lbl_3"}, resp.LabelNames)
+	})
+}
+
 func BenchmarkIngesterSeriesCreationLocking(b *testing.B) {
 	for i := 1; i <= 32; i++ {
 		b.Run(strconv.Itoa(i), func(b *testing.B) {

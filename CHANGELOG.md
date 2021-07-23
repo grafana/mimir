@@ -7,10 +7,12 @@
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20
   * Users only have control of the HTTP header when Mimir is not frontend by an auth proxy validating the tenant IDs
+* [ENHANCEMENT] Querier now can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. This can be enabled by enabling the `-querier.query-label-names-with-matchers-enabled` flag once the ingesters are updated to this version. In the future this is expected to become the default behavior. #3
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 
 
 ## master / unreleased
+
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. #4317
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_series_total` and `cortex_query_fetched_chunks_bytes_total` per-user counters to expose the number of series and bytes fetched as part of queries. These metrics can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #4343
 * [CHANGE] Update Go version to 1.16.6. #4362
