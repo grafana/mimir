@@ -351,7 +351,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 // are considered and the forwarded matchers do not contain matchers on the
 // `idLabelName`.
 func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*labels.Matcher) (matchedIDs map[string]struct{}, unrelatedMatchers []*labels.Matcher) {
-	// this contains the matchers which are not related to labelName
+	// this contains the matchers which are not related to idLabelName
 	unrelatedMatchers = make([]*labels.Matcher, 0, len(matchers))
 
 	// build map of values to consider for the matchers
@@ -361,24 +361,25 @@ func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*label
 	}
 
 	for _, m := range matchers {
-		if m.Name != idLabelName {
-			// check if has the retained label name
-			if m.Name == retainExistingPrefix+idLabelName {
-				// rewrite label to the original name, by copying matcher and
-				// replacing the label name
-				rewrittenM := *m
-				rewrittenM.Name = idLabelName
-				unrelatedMatchers = append(unrelatedMatchers, &rewrittenM)
-			} else {
-				unrelatedMatchers = append(unrelatedMatchers, m)
+		switch m.Name {
+		// matcher has idLabelName to target a specific tenant(s)
+		case idLabelName:
+			for value := range matchedIDs {
+				if !m.Matches(value) {
+					delete(matchedIDs, value)
+				}
 			}
-			continue
-		}
 
-		for value := range matchedIDs {
-			if !m.Matches(value) {
-				delete(matchedIDs, value)
-			}
+		// check if has the retained label name
+		case retainExistingPrefix + idLabelName:
+			// rewrite label to the original name, by copying matcher and
+			// replacing the label name
+			rewrittenM := *m
+			rewrittenM.Name = idLabelName
+			unrelatedMatchers = append(unrelatedMatchers, &rewrittenM)
+
+		default:
+			unrelatedMatchers = append(unrelatedMatchers, m)
 		}
 	}
 
