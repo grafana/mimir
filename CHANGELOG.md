@@ -7,7 +7,11 @@
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20
   * Users only have control of the HTTP header when Mimir is not frontend by an auth proxy validating the tenant IDs
-* [ENHANCEMENT] Include additional limits in the per-tenant override exporter. #21
+* [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
+  * `max_fetched_series_per_query`
+  * `max_fetched_chunk_bytes_per_query`
+  * `ruler_max_rules_per_rule_group`
+  * `ruler_max_rule_groups_per_tenant`
 * [ENHANCEMENT] Querier now can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. This can be enabled by enabling the `-querier.query-label-names-with-matchers-enabled` flag once the ingesters are updated to this version. In the future this is expected to become the default behavior. #3
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 
