@@ -62,7 +62,7 @@ func (s *schemaCaching) setImmutability(from, through model.Time, queries []Inde
 	// old queries will mostly be all behind boundary.
 	// To cleanly split cacheable and non-cacheable ranges, we'd need bucket start and end times
 	// which we don't know.
-	// See: https://github.com/grafana/mimir/issues/1698
+	// See: https://github.com/cortexproject/cortex/issues/1698
 	if through.Before(cacheBefore) {
 		for i := range queries {
 			queries[i].Immutable = true

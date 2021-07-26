@@ -16,12 +16,12 @@ const (
 // GetDefaultImage returns the Docker image to use to run Cortex.
 func GetDefaultImage() string {
 	// Get the cortex image from the CORTEX_IMAGE env variable,
-	// falling back to "quay.io/grafana/mimir:latest"
+	// falling back to "quay.io/cortexproject/cortex:latest"
 	if os.Getenv("CORTEX_IMAGE") != "" {
 		return os.Getenv("CORTEX_IMAGE")
 	}
 
-	return "quay.io/grafana/mimir:latest"
+	return "quay.io/cortexproject/cortex:latest"
 }
 
 func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *CortexService {

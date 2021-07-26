@@ -366,7 +366,7 @@ func (s *storageClientV1) query(ctx context.Context, query chunk.IndexQuery, cal
 		return true
 	})
 	if err != nil {
-		_ = log.Error(err)
+		log.Error(err)
 		return errors.WithStack(err)
 	}
 	return nil
