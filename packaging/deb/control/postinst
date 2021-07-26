@@ -4,8 +4,6 @@ set -e
 
 [ -f /etc/sysconfig/cortex ] && . /etc/default/cortex
 
-# Initial installation: $1 == configure
-# Upgrade: $1 == 2, and configured to restart on upgrade
 case "$1" in
   configure)
      [ -z "$CORTEX_USER" ] && CORTEX_USER="cortex"
