@@ -31,14 +31,22 @@ func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
 	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
+		// Write path limits
 		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, limits.IngestionRate, "ingestion_rate", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.IngestionBurstSize), "ingestion_burst_size", tenant)
-
-		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxSeriesPerQuery), "max_series_per_query", tenant)
-		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxSamplesPerQuery), "max_samples_per_query", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxLocalSeriesPerUser), "max_local_series_per_user", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxLocalSeriesPerMetric), "max_local_series_per_metric", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxGlobalSeriesPerUser), "max_global_series_per_user", tenant)
 		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric", tenant)
+
+		// Read path limits
+		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query", tenant)
+		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query", tenant)
+		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxSeriesPerQuery), "max_series_per_query", tenant)
+		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.MaxSamplesPerQuery), "max_samples_per_query", tenant)
+
+		// Ruler limits
+		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group", tenant)
+		ch <- prometheus.MustNewConstMetric(oe.description, prometheus.GaugeValue, float64(limits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant", tenant)
 	}
 }
