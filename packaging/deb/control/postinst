@@ -2,6 +2,7 @@
 
 set -e
 
+# shellcheck disable=1091
 [ -f /etc/sysconfig/cortex ] && . /etc/default/cortex
 
 case "$1" in
