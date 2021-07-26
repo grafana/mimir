@@ -14,7 +14,7 @@ linters-settings:
     # see https://github.com/kisielk/errcheck#excluding-functions for details
     exclude: ./.errcheck-exclude
   goimports:
-    local-prefixes: "github.com/cortexproject/cortex"
+    local-prefixes: "github.com/grafana/mimir"
 
 run:
   timeout: 5m
