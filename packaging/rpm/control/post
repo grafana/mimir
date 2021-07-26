@@ -20,7 +20,7 @@ set -e
      chown root:$CORTEX_GROUP /etc/cortex/single-process-config.yaml
 
  elif [ $1 -ge 2 ] ; then
-     if [ "$RESTART_ON_UPGRADE" == "true" ]; then
+     if [ "$RESTART_ON_UPGRADE" = "true" ]; then
 	 if command -v systemctl 2>/dev/null; then
 	     systemctl daemon-reload
 	 fi
