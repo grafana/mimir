@@ -257,7 +257,7 @@
                 (cortex_ingester_instance_limits{limit="max_series"} > 0)
             ) > 0.7
           |||,
-          'for': '5m',
+          'for': '3h',
           labels: {
             severity: 'warning',
           },
