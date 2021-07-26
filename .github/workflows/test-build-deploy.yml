@@ -10,7 +10,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image
+      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -34,7 +34,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image
+      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
     services:
       cassandra:
         image: cassandra:3.11
@@ -55,7 +55,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image
+      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -121,16 +121,16 @@ jobs:
           docker pull amazon/dynamodb-local:1.11.477
           docker pull consul:1.8.4
           docker pull gcr.io/etcd-development/etcd:v3.4.7
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.0.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.1.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.2.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.3.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.4.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.5.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.6.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.7.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.8.0
-          docker pull us.gcr.io/kubernetes-dev/mimir:v1.9.0
+          docker pull quay.io/cortexproject/cortex:v1.0.0
+          docker pull quay.io/cortexproject/cortex:v1.1.0
+          docker pull quay.io/cortexproject/cortex:v1.2.0
+          docker pull quay.io/cortexproject/cortex:v1.3.0
+          docker pull quay.io/cortexproject/cortex:v1.4.0
+          docker pull quay.io/cortexproject/cortex:v1.5.0
+          docker pull quay.io/cortexproject/cortex:v1.6.0
+          docker pull quay.io/cortexproject/cortex:v1.7.0
+          docker pull quay.io/cortexproject/cortex:v1.8.0
+          docker pull quay.io/cortexproject/cortex:v1.9.0
           docker pull shopify/bigtable-emulator:0.1.0
           docker pull rinscy/cassandra:3.11.0
           docker pull memcached:1.6.1
@@ -138,7 +138,7 @@ jobs:
       - name: Integration Tests
         run: |
           export IMAGE_TAG=$(make image-tag)
-          export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
-          export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
-          echo "Running integration tests with image: $MIMIR_IMAGE"
+          export CORTEX_IMAGE="quay.io/cortexproject/cortex:$IMAGE_TAG"
+          export CORTEX_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+          echo "Running integration tests with image: $CORTEX_IMAGE"
           go test -tags=requires_docker -timeout 2400s -v -count=1 ./integration/...
