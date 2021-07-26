@@ -454,14 +454,16 @@ func (s *SummaryData) Metric(desc *prometheus.Desc, labelValues ...string) prome
 	return prometheus.MustNewConstSummary(desc, s.sampleCount, s.sampleSum, s.quantiles, labelValues...)
 }
 
-// HistogramData keeps data required to build histogram Metric
+// HistogramData keeps data required to build histogram Metric.
 type HistogramData struct {
 	sampleCount uint64
 	sampleSum   float64
 	buckets     map[float64]uint64
 }
 
-// Adds histogram from gathered metrics to this histogram data.
+// AddHistogram adds histogram from gathered metrics to this histogram data.
+// Do not call this function after Metric() has been invoked, because it's not
+// allowed to change the buckets after they've been passed to a prometheus.Metric.
 func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
 	d.sampleCount += histo.GetSampleCount()
 	d.sampleSum += histo.GetSampleSum()
@@ -477,7 +479,9 @@ func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
 	}
 }
 
-// Merged another histogram data into this one.
+// AddHistogramData merges another histogram data into this one.
+// Do not call this function after Metric() has been invoked, because it's not
+// allowed to change the buckets after they've been passed to a prometheus.Metric.
 func (d *HistogramData) AddHistogramData(histo HistogramData) {
 	d.sampleCount += histo.sampleCount
 	d.sampleSum += histo.sampleSum
@@ -492,12 +496,19 @@ func (d *HistogramData) AddHistogramData(histo HistogramData) {
 	}
 }
 
-// Return prometheus metric from this histogram data.
+// Metric returns prometheus metric from this histogram data.
 func (d *HistogramData) Metric(desc *prometheus.Desc, labelValues ...string) prometheus.Metric {
 	return prometheus.MustNewConstHistogram(desc, d.sampleCount, d.sampleSum, d.buckets, labelValues...)
 }
 
-// Creates new histogram data collector.
+// Copy returns a copy of this histogram data.
+func (d *HistogramData) Copy() *HistogramData {
+	cp := &HistogramData{}
+	cp.AddHistogramData(*d)
+	return cp
+}
+
+// NewHistogramDataCollector creates new histogram data collector.
 func NewHistogramDataCollector(desc *prometheus.Desc) *HistogramDataCollector {
 	return &HistogramDataCollector{
 		desc: desc,
@@ -522,7 +533,9 @@ func (h *HistogramDataCollector) Collect(out chan<- prometheus.Metric) {
 	h.dataMu.RLock()
 	defer h.dataMu.RUnlock()
 
-	out <- h.data.Metric(h.desc)
+	// We must create a copy of the HistogramData data structure before calling Metric()
+	// to honor its contract.
+	out <- h.data.Copy().Metric(h.desc)
 }
 
 func (h *HistogramDataCollector) Add(hd HistogramData) {
