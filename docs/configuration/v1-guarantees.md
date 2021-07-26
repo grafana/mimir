@@ -95,3 +95,6 @@ Currently experimental features are:
   - `-alertmanager.sharding-ring.heartbeat-period=0`
   - `-compactor.ring.heartbeat-period=0`
   - `-store-gateway.sharding-ring.heartbeat-period=0`
+- `LabelNames` calls using matchers
+  - `-querier.query-label-names-with-matchers-enabled`
+

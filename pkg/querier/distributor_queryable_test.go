@@ -46,7 +46,7 @@ func TestDistributorQuerier(t *testing.T) {
 		},
 		nil)
 
-	queryable := newDistributorQueryable(d, false, nil, 0)
+	queryable := newDistributorQueryable(d, false, nil, 0, true)
 	querier, err := queryable.Querier(context.Background(), mint, maxt)
 	require.NoError(t, err)
 
@@ -123,7 +123,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
 
 				ctx := user.InjectOrgID(context.Background(), "test")
-				queryable := newDistributorQueryable(distributor, streamingEnabled, nil, testData.queryIngestersWithin)
+				queryable := newDistributorQueryable(distributor, streamingEnabled, nil, testData.queryIngestersWithin, true)
 				querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 				require.NoError(t, err)
 
@@ -150,7 +150,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 
 func TestDistributorQueryableFilter(t *testing.T) {
 	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, false, nil, 1*time.Hour)
+	dq := newDistributorQueryable(d, false, nil, 1*time.Hour, true)
 
 	now := time.Now()
 
@@ -196,7 +196,7 @@ func TestIngesterStreaming(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, true, mergeChunks, 0)
+	queryable := newDistributorQueryable(d, true, mergeChunks, 0, true)
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -272,7 +272,7 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, true, mergeChunks, 0)
+	queryable := newDistributorQueryable(d, true, mergeChunks, 0, true)
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -290,6 +290,48 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 
 	require.False(t, seriesSet.Next())
 	require.NoError(t, seriesSet.Err())
+}
+
+func TestDistributorQuerier_LabelNames(t *testing.T) {
+	someMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	labelNames := []string{"foo", "job"}
+
+	t.Run("with matchers", func(t *testing.T) {
+		t.Run("queryLabelNamesWithMatchers=true", func(t *testing.T) {
+			d := &mockDistributor{}
+			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
+				Return(labelNames, nil)
+
+			queryable := newDistributorQueryable(d, false, nil, 0, true)
+			querier, err := queryable.Querier(context.Background(), mint, maxt)
+			require.NoError(t, err)
+
+			names, warnings, err := querier.LabelNames(someMatchers...)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			assert.Equal(t, labelNames, names)
+		})
+
+		t.Run("queryLabelNamesWithMatchers=false", func(t *testing.T) {
+			metrics := []metric.Metric{
+				{Metric: model.Metric{"foo": "bar"}},
+				{Metric: model.Metric{"job": "baz"}},
+				{Metric: model.Metric{"job": "baz", "foo": "boom"}},
+			}
+			d := &mockDistributor{}
+			d.On("MetricsForLabelMatchers", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
+				Return(metrics, nil)
+
+			queryable := newDistributorQueryable(d, false, nil, 0, false)
+			querier, err := queryable.Querier(context.Background(), mint, maxt)
+			require.NoError(t, err)
+
+			names, warnings, err := querier.LabelNames(someMatchers...)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+			assert.Equal(t, labelNames, names)
+		})
+	})
 }
 
 func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples []cortexpb.Sample) {
@@ -347,8 +389,8 @@ func (m *mockDistributor) LabelValuesForLabelName(ctx context.Context, from, to 
 	args := m.Called(ctx, from, to, lbl, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time) ([]string, error) {
-	args := m.Called(ctx, from, to)
+func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]string, error) {
+	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
 func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
