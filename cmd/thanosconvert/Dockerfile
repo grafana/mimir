@@ -5,5 +5,5 @@ ENTRYPOINT ["/thanosconvert"]
 
 ARG revision
 LABEL org.opencontainers.image.title="thanosconvert" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/master/tools/thanosconvert" \
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/tools/thanosconvert" \
       org.opencontainers.image.revision="${revision}"
