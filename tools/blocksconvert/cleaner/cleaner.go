@@ -14,12 +14,12 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/storage"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
-	"github.com/cortexproject/cortex/tools/blocksconvert/planprocessor"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/tools/blocksconvert"
+	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
 )
 
 type Config struct {

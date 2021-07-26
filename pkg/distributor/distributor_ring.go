@@ -7,10 +7,10 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/ring/kv"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/ring/kv"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // RingConfig masks the ring lifecycler config which contains

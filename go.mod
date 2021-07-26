@@ -1,4 +1,4 @@
-module github.com/cortexproject/cortex
+module github.com/grafana/mimir
 
 go 1.16
 

@@ -15,8 +15,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore/s3"
 	"gopkg.in/yaml.v2"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
 )
 
 const bktName = "cheesecake"

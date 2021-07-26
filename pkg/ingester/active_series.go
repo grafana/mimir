@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"go.uber.org/atomic"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (

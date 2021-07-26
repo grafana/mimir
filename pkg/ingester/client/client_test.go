@@ -8,8 +8,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // TestMarshall is useful to try out various optimisation on the unmarshalling code.

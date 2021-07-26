@@ -11,7 +11,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/cortexproject/cortex/integration/e2e"
+	"github.com/grafana/mimir/integration/e2e"
 )
 
 var (
@@ -32,7 +32,7 @@ func getCortexProjectDir() string {
 		return string(bytes.TrimSpace(dir))
 	}
 
-	return os.Getenv("GOPATH") + "/src/github.com/cortexproject/cortex"
+	return os.Getenv("GOPATH") + "/src/github.com/grafana/mimir"
 }
 
 func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {

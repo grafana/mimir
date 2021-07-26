@@ -13,9 +13,9 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
-	"github.com/cortexproject/cortex/pkg/storegateway/storegatewaypb"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/grpcclient"
+	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/grpcclient"
 )
 
 func Test_newStoreGatewayClientFactory(t *testing.T) {

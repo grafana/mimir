@@ -45,10 +45,10 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/time/rate"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	util_net "github.com/cortexproject/cortex/pkg/util/net"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	util_net "github.com/grafana/mimir/pkg/util/net"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 const (

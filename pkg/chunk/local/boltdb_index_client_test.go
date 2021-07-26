@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.etcd.io/bbolt"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 var (

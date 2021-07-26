@@ -12,15 +12,15 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	"github.com/cortexproject/cortex/pkg/ingester/client"
-	"github.com/cortexproject/cortex/pkg/prom1/storage/metric"
-	"github.com/cortexproject/cortex/pkg/querier/series"
-	"github.com/cortexproject/cortex/pkg/tenant"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/chunkcompat"
-	"github.com/cortexproject/cortex/pkg/util/math"
-	"github.com/cortexproject/cortex/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/prom1/storage/metric"
+	"github.com/grafana/mimir/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // Distributor is the read interface to the distributor, made an interface here

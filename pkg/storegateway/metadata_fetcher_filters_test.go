@@ -19,9 +19,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	"github.com/cortexproject/cortex/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/cortexproject/cortex/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestIgnoreDeletionMarkFilter_Filter(t *testing.T) {

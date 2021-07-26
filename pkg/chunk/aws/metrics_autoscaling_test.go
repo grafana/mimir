@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/mtime"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 const (

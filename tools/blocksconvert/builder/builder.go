@@ -21,15 +21,15 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/cache"
-	"github.com/cortexproject/cortex/pkg/chunk/storage"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
-	"github.com/cortexproject/cortex/tools/blocksconvert/planprocessor"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/cache"
+	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/tools/blocksconvert"
+	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
 )
 
 // How many series are kept in the memory before sorting and writing them to the file.

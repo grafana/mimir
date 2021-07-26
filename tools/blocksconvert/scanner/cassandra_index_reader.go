@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/cassandra"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/cassandra"
 )
 
 /* Cassandra can easily run out of memory or timeout if we try to SELECT the

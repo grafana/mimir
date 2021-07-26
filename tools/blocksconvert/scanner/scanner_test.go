@@ -14,8 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 func TestVerifyPlanFile(t *testing.T) {

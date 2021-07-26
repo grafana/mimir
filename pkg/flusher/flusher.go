@@ -10,10 +10,10 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/cortexproject/cortex/pkg/ingester"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // Config for an Ingester.

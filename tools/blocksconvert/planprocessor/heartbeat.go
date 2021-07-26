@@ -11,8 +11,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 type heartbeat struct {

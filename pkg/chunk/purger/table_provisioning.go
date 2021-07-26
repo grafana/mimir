@@ -3,7 +3,7 @@ package purger
 import (
 	"flag"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 // TableProvisioningConfig holds config for table throuput and autoscaling. Currently only used by DynamoDB.

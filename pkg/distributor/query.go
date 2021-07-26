@@ -11,16 +11,16 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/weaveworks/common/instrument"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	ingester_client "github.com/cortexproject/cortex/pkg/ingester/client"
-	"github.com/cortexproject/cortex/pkg/querier/stats"
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/tenant"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/extract"
-	grpc_util "github.com/cortexproject/cortex/pkg/util/grpc"
-	"github.com/cortexproject/cortex/pkg/util/limiter"
-	"github.com/cortexproject/cortex/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/extract"
+	grpc_util "github.com/grafana/mimir/pkg/util/grpc"
+	"github.com/grafana/mimir/pkg/util/limiter"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // Query multiple ingesters and returns a Matrix of samples.

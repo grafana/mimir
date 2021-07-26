@@ -24,10 +24,10 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"go.uber.org/atomic"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/encoding"
-	"github.com/cortexproject/cortex/pkg/util"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 func TestTsdbBuilder(t *testing.T) {

@@ -7,15 +7,15 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/bucketclient"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/local"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/objectclient"
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/aws"
-	"github.com/cortexproject/cortex/pkg/chunk/azure"
-	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/objectclient"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/aws"
+	"github.com/grafana/mimir/pkg/chunk/azure"
+	"github.com/grafana/mimir/pkg/chunk/gcp"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 // AlertStore stores and configures users rule configs

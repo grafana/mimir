@@ -6,7 +6,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/hashicorp/memberlist"
 
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // ringBroadcast implements memberlist.Broadcast interface, which is used by memberlist.TransmitLimitedQueue.

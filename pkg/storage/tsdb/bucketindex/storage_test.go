@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/storage/tsdb/testutil"
-	cortex_testutil "github.com/cortexproject/cortex/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestReadIndex_ShouldReturnErrorIfIndexDoesNotExist(t *testing.T) {

@@ -23,13 +23,13 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/aws"
-	"github.com/cortexproject/cortex/pkg/chunk/storage"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/aws"
+	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 type Config struct {

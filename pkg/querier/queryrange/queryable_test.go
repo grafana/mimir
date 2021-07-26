@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	"github.com/cortexproject/cortex/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/querier/astmapper"
 )
 
 func TestSelect(t *testing.T) {

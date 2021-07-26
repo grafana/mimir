@@ -9,8 +9,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/ring/kv/codec"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type mockKV struct {

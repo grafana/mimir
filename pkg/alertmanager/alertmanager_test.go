@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {

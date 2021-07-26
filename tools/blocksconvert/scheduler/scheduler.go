@@ -22,9 +22,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"google.golang.org/grpc"
 
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 type Config struct {

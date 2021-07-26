@@ -8,11 +8,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/ingester/client"
-	"github.com/cortexproject/cortex/pkg/querier/chunkstore"
-	seriesset "github.com/cortexproject/cortex/pkg/querier/series"
-	"github.com/cortexproject/cortex/pkg/tenant"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/querier/chunkstore"
+	seriesset "github.com/grafana/mimir/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/tenant"
 )
 
 type chunkIteratorFunc func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator

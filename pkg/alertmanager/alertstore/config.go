@@ -5,11 +5,11 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/local"
-	"github.com/cortexproject/cortex/pkg/chunk/aws"
-	"github.com/cortexproject/cortex/pkg/chunk/azure"
-	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/local"
+	"github.com/grafana/mimir/pkg/chunk/aws"
+	"github.com/grafana/mimir/pkg/chunk/azure"
+	"github.com/grafana/mimir/pkg/chunk/gcp"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 // LegacyConfig configures the alertmanager storage backend using the legacy storage clients.

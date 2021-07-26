@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/ring/kv"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/ring/kv"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 const (

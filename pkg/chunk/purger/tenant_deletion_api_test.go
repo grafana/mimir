@@ -13,7 +13,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/weaveworks/common/user"
 
-	"github.com/cortexproject/cortex/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestDeleteTenant(t *testing.T) {

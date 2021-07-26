@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 type dynamodbIndexReader struct {

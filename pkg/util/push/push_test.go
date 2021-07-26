@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 func TestHandler_remoteWrite(t *testing.T) {

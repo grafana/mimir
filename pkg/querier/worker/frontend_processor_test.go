@@ -11,7 +11,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
-	"github.com/cortexproject/cortex/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestRecvFailDoesntCancelProcess(t *testing.T) {

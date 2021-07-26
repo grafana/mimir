@@ -41,16 +41,16 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/cortexproject/cortex/pkg/chunk/encoding"
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	"github.com/cortexproject/cortex/pkg/ingester/client"
-	"github.com/cortexproject/cortex/pkg/ring"
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
-	"github.com/cortexproject/cortex/pkg/util"
-	util_math "github.com/cortexproject/cortex/pkg/util/math"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/pkg/util/test"
-	"github.com/cortexproject/cortex/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/ring"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIngester_v2Push(t *testing.T) {

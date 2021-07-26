@@ -4,9 +4,9 @@ import (
 	"flag"
 	"reflect"
 
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore/local"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/ruler/rulestore/local"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 // Config configures a rule store.

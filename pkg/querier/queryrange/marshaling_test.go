@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {

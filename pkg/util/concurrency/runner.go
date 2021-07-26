@@ -7,7 +7,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"golang.org/x/sync/errgroup"
 
-	util_math "github.com/cortexproject/cortex/pkg/util/math"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 // ForEachUser runs the provided userFunc for each userIDs up to concurrency concurrent workers.

@@ -18,11 +18,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
-	"github.com/cortexproject/cortex/integration/e2ecortex"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	s3 "github.com/cortexproject/cortex/pkg/chunk/aws"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	s3 "github.com/grafana/mimir/pkg/chunk/aws"
 )
 
 const simpleAlertmanagerConfig = `route:

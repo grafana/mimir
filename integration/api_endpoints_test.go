@@ -12,8 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	"github.com/cortexproject/cortex/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2e"
+	"github.com/grafana/mimir/integration/e2ecortex"
 )
 
 func TestIndexAPIEndpoint(t *testing.T) {

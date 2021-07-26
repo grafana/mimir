@@ -20,8 +20,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	tlsutil "github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	tlsutil "github.com/grafana/mimir/pkg/util/tls"
 )
 
 type messageType uint8

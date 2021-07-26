@@ -15,9 +15,9 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"golang.org/x/time/rate"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/util"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/ring/kv/codec"
+	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (

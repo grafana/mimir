@@ -9,7 +9,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/cortexproject/cortex/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type BlocksConsistencyChecker struct {

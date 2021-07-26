@@ -8,8 +8,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	ring_client "github.com/cortexproject/cortex/pkg/ring/client"
+	"github.com/grafana/mimir/pkg/ring"
+	ring_client "github.com/grafana/mimir/pkg/ring/client"
 )
 
 var clients = promauto.NewGauge(prometheus.GaugeOpts{

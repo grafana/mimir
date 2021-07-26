@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 func TestIndex(t *testing.T) {

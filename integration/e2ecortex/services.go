@@ -4,7 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cortexproject/cortex/integration/e2e"
+	"github.com/grafana/mimir/integration/e2e"
 )
 
 const (

@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	"github.com/cortexproject/cortex/pkg/ring/kv/etcd"
+	"github.com/grafana/mimir/pkg/ring/kv/codec"
+	"github.com/grafana/mimir/pkg/ring/kv/consul"
+	"github.com/grafana/mimir/pkg/ring/kv/etcd"
 )
 
 func withFixtures(t *testing.T, f func(*testing.T, Client)) {

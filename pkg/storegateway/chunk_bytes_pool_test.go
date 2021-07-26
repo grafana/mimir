@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/store"
 
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestChunkBytesPool_Get(t *testing.T) {

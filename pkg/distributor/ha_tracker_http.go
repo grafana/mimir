@@ -9,7 +9,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const trackerTpl = `

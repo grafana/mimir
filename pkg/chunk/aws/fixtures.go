@@ -7,10 +7,10 @@ import (
 
 	"golang.org/x/time/rate"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/objectclient"
-	"github.com/cortexproject/cortex/pkg/chunk/testutils"
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/objectclient"
+	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type fixture struct {

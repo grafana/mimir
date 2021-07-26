@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2ecache "github.com/cortexproject/cortex/integration/e2e/cache"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
-	"github.com/cortexproject/cortex/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2e"
+	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/mimir/integration/e2ecortex"
 )
 
 type querierShardingTestConfig struct {

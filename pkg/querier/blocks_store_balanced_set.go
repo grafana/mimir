@@ -15,9 +15,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	"github.com/thanos-io/thanos/pkg/extprom"
 
-	"github.com/cortexproject/cortex/pkg/ring/client"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/ring/client"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 // BlocksStoreSet implementation used when the blocks are not sharded in the store-gateway

@@ -32,15 +32,15 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"gopkg.in/yaml.v2"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
-	"github.com/cortexproject/cortex/pkg/util/concurrency"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	cortex_testutil "github.com/cortexproject/cortex/pkg/util/test"
-	"github.com/cortexproject/cortex/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/ring/kv/consul"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util/concurrency"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/services"
+	cortex_testutil "github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestConfig_ShouldSupportYamlConfig(t *testing.T) {

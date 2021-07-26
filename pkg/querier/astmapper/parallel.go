@@ -6,7 +6,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var summableAggregates = map[parser.ItemType]struct{}{

@@ -18,8 +18,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/dns"
 	"github.com/prometheus/prometheus/notifier"
 
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/tls"
 )
 
 type NotifierConfig struct {

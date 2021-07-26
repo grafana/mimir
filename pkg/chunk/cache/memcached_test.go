@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/cortexproject/cortex/pkg/chunk/cache"
+	"github.com/grafana/mimir/pkg/chunk/cache"
 )
 
 func TestMemcached(t *testing.T) {

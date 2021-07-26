@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/cortexproject/cortex/pkg/storage/tsdb/testutil"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func TestBucketIndexBlocksFinder_GetBlocks(t *testing.T) {

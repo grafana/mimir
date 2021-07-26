@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 // takes a chunk client and exposes metrics for its operations.

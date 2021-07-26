@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/thanos-io/thanos/pkg/store"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 const (

@@ -15,9 +15,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/cortexproject/cortex/pkg/ruler/rulespb"
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 const (

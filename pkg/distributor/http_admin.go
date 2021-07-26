@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const tpl = `

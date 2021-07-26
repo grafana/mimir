@@ -3,7 +3,7 @@ package alertmanager
 import (
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // This struct aggregates metrics exported by Alertmanager

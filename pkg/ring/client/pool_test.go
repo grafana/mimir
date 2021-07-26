@@ -13,7 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 type mockClient struct {

@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/astmapper"
 )
 
 var (

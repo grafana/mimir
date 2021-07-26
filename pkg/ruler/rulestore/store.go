@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/cortexproject/cortex/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 var (

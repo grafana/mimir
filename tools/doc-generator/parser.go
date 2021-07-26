@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/weaveworks/common/logging"
 
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 var (

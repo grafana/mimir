@@ -15,11 +15,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/integration/e2e"
-	e2edb "github.com/cortexproject/cortex/integration/e2e/db"
-	"github.com/cortexproject/cortex/pkg/ring/kv"
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	"github.com/cortexproject/cortex/pkg/ring/kv/etcd"
+	"github.com/grafana/mimir/integration/e2e"
+	e2edb "github.com/grafana/mimir/integration/e2e/db"
+	"github.com/grafana/mimir/pkg/ring/kv"
+	"github.com/grafana/mimir/pkg/ring/kv/consul"
+	"github.com/grafana/mimir/pkg/ring/kv/etcd"
 )
 
 func TestKVList(t *testing.T) {

@@ -15,9 +15,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	cortex_testutil "github.com/cortexproject/cortex/pkg/storage/tsdb/testutil"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/pkg/util/test"
+	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestLoader_GetIndex_ShouldLazyLoadBucketIndex(t *testing.T) {

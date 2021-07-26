@@ -18,7 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 type fakePusher struct {

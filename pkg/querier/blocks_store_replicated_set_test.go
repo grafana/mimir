@@ -14,13 +14,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/pkg/util/test"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/ring/kv/consul"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {

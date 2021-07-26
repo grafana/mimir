@@ -7,7 +7,7 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"google.golang.org/grpc"
 
-	cortex_middleware "github.com/cortexproject/cortex/pkg/util/middleware"
+	cortex_middleware "github.com/grafana/mimir/pkg/util/middleware"
 )
 
 func Instrument(requestDuration *prometheus.HistogramVec) ([]grpc.UnaryClientInterceptor, []grpc.StreamClientInterceptor) {

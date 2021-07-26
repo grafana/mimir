@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
-	"github.com/cortexproject/cortex/pkg/ruler/rulespb"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 func TestClient_LoadAllRuleGroups(t *testing.T) {

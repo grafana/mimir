@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 func TestScanForPlans(t *testing.T) {

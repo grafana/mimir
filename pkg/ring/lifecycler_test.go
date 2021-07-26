@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/ring/kv/consul"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/services"
-	"github.com/cortexproject/cortex/pkg/util/test"
+	"github.com/grafana/mimir/pkg/ring/kv/consul"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func testLifecyclerConfig(ringConfig Config, id string) LifecyclerConfig {

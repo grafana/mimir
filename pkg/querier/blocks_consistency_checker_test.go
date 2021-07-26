@@ -10,8 +10,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/cortexproject/cortex/pkg/storage/tsdb/bucketindex"
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestBlocksConsistencyChecker_Check(t *testing.T) {

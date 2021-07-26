@@ -7,11 +7,11 @@ import (
 
 	"gopkg.in/yaml.v2"
 
-	"github.com/cortexproject/cortex/pkg/ingester"
-	"github.com/cortexproject/cortex/pkg/ring/kv"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/runtimeconfig"
-	"github.com/cortexproject/cortex/pkg/util/validation"
+	"github.com/grafana/mimir/pkg/ingester"
+	"github.com/grafana/mimir/pkg/ring/kv"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/runtimeconfig"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (

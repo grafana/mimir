@@ -7,8 +7,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/weaveworks/common/server"
 
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 // NewServerService constructs service from Server component.

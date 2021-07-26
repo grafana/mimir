@@ -6,7 +6,7 @@ import (
 	"cloud.google.com/go/bigtable"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 func TestParseRowKey(t *testing.T) {

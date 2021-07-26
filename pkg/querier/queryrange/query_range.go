@@ -22,9 +22,9 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // StatusSuccess Prometheus success result.
@@ -272,7 +272,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	// internally works.
 	buf := bytes.NewBuffer(make([]byte, 0, r.ContentLength+bytes.MinRead))
 	if _, err := buf.ReadFrom(r.Body); err != nil {
-		log.Error(err)
+		_ = log.Error(err)
 		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error decoding response: %v", err)
 	}
 

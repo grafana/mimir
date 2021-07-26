@@ -19,5 +19,5 @@ ENTRYPOINT ["/package.sh"]
 ARG revision
 LABEL org.opencontainers.image.title="fpm" \
         # TODO: should this label point to the fpm source code?
-        org.opencontainers.image.source="https://github.com/cortexproject/cortex/tree/master/packaging/fpm" \
+        org.opencontainers.image.source="https://github.com/grafana/mimir/tree/master/packaging/fpm" \
         org.opencontainers.image.revision="${revision}"

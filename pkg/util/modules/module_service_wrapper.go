@@ -1,8 +1,8 @@
 package modules
 
 import (
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 // This function wraps module service, and adds waiting for dependencies to start before starting,

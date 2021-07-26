@@ -18,9 +18,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/weaveworks/common/logging"
 
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
-	utillog "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/storage/bucket"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	utillog "github.com/grafana/mimir/pkg/util/log"
 )
 
 func stringNotEmpty(v string) bool {

@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	promchunk "github.com/cortexproject/cortex/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/chunk"
+	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 )
 
 const (

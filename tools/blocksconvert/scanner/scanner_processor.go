@@ -8,8 +8,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/tools/blocksconvert"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/tools/blocksconvert"
 )
 
 // Results from processor are passed to this function.

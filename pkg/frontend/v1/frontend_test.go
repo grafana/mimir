@@ -27,12 +27,12 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
-	"github.com/cortexproject/cortex/pkg/frontend/transport"
-	"github.com/cortexproject/cortex/pkg/frontend/v1/frontendv1pb"
-	querier_worker "github.com/cortexproject/cortex/pkg/querier/worker"
-	"github.com/cortexproject/cortex/pkg/scheduler/queue"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/frontend/transport"
+	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
+	"github.com/grafana/mimir/pkg/scheduler/queue"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 const (

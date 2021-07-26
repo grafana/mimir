@@ -10,16 +10,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	promRules "github.com/prometheus/prometheus/rules"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/aws"
-	"github.com/cortexproject/cortex/pkg/chunk/azure"
-	"github.com/cortexproject/cortex/pkg/chunk/gcp"
-	"github.com/cortexproject/cortex/pkg/chunk/openstack"
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore"
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore/bucketclient"
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore/local"
-	"github.com/cortexproject/cortex/pkg/ruler/rulestore/objectclient"
-	"github.com/cortexproject/cortex/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/aws"
+	"github.com/grafana/mimir/pkg/chunk/azure"
+	"github.com/grafana/mimir/pkg/chunk/gcp"
+	"github.com/grafana/mimir/pkg/chunk/openstack"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
+	"github.com/grafana/mimir/pkg/ruler/rulestore/bucketclient"
+	"github.com/grafana/mimir/pkg/ruler/rulestore/local"
+	"github.com/grafana/mimir/pkg/ruler/rulestore/objectclient"
+	"github.com/grafana/mimir/pkg/storage/bucket"
 )
 
 // RuleStoreConfig configures a rule store.

@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/atomic"
 
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 // ActiveUsers keeps track of latest user's activity timestamp,

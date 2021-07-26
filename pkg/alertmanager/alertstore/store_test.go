@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/bucketclient"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/objectclient"
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/objectclient"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 func TestAlertStore_ListAllUsers(t *testing.T) {

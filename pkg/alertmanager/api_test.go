@@ -20,12 +20,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/flagext"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertstore/bucketclient"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/services"
 
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"

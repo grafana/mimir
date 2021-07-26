@@ -15,9 +15,9 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/cortexproject/cortex/pkg/frontend/v1/frontendv1pb"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
-	"github.com/cortexproject/cortex/pkg/util/services"
+	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func setupFrontend(t *testing.T, config Config) (*Frontend, error) {

@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 var (

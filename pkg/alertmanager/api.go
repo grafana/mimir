@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	"github.com/cortexproject/cortex/pkg/tenant"
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/concurrency"
-	util_log "github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/concurrency"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"

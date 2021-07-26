@@ -11,7 +11,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/storage/tsdb/bucketindex"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type MetadataFilterWithBucketIndex interface {

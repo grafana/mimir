@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/common/expfmt"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
-	"github.com/cortexproject/cortex/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 var (

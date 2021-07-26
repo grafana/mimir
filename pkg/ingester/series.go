@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 
-	"github.com/cortexproject/cortex/pkg/chunk/encoding"
-	"github.com/cortexproject/cortex/pkg/prom1/storage/metric"
+	"github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 )
 
 const (

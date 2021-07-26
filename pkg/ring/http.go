@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 
-	"github.com/cortexproject/cortex/pkg/util"
-	"github.com/cortexproject/cortex/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/log"
 )
 
 const pageContent = `

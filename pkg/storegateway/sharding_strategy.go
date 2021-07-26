@@ -11,8 +11,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/cortexproject/cortex/pkg/ring"
-	cortex_tsdb "github.com/cortexproject/cortex/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/ring"
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const (

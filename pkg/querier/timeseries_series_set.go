@@ -7,7 +7,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/cortexproject/cortex/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/cortexpb"
 )
 
 // timeSeriesSeriesSet is a wrapper around a cortexpb.TimeSeries slice to implement to SeriesSet interface

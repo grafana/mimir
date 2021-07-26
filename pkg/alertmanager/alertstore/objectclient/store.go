@@ -12,9 +12,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
-	"github.com/cortexproject/cortex/pkg/alertmanager/alertspb"
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/util/concurrency"
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/util/concurrency"
 )
 
 // Object Alert Storage Schema
