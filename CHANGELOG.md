@@ -2,6 +2,8 @@
 
 ## Mimir - master / unreleased
 
+* [CHANGE] Renamed metric `experimental_features_in_use_total` as `experimental_features_used_total`. #32
+* [CHANGE] Removed `log_messages_total` metric. #32
 * [CHANGE] Removed `configdb` support from Ruler and Alertmanager backend storages. #15
 * [CHANGE] Changed `-ruler.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
