@@ -274,7 +274,7 @@
                 (cortex_ingester_memory_series / ignoring(limit) cortex_ingester_instance_limits{limit="max_series"})
                 and ignoring (limit)
                 (cortex_ingester_instance_limits{limit="max_series"} > 0)
-            ) > 0.8
+            ) > 0.85
           |||,
           'for': '5m',
           labels: {
