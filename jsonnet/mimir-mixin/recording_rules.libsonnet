@@ -75,6 +75,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum by (cluster, namespace, deployment) (
                 label_replace(
                   kube_deployment_spec_replicas,
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
                   "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                 )
               )
@@ -214,6 +216,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                     node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
                   "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                 )
               )
@@ -238,6 +242,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                       kube_pod_container_resource_requests_cpu_cores,
                       "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                     ),
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
                     "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
@@ -252,6 +258,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                       kube_pod_container_resource_requests{resource="cpu"},
                       "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                     ),
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
                     "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
@@ -287,6 +295,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                     container_memory_usage_bytes,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
+                  # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                  # always matches everything and the (optional) zone is not removed.
                   "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                 )
               )
@@ -311,6 +321,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                       kube_pod_container_resource_requests_memory_bytes,
                       "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                     ),
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
                     "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
@@ -325,6 +337,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
                       kube_pod_container_resource_requests{resource="memory"},
                       "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                     ),
+                    # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
+                    # always matches everything and the (optional) zone is not removed.
                     "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
