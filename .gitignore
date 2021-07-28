@@ -16,7 +16,7 @@ dist/
 
 # Binaries built from ./cmd
 /blocksconvert
-/cortex
+/mimir
 /query-tee
 /test-exporter
 
