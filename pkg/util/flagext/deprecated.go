@@ -14,7 +14,7 @@ import (
 var DeprecatedFlagsUsed = promauto.NewCounter(
 	prometheus.CounterOpts{
 		Namespace: "cortex",
-		Name:      "deprecated_flags_inuse_total",
+		Name:      "deprecated_flags_used_total",
 		Help:      "The number of deprecated flags currently set.",
 	})
 
