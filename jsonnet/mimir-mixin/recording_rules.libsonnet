@@ -80,10 +80,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
               or
               sum by (cluster, namespace, deployment) (
-                label_replace(
-                  label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*)"),
-                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
-                )
+                label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?")
               )
             |||,
           },
