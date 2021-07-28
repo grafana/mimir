@@ -69,12 +69,21 @@ local utils = import 'mixin-utils/utils.libsonnet';
         rules: [
           {
             // Convenience rule to get the number of replicas for both a deployment and a statefulset.
+            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: 'cluster_namespace_deployment:actual_replicas:count',
             expr: |||
-              sum by (cluster, namespace, deployment) (kube_deployment_spec_replicas)
-                or
               sum by (cluster, namespace, deployment) (
-                label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*)")
+                label_replace(
+                  kube_deployment_spec_replicas,
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
+              or
+              sum by (cluster, namespace, deployment) (
+                label_replace(
+                  label_replace(kube_statefulset_replicas, "deployment", "$1", "statefulset", "(.*)"),
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
               )
             |||,
           },
@@ -188,7 +197,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             expr: |||
               ceil(
                 (sum by (cluster, namespace) (
-                  cortex_ingester_tsdb_storage_blocks_bytes{job=~".+/ingester"}
+                  cortex_ingester_tsdb_storage_blocks_bytes{job=~".+/ingester.*"}
                 ) / 4)
                   /
                 avg by (cluster, namespace) (
@@ -199,18 +208,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           {
             // Convenience rule to get the CPU utilization for both a deployment and a statefulset.
+            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: 'cluster_namespace_deployment:container_cpu_usage_seconds_total:sum_rate',
             expr: |||
               sum by (cluster, namespace, deployment) (
                 label_replace(
-                  node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate,
-                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  label_replace(
+                    node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate,
+                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  ),
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                 )
               )
             |||,
           },
           {
             // Convenience rule to get the CPU request for both a deployment and a statefulset.
+            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: 'cluster_namespace_deployment:kube_pod_container_resource_requests_cpu_cores:sum',
             expr: |||
               # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
@@ -223,8 +237,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
               (
                 sum by (cluster, namespace, deployment) (
                   label_replace(
-                    kube_pod_container_resource_requests_cpu_cores,
-                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    label_replace(
+                      kube_pod_container_resource_requests_cpu_cores,
+                      "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    ),
+                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
               )
@@ -234,8 +251,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
               (
                 sum by (cluster, namespace, deployment) (
                   label_replace(
-                    kube_pod_container_resource_requests{resource="cpu"},
-                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    label_replace(
+                      kube_pod_container_resource_requests{resource="cpu"},
+                      "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    ),
+                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
               )
@@ -261,18 +281,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           {
             // Convenience rule to get the Memory utilization for both a deployment and a statefulset.
+            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: 'cluster_namespace_deployment:container_memory_usage_bytes:sum',
             expr: |||
               sum by (cluster, namespace, deployment) (
                 label_replace(
-                  container_memory_usage_bytes,
-                  "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  label_replace(
+                    container_memory_usage_bytes,
+                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                  ),
+                  "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                 )
               )
             |||,
           },
           {
             // Convenience rule to get the Memory request for both a deployment and a statefulset.
+            // Multi-zone deployments are grouped together removing the "zone-X" suffix.
             record: 'cluster_namespace_deployment:kube_pod_container_resource_requests_memory_bytes:sum',
             expr: |||
               # This recording rule is made compatible with the breaking changes introduced in kube-state-metrics v2
@@ -285,8 +310,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
               (
                 sum by (cluster, namespace, deployment) (
                   label_replace(
-                    kube_pod_container_resource_requests_memory_bytes,
-                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    label_replace(
+                      kube_pod_container_resource_requests_memory_bytes,
+                      "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    ),
+                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
               )
@@ -296,8 +324,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
               (
                 sum by (cluster, namespace, deployment) (
                   label_replace(
-                    kube_pod_container_resource_requests{resource="memory"},
-                    "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    label_replace(
+                      kube_pod_container_resource_requests{resource="memory"},
+                      "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
+                    ),
+                    "deployment", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
                   )
                 )
               )
