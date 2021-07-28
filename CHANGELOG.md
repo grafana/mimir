@@ -1,6 +1,6 @@
 # Changelog
 
-## Mimir - master / unreleased
+## Mimir - main / unreleased
 
 * [CHANGE] Renamed metric `experimental_features_in_use_total` as `experimental_features_used_total`. #32
 * [CHANGE] Removed `log_messages_total` metric. #32
@@ -18,7 +18,7 @@
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 
 
-## master / unreleased
+## main / unreleased
 
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. #4317
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_series_total` and `cortex_query_fetched_chunks_bytes_total` per-user counters to expose the number of series and bytes fetched as part of queries. These metrics can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #4343
