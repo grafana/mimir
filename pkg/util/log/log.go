@@ -7,7 +7,6 @@ import (
 	"github.com/go-kit/kit/log"
 	kitlog "github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
 )
@@ -17,23 +16,7 @@ var (
 	// TODO: Change all components to take a non-global logger via their constructors.
 	// Prefer accepting a non-global logger as an argument.
 	Logger = kitlog.NewNopLogger()
-
-	logMessages = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "log_messages_total",
-		Help: "Total number of log messages.",
-	}, []string{"level"})
-
-	supportedLevels = []level.Value{
-		level.DebugValue(),
-		level.InfoValue(),
-		level.WarnValue(),
-		level.ErrorValue(),
-	}
 )
-
-func init() {
-	prometheus.MustRegister(logMessages)
-}
 
 // InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
 // default logger for the server.
@@ -67,11 +50,6 @@ func NewPrometheusLogger(l logging.Level, format logging.Format) (log.Logger, er
 	}
 	logger = level.NewFilter(logger, l.Gokit)
 
-	// Initialise counters for all supported levels:
-	for _, level := range supportedLevels {
-		logMessages.WithLabelValues(level.String())
-	}
-
 	logger = &PrometheusLogger{
 		logger: logger,
 	}
@@ -83,16 +61,7 @@ func NewPrometheusLogger(l logging.Level, format logging.Format) (log.Logger, er
 
 // Log increments the appropriate Prometheus counter depending on the log level.
 func (pl *PrometheusLogger) Log(kv ...interface{}) error {
-	pl.logger.Log(kv...)
-	l := "unknown"
-	for i := 1; i < len(kv); i += 2 {
-		if v, ok := kv[i].(level.Value); ok {
-			l = v.String()
-			break
-		}
-	}
-	logMessages.WithLabelValues(l).Inc()
-	return nil
+	return pl.logger.Log(kv...)
 }
 
 // CheckFatal prints an error and exits with error code 1 if err is non-nil

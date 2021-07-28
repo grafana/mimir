@@ -2,7 +2,10 @@
 
 ## Mimir - master / unreleased
 
-* [CHANGE] Removed `configdb` support from Ruler and Alertmanager backend storages. #15
+* [CHANGE] Renamed metric `deprecated_flags_inuse_total` as `deprecated_flags_used_total`. #35
+* [CHANGE] Renamed metric `experimental_features_in_use_total` as `experimental_features_used_total`. #32
+* [CHANGE] Removed `log_messages_total` metric. #32
+* [CHANGE] Removed `configdb` support from Ruler and Alertmanager backend storages. #15 #38
 * [CHANGE] Changed `-ruler.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Changed `-alertmanager.storage.type` default value from `configdb` to `local`. #15
 * [CHANGE] Prevent path traversal attack from users able to control the HTTP header `X-Scope-OrgID`. (CVE-2021-36157) #20

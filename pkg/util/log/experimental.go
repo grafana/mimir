@@ -9,7 +9,7 @@ import (
 var experimentalFeaturesInUse = promauto.NewCounter(
 	prometheus.CounterOpts{
 		Namespace: "cortex",
-		Name:      "experimental_features_in_use_total",
+		Name:      "experimental_features_used_total",
 		Help:      "The number of experimental features in use.",
 	},
 )
