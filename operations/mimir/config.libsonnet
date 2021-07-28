@@ -328,6 +328,25 @@
         ruler_max_rule_groups_per_tenant: 20,
       },
 
+      medium_small_user:: {
+        max_series_per_user: 0,  // Disabled in favour of the max global limit
+        max_series_per_metric: 0,  // Disabled in favour of the max global limit
+
+        // Our limit should be 100k, but we need some room of about ~50% to take rollouts into account
+        max_global_series_per_user: 300000,
+        max_global_series_per_metric: 30000,
+
+        max_series_per_query: 100000,
+        max_samples_per_query: 1000000,
+
+        ingestion_rate: 30000,
+        ingestion_burst_size: 300000,
+
+        // 375 rules
+        ruler_max_rules_per_rule_group: 15,
+        ruler_max_rule_groups_per_tenant: 25,
+      },
+
       small_user:: {
         max_series_per_metric: 0,  // Disabled in favour of the max global limit
         max_series_per_user: 0,  // Disabled in favour of the max global limit
