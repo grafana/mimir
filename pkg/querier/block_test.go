@@ -384,3 +384,42 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 		}
 	}
 }
+
+func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
+	const (
+		numSeries          = 100
+		numSamplesPerChunk = 120
+		numChunksPerSeries = 500
+		samplesPerStep     = 720 // equal to querying 15sec interval data with a "step" of 3h
+	)
+
+	// Generate series.
+	series := make([]*storepb.Series, 0, numSeries)
+	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		lbls := mkZLabels("__name__", "test", "series_id", strconv.Itoa(seriesID))
+		chunks := make([]storepb.AggrChunk, 0, numChunksPerSeries)
+
+		// Create chunks with 1 sample per second.
+		for minT := int64(0); minT < numChunksPerSeries*numSamplesPerChunk; minT += numSamplesPerChunk {
+			chunks = append(chunks, createAggrChunkWithSineSamples(util.TimeFromMillis(minT), util.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
+		}
+
+		series = append(series, &storepb.Series{
+			Labels: lbls,
+			Chunks: chunks,
+		})
+	}
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		set := blockQuerierSeriesSet{series: series}
+
+		for set.Next() {
+			seekT := int64(0)
+			for t := set.At().Iterator(); t.Seek(seekT); seekT += samplesPerStep {
+				t.At()
+			}
+		}
+	}
+}
