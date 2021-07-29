@@ -51,7 +51,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 		{
 			name:            "test handler with stats enabled",
 			cfg:             HandlerConfig{QueryStatsEnabled: true},
-			expectedMetrics: 3,
+			expectedMetrics: 4,
 		},
 		{
 			name:            "test handler with stats disabled",
@@ -84,6 +84,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				"cortex_query_seconds_total",
 				"cortex_query_fetched_series_total",
 				"cortex_query_fetched_chunks_bytes_total",
+				"cortex_query_fetched_chunks_total",
 			)
 
 			assert.NoError(t, err)
