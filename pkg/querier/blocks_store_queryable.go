@@ -630,15 +630,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 						return validation.LimitError(limitErr.Error())
 					}
 
-					chunksCount, chunksSize := countChunksAndBytes(s)
-
 					// Ensure the max number of chunks limit hasn't been reached (max == 0 means disabled).
 					if maxChunksLimit > 0 {
-						actual := numChunks.Add(int32(chunksCount))
+						actual := numChunks.Add(int32(len(s.Chunks)))
 						if actual > int32(leftChunksLimit) {
 							return validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, util.LabelMatchersToString(matchers), maxChunksLimit))
 						}
 					}
+
+					_, chunksSize := countChunksAndBytes(s)
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
 						return validation.LimitError(chunkBytesLimitErr.Error())
 					}
@@ -964,7 +964,7 @@ func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
 }
 
 // countChunksAndBytes returns the number of chunks and size of the chunks making up the provided series in bytes
-func countChunksAndBytes(series ...*storepb.Series) (chunks int, bytes int) {
+func countChunksAndBytes(series ...*storepb.Series) (chunks, bytes int) {
 	for _, s := range series {
 		chunks += len(s.Chunks)
 		for _, c := range s.Chunks {
