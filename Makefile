@@ -44,6 +44,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
 
+# FIXME: This should be removed when all other images are updated to use new Docker registry
 mimir-build-image/$(UPTODATE): mimir-build-image/Dockerfile
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
