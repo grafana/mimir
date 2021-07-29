@@ -604,7 +604,6 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			mySeries := []*storepb.Series(nil)
 			myWarnings := storage.Warnings(nil)
 			myQueriedBlocks := []ulid.ULID(nil)
-			chunksFetched := 0
 
 			for {
 				// Ensure the context hasn't been canceled in the meanwhile (eg. an error occurred
@@ -631,19 +630,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 						return validation.LimitError(limitErr.Error())
 					}
 
-					// Add number of chunks fetched for stat purposes regardless of whether or not a limit
-					// will be applied to the number of chunks fetched as part of this query. Keep track in
-					// a local variable (instead of `numChunks`) to avoid double counting.
-					chunksFetched += len(s.Chunks)
+					chunksCount, chunksSize := countChunksAndBytes(s)
 
 					// Ensure the max number of chunks limit hasn't been reached (max == 0 means disabled).
 					if maxChunksLimit > 0 {
-						actual := numChunks.Add(int32(len(s.Chunks)))
+						actual := numChunks.Add(int32(chunksCount))
 						if actual > int32(leftChunksLimit) {
 							return validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, util.LabelMatchersToString(matchers), maxChunksLimit))
 						}
 					}
-					chunksSize := countChunkBytes(s)
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
 						return validation.LimitError(chunkBytesLimitErr.Error())
 					}
@@ -672,7 +667,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			}
 
 			numSeries := len(mySeries)
-			chunkBytes := countChunkBytes(mySeries...)
+			chunksFetched, chunkBytes := countChunksAndBytes(mySeries...)
 
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
@@ -968,13 +963,14 @@ func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
 	return res, nil
 }
 
-// countChunkBytes returns the size of the chunks making up the provided series in bytes
-func countChunkBytes(series ...*storepb.Series) (count int) {
+// countChunksAndBytes returns the number of chunks and size of the chunks making up the provided series in bytes
+func countChunksAndBytes(series ...*storepb.Series) (chunks int, bytes int) {
 	for _, s := range series {
+		chunks += len(s.Chunks)
 		for _, c := range s.Chunks {
-			count += c.Size()
+			bytes += c.Size()
 		}
 	}
 
-	return count
+	return chunks, bytes
 }

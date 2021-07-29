@@ -91,7 +91,7 @@ func (s *Stats) AddFetchedChunks(chunks uint64) {
 		return
 	}
 
-	atomic.AddUint64(&s.FetchedChunks, chunks)
+	atomic.AddUint64(&s.FetchedChunksCount, chunks)
 }
 
 func (s *Stats) LoadFetchedChunks() uint64 {
@@ -99,7 +99,7 @@ func (s *Stats) LoadFetchedChunks() uint64 {
 		return 0
 	}
 
-	return atomic.LoadUint64(&s.FetchedChunks)
+	return atomic.LoadUint64(&s.FetchedChunksCount)
 }
 
 // Merge the provide Stats into this one.
