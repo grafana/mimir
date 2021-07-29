@@ -138,7 +138,7 @@ jobs:
       - name: Integration Tests
         run: |
           export IMAGE_TAG=$(make image-tag)
-          export CORTEX_IMAGE="quay.io/cortexproject/cortex:$IMAGE_TAG"
+          export CORTEX_IMAGE="quay.io/mimir/:$IMAGE_TAG"
           export CORTEX_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
           echo "Running integration tests with image: $CORTEX_IMAGE"
           go test -tags=requires_docker -timeout 2400s -v -count=1 ./integration/...

@@ -18,7 +18,6 @@ services:
       - 35357:35357
 
   swift-create-container:
-    network_mode: host
     image: theflockers/swiftclient
     environment:
       - OS_USERNAME=admin
@@ -30,7 +29,6 @@ services:
                             swift post cortex-tsdb && swift list"]
 
   prometheus:
-    network_mode: host
     image: prom/prometheus:v2.16.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml"]
     volumes:
@@ -41,7 +39,6 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-    network_mode: host
     image: grafana/agent:v0.2.0
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
@@ -55,46 +52,44 @@ services:
       - 16686:16686
       - "14268"
 
-  cortex-1:
-    network_mode: host
+  mimir-1:
     build:
       context:    .
       dockerfile: dev.dockerfile
-    image: cortex
-    command: ["sh", "-c", "sleep 40 && exec ./cortex -config.file=./config/cortex.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
+    image: mimir
+    command: ["sh", "-c", "sleep 40 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
     depends_on:
       - consul
       - swift
     environment:
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=cortex-1
+      - JAEGER_TAGS=app=mimir-1
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
     ports:
       - 8001:8001
     volumes:
-      - ./config:/cortex/config
+      - ./config:/mimir/config
       - .data-cortex-1:/data:delegated
 
-  cortex-2:
-    network_mode: host
+  mimir-2:
     build:
       context:    .
       dockerfile: dev.dockerfile
-    image: cortex
-    command: ["sh", "-c", "sleep 40 && exec ./cortex -config.file=./config/cortex.yaml -target=all -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
+    image: mimir
+    command: ["sh", "-c", "sleep 40 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
     depends_on:
       - consul
       - swift
     environment:
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=cortex-2
+      - JAEGER_TAGS=app=mimir-2
       - JAEGER_SAMPLER_TYPE=const
       - JAEGER_SAMPLER_PARAM=1
     ports:
       - 8002:8002
     volumes:
-      - ./config:/cortex/config
+      - ./config:/mimir/config
       - .data-cortex-2:/data:delegated
