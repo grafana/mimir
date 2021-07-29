@@ -630,15 +630,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 						return validation.LimitError(limitErr.Error())
 					}
 
+					chunksCount, chunksSize := countChunksAndBytes(s)
+
 					// Ensure the max number of chunks limit hasn't been reached (max == 0 means disabled).
 					if maxChunksLimit > 0 {
-						actual := numChunks.Add(int32(len(s.Chunks)))
+						actual := numChunks.Add(int32(chunksCount))
 						if actual > int32(leftChunksLimit) {
 							return validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, util.LabelMatchersToString(matchers), maxChunksLimit))
 						}
 					}
-
-					_, chunksSize := countChunksAndBytes(s)
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
 						return validation.LimitError(chunkBytesLimitErr.Error())
 					}
