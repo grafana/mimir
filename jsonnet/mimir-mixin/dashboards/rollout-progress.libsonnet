@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     gateway_job_matcher: $.jobMatcher($._config.job_names.gateway),
     gateway_write_routes_regex: 'api_(v1|prom)_push',
     gateway_read_routes_regex: '(prometheus|api_prom)_api_v1_.+',
-    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester', 'query-frontend', 'querier', 'compactor', 'store-gateway', 'ruler', 'alertmanager']),
+    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester.*', 'query-frontend', 'querier', 'compactor', 'store-gateway', 'ruler', 'alertmanager']),
   },
 
   'cortex-rollout-progress.json':
@@ -22,29 +22,60 @@ local utils = import 'mixin-utils/utils.libsonnet';
         //
         $.panel('Rollout progress') +
         $.barGauge([
+          // Multi-zone deployments are grouped together removing the "zone-X" suffix.
+          // After the grouping, the resulting label is called "cortex_service".
           |||
             (
-              kube_statefulset_status_replicas_updated{%(namespace_matcher)s,statefulset=~"%(all_services_regex)s"}
+              sum by(cortex_service) (
+                label_replace(
+                  kube_statefulset_status_replicas_updated{%(namespace_matcher)s,statefulset=~"%(all_services_regex)s"},
+                  "cortex_service", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
               /
-              kube_statefulset_replicas{%(namespace_matcher)s}
+              sum by(cortex_service) (
+                label_replace(
+                  kube_statefulset_replicas{%(namespace_matcher)s},
+                  "cortex_service", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
             ) and (
-              kube_statefulset_replicas{%(namespace_matcher)s}
+              sum by(cortex_service) (
+                label_replace(
+                  kube_statefulset_replicas{%(namespace_matcher)s},
+                  "cortex_service", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
               > 0
             )
           ||| % config,
           |||
             (
-              kube_deployment_status_replicas_updated{%(namespace_matcher)s,deployment=~"%(all_services_regex)s"}
+              sum by(cortex_service) (
+                label_replace(
+                  kube_deployment_status_replicas_updated{%(namespace_matcher)s,deployment=~"%(all_services_regex)s"},
+                  "cortex_service", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
               /
-              kube_deployment_spec_replicas{%(namespace_matcher)s}
+              sum by(cortex_service) (
+                label_replace(
+                  kube_deployment_spec_replicas{%(namespace_matcher)s},
+                  "cortex_service", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
             ) and (
-              kube_deployment_spec_replicas{%(namespace_matcher)s}
+              sum by(cortex_service) (
+                label_replace(
+                  kube_deployment_spec_replicas{%(namespace_matcher)s},
+                  "cortex_service", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"
+                )
+              )
               > 0
             )
           ||| % config,
         ], legends=[
-          '{{statefulset}}',
-          '{{deployment}}',
+          '{{cortex_service}}',
         ], thresholds=[
           { color: 'yellow', value: null },
           { color: 'yellow', value: 0.999 },
