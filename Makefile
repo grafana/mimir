@@ -12,6 +12,7 @@ GOPROXY_VALUE=$(shell go env GOPROXY)
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= quay.io/cortexproject/
+BUILD_IMAGE ?= us.gcr.io/kubernetes-dev/mimir-build-image
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
 # If finding refs/tags/ does not equal emptystring then use
@@ -33,7 +34,7 @@ image-tag:
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 # Building Docker images is now automated. The convention is every directory
-# with a Dockerfile in it builds an image calls quay.io/cortexproject/<dirname>.
+# with a Dockerfile in it builds an image called quay.io/cortexproject/<dirname>.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 %/$(UPTODATE): %/Dockerfile
@@ -43,20 +44,27 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
 
+mimir-build-image/$(UPTODATE): mimir-build-image/Dockerfile
+	@echo
+	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
+	@echo
+	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
+	touch $@
+
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 fetch-build-image:
 	docker pull $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG)
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
-	touch build-image/.uptodate
+	touch mimir-build-image/.uptodate
 
 push-multiarch-build-image:
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
-	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) build-image/
-	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) build-image/
+	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
+	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) mimir-build-image/
 	# This command will run the same build as above, but it will reuse existing platform-specific images,
 	# put them together and push to registry.
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)build-image:$(IMAGE_TAG) build-image/
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 
 # We don't want find to scan inside a bunch of directories, to accelerate the
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
@@ -112,12 +120,11 @@ all: $(UPTODATE_FILES)
 test: protos
 mod-check: protos
 lint: protos
-build-image/$(UPTODATE): build-image/*
+mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-BUILD_IMAGE ?= $(IMAGE_PREFIX)build-image
 LATEST_BUILD_IMAGE_TAG ?= 20210713_update-go-1.16.6-178ab0c4f
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
@@ -132,7 +139,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 			-v $(shell pwd)/.pkg:/go/pkg:delegated,z \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test cover shell mod-check check-protos web-build web-pre web-deploy doc: build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint test cover shell mod-check check-protos web-build web-pre web-deploy doc: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo

@@ -67,7 +67,7 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Build Image
         run: |
-          touch build-image/.uptodate
+          touch mimir-build-image/.uptodate
           make BUILD_IN_CONTAINER=false
       - name: Save Images
         run: |
