@@ -630,14 +630,15 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 						return validation.LimitError(limitErr.Error())
 					}
 
+					chunksCount, chunksSize := countChunksAndBytes(s)
+
 					// Ensure the max number of chunks limit hasn't been reached (max == 0 means disabled).
 					if maxChunksLimit > 0 {
-						actual := numChunks.Add(int32(len(s.Chunks)))
+						actual := numChunks.Add(int32(chunksCount))
 						if actual > int32(leftChunksLimit) {
 							return validation.LimitError(fmt.Sprintf(errMaxChunksPerQueryLimit, util.LabelMatchersToString(matchers), maxChunksLimit))
 						}
 					}
-					chunksSize := countChunkBytes(s)
 					if chunkBytesLimitErr := queryLimiter.AddChunkBytes(chunksSize); chunkBytesLimitErr != nil {
 						return validation.LimitError(chunkBytesLimitErr.Error())
 					}
@@ -666,15 +667,17 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 			}
 
 			numSeries := len(mySeries)
-			chunkBytes := countChunkBytes(mySeries...)
+			chunksFetched, chunkBytes := countChunksAndBytes(mySeries...)
 
 			reqStats.AddFetchedSeries(uint64(numSeries))
 			reqStats.AddFetchedChunkBytes(uint64(chunkBytes))
+			reqStats.AddFetchedChunks(uint64(chunksFetched))
 
 			level.Debug(spanLog).Log("msg", "received series from store-gateway",
 				"instance", c.RemoteAddress(),
 				"fetched series", numSeries,
 				"fetched chunk bytes", chunkBytes,
+				"fetched chunks", chunksFetched,
 				"requested blocks", strings.Join(convertULIDsToString(blockIDs), " "),
 				"queried blocks", strings.Join(convertULIDsToString(myQueriedBlocks), " "))
 
@@ -960,13 +963,14 @@ func convertBlockHintsToULIDs(hints []hintspb.Block) ([]ulid.ULID, error) {
 	return res, nil
 }
 
-// countChunkBytes returns the size of the chunks making up the provided series in bytes
-func countChunkBytes(series ...*storepb.Series) (count int) {
+// countChunksAndBytes returns the number of chunks and size of the chunks making up the provided series in bytes
+func countChunksAndBytes(series ...*storepb.Series) (chunks, bytes int) {
 	for _, s := range series {
+		chunks += len(s.Chunks)
 		for _, c := range s.Chunks {
-			count += c.Size()
+			bytes += c.Size()
 		}
 	}
 
-	return count
+	return chunks, bytes
 }
