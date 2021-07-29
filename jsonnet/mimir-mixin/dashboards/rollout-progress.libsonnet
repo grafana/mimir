@@ -76,6 +76,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           ||| % config,
         ], legends=[
           '{{cortex_service}}',
+          '{{cortex_service}}',
         ], thresholds=[
           { color: 'yellow', value: null },
           { color: 'yellow', value: 0.999 },
