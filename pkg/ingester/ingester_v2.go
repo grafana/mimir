@@ -493,16 +493,22 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
+	asm, err := NewActiveSeriesMatcher(cfg.ActiveMatchingSeries)
+	if err != nil {
+		return nil, err
+	}
+
 	i := &Ingester{
-		cfg:           cfg,
-		clientConfig:  clientConfig,
-		limits:        limits,
-		chunkStore:    nil,
-		usersMetadata: map[string]*userMetricsMetadata{},
-		wal:           &noopWAL{},
-		TSDBState:     newTSDBState(cfg, bucketClient, registerer),
-		logger:        logger,
-		ingestionRate: util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		cfg:                 cfg,
+		clientConfig:        clientConfig,
+		limits:              limits,
+		chunkStore:          nil,
+		usersMetadata:       map[string]*userMetricsMetadata{},
+		wal:                 &noopWAL{},
+		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
+		logger:              logger,
+		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		activeSeriesMatcher: asm,
 	}
 	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
@@ -715,7 +721,11 @@ func (i *Ingester) v2UpdateActiveSeries() {
 		}
 
 		userDB.activeSeries.Purge(purgeTime)
-		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(userDB.activeSeries.Active()))
+		allActive, activeMatching := userDB.activeSeries.Active()
+		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+		for idx, lbl := range i.activeSeriesMatcher.MatcherNames() {
+			i.metrics.activeMatchingSeriesPerUser.WithLabelValues(userID, lbl).Set(float64(activeMatching[idx]))
+		}
 	}
 }
 
@@ -1622,7 +1632,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(),
+		activeSeries:        NewActiveSeries(i.activeSeriesMatcher),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),

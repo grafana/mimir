@@ -6,17 +6,18 @@
 package ingester
 
 import (
+	"fmt"
 	"hash"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/cespare/xxhash"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -25,33 +26,42 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
+	asm     ActiveSeriesMatcher
 	stripes [numActiveSeriesStripes]activeSeriesStripe
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
+	asm ActiveSeriesMatcher
+
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs atomic.Int64
 
-	mu     sync.RWMutex
-	refs   map[uint64][]activeSeriesEntry
-	active int // Number of active entries in this stripe. Only decreased during purge or clear.
+	mu             sync.RWMutex
+	refs           map[uint64][]activeSeriesEntry
+	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeMatching []int // Number of active entires in this stripe matching each matcher of the configured ActiveSeriesMatcher.
 }
 
 // activeSeriesEntry holds a timestamp for single series.
 type activeSeriesEntry struct {
-	lbs   labels.Labels
-	nanos *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	lbs     labels.Labels
+	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	matches []bool        // Which matchers of ActiveSeriesMatcher does this series match
 }
 
-func NewActiveSeries() *ActiveSeries {
-	c := &ActiveSeries{}
+func NewActiveSeries(asm ActiveSeriesMatcher) *ActiveSeries {
+	c := &ActiveSeries{asm: asm}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numActiveSeriesStripes; i++ {
-		c.stripes[i].refs = map[uint64][]activeSeriesEntry{}
+		c.stripes[i] = activeSeriesStripe{
+			asm:            asm,
+			refs:           map[uint64][]activeSeriesEntry{},
+			activeMatching: makeIntSliceIfNotEmpty(len(asm.MatcherNames())),
+		}
 	}
 
 	return c
@@ -99,12 +109,18 @@ func (c *ActiveSeries) clear() {
 	}
 }
 
-func (c *ActiveSeries) Active() int {
+func (c *ActiveSeries) Active() (int, []int) {
 	total := 0
+	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()))
 	for s := 0; s < numActiveSeriesStripes; s++ {
-		total += c.stripes[s].getActive()
+		c.stripes[s].mu.RLock()
+		total += c.stripes[s].active
+		for i, a := range c.stripes[s].activeMatching {
+			totalMatching[i] += a
+		}
+		c.stripes[s].mu.RUnlock()
 	}
-	return total
+	return total, totalMatching
 }
 
 func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
@@ -158,10 +174,19 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 		}
 	}
 
+	matches := s.asm.Matches(series)
+
 	s.active++
+	for i, ok := range matches {
+		if ok {
+			s.activeMatching[i]++
+		}
+	}
+
 	e := activeSeriesEntry{
-		lbs:   labelsCopy(series),
-		nanos: atomic.NewInt64(nowNanos),
+		lbs:     labelsCopy(series),
+		nanos:   atomic.NewInt64(nowNanos),
+		matches: matches,
 	}
 
 	s.refs[fingerprint] = append(s.refs[fingerprint], e)
@@ -177,6 +202,9 @@ func (s *activeSeriesStripe) clear() {
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64][]activeSeriesEntry{}
 	s.active = 0
+	for i := range s.activeMatching {
+		s.activeMatching[i] = 0
+	}
 }
 
 func (s *activeSeriesStripe) purge(keepUntil time.Time) {
@@ -190,6 +218,7 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	defer s.mu.Unlock()
 
 	active := 0
+	activeMatching := makeIntSliceIfNotEmpty(len(s.activeMatching))
 
 	oldest := int64(math.MaxInt64)
 	for fp, entries := range s.refs {
@@ -203,6 +232,11 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 			}
 
 			active++
+			for i, ok := range entries[0].matches {
+				if ok {
+					activeMatching[i]++
+				}
+			}
 			if ts < oldest {
 				oldest = ts
 			}
@@ -229,6 +263,14 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 			delete(s.refs, fp)
 		} else {
 			active += cnt
+			for i := range entries {
+				for i, ok := range entries[i].matches {
+					if ok {
+						activeMatching[i]++
+					}
+				}
+			}
+
 			s.refs[fp] = entries
 		}
 	}
@@ -239,11 +281,78 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 		s.oldestEntryTs.Store(oldest)
 	}
 	s.active = active
+	s.activeMatching = activeMatching
 }
 
-func (s *activeSeriesStripe) getActive() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func NewActiveSeriesMatcher(cfgs ActiveMatchingSeriesConfigs) (asm ActiveSeriesMatcher, _ error) {
+	seenMatcherNames := map[string]int{}
+	for i, cfg := range cfgs {
+		if idx, seen := seenMatcherNames[cfg.Name]; seen {
+			return asm, fmt.Errorf("active series matcher %d duplicates the name of matcher at position %d: %q", i, idx, cfg.Name)
+		}
+		seenMatcherNames[cfg.Name] = i
 
-	return s.active
+		sm, err := newSeriesMatcher(cfg.Matcher)
+		if err != nil {
+			return asm, fmt.Errorf("can't build active series matcher %d: %w", i, err)
+		}
+		asm.seriesMatchers = append(asm.seriesMatchers, sm)
+		asm.matcherNames = append(asm.matcherNames, cfg.Name)
+	}
+	return asm, nil
+}
+
+type ActiveSeriesMatcher struct {
+	matcherNames   []string
+	seriesMatchers []seriesMatcher
+}
+
+func (asm ActiveSeriesMatcher) MatcherNames() []string {
+	return asm.matcherNames
+}
+
+func (asm ActiveSeriesMatcher) Matches(series labels.Labels) []bool {
+	matches := make([]bool, len(asm.matcherNames))
+	for i, sm := range asm.seriesMatchers {
+		matches[i] = sm.matches(series)
+	}
+	return matches
+}
+
+func newSeriesMatcher(matcher string) (sm seriesMatcher, _ error) {
+	expr, err := parser.ParseExpr(matcher)
+	if err != nil {
+		return sm, err
+	}
+	vs, ok := expr.(*parser.VectorSelector)
+	if !ok {
+		return sm, fmt.Errorf("should be a vector selector, but %T was provided", expr)
+	}
+	if vs.OriginalOffset != 0 || vs.Timestamp != nil || vs.StartOrEnd != 0 {
+		return sm, fmt.Errorf("no offset or timestamp should be provided")
+	}
+	sm.matchers = vs.LabelMatchers
+
+	return sm, nil
+}
+
+type seriesMatcher struct {
+	matchers []*labels.Matcher
+}
+
+func (sm seriesMatcher) matches(series labels.Labels) bool {
+	metric := series.Map()
+	for _, lm := range sm.matchers {
+		if !lm.Matches(metric[lm.Name]) {
+			return false
+		}
+	}
+	return true
+}
+
+func makeIntSliceIfNotEmpty(l int) []int {
+	if l == 0 {
+		return nil
+	}
+	return make([]int, l)
 }

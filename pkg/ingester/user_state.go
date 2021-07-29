@@ -34,11 +34,12 @@ import (
 // userStates holds the userState object for all users (tenants),
 // each one containing all the in-memory series for a given user.
 type userStates struct {
-	states  sync.Map
-	limiter *Limiter
-	cfg     Config
-	metrics *ingesterMetrics
-	logger  log.Logger
+	states              sync.Map
+	limiter             *Limiter
+	cfg                 Config
+	metrics             *ingesterMetrics
+	logger              log.Logger
+	activeSeriesMatcher ActiveSeriesMatcher
 }
 
 type userState struct {
@@ -62,6 +63,7 @@ type userState struct {
 	discardedSamples      *prometheus.CounterVec
 	createdChunks         prometheus.Counter
 	activeSeriesGauge     prometheus.Gauge
+	activeSeriesMatching  *prometheus.GaugeVec
 }
 
 // DiscardedSamples metric labels
@@ -70,12 +72,13 @@ const (
 	perMetricSeriesLimit = "per_metric_series_limit"
 )
 
-func newUserStates(limiter *Limiter, cfg Config, metrics *ingesterMetrics, logger log.Logger) *userStates {
+func newUserStates(limiter *Limiter, cfg Config, metrics *ingesterMetrics, logger log.Logger, asm ActiveSeriesMatcher) *userStates {
 	return &userStates{
-		limiter: limiter,
-		cfg:     cfg,
-		metrics: metrics,
-		logger:  logger,
+		limiter:             limiter,
+		cfg:                 cfg,
+		metrics:             metrics,
+		logger:              logger,
+		activeSeriesMatcher: asm,
 	}
 }
 
@@ -96,6 +99,9 @@ func (us *userStates) gc() {
 			us.states.Delete(key)
 			state.activeSeries.clear()
 			state.activeSeriesGauge.Set(0)
+			for _, matcherName := range us.activeSeriesMatcher.MatcherNames() {
+				state.activeSeriesMatching.WithLabelValues(matcherName).Set(0)
+			}
 		}
 		return true
 	})
@@ -121,7 +127,11 @@ func (us *userStates) purgeAndUpdateActiveSeries(purgeTime time.Time) {
 	us.states.Range(func(key, value interface{}) bool {
 		state := value.(*userState)
 		state.activeSeries.Purge(purgeTime)
-		state.activeSeriesGauge.Set(float64(state.activeSeries.Active()))
+		allActive, activeMatching := state.activeSeries.Active()
+		state.activeSeriesGauge.Set(float64(allActive))
+		for i, matcherName := range us.activeSeriesMatcher.MatcherNames() {
+			state.activeSeriesMatching.WithLabelValues(matcherName).Set(float64(activeMatching[i]))
+		}
 		return true
 	})
 }
@@ -139,6 +149,7 @@ func (us *userStates) getOrCreate(userID string) *userState {
 	if !ok {
 
 		logger := log.With(us.logger, "user", userID)
+		userLabels := prometheus.Labels{"user": userID}
 		// Speculatively create a userState object and try to store it
 		// in the map.  Another goroutine may have got there before
 		// us, in which case this userState will be discarded
@@ -156,11 +167,12 @@ func (us *userStates) getOrCreate(userID string) *userState {
 			memSeries:             us.metrics.memSeries,
 			memSeriesCreatedTotal: us.metrics.memSeriesCreatedTotal.WithLabelValues(userID),
 			memSeriesRemovedTotal: us.metrics.memSeriesRemovedTotal.WithLabelValues(userID),
-			discardedSamples:      validation.DiscardedSamples.MustCurryWith(prometheus.Labels{"user": userID}),
+			discardedSamples:      validation.DiscardedSamples.MustCurryWith(userLabels),
 			createdChunks:         us.metrics.createdChunks,
 
-			activeSeries:      NewActiveSeries(),
-			activeSeriesGauge: us.metrics.activeSeriesPerUser.WithLabelValues(userID),
+			activeSeries:         NewActiveSeries(us.activeSeriesMatcher),
+			activeSeriesGauge:    us.metrics.activeSeriesPerUser.WithLabelValues(userID),
+			activeSeriesMatching: us.metrics.activeMatchingSeriesPerUser.MustCurryWith(userLabels),
 		}
 		state.mapper = newFPMapper(state.fpToSeries, logger)
 		stored, ok := us.states.LoadOrStore(userID, state)
@@ -179,6 +191,9 @@ func (us *userStates) teardown() {
 		u.memSeriesRemovedTotal.Add(float64(u.fpToSeries.length()))
 		u.memSeries.Sub(float64(u.fpToSeries.length()))
 		u.activeSeriesGauge.Set(0)
+		for _, matcherName := range us.activeSeriesMatcher.MatcherNames() {
+			u.activeSeriesMatching.WithLabelValues(matcherName).Set(0)
+		}
 		us.metrics.memUsers.Dec()
 	}
 }

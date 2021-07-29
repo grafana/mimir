@@ -86,9 +86,10 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period"`
 
-	ActiveSeriesMetricsEnabled      bool          `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration `yaml:"active_series_metrics_update_period"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout"`
+	ActiveSeriesMetricsEnabled      bool                        `yaml:"active_series_metrics_enabled"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration               `yaml:"active_series_metrics_update_period"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration               `yaml:"active_series_metrics_idle_timeout"`
+	ActiveMatchingSeries            ActiveMatchingSeriesConfigs `yaml:"active_matching_series"`
 
 	// Use blocks storage.
 	BlocksStorageEnabled        bool                     `yaml:"-"`
@@ -134,6 +135,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
+	f.Var(&cfg.ActiveMatchingSeries, "ingester.active-matching-series", "Additional active series metrics for series matching the provided matchers. Flag value must be '<matcher_name>:<matcher>', like 'foobar:{foo=\"bar\"}'. Can be provided multiple times.")
+
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", false, "Stream chunks when using blocks. This is experimental feature and not yet tested. Once ready, it will be made default and this config option removed.")
 
 	f.Float64Var(&cfg.DefaultLimits.MaxIngestionRate, "ingester.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. This limit only works when using blocks engine. 0 = unlimited.")
@@ -165,6 +168,42 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 	return result
 }
 
+var _ flag.Value = &ActiveMatchingSeriesConfigs{}
+
+// ActiveMatchingSeriesConfigs is a slice of ActiveMatchingSeriesConfig implementing the flag.Value interface so it can be filled by providing multiple flags.
+type ActiveMatchingSeriesConfigs []ActiveMatchingSeriesConfig
+
+func (cfgs *ActiveMatchingSeriesConfigs) String() string {
+	strs := make([]string, len(*cfgs))
+	for i, cfg := range *cfgs {
+		strs[i] = cfg.String()
+	}
+	return strings.Join(strs, ",")
+}
+
+func (cfgs *ActiveMatchingSeriesConfigs) Set(s string) error {
+	if !strings.Contains(s, ":") {
+		return fmt.Errorf("ingester.active-matching-series value should be <matcher_name>:<matcher>, but colon was not found in the value %q", s)
+	}
+	split := strings.SplitN(s, ":", 2)
+	name, matcher := split[0], split[1]
+	if len(name) == 0 || len(matcher) == 0 {
+		return fmt.Errorf("ingester.active-matching-series value should be <matcher_name>:<matcher>, but one of the sides was empty in the value %q", s)
+	}
+	*cfgs = append(*cfgs, ActiveMatchingSeriesConfig{Name: name, Matcher: matcher})
+	return nil
+}
+
+// ActiveMatchingSeriesConfig configures a matcher that will provide more active series metrics.
+type ActiveMatchingSeriesConfig struct {
+	Name    string `yaml:"name"`
+	Matcher string `yaml:"matcher"`
+}
+
+func (cfg ActiveMatchingSeriesConfig) String() string {
+	return cfg.Name + ":" + cfg.Matcher
+}
+
 // Ingester deals with "in flight" chunks.  Based on Prometheus 1.x
 // MemorySeriesStorage.
 type Ingester struct {
@@ -175,6 +214,8 @@ type Ingester struct {
 
 	metrics *ingesterMetrics
 	logger  log.Logger
+
+	activeSeriesMatcher ActiveSeriesMatcher
 
 	chunkStore         ChunkStore
 	lifecycler         *ring.Lifecycler
@@ -254,6 +295,11 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 		}
 	}
 
+	asm, err := NewActiveSeriesMatcher(cfg.ActiveMatchingSeries)
+	if err != nil {
+		return nil, err
+	}
+
 	i := &Ingester{
 		cfg:          cfg,
 		clientConfig: clientConfig,
@@ -265,10 +311,11 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 		usersMetadata:    map[string]*userMetricsMetadata{},
 		registerer:       registerer,
 		logger:           logger,
+
+		activeSeriesMatcher: asm,
 	}
 	i.metrics = newIngesterMetrics(registerer, true, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
-	var err error
 	// During WAL recovery, it will create new user states which requires the limiter.
 	// Hence initialise the limiter before creating the WAL.
 	// The '!cfg.WALConfig.WALEnabled' argument says don't flush on shutdown if the WAL is enabled.
@@ -307,7 +354,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 
 	// If the WAL recover happened, then the userStates would already be set.
 	if i.userStates == nil {
-		i.userStates = newUserStates(i.limiter, i.cfg, i.metrics, i.logger)
+		i.userStates = newUserStates(i.limiter, i.cfg, i.metrics, i.logger, i.activeSeriesMatcher)
 	}
 
 	var err error
