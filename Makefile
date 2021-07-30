@@ -11,7 +11,7 @@ GOPROXY_VALUE=$(shell go env GOPROXY)
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
-IMAGE_PREFIX ?= quay.io/mimir/
+IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev/
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
 # If finding refs/tags/ does not equal emptystring then use

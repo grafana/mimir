@@ -21,7 +21,7 @@ func GetDefaultImage() string {
 		return os.Getenv("CORTEX_IMAGE")
 	}
 
-	return "quay.io/mimir/mimir:latest"
+	return "us.gcr.io/kubernetes-dev/mimir:latest"
 }
 
 func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *CortexService {
