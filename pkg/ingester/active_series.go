@@ -14,9 +14,9 @@ import (
 
 	"github.com/cespare/xxhash"
 	"github.com/grafana/mimir/pkg/util"
+	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 	"go.uber.org/atomic"
 )
 
@@ -292,62 +292,40 @@ func NewActiveSeriesMatcher(cfgs ActiveMatchingSeriesConfigs) (asm ActiveSeriesM
 		}
 		seenMatcherNames[cfg.Name] = i
 
-		sm, err := newSeriesMatcher(cfg.Matcher)
+		sm, err := amlabels.ParseMatchers(cfg.Matcher)
 		if err != nil {
 			return asm, fmt.Errorf("can't build active series matcher %d: %w", i, err)
 		}
-		asm.seriesMatchers = append(asm.seriesMatchers, sm)
-		asm.matcherNames = append(asm.matcherNames, cfg.Name)
+		asm.matchers = append(asm.matchers, sm)
+		asm.names = append(asm.names, cfg.Name)
 	}
 	return asm, nil
 }
 
 type ActiveSeriesMatcher struct {
-	matcherNames   []string
-	seriesMatchers []seriesMatcher
+	names    []string
+	matchers []amlabels.Matchers
 }
 
 func (asm ActiveSeriesMatcher) MatcherNames() []string {
-	return asm.matcherNames
+	return asm.names
 }
 
 func (asm ActiveSeriesMatcher) Matches(series labels.Labels) []bool {
-	matches := make([]bool, len(asm.matcherNames))
-	for i, sm := range asm.seriesMatchers {
-		matches[i] = sm.matches(series)
+	ls := labelsToLabelSet(series)
+	matches := make([]bool, len(asm.names))
+	for i, sm := range asm.matchers {
+		matches[i] = sm.Matches(ls)
 	}
 	return matches
 }
 
-func newSeriesMatcher(matcher string) (sm seriesMatcher, _ error) {
-	expr, err := parser.ParseExpr(matcher)
-	if err != nil {
-		return sm, err
+func labelsToLabelSet(series labels.Labels) model.LabelSet {
+	ls := make(model.LabelSet)
+	for _, l := range series {
+		ls[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
-	vs, ok := expr.(*parser.VectorSelector)
-	if !ok {
-		return sm, fmt.Errorf("should be a vector selector, but %T was provided", expr)
-	}
-	if vs.OriginalOffset != 0 || vs.Timestamp != nil || vs.StartOrEnd != 0 {
-		return sm, fmt.Errorf("no offset or timestamp should be provided")
-	}
-	sm.matchers = vs.LabelMatchers
-
-	return sm, nil
-}
-
-type seriesMatcher struct {
-	matchers []*labels.Matcher
-}
-
-func (sm seriesMatcher) matches(series labels.Labels) bool {
-	metric := series.Map()
-	for _, lm := range sm.matchers {
-		if !lm.Matches(metric[lm.Name]) {
-			return false
-		}
-	}
-	return true
+	return ls
 }
 
 func makeIntSliceIfNotEmpty(l int) []int {
