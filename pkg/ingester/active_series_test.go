@@ -306,3 +306,113 @@ func benchmarkPurge(b *testing.B, twice bool) {
 		}
 	}
 }
+
+func TestActiveSeriesMatcher(t *testing.T) {
+	t.Run("malformed matcher", func(t *testing.T) {
+		for _, matcher := range []string{
+			`{foo}`,
+			`{foo=~"}`,
+		} {
+			t.Run(matcher, func(t *testing.T) {
+				config := ActiveMatchingSeriesConfigs{
+					{
+						Name:    "malformed",
+						Matcher: matcher,
+					},
+				}
+
+				_, err := NewActiveSeriesMatcher(config)
+				assert.Error(t, err)
+			})
+		}
+	})
+
+	t.Run("matches series", func(t *testing.T) {
+		config := ActiveMatchingSeriesConfigs{
+			{
+				Name:    "has_foo_label",
+				Matcher: `{foo!=""}`,
+			},
+			{
+				Name:    "does_not_have_foo_label",
+				Matcher: `{foo=""}`,
+			},
+			{
+				Name:    "has_foo_and_bar_starts_with_1",
+				Matcher: `{foo!="", bar=~"1.*"}`,
+			},
+			{
+				Name:    "bar_starts_with_1",
+				Matcher: `{bar=~"1.*"}`,
+			},
+		}
+
+		asm, err := NewActiveSeriesMatcher(config)
+		require.NoError(t, err)
+
+		for _, tc := range []struct {
+			series   labels.Labels
+			expected []bool
+		}{
+			{
+				series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					true,  // has_foo_label
+					false, // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					true,  // has_foo_label
+					false, // does_not_have_foo_label
+					true,  // has_foo_and_bar_starts_with_1
+					true,  // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					true,  // has_foo_label
+					false, // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					false, // has_foo_label
+					true,  // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					false, // has_foo_label
+					true,  // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					true,  // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					false, // has_foo_label
+					true,  // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+		} {
+			t.Run(tc.series.String(), func(t *testing.T) {
+				got := asm.Matches(tc.series)
+				assert.Equal(t, tc.expected, got)
+			})
+		}
+	})
+}
