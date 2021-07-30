@@ -23,7 +23,7 @@ ingester:
       kvstore:
         store: consul
         consul:
-          host: localhost:8500
+          host: consul:8500
       replication_factor: 1
 
 querier:
@@ -36,7 +36,7 @@ store_gateway:
     kvstore:
       store: consul
       consul:
-        host: localhost:8500
+        host: consul:8500
 
 blocks_storage:
   backend: swift
@@ -51,7 +51,7 @@ blocks_storage:
     sync_dir: /data/cortex-tsdb-querier
 
   swift:
-    auth_url:          http://localhost:5000/v2.0
+    auth_url:          http://swift:5000/v2.0
     username:          admin
     password:          s3cr3t
     project_name:      admin
@@ -69,12 +69,12 @@ ruler:
     kvstore:
       store: consul
       consul:
-        host: localhost:8500
+        host: consul:8500
 
 ruler_storage:
   backend: swift
   swift:
-    auth_url:          http://localhost:5000/v2.0
+    auth_url:          http://swift:5000/v2.0
     username:          admin
     password:          s3cr3t
     project_name:      admin

@@ -9,6 +9,9 @@ services:
 
   swift:
     image: beaukode/docker-swift-onlyone-authv2-keystone
+    environment:
+      # Hostname of this container.
+      - PUBLIC_HOST=swift
     volumes:
       - .data-swift:/srv:delegated
     ports:
@@ -23,7 +26,7 @@ services:
       - OS_USERNAME=admin
       - OS_PASSWORD=s3cr3t
       - OS_TENANT_NAME=admin
-      - OS_AUTH_URL=http://localhost:5000/v2.0
+      - OS_AUTH_URL=http://swift:5000/v2.0
       - OS_REGION_NAME=RegionOne
     command: ["sh", "-c", "sleep 30 && swift post cortex-rules && \
                             swift post cortex-tsdb && swift list"]
