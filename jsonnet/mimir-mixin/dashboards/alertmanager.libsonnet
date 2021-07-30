@@ -150,16 +150,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Sharding Runtime State Sync')
+      $.row('Sharding Initial State Sync')
       .addPanel(
-        $.panel('Syncs/sec') +
+        $.panel('Initial syncs/sec') +
         $.queryPanel(
           'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           '{{outcome}}'
         )
       )
       .addPanel(
-        $.panel('Sync duration') +
+        $.panel('Initial sync duration') +
         $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher('alertmanager'))
       )
       .addPanel(
@@ -178,7 +178,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Sharding State Operations')
+      $.row('Sharding Runtime State Sync')
       .addPanel(
         $.panel('Replicate state to other alertmanagers /sec') +
         $.queryPanel(
