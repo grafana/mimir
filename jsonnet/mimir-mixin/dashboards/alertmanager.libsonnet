@@ -17,6 +17,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Total Silences') +
         $.statPanel('sum(cortex_alertmanager_silences{%s})' % $.jobMatcher('alertmanager'), format='short')
       )
+      .addPanel(
+        $.panel('Tenants') +
+        $.statPanel('max(cortex_alertmanager_tenants_discovered{%s})' % $.jobMatcher('alertmanager'), format='short')
+      )
     )
     .addRow(
       $.row('Alerts Received')
@@ -86,5 +90,136 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
     .addRows(
       $.getObjectStoreRows('Alertmanager Configuration Object Store (Alertmanager accesses)', 'alertmanager-storage')
+    )
+    .addRow(
+      $.row('Replication')
+      .addPanel(
+        $.panel('Per %s Tenants' % $._config.per_instance_label) +
+        $.queryPanel(
+          'max by(%s) (cortex_alertmanager_tenants_owned{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          '{{%s}}' % $._config.per_instance_label
+        ) +
+        $.stack
+      )
+      .addPanel(
+        $.panel('Per %s Alerts' % $._config.per_instance_label) +
+        $.queryPanel(
+          'sum by(%s) (cortex_alertmanager_alerts{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          '{{%s}}' % $._config.per_instance_label
+        ) +
+        $.stack
+      )
+      .addPanel(
+        $.panel('Per %s Silences' % $._config.per_instance_label) +
+        $.queryPanel(
+          'sum by(%s) (cortex_alertmanager_silences{%s})' % [$._config.per_instance_label, $.jobMatcher('alertmanager')],
+          '{{%s}}' % $._config.per_instance_label
+        ) +
+        $.stack
+      )
+    )
+    .addRow(
+      $.row('Tenant Configuration Sync')
+      .addPanel(
+        $.panel('Syncs/sec') +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
+            'sum(rate(cortex_alertmanager_sync_configs_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          ],
+          ['success', 'failed']
+        )
+      )
+      .addPanel(
+        $.panel('Syncs/sec (By Reason)') +
+        $.queryPanel(
+          'sum by(reason) (rate(cortex_alertmanager_sync_configs_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          '{{reason}}'
+        )
+      )
+      .addPanel(
+        $.panel('Ring Check Errors/sec') +
+        $.queryPanel(
+          'sum (rate(cortex_alertmanager_ring_check_errors_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          'errors'
+        )
+      )
+    )
+    .addRow(
+      $.row('Sharding Initial State Sync')
+      .addPanel(
+        $.panel('Initial syncs/sec') +
+        $.queryPanel(
+          'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          '{{outcome}}'
+        )
+      )
+      .addPanel(
+        $.panel('Initial sync duration') +
+        $.latencyPanel('cortex_alertmanager_state_initial_sync_duration_seconds', '{%s}' % $.jobMatcher('alertmanager'))
+      )
+      .addPanel(
+        $.panel('Fetch state from other alertmanagers /sec') +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_alertmanager_state_fetch_replica_state_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
+            'sum(rate(cortex_alertmanager_state_fetch_replica_state_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          ],
+          ['success', 'failed']
+        )
+      )
+    )
+    .addRow(
+      $.row('Sharding Runtime State Sync')
+      .addPanel(
+        $.panel('Replicate state to other alertmanagers /sec') +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_alertmanager_state_replication_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_alertmanager_state_replication_failed_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
+            'sum(rate(cortex_alertmanager_state_replication_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          ],
+          ['success', 'failed']
+        )
+      )
+      .addPanel(
+        $.panel('Merge state from other alertmanagers /sec') +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_alertmanager_partial_state_merges_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_alertmanager_partial_state_merges_failed_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
+            'sum(rate(cortex_alertmanager_partial_state_merges_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          ],
+          ['success', 'failed']
+        )
+      )
+      .addPanel(
+        $.panel('Persist state to remote storage /sec') +
+        $.queryPanel(
+          [
+            |||
+              sum(rate(cortex_alertmanager_state_persist_total{%s}[$__rate_interval]))
+              -
+              sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))
+            ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
+            'sum(rate(cortex_alertmanager_state_persist_failed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
+          ],
+          ['success', 'failed']
+        )
+      )
     ),
 }
