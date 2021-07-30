@@ -57,13 +57,13 @@ type userState struct {
 	seriesInMetric *metricCounter
 
 	// Series metrics.
-	memSeries             prometheus.Gauge
-	memSeriesCreatedTotal prometheus.Counter
-	memSeriesRemovedTotal prometheus.Counter
-	discardedSamples      *prometheus.CounterVec
-	createdChunks         prometheus.Counter
-	activeSeriesGauge     prometheus.Gauge
-	activeSeriesMatching  *prometheus.GaugeVec
+	memSeries                  prometheus.Gauge
+	memSeriesCreatedTotal      prometheus.Counter
+	memSeriesRemovedTotal      prometheus.Counter
+	discardedSamples           *prometheus.CounterVec
+	createdChunks              prometheus.Counter
+	activeSeriesGauge          prometheus.Gauge
+	activeSeriesCustomTrackers *prometheus.GaugeVec
 }
 
 // DiscardedSamples metric labels
@@ -99,8 +99,8 @@ func (us *userStates) gc() {
 			us.states.Delete(key)
 			state.activeSeries.clear()
 			state.activeSeriesGauge.Set(0)
-			for _, matcherName := range us.activeSeriesMatcher.MatcherNames() {
-				state.activeSeriesMatching.WithLabelValues(matcherName).Set(0)
+			for _, name := range us.activeSeriesMatcher.MatcherNames() {
+				state.activeSeriesCustomTrackers.WithLabelValues(name).Set(0)
 			}
 		}
 		return true
@@ -129,8 +129,8 @@ func (us *userStates) purgeAndUpdateActiveSeries(purgeTime time.Time) {
 		state.activeSeries.Purge(purgeTime)
 		allActive, activeMatching := state.activeSeries.Active()
 		state.activeSeriesGauge.Set(float64(allActive))
-		for i, matcherName := range us.activeSeriesMatcher.MatcherNames() {
-			state.activeSeriesMatching.WithLabelValues(matcherName).Set(float64(activeMatching[i]))
+		for i, name := range us.activeSeriesMatcher.MatcherNames() {
+			state.activeSeriesCustomTrackers.WithLabelValues(name).Set(float64(activeMatching[i]))
 		}
 		return true
 	})
@@ -170,9 +170,9 @@ func (us *userStates) getOrCreate(userID string) *userState {
 			discardedSamples:      validation.DiscardedSamples.MustCurryWith(userLabels),
 			createdChunks:         us.metrics.createdChunks,
 
-			activeSeries:         NewActiveSeries(us.activeSeriesMatcher),
-			activeSeriesGauge:    us.metrics.activeSeriesPerUser.WithLabelValues(userID),
-			activeSeriesMatching: us.metrics.activeMatchingSeriesPerUser.MustCurryWith(userLabels),
+			activeSeries:               NewActiveSeries(us.activeSeriesMatcher),
+			activeSeriesGauge:          us.metrics.activeSeriesPerUser.WithLabelValues(userID),
+			activeSeriesCustomTrackers: us.metrics.activeSeriesCustomTrackersPerUser.MustCurryWith(userLabels),
 		}
 		state.mapper = newFPMapper(state.fpToSeries, logger)
 		stored, ok := us.states.LoadOrStore(userID, state)
@@ -191,8 +191,8 @@ func (us *userStates) teardown() {
 		u.memSeriesRemovedTotal.Add(float64(u.fpToSeries.length()))
 		u.memSeries.Sub(float64(u.fpToSeries.length()))
 		u.activeSeriesGauge.Set(0)
-		for _, matcherName := range us.activeSeriesMatcher.MatcherNames() {
-			u.activeSeriesMatching.WithLabelValues(matcherName).Set(0)
+		for _, name := range us.activeSeriesMatcher.MatcherNames() {
+			u.activeSeriesCustomTrackers.WithLabelValues(name).Set(0)
 		}
 		us.metrics.memUsers.Dec()
 	}

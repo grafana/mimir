@@ -493,7 +493,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	asm, err := NewActiveSeriesMatcher(cfg.ActiveMatchingSeries)
+	asm, err := NewActiveSeriesMatcher(cfg.ActiveSeriesCustomTrackers)
 	if err != nil {
 		return nil, err
 	}
@@ -723,8 +723,8 @@ func (i *Ingester) v2UpdateActiveSeries() {
 		userDB.activeSeries.Purge(purgeTime)
 		allActive, activeMatching := userDB.activeSeries.Active()
 		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
-		for idx, lbl := range i.activeSeriesMatcher.MatcherNames() {
-			i.metrics.activeMatchingSeriesPerUser.WithLabelValues(userID, lbl).Set(float64(activeMatching[idx]))
+		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
+			i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
 		}
 	}
 }

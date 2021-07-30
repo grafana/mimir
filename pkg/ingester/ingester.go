@@ -86,10 +86,10 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period"`
 
-	ActiveSeriesMetricsEnabled      bool                        `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration               `yaml:"active_series_metrics_update_period"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration               `yaml:"active_series_metrics_idle_timeout"`
-	ActiveMatchingSeries            ActiveMatchingSeriesConfigs `yaml:"active_matching_series"`
+	ActiveSeriesMetricsEnabled      bool                              `yaml:"active_series_metrics_enabled"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration                     `yaml:"active_series_metrics_update_period"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration                     `yaml:"active_series_metrics_idle_timeout"`
+	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfigs `yaml:"active_series_custom_trackers"`
 
 	// Use blocks storage.
 	BlocksStorageEnabled        bool                     `yaml:"-"`
@@ -135,7 +135,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
-	f.Var(&cfg.ActiveMatchingSeries, "ingester.active-matching-series", "Additional active series metrics for series matching the provided matchers. Flag value must be '<matcher_name>:<matcher>', like 'foobar:{foo=\"bar\"}'. Can be provided multiple times.")
+	f.Var(&cfg.ActiveSeriesCustomTrackers, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple colon-separated values to a single flag.") // FIXME TODO
 
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", false, "Stream chunks when using blocks. This is experimental feature and not yet tested. Once ready, it will be made default and this config option removed.")
 
@@ -168,12 +168,12 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 	return result
 }
 
-var _ flag.Value = &ActiveMatchingSeriesConfigs{}
+var _ flag.Value = &ActiveSeriesCustomTrackersConfigs{}
 
-// ActiveMatchingSeriesConfigs is a slice of ActiveMatchingSeriesConfig implementing the flag.Value interface so it can be filled by providing multiple flags.
-type ActiveMatchingSeriesConfigs []ActiveMatchingSeriesConfig
+// ActiveSeriesCustomTrackersConfigs configures the additional custom trackers for active series in the ingester.
+type ActiveSeriesCustomTrackersConfigs []ActiveSeriesCustomTrackerConfig
 
-func (cfgs *ActiveMatchingSeriesConfigs) String() string {
+func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
 	strs := make([]string, len(*cfgs))
 	for i, cfg := range *cfgs {
 		strs[i] = cfg.String()
@@ -181,26 +181,34 @@ func (cfgs *ActiveMatchingSeriesConfigs) String() string {
 	return strings.Join(strs, ",")
 }
 
-func (cfgs *ActiveMatchingSeriesConfigs) Set(s string) error {
+func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
 	if !strings.Contains(s, ":") {
-		return fmt.Errorf("ingester.active-matching-series value should be <matcher_name>:<matcher>, but colon was not found in the value %q", s)
+		return fmt.Errorf("-ingester.active-series-custrom-trackers value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %q", s)
 	}
-	split := strings.SplitN(s, ":", 2)
-	name, matcher := split[0], split[1]
-	if len(name) == 0 || len(matcher) == 0 {
-		return fmt.Errorf("ingester.active-matching-series value should be <matcher_name>:<matcher>, but one of the sides was empty in the value %q", s)
+
+	pairs := strings.Split(s, ";")
+	for i, p := range pairs {
+		if !strings.Contains(p, ":") {
+			return fmt.Errorf("-ingester.active-series-custrom-trackers value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
+		}
+		split := strings.SplitN(p, ":", 2)
+		name, matcher := split[0], split[1]
+		if len(name) == 0 || len(matcher) == 0 {
+			return fmt.Errorf("colon-separated values of -ingester.active-series-custrom-trackers should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
+		}
+		*cfgs = append(*cfgs, ActiveSeriesCustomTrackerConfig{Name: name, Matcher: matcher})
 	}
-	*cfgs = append(*cfgs, ActiveMatchingSeriesConfig{Name: name, Matcher: matcher})
 	return nil
 }
 
-// ActiveMatchingSeriesConfig configures a matcher that will provide more active series metrics.
-type ActiveMatchingSeriesConfig struct {
+// ActiveSeriesCustomTrackerConfig configures an additional custom tracker for active series in the ingester.
+// Active series matched by the matcher will be exported in the metric labeled with the name provided.
+type ActiveSeriesCustomTrackerConfig struct {
 	Name    string `yaml:"name"`
 	Matcher string `yaml:"matcher"`
 }
 
-func (cfg ActiveMatchingSeriesConfig) String() string {
+func (cfg ActiveSeriesCustomTrackerConfig) String() string {
 	return cfg.Name + ":" + cfg.Matcher
 }
 
@@ -295,7 +303,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 		}
 	}
 
-	asm, err := NewActiveSeriesMatcher(cfg.ActiveMatchingSeries)
+	asm, err := NewActiveSeriesMatcher(cfg.ActiveSeriesCustomTrackers)
 	if err != nil {
 		return nil, err
 	}

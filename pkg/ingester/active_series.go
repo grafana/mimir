@@ -284,7 +284,7 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	s.activeMatching = activeMatching
 }
 
-func NewActiveSeriesMatcher(cfgs ActiveMatchingSeriesConfigs) (asm ActiveSeriesMatcher, _ error) {
+func NewActiveSeriesMatcher(cfgs ActiveSeriesCustomTrackersConfigs) (asm ActiveSeriesMatcher, _ error) {
 	seenMatcherNames := map[string]int{}
 	for i, cfg := range cfgs {
 		if idx, seen := seenMatcherNames[cfg.Name]; seen {

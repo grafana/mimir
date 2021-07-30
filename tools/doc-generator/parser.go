@@ -260,6 +260,8 @@ func getFieldType(t reflect.Type) (string, error) {
 		return "string", nil
 	case "[]*relabel.Config":
 		return "relabel_config...", nil
+	case "ingester.ActiveSeriesCustomTrackersConfigs":
+		return "active_series_custom_tracker...", nil
 	}
 
 	// Fallback to auto-detection of built-in data types
