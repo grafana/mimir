@@ -568,6 +568,8 @@ func NewV2ForFlusher(cfg Config, limits *validation.Overrides, registerer promet
 		wal:       &noopWAL{},
 		TSDBState: newTSDBState(cfg, bucketClient, registerer),
 		logger:    logger,
+
+		activeSeriesMatcher: newEmptyActiveSeriesMatcher(),
 	}
 	i.metrics = newIngesterMetrics(registerer, false, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
@@ -726,6 +728,7 @@ func (i *Ingester) v2UpdateActiveSeries() {
 		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
 			i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
 		}
+		i.activeSeriesMatcher.PutDirtyInts(activeMatching)
 	}
 }
 

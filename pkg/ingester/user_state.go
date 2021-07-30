@@ -39,7 +39,7 @@ type userStates struct {
 	cfg                 Config
 	metrics             *ingesterMetrics
 	logger              log.Logger
-	activeSeriesMatcher ActiveSeriesMatcher
+	activeSeriesMatcher *ActiveSeriesMatcher
 }
 
 type userState struct {
@@ -72,7 +72,7 @@ const (
 	perMetricSeriesLimit = "per_metric_series_limit"
 )
 
-func newUserStates(limiter *Limiter, cfg Config, metrics *ingesterMetrics, logger log.Logger, asm ActiveSeriesMatcher) *userStates {
+func newUserStates(limiter *Limiter, cfg Config, metrics *ingesterMetrics, logger log.Logger, asm *ActiveSeriesMatcher) *userStates {
 	return &userStates{
 		limiter:             limiter,
 		cfg:                 cfg,
@@ -132,6 +132,7 @@ func (us *userStates) purgeAndUpdateActiveSeries(purgeTime time.Time) {
 		for i, name := range us.activeSeriesMatcher.MatcherNames() {
 			state.activeSeriesCustomTrackers.WithLabelValues(name).Set(float64(activeMatching[i]))
 		}
+		us.activeSeriesMatcher.PutDirtyInts(activeMatching)
 		return true
 	})
 }

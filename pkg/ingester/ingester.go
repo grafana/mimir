@@ -223,7 +223,7 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	activeSeriesMatcher ActiveSeriesMatcher
+	activeSeriesMatcher *ActiveSeriesMatcher
 
 	chunkStore         ChunkStore
 	lifecycler         *ring.Lifecycler
@@ -410,6 +410,8 @@ func NewForFlusher(cfg Config, chunkStore ChunkStore, limits *validation.Overrid
 		wal:              &noopWAL{},
 		limits:           limits,
 		logger:           logger,
+
+		activeSeriesMatcher: newEmptyActiveSeriesMatcher(),
 	}
 	i.metrics = newIngesterMetrics(registerer, true, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
