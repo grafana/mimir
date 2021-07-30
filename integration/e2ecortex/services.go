@@ -68,11 +68,15 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	entryCommand := "mimir"
+	if strings.Contains(image, "quay.io/cortexproject/cortex") {
+		entryCommand = "cortex"
+	}
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(entryCommand, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                         "querier",
 			"-log.level":                      "warn",
 			"-distributor.replication-factor": "1",
