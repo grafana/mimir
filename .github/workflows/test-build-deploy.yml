@@ -10,7 +10,10 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
+      image: us.gcr.io/kubernetes-dev/mimirbuild-image@sha256:fad56ea2be4c4f9e1425e34f9924d9e8437e3ee80b9adcffd3991f46b07951e5
+      credentials:
+        username: _json_key
+        password: ${{ secrets.gcr_json_key }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -34,7 +37,10 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
+      image: us.gcr.io/kubernetes-dev/mimirbuild-image@sha256:fad56ea2be4c4f9e1425e34f9924d9e8437e3ee80b9adcffd3991f46b07951e5
+      credentials:
+        username: _json_key
+        password: ${{ secrets.gcr_json_key }}
     services:
       cassandra:
         image: cassandra:3.11
@@ -55,7 +61,10 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: quay.io/cortexproject/build-image:20210713_update-go-1.16.6-178ab0c4f
+      image: us.gcr.io/kubernetes-dev/mimirbuild-image@sha256:fad56ea2be4c4f9e1425e34f9924d9e8437e3ee80b9adcffd3991f46b07951e5
+      credentials:
+        username: _json_key
+        password: ${{ secrets.gcr_json_key }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
