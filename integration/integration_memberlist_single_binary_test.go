@@ -198,11 +198,11 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 		instances = instances[:i]
 		stop.Go(func() error { return s.Stop(c) })
 
-		// TODO(#4360): Remove this when issue is resolved.
-		//   Wait until memberlist for all nodes has recognised the instance left.
+		// TODO(#44): Remove this when issue is resolved.
+		//   Wait until the ring for all nodes has recognised the instance left.
 		//   This means that we will not gossip tombstones to leaving nodes.
 		for _, c := range instances {
-			require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(len(instances))), "memberlist_client_cluster_members_count"))
+			require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(len(instances))), "cortex_ring_members"))
 		}
 	}
 	require.NoError(t, stop.Wait())
