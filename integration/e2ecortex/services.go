@@ -3,6 +3,7 @@ package e2ecortex
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/grafana/mimir/integration/e2e"
 )
@@ -142,11 +143,15 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	entryCommand := "mimir"
+	if strings.Contains(image, "quay.io/cortexproject/cortex") {
+		entryCommand = "cortex"
+	}
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(entryCommand, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                        "ingester",
 			"-log.level":                     "warn",
 			"-ingester.final-sleep":          "0s",
