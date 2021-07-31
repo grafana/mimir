@@ -68,10 +68,7 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	entryCommand := "mimir"
-	if strings.Contains(image, "quay.io/cortexproject/cortex") {
-		entryCommand = "cortex"
-	}
+	entryCommand := getEntryCommandForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
@@ -147,10 +144,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	entryCommand := "mimir"
-	if strings.Contains(image, "quay.io/cortexproject/cortex") {
-		entryCommand = "cortex"
-	}
+	entryCommand := getEntryCommandForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
@@ -172,6 +166,13 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 		httpPort,
 		grpcPort,
 	)
+}
+
+func getEntryCommandForBackwardsCompatability(image string) string {
+	if strings.Contains(image, "quay.io/cortexproject/cortex") {
+		return "cortex"
+	}
+	return "mimir"
 }
 
 func NewTableManager(name string, flags map[string]string, image string) *CortexService {
@@ -212,11 +213,12 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	entryCommand := getEntryCommandForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(entryCommand, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "query-frontend",
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
