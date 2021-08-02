@@ -865,10 +865,10 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 			})
 		}
 
-		if i.cfg.BlocksStorageConfig.TSDB.MaxExemplars > 0 {
+		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplars(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
-			if ref == 0 && len(ts.Exemplars) > 0 {
+			if ref == 0 {
 				updateFirstPartial(func() error {
 					return wrappedTSDBIngestExemplarErr(errExemplarRef,
 						model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
@@ -1608,8 +1608,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		instanceSeriesCount: &i.TSDBState.seriesCount,
 	}
 
+	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplars(userID))
 	enableExemplars := false
-	if i.cfg.BlocksStorageConfig.TSDB.MaxExemplars > 0 {
+	if maxExemplars > 0 {
 		enableExemplars = true
 	}
 	// Create a new user database
@@ -1625,7 +1626,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		SeriesLifecycleCallback:   userDB,
 		BlocksToDelete:            userDB.blocksToDelete,
 		EnableExemplarStorage:     enableExemplars,
-		MaxExemplars:              int64(i.cfg.BlocksStorageConfig.TSDB.MaxExemplars),
+		MaxExemplars:              int64(maxExemplars),
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)
