@@ -481,8 +481,9 @@ func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
 }
 
 // AddHistogramData merges another histogram data into this one.
-// Do not call this function after Metric() has been invoked, because it's not
-// allowed to change the buckets after they've been passed to a prometheus.Metric.
+// Do not call this function after Metric() has been invoked, because histogram created by Metric
+// is using the buckets map (doesn't make a copy), and it's not allowed to change the buckets
+// after they've been passed to a prometheus.Metric.
 func (d *HistogramData) AddHistogramData(histo HistogramData) {
 	d.sampleCount += histo.sampleCount
 	d.sampleSum += histo.sampleSum
