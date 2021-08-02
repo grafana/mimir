@@ -37,7 +37,7 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -69,7 +69,7 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -112,7 +112,7 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -146,7 +146,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -170,7 +170,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	)
 }
 
-func getBinaryNameForBackwardsCompatability(image string) string {
+func getBinaryNameForBackwardsCompatibility(image string) string {
 	if strings.Contains(image, "quay.io/cortexproject/cortex") {
 		return "cortex"
 	}
@@ -189,7 +189,7 @@ func NewTableManagerWithConfigFile(name, configFile string, flags map[string]str
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -216,7 +216,7 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -245,7 +245,7 @@ func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]s
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -272,7 +272,7 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -298,7 +298,7 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -336,7 +336,7 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -358,7 +358,7 @@ func NewAlertmanager(name string, flags map[string]string, image string) *Cortex
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -379,7 +379,7 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) 
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -400,7 +400,7 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,
@@ -430,7 +430,7 @@ func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, i
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	binaryName := getBinaryNameForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
 	return NewCortexService(
 		name,

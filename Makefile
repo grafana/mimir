@@ -12,7 +12,7 @@ GOPROXY_VALUE=$(shell go env GOPROXY)
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
 IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev/
-BUILD_IMAGE ?= us.gcr.io/kubernetes-dev/mimir-build-image
+BUILD_IMAGE ?= $(IMAGE_PREFIX)/mimir-build-image
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
 # If finding refs/tags/ does not equal emptystring then use
@@ -40,14 +40,6 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 %/$(UPTODATE): %/Dockerfile
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
-	@echo
-	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
-	touch $@
-
-# FIXME: This should be removed when all other images are updated to use new Docker registry
-mimir-build-image/$(UPTODATE): mimir-build-image/Dockerfile
-	@echo
-	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 	@echo
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
@@ -127,7 +119,6 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
 LATEST_BUILD_IMAGE_TAG ?= 20210802-6ece8f873
-
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
