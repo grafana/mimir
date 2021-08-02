@@ -2,6 +2,7 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Renamed build image to us.gcr.io/kubernetes-dev/mimir-build-image. #40
 * [CHANGE] Renamed metric `deprecated_flags_inuse_total` as `deprecated_flags_used_total`. #35
 * [CHANGE] Renamed metric `experimental_features_in_use_total` as `experimental_features_used_total`. #32
 * [CHANGE] Removed `log_messages_total` metric. #32

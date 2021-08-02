@@ -46,6 +46,6 @@ ENV GOCACHE=/go/cache
 ENTRYPOINT ["/build.sh"]
 
 ARG revision
-LABEL org.opencontainers.image.title="build-image" \
-      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/build-image" \
+LABEL org.opencontainers.image.title="mimir-build-image" \
+      org.opencontainers.image.source="https://github.com/grafana/mimir/tree/main/mimir-build-image" \
       org.opencontainers.image.revision="${revision}"
