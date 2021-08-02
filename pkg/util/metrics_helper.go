@@ -498,6 +498,9 @@ func (d *HistogramData) AddHistogramData(histo HistogramData) {
 }
 
 // Metric returns prometheus metric from this histogram data.
+//
+// Note that returned metric shares bucket with this HistogramData, so avoid
+// doing more modifications to this HistogramData after calling Metric.
 func (d *HistogramData) Metric(desc *prometheus.Desc, labelValues ...string) prometheus.Metric {
 	return prometheus.MustNewConstHistogram(desc, d.sampleCount, d.sampleSum, d.buckets, labelValues...)
 }
