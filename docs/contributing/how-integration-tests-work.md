@@ -12,10 +12,10 @@ Cortex integration tests are written in Go and based on a [custom framework](htt
 When integration tests run in CI, we build the Cortex docker image based on the PR code and then run the integration tests against it. When running tests **locally** you should build the Cortex Docker image first:
 
 ```
-make ./cmd/cortex/.uptodate
+make ./cmd/mimir/.uptodate
 ```
 
-This will locally build the `quay.io/cortexproject/cortex:latest` image used by integration tests. Whenever the Cortex code changes (`cmd/`, `pkg/` or vendors) you should rebuild the Cortex image, while it's **not** necessary to rebuild it while developing integration tests.
+This will locally build the `us.gcr.io/kubernetes-dev/mimir:latest` image used by integration tests. Whenever the Cortex code changes (`cmd/`, `pkg/` or vendors) you should rebuild the Cortex image, while it's **not** necessary to rebuild it while developing integration tests.
 
 Once the Docker image is built, you can run integration tests:
 
@@ -32,7 +32,7 @@ go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexB
 ### Supported environment variables
 
 - **`CORTEX_IMAGE`**<br />
-  Docker image used to run Cortex in integration tests (defaults to `quay.io/cortexproject/cortex:latest`)
+  Docker image used to run Cortex in integration tests (defaults to `us.gcr.io/kubernetes-dev/mimir:latest`)
 - **`CORTEX_CHECKOUT_DIR`**<br />
   The absolute path of the Cortex repository local checkout (defaults to `$GOPATH/src/github.com/cortexproject/cortex`)
 - **`E2E_TEMP_DIR`**<br />

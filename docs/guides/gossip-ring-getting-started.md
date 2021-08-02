@@ -20,7 +20,7 @@ dependencies.
 
 Build Cortex first:
 ```sh
-$ go build ./cmd/cortex
+$ go build ./cmd/mimir
 ```
 
 Run two instances of Cortex, each one with its own dedicated config file:

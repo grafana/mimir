@@ -23,7 +23,7 @@ For simplicity and to get started, we'll run it as a [single process](../configu
 You can reconfigure the config to use GCS, Azure storage or local storage as shown in the file's comments.
 
 ```sh
-$ go build ./cmd/cortex
+$ go build ./cmd/mimir
 $ ./cortex -config.file=./docs/configuration/single-process-config-blocks.yaml
 ```
 
@@ -69,7 +69,7 @@ Next we're going to show how you can run a scale out Cortex cluster using Docker
 - A single node Consul instance to coordinate the Cortex cluster.
 
 ```sh
-$ make ./cmd/cortex/.uptodate
+$ make ./cmd/mimir/.uptodate
 $ docker network create cortex
 $ docker run -d --name=consul --network=cortex -e CONSUL_BIND_INTERFACE=eth0 consul
 ```

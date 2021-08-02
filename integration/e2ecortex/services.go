@@ -37,11 +37,12 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                         "distributor",
 			"-log.level":                      "warn",
 			"-auth.enabled":                   "true",
@@ -68,12 +69,12 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	entryCommand := getEntryCommandForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(entryCommand, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                         "querier",
 			"-log.level":                      "warn",
 			"-distributor.replication-factor": "1",
@@ -111,11 +112,12 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "store-gateway",
 			"-log.level": "warn",
 			// Store-gateway ring backend.
@@ -144,12 +146,12 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	entryCommand := getEntryCommandForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(entryCommand, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                        "ingester",
 			"-log.level":                     "warn",
 			"-ingester.final-sleep":          "0s",
@@ -168,7 +170,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	)
 }
 
-func getEntryCommandForBackwardsCompatability(image string) string {
+func getBinaryNameForBackwardsCompatability(image string) string {
 	if strings.Contains(image, "quay.io/cortexproject/cortex") {
 		return "cortex"
 	}
@@ -187,11 +189,12 @@ func NewTableManagerWithConfigFile(name, configFile string, flags map[string]str
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "table-manager",
 			"-log.level": "warn",
 		}, flags))...),
@@ -213,12 +216,12 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	if image == "" {
 		image = GetDefaultImage()
 	}
-	entryCommand := getEntryCommandForBackwardsCompatability(image)
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(entryCommand, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "query-frontend",
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
@@ -242,11 +245,12 @@ func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]s
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "query-scheduler",
 			"-log.level": "warn",
 		}, flags))...),
@@ -268,11 +272,12 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "compactor",
 			"-log.level": "warn",
 			// Store-gateway ring backend.
@@ -293,11 +298,12 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":       "all",
 			"-log.level":    "warn",
 			"-auth.enabled": "true",
@@ -330,11 +336,12 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			// Do not pass any extra default flags because the config should be drive by the config file.
 			"-target":      "all",
 			"-log.level":   "warn",
@@ -351,11 +358,12 @@ func NewAlertmanager(name string, flags map[string]string, image string) *Cortex
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                               "alertmanager",
 			"-log.level":                            "warn",
 			"-experimental.alertmanager.enable-api": "true",
@@ -371,11 +379,12 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) 
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                               "alertmanager",
 			"-log.level":                            "warn",
 			"-experimental.alertmanager.enable-api": "true",
@@ -391,11 +400,12 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "ruler",
 			"-log.level": "warn",
 			// Configure the ingesters ring backend
@@ -420,11 +430,12 @@ func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, i
 	if image == "" {
 		image = GetDefaultImage()
 	}
+	binaryName := getBinaryNameForBackwardsCompatability(image)
 
 	return NewCortexService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint("mimir", e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                   "purger",
 			"-log.level":                "warn",
 			"-purger.object-store-type": "filesystem",
