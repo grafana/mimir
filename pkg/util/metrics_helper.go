@@ -462,8 +462,9 @@ type HistogramData struct {
 }
 
 // AddHistogram adds histogram from gathered metrics to this histogram data.
-// Do not call this function after Metric() has been invoked, because it's not
-// allowed to change the buckets after they've been passed to a prometheus.Metric.
+// Do not call this function after Metric() has been invoked, because histogram created by Metric
+// is using the buckets map (doesn't make a copy), and it's not allowed to change the buckets
+// after they've been passed to a prometheus.Metric.
 func (d *HistogramData) AddHistogram(histo *dto.Histogram) {
 	d.sampleCount += histo.GetSampleCount()
 	d.sampleSum += histo.GetSampleSum()
