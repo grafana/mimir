@@ -4058,6 +4058,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-metadata-per-metric
 [max_global_metadata_per_metric: <int> | default = 0]
 
+# The maximum number of exemplars in memory, across the cluster. 0 to disable
+# exemplars ingestion.
+# CLI flag: -ingester.max-global-exemplars-per-user
+[max_global_exemplars_per_user: <int> | default = 0]
+
 # Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
 # respective YAML config option instead. Maximum number of chunks that can be
 # fetched in a single query. This limit is enforced when fetching chunks from
@@ -5002,11 +5007,6 @@ tsdb:
   # limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
-
-  # Enables support for exemplars in TSDB and sets the maximum number that will
-  # be stored. 0 or less means disabled.
-  # CLI flag: -blocks-storage.tsdb.max-exemplars
-  [max_exemplars: <int> | default = 0]
 ```
 
 ### `compactor_config`
