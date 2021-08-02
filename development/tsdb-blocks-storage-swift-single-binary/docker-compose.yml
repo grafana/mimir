@@ -9,6 +9,9 @@ services:
 
   swift:
     image: beaukode/docker-swift-onlyone-authv2-keystone
+    environment:
+      # Hostname of this container.
+      - PUBLIC_HOST=swift
     volumes:
       - .data-swift:/srv:delegated
     ports:
@@ -18,19 +21,17 @@ services:
       - 35357:35357
 
   swift-create-container:
-    network_mode: host
     image: theflockers/swiftclient
     environment:
       - OS_USERNAME=admin
       - OS_PASSWORD=s3cr3t
       - OS_TENANT_NAME=admin
-      - OS_AUTH_URL=http://localhost:5000/v2.0
+      - OS_AUTH_URL=http://swift:5000/v2.0
       - OS_REGION_NAME=RegionOne
     command: ["sh", "-c", "sleep 30 && swift post cortex-rules && \
                             swift post cortex-tsdb && swift list"]
 
   prometheus:
-    network_mode: host
     image: prom/prometheus:v2.16.0
     command: ["--config.file=/etc/prometheus/prometheus.yaml"]
     volumes:
@@ -41,7 +42,6 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-    network_mode: host
     image: grafana/agent:v0.2.0
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
@@ -56,7 +56,6 @@ services:
       - "14268"
 
   cortex-1:
-    network_mode: host
     build:
       context:    .
       dockerfile: dev.dockerfile
@@ -78,7 +77,6 @@ services:
       - .data-cortex-1:/data:delegated
 
   cortex-2:
-    network_mode: host
     build:
       context:    .
       dockerfile: dev.dockerfile
