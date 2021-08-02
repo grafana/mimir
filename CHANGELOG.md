@@ -18,6 +18,9 @@
 * [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-frontend.query-stats-enabled=false`. #83
 * [CHANGE] Ingester: default `-ingester.min-ready-duration` reduced from 1m to 15s. #126
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
+* [CHANGE] Allow experimental ingester max-exemplars setting to be changed dynamically #47
+  * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
+  * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100
   * New config options:

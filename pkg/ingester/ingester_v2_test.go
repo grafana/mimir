@@ -517,7 +517,7 @@ func TestIngester_v2Push(t *testing.T) {
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			limits := defaultLimitsTestConfig()
-			limits.MaxGlobalExemplars = testData.maxExemplars
+			limits.MaxGlobalExemplarsPerUser = testData.maxExemplars
 
 			i, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, "", registry)
 			require.NoError(t, err)

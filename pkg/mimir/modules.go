@@ -417,6 +417,7 @@ func initQueryableForEngine(engine string, cfg Config, chunkStore chunk.Store, l
 func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageEnabled = t.Cfg.Storage.Engine == storage.StorageEngineBlocks
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
+	t.Cfg.Ingester.TenantLimitsFn = tenantLimitsRuntimeConfigFn(t.RuntimeConfig)
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {

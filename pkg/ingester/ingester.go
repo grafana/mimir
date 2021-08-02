@@ -96,6 +96,8 @@ type Config struct {
 	StreamChunksWhenUsingBlocks bool                     `yaml:"-"`
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
+	// function to get a chan to receive updates to per-tenant limits (e.g. max exemplars).
+	TenantLimitsFn func() <-chan map[string]*validation.Limits `yaml:"-"`
 
 	// Injected at runtime and read from the distributor config, required
 	// to accurately apply global limits.

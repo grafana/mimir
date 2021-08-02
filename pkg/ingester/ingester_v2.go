@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -523,6 +524,10 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
 
+	if cfg.TenantLimitsFn != nil {
+		go i.watchTenantLimitChan(cfg.TenantLimitsFn())
+	}
+
 	// Init the limter and instantiate the user states which depend on it
 	i.limiter = NewLimiter(
 		limits,
@@ -865,7 +870,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 			})
 		}
 
-		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplars(userID) > 0 {
+		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
 			if ref == 0 {
@@ -1608,7 +1613,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		instanceSeriesCount: &i.TSDBState.seriesCount,
 	}
 
-	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplars(userID))
+	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	enableExemplars := false
 	if maxExemplars > 0 {
 		enableExemplars = true
@@ -1827,6 +1832,34 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 
 	level.Info(i.logger).Log("msg", "successfully opened existing TSDBs")
 	return nil
+}
+
+// Receive updates to maxExemplars via push notification.
+// TSDB may need to shuffle data around on resize, so we do it outside of push calls.
+func (i *Ingester) watchTenantLimitChan(ch <-chan map[string]*validation.Limits) {
+	for data := range ch {
+		for userID, limits := range data {
+			// We populate a Config struct with just one value, which is OK
+			// because Head.ApplyConfig only looks at one value.
+			// The other fields in Config are things like Rules, Scrape
+			// settings, which don't apply to Head.
+			cfg := config.Config{
+				StorageConfig: config.StorageConfig{
+					ExemplarsConfig: &config.ExemplarsConfig{
+						MaxExemplars: int64(i.limiter.convertGlobalToLocalLimit(userID, limits.MaxGlobalExemplarsPerUser)),
+					},
+				},
+			}
+			tsdb := i.getTSDB(userID)
+			if tsdb == nil {
+				// No TSDB for this tenant; maybe it hasn't sent any data yet.
+				continue
+			}
+			if err := tsdb.Head().ApplyConfig(&cfg); err != nil {
+				level.Error(i.logger).Log("msg", "failed to apply runtime config to TSDB", "user", userID, "err", err)
+			}
+		}
+	}
 }
 
 // getMemorySeriesMetric returns the total number of in-memory series across all open TSDBs.

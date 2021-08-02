@@ -109,6 +109,27 @@ func multiClientRuntimeConfigChannel(manager *runtimeconfig.Manager) func() <-ch
 	}
 }
 
+// returns function that can be used to get a chan to receive updates
+func tenantLimitsRuntimeConfigFn(manager *runtimeconfig.Manager) func() <-chan map[string]*validation.Limits {
+	if manager == nil {
+		return nil
+	}
+	return func() <-chan map[string]*validation.Limits {
+		outCh := make(chan map[string]*validation.Limits)
+
+		ch := manager.CreateListenerChannel(1)
+		go func() {
+			for val := range ch {
+				if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
+					outCh <- cfg.TenantLimits
+				}
+			}
+		}()
+
+		return outCh
+	}
+}
+
 func ingesterChunkStreaming(manager *runtimeconfig.Manager) func() ingester.QueryStreamType {
 	if manager == nil {
 		return nil
