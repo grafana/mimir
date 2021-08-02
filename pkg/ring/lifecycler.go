@@ -48,16 +48,17 @@ type LifecyclerConfig struct {
 	RingConfig Config `yaml:"ring"`
 
 	// Config for the ingester lifecycle control
-	NumTokens            int           `yaml:"num_tokens"`
-	HeartbeatPeriod      time.Duration `yaml:"heartbeat_period"`
-	ObservePeriod        time.Duration `yaml:"observe_period"`
-	JoinAfter            time.Duration `yaml:"join_after"`
-	MinReadyDuration     time.Duration `yaml:"min_ready_duration"`
-	InfNames             []string      `yaml:"interface_names"`
-	FinalSleep           time.Duration `yaml:"final_sleep"`
-	TokensFilePath       string        `yaml:"tokens_file_path"`
-	Zone                 string        `yaml:"availability_zone"`
-	UnregisterOnShutdown bool          `yaml:"unregister_on_shutdown"`
+	NumTokens                int           `yaml:"num_tokens"`
+	HeartbeatPeriod          time.Duration `yaml:"heartbeat_period"`
+	ObservePeriod            time.Duration `yaml:"observe_period"`
+	JoinAfter                time.Duration `yaml:"join_after"`
+	MinReadyDuration         time.Duration `yaml:"min_ready_duration"`
+	InfNames                 []string      `yaml:"interface_names"`
+	FinalSleep               time.Duration `yaml:"final_sleep"`
+	TokensFilePath           string        `yaml:"tokens_file_path"`
+	Zone                     string        `yaml:"availability_zone"`
+	UnregisterOnShutdown     bool          `yaml:"unregister_on_shutdown"`
+	ReadinessCheckRingHealth bool          `yaml:"readiness_check_ring_health"`
 
 	// For testing, you can override the address and ID of this ingester
 	Addr string `yaml:"address" doc:"hidden"`
@@ -104,6 +105,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.StringVar(&cfg.ID, prefix+"lifecycler.ID", hostname, "ID to register in the ring.")
 	f.StringVar(&cfg.Zone, prefix+"availability-zone", "", "The availability zone where this instance is running.")
 	f.BoolVar(&cfg.UnregisterOnShutdown, prefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.")
+	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
 }
 
 // Lifecycler is responsible for managing the lifecycle of entries in the ring.
@@ -219,27 +221,31 @@ func (i *Lifecycler) CheckReady(ctx context.Context) error {
 		return fmt.Errorf("waiting for %v after startup", i.cfg.MinReadyDuration)
 	}
 
-	desc, err := i.KVStore.Get(ctx, i.RingKey)
-	if err != nil {
-		level.Error(log.Logger).Log("msg", "error talking to the KV store", "ring", i.RingName, "err", err)
-		return fmt.Errorf("error talking to the KV store: %s", err)
-	}
-
+	// Ensure the instance holds some tokens.
 	if len(i.getTokens()) == 0 {
 		return fmt.Errorf("this instance owns no tokens")
 	}
 
-	ringDesc, ok := desc.(*Desc)
-	if !ok || ringDesc == nil {
-		return fmt.Errorf("no ring returned from the KV store")
-	}
+	// Ensure all instances in the ring are ACTIVE and healthy.
+	if i.cfg.ReadinessCheckRingHealth {
+		desc, err := i.KVStore.Get(ctx, i.RingKey)
+		if err != nil {
+			level.Error(log.Logger).Log("msg", "error talking to the KV store", "ring", i.RingName, "err", err)
+			return fmt.Errorf("error talking to the KV store: %s", err)
+		}
 
-	if err := ringDesc.Ready(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
-		level.Warn(log.Logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
-			"this instance cannot become ready until this problem is resolved. "+
-			"The /ring http endpoint on the distributor (or single binary) provides visibility into the ring.",
-			"ring", i.RingName, "err", err)
-		return err
+		ringDesc, ok := desc.(*Desc)
+		if !ok || ringDesc == nil {
+			return fmt.Errorf("no ring returned from the KV store")
+		}
+
+		if err := ringDesc.Ready(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
+			level.Warn(log.Logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
+				"this instance cannot become ready until this problem is resolved. "+
+				"The /ring http endpoint on the distributor (or single binary) provides visibility into the ring.",
+				"ring", i.RingName, "err", err)
+			return err
+		}
 	}
 
 	i.ready = true
