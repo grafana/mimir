@@ -31,9 +31,9 @@ go test -v -tags=requires_docker ./integration -run "^TestChunksStorageAllIndexB
 
 ### Supported environment variables
 
-- **`CORTEX_IMAGE`**<br />
+- **`MIMIR_IMAGE`**<br />
   Docker image used to run Cortex in integration tests (defaults to `us.gcr.io/kubernetes-dev/mimir:latest`)
-- **`CORTEX_CHECKOUT_DIR`**<br />
+- **`MIMIR_CHECKOUT_DIR`**<br />
   The absolute path of the Cortex repository local checkout (defaults to `$GOPATH/src/github.com/cortexproject/cortex`)
 - **`E2E_TEMP_DIR`**<br />
   The absolute path to a directory where the integration test will create an additional temporary directory to store files generated during the test.
