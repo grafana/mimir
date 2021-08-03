@@ -718,6 +718,13 @@ lifecycler:
   # CLI flag: -ingester.unregister-on-shutdown
   [unregister_on_shutdown: <boolean> | default = true]
 
+  # When enabled the readiness probe succeeds only after all instances are
+  # ACTIVE and healthy in the ring. This option should be disabled if in your
+  # cluster multiple instances can be rolled out simultaneously, otherwise
+  # rolling updates may be slowed down.
+  # CLI flag: -ingester.readiness-check-ring-health
+  [readiness_check_ring_health: <boolean> | default = true]
+
 # Number of times to try and transfer chunks before falling back to flushing.
 # Negative value or zero disables hand-over. This feature is supported only by
 # the chunks storage.
