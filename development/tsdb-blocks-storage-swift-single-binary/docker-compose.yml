@@ -21,7 +21,6 @@ services:
       - 35357:35357
 
   swift-create-container:
-
     image: theflockers/swiftclient
     environment:
       - OS_USERNAME=admin
@@ -44,7 +43,6 @@ services:
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
   grafana-agent:
-
     image: grafana/agent:v0.2.0
     command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
     volumes:
@@ -59,7 +57,6 @@ services:
       - "14268"
 
   mimir-1:
-
     build:
       context:    .
       dockerfile: dev.dockerfile
@@ -81,7 +78,6 @@ services:
       - .data-cortex-1:/data:delegated
 
   mimir-2:
-
     build:
       context:    .
       dockerfile: dev.dockerfile
