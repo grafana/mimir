@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	"github.com/grafana/mimir/pkg/ring/kv/memberlist"
 	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -682,7 +683,7 @@ func (t *Cortex) initRuler() (serv services.Service, err error) {
 
 	// If the API is enabled, register the Ruler API
 	if t.Cfg.Ruler.EnableAPI {
-		t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, util_log.Logger))
+		t.API.RegisterRulerAPI(ruler.NewAPI(t.Ruler, t.RulerStorage, &rulespb.DefaultSerde{}, util_log.Logger))
 	}
 
 	return t.Ruler, nil

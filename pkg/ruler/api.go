@@ -7,7 +7,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -16,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/weaveworks/common/user"
 	"gopkg.in/yaml.v3"
 
@@ -123,15 +121,17 @@ func respondError(logger log.Logger, w http.ResponseWriter, msg string) {
 type API struct {
 	ruler *Ruler
 	store rulestore.RuleStore
+	serde rulespb.Serde
 
 	logger log.Logger
 }
 
 // NewAPI returns a new API struct with the provided ruler and rule store
-func NewAPI(r *Ruler, s rulestore.RuleStore, logger log.Logger) *API {
+func NewAPI(r *Ruler, s rulestore.RuleStore, serde rulespb.Serde, logger log.Logger) *API {
 	return &API{
 		ruler:  r,
 		store:  s,
+		serde:  serde,
 		logger: logger,
 	}
 }
@@ -413,7 +413,7 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 
 	level.Debug(logger).Log("msg", "retrieved rule groups from rule store", "userID", userID, "num_namespaces", len(rgs))
 
-	formatted := rgs.Formatted()
+	formatted := a.serde.RuleGroupListToYAML(rgs)
 	marshalAndSend(formatted, w, logger)
 }
 
@@ -435,7 +435,8 @@ func (a *API) GetRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	formatted := rulespb.FromProto(rg)
+	formatted := a.serde.RuleGroupDescToYAML(rg)
+
 	marshalAndSend(formatted, w, logger)
 }
 
@@ -456,23 +457,10 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	level.Debug(logger).Log("msg", "attempting to unmarshal rulegroup", "userID", userID, "group", string(payload))
 
-	rg := rulefmt.RuleGroup{}
-	err = yaml.Unmarshal(payload, &rg)
+	rg, err := a.serde.YAMLToProto(userID, namespace, payload)
 	if err != nil {
-		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
-		http.Error(w, ErrBadRuleGroup.Error(), http.StatusBadRequest)
-		return
-	}
-
-	errs := a.ruler.manager.ValidateRuleGroup(rg)
-	if len(errs) > 0 {
-		e := []string{}
-		for _, err := range errs {
-			level.Error(logger).Log("msg", "unable to validate rule group payload", "err", err.Error())
-			e = append(e, err.Error())
-		}
-
-		http.Error(w, strings.Join(e, ", "), http.StatusBadRequest)
+		level.Error(logger).Log("msg", "unable to unmarshal and validate rule group payload", "err", err.Error())
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -495,10 +483,8 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	rgProto := rulespb.ToProto(userID, namespace, rg)
-
-	level.Debug(logger).Log("msg", "attempting to store rulegroup", "userID", userID, "group", rgProto.String())
-	err = a.store.SetRuleGroup(req.Context(), userID, namespace, rgProto)
+	level.Debug(logger).Log("msg", "attempting to store rulegroup", "userID", userID, "group", rg.String())
+	err = a.store.SetRuleGroup(req.Context(), userID, namespace, rg)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to store rule group", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusInternalServerError)

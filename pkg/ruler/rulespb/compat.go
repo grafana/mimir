@@ -1,6 +1,8 @@
 package rulespb
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/prometheus/common/model"
@@ -10,6 +12,75 @@ import (
 
 	"github.com/grafana/mimir/pkg/cortexpb" //lint:ignore faillint allowed to import other protobuf
 )
+
+type Serde interface {
+	YAMLToProto(user string, namespace string, data []byte) (*RuleGroupDesc, error)
+	RuleGroupDescToYAML(*RuleGroupDesc) interface{}
+	RuleGroupListToYAML(RuleGroupList) interface{}
+}
+
+type DefaultSerde struct{}
+
+func (*DefaultSerde) validateRuleGroup(g rulefmt.RuleGroup) []error {
+	var errs []error
+
+	if g.Name == "" {
+		errs = append(errs, errors.New("invalid rules config: rule group name must not be empty"))
+		return errs
+	}
+
+	if len(g.Rules) == 0 {
+		errs = append(errs, fmt.Errorf("invalid rules config: rule group '%s' has no rules", g.Name))
+		return errs
+	}
+
+	for i, r := range g.Rules {
+		for _, err := range r.Validate() {
+			var ruleName string
+			if r.Alert.Value != "" {
+				ruleName = r.Alert.Value
+			} else {
+				ruleName = r.Record.Value
+			}
+			errs = append(errs, &rulefmt.Error{
+				Group:    g.Name,
+				Rule:     i,
+				RuleName: ruleName,
+				Err:      err,
+			})
+		}
+	}
+
+	return errs
+}
+
+func (d *DefaultSerde) YAMLToProto(user string, namespace string, data []byte) (*RuleGroupDesc, error) {
+	rg := rulefmt.RuleGroup{}
+	err := yaml.Unmarshal(data, &rg)
+	if err != nil {
+		return nil, err
+	}
+
+	errs := d.validateRuleGroup(rg)
+	if len(errs) > 0 {
+		e := []string{}
+		var err error
+		for _, err = range errs {
+			e = append(e, err.Error())
+		}
+		return nil, err
+	}
+
+	return ToProto(user, namespace, rg), nil
+}
+
+func (d *DefaultSerde) RuleGroupDescToYAML(desc *RuleGroupDesc) interface{} {
+	return FromProto(desc)
+}
+
+func (d *DefaultSerde) RuleGroupListToYAML(rls RuleGroupList) interface{} {
+	return rls.Formatted()
+}
 
 // ToProto transforms a formatted prometheus rulegroup to a rule group protobuf
 func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc {

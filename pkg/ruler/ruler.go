@@ -189,8 +189,6 @@ type MultiTenantManager interface {
 	GetRules(userID string) []*promRules.Group
 	// Stop stops all Manager components.
 	Stop()
-	// ValidateRuleGroup validates a rulegroup
-	ValidateRuleGroup(rulefmt.RuleGroup) []error
 }
 
 // Ruler evaluates rules.
