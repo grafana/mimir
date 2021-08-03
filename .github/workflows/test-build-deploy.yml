@@ -10,7 +10,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image@sha256:fad56ea2be4c4f9e1425e34f9924d9e8437e3ee80b9adcffd3991f46b07951e5
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:jdb-lint-packaging-scripts-b6709b71a
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -37,7 +37,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image@sha256:fad56ea2be4c4f9e1425e34f9924d9e8437e3ee80b9adcffd3991f46b07951e5
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:jdb-lint-packaging-scripts-b6709b71a
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -61,7 +61,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image@sha256:fad56ea2be4c4f9e1425e34f9924d9e8437e3ee80b9adcffd3991f46b07951e5
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:jdb-lint-packaging-scripts-b6709b71a
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
