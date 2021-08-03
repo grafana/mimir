@@ -145,7 +145,7 @@ exes $(EXES) protos $(PROTO_GOS) lint test cover shell mod-check check-protos we
 	@mkdir -p $(shell pwd)/.cache
 	@echo
 	@echo ">>>> Entering build container: $@"
-	@$(SUDO) time docker run --rm $(TTY) -i $(GOVOLUMES) $(BUILD_IMAGE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(GOVOLUMES) $(BUILD_IMAGE) $@;
 
 else
 
@@ -325,7 +325,7 @@ packages: dist packaging/fpm/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo ">>>> Entering build container: $@"
-	@$(SUDO) time docker run --rm $(TTY) \
+	$(SUDO) time docker run --rm $(TTY) \
 		-v  $(shell pwd):/src/github.com/grafana/mimir:delegated,z \
 		-i $(PACKAGE_IMAGE) $@;
 
