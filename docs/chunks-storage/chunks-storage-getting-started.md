@@ -26,7 +26,7 @@ Clone and build Cortex
 ```sh
 $ git clone https://github.com/cortexproject/cortex.git
 $ cd cortex
-$ go build ./cmd/cortex
+$ go build ./cmd/mimir
 $ ./cortex -config.file=./docs/chunks-storage/single-process-config.yaml
 ```
 
@@ -72,7 +72,7 @@ Next we're going to show how you can run a scale out Cortex cluster using Docker
 - A single node Consul instance to coordinate the Cortex cluster.
 
 ```sh
-$ make ./cmd/cortex/.uptodate
+$ make ./cmd/mimir/.uptodate
 $ docker network create cortex
 $ docker run -d --name=consul --network=cortex -e CONSUL_BIND_INTERFACE=eth0 consul
 ```

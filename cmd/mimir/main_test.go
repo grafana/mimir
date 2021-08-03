@@ -85,7 +85,7 @@ func TestFlagParsing(t *testing.T) {
 			stdoutMessage: "Cortex, version",
 		},
 
-		// we cannot test the happy path, as cortex would then fully start
+		// we cannot test the happy path, as mimir would then fully start
 	} {
 		t.Run(name, func(t *testing.T) {
 			_ = os.Setenv("TARGET", "ingester")
@@ -125,7 +125,7 @@ func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, st
 		arguments = append(arguments, "-"+configFileOption, tempFile.Name())
 	}
 
-	arguments = append([]string{"./cortex"}, arguments...)
+	arguments = append([]string{"./mimir"}, arguments...)
 
 	testMode = true
 	os.Args = arguments

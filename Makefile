@@ -11,8 +11,8 @@ GOPROXY_VALUE=$(shell go env GOPROXY)
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
-IMAGE_PREFIX ?= quay.io/cortexproject/
-BUILD_IMAGE ?= us.gcr.io/kubernetes-dev/mimir-build-image
+IMAGE_PREFIX ?= us.gcr.io/kubernetes-dev/
+BUILD_IMAGE ?= $(IMAGE_PREFIX)mimir-build-image
 
 # For a tag push GITHUB_REF will look like refs/tags/<tag_name>,
 # If finding refs/tags/ does not equal emptystring then use
@@ -34,20 +34,12 @@ image-tag:
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 # Building Docker images is now automated. The convention is every directory
-# with a Dockerfile in it builds an image called quay.io/cortexproject/<dirname>.
+# with a Dockerfile in it builds an image called us.gcr.io/kubernetes-dev/mimir.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 %/$(UPTODATE): %/Dockerfile
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
-	@echo
-	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
-	touch $@
-
-# FIXME: This should be removed when all other images are updated to use new Docker registry
-mimir-build-image/$(UPTODATE): mimir-build-image/Dockerfile
-	@echo
-	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(BUILD_IMAGE) -t $(BUILD_IMAGE):$(IMAGE_TAG) mimir-build-image/
 	@echo
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
@@ -293,7 +285,7 @@ check-white-noise: clean-white-noise
 web-serve:
 	cd website && hugo --config config.toml --minify -v server
 
-# Generate binaries for a Cortex release
+# Generate binaries for a Mimir release
 dist: dist/$(UPTODATE)
 
 dist/$(UPTODATE):
@@ -301,9 +293,9 @@ dist/$(UPTODATE):
 	mkdir -p ./dist
 	for os in linux darwin; do \
       for arch in amd64 arm64; do \
-        echo "Building Cortex for $$os/$$arch"; \
-        GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/cortex-$$os-$$arch ./cmd/cortex; \
-        sha256sum ./dist/cortex-$$os-$$arch | cut -d ' ' -f 1 > ./dist/cortex-$$os-$$arch-sha-256; \
+        echo "Building Mimir for $$os/$$arch"; \
+        GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch ./cmd/mimir; \
+        sha256sum ./dist/mimir-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch-sha-256; \
         echo "Building query-tee for $$os/$$arch"; \
         GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch ./cmd/query-tee; \
         sha256sum ./dist/query-tee-$$os-$$arch | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch-sha-256; \
@@ -312,7 +304,7 @@ dist/$(UPTODATE):
     touch $@
 
 # Generate packages for a Mimir release.
-FPM_OPTS := fpm -s dir -v $(VERSION) -n cortex -f \
+FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
 	--license "Apache 2.0" \
 	--url "https://github.com/grafana/mimir"
 
@@ -345,20 +337,20 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--architecture $$deb_arch \
 			--after-install packaging/deb/control/postinst \
 			--before-remove packaging/deb/control/prerm \
-			--package dist/cortex-$(VERSION)_$$arch.deb \
-			dist/cortex-linux-$$arch=/usr/local/bin/cortex \
-			docs/chunks-storage/single-process-config.yaml=/etc/cortex/single-process-config.yaml \
-			packaging/deb/default/cortex=/etc/default/cortex \
-			packaging/deb/systemd/cortex.service=/etc/systemd/system/cortex.service; \
+			--package dist/mimir-$(VERSION)_$$arch.deb \
+			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
+			docs/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			packaging/deb/default/mimir=/etc/default/mimir \
+			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 		$(FPM_OPTS) -t rpm  \
 			--architecture $$rpm_arch \
 			--after-install packaging/rpm/control/post \
 			--before-remove packaging/rpm/control/preun \
-			--package dist/cortex-$(VERSION)_$$arch.rpm \
-			dist/cortex-linux-$$arch=/usr/local/bin/cortex \
-			docs/chunks-storage/single-process-config.yaml=/etc/cortex/single-process-config.yaml \
-			packaging/rpm/sysconfig/cortex=/etc/sysconfig/cortex \
-			packaging/rpm/systemd/cortex.service=/etc/systemd/system/cortex.service; \
+			--package dist/mimir-$(VERSION)_$$arch.rpm \
+			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
+			docs/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
+			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 	done
 	for pkg in dist/*.deb dist/*.rpm; do \
   		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \

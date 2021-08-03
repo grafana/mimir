@@ -1,5 +1,5 @@
 FROM alpine:3.13
 
-RUN     mkdir /cortex
-WORKDIR /cortex
-ADD     ./cortex ./
+RUN     mkdir /mimr
+WORKDIR /mimir
+ADD     ./mimir ./

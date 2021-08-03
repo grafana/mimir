@@ -1,5 +1,5 @@
 cmd/test-exporter/test-exporter
-cmd/cortex/cortex
+cmd/mimir/mimir
 cmd/query-tee/query-tee
 cmd/blocksconvert/blocksconvert
 cmd/thanosconvert/thanosconvert
@@ -16,7 +16,7 @@ dist/
 
 # Binaries built from ./cmd
 /blocksconvert
-/cortex
+/mimir
 /query-tee
 /test-exporter
 
