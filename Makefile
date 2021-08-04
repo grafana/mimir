@@ -112,13 +112,13 @@ pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 all: $(UPTODATE_FILES)
 test: protos
 mod-check: protos
-lint: protos
+lint: lint-packaging-scripts protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
 
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= 20210802-6ece8f873
+LATEST_BUILD_IMAGE_TAG ?= jdb-lint-packaging-scripts-b6709b71a
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -132,7 +132,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 			-v $(shell pwd)/.pkg:/go/pkg:delegated,z \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint test cover shell mod-check check-protos web-build web-pre web-deploy doc: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -153,7 +153,10 @@ protos: $(PROTO_GOS)
 	@# to configure all such relative paths.
 	protoc -I $(GOPATH)/src:./vendor/github.com/thanos-io/thanos/pkg:./vendor/github.com/gogo/protobuf:./vendor:./$(@D) --gogoslick_out=plugins=grpc,Mgoogle/protobuf/any.proto=github.com/gogo/protobuf/types,:./$(@D) ./$(patsubst %.pb.go,%.proto,$@)
 
-lint:
+lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
+	shellcheck $?
+
+lint: lint-packaging-scripts
 	misspell -error docs
 
 	# Configured via .golangci.yml.
