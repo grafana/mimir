@@ -25,8 +25,8 @@ $ go build ./cmd/mimir
 
 Run two instances of Cortex, each one with its own dedicated config file:
 ```
-$ ./cortex -config.file docs/configuration/single-process-config-blocks-gossip-1.yaml
-$ ./cortex -config.file docs/configuration/single-process-config-blocks-gossip-2.yaml
+$ ./mimir -config.file docs/configuration/single-process-config-blocks-gossip-1.yaml
+$ ./mimir -config.file docs/configuration/single-process-config-blocks-gossip-2.yaml
 ```
 
 Download Prometheus and configure it to use our first Cortex instance for remote writes.
