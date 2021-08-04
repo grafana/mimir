@@ -34,7 +34,7 @@ image-tag:
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
 # Building Docker images is now automated. The convention is every directory
-# with a Dockerfile in it builds an image called us.gcr.io/kubernetes-dev/mimir.
+# with a Dockerfile in it builds an image called us.gcr.io/kubernetes-dev/<directory>.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
 %/$(UPTODATE): %/Dockerfile
