@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/thanos-io/thanos/pkg/testutil"
 )
 
 // This test verifies that jsoninter uses our custom method for marshalling.
@@ -99,7 +98,7 @@ func TestMetricMetadataToMetricTypeToMetricType(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.desc, func(t *testing.T) {
 			m := MetricMetadataMetricTypeToMetricType(tt.input)
-			testutil.Equals(t, tt.expected, m)
+			assert.Equal(t, tt.expected, m)
 		})
 	}
 }

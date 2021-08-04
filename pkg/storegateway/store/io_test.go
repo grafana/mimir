@@ -9,8 +9,7 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
-
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestByteRanges_contiguous(t *testing.T) {
@@ -37,7 +36,7 @@ func TestByteRanges_contiguous(t *testing.T) {
 	}
 
 	for _, tc := range tests {
-		testutil.Equals(t, tc.expected, tc.ranges.areContiguous())
+		assert.Equal(t, tc.expected, tc.ranges.areContiguous())
 	}
 }
 
@@ -138,11 +137,11 @@ func TestReadByteRanges(t *testing.T) {
 			actual, err := readByteRanges(bytes.NewReader(testData.src), actual, testData.ranges)
 
 			if testData.expectedErr != nil {
-				testutil.NotOk(t, err)
-				testutil.Equals(t, true, errors.Is(err, testData.expectedErr))
+				assert.Error(t, err)
+				assert.Equal(t, true, errors.Is(err, testData.expectedErr))
 			} else {
-				testutil.Ok(t, err)
-				testutil.Equals(t, testData.expectedRead, actual)
+				assert.NoError(t, err)
+				assert.Equal(t, testData.expectedRead, actual)
 			}
 		})
 	}

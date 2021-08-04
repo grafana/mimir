@@ -15,35 +15,34 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
-	storetestutil "github.com/thanos-io/thanos/pkg/store/storepb/testutil"
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDiffVarintCodec(t *testing.T) {
 	chunksDir, err := ioutil.TempDir("", "diff_varint_codec")
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = chunksDir
 	headOpts.ChunkRange = 1000
-	h, err := tsdb.NewHead(nil, nil, nil, headOpts)
-	testutil.Ok(t, err)
+	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, h.Close())
-		testutil.Ok(t, os.RemoveAll(chunksDir))
+		assert.NoError(t, h.Close())
+		assert.NoError(t, os.RemoveAll(chunksDir))
 	}()
 
 	appendTestData(t, h.Appender(context.Background()), 1e6)
 
 	idx, err := h.Index()
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	defer func() {
-		testutil.Ok(t, idx.Close())
+		assert.NoError(t, idx.Close())
 	}()
 
 	postingsMap := map[string]index.Postings{
 		"all":      allPostings(t, idx),
-		`n="1"`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "n", "1"+storetestutil.LabelLongSuffix)),
+		`n="1"`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "n", "1"+LabelLongSuffix)),
 		`j="foo"`:  matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "j", "foo")),
 		`j!="foo"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")),
 		`i=~".*"`:  matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")),
@@ -51,7 +50,7 @@ func TestDiffVarintCodec(t *testing.T) {
 		`i=~"1.+"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")),
 		`i=~"^$"'`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")),
 		`i!~""`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "i", "")),
-		`n!="2"`:   matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+storetestutil.LabelLongSuffix)),
+		`n!="2"`:   matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+LabelLongSuffix)),
 		`i!~"2.*"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")),
 	}
 
@@ -65,7 +64,7 @@ func TestDiffVarintCodec(t *testing.T) {
 
 	for postingName, postings := range postingsMap {
 		p, err := toUint64Postings(postings)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 
 		for cname, codec := range codecs {
 			name := cname + "/" + postingName
@@ -76,13 +75,13 @@ func TestDiffVarintCodec(t *testing.T) {
 				p.reset() // We reuse postings between runs, so we need to reset iterator.
 
 				data, err := codec.codingFunction(p, p.len())
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 
 				t.Log("encoded size", len(data), "bytes")
 				t.Logf("ratio: %0.3f", float64(len(data))/float64(4*p.len()))
 
 				decodedPostings, err := codec.decodingFunction(data)
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 
 				p.reset()
 				comparePostings(t, p, decodedPostings)
@@ -112,20 +111,13 @@ func comparePostings(t *testing.T, p1, p2 index.Postings) {
 		return
 	}
 
-	testutil.Ok(t, p1.Err())
-	testutil.Ok(t, p2.Err())
-}
-
-func allPostings(t testing.TB, ix tsdb.IndexReader) index.Postings {
-	k, v := index.AllPostingsKey()
-	p, err := ix.Postings(k, v)
-	testutil.Ok(t, err)
-	return p
+	assert.NoError(t, p1.Err())
+	assert.NoError(t, p2.Err())
 }
 
 func matchPostings(t testing.TB, ix tsdb.IndexReader, m *labels.Matcher) index.Postings {
 	vals, err := ix.LabelValues(m.Name)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	matching := []string(nil)
 	for _, v := range vals {
@@ -135,7 +127,7 @@ func matchPostings(t testing.TB, ix tsdb.IndexReader, m *labels.Matcher) index.P
 	}
 
 	p, err := ix.Postings(m.Name, matching...)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 	return p
 }
 

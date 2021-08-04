@@ -34,6 +34,7 @@ require (
 	github.com/hashicorp/go-sockaddr v1.0.2
 	github.com/hashicorp/memberlist v0.2.3
 	github.com/json-iterator/go v1.1.11
+	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.10
 	github.com/mitchellh/go-wordwrap v1.0.0
 	github.com/ncw/swift v1.0.52

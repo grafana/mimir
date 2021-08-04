@@ -6,7 +6,7 @@ package store
 import (
 	"testing"
 
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 // Refer to https://github.com/prometheus/prometheus/issues/2651.
@@ -48,6 +48,6 @@ func TestFindSetMatches(t *testing.T) {
 
 	for _, c := range cases {
 		matches := findSetMatches(c.pattern)
-		testutil.Equals(t, c.exp, matches)
+		assert.Equal(t, c.exp, matches)
 	}
 }

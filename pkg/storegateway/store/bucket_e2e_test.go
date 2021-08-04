@@ -20,6 +20,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/stretchr/testify/assert"
+	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/codes"
 
@@ -27,12 +29,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/objstore/objtesting"
 	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
-	"github.com/thanos-io/thanos/pkg/testutil"
-	"github.com/thanos-io/thanos/pkg/testutil/e2eutil"
 )
 
 var (
@@ -109,24 +108,24 @@ func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt o
 
 		// Create two blocks per time slot. Only add 10 samples each so only one chunk
 		// gets created each. This way we can easily verify we got 10 chunks per series below.
-		id1, err := e2eutil.CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset, 0, metadata.NoneFunc)
-		testutil.Ok(t, err)
-		id2, err := e2eutil.CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset, 0, metadata.NoneFunc)
-		testutil.Ok(t, err)
+		id1, err := CreateBlock(ctx, dir, series[:4], 10, mint, maxt, extLset, 0, metadata.NoneFunc)
+		assert.NoError(t, err)
+		id2, err := CreateBlock(ctx, dir, series[4:], 10, mint, maxt, extLset, 0, metadata.NoneFunc)
+		assert.NoError(t, err)
 
 		dir1, dir2 := filepath.Join(dir, id1.String()), filepath.Join(dir, id2.String())
 
 		// Replace labels to the meta of the second block.
 		meta, err := metadata.ReadFromDir(dir2)
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 		meta.Thanos.Labels = map[string]string{"ext2": "value2"}
-		testutil.Ok(t, meta.WriteToDir(logger, dir2))
+		assert.NoError(t, meta.WriteToDir(logger, dir2))
 
-		testutil.Ok(t, block.Upload(ctx, logger, bkt, dir1, metadata.NoneFunc))
-		testutil.Ok(t, block.Upload(ctx, logger, bkt, dir2, metadata.NoneFunc))
+		assert.NoError(t, block.Upload(ctx, logger, bkt, dir1, metadata.NoneFunc))
+		assert.NoError(t, block.Upload(ctx, logger, bkt, dir2, metadata.NoneFunc))
 
-		testutil.Ok(t, os.RemoveAll(dir1))
-		testutil.Ok(t, os.RemoveAll(dir2))
+		assert.NoError(t, os.RemoveAll(dir1))
+		assert.NoError(t, os.RemoveAll(dir2))
 	}
 
 	return
@@ -176,7 +175,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		block.NewTimePartitionMetaFilter(filterConf.MinTime, filterConf.MaxTime),
 		block.NewLabelShardedMetaFilter(relabelConfig),
 	}, nil)
-	testutil.Ok(t, err)
+	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
 		objstore.WithNoopInstr(bkt),
@@ -195,8 +194,8 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		WithIndexCache(s.cache),
 		WithFilterConfig(filterConf),
 	)
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, store.Close()) }()
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, store.Close()) }()
 
 	s.store = store
 
@@ -207,7 +206,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	testutil.Ok(t, store.SyncBlocks(ctx))
+	assert.NoError(t, store.SyncBlocks(ctx))
 	return s
 }
 
@@ -216,16 +215,16 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 	t.Helper()
 
 	mint, maxt := s.store.TimeRange()
-	testutil.Equals(t, s.minTime, mint)
-	testutil.Equals(t, s.maxTime, maxt)
+	assert.Equal(t, s.minTime, mint)
+	assert.Equal(t, s.maxTime, maxt)
 
 	vals, err := s.store.LabelValues(ctx, &storepb.LabelValuesRequest{
 		Label: "a",
 		Start: timestamp.FromTime(minTime),
 		End:   timestamp.FromTime(maxTime),
 	})
-	testutil.Ok(t, err)
-	testutil.Equals(t, []string{"1", "2"}, vals.Values)
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"1", "2"}, vals.Values)
 
 	// TODO(bwplotka): Add those test cases to TSDB querier_test.go as well, there are no tests for matching.
 	for i, tcase := range []struct {
@@ -435,12 +434,12 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
 			srv := newStoreSeriesServer(ctx)
 
-			testutil.Ok(t, s.store.Series(tcase.req, srv))
-			testutil.Equals(t, len(tcase.expected), len(srv.SeriesSet))
+			assert.NoError(t, s.store.Series(tcase.req, srv))
+			assert.Equal(t, len(tcase.expected), len(srv.SeriesSet))
 
 			for i, s := range srv.SeriesSet {
-				testutil.Equals(t, tcase.expected[i], s.Labels)
-				testutil.Equals(t, tcase.expectedChunkLen, len(s.Chunks))
+				assert.Equal(t, tcase.expected[i], s.Labels)
+				assert.Equal(t, tcase.expectedChunkLen, len(s.Chunks))
 			}
 		}); !ok {
 			return
@@ -449,13 +448,13 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 }
 
 func TestBucketStore_e2e(t *testing.T) {
-	objtesting.ForeachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		dir, err := ioutil.TempDir("", "test_bucketstore_e2e")
-		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 
@@ -471,7 +470,7 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxItemSize: 1e5,
 				MaxSize:     2e5,
 			})
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 			s.cache.SwapWith(indexCache)
 			testBucketStore_e2e(t, ctx, s)
 		}); !ok {
@@ -483,7 +482,7 @@ func TestBucketStore_e2e(t *testing.T) {
 				MaxItemSize: 50,
 				MaxSize:     100,
 			})
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 			s.cache.SwapWith(indexCache2)
 			testBucketStore_e2e(t, ctx, s)
 		})
@@ -504,13 +503,13 @@ func (g naivePartitioner) Partition(length int, rng func(int) (uint64, uint64)) 
 // This tests if our, sometimes concurrent, fetches for different parts works.
 // Regression test against: https://github.com/thanos-io/thanos/issues/829.
 func TestBucketStore_ManyParts_e2e(t *testing.T) {
-	objtesting.ForeachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		dir, err := ioutil.TempDir("", "test_bucketstore_e2e")
-		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 
@@ -518,7 +517,7 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 			MaxItemSize: 1e5,
 			MaxSize:     2e5,
 		})
-		testutil.Ok(t, err)
+		assert.NoError(t, err)
 		s.cache.SwapWith(indexCache)
 
 		testBucketStore_e2e(t, ctx, s)
@@ -531,8 +530,8 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
 	dir, err := ioutil.TempDir("", "test_bucket_time_part_e2e")
-	testutil.Ok(t, err)
-	defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 	hourAfter := time.Now().Add(1 * time.Hour)
 	filterMaxTime := model.TimeOrDurationValue{Time: &hourAfter}
@@ -544,11 +543,11 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 		MinTime: minTimeDuration,
 		MaxTime: filterMaxTime,
 	})
-	testutil.Ok(t, s.store.SyncBlocks(ctx))
+	assert.NoError(t, s.store.SyncBlocks(ctx))
 
 	mint, maxt := s.store.TimeRange()
-	testutil.Equals(t, s.minTime, mint)
-	testutil.Equals(t, filterMaxTime.PrometheusTimestamp(), maxt)
+	assert.Equal(t, s.minTime, mint)
+	assert.Equal(t, filterMaxTime.PrometheusTimestamp(), maxt)
 
 	req := &storepb.SeriesRequest{
 		Matchers: []storepb.LabelMatcher{
@@ -568,15 +567,15 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 	s.cache.SwapWith(noopCache{})
 	srv := newStoreSeriesServer(ctx)
 
-	testutil.Ok(t, s.store.Series(req, srv))
-	testutil.Equals(t, len(expectedLabels), len(srv.SeriesSet))
+	assert.NoError(t, s.store.Series(req, srv))
+	assert.Equal(t, len(expectedLabels), len(srv.SeriesSet))
 
 	for i, s := range srv.SeriesSet {
-		testutil.Equals(t, expectedLabels[i], s.Labels)
+		assert.Equal(t, expectedLabels[i], s.Labels)
 
 		// prepareTestBlocks makes 3 chunks containing 2 hour data,
 		// we should only get 1, as we are filtering by time.
-		testutil.Equals(t, 1, len(s.Chunks))
+		assert.Equal(t, 1, len(s.Chunks))
 	}
 }
 
@@ -618,11 +617,11 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			bkt := objstore.NewInMemBucket()
 
 			dir, err := ioutil.TempDir("", "test_bucket_chunks_limiter_e2e")
-			testutil.Ok(t, err)
-			defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
+			assert.NoError(t, err)
+			defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code), emptyRelabelConfig, allowAllFilterConf)
-			testutil.Ok(t, s.store.SyncBlocks(ctx))
+			assert.NoError(t, s.store.SyncBlocks(ctx))
 
 			req := &storepb.SeriesRequest{
 				Matchers: []storepb.LabelMatcher{
@@ -637,33 +636,33 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			err = s.store.Series(req, srv)
 
 			if testData.expectedErr == "" {
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 			} else {
-				testutil.NotOk(t, err)
-				testutil.Assert(t, strings.Contains(err.Error(), testData.expectedErr))
+				assert.Error(t, err)
+				assert.True(t, strings.Contains(err.Error(), testData.expectedErr))
 				status, ok := status.FromError(err)
-				testutil.Equals(t, true, ok)
-				testutil.Equals(t, testData.code, status.Code())
+				assert.Equal(t, true, ok)
+				assert.Equal(t, testData.code, status.Code())
 			}
 		})
 	}
 }
 
 func TestBucketStore_LabelNames_e2e(t *testing.T) {
-	objtesting.ForeachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		dir, err := ioutil.TempDir("", "test_bucketstore_label_names_e2e")
-		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 		s.cache.SwapWith(noopCache{})
 
 		mint, maxt := s.store.TimeRange()
-		testutil.Equals(t, s.minTime, mint)
-		testutil.Equals(t, s.maxTime, maxt)
+		assert.Equal(t, s.minTime, mint)
+		assert.Equal(t, s.maxTime, maxt)
 
 		for name, tc := range map[string]struct {
 			req      *storepb.LabelNamesRequest
@@ -743,29 +742,29 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 		} {
 			t.Run(name, func(t *testing.T) {
 				vals, err := s.store.LabelNames(ctx, tc.req)
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 
-				testutil.Equals(t, tc.expected, vals.Names)
+				assert.Equal(t, tc.expected, vals.Names)
 			})
 		}
 	})
 }
 
 func TestBucketStore_LabelValues_e2e(t *testing.T) {
-	objtesting.ForeachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
 		dir, err := ioutil.TempDir("", "test_bucketstore_label_values_e2e")
-		testutil.Ok(t, err)
-		defer func() { testutil.Ok(t, os.RemoveAll(dir)) }()
+		assert.NoError(t, err)
+		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
 		s.cache.SwapWith(noopCache{})
 
 		mint, maxt := s.store.TimeRange()
-		testutil.Equals(t, s.minTime, mint)
-		testutil.Equals(t, s.maxTime, maxt)
+		assert.Equal(t, s.minTime, mint)
+		assert.Equal(t, s.maxTime, maxt)
 
 		for name, tc := range map[string]struct {
 			req      *storepb.LabelValuesRequest
@@ -848,9 +847,9 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 		} {
 			t.Run(name, func(t *testing.T) {
 				vals, err := s.store.LabelValues(ctx, tc.req)
-				testutil.Ok(t, err)
+				assert.NoError(t, err)
 
-				testutil.Equals(t, tc.expected, emptyToNil(vals.Values))
+				assert.Equal(t, tc.expected, emptyToNil(vals.Values))
 			})
 		}
 	})
@@ -861,4 +860,28 @@ func emptyToNil(values []string) []string {
 		return nil
 	}
 	return values
+}
+
+func foreachStore(t *testing.T, testFn func(t *testing.T, bkt objstore.Bucket)) {
+	t.Parallel()
+
+	// Mandatory Inmem. Not parallel, to detect problem early.
+	if ok := t.Run("inmem", func(t *testing.T) {
+		testFn(t, objstore.NewInMemBucket())
+	}); !ok {
+		return
+	}
+
+	// Mandatory Filesystem.
+	t.Run("filesystem", func(t *testing.T) {
+		t.Parallel()
+
+		dir, err := ioutil.TempDir("", "filesystem-foreach-store-test")
+		assert.NoError(t, err)
+		defer assert.NoError(t, os.RemoveAll(dir))
+
+		b, err := filesystem.NewBucket(dir)
+		assert.NoError(t, err)
+		testFn(t, b)
+	})
 }

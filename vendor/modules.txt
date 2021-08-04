@@ -122,8 +122,6 @@ github.com/aws/aws-sdk-go/service/sts
 github.com/aws/aws-sdk-go/service/sts/stsiface
 # github.com/beorn7/perks v1.0.1
 github.com/beorn7/perks/quantile
-# github.com/blang/semver/v4 v4.0.0
-github.com/blang/semver/v4
 # github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 ## explicit
 github.com/bradfitz/gomemcache/memcache
@@ -235,7 +233,6 @@ github.com/gogo/googleapis/google/rpc
 # github.com/gogo/protobuf v1.3.2
 ## explicit
 github.com/gogo/protobuf/gogoproto
-github.com/gogo/protobuf/jsonpb
 github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/sortkeys
@@ -348,6 +345,11 @@ github.com/jstemmer/go-junit-report/parser
 github.com/julienschmidt/httprouter
 # github.com/klauspost/cpuid v1.3.1
 github.com/klauspost/cpuid
+# github.com/leanovate/gopter v0.2.4
+## explicit
+github.com/leanovate/gopter
+github.com/leanovate/gopter/gen
+github.com/leanovate/gopter/prop
 # github.com/mailru/easyjson v0.7.6
 github.com/mailru/easyjson/buffer
 github.com/mailru/easyjson/jlexer
@@ -492,7 +494,6 @@ github.com/prometheus/procfs/internal/util
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
 github.com/prometheus/prometheus/discovery/dns
-github.com/prometheus/prometheus/discovery/file
 github.com/prometheus/prometheus/discovery/refresh
 github.com/prometheus/prometheus/discovery/targetgroup
 github.com/prometheus/prometheus/notifier
@@ -579,17 +580,13 @@ github.com/thanos-io/thanos/pkg/cacheutil
 github.com/thanos-io/thanos/pkg/compact
 github.com/thanos-io/thanos/pkg/compact/downsample
 github.com/thanos-io/thanos/pkg/component
-github.com/thanos-io/thanos/pkg/discovery/cache
 github.com/thanos-io/thanos/pkg/discovery/dns
 github.com/thanos-io/thanos/pkg/discovery/dns/godns
 github.com/thanos-io/thanos/pkg/discovery/dns/miekgdns
 github.com/thanos-io/thanos/pkg/discovery/memcache
 github.com/thanos-io/thanos/pkg/errutil
-github.com/thanos-io/thanos/pkg/exemplars/exemplarspb
 github.com/thanos-io/thanos/pkg/extprom
 github.com/thanos-io/thanos/pkg/gate
-github.com/thanos-io/thanos/pkg/http
-github.com/thanos-io/thanos/pkg/metadata/metadatapb
 github.com/thanos-io/thanos/pkg/model
 github.com/thanos-io/thanos/pkg/objstore
 github.com/thanos-io/thanos/pkg/objstore/azure
@@ -598,18 +595,14 @@ github.com/thanos-io/thanos/pkg/objstore/gcs
 github.com/thanos-io/thanos/pkg/objstore/s3
 github.com/thanos-io/thanos/pkg/objstore/swift
 github.com/thanos-io/thanos/pkg/pool
-github.com/thanos-io/thanos/pkg/promclient
-github.com/thanos-io/thanos/pkg/rules/rulespb
 github.com/thanos-io/thanos/pkg/runutil
 github.com/thanos-io/thanos/pkg/shipper
-github.com/thanos-io/thanos/pkg/store
 github.com/thanos-io/thanos/pkg/store/cache
 github.com/thanos-io/thanos/pkg/store/hintspb
 github.com/thanos-io/thanos/pkg/store/labelpb
 github.com/thanos-io/thanos/pkg/store/storepb
 github.com/thanos-io/thanos/pkg/store/storepb/prompb
 github.com/thanos-io/thanos/pkg/strutil
-github.com/thanos-io/thanos/pkg/targets/targetspb
 github.com/thanos-io/thanos/pkg/testutil
 github.com/thanos-io/thanos/pkg/tracing
 # github.com/tmc/grpc-websocket-proxy v0.0.0-20200427203606-3cfed13b9966
@@ -1036,8 +1029,6 @@ google.golang.org/protobuf/types/known/wrapperspb
 google.golang.org/protobuf/types/pluginpb
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 gopkg.in/alecthomas/kingpin.v2
-# gopkg.in/fsnotify/fsnotify.v1 v1.4.7
-gopkg.in/fsnotify/fsnotify.v1
 # gopkg.in/inf.v0 v0.9.1
 gopkg.in/inf.v0
 # gopkg.in/ini.v1 v1.57.0
