@@ -5,7 +5,7 @@ weight: 5
 slug: how-integration-tests-work
 ---
 
-Mimir integration tests are written in Go and based on a [custom framework](https://github.com/grafana/mimir/tree/master/integration/e2e) running Mimir and its dependencies in Docker containers and using the Go [`testing`](https://golang.org/pkg/testing/) package for assertions. Integration tests run in CI for every PR, and can be easily executed locally during development (it just requires Docker).
+Mimir integration tests are written in Go and based on a [custom framework](https://github.com/grafana/mimir/tree/main/integration/e2e) running Mimir and its dependencies in Docker containers and using the Go [`testing`](https://golang.org/pkg/testing/) package for assertions. Integration tests run in CI for every PR, and can be easily executed locally during development (it just requires Docker).
 
 ## How to run integration tests
 
