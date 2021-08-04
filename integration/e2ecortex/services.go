@@ -16,8 +16,8 @@ const (
 
 // GetDefaultImage returns the Docker image to use to run Cortex.
 func GetDefaultImage() string {
-	// Get the cortex image from the MIMIR_IMAGE env variable,
-	// falling back to "quay.io/cortexproject/cortex:latest"
+	// Get the mimir image from the MIMIR_IMAGE env variable,
+	// falling back to  "us.gcr.io/kubernetes-dev/mimir:latest"
 	if os.Getenv("MIMIR_IMAGE") != "" {
 		return os.Getenv("MIMIR_IMAGE")
 	}

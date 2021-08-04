@@ -149,5 +149,5 @@ jobs:
           export IMAGE_TAG=$(make image-tag)
           export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
           export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
-          echo "Running integration tests with image: MIMIR_IMAGE"
+          echo "Running integration tests with image: $MIMIR_IMAGE"
           go test -tags=requires_docker -timeout 2400s -v -count=1 ./integration/...
