@@ -199,6 +199,12 @@ lint: lint-packaging-scripts
 		./pkg/querier/... \
 		./pkg/ruler/...
 
+	# Ensure packages we imported from Thanos are no longer used.
+	GOFLAGS="-tags=requires_docker" faillint -paths \
+		"github.com/thanos/thanos-io/pkg/store,\
+		github.com/thanos-io/thanos/pkg/testutil/..." \
+		./pkg/... ./cmd/... ./tools/... ./integration/...
+
 test:
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
