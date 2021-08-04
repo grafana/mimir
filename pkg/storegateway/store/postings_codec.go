@@ -1,5 +1,6 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/postings_codec.go
+// Included-from-license: Apache-2.0
+// Included-from-copyright: The Thanos Authors.
 
 package store
 
