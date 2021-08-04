@@ -1947,10 +1947,10 @@ func (r *bucketIndexReader) fetchPostings(keys []labels.Label) ([]index.Postings
 			if isDiffVarintSnappyEncodedPostings(b) {
 				s := time.Now()
 				l, err = diffVarintSnappyDecode(b)
-				r.stats.cachedPostingsDecompressions += 1
+				r.stats.cachedPostingsDecompressions++
 				r.stats.cachedPostingsDecompressionTimeSum += time.Since(s)
 				if err != nil {
-					r.stats.cachedPostingsDecompressionErrors += 1
+					r.stats.cachedPostingsDecompressionErrors++
 				}
 			} else {
 				_, l, err = r.dec.Postings(b)
