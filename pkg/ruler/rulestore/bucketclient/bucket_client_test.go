@@ -38,7 +38,7 @@ func TestListRules(t *testing.T) {
 		}
 
 		for _, g := range groups {
-			desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
+			desc := rulespb.ToProto(g.user, g.namespace, rulespb.RuleGroup{RuleGroup: g.ruleGroup})
 			require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
 		}
 
@@ -116,7 +116,7 @@ func TestLoadRules(t *testing.T) {
 		}
 
 		for _, g := range groups {
-			desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
+			desc := rulespb.ToProto(g.user, g.namespace, rulespb.RuleGroup{RuleGroup: g.ruleGroup})
 			require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
 		}
 
@@ -182,7 +182,7 @@ func TestDelete(t *testing.T) {
 		}
 
 		for _, g := range groups {
-			desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
+			desc := rulespb.ToProto(g.user, g.namespace, rulespb.RuleGroup{RuleGroup: g.ruleGroup})
 			require.NoError(t, rs.SetRuleGroup(context.Background(), g.user, g.namespace, desc))
 		}
 

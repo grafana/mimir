@@ -835,7 +835,7 @@ func setupRuleGroupsStore(t *testing.T, ruleGroups []ruleGroupKey) (*chunk.MockS
 
 	// "upload" rule groups
 	for _, key := range ruleGroups {
-		desc := rulespb.ToProto(key.user, key.namespace, rulefmt.RuleGroup{Name: key.group})
+		desc := rulespb.ToProto(key.user, key.namespace, rulespb.RuleGroup{RuleGroup: rulefmt.RuleGroup{Name: key.group}})
 		require.NoError(t, rs.SetRuleGroup(context.Background(), key.user, key.namespace, desc))
 	}
 
@@ -870,7 +870,7 @@ func TestRuler_ListAllRules(t *testing.T) {
 
 	gs := make(map[string]map[string][]rulefmt.RuleGroup) // user:namespace:[]rulefmt.RuleGroup
 	for userID := range mockRules {
-		gs[userID] = mockRules[userID].Formatted()
+		gs[userID] = mockRules[userID].FormattedPrometheus()
 	}
 	expectedResponse, err := yaml.Marshal(gs)
 	require.NoError(t, err)

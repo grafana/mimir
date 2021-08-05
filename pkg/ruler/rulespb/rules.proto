@@ -45,3 +45,8 @@ message RuleDesc {
     (gogoproto.customtype) = "github.com/grafana/mimir/pkg/cortexpb.LabelAdapter"
   ];
 }
+
+message RemoteWriteConfig {
+    string url = 1;
+}
+

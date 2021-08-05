@@ -28,15 +28,17 @@ func TestClient_LoadAllRuleGroups(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	ruleGroups := rulefmt.RuleGroups{
-		Groups: []rulefmt.RuleGroup{
+	ruleGroups := rulespb.RuleGroups{
+		Groups: []rulespb.RuleGroup{
 			{
-				Name:     "rule",
-				Interval: model.Duration(100 * time.Second),
-				Rules: []rulefmt.RuleNode{
-					{
-						Record: yaml.Node{Kind: yaml.ScalarNode, Value: "test_rule"},
-						Expr:   yaml.Node{Kind: yaml.ScalarNode, Value: "up"},
+				RuleGroup: rulefmt.RuleGroup{
+					Name:     "rule",
+					Interval: model.Duration(100 * time.Second),
+					Rules: []rulefmt.RuleNode{
+						{
+							Record: yaml.Node{Kind: yaml.ScalarNode, Value: "test_rule"},
+							Expr:   yaml.Node{Kind: yaml.ScalarNode, Value: "up"},
+						},
 					},
 				},
 			},

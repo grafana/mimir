@@ -16,7 +16,6 @@ import (
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/weaveworks/common/user"
 	"gopkg.in/yaml.v3"
 
@@ -456,7 +455,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 
 	level.Debug(logger).Log("msg", "attempting to unmarshal rulegroup", "userID", userID, "group", string(payload))
 
-	rg := rulefmt.RuleGroup{}
+	rg := rulespb.RuleGroup{}
 	err = yaml.Unmarshal(payload, &rg)
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to unmarshal rule group payload", "err", err.Error())
@@ -464,7 +463,7 @@ func (a *API) CreateRuleGroup(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	errs := a.ruler.manager.ValidateRuleGroup(rg)
+	errs := a.ruler.manager.ValidateRuleGroup(rg.RuleGroup)
 	if len(errs) > 0 {
 		e := []string{}
 		for _, err := range errs {

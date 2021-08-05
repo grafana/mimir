@@ -124,7 +124,7 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 func (r *DefaultMultiTenantManager) syncRulesToManager(ctx context.Context, user string, groups rulespb.RuleGroupList) {
 	// Map the files to disk and return the file names to be passed to the users manager if they
 	// have been updated
-	update, files, err := r.mapper.MapRules(user, groups.Formatted())
+	update, files, err := r.mapper.MapRules(user, groups.FormattedPrometheus())
 	if err != nil {
 		r.lastReloadSuccessful.WithLabelValues(user).Set(0)
 		level.Error(r.logger).Log("msg", "unable to map rule files", "user", user, "err", err)
