@@ -611,7 +611,7 @@ func TestBucketStore_Sharding(t *testing.T) {
 func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ulid.ULID) {
 	var cached []ulid.ULID
 
-	logger := log.NewLogfmtLogger(os.Stderr)
+	logger := log.NewNopLogger()
 	for _, sc := range []struct {
 		name              string
 		relabel           string
@@ -1101,14 +1101,14 @@ func benchmarkExpandedPostings(
 
 func TestBucketSeries(t *testing.T) {
 	tb := test.NewTB(t)
-	runSeriesInterestingCases(tb, 200e3, 200e3, func(t test.TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1)
 	})
 }
 
 func TestBucketSkipChunksSeries(t *testing.T) {
 	tb := test.NewTB(t)
-	runSeriesInterestingCases(tb, 200e3, 200e3, func(t test.TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1)
 	})
 }
@@ -2251,7 +2251,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		opts.ScrapeInterval = 1 * time.Millisecond
 	}
 
-	fmt.Printf(
+	t.Logf(
 		"Creating %d %d-sample series with %s interval in %s\n",
 		opts.Series,
 		opts.SamplesPerSeries,
