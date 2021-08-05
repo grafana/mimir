@@ -15,7 +15,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
@@ -52,10 +52,10 @@ var (
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{Value: 137, TimestampMs: 1536673680000},
 						{Value: 137, TimestampMs: 1536673780000},
 					},
@@ -66,9 +66,9 @@ var (
 )
 
 func mkAPIResponse(start, end, step int64) *PrometheusResponse {
-	var samples []cortexpb.Sample
+	var samples []mimirpb.Sample
 	for i := start; i <= end; i += step {
-		samples = append(samples, cortexpb.Sample{
+		samples = append(samples, mimirpb.Sample{
 			TimestampMs: int64(i),
 			Value:       float64(i),
 		})
@@ -80,7 +80,7 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 			ResultType: matrix,
 			Result: []SampleStream{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Samples: samples,

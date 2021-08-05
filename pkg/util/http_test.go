@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -140,20 +140,20 @@ func TestStreamWriteYAMLResponse(t *testing.T) {
 
 func TestParseProtoReader(t *testing.T) {
 	// 47 bytes compressed and 53 uncompressed
-	req := &cortexpb.PreallocWriteRequest{
-		WriteRequest: cortexpb.WriteRequest{
-			Timeseries: []cortexpb.PreallocTimeseries{
+	req := &mimirpb.PreallocWriteRequest{
+		WriteRequest: mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
 				{
-					TimeSeries: &cortexpb.TimeSeries{
-						Labels: []cortexpb.LabelAdapter{
+					TimeSeries: &mimirpb.TimeSeries{
+						Labels: []mimirpb.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 						},
-						Samples: []cortexpb.Sample{
+						Samples: []mimirpb.Sample{
 							{Value: 10, TimestampMs: 1},
 							{Value: 20, TimestampMs: 2},
 							{Value: 30, TimestampMs: 3},
 						},
-						Exemplars: []cortexpb.Exemplar{},
+						Exemplars: []mimirpb.Exemplar{},
 					},
 				},
 			},
@@ -182,7 +182,7 @@ func TestParseProtoReader(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			assert.Nil(t, util.SerializeProtoResponse(w, req, tt.compression))
-			var fromWire cortexpb.PreallocWriteRequest
+			var fromWire mimirpb.PreallocWriteRequest
 
 			reader := w.Result().Body
 			if tt.useBytesBuffer {

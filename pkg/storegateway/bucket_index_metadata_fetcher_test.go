@@ -20,14 +20,14 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/concurrency"
 )
 
 func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	const userID = "user-1"
 
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	reg := prometheus.NewPedanticRegistry()
 	ctx := context.Background()
 	now := time.Now()
@@ -101,7 +101,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 	const userID = "user-1"
 
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	reg := prometheus.NewPedanticRegistry()
 	ctx := context.Background()
 	logs := &concurrency.SyncBuffer{}
@@ -152,7 +152,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 	const userID = "user-1"
 
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	reg := prometheus.NewPedanticRegistry()
 	ctx := context.Background()
 	logs := &concurrency.SyncBuffer{}
@@ -206,7 +206,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) {
 	const userID = "user-1"
 
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	reg := prometheus.NewPedanticRegistry()
 	ctx := context.Background()
 	now := time.Now()

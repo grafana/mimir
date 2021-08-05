@@ -23,7 +23,7 @@ import (
 )
 
 // RuleStoreConfig configures a rule store.
-// TODO remove this legacy config in Cortex 1.11.
+// TODO remove this legacy config in Mimir 1.11.
 type RuleStoreConfig struct {
 	Type string `yaml:"type"`
 

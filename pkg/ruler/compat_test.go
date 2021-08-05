@@ -18,16 +18,16 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type fakePusher struct {
-	request  *cortexpb.WriteRequest
-	response *cortexpb.WriteResponse
+	request  *mimirpb.WriteRequest
+	response *mimirpb.WriteResponse
 	err      error
 }
 
-func (p *fakePusher) Push(ctx context.Context, r *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error) {
+func (p *fakePusher) Push(ctx context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	p.request = r
 	return p.response, p.err
 }
@@ -104,7 +104,7 @@ func TestPusherAppendable(t *testing.T) {
 			lbls, err := parser.ParseMetric(tc.series)
 			require.NoError(t, err)
 
-			pusher.response = &cortexpb.WriteResponse{}
+			pusher.response = &mimirpb.WriteResponse{}
 			a := pa.Appender(ctx)
 			_, err = a.Append(0, lbls, 120_000, tc.value)
 			require.NoError(t, err)
@@ -149,7 +149,7 @@ func TestPusherErrors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 
-			pusher := &fakePusher{err: tc.returnedError, response: &cortexpb.WriteResponse{}}
+			pusher := &fakePusher{err: tc.returnedError, response: &mimirpb.WriteResponse{}}
 
 			writes := prometheus.NewCounter(prometheus.CounterOpts{})
 			failures := prometheus.NewCounter(prometheus.CounterOpts{})

@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -108,12 +108,12 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			// Add the memcached address to the flags.
 			flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
 
-			// Start Cortex components.
-			distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-			storeGateway1 := e2ecortex.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), flags, "")
-			storeGateway2 := e2ecortex.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), flags, "")
-			storeGateways := e2ecortex.NewCompositeCortexService(storeGateway1, storeGateway2)
+			// Start Mimir components.
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), flags, "")
+			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), flags, "")
+			storeGateways := e2emimir.NewCompositeMimirService(storeGateway1, storeGateway2)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway1, storeGateway2))
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
@@ -122,7 +122,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 					"-querier.store-gateway-addresses": strings.Join([]string{storeGateway1.NetworkGRPCEndpoint(), storeGateway2.NetworkGRPCEndpoint()}, ","),
 				})
 			}
-			querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 			require.NoError(t, s.StartAndWaitReady(querier))
 
 			// Wait until both the distributor and querier have updated the ring. The querier will also watch
@@ -134,10 +134,10 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 			}
 
-			c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
 			require.NoError(t, err)
 
-			// Push some series to Cortex.
+			// Push some series to Mimir.
 			series1Timestamp := time.Now()
 			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
 			series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
@@ -174,7 +174,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 			if testCfg.bucketIndexEnabled {
 				// Start the compactor to have the bucket index created before querying.
-				compactor := e2ecortex.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
+				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
 				require.NoError(t, s.StartAndWaitReady(compactor))
 			} else {
 				// Wait until the querier has discovered the uploaded blocks.
@@ -306,7 +306,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			memcached := e2ecache.NewMemcached()
 			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
 
-			// Setting the replication factor equal to the number of Cortex replicas
+			// Setting the replication factor equal to the number of Mimir replicas
 			// make sure each replica creates the same blocks, so the total number of
 			// blocks is stable and easy to assert on.
 			const seriesReplicationFactor = 2
@@ -335,13 +335,13 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-store-gateway.sharding-ring.replication-factor": "1",
 			})
 
-			// Start Cortex replicas.
-			cortex1 := e2ecortex.NewSingleBinary("cortex-1", flags, "")
-			cortex2 := e2ecortex.NewSingleBinary("cortex-2", flags, "")
-			cluster := e2ecortex.NewCompositeCortexService(cortex1, cortex2)
-			require.NoError(t, s.StartAndWaitReady(cortex1, cortex2))
+			// Start Mimir replicas.
+			mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, "")
+			mimir2 := e2emimir.NewSingleBinary("mimir-2", flags, "")
+			cluster := e2emimir.NewCompositeMimirService(mimir1, mimir2)
+			require.NoError(t, s.StartAndWaitReady(mimir1, mimir2))
 
-			// Wait until Cortex replicas have updated the ring state.
+			// Wait until Mimir replicas have updated the ring state.
 			for _, replica := range cluster.Instances() {
 				numTokensPerInstance := 512 // Ingesters ring.
 				if testCfg.blocksShardingEnabled {
@@ -351,10 +351,10 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 			}
 
-			c, err := e2ecortex.NewClient(cortex1.HTTPEndpoint(), cortex2.HTTPEndpoint(), "", "", "user-1")
+			c, err := e2emimir.NewClient(mimir1.HTTPEndpoint(), mimir2.HTTPEndpoint(), "", "", "user-1")
 			require.NoError(t, err)
 
-			// Push some series to Cortex.
+			// Push some series to Mimir.
 			series1Timestamp := time.Now()
 			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
 			series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
@@ -392,7 +392,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			if testCfg.bucketIndexEnabled {
 				// Start the compactor to have the bucket index created before querying. We need to run the compactor
 				// as a separate service because it's currently not part of the single binary.
-				compactor := e2ecortex.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
+				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
 				require.NoError(t, s.StartAndWaitReady(compactor))
 			} else {
 				// Wait until the querier has discovered the uploaded blocks (discovered both by the querier and store-gateway).
@@ -460,7 +460,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 
 func testMetadataQueriesWithBlocksStorage(
 	t *testing.T,
-	c *e2ecortex.Client,
+	c *e2emimir.Client,
 	lastSeriesInStorage prompb.TimeSeries,
 	lastSeriesInIngesterBlocks prompb.TimeSeries,
 	firstSeriesInIngesterHead prompb.TimeSeries,
@@ -702,16 +702,16 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	// Start Cortex components for the write path.
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	// Start Mimir components for the write path.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push some series to Cortex.
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	// Push some series to Mimir.
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
 	series1Timestamp := time.Now()
@@ -735,10 +735,10 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
 
 	// Start the querier and store-gateway, and configure them to not frequently sync blocks.
-	storeGateway := e2ecortex.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
+	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
 		"-blocks-storage.bucket-store.sync-interval": "1m",
 	}), "")
-	querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), mergeFlags(flags, map[string]string{
 		"-blocks-storage.bucket-store.sync-interval": "1m",
 	}), "")
 	require.NoError(t, s.StartAndWaitReady(querier, storeGateway))
@@ -748,7 +748,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	require.NoError(t, storeGateway.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	// Query back the series.
-	c, err = e2ecortex.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
+	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
 	result, err := c.Query("series_1", series1Timestamp)
@@ -757,7 +757,7 @@ func TestQuerierWithBlocksStorageOnMissingBlocksFromStorage(t *testing.T) {
 	assert.Equal(t, expectedVector1, result.(model.Vector))
 
 	// Delete all blocks from the storage.
-	storage, err := e2ecortex.NewS3ClientForMinio(minio, flags["-blocks-storage.s3.bucket-name"])
+	storage, err := e2emimir.NewS3ClientForMinio(minio, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, err)
 	require.NoError(t, storage.DeleteBlocks("user-1"))
 
@@ -796,10 +796,10 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 	// Add the memcached address to the flags.
 	flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
 
-	// Start Cortex components.
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	storeGateway := e2ecortex.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags, "")
+	// Start Mimir components.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway))
 
 	// Start the querier with configuring store-gateway addresses if sharding is disabled.
@@ -807,13 +807,13 @@ func TestQueryLimitsWithBlocksStorageRunningInMicroServices(t *testing.T) {
 		"-querier.store-gateway-addresses": strings.Join([]string{storeGateway.NetworkGRPCEndpoint()}, ","),
 	})
 
-	querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(querier))
 
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	// Push some series to Cortex.
+	// Push some series to Mimir.
 	series1Timestamp := time.Now()
 	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
 	series3Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
@@ -852,7 +852,7 @@ func TestHashCollisionHandling(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 	flags := ChunksStorageFlags()
 
 	// Start dependencies.
@@ -861,25 +861,25 @@ func TestHashCollisionHandling(t *testing.T) {
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul, dynamo))
 
-	tableManager := e2ecortex.NewTableManager("table-manager", ChunksStorageFlags(), "")
+	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(tableManager))
 
 	// Wait until the first table-manager sync has completed, so that we're
 	// sure the tables have been created.
 	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
 
-	// Start Cortex components for the write path.
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	// Start Mimir components for the write path.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-0")
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-0")
 	require.NoError(t, err)
 
 	var series []prompb.TimeSeries
@@ -922,14 +922,14 @@ func TestHashCollisionHandling(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	// Wait until the querier has updated the ring.
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	// Query the series.
-	c, err = e2ecortex.NewClient("", querier.HTTPEndpoint(), "", "", "user-0")
+	c, err = e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user-0")
 	require.NoError(t, err)
 
 	result, err := c.Query("fingerprint_collision", now)

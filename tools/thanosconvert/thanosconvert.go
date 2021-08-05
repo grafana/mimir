@@ -14,10 +14,10 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// ThanosBlockConverter converts blocks written by Thanos to make them readable by Cortex
+// ThanosBlockConverter converts blocks written by Thanos to make them readable by Mimir
 type ThanosBlockConverter struct {
 	logger log.Logger
 	bkt    objstore.Bucket
@@ -59,7 +59,7 @@ func NewThanosBlockConverter(ctx context.Context, cfg bucket.Config, dryRun bool
 func (c ThanosBlockConverter) Run(ctx context.Context) (Results, error) {
 	results := make(Results)
 
-	scanner := cortex_tsdb.NewUsersScanner(c.bkt, cortex_tsdb.AllUsers, c.logger)
+	scanner := mimir_tsdb.NewUsersScanner(c.bkt, mimir_tsdb.AllUsers, c.logger)
 	users, _, err := scanner.ScanUsers(ctx)
 	if err != nil {
 		return results, errors.Wrap(err, "error while scanning users")
@@ -143,7 +143,7 @@ func (c *ThanosBlockConverter) uploadNewMeta(ctx context.Context, userBucketClie
 func convertMetadata(meta metadata.Meta, expectedUser string) (metadata.Meta, []string) {
 	var changesRequired []string
 
-	org, ok := meta.Thanos.Labels[cortex_tsdb.TenantIDExternalLabel]
+	org, ok := meta.Thanos.Labels[mimir_tsdb.TenantIDExternalLabel]
 	if !ok {
 		changesRequired = append(changesRequired, "add __org_id__ label")
 	} else if org != expectedUser {
@@ -151,13 +151,13 @@ func convertMetadata(meta metadata.Meta, expectedUser string) (metadata.Meta, []
 	}
 
 	// remove __org_id__ so that we can see if there are any other labels
-	delete(meta.Thanos.Labels, cortex_tsdb.TenantIDExternalLabel)
+	delete(meta.Thanos.Labels, mimir_tsdb.TenantIDExternalLabel)
 	if len(meta.Thanos.Labels) > 0 {
 		changesRequired = append(changesRequired, "remove extra Thanos labels")
 	}
 
 	meta.Thanos.Labels = map[string]string{
-		cortex_tsdb.TenantIDExternalLabel: expectedUser,
+		mimir_tsdb.TenantIDExternalLabel: expectedUser,
 	}
 
 	return meta, changesRequired

@@ -9,7 +9,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/s3"
 
-	cortex_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
+	mimir_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 )
 
 // TenantConfigProvider defines a per-tenant config provider.
@@ -80,7 +80,7 @@ func (b *SSEBucketClient) getCustomS3SSEConfig() (encrypt.ServerSide, error) {
 		return nil, nil
 	}
 
-	cfg := cortex_s3.SSEConfig{
+	cfg := mimir_s3.SSEConfig{
 		Type:                 sseType,
 		KMSKeyID:             b.cfgProvider.S3SSEKMSKeyID(b.userID),
 		KMSEncryptionContext: b.cfgProvider.S3SSEKMSEncryptionContext(b.userID),

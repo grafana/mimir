@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/series"
 )
 
@@ -23,7 +23,7 @@ func FromResult(res *promql.Result) ([]SampleStream, error) {
 	case promql.Scalar:
 		return []SampleStream{
 			{
-				Samples: []cortexpb.Sample{
+				Samples: []mimirpb.Sample{
 					{
 						Value:       v.V,
 						TimestampMs: v.T,
@@ -57,20 +57,20 @@ func FromResult(res *promql.Result) ([]SampleStream, error) {
 	return nil, errors.Errorf("Unexpected value type: [%s]", res.Value.Type())
 }
 
-func mapLabels(ls labels.Labels) []cortexpb.LabelAdapter {
-	result := make([]cortexpb.LabelAdapter, 0, len(ls))
+func mapLabels(ls labels.Labels) []mimirpb.LabelAdapter {
+	result := make([]mimirpb.LabelAdapter, 0, len(ls))
 	for _, l := range ls {
-		result = append(result, cortexpb.LabelAdapter(l))
+		result = append(result, mimirpb.LabelAdapter(l))
 	}
 
 	return result
 }
 
-func mapPoints(pts ...promql.Point) []cortexpb.Sample {
-	result := make([]cortexpb.Sample, 0, len(pts))
+func mapPoints(pts ...promql.Point) []mimirpb.Sample {
+	result := make([]mimirpb.Sample, 0, len(pts))
 
 	for _, pt := range pts {
-		result = append(result, cortexpb.Sample{
+		result = append(result, mimirpb.Sample{
 			Value:       pt.V,
 			TimestampMs: pt.T,
 		})

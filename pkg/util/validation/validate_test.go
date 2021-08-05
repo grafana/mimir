@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -79,7 +79,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "valid", "foo ": "bar"},
 			false,
-			newInvalidLabelError([]cortexpb.LabelAdapter{
+			newInvalidLabelError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "valid"},
 				{Name: "foo ", Value: "bar"},
 			}, "foo "),
@@ -92,7 +92,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelName", "this_is_a_really_really_long_name_that_should_cause_an_error": "test_value_please_ignore"},
 			false,
-			newLabelNameTooLongError([]cortexpb.LabelAdapter{
+			newLabelNameTooLongError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "badLabelName"},
 				{Name: "this_is_a_really_really_long_name_that_should_cause_an_error", Value: "test_value_please_ignore"},
 			}, "this_is_a_really_really_long_name_that_should_cause_an_error"),
@@ -100,7 +100,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "badLabelValue", "much_shorter_name": "test_value_please_ignore_no_really_nothing_to_see_here"},
 			false,
-			newLabelValueTooLongError([]cortexpb.LabelAdapter{
+			newLabelValueTooLongError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "badLabelValue"},
 				{Name: "much_shorter_name", Value: "test_value_please_ignore_no_really_nothing_to_see_here"},
 			}, "test_value_please_ignore_no_really_nothing_to_see_here"),
@@ -108,7 +108,7 @@ func TestValidateLabels(t *testing.T) {
 		{
 			map[model.LabelName]model.LabelValue{model.MetricNameLabel: "foo", "bar": "baz", "blip": "blop"},
 			false,
-			newTooManyLabelsError([]cortexpb.LabelAdapter{
+			newTooManyLabelsError([]mimirpb.LabelAdapter{
 				{Name: model.MetricNameLabel, Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "blip", Value: "blop"},
@@ -120,7 +120,7 @@ func TestValidateLabels(t *testing.T) {
 			nil,
 		},
 	} {
-		err := ValidateLabels(cfg, userID, cortexpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
+		err := ValidateLabels(cfg, userID, mimirpb.FromMetricsToLabelAdapters(c.metric), c.skipLabelNameValidation)
 		assert.Equal(t, c.err, err, "wrong error")
 	}
 
@@ -151,24 +151,24 @@ func TestValidateLabels(t *testing.T) {
 func TestValidateExemplars(t *testing.T) {
 	userID := "testUser"
 
-	invalidExemplars := []cortexpb.Exemplar{
+	invalidExemplars := []mimirpb.Exemplar{
 		{
 			// Missing labels
 			Labels: nil,
 		},
 		{
 			// Invalid timestamp
-			Labels: []cortexpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 		},
 		{
 			// Combined labelset too long
-			Labels:      []cortexpb.LabelAdapter{{Name: "foo", Value: strings.Repeat("0", 126)}},
+			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: strings.Repeat("0", 126)}},
 			TimestampMs: 1000,
 		},
 	}
 
 	for _, ie := range invalidExemplars {
-		err := ValidateExemplar(userID, []cortexpb.LabelAdapter{}, ie)
+		err := ValidateExemplar(userID, []mimirpb.LabelAdapter{}, ie)
 		assert.NotNil(t, err)
 	}
 
@@ -201,32 +201,32 @@ func TestValidateMetadata(t *testing.T) {
 
 	for _, c := range []struct {
 		desc     string
-		metadata *cortexpb.MetricMetadata
+		metadata *mimirpb.MetricMetadata
 		err      error
 	}{
 		{
 			"with a valid config",
-			&cortexpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: cortexpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			nil,
 		},
 		{
 			"with no metric name",
-			&cortexpb.MetricMetadata{MetricFamilyName: "", Type: cortexpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
+			&mimirpb.MetricMetadata{MetricFamilyName: "", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			httpgrpc.Errorf(http.StatusBadRequest, "metadata missing metric name"),
 		},
 		{
 			"with a long metric name",
-			&cortexpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines", Type: cortexpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines_and_routines_and_routines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: ""},
 			httpgrpc.Errorf(http.StatusBadRequest, "metadata 'METRIC_NAME' value too long: \"go_goroutines_and_routines_and_routines\" metric \"go_goroutines_and_routines_and_routines\""),
 		},
 		{
 			"with a long help",
-			&cortexpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: cortexpb.COUNTER, Help: "Number of goroutines that currently exist.", Unit: ""},
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines that currently exist.", Unit: ""},
 			httpgrpc.Errorf(http.StatusBadRequest, "metadata 'HELP' value too long: \"Number of goroutines that currently exist.\" metric \"go_goroutines\""),
 		},
 		{
 			"with a long unit",
-			&cortexpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: cortexpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
+			&mimirpb.MetricMetadata{MetricFamilyName: "go_goroutines", Type: mimirpb.COUNTER, Help: "Number of goroutines.", Unit: "a_made_up_unit_that_is_really_long"},
 			httpgrpc.Errorf(http.StatusBadRequest, "metadata 'UNIT' value too long: \"a_made_up_unit_that_is_really_long\" metric \"go_goroutines\""),
 		},
 	} {
@@ -266,12 +266,12 @@ func TestValidateLabelOrder(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(cfg, userID, []cortexpb.LabelAdapter{
+	actual := ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "m"},
 		{Name: "b", Value: "b"},
 		{Name: "a", Value: "a"},
 	}, false)
-	expected := newLabelsNotSortedError([]cortexpb.LabelAdapter{
+	expected := newLabelsNotSortedError([]mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "m"},
 		{Name: "b", Value: "b"},
 		{Name: "a", Value: "a"},
@@ -287,22 +287,22 @@ func TestValidateLabelDuplication(t *testing.T) {
 
 	userID := "testUser"
 
-	actual := ValidateLabels(cfg, userID, []cortexpb.LabelAdapter{
+	actual := ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, false)
-	expected := newDuplicatedLabelError([]cortexpb.LabelAdapter{
+	expected := newDuplicatedLabelError([]mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: model.MetricNameLabel, Value: "b"},
 	}, model.MetricNameLabel)
 	assert.Equal(t, expected, actual)
 
-	actual = ValidateLabels(cfg, userID, []cortexpb.LabelAdapter{
+	actual = ValidateLabels(cfg, userID, []mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},
 	}, false)
-	expected = newDuplicatedLabelError([]cortexpb.LabelAdapter{
+	expected = newDuplicatedLabelError([]mimirpb.LabelAdapter{
 		{Name: model.MetricNameLabel, Value: "a"},
 		{Name: "a", Value: "a"},
 		{Name: "a", Value: "a"},

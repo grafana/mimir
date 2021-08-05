@@ -431,7 +431,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	}...)
 
 	modifiers := []block.MetadataModifier{
-		// Remove Cortex external labels so that they're not injected when querying blocks.
+		// Remove Mimir external labels so that they're not injected when querying blocks.
 		NewReplicaLabelRemover(userLogger, []string{
 			tsdb.TenantIDExternalLabel,
 			tsdb.IngesterIDExternalLabel,

@@ -7,7 +7,7 @@ import (
 )
 
 // BucketStoreMetrics aggregates metrics exported by Thanos Bucket Store
-// and re-exports those aggregates as Cortex metrics.
+// and re-exports those aggregates as Mimir metrics.
 type BucketStoreMetrics struct {
 	regs *util.UserRegistries
 

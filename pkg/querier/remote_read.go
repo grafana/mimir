@@ -7,8 +7,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -80,11 +80,11 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 
 	for s.Next() {
 		series := s.At()
-		samples := []cortexpb.Sample{}
+		samples := []mimirpb.Sample{}
 		it := series.Iterator()
 		for it.Next() {
 			t, v := it.At()
-			samples = append(samples, cortexpb.Sample{
+			samples = append(samples, mimirpb.Sample{
 				TimestampMs: t,
 				Value:       v,
 			})
@@ -92,8 +92,8 @@ func seriesSetToQueryResponse(s storage.SeriesSet) (*client.QueryResponse, error
 		if err := it.Err(); err != nil {
 			return nil, err
 		}
-		result.Timeseries = append(result.Timeseries, cortexpb.TimeSeries{
-			Labels:  cortexpb.FromLabelsToLabelAdapters(series.Labels()),
+		result.Timeseries = append(result.Timeseries, mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 			Samples: samples,
 		})
 	}

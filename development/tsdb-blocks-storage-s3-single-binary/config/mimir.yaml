@@ -42,18 +42,18 @@ blocks_storage:
   backend: s3
 
   tsdb:
-    dir: /data/cortex-tsdb-ingester
+    dir: /data/mimir-tsdb-ingester
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
 
   bucket_store:
-    sync_dir: /data/cortex-tsdb-querier
+    sync_dir: /data/mimir-tsdb-querier
 
   s3:
     endpoint:          minio:9000
-    bucket_name:       cortex-tsdb
-    access_key_id:     cortex
+    bucket_name:       mimir-tsdb
+    access_key_id:     mimir
     secret_access_key: supersecret
     insecure:          true
 
@@ -73,9 +73,9 @@ ruler:
 ruler_storage:
   backend: s3
   s3:
-    bucket_name:       cortex-rules
+    bucket_name:       mimir-rules
     endpoint:          minio:9000
-    access_key_id:     cortex
+    access_key_id:     mimir
     secret_access_key: supersecret
     insecure: true
 

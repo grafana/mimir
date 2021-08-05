@@ -49,7 +49,7 @@ type iterator interface {
 	Err() error
 }
 
-// NewChunkMergeIterator returns a chunkenc.Iterator that merges Cortex chunks together.
+// NewChunkMergeIterator returns a chunkenc.Iterator that merges Mimir chunks together.
 func NewChunkMergeIterator(chunks []chunk.Chunk, _, _ model.Time) chunkenc.Iterator {
 	converted := make([]GenericChunk, len(chunks))
 	for i, c := range chunks {

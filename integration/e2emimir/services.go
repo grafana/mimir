@@ -1,4 +1,4 @@
-package e2ecortex
+package e2emimir
 
 import (
 	"os"
@@ -14,7 +14,7 @@ const (
 	GossipPort = 9094
 )
 
-// GetDefaultImage returns the Docker image to use to run Cortex.
+// GetDefaultImage returns the Docker image to use to run Mimir.
 func GetDefaultImage() string {
 	// Get the mimir image from the MIMIR_IMAGE env variable,
 	// falling back to  "us.gcr.io/kubernetes-dev/mimir:latest"
@@ -25,11 +25,11 @@ func GetDefaultImage() string {
 	return "us.gcr.io/kubernetes-dev/mimir:latest"
 }
 
-func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *CortexService {
+func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewDistributorWithConfigFile(name, consulAddress, "", flags, image)
 }
 
-func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *CortexService {
+func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -39,7 +39,7 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -57,11 +57,11 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	)
 }
 
-func NewQuerier(name string, consulAddress string, flags map[string]string, image string) *CortexService {
+func NewQuerier(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewQuerierWithConfigFile(name, consulAddress, "", flags, image)
 }
 
-func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *CortexService {
+func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -71,7 +71,7 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -100,11 +100,11 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	)
 }
 
-func NewStoreGateway(name string, consulAddress string, flags map[string]string, image string) *CortexService {
+func NewStoreGateway(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewStoreGatewayWithConfigFile(name, consulAddress, "", flags, image)
 }
 
-func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *CortexService {
+func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -114,7 +114,7 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -135,11 +135,11 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	)
 }
 
-func NewIngester(name string, consulAddress string, flags map[string]string, image string) *CortexService {
+func NewIngester(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewIngesterWithConfigFile(name, consulAddress, "", flags, image)
 }
 
-func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *CortexService {
+func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -148,7 +148,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -177,11 +177,11 @@ func getBinaryNameForBackwardsCompatibility(image string) string {
 	return "mimir"
 }
 
-func NewTableManager(name string, flags map[string]string, image string) *CortexService {
+func NewTableManager(name string, flags map[string]string, image string) *MimirService {
 	return NewTableManagerWithConfigFile(name, "", flags, image)
 }
 
-func NewTableManagerWithConfigFile(name, configFile string, flags map[string]string, image string) *CortexService {
+func NewTableManagerWithConfigFile(name, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -191,7 +191,7 @@ func NewTableManagerWithConfigFile(name, configFile string, flags map[string]str
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -204,11 +204,11 @@ func NewTableManagerWithConfigFile(name, configFile string, flags map[string]str
 	)
 }
 
-func NewQueryFrontend(name string, flags map[string]string, image string) *CortexService {
+func NewQueryFrontend(name string, flags map[string]string, image string) *MimirService {
 	return NewQueryFrontendWithConfigFile(name, "", flags, image)
 }
 
-func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]string, image string) *CortexService {
+func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -218,7 +218,7 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -233,11 +233,11 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	)
 }
 
-func NewQueryScheduler(name string, flags map[string]string, image string) *CortexService {
+func NewQueryScheduler(name string, flags map[string]string, image string) *MimirService {
 	return NewQuerySchedulerWithConfigFile(name, "", flags, image)
 }
 
-func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]string, image string) *CortexService {
+func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -247,7 +247,7 @@ func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]s
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -260,11 +260,11 @@ func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]s
 	)
 }
 
-func NewCompactor(name string, consulAddress string, flags map[string]string, image string) *CortexService {
+func NewCompactor(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewCompactorWithConfigFile(name, consulAddress, "", flags, image)
 }
 
-func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *CortexService {
+func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -274,7 +274,7 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -294,13 +294,13 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 	)
 }
 
-func NewSingleBinary(name string, flags map[string]string, image string, otherPorts ...int) *CortexService {
+func NewSingleBinary(name string, flags map[string]string, image string, otherPorts ...int) *MimirService {
 	if image == "" {
 		image = GetDefaultImage()
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -332,13 +332,13 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 	)
 }
 
-func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[string]string, image string, httpPort, grpcPort int, otherPorts ...int) *CortexService {
+func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[string]string, image string, httpPort, grpcPort int, otherPorts ...int) *MimirService {
 	if image == "" {
 		image = GetDefaultImage()
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -354,13 +354,13 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 	)
 }
 
-func NewAlertmanager(name string, flags map[string]string, image string) *CortexService {
+func NewAlertmanager(name string, flags map[string]string, image string) *MimirService {
 	if image == "" {
 		image = GetDefaultImage()
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -375,13 +375,13 @@ func NewAlertmanager(name string, flags map[string]string, image string) *Cortex
 	)
 }
 
-func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) *CortexService {
+func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) *MimirService {
 	if image == "" {
 		image = GetDefaultImage()
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -396,13 +396,13 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) 
 	)
 }
 
-func NewRuler(name string, consulAddress string, flags map[string]string, image string) *CortexService {
+func NewRuler(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	if image == "" {
 		image = GetDefaultImage()
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
@@ -418,11 +418,11 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 	)
 }
 
-func NewPurger(name string, flags map[string]string, image string) *CortexService {
+func NewPurger(name string, flags map[string]string, image string) *MimirService {
 	return NewPurgerWithConfigFile(name, "", flags, image)
 }
 
-func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, image string) *CortexService {
+func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, image string) *MimirService {
 	if configFile != "" {
 		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
 	}
@@ -432,7 +432,7 @@ func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, i
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
-	return NewCortexService(
+	return NewMimirService(
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{

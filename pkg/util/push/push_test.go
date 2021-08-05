@@ -14,47 +14,47 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestHandler_remoteWrite(t *testing.T) {
 	req := createRequest(t, createPrometheusRemoteWriteProtobuf(t))
 	resp := httptest.NewRecorder()
-	handler := Handler(100000, nil, verifyWriteRequestHandler(t, cortexpb.API))
+	handler := Handler(100000, nil, verifyWriteRequestHandler(t, mimirpb.API))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
 
 func TestHandler_cortexWriteRequest(t *testing.T) {
-	req := createRequest(t, createCortexWriteRequestProtobuf(t, false))
+	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
-	handler := Handler(100000, sourceIPs, verifyWriteRequestHandler(t, cortexpb.RULE))
+	handler := Handler(100000, sourceIPs, verifyWriteRequestHandler(t, mimirpb.RULE))
 	handler.ServeHTTP(resp, req)
 	assert.Equal(t, 200, resp.Code)
 }
 
 func TestHandler_ignoresSkipLabelNameValidationIfSet(t *testing.T) {
 	for _, req := range []*http.Request{
-		createRequest(t, createCortexWriteRequestProtobuf(t, true)),
-		createRequest(t, createCortexWriteRequestProtobuf(t, false)),
+		createRequest(t, createMimirWriteRequestProtobuf(t, true)),
+		createRequest(t, createMimirWriteRequestProtobuf(t, false)),
 	} {
 		resp := httptest.NewRecorder()
-		handler := Handler(100000, nil, verifyWriteRequestHandler(t, cortexpb.RULE))
+		handler := Handler(100000, nil, verifyWriteRequestHandler(t, mimirpb.RULE))
 		handler.ServeHTTP(resp, req)
 		assert.Equal(t, 200, resp.Code)
 	}
 }
 
-func verifyWriteRequestHandler(t *testing.T, expectSource cortexpb.WriteRequest_SourceEnum) func(ctx context.Context, request *cortexpb.WriteRequest) (response *cortexpb.WriteResponse, err error) {
+func verifyWriteRequestHandler(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) func(ctx context.Context, request *mimirpb.WriteRequest) (response *mimirpb.WriteResponse, err error) {
 	t.Helper()
-	return func(ctx context.Context, request *cortexpb.WriteRequest) (response *cortexpb.WriteResponse, err error) {
+	return func(ctx context.Context, request *mimirpb.WriteRequest) (response *mimirpb.WriteResponse, err error) {
 		assert.Len(t, request.Timeseries, 1)
 		assert.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
 		assert.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
 		assert.Equal(t, expectSource, request.Source)
 		assert.False(t, request.SkipLabelNameValidation)
-		return &cortexpb.WriteResponse{}, nil
+		return &mimirpb.WriteResponse{}, nil
 	}
 }
 
@@ -87,21 +87,21 @@ func createPrometheusRemoteWriteProtobuf(t *testing.T) []byte {
 	require.NoError(t, err)
 	return inoutBytes
 }
-func createCortexWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
+func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
-	ts := cortexpb.PreallocTimeseries{
-		TimeSeries: &cortexpb.TimeSeries{
-			Labels: []cortexpb.LabelAdapter{
+	ts := mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 			},
-			Samples: []cortexpb.Sample{
+			Samples: []mimirpb.Sample{
 				{Value: 1, TimestampMs: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC).UnixNano()},
 			},
 		},
 	}
-	input := cortexpb.WriteRequest{
-		Timeseries:              []cortexpb.PreallocTimeseries{ts},
-		Source:                  cortexpb.RULE,
+	input := mimirpb.WriteRequest{
+		Timeseries:              []mimirpb.PreallocTimeseries{ts},
+		Source:                  mimirpb.RULE,
 		SkipLabelNameValidation: skipLabelNameValidation,
 	}
 	inoutBytes, err := input.Marshal()

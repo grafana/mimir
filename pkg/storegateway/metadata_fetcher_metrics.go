@@ -7,7 +7,7 @@ import (
 )
 
 // This struct aggregates metrics exported by Thanos MetaFetcher
-// and re-exports those aggregates as Cortex metrics.
+// and re-exports those aggregates as Mimir metrics.
 type MetadataFetcherMetrics struct {
 	regs *util.UserRegistries
 

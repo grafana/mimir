@@ -103,7 +103,7 @@ func (cfg *S3Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.SecretAccessKey, prefix+"s3.secret-access-key", "", "AWS Secret Access Key")
 	f.BoolVar(&cfg.Insecure, prefix+"s3.insecure", false, "Disable https on s3 connection.")
 
-	// TODO Remove in Cortex 1.10.0
+	// TODO Remove in Mimir 1.10.0
 	f.BoolVar(&cfg.SSEEncryption, prefix+"s3.sse-encryption", false, "Enable AWS Server Side Encryption [Deprecated: Use .sse instead. if s3.sse-encryption is enabled, it assumes .sse.type SSE-S3]")
 
 	cfg.SSEConfig.RegisterFlagsWithPrefix(prefix+"s3.sse.", f)
@@ -237,7 +237,7 @@ func buildS3Config(cfg S3Config) (*aws.Config, []string, error) {
 	}
 
 	// While extending S3 configuration this http config was copied in order to
-	// to maintain backwards compatibility with previous versions of Cortex while providing
+	// to maintain backwards compatibility with previous versions of Mimir while providing
 	// more flexible configuration of the http client
 	// https://github.com/weaveworks/common/blob/4b1847531bc94f54ce5cf210a771b2a86cd34118/aws/config.go#L23
 	transport := http.RoundTripper(&http.Transport{

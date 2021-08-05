@@ -13,18 +13,18 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestDuplicatesSamples(t *testing.T) {
-	ts := cortexpb.TimeSeries{
-		Labels: []cortexpb.LabelAdapter{
+	ts := mimirpb.TimeSeries{
+		Labels: []mimirpb.LabelAdapter{
 			{
 				Name:  "lbl",
 				Value: "val",
 			},
 		},
-		Samples: []cortexpb.Sample{
+		Samples: []mimirpb.Sample{
 			{Value: 0.948569891, TimestampMs: 1583946731937},
 			{Value: 0.948569891, TimestampMs: 1583946731937},
 			{Value: 0.949927461, TimestampMs: 1583946751878},
@@ -54,8 +54,8 @@ func TestDuplicatesSamples(t *testing.T) {
 	}
 
 	// run same query, but with deduplicated samples
-	deduped := cortexpb.TimeSeries{
-		Labels: []cortexpb.LabelAdapter{
+	deduped := mimirpb.TimeSeries{
+		Labels: []mimirpb.LabelAdapter{
 			{
 				Name:  "lbl",
 				Value: "val",
@@ -70,8 +70,8 @@ func TestDuplicatesSamples(t *testing.T) {
 	}
 }
 
-func dedupeSorted(samples []cortexpb.Sample) []cortexpb.Sample {
-	out := []cortexpb.Sample(nil)
+func dedupeSorted(samples []mimirpb.Sample) []mimirpb.Sample {
+	out := []mimirpb.Sample(nil)
 	lastTs := int64(0)
 	for _, s := range samples {
 		if s.TimestampMs == lastTs {
@@ -84,8 +84,8 @@ func dedupeSorted(samples []cortexpb.Sample) []cortexpb.Sample {
 	return out
 }
 
-func runPromQLAndGetJSONResult(t *testing.T, query string, ts cortexpb.TimeSeries, step time.Duration) string {
-	tq := &testQueryable{ts: newTimeSeriesSeriesSet([]cortexpb.TimeSeries{ts})}
+func runPromQLAndGetJSONResult(t *testing.T, query string, ts mimirpb.TimeSeries, step time.Duration) string {
+	tq := &testQueryable{ts: newTimeSeriesSeriesSet([]mimirpb.TimeSeries{ts})}
 
 	engine := promql.NewEngine(promql.EngineOpts{
 		Logger:     log.NewNopLogger(),

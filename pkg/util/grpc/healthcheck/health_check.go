@@ -37,7 +37,7 @@ func (h *HealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_health_
 	return status.Error(codes.Unimplemented, "Watching is not supported")
 }
 
-// isHealthy returns whether the Cortex instance should be considered healthy.
+// isHealthy returns whether the Mimir instance should be considered healthy.
 func (h *HealthCheck) isHealthy() bool {
 	states := h.sm.ServicesByState()
 

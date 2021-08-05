@@ -45,7 +45,7 @@ func main() {
 	}
 
 	// Run the proxy.
-	proxy, err := querytee.NewProxy(cfg.ProxyConfig, util_log.Logger, cortexReadRoutes(cfg), registry)
+	proxy, err := querytee.NewProxy(cfg.ProxyConfig, util_log.Logger, mimirReadRoutes(cfg), registry)
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to initialize the proxy", "err", err.Error())
 		os.Exit(1)
@@ -59,7 +59,7 @@ func main() {
 	proxy.Await()
 }
 
-func cortexReadRoutes(cfg Config) []querytee.Route {
+func mimirReadRoutes(cfg Config) []querytee.Route {
 	prefix := cfg.PathPrefix
 
 	// Strip trailing slashes.

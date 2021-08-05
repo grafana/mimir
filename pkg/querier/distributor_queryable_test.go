@@ -17,8 +17,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -180,13 +180,13 @@ func TestIngesterStreaming(t *testing.T) {
 		&client.QueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "bar", Value: "baz"},
 					},
 					Chunks: clientChunks,
 				},
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: "bar"},
 					},
 					Chunks: clientChunks,
@@ -220,21 +220,21 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		mint = 0
 		maxt = 10000
 	)
-	s1 := []cortexpb.Sample{
+	s1 := []mimirpb.Sample{
 		{Value: 1, TimestampMs: 1000},
 		{Value: 2, TimestampMs: 2000},
 		{Value: 3, TimestampMs: 3000},
 		{Value: 4, TimestampMs: 4000},
 		{Value: 5, TimestampMs: 5000},
 	}
-	s2 := []cortexpb.Sample{
+	s2 := []mimirpb.Sample{
 		{Value: 1, TimestampMs: 1000},
 		{Value: 2.5, TimestampMs: 2500},
 		{Value: 3, TimestampMs: 3000},
 		{Value: 5.5, TimestampMs: 5500},
 	}
 
-	mergedSamplesS1S2 := []cortexpb.Sample{
+	mergedSamplesS1S2 := []mimirpb.Sample{
 		{Value: 1, TimestampMs: 1000},
 		{Value: 2, TimestampMs: 2000},
 		{Value: 2.5, TimestampMs: 2500},
@@ -249,22 +249,22 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		&client.QueryStreamResponse{
 			Chunkseries: []client.TimeSeriesChunk{
 				{
-					Labels: []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
 					Chunks: convertToChunks(t, s1),
 				},
 				{
-					Labels: []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Chunks: convertToChunks(t, s1),
 				},
 			},
 
-			Timeseries: []cortexpb.TimeSeries{
+			Timeseries: []mimirpb.TimeSeries{
 				{
-					Labels:  []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
+					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "two"}},
 					Samples: s2,
 				},
 				{
-					Labels:  []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
+					Labels:  []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "three"}},
 					Samples: s1,
 				},
 			},
@@ -334,7 +334,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 	})
 }
 
-func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples []cortexpb.Sample) {
+func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples []mimirpb.Sample) {
 	require.Equal(t, l, series.Labels())
 
 	it := series.Iterator()
@@ -349,7 +349,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 	require.Nil(t, it.Err())
 }
 
-func convertToChunks(t *testing.T, samples []cortexpb.Sample) []client.Chunk {
+func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	// We need to make sure that there is atleast one chunk present,
 	// else no series will be selected.
 	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)

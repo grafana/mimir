@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ToQueryRequest builds a QueryRequest proto.
@@ -70,12 +70,12 @@ func FromExemplarQueryRequest(req *ExemplarQueryRequest) (int64, int64, [][]*lab
 func ToQueryResponse(matrix model.Matrix) *QueryResponse {
 	resp := &QueryResponse{}
 	for _, ss := range matrix {
-		ts := cortexpb.TimeSeries{
-			Labels:  cortexpb.FromMetricsToLabelAdapters(ss.Metric),
-			Samples: make([]cortexpb.Sample, 0, len(ss.Values)),
+		ts := mimirpb.TimeSeries{
+			Labels:  mimirpb.FromMetricsToLabelAdapters(ss.Metric),
+			Samples: make([]mimirpb.Sample, 0, len(ss.Values)),
 		}
 		for _, s := range ss.Values {
-			ts.Samples = append(ts.Samples, cortexpb.Sample{
+			ts.Samples = append(ts.Samples, mimirpb.Sample{
 				Value:       float64(s.Value),
 				TimestampMs: int64(s.Timestamp),
 			})
@@ -90,7 +90,7 @@ func FromQueryResponse(resp *QueryResponse) model.Matrix {
 	m := make(model.Matrix, 0, len(resp.Timeseries))
 	for _, ts := range resp.Timeseries {
 		var ss model.SampleStream
-		ss.Metric = cortexpb.FromLabelAdaptersToMetric(ts.Labels)
+		ss.Metric = mimirpb.FromLabelAdaptersToMetric(ts.Labels)
 		ss.Values = make([]model.SamplePair, 0, len(ts.Samples))
 		for _, s := range ts.Samples {
 			ss.Values = append(ss.Values, model.SamplePair{
@@ -137,7 +137,7 @@ func FromMetricsForLabelMatchersRequest(req *MetricsForLabelMatchersRequest) (mo
 func FromMetricsForLabelMatchersResponse(resp *MetricsForLabelMatchersResponse) []model.Metric {
 	metrics := []model.Metric{}
 	for _, m := range resp.Metric {
-		metrics = append(metrics, cortexpb.FromLabelAdaptersToMetric(m.Labels))
+		metrics = append(metrics, mimirpb.FromLabelAdaptersToMetric(m.Labels))
 	}
 	return metrics
 }
@@ -252,7 +252,7 @@ func FromLabelMatchers(matchers []*LabelMatcher) ([]*labels.Matcher, error) {
 }
 
 // FastFingerprint runs the same algorithm as Prometheus labelSetToFastFingerprint()
-func FastFingerprint(ls []cortexpb.LabelAdapter) model.Fingerprint {
+func FastFingerprint(ls []mimirpb.LabelAdapter) model.Fingerprint {
 	if len(ls) == 0 {
 		return model.Metric(nil).FastFingerprint()
 	}

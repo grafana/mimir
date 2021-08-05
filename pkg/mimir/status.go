@@ -14,10 +14,10 @@ const tpl = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex Services Status</title>
+		<title>Mimir Services Status</title>
 	</head>
 	<body>
-		<h1>Cortex Services Status</h1>
+		<h1>Mimir Services Status</h1>
 		<p>Current time: {{ .Now }}</p>
 		<table border="1">
 			<thead>
@@ -49,7 +49,7 @@ func init() {
 	tmpl = template.Must(template.New("webpage").Parse(tpl))
 }
 
-func (t *Cortex) servicesHandler(w http.ResponseWriter, r *http.Request) {
+func (t *Mimir) servicesHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	w.Header().Set("Content-Type", "text/plain")
 

@@ -1,5 +1,5 @@
 *
 !.gitignore
-!cortex-tsdb
-!cortex-alertmanager
-!cortex-ruler
+!mimir-tsdb
+!mimir-alertmanager
+!mimir-ruler

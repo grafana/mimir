@@ -16,7 +16,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestZoneAwareReplication(t *testing.T) {
@@ -34,23 +34,23 @@ func TestZoneAwareReplication(t *testing.T) {
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	// Start Cortex components.
+	// Start Mimir components.
 	ingesterFlags := func(zone string) map[string]string {
 		return mergeFlags(flags, map[string]string{
 			"-ingester.availability-zone": zone,
 		})
 	}
 
-	ingester1 := e2ecortex.NewIngesterWithConfigFile("ingester-1", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-a"), "")
-	ingester2 := e2ecortex.NewIngesterWithConfigFile("ingester-2", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-a"), "")
-	ingester3 := e2ecortex.NewIngesterWithConfigFile("ingester-3", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-b"), "")
-	ingester4 := e2ecortex.NewIngesterWithConfigFile("ingester-4", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-b"), "")
-	ingester5 := e2ecortex.NewIngesterWithConfigFile("ingester-5", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-c"), "")
-	ingester6 := e2ecortex.NewIngesterWithConfigFile("ingester-6", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-c"), "")
+	ingester1 := e2emimir.NewIngesterWithConfigFile("ingester-1", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-a"), "")
+	ingester2 := e2emimir.NewIngesterWithConfigFile("ingester-2", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-a"), "")
+	ingester3 := e2emimir.NewIngesterWithConfigFile("ingester-3", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-b"), "")
+	ingester4 := e2emimir.NewIngesterWithConfigFile("ingester-4", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-b"), "")
+	ingester5 := e2emimir.NewIngesterWithConfigFile("ingester-5", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-c"), "")
+	ingester6 := e2emimir.NewIngesterWithConfigFile("ingester-6", consul.NetworkHTTPEndpoint(), "", ingesterFlags("zone-c"), "")
 	require.NoError(t, s.StartAndWaitReady(ingester1, ingester2, ingester3, ingester4, ingester5, ingester6))
 
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, querier))
 
 	// Wait until distributor and querier have updated the ring.
@@ -62,7 +62,7 @@ func TestZoneAwareReplication(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ingester"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	client, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+	client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 	require.NoError(t, err)
 
 	// Push some series

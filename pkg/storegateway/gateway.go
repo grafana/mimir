@@ -79,7 +79,7 @@ func (cfg *Config) Validate(limits validation.Limits) error {
 	return nil
 }
 
-// StoreGateway is the Cortex service responsible to expose an API over the bucket
+// StoreGateway is the Mimir service responsible to expose an API over the bucket
 // where blocks are stored, supporting blocks sharding and replication across a pool
 // of store gateway instances (optional).
 type StoreGateway struct {

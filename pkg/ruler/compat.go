@@ -19,14 +19,14 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // Pusher is an ingester server that accepts pushes.
 type Pusher interface {
-	Push(context.Context, *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error)
+	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
 
 type PusherAppender struct {
@@ -36,7 +36,7 @@ type PusherAppender struct {
 	ctx             context.Context
 	pusher          Pusher
 	labels          []labels.Labels
-	samples         []cortexpb.Sample
+	samples         []mimirpb.Sample
 	userID          string
 	evaluationDelay time.Duration
 }
@@ -56,7 +56,7 @@ func (a *PusherAppender) Append(_ uint64, l labels.Labels, t int64, v float64) (
 		t -= a.evaluationDelay.Milliseconds()
 	}
 
-	a.samples = append(a.samples, cortexpb.Sample{
+	a.samples = append(a.samples, mimirpb.Sample{
 		TimestampMs: t,
 		Value:       v,
 	})
@@ -72,7 +72,7 @@ func (a *PusherAppender) Commit() error {
 
 	// Since a.pusher is distributor, client.ReuseSlice will be called in a.pusher.Push.
 	// We shouldn't call client.ReuseSlice here.
-	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), cortexpb.ToWriteRequest(a.labels, a.samples, nil, cortexpb.RULE))
+	_, err := a.pusher.Push(user.InjectOrgID(a.ctx, a.userID), mimirpb.ToWriteRequest(a.labels, a.samples, nil, mimirpb.RULE))
 
 	if err != nil {
 		// Don't report errors that ended with 4xx HTTP status code (series limits, duplicate samples, out of order, etc.)

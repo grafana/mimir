@@ -20,8 +20,8 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/ring/testutils"
@@ -315,7 +315,7 @@ func TestIngesterFlush(t *testing.T) {
 	// Now write a sample to this ingester
 	var (
 		lbls       = []labels.Labels{{{Name: labels.MetricName, Value: "foo"}}}
-		sampleData = []cortexpb.Sample{
+		sampleData = []mimirpb.Sample{
 			{
 				TimestampMs: 123000,
 				Value:       456,
@@ -323,7 +323,7 @@ func TestIngesterFlush(t *testing.T) {
 		}
 	)
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err := ing.Push(ctx, cortexpb.ToWriteRequest(lbls, sampleData, nil, cortexpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest(lbls, sampleData, nil, mimirpb.API))
 	require.NoError(t, err)
 
 	// We add a 100ms sleep into the flush loop, such that we can reliably detect

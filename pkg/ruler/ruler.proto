@@ -1,6 +1,6 @@
 // Ruler Service Representation
 // This service is used to retrieve the current state of rules running across
-// all Rulers in a cluster. It allows cortex to fully serve the `/api/v1/{rules|alerts}`
+// all Rulers in a cluster. It allows mimir to fully serve the `/api/v1/{rules|alerts}`
 // Prometheus API
 syntax = "proto3";
 package ruler;
@@ -8,7 +8,7 @@ package ruler;
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
 import "google/protobuf/duration.proto";
 import "google/protobuf/timestamp.proto";
-import "github.com/grafana/mimir/pkg/cortexpb/cortex.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 import "github.com/grafana/mimir/pkg/ruler/rulespb/rules.proto";
 
 
@@ -25,7 +25,7 @@ message RulesResponse {
   repeated GroupStateDesc groups = 1;
 }
 
-// GroupStateDesc is a proto representation of a cortex rule group
+// GroupStateDesc is a proto representation of a mimir rule group
 message GroupStateDesc {
   rules.RuleGroupDesc group = 1;
   repeated RuleStateDesc active_rules = 2;
@@ -48,11 +48,11 @@ message AlertStateDesc {
   string state = 1;
   repeated cortexpb.LabelPair labels = 2 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/cortexpb.LabelAdapter"
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
   repeated cortexpb.LabelPair annotations = 3 [
     (gogoproto.nullable) = false,
-    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/cortexpb.LabelAdapter"
+    (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"
   ];
   double value = 4;
   google.protobuf.Timestamp active_at = 5

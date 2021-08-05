@@ -6,7 +6,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 )
 
-// SeriesWithChunks extends storage.Series interface with direct access to Cortex chunks.
+// SeriesWithChunks extends storage.Series interface with direct access to Mimir chunks.
 type SeriesWithChunks interface {
 	storage.Series
 

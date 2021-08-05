@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing.T) {
@@ -27,14 +27,14 @@ func TestQueryLimiter_AddSeries_ShouldReturnNoErrorOnLimitNotExceeded(t *testing
 		})
 		limiter = NewQueryLimiter(100, 0, 0)
 	)
-	err := limiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(series1))
+	err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	assert.NoError(t, err)
-	err = limiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(series2))
+	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 
 	// Re-add previous series to make sure it's not double counted
-	err = limiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(series1))
+	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	assert.NoError(t, err)
 	assert.Equal(t, 2, limiter.uniqueSeriesCount())
 }
@@ -55,9 +55,9 @@ func TestQueryLimiter_AddSeriers_ShouldReturnErrorOnLimitExceeded(t *testing.T) 
 		})
 		limiter = NewQueryLimiter(1, 0, 0)
 	)
-	err := limiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(series1))
+	err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series1))
 	require.NoError(t, err)
-	err = limiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(series2))
+	err = limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(series2))
 	require.Error(t, err)
 }
 
@@ -86,7 +86,7 @@ func BenchmarkQueryLimiter_AddSeries(b *testing.B) {
 
 	limiter := NewQueryLimiter(b.N+1, 0, 0)
 	for _, s := range series {
-		err := limiter.AddSeries(cortexpb.FromLabelsToLabelAdapters(s))
+		err := limiter.AddSeries(mimirpb.FromLabelsToLabelAdapters(s))
 		assert.NoError(b, err)
 	}
 

@@ -256,7 +256,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 		Alerts:     am.alerts,
 		Silences:   am.silences,
 		StatusFunc: am.marker.Status,
-		// Cortex should not expose cluster information back to its tenants.
+		// Mimir should not expose cluster information back to its tenants.
 		Peer:     &NilPeer{},
 		Registry: am.registry,
 		Logger:   log.With(am.logger, "component", "api"),

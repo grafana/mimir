@@ -25,7 +25,7 @@ func decodeLabels(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 		*labelsPtr = append(*labelsPtr, labels.Label{Name: key, Value: value})
 		return true
 	})
-	// Labels are always sorted, but earlier Cortex using a map would
+	// Labels are always sorted, but earlier Mimir using a map would
 	// output in any order so we have to sort on read in
 	sort.Sort(*labelsPtr)
 }

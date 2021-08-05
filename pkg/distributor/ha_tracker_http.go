@@ -17,10 +17,10 @@ const trackerTpl = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex HA Tracker Status</title>
+		<title>Mimir HA Tracker Status</title>
 	</head>
 	<body>
-		<h1>Cortex HA Tracker Status</h1>
+		<h1>Mimir HA Tracker Status</h1>
 		<p>Current time: {{ .Now }}</p>
 		<table width="100%" border="1">
 			<thead>

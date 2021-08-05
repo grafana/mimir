@@ -5,16 +5,16 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type IngesterServerMock struct {
 	mock.Mock
 }
 
-func (m *IngesterServerMock) Push(ctx context.Context, r *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error) {
+func (m *IngesterServerMock) Push(ctx context.Context, r *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	args := m.Called(ctx, r)
-	return args.Get(0).(*cortexpb.WriteResponse), args.Error(1)
+	return args.Get(0).(*mimirpb.WriteResponse), args.Error(1)
 }
 
 func (m *IngesterServerMock) Query(ctx context.Context, r *QueryRequest) (*QueryResponse, error) {

@@ -7,7 +7,7 @@ import (
 )
 
 // This struct aggregates metrics exported by Alertmanager
-// and re-exports those aggregates as Cortex metrics.
+// and re-exports those aggregates as Mimir metrics.
 type alertmanagerMetrics struct {
 	regs *util.UserRegistries
 

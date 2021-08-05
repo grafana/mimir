@@ -32,7 +32,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
@@ -114,7 +114,7 @@ func testSetup(t *testing.T, cfg Config) (*promql.Engine, storage.QueryableFunc,
 
 	// Mock the pusher
 	pusher := newPusherMock()
-	pusher.MockPush(&cortexpb.WriteResponse{}, nil)
+	pusher.MockPush(&mimirpb.WriteResponse{}, nil)
 
 	l := log.NewLogfmtLogger(os.Stdout)
 	l = level.NewFilter(l, level.AllowInfo())

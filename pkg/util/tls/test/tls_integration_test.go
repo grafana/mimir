@@ -450,7 +450,7 @@ func setupCertificates(t *testing.T) keyMaterial {
 
 	// create server side CA
 
-	testCA := ca.New("Cortex Test")
+	testCA := ca.New("Mimir Test")
 	caCertFile := filepath.Join(testCADir, "ca.crt")
 	require.NoError(t, testCA.WriteCACertificate(caCertFile))
 
@@ -479,8 +479,8 @@ func setupCertificates(t *testing.T) keyMaterial {
 	))
 
 	// create client CAs
-	testClientCA1 := ca.New("Cortex Test Client CA 1")
-	testClientCA2 := ca.New("Cortex Test Client CA 2")
+	testClientCA1 := ca.New("Mimir Test Client CA 1")
+	testClientCA2 := ca.New("Mimir Test Client CA 2")
 
 	clientCA1CertFile := filepath.Join(testCADir, "ca-client-1.crt")
 	require.NoError(t, testClientCA1.WriteCACertificate(clientCA1CertFile))

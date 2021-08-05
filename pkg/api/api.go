@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
@@ -29,6 +28,7 @@ import (
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -200,7 +200,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, tar
 	}
 }
 
-// RegisterAPI registers the standard endpoints associated with a running Cortex.
+// RegisterAPI registers the standard endpoints associated with a running Mimir.
 func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config", "Current Config (including the default values)")
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config?mode=diff", "Current Config (show only values that differ from the defaults)")
@@ -244,7 +244,7 @@ type Ingester interface {
 	client.IngesterServer
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)
-	Push(context.Context, *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error)
+	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
 
 // RegisterIngester registers the ingesters HTTP and GRPC service
@@ -393,7 +393,7 @@ func (a *API) RegisterQueryAPI(handler http.Handler) {
 }
 
 // RegisterQueryFrontend registers the Prometheus routes supported by the
-// Cortex querier service. Currently this can not be registered simultaneously
+// Mimir querier service. Currently this can not be registered simultaneously
 // with the Querier.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler) {
 	a.RegisterQueryAPI(h)
@@ -412,7 +412,7 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 	schedulerpb.RegisterSchedulerForQuerierServer(a.server.GRPC, f)
 }
 
-// RegisterServiceMapHandler registers the Cortex structs service handler
+// RegisterServiceMapHandler registers the Mimir structs service handler
 // TODO: Refactor this code to be accomplished using the services.ServiceManager
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {

@@ -24,7 +24,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	ring_client "github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/ring/kv"
@@ -423,10 +423,10 @@ func (r *Ruler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			<html>
 				<head>
 					<meta charset="UTF-8">
-					<title>Cortex Ruler Status</title>
+					<title>Mimir Ruler Status</title>
 				</head>
 				<body>
-					<h1>Cortex Ruler Status</h1>
+					<h1>Mimir Ruler Status</h1>
 					<p>Ruler running with shards disabled</p>
 				</body>
 			</html>`
@@ -689,8 +689,8 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 				for _, a := range rule.ActiveAlerts() {
 					alerts = append(alerts, &AlertStateDesc{
 						State:       a.State.String(),
-						Labels:      cortexpb.FromLabelsToLabelAdapters(a.Labels),
-						Annotations: cortexpb.FromLabelsToLabelAdapters(a.Annotations),
+						Labels:      mimirpb.FromLabelsToLabelAdapters(a.Labels),
+						Annotations: mimirpb.FromLabelsToLabelAdapters(a.Annotations),
 						Value:       a.Value,
 						ActiveAt:    a.ActiveAt,
 						FiredAt:     a.FiredAt,
@@ -704,8 +704,8 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 						Expr:        rule.Query().String(),
 						Alert:       rule.Name(),
 						For:         rule.HoldDuration(),
-						Labels:      cortexpb.FromLabelsToLabelAdapters(rule.Labels()),
-						Annotations: cortexpb.FromLabelsToLabelAdapters(rule.Annotations()),
+						Labels:      mimirpb.FromLabelsToLabelAdapters(rule.Labels()),
+						Annotations: mimirpb.FromLabelsToLabelAdapters(rule.Annotations()),
 					},
 					State:               rule.State().String(),
 					Health:              string(rule.Health()),
@@ -719,7 +719,7 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 					Rule: &rulespb.RuleDesc{
 						Record: rule.Name(),
 						Expr:   rule.Query().String(),
-						Labels: cortexpb.FromLabelsToLabelAdapters(rule.Labels()),
+						Labels: mimirpb.FromLabelsToLabelAdapters(rule.Labels()),
 					},
 					Health:              string(rule.Health()),
 					LastError:           lastError,
@@ -829,7 +829,7 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 
 	userID, err := tenant.TenantID(req.Context())
 	if err != nil {
-		// When Cortex is running, it uses Auth Middleware for checking X-Scope-OrgID and injecting tenant into context.
+		// When Mimir is running, it uses Auth Middleware for checking X-Scope-OrgID and injecting tenant into context.
 		// Auth Middleware sends http.StatusUnauthorized if X-Scope-OrgID is missing, so we do too here, for consistency.
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

@@ -114,7 +114,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.FallbackConfigFile, "alertmanager.configs.fallback", "", "Filename of fallback config to use if none specified for instance.")
 	f.StringVar(&cfg.AutoWebhookRoot, "alertmanager.configs.auto-webhook-root", "", "Root of URL to generate if config is "+autoWebhookURL)
-	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Cortex configs")
+	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Mimir configs")
 
 	f.BoolVar(&cfg.EnableAPI, "experimental.alertmanager.enable-api", false, "Enable the experimental alertmanager config api.")
 
@@ -514,7 +514,7 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 }
 
 // migrateStateFilesToPerTenantDirectories migrates any existing configuration from old place to new hierarchy.
-// TODO: Remove in Cortex 1.11.
+// TODO: Remove in Mimir 1.11.
 func (am *MultitenantAlertmanager) migrateStateFilesToPerTenantDirectories() error {
 	migrate := func(from, to string) error {
 		level.Info(am.logger).Log("msg", "migrating alertmanager state", "from", from, "to", to)
@@ -857,7 +857,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
 			// working configuration.
-			return fmt.Errorf("invalid Cortex configuration for %v: %v", cfg.User, err)
+			return fmt.Errorf("invalid Mimir configuration for %v: %v", cfg.User, err)
 		}
 	}
 

@@ -21,7 +21,7 @@ var (
 	generateSeries = e2e.GenerateSeries
 )
 
-func getCortexProjectDir() string {
+func getMimirProjectDir() string {
 	if dir := os.Getenv("MIMIR_CHECKOUT_DIR"); dir != "" {
 		return dir
 	}
@@ -50,7 +50,7 @@ func writeFileToSharedDir(s *e2e.Scenario, dst string, content []byte) error {
 }
 
 func copyFileToSharedDir(s *e2e.Scenario, src, dst string) error {
-	content, err := ioutil.ReadFile(filepath.Join(getCortexProjectDir(), src))
+	content, err := ioutil.ReadFile(filepath.Join(getMimirProjectDir(), src))
 	if err != nil {
 		return errors.Wrapf(err, "unable to read local file %s", src)
 	}

@@ -23,7 +23,7 @@ type metadataResult struct {
 	Error  string                      `json:"error,omitempty"`
 }
 
-// MetadataHandler returns metric metadata held by Cortex for a given tenant.
+// MetadataHandler returns metric metadata held by Mimir for a given tenant.
 // It is kept and returned as a set.
 func MetadataHandler(d Distributor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

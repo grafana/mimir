@@ -26,8 +26,8 @@ import (
 	tsdb_record "github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // WALConfig is config for the Write Ahead Log.
@@ -495,7 +495,7 @@ func (w *walWrapper) checkpointSeries(userID string, fp model.Fingerprint, serie
 	b, err = encodeWithTypeHeader(&Series{
 		UserId:      userID,
 		Fingerprint: uint64(fp),
-		Labels:      cortexpb.FromLabelsToLabelAdapters(series.metric),
+		Labels:      mimirpb.FromLabelsToLabelAdapters(series.metric),
 		Chunks:      wireChunks,
 	}, CheckpointRecord, b)
 
@@ -715,7 +715,7 @@ Loop:
 	}
 }
 
-func copyLabelAdapters(las []cortexpb.LabelAdapter) []cortexpb.LabelAdapter {
+func copyLabelAdapters(las []mimirpb.LabelAdapter) []mimirpb.LabelAdapter {
 	for i := range las {
 		n, v := make([]byte, len(las[i].Name)), make([]byte, len(las[i].Value))
 		copy(n, las[i].Name)
@@ -735,7 +735,7 @@ func processCheckpointRecord(
 	errChan chan error,
 	memoryChunks prometheus.Counter,
 ) {
-	var la []cortexpb.LabelAdapter
+	var la []mimirpb.LabelAdapter
 	for s := range seriesChan {
 		state, ok := stateCache[s.UserId]
 		if !ok {
@@ -746,7 +746,7 @@ func processCheckpointRecord(
 
 		la = la[:0]
 		for _, l := range s.Labels {
-			la = append(la, cortexpb.LabelAdapter{
+			la = append(la, mimirpb.LabelAdapter{
 				Name:  string(l.Name),
 				Value: string(l.Value),
 			})
@@ -873,7 +873,7 @@ Loop:
 
 				lp = lp[:0]
 				for _, l := range s.Labels {
-					lp = append(lp, cortexpb.LabelAdapter(l))
+					lp = append(lp, mimirpb.LabelAdapter(l))
 				}
 				if _, err := state.createSeriesWithFingerprint(fp, lp, nil, true); err != nil {
 					// We don't return here in order to close/drain all the channels and

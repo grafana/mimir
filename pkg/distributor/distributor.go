@@ -24,8 +24,8 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/ring"
 	ring_client "github.com/grafana/mimir/pkg/ring/client"
@@ -40,7 +40,7 @@ import (
 )
 
 var (
-	emptyPreallocSeries = cortexpb.PreallocTimeseries{}
+	emptyPreallocSeries = mimirpb.PreallocTimeseries{}
 
 	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
 
@@ -131,7 +131,7 @@ type Config struct {
 	// for testing and for extending the ingester by adding calls to the client
 	IngesterClientFactory ring_client.PoolFactory `yaml:"-"`
 
-	// when true the distributor does not validate the label name, Cortex doesn't directly use
+	// when true the distributor does not validate the label name, Mimir doesn't directly use
 	// this (and should never use it) but this feature is used by other projects built on top of it
 	SkipLabelNameValidation bool `yaml:"-"`
 
@@ -414,7 +414,7 @@ func (d *Distributor) stopping(_ error) error {
 	return services.StopManagerAndAwaitStopped(context.Background(), d.subservices)
 }
 
-func (d *Distributor) tokenForLabels(userID string, labels []cortexpb.LabelAdapter) (uint32, error) {
+func (d *Distributor) tokenForLabels(userID string, labels []mimirpb.LabelAdapter) (uint32, error) {
 	if d.cfg.ShardByAllLabels {
 		return shardByAllLabels(userID, labels), nil
 	}
@@ -449,7 +449,7 @@ func shardByUser(userID string) uint32 {
 }
 
 // This function generates different values for different order of same labels.
-func shardByAllLabels(userID string, labels []cortexpb.LabelAdapter) uint32 {
+func shardByAllLabels(userID string, labels []mimirpb.LabelAdapter) uint32 {
 	h := shardByUser(userID)
 	for _, label := range labels {
 		h = ingester_client.HashAdd32(h, label.Name)
@@ -459,7 +459,7 @@ func shardByAllLabels(userID string, labels []cortexpb.LabelAdapter) uint32 {
 }
 
 // Remove the label labelname from a slice of LabelPairs if it exists.
-func removeLabel(labelName string, labels *[]cortexpb.LabelAdapter) {
+func removeLabel(labelName string, labels *[]mimirpb.LabelAdapter) {
 	for i := 0; i < len(*labels); i++ {
 		pair := (*labels)[i]
 		if pair.Name == labelName {
@@ -498,16 +498,16 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // any are configured to be dropped for the user ID.
 // Returns the validated series with it's labels/samples, and any error.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSeries(ts cortexpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) (cortexpb.PreallocTimeseries, validation.ValidationError) {
+func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) (mimirpb.PreallocTimeseries, validation.ValidationError) {
 	d.labelsHistogram.Observe(float64(len(ts.Labels)))
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return emptyPreallocSeries, err
 	}
 
-	var samples []cortexpb.Sample
+	var samples []mimirpb.Sample
 	if len(ts.Samples) > 0 {
 		// Only alloc when data present
-		samples = make([]cortexpb.Sample, 0, len(ts.Samples))
+		samples = make([]mimirpb.Sample, 0, len(ts.Samples))
 		for _, s := range ts.Samples {
 			if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
 				return emptyPreallocSeries, err
@@ -516,10 +516,10 @@ func (d *Distributor) validateSeries(ts cortexpb.PreallocTimeseries, userID stri
 		}
 	}
 
-	var exemplars []cortexpb.Exemplar
+	var exemplars []mimirpb.Exemplar
 	if len(ts.Exemplars) > 0 {
 		// Only alloc when data present
-		exemplars = make([]cortexpb.Exemplar, 0, len(ts.Exemplars))
+		exemplars = make([]mimirpb.Exemplar, 0, len(ts.Exemplars))
 		for _, e := range ts.Exemplars {
 			if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
 				// An exemplar validation error prevents ingesting samples
@@ -532,8 +532,8 @@ func (d *Distributor) validateSeries(ts cortexpb.PreallocTimeseries, userID stri
 		}
 	}
 
-	return cortexpb.PreallocTimeseries{
-			TimeSeries: &cortexpb.TimeSeries{
+	return mimirpb.PreallocTimeseries{
+			TimeSeries: &mimirpb.TimeSeries{
 				Labels:    ts.Labels,
 				Samples:   samples,
 				Exemplars: exemplars,
@@ -543,7 +543,7 @@ func (d *Distributor) validateSeries(ts cortexpb.PreallocTimeseries, userID stri
 }
 
 // Push implements client.IngesterServer
-func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error) {
+func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -586,8 +586,8 @@ func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*co
 	// A WriteRequest can only contain series or metadata but not both. This might change in the future.
 	// For each timeseries or samples, we compute a hash to distribute across ingesters;
 	// check each sample/metadata and discard if outside limits.
-	validatedTimeseries := make([]cortexpb.PreallocTimeseries, 0, len(req.Timeseries))
-	validatedMetadata := make([]*cortexpb.MetricMetadata, 0, len(req.Metadata))
+	validatedTimeseries := make([]mimirpb.PreallocTimeseries, 0, len(req.Timeseries))
+	validatedMetadata := make([]*mimirpb.MetricMetadata, 0, len(req.Metadata))
 	metadataKeys := make([]uint32, 0, len(req.Metadata))
 	seriesKeys := make([]uint32, 0, len(req.Timeseries))
 	validatedSamples := 0
@@ -598,7 +598,7 @@ func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*co
 		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			// Ensure the request slice is reused if the series get deduped.
-			cortexpb.ReuseSlice(req.Timeseries)
+			mimirpb.ReuseSlice(req.Timeseries)
 
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
@@ -636,12 +636,12 @@ func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*co
 		}
 
 		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
-			l := relabel.Process(cortexpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
-			ts.Labels = cortexpb.FromLabelsToLabelAdapters(l)
+			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
+			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
 		}
 
 		// If we found both the cluster and replica labels, we only want to include the cluster label when
-		// storing series in Cortex. If we kept the replica label we would end up with another series for the same
+		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 		// series we're trying to dedupe when HA tracking moves over to a different replica.
 		if removeReplica {
 			removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
@@ -712,15 +712,15 @@ func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*co
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
 		// Ensure the request slice is reused if there's no series or metadata passing the validation.
-		cortexpb.ReuseSlice(req.Timeseries)
+		mimirpb.ReuseSlice(req.Timeseries)
 
-		return &cortexpb.WriteResponse{}, firstPartialErr
+		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
 	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
 		// Ensure the request slice is reused if the request is rate limited.
-		cortexpb.ReuseSlice(req.Timeseries)
+		mimirpb.ReuseSlice(req.Timeseries)
 
 		// Return a 4xx here to have the client discard the data and not retry. If a client
 		// is sending too much data consistently we will unlikely ever catch up otherwise.
@@ -749,8 +749,8 @@ func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*co
 	}
 
 	err = ring.DoBatch(ctx, op, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
-		timeseries := make([]cortexpb.PreallocTimeseries, 0, len(indexes))
-		var metadata []*cortexpb.MetricMetadata
+		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
+		var metadata []*mimirpb.MetricMetadata
 
 		for _, i := range indexes {
 			if i >= initialMetadataIndex {
@@ -772,14 +772,14 @@ func (d *Distributor) Push(ctx context.Context, req *cortexpb.WriteRequest) (*co
 		localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
 
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
-	}, func() { cortexpb.ReuseSlice(req.Timeseries) })
+	}, func() { mimirpb.ReuseSlice(req.Timeseries) })
 	if err != nil {
 		return nil, err
 	}
-	return &cortexpb.WriteResponse{}, firstPartialErr
+	return &mimirpb.WriteResponse{}, firstPartialErr
 }
 
-func sortLabelsIfNeeded(labels []cortexpb.LabelAdapter) {
+func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	// no need to run sort.Slice, if labels are already sorted, which is most of the time.
 	// we can avoid extra memory allocations (mostly interface-related) this way.
 	sorted := true
@@ -801,14 +801,14 @@ func sortLabelsIfNeeded(labels []cortexpb.LabelAdapter) {
 	})
 }
 
-func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []cortexpb.PreallocTimeseries, metadata []*cortexpb.MetricMetadata, source cortexpb.WriteRequest_SourceEnum) error {
+func (d *Distributor) send(ctx context.Context, ingester ring.InstanceDesc, timeseries []mimirpb.PreallocTimeseries, metadata []*mimirpb.MetricMetadata, source mimirpb.WriteRequest_SourceEnum) error {
 	h, err := d.ingesterPool.GetClientFor(ingester.Addr)
 	if err != nil {
 		return err
 	}
 	c := h.(ingester_client.IngesterClient)
 
-	req := cortexpb.WriteRequest{
+	req := mimirpb.WriteRequest{
 		Timeseries: timeseries,
 		Metadata:   metadata,
 		Source:     source,
@@ -969,7 +969,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 	}
 
 	result := []scrape.MetricMetadata{}
-	dedupTracker := map[cortexpb.MetricMetadata]struct{}{}
+	dedupTracker := map[mimirpb.MetricMetadata]struct{}{}
 	for _, resp := range resps {
 		r := resp.(*ingester_client.MetricsMetadataResponse)
 		for _, m := range r.Metadata {
@@ -984,7 +984,7 @@ func (d *Distributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetad
 				Metric: m.MetricFamilyName,
 				Help:   m.Help,
 				Unit:   m.Unit,
-				Type:   cortexpb.MetricMetadataMetricTypeToMetricType(m.GetType()),
+				Type:   mimirpb.MetricMetadataMetricTypeToMetricType(m.GetType()),
 			})
 		}
 	}
@@ -1089,10 +1089,10 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			<html>
 				<head>
 					<meta charset="UTF-8">
-					<title>Cortex Distributor Status</title>
+					<title>Mimir Distributor Status</title>
 				</head>
 				<body>
-					<h1>Cortex Distributor Status</h1>
+					<h1>Mimir Distributor Status</h1>
 					<p>Distributor is not running with global limits enabled</p>
 				</body>
 			</html>`
