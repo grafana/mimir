@@ -44,7 +44,7 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 // Partition partitions length entries into n <= length ranges that cover all
 // input ranges by combining entries that are separated by reasonably small gaps.
 // It is used to combine multiple small ranges from object storage into bigger, more efficient/cheaper ones.
-func (p *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) []Part {
+func (g *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) []Part {
 	// Calculate the size of requested ranges.
 	requestedBytes := uint64(0)
 	for i := 0; i < length; i++ {
@@ -53,7 +53,7 @@ func (p *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 	}
 
 	// Run the upstream partitioner to compute the actual ranges that will be fetched.
-	parts := p.partition(length, rng)
+	parts := g.partition(length, rng)
 
 	// Calculate the size of ranges that will be fetched.
 	expandedBytes := uint64(0)
@@ -61,10 +61,10 @@ func (p *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint6
 		expandedBytes += p.End - p.Start
 	}
 
-	p.requestedBytes.Add(float64(requestedBytes))
-	p.expandedBytes.Add(float64(expandedBytes))
-	p.requestedRanges.Add(float64(length))
-	p.expandedRanges.Add(float64(len(parts)))
+	g.requestedBytes.Add(float64(requestedBytes))
+	g.expandedBytes.Add(float64(expandedBytes))
+	g.requestedRanges.Add(float64(length))
+	g.expandedRanges.Add(float64(len(parts)))
 
 	return parts
 }
