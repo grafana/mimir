@@ -3,12 +3,10 @@ package storegateway
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-
-	"github.com/grafana/mimir/pkg/storegateway/store"
 )
 
 type gapBasedPartitioner struct {
-	upstream store.Partitioner
+	upstream Partitioner
 
 	// Metrics.
 	requestedBytes  prometheus.Counter
@@ -19,7 +17,7 @@ type gapBasedPartitioner struct {
 
 func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapBasedPartitioner {
 	return &gapBasedPartitioner{
-		upstream: store.NewGapBasedPartitioner(maxGapBytes),
+		upstream: NewGapBasedPartitioner(maxGapBytes),
 		requestedBytes: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_bucket_store_partitioner_requested_bytes_total",
 			Help: "Total size of byte ranges required to fetch from the storage before they are passed to the partitioner.",
@@ -39,7 +37,7 @@ func newGapBasedPartitioner(maxGapBytes uint64, reg prometheus.Registerer) *gapB
 	}
 }
 
-func (p *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) []store.Part {
+func (p *gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) []Part {
 	// Calculate the size of requested ranges.
 	requestedBytes := uint64(0)
 	for i := 0; i < length; i++ {

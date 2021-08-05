@@ -2,7 +2,7 @@
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
 
-package store
+package storegateway
 
 import (
 	"context"
@@ -184,10 +184,10 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		dir,
 		chunksLimiterFactory,
 		seriesLimiterFactory,
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
 		20,
 		true,
-		DefaultPostingOffsetInMemorySampling,
+		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		true,
 		time.Minute,

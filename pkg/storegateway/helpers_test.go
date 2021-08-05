@@ -1,7 +1,7 @@
 // Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/testutil/e2eutil/prometheus.go
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
-package store
+package storegateway
 
 import (
 	"context"

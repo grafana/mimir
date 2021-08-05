@@ -8,8 +8,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/storegateway/store"
 )
 
 func TestGapBasedPartitioner_Partition(t *testing.T) {
@@ -33,7 +31,7 @@ func TestGapBasedPartitioner_Partition(t *testing.T) {
 		}
 	})
 
-	expected := []store.Part{
+	expected := []Part{
 		{Start: 10, End: 27, ElemRng: [2]int{0, 3}},
 		{Start: 38, End: 52, ElemRng: [2]int{3, 5}},
 	}

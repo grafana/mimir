@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway/store"
 )
 
 func TestChunkBytesPool_Get(t *testing.T) {
@@ -19,10 +18,10 @@ func TestChunkBytesPool_Get(t *testing.T) {
 	p, err := newChunkBytesPool(cortex_tsdb.ChunkPoolDefaultMinBucketSize, cortex_tsdb.ChunkPoolDefaultMaxBucketSize, 0, reg)
 	require.NoError(t, err)
 
-	_, err = p.Get(store.EstimatedMaxChunkSize - 1)
+	_, err = p.Get(cortex_tsdb.EstimatedMaxChunkSize - 1)
 	require.NoError(t, err)
 
-	_, err = p.Get(store.EstimatedMaxChunkSize + 1)
+	_, err = p.Get(cortex_tsdb.EstimatedMaxChunkSize + 1)
 	require.NoError(t, err)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(fmt.Sprintf(`
@@ -33,5 +32,5 @@ func TestChunkBytesPool_Get(t *testing.T) {
 		# HELP cortex_bucket_store_chunk_pool_returned_bytes_total Total bytes returned by the chunk bytes pool.
 		# TYPE cortex_bucket_store_chunk_pool_returned_bytes_total counter
 		cortex_bucket_store_chunk_pool_returned_bytes_total %d
-	`, store.EstimatedMaxChunkSize*2, store.EstimatedMaxChunkSize*3))))
+	`, cortex_tsdb.EstimatedMaxChunkSize*2, cortex_tsdb.EstimatedMaxChunkSize*3))))
 }
