@@ -8,13 +8,14 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	dskit "github.com/grafana/dskit/pkg/util"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/pkg/errors"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/services"
 )
 
@@ -197,12 +198,12 @@ func (w *frontendSchedulerWorker) stop() {
 }
 
 func (w *frontendSchedulerWorker) runOne(ctx context.Context, client schedulerpb.SchedulerForFrontendClient) {
-	backoffConfig := util.BackoffConfig{
+	backoffConfig := dskit.BackoffConfig{
 		MinBackoff: 50 * time.Millisecond,
 		MaxBackoff: 1 * time.Second,
 	}
 
-	backoff := util.NewBackoff(ctx, backoffConfig)
+	backoff := dskit.NewBackoff(ctx, backoffConfig)
 	for backoff.Ongoing() {
 		loop, loopErr := client.FrontendLoop(ctx)
 		if loopErr != nil {

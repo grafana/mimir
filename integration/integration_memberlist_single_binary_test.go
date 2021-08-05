@@ -145,7 +145,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		8000,
 	)
 
-	backOff := util.BackoffConfig{
+	backOff := dskit.BackoffConfig{
 		MinBackoff: 200 * time.Millisecond,
 		MaxBackoff: 500 * time.Millisecond, // Bump max backoff... things take little longer with memberlist.
 		MaxRetries: 100,

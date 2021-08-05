@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/aws"
 	"github.com/grafana/mimir/pkg/chunk/storage"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
@@ -436,7 +436,7 @@ func uploadPlansConcurrently(ctx context.Context, log log.Logger, dir string, bu
 				src := filepath.Join(dir, filepath.FromSlash(p))
 				dst := path.Join(bucketPrefix, p)
 
-				boff := util.NewBackoff(ctx, util.BackoffConfig{
+				boff := dskit.NewBackoff(ctx, dskit.BackoffConfig{
 					MinBackoff: 1 * time.Second,
 					MaxBackoff: 5 * time.Second,
 					MaxRetries: 5,

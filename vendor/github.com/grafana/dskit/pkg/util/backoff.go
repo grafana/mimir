@@ -87,7 +87,7 @@ func (b *Backoff) Wait() {
 func (b *Backoff) NextDelay() time.Duration {
 	b.numRetries++
 
-	// Handle the edge case the min and max have the same value
+	// Handle the edge case where the min and max have the same value
 	// (or due to some misconfig max is < min)
 	if b.nextDelayMin >= b.nextDelayMax {
 		return b.nextDelayMin

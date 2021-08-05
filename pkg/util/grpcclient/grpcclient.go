@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	dskit "github.com/grafana/dskit/pkg/util"
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpc/encoding/snappy"
 	"github.com/grafana/mimir/pkg/util/tls"
 )
@@ -24,8 +24,8 @@ type Config struct {
 	RateLimit       float64 `yaml:"rate_limit"`
 	RateLimitBurst  int     `yaml:"rate_limit_burst"`
 
-	BackoffOnRatelimits bool               `yaml:"backoff_on_ratelimits"`
-	BackoffConfig       util.BackoffConfig `yaml:"backoff_config"`
+	BackoffOnRatelimits bool                `yaml:"backoff_on_ratelimits"`
+	BackoffConfig       dskit.BackoffConfig `yaml:"backoff_config"`
 
 	TLSEnabled bool             `yaml:"tls_enabled"`
 	TLS        tls.ClientConfig `yaml:",inline"`

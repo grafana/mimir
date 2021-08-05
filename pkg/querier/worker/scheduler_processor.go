@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	dskit "github.com/grafana/dskit/pkg/util"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	"github.com/weaveworks/common/user"
 
@@ -23,7 +24,6 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/grpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -87,7 +87,7 @@ func (sp *schedulerProcessor) notifyShutdown(ctx context.Context, conn *grpc.Cli
 func (sp *schedulerProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
 	schedulerClient := schedulerpb.NewSchedulerForQuerierClient(conn)
 
-	backoff := util.NewBackoff(ctx, processorBackoffConfig)
+	backoff := dskit.NewBackoff(ctx, processorBackoffConfig)
 	for backoff.Ongoing() {
 		c, err := schedulerClient.QuerierLoop(ctx)
 		if err == nil {

@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/pkg/errors"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // CompositeHTTPService abstract an higher-level service composed, under the hood,
@@ -16,13 +15,13 @@ type CompositeHTTPService struct {
 	services []*HTTPService
 
 	// Generic retry backoff.
-	retryBackoff *util.Backoff
+	retryBackoff *dskit.Backoff
 }
 
 func NewCompositeHTTPService(services ...*HTTPService) *CompositeHTTPService {
 	return &CompositeHTTPService{
 		services: services,
-		retryBackoff: util.NewBackoff(context.Background(), util.BackoffConfig{
+		retryBackoff: dskit.NewBackoff(context.Background(), dskit.BackoffConfig{
 			MinBackoff: 300 * time.Millisecond,
 			MaxBackoff: 600 * time.Millisecond,
 			MaxRetries: 50, // Sometimes the CI is slow ¯\_(ツ)_/¯

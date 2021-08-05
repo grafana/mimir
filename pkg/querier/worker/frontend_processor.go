@@ -8,17 +8,17 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
-	processorBackoffConfig = util.BackoffConfig{
+	processorBackoffConfig = dskit.BackoffConfig{
 		MinBackoff: 50 * time.Millisecond,
 		MaxBackoff: 1 * time.Second,
 	}
@@ -57,7 +57,7 @@ func (fp *frontendProcessor) notifyShutdown(ctx context.Context, conn *grpc.Clie
 func (fp *frontendProcessor) processQueriesOnSingleStream(ctx context.Context, conn *grpc.ClientConn, address string) {
 	client := frontendv1pb.NewFrontendClient(conn)
 
-	backoff := util.NewBackoff(ctx, processorBackoffConfig)
+	backoff := dskit.NewBackoff(ctx, processorBackoffConfig)
 	for backoff.Ongoing() {
 		c, err := client.Process(ctx)
 		if err != nil {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -16,7 +17,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/storage"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
 	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
@@ -172,7 +172,7 @@ func (cp *cleanerProcessor) deleteChunksForSeries(ctx context.Context, tableName
 	var c *chunk.Chunk
 	var err error
 
-	b := util.NewBackoff(ctx, util.BackoffConfig{
+	b := dskit.NewBackoff(ctx, dskit.BackoffConfig{
 		MinBackoff: 1 * time.Second,
 		MaxBackoff: 5 * time.Second,
 		MaxRetries: 5,

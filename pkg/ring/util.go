@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -70,7 +71,7 @@ func GetInstancePort(configPort, listenPort int) int {
 // WaitInstanceState waits until the input instanceID is registered within the
 // ring matching the provided state. A timeout should be provided within the context.
 func WaitInstanceState(ctx context.Context, r ReadRing, instanceID string, state InstanceState) error {
-	backoff := util.NewBackoff(ctx, util.BackoffConfig{
+	backoff := dskit.NewBackoff(ctx, dskit.BackoffConfig{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: time.Second,
 		MaxRetries: 0,

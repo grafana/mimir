@@ -5,12 +5,12 @@ import (
 	"io"
 	"time"
 
+	dskit "github.com/grafana/dskit/pkg/util"
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/objectclient"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type fixture struct {
@@ -73,7 +73,7 @@ func dynamoDBFixture(provisionedErr, gangsize, maxParallelism int) testutils.Fix
 				cfg: DynamoDBConfig{
 					ChunkGangSize:          gangsize,
 					ChunkGetMaxParallelism: maxParallelism,
-					BackoffConfig: util.BackoffConfig{
+					BackoffConfig: dskit.BackoffConfig{
 						MinBackoff: 1 * time.Millisecond,
 						MaxBackoff: 5 * time.Millisecond,
 						MaxRetries: 20,
