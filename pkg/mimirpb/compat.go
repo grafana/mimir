@@ -1,4 +1,4 @@
-package cortexpb
+package mimirpb
 
 import (
 	stdjson "encoding/json"
