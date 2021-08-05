@@ -1,6 +1,9 @@
 // Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/bucket_test.go
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
+// Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/testutil/series.go
+// Included-from-license: Apache-2.0
+// Included-from-copyright: The Thanos Authors.
 
 package store
 
@@ -17,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -36,7 +40,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
+	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
 
@@ -53,6 +59,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
+)
+
+const (
+	// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
+	labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
 
 var emptyRelabelConfig = make([]*relabel.Config, 0)
@@ -1046,12 +1057,12 @@ func appendTestData(t testing.TB, app storage.Appender, series int) {
 	series = series / 5
 	for n := 0; n < 10; n++ {
 		for i := 0; i < series/10; i++ {
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", strconv.Itoa(n)+LabelLongSuffix, "j", "foo"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", strconv.Itoa(n)+LabelLongSuffix, "j", "bar"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", "0_"+strconv.Itoa(n)+LabelLongSuffix, "j", "bar"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", "1_"+strconv.Itoa(n)+LabelLongSuffix, "j", "bar"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", "2_"+strconv.Itoa(n)+LabelLongSuffix, "j", "foo"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo"))
 		}
 	}
 	assert.NoError(t, app.Commit())
@@ -1079,7 +1090,7 @@ func benchmarkExpandedPostings(
 	r indexheader.Reader,
 	series int,
 ) {
-	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+LabelLongSuffix)
+	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
@@ -1089,9 +1100,9 @@ func benchmarkExpandedPostings(
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
-	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+LabelLongSuffix)
+	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
-	iRegexSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+LabelLongSuffix+"|1"+LabelLongSuffix+"|2"+LabelLongSuffix)
+	iRegexSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
 
 	series = series / 5
 	cases := []struct {
@@ -1145,14 +1156,14 @@ func benchmarkExpandedPostings(
 
 func TestBucketSeries(t *testing.T) {
 	tb := NewTB(t)
-	RunSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1)
 	})
 }
 
 func TestBucketSkipChunksSeries(t *testing.T) {
 	tb := NewTB(t)
-	RunSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1)
 	})
 }
@@ -1160,7 +1171,7 @@ func TestBucketSkipChunksSeries(t *testing.T) {
 func BenchmarkBucketSeries(b *testing.B) {
 	tb := NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
-	RunSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
 	})
 }
@@ -1168,7 +1179,7 @@ func BenchmarkBucketSeries(b *testing.B) {
 func BenchmarkBucketSkipChunksSeries(b *testing.B) {
 	tb := NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
-	RunSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
 	})
 }
@@ -1213,7 +1224,7 @@ func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, 
 	// Timestamp will be counted for each new series and new sample, so each each series will have unique timestamp.
 	// This allows to pick time range that will correspond to number of series picked 1:1.
 	for bi := 0; bi < numOfBlocks; bi++ {
-		head, bSeries := CreateHeadWithSeries(t, bi, HeadGenOptions{
+		head, bSeries := createHeadWithSeries(t, bi, headGenOptions{
 			TSDBDir:          filepath.Join(tmpDir, fmt.Sprintf("%d", bi)),
 			SamplesPerSeries: samplesPerSeriesPerBlock,
 			Series:           seriesPerBlock,
@@ -1263,7 +1274,7 @@ func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, 
 
 	assert.NoError(t, st.SyncBlocks(context.Background()))
 
-	var bCases []*SeriesCase
+	var bCases []*seriesCase
 	for _, p := range requestedRatios {
 		expectedSamples := int(p * float64(totalSeries*samplesPerSeries))
 		if expectedSamples == 0 {
@@ -1276,7 +1287,7 @@ func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, 
 			seriesCut = expectedSamples / samplesPerSeriesPerBlock
 		}
 
-		bCases = append(bCases, &SeriesCase{
+		bCases = append(bCases, &seriesCase{
 			Name: fmt.Sprintf("%dof%d", expectedSamples, totalSeries*samplesPerSeries),
 			Req: &storepb.SeriesRequest{
 				MinTime: 0,
@@ -1290,7 +1301,7 @@ func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, 
 			ExpectedSeries: series[:seriesCut],
 		})
 	}
-	RunTestServerSeries(t, st, bCases...)
+	runTestServerSeries(t, st, bCases...)
 
 	if !t.IsBenchmark() {
 		if !skipChunk {
@@ -1386,7 +1397,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		for i := 0; i < numSeries; i++ {
 			ts := int64(i)
-			lbls := labels.FromStrings("foo", "bar", "b", "1", "i", fmt.Sprintf("%07d%s", ts, LabelLongSuffix))
+			lbls := labels.FromStrings("foo", "bar", "b", "1", "i", fmt.Sprintf("%07d%s", ts, labelLongSuffix))
 
 			_, err := app.Append(0, lbls, ts, 0)
 			assert.NoError(t, err)
@@ -1425,7 +1436,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		for i := 0; i < numSeries; i++ {
 			ts := int64(i)
-			lbls := labels.FromStrings("foo", "bar", "b", "2", "i", fmt.Sprintf("%07d%s", ts, LabelLongSuffix))
+			lbls := labels.FromStrings("foo", "bar", "b", "2", "i", fmt.Sprintf("%07d%s", ts, labelLongSuffix))
 
 			_, err := app.Append(0, lbls, ts, 0)
 			assert.NoError(t, err)
@@ -1524,7 +1535,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 	tb, store, seriesSet1, seriesSet2, block1, block2, close := setupStoreForHintsTest(t)
 	defer close()
 
-	testCases := []*SeriesCase{
+	testCases := []*seriesCase{
 		{
 			Name: "querying a range containing 1 block should return 1 block in the response hints",
 			Req: &storepb.SeriesRequest{
@@ -1585,7 +1596,7 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 		},
 	}
 
-	RunTestServerSeries(tb, store, testCases...)
+	runTestServerSeries(tb, store, testCases...)
 }
 
 func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
@@ -1852,7 +1863,7 @@ func setupStoreForHintsTest(t *testing.T) (TB, *BucketStore, []*storepb.Series, 
 	}
 
 	// Create TSDB blocks.
-	head, seriesSet1 := CreateHeadWithSeries(t, 0, HeadGenOptions{
+	head, seriesSet1 := createHeadWithSeries(t, 0, headGenOptions{
 		TSDBDir:          filepath.Join(tmpDir, "0"),
 		SamplesPerSeries: 1,
 		Series:           2,
@@ -1861,7 +1872,7 @@ func setupStoreForHintsTest(t *testing.T) (TB, *BucketStore, []*storepb.Series, 
 	})
 	block1 := createBlockFromHead(t, bktDir, head)
 	assert.NoError(t, head.Close())
-	head2, seriesSet2 := CreateHeadWithSeries(t, 1, HeadGenOptions{
+	head2, seriesSet2 := createHeadWithSeries(t, 1, headGenOptions{
 		TSDBDir:          filepath.Join(tmpDir, "1"),
 		SamplesPerSeries: 1,
 		Series:           2,
@@ -2155,7 +2166,7 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 	})
 
 	// Create a block.
-	head, _ := CreateHeadWithSeries(b, 0, HeadGenOptions{
+	head, _ := createHeadWithSeries(b, 0, headGenOptions{
 		TSDBDir:          filepath.Join(tmpDir, "head"),
 		SamplesPerSeries: 86400 / 15, // Simulate 1 day block with 15s scrape interval.
 		ScrapeInterval:   15 * time.Second,
@@ -2274,5 +2285,201 @@ func BenchmarkDownsampledBlockSeries(b *testing.B) {
 				benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, aggrs)
 			})
 		}
+	}
+}
+
+type headGenOptions struct {
+	TSDBDir                  string
+	SamplesPerSeries, Series int
+	ScrapeInterval           time.Duration
+
+	WithWAL       bool
+	PrependLabels labels.Labels
+	SkipChunks    bool // Skips chunks in returned slice (not in generated head!).
+
+	Random *rand.Rand
+}
+
+// createHeadWithSeries returns head filled with given samples and same series returned in separate list for assertion purposes.
+// Returned series list has "ext1"="1" prepended. Each series looks as follows:
+// {foo=bar,i=000001aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd} <random value> where number indicate sample number from 0.
+// Returned series are framed in the same way as remote read would frame them.
+func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head, []*storepb.Series) {
+	if opts.SamplesPerSeries < 1 || opts.Series < 1 {
+		t.Fatal("samples and series has to be 1 or more")
+	}
+	if opts.ScrapeInterval == 0 {
+		opts.ScrapeInterval = 1 * time.Millisecond
+	}
+
+	fmt.Printf(
+		"Creating %d %d-sample series with %s interval in %s\n",
+		opts.Series,
+		opts.SamplesPerSeries,
+		opts.ScrapeInterval.String(),
+		opts.TSDBDir,
+	)
+
+	var w *wal.WAL
+	var err error
+	if opts.WithWAL {
+		w, err = wal.New(nil, nil, filepath.Join(opts.TSDBDir, "wal"), true)
+		assert.NoError(t, err)
+	} else {
+		assert.NoError(t, os.MkdirAll(filepath.Join(opts.TSDBDir, "wal"), os.ModePerm))
+	}
+
+	headOpts := tsdb.DefaultHeadOptions()
+	headOpts.ChunkDirRoot = opts.TSDBDir
+	h, err := tsdb.NewHead(nil, nil, w, headOpts, nil)
+	assert.NoError(t, err)
+
+	app := h.Appender(context.Background())
+	for i := 0; i < opts.Series; i++ {
+		tsLabel := j*opts.Series*opts.SamplesPerSeries + i*opts.SamplesPerSeries
+		ref, err := app.Append(
+			0,
+			labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix)),
+			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
+			opts.Random.Float64(),
+		)
+		assert.NoError(t, err)
+
+		for is := 1; is < opts.SamplesPerSeries; is++ {
+			_, err := app.Append(ref, nil, int64(tsLabel+is)*opts.ScrapeInterval.Milliseconds(), opts.Random.Float64())
+			assert.NoError(t, err)
+		}
+	}
+	assert.NoError(t, app.Commit())
+
+	// Use TSDB and get all series for assertion.
+	chks, err := h.Chunks()
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, chks.Close()) }()
+
+	ir, err := h.Index()
+	assert.NoError(t, err)
+	defer func() { assert.NoError(t, ir.Close()) }()
+
+	var (
+		lset       labels.Labels
+		chunkMetas []chunks.Meta
+		expected   = make([]*storepb.Series, 0, opts.Series)
+	)
+
+	all := allPostings(t, ir)
+	for all.Next() {
+		assert.NoError(t, ir.Series(all.At(), &lset, &chunkMetas))
+		expected = append(expected, &storepb.Series{Labels: labelpb.ZLabelsFromPromLabels(append(opts.PrependLabels.Copy(), lset...))})
+
+		if opts.SkipChunks {
+			continue
+		}
+
+		for _, c := range chunkMetas {
+			chEnc, err := chks.Chunk(c.Ref)
+			assert.NoError(t, err)
+
+			// Open Chunk.
+			if c.MaxTime == math.MaxInt64 {
+				c.MaxTime = c.MinTime + int64(chEnc.NumSamples()) - 1
+			}
+
+			expected[len(expected)-1].Chunks = append(expected[len(expected)-1].Chunks, storepb.AggrChunk{
+				MinTime: c.MinTime,
+				MaxTime: c.MaxTime,
+				Raw:     &storepb.Chunk{Type: storepb.Chunk_XOR, Data: chEnc.Bytes()},
+			})
+		}
+	}
+	assert.NoError(t, all.Err())
+	return h, expected
+}
+
+func runSeriesInterestingCases(t TB, maxSamples, maxSeries int, f func(t TB, samplesPerSeries, series int)) {
+	for _, tc := range []struct {
+		samplesPerSeries int
+		series           int
+	}{
+		{
+			samplesPerSeries: 1,
+			series:           maxSeries,
+		},
+		{
+			samplesPerSeries: maxSamples / (maxSeries / 10),
+			series:           maxSeries / 10,
+		},
+		{
+			samplesPerSeries: maxSamples,
+			series:           1,
+		},
+	} {
+		if ok := t.Run(fmt.Sprintf("%dSeriesWith%dSamples", tc.series, tc.samplesPerSeries), func(t TB) {
+			f(t, tc.samplesPerSeries, tc.series)
+		}); !ok {
+			return
+		}
+		runtime.GC()
+	}
+}
+
+// seriesCase represents single test/benchmark case for testing storepb series.
+type seriesCase struct {
+	Name string
+	Req  *storepb.SeriesRequest
+
+	// Exact expectations are checked only for tests. For benchmarks only length is assured.
+	ExpectedSeries   []*storepb.Series
+	ExpectedWarnings []string
+	ExpectedHints    []hintspb.SeriesResponseHints
+}
+
+// runTestServerSeries runs tests against given cases.
+func runTestServerSeries(t TB, store storepb.StoreServer, cases ...*seriesCase) {
+	for _, c := range cases {
+		t.Run(c.Name, func(t TB) {
+			t.ResetTimer()
+			for i := 0; i < t.N(); i++ {
+				srv := newStoreSeriesServer(context.Background())
+				assert.NoError(t, store.Series(c.Req, srv))
+				assert.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
+				assert.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet))
+				assert.Equal(t, len(c.ExpectedHints), len(srv.HintsSet))
+
+				if !t.IsBenchmark() {
+					if len(c.ExpectedSeries) == 1 {
+						// For bucketStoreAPI chunks are not sorted within response. TODO: Investigate: Is this fine?
+						sort.Slice(srv.SeriesSet[0].Chunks, func(i, j int) bool {
+							return srv.SeriesSet[0].Chunks[i].MinTime < srv.SeriesSet[0].Chunks[j].MinTime
+						})
+					}
+
+					// Huge responses can produce unreadable diffs - make it more human readable.
+					if len(c.ExpectedSeries) > 4 {
+						for j := range c.ExpectedSeries {
+							assert.Equal(t, c.ExpectedSeries[j].Labels, srv.SeriesSet[j].Labels, "%v series chunks mismatch", j)
+
+							// Check chunks when it is not a skip chunk query
+							if !c.Req.SkipChunks {
+								if len(c.ExpectedSeries[j].Chunks) > 20 {
+									assert.Equal(t, len(c.ExpectedSeries[j].Chunks), len(srv.SeriesSet[j].Chunks), "%v series chunks number mismatch", j)
+								}
+								assert.Equal(t, c.ExpectedSeries[j].Chunks, srv.SeriesSet[j].Chunks, "%v series chunks mismatch", j)
+							}
+						}
+					} else {
+						assert.Equal(t, c.ExpectedSeries, srv.SeriesSet)
+					}
+
+					var actualHints []hintspb.SeriesResponseHints
+					for _, anyHints := range srv.HintsSet {
+						hints := hintspb.SeriesResponseHints{}
+						assert.NoError(t, types.UnmarshalAny(anyHints, &hints))
+						actualHints = append(actualHints, hints)
+					}
+					assert.Equal(t, c.ExpectedHints, actualHints)
+				}
+			}
+		})
 	}
 }

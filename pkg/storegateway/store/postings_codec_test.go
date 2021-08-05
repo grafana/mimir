@@ -1,6 +1,9 @@
 // Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/postings_codec_test.go
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
+// Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/testutil/series.go
+// Included-from-license: Apache-2.0
+// Included-from-copyright: The Thanos Authors.
 
 package store
 
@@ -43,7 +46,7 @@ func TestDiffVarintCodec(t *testing.T) {
 
 	postingsMap := map[string]index.Postings{
 		"all":      allPostings(t, idx),
-		`n="1"`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "n", "1"+LabelLongSuffix)),
+		`n="1"`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)),
 		`j="foo"`:  matchPostings(t, idx, labels.MustNewMatcher(labels.MatchEqual, "j", "foo")),
 		`j!="foo"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")),
 		`i=~".*"`:  matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", ".*")),
@@ -51,7 +54,7 @@ func TestDiffVarintCodec(t *testing.T) {
 		`i=~"1.+"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "1.+")),
 		`i=~"^$"'`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")),
 		`i!~""`:    matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "i", "")),
-		`n!="2"`:   matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+LabelLongSuffix)),
+		`n!="2"`:   matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)),
 		`i!~"2.*"`: matchPostings(t, idx, labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")),
 	}
 
@@ -215,4 +218,11 @@ func BenchmarkEncodePostings(b *testing.B) {
 			}
 		})
 	}
+}
+
+func allPostings(t testing.TB, ix tsdb.IndexReader) index.Postings {
+	k, v := index.AllPostingsKey()
+	p, err := ix.Postings(k, v)
+	assert.NoError(t, err)
+	return p
 }

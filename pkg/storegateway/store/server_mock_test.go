@@ -19,7 +19,7 @@ type storeSeriesServer struct {
 
 	ctx context.Context
 
-	SeriesSet []storepb.Series
+	SeriesSet []*storepb.Series
 	Warnings  []string
 	HintsSet  []*types.Any
 
@@ -39,7 +39,7 @@ func (s *storeSeriesServer) Send(r *storepb.SeriesResponse) error {
 	}
 
 	if r.GetSeries() != nil {
-		s.SeriesSet = append(s.SeriesSet, *r.GetSeries())
+		s.SeriesSet = append(s.SeriesSet, r.GetSeries())
 		return nil
 	}
 
