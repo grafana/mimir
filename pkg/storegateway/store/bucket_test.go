@@ -2396,49 +2396,6 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	return h, expected
 }
 
-// seriesServer is test gRPC storeAPI series server.
-type seriesServer struct {
-	// This field just exist to pseudo-implement the unused methods of the interface.
-	storepb.Store_SeriesServer
-
-	ctx context.Context
-
-	SeriesSet []*storepb.Series
-	Warnings  []string
-	HintsSet  []*types.Any
-
-	Size int64
-}
-
-func newSeriesServer(ctx context.Context) *seriesServer {
-	return &seriesServer{ctx: ctx}
-}
-
-func (s *seriesServer) Send(r *storepb.SeriesResponse) error {
-	s.Size += int64(r.Size())
-
-	if r.GetWarning() != "" {
-		s.Warnings = append(s.Warnings, r.GetWarning())
-		return nil
-	}
-
-	if r.GetSeries() != nil {
-		s.SeriesSet = append(s.SeriesSet, r.GetSeries())
-		return nil
-	}
-
-	if r.GetHints() != nil {
-		s.HintsSet = append(s.HintsSet, r.GetHints())
-		return nil
-	}
-	// Unsupported field, skip.
-	return nil
-}
-
-func (s *seriesServer) Context() context.Context {
-	return s.ctx
-}
-
 func runSeriesInterestingCases(t TB, maxSamples, maxSeries int, f func(t TB, samplesPerSeries, series int)) {
 	for _, tc := range []struct {
 		samplesPerSeries int
@@ -2483,7 +2440,7 @@ func runTestServerSeries(t TB, store storepb.StoreServer, cases ...*seriesCase) 
 		t.Run(c.Name, func(t TB) {
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				srv := newSeriesServer(context.Background())
+				srv := newStoreSeriesServer(context.Background())
 				assert.NoError(t, store.Series(c.Req, srv))
 				assert.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
 				assert.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet))
