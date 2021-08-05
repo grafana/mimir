@@ -436,7 +436,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		},
 	} {
 		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
-			srv := newStoreSeriesServer(ctx)
+			srv := newBucketStoreSeriesServer(ctx)
 
 			assert.NoError(t, s.store.Series(tcase.req, srv))
 			assert.Equal(t, len(tcase.expected), len(srv.SeriesSet))
@@ -569,7 +569,7 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 	}
 
 	s.cache.SwapWith(noopCache{})
-	srv := newStoreSeriesServer(ctx)
+	srv := newBucketStoreSeriesServer(ctx)
 
 	assert.NoError(t, s.store.Series(req, srv))
 	assert.Equal(t, len(expectedLabels), len(srv.SeriesSet))
@@ -636,7 +636,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			}
 
 			s.cache.SwapWith(noopCache{})
-			srv := newStoreSeriesServer(ctx)
+			srv := newBucketStoreSeriesServer(ctx)
 			err = s.store.Series(req, srv)
 
 			if testData.expectedErr == "" {

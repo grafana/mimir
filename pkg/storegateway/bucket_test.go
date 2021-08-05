@@ -1428,7 +1428,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	}
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
-		srv := newStoreSeriesServer(context.Background())
+		srv := newBucketStoreSeriesServer(context.Background())
 		assert.NoError(t, store.Series(&storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
@@ -1443,7 +1443,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.Equal(t, numSeries, len(srv.SeriesSet))
 	})
 	t.Run("invoke series for second block. This should revoke previous cache.", func(t *testing.T) {
-		srv := newStoreSeriesServer(context.Background())
+		srv := newBucketStoreSeriesServer(context.Background())
 		assert.NoError(t, store.Series(&storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
@@ -1460,7 +1460,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	t.Run("remove second block. Cache stays. Ask for first again.", func(t *testing.T) {
 		assert.NoError(t, store.removeBlock(b2.meta.ULID))
 
-		srv := newStoreSeriesServer(context.Background())
+		srv := newBucketStoreSeriesServer(context.Background())
 		assert.NoError(t, store.Series(&storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
@@ -1491,11 +1491,9 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 				},
 			},
 			ExpectedSeries: seriesSet1,
-			ExpectedHints: []hintspb.SeriesResponseHints{
-				{
-					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String()},
-					},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
 				},
 			},
 		}, {
@@ -1508,12 +1506,10 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 				},
 			},
 			ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
-			ExpectedHints: []hintspb.SeriesResponseHints{
-				{
-					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String()},
-						{Id: block2.String()},
-					},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+					{Id: block2.String()},
 				},
 			},
 		}, {
@@ -1531,11 +1527,9 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 				}),
 			},
 			ExpectedSeries: seriesSet1,
-			ExpectedHints: []hintspb.SeriesResponseHints{
-				{
-					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String()},
-					},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
 				},
 			},
 		},
@@ -1597,7 +1591,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
 	}
 
-	srv := newStoreSeriesServer(context.Background())
+	srv := newBucketStoreSeriesServer(context.Background())
 	err = store.Series(req, srv)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
@@ -1712,7 +1706,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 				},
 			}
 
-			srv := newStoreSeriesServer(context.Background())
+			srv := newBucketStoreSeriesServer(context.Background())
 			err = store.Series(req, srv)
 			assert.NoError(t, err)
 			assert.True(t, len(srv.SeriesSet) == 1)
@@ -2376,7 +2370,7 @@ type seriesCase struct {
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
 	ExpectedSeries   []*storepb.Series
 	ExpectedWarnings []string
-	ExpectedHints    []hintspb.SeriesResponseHints
+	ExpectedHints    hintspb.SeriesResponseHints
 }
 
 // runTestServerSeries runs tests against given cases.
@@ -2385,11 +2379,10 @@ func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesC
 		t.Run(c.Name, func(t test.TB) {
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				srv := newStoreSeriesServer(context.Background())
+				srv := newBucketStoreSeriesServer(context.Background())
 				assert.NoError(t, store.Series(c.Req, srv))
 				assert.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
 				assert.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet))
-				assert.Equal(t, len(c.ExpectedHints), len(srv.HintsSet))
 
 				if !t.IsBenchmark() {
 					if len(c.ExpectedSeries) == 1 {
@@ -2416,13 +2409,7 @@ func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesC
 						assert.Equal(t, c.ExpectedSeries, srv.SeriesSet)
 					}
 
-					var actualHints []hintspb.SeriesResponseHints
-					for _, anyHints := range srv.HintsSet {
-						hints := hintspb.SeriesResponseHints{}
-						assert.NoError(t, types.UnmarshalAny(anyHints, &hints))
-						actualHints = append(actualHints, hints)
-					}
-					assert.Equal(t, c.ExpectedHints, actualHints)
+					assert.Equal(t, c.ExpectedHints, srv.Hints)
 				}
 			}
 		})
