@@ -1,6 +1,9 @@
 // Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/postings_codec_test.go
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
+// Included-from-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/storepb/testutil/series.go
+// Included-from-license: Apache-2.0
+// Included-from-copyright: The Thanos Authors.
 
 package store
 
@@ -215,4 +218,11 @@ func BenchmarkEncodePostings(b *testing.B) {
 			}
 		})
 	}
+}
+
+func allPostings(t testing.TB, ix tsdb.IndexReader) index.Postings {
+	k, v := index.AllPostingsKey()
+	p, err := ix.Postings(k, v)
+	assert.NoError(t, err)
+	return p
 }
