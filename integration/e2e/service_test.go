@@ -10,10 +10,9 @@ import (
 	"testing"
 	"time"
 
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestWaitSumMetric(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dskit "github.com/grafana/dskit/pkg/util"
+
 	"github.com/grafana/mimir/pkg/util"
 )
 

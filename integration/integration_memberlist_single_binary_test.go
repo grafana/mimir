@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	dskit "github.com/grafana/dskit/pkg/util"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2ecortex"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestSingleBinaryWithMemberlist(t *testing.T) {

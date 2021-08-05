@@ -32,7 +32,7 @@ import (
 	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
 )
 
-// How many series are kept in the memory before sorting and writing them to the file.
+// How many series are kept in the memory before sorting and writing them tointegration_memberlist_single_binary_test.go the file.
 const defaultSeriesBatchSize = 250000
 
 type Config struct {
