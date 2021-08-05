@@ -54,7 +54,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const (
@@ -2375,7 +2375,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 			return pIdxs[i].offset < pIdxs[j].offset
 		})
 		parts := r.block.partitioner.Partition(len(pIdxs), func(i int) (start, end uint64) {
-			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + cortex_tsdb.EstimatedMaxChunkSize
+			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + mimir_tsdb.EstimatedMaxChunkSize
 		})
 
 		for _, p := range parts {
@@ -2401,7 +2401,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		return errors.Wrap(err, "get range reader")
 	}
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
-	bufReader := bufio.NewReaderSize(reader, cortex_tsdb.EstimatedMaxChunkSize)
+	bufReader := bufio.NewReaderSize(reader, mimir_tsdb.EstimatedMaxChunkSize)
 
 	locked := true
 	r.mtx.Lock()
@@ -2418,7 +2418,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 	r.stats.chunksFetchedSizeSum += int(part.End - part.Start)
 
 	var (
-		buf        = make([]byte, cortex_tsdb.EstimatedMaxChunkSize)
+		buf        = make([]byte, mimir_tsdb.EstimatedMaxChunkSize)
 		readOffset = int(pIdxs[0].offset)
 
 		// Save a few allocations.
@@ -2440,7 +2440,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		// Presume chunk length to be reasonably large for common use cases.
 		// However, declaration for EstimatedMaxChunkSize warns us some chunks could be larger in some rare cases.
 		// This is handled further down below.
-		chunkLen = cortex_tsdb.EstimatedMaxChunkSize
+		chunkLen = mimir_tsdb.EstimatedMaxChunkSize
 		if i+1 < len(pIdxs) {
 			if diff = pIdxs[i+1].offset - pIdx.offset; int(diff) < chunkLen {
 				chunkLen = int(diff)

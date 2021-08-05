@@ -59,8 +59,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"go.uber.org/atomic"
 
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -519,10 +518,10 @@ func TestBucketStore_Info(t *testing.T) {
 		dir,
 		NewChunksLimiterFactory(0),
 		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		true,
-		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		false,
 		false,
 		0,
@@ -767,10 +766,10 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 				dir,
 				NewChunksLimiterFactory(0),
 				NewSeriesLimiterFactory(0),
-				newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+				newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 				20,
 				true,
-				cortex_tsdb.DefaultPostingOffsetInMemorySampling,
+				mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 				false,
 				false,
 				0,
@@ -940,7 +939,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 	id := uploadTestBlock(tb, tmpDir, bkt, 500)
 
-	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
+	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(tb, err)
 
 	benchmarkExpandedPostings(tb, bkt, id, r, 500)
@@ -958,7 +957,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	defer func() { assert.NoError(tb, bkt.Close()) }()
 
 	id := uploadTestBlock(tb, tmpDir, bkt, 50e5)
-	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
+	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(tb, err)
 
 	benchmarkExpandedPostings(tb, bkt, id, r, 50e5)
@@ -1084,7 +1083,7 @@ func benchmarkExpandedPostings(
 				indexCache:        noopCache{},
 				bkt:               bkt,
 				meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-				partitioner:       newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+				partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			}
 
 			indexr := newBucketIndexReader(context.Background(), b)
@@ -1201,10 +1200,10 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		tmpDir,
 		NewChunksLimiterFactory(0),
 		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		1,
 		false,
-		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		false,
 		false,
 		0,
@@ -1362,11 +1361,11 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:     newBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
-			partitioner: newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
-		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
+		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 		assert.NoError(t, err)
 	}
 
@@ -1401,11 +1400,11 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:     newBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
-			partitioner: newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
-		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
+		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 		assert.NoError(t, err)
 	}
 
@@ -1566,10 +1565,10 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		tmpDir,
 		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
-		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
 		0,
@@ -1656,10 +1655,10 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		tmpDir,
 		NewChunksLimiterFactory(100000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
-		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
 		0,
@@ -1839,10 +1838,10 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		tmpDir,
 		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
-		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
 		0,
@@ -2143,10 +2142,10 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 	chunkPool, err := NewDefaultChunkBytesPool(64 * 1024 * 1024 * 1024)
 	assert.NoError(b, err)
 
-	partitioner := newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil)
+	partitioner := newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil)
 
 	// Create an index header reader.
-	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
+	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(b, err)
 	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.DefaultInMemoryIndexCacheConfig)
 	assert.NoError(b, err)

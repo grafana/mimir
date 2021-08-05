@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestLabelRemoverFilter(t *testing.T) {
@@ -23,16 +23,16 @@ func TestLabelRemoverFilter(t *testing.T) {
 		expected map[ulid.ULID]map[string]string
 	}{
 		"should remove cpnfigured labels": {
-			labels: []string{cortex_tsdb.IngesterIDExternalLabel},
+			labels: []string{mimir_tsdb.IngesterIDExternalLabel},
 			input: map[ulid.ULID]map[string]string{
-				block1: {cortex_tsdb.IngesterIDExternalLabel: "ingester-0", cortex_tsdb.TenantIDExternalLabel: "user-1"},
-				block2: {cortex_tsdb.IngesterIDExternalLabel: "ingester-0", cortex_tsdb.TenantIDExternalLabel: "user-1"},
-				block3: {cortex_tsdb.IngesterIDExternalLabel: "ingester-0", cortex_tsdb.TenantIDExternalLabel: "user-1"},
+				block1: {mimir_tsdb.IngesterIDExternalLabel: "ingester-0", mimir_tsdb.TenantIDExternalLabel: "user-1"},
+				block2: {mimir_tsdb.IngesterIDExternalLabel: "ingester-0", mimir_tsdb.TenantIDExternalLabel: "user-1"},
+				block3: {mimir_tsdb.IngesterIDExternalLabel: "ingester-0", mimir_tsdb.TenantIDExternalLabel: "user-1"},
 			},
 			expected: map[ulid.ULID]map[string]string{
-				block1: {cortex_tsdb.TenantIDExternalLabel: "user-1"},
-				block2: {cortex_tsdb.TenantIDExternalLabel: "user-1"},
-				block3: {cortex_tsdb.TenantIDExternalLabel: "user-1"},
+				block1: {mimir_tsdb.TenantIDExternalLabel: "user-1"},
+				block2: {mimir_tsdb.TenantIDExternalLabel: "user-1"},
+				block3: {mimir_tsdb.TenantIDExternalLabel: "user-1"},
 			},
 		},
 	}

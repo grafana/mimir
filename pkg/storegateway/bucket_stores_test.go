@@ -35,7 +35,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
@@ -377,11 +377,11 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	}
 }
 
-func prepareStorageConfig(t *testing.T) (cortex_tsdb.BlocksStorageConfig, func()) {
+func prepareStorageConfig(t *testing.T) (mimir_tsdb.BlocksStorageConfig, func()) {
 	tmpDir, err := ioutil.TempDir(os.TempDir(), "blocks-sync-*")
 	require.NoError(t, err)
 
-	cfg := cortex_tsdb.BlocksStorageConfig{}
+	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = tmpDir
 
@@ -458,7 +458,7 @@ func mockLoggingLevel() logging.Level {
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
 	// We have to store it in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(cortex_tsdb.TenantIDExternalLabel, userID))
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(mimir_tsdb.TenantIDExternalLabel, userID))
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
