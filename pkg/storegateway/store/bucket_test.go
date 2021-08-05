@@ -44,8 +44,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/atomic"
-
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -59,6 +57,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
+	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -983,7 +984,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
-	tb := NewTB(t)
+	tb := test.NewTB(t)
 
 	tmpDir, err := ioutil.TempDir("", "test-expanded-postings")
 	assert.NoError(tb, err)
@@ -1002,7 +1003,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
-	tb := NewTB(b)
+	tb := test.NewTB(b)
 
 	tmpDir, err := ioutil.TempDir("", "bench-expanded-postings")
 	assert.NoError(tb, err)
@@ -1084,7 +1085,7 @@ func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 // Very similar benchmark to ths: https://github.com/prometheus/prometheus/blob/1d1732bc25cc4b47f513cb98009a4eb91879f175/tsdb/querier_bench_test.go#L82,
 // but with postings results check when run as test.
 func benchmarkExpandedPostings(
-	t TB,
+	t test.TB,
 	bkt objstore.BucketReader,
 	id ulid.ULID,
 	r indexheader.Reader,
@@ -1131,7 +1132,7 @@ func benchmarkExpandedPostings(
 	}
 
 	for _, c := range cases {
-		t.Run(c.name, func(t TB) {
+		t.Run(c.name, func(t test.TB) {
 			b := &bucketBlock{
 				logger:            log.NewNopLogger(),
 				metrics:           newBucketStoreMetrics(nil),
@@ -1155,36 +1156,36 @@ func benchmarkExpandedPostings(
 }
 
 func TestBucketSeries(t *testing.T) {
-	tb := NewTB(t)
-	runSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
+	tb := test.NewTB(t)
+	runSeriesInterestingCases(tb, 200e3, 200e3, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1)
 	})
 }
 
 func TestBucketSkipChunksSeries(t *testing.T) {
-	tb := NewTB(t)
-	runSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
+	tb := test.NewTB(t)
+	runSeriesInterestingCases(tb, 200e3, 200e3, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1)
 	})
 }
 
 func BenchmarkBucketSeries(b *testing.B) {
-	tb := NewTB(b)
+	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
-	runSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
 	})
 }
 
 func BenchmarkBucketSkipChunksSeries(b *testing.B) {
-	tb := NewTB(b)
+	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
-	runSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
 	})
 }
 
-func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, requestedRatios ...float64) {
+func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries int, requestedRatios ...float64) {
 	const numOfBlocks = 4
 
 	tmpDir, err := ioutil.TempDir("", "testorbench-bucketseries")
@@ -1812,7 +1813,7 @@ func TestBigEndianPostingsCount(t *testing.T) {
 	assert.Equal(t, count, c)
 }
 
-func createBlockWithOneSeriesWithStep(t TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
+func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = dir
 	headOpts.ChunkRange = int64(totalSamples) * step
@@ -1834,8 +1835,8 @@ func createBlockWithOneSeriesWithStep(t TB, dir string, lbls labels.Labels, bloc
 	return createBlockFromHead(t, dir, h)
 }
 
-func setupStoreForHintsTest(t *testing.T) (TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
-	tb := NewTB(t)
+func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
+	tb := test.NewTB(t)
 
 	closers := []func(){}
 
@@ -2101,7 +2102,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	})
 
 	// Create a block.
-	blockID := createBlockWithOneSeriesWithStep(NewTB(b), tmpDir, labels.FromStrings("__name__", "test"), 0, 100000, rand.New(rand.NewSource(0)), 5000)
+	blockID := createBlockWithOneSeriesWithStep(test.NewTB(b), tmpDir, labels.FromStrings("__name__", "test"), 0, 100000, rand.New(rand.NewSource(0)), 5000)
 
 	// Upload the block to the bucket.
 	thanosMeta := metadata.Thanos{
@@ -2396,7 +2397,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	return h, expected
 }
 
-func runSeriesInterestingCases(t TB, maxSamples, maxSeries int, f func(t TB, samplesPerSeries, series int)) {
+func runSeriesInterestingCases(t test.TB, maxSamples, maxSeries int, f func(t test.TB, samplesPerSeries, series int)) {
 	for _, tc := range []struct {
 		samplesPerSeries int
 		series           int
@@ -2414,7 +2415,7 @@ func runSeriesInterestingCases(t TB, maxSamples, maxSeries int, f func(t TB, sam
 			series:           1,
 		},
 	} {
-		if ok := t.Run(fmt.Sprintf("%dSeriesWith%dSamples", tc.series, tc.samplesPerSeries), func(t TB) {
+		if ok := t.Run(fmt.Sprintf("%dSeriesWith%dSamples", tc.series, tc.samplesPerSeries), func(t test.TB) {
 			f(t, tc.samplesPerSeries, tc.series)
 		}); !ok {
 			return
@@ -2435,9 +2436,9 @@ type seriesCase struct {
 }
 
 // runTestServerSeries runs tests against given cases.
-func runTestServerSeries(t TB, store storepb.StoreServer, cases ...*seriesCase) {
+func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesCase) {
 	for _, c := range cases {
-		t.Run(c.Name, func(t TB) {
+		t.Run(c.Name, func(t test.TB) {
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				srv := newStoreSeriesServer(context.Background())
