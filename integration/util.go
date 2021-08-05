@@ -22,7 +22,7 @@ var (
 )
 
 func getCortexProjectDir() string {
-	if dir := os.Getenv("CORTEX_CHECKOUT_DIR"); dir != "" {
+	if dir := os.Getenv("MIMIR_CHECKOUT_DIR"); dir != "" {
 		return dir
 	}
 
