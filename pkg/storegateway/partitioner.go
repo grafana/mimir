@@ -3,7 +3,8 @@ package storegateway
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/store"
+
+	"github.com/grafana/mimir/pkg/storegateway/store"
 )
 
 type gapBasedPartitioner struct {
