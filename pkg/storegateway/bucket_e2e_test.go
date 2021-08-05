@@ -26,6 +26,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/codes"
 
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/model"
@@ -184,7 +186,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		dir,
 		chunksLimiterFactory,
 		seriesLimiterFactory,
-		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		true,
 		cortex_tsdb.DefaultPostingOffsetInMemorySampling,

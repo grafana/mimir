@@ -2212,47 +2212,6 @@ type Partitioner interface {
 	Partition(length int, rng func(int) (uint64, uint64)) []Part
 }
 
-type gapBasedPartitioner struct {
-	maxGapSize uint64
-}
-
-func NewGapBasedPartitioner(maxGapSize uint64) Partitioner {
-	return gapBasedPartitioner{
-		maxGapSize: maxGapSize,
-	}
-}
-
-// Partition partitions length entries into n <= length ranges that cover all
-// input ranges by combining entries that are separated by reasonably small gaps.
-// It is used to combine multiple small ranges from object storage into bigger, more efficient/cheaper ones.
-func (g gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) (parts []Part) {
-	j := 0
-	k := 0
-	for k < length {
-		j = k
-		k++
-
-		p := Part{}
-		p.Start, p.End = rng(j)
-
-		// Keep growing the range until the end or we encounter a large gap.
-		for ; k < length; k++ {
-			s, e := rng(k)
-
-			if p.End+g.maxGapSize < s {
-				break
-			}
-
-			if p.End <= e {
-				p.End = e
-			}
-		}
-		p.ElemRng = [2]int{j, k}
-		parts = append(parts, p)
-	}
-	return parts
-}
-
 type symbolizedLabel struct {
 	name, value uint32
 }

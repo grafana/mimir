@@ -59,6 +59,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"go.uber.org/atomic"
 
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -499,64 +501,6 @@ func TestBucketBlockSet_labelMatchers(t *testing.T) {
 	}
 }
 
-func TestGapBasedPartitioner_Partition(t *testing.T) {
-	const maxGapSize = 1024 * 512
-
-	for _, c := range []struct {
-		input    [][2]int
-		expected []Part
-	}{
-		{
-			input:    [][2]int{{1, 10}},
-			expected: []Part{{Start: 1, End: 10, ElemRng: [2]int{0, 1}}},
-		},
-		{
-			input:    [][2]int{{1, 2}, {3, 5}, {7, 10}},
-			expected: []Part{{Start: 1, End: 10, ElemRng: [2]int{0, 3}}},
-		},
-		{
-			input: [][2]int{
-				{1, 2},
-				{3, 5},
-				{20, 30},
-				{maxGapSize + 31, maxGapSize + 32},
-			},
-			expected: []Part{
-				{Start: 1, End: 30, ElemRng: [2]int{0, 3}},
-				{Start: maxGapSize + 31, End: maxGapSize + 32, ElemRng: [2]int{3, 4}},
-			},
-		},
-		// Overlapping ranges.
-		{
-			input: [][2]int{
-				{1, 30},
-				{1, 4},
-				{3, 28},
-				{maxGapSize + 31, maxGapSize + 32},
-				{maxGapSize + 31, maxGapSize + 40},
-			},
-			expected: []Part{
-				{Start: 1, End: 30, ElemRng: [2]int{0, 3}},
-				{Start: maxGapSize + 31, End: maxGapSize + 40, ElemRng: [2]int{3, 5}},
-			},
-		},
-		{
-			input: [][2]int{
-				// Mimick AllPostingsKey, where range specified whole range.
-				{1, 15},
-				{1, maxGapSize + 100},
-				{maxGapSize + 31, maxGapSize + 40},
-			},
-			expected: []Part{{Start: 1, End: maxGapSize + 100, ElemRng: [2]int{0, 3}}},
-		},
-	} {
-		res := gapBasedPartitioner{maxGapSize: maxGapSize}.Partition(len(c.input), func(i int) (uint64, uint64) {
-			return uint64(c.input[i][0]), uint64(c.input[i][1])
-		})
-		assert.Equal(t, c.expected, res)
-	}
-}
-
 func TestBucketStore_Info(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -575,7 +519,7 @@ func TestBucketStore_Info(t *testing.T) {
 		dir,
 		NewChunksLimiterFactory(0),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		true,
 		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -823,7 +767,7 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 				dir,
 				NewChunksLimiterFactory(0),
 				NewSeriesLimiterFactory(0),
-				NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+				newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 				20,
 				true,
 				cortex_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -1140,7 +1084,7 @@ func benchmarkExpandedPostings(
 				indexCache:        noopCache{},
 				bkt:               bkt,
 				meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-				partitioner:       NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+				partitioner:       newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 			}
 
 			indexr := newBucketIndexReader(context.Background(), b)
@@ -1257,7 +1201,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		tmpDir,
 		NewChunksLimiterFactory(0),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		1,
 		false,
 		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -1418,7 +1362,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:     newBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
-			partitioner: NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+			partitioner: newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
@@ -1457,7 +1401,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:     newBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
-			partitioner: NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+			partitioner: newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
@@ -1628,7 +1572,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		tmpDir,
 		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
 		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -1718,7 +1662,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		tmpDir,
 		NewChunksLimiterFactory(100000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
 		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -1901,7 +1845,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		tmpDir,
 		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
 		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
@@ -2205,7 +2149,7 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 	chunkPool, err := NewDefaultChunkBytesPool(64 * 1024 * 1024 * 1024)
 	assert.NoError(b, err)
 
-	partitioner := NewGapBasedPartitioner(cortex_tsdb.PartitionerMaxGapSize)
+	partitioner := newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil)
 
 	// Create an index header reader.
 	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
