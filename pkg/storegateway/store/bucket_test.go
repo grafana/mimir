@@ -62,8 +62,8 @@ import (
 )
 
 const (
-	// LabelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
-	LabelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
+	// labelLongSuffix is a label with ~50B in size, to emulate real-world high cardinality.
+	labelLongSuffix = "aaaaaaaaaabbbbbbbbbbccccccccccdddddddddd"
 )
 
 var emptyRelabelConfig = make([]*relabel.Config, 0)
@@ -1057,12 +1057,12 @@ func appendTestData(t testing.TB, app storage.Appender, series int) {
 	series = series / 5
 	for n := 0; n < 10; n++ {
 		for i := 0; i < series/10; i++ {
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", strconv.Itoa(n)+LabelLongSuffix, "j", "foo"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "foo"))
 			// Have some series that won't be matched, to properly test inverted matches.
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", strconv.Itoa(n)+LabelLongSuffix, "j", "bar"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", "0_"+strconv.Itoa(n)+LabelLongSuffix, "j", "bar"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", "1_"+strconv.Itoa(n)+LabelLongSuffix, "j", "bar"))
-			addSeries(labels.FromStrings("i", strconv.Itoa(i)+LabelLongSuffix, "n", "2_"+strconv.Itoa(n)+LabelLongSuffix, "j", "foo"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", strconv.Itoa(n)+labelLongSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "0_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "1_"+strconv.Itoa(n)+labelLongSuffix, "j", "bar"))
+			addSeries(labels.FromStrings("i", strconv.Itoa(i)+labelLongSuffix, "n", "2_"+strconv.Itoa(n)+labelLongSuffix, "j", "foo"))
 		}
 	}
 	assert.NoError(t, app.Commit())
@@ -1090,7 +1090,7 @@ func benchmarkExpandedPostings(
 	r indexheader.Reader,
 	series int,
 ) {
-	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+LabelLongSuffix)
+	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
 	jNotFoo := labels.MustNewMatcher(labels.MatchNotEqual, "j", "foo")
@@ -1100,9 +1100,9 @@ func benchmarkExpandedPostings(
 	i1Plus := labels.MustNewMatcher(labels.MatchRegexp, "i", "^1.+$")
 	iEmptyRe := labels.MustNewMatcher(labels.MatchRegexp, "i", "^$")
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
-	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+LabelLongSuffix)
+	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
-	iRegexSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+LabelLongSuffix+"|1"+LabelLongSuffix+"|2"+LabelLongSuffix)
+	iRegexSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
 
 	series = series / 5
 	cases := []struct {
@@ -1397,7 +1397,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		for i := 0; i < numSeries; i++ {
 			ts := int64(i)
-			lbls := labels.FromStrings("foo", "bar", "b", "1", "i", fmt.Sprintf("%07d%s", ts, LabelLongSuffix))
+			lbls := labels.FromStrings("foo", "bar", "b", "1", "i", fmt.Sprintf("%07d%s", ts, labelLongSuffix))
 
 			_, err := app.Append(0, lbls, ts, 0)
 			assert.NoError(t, err)
@@ -1436,7 +1436,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 
 		for i := 0; i < numSeries; i++ {
 			ts := int64(i)
-			lbls := labels.FromStrings("foo", "bar", "b", "2", "i", fmt.Sprintf("%07d%s", ts, LabelLongSuffix))
+			lbls := labels.FromStrings("foo", "bar", "b", "2", "i", fmt.Sprintf("%07d%s", ts, labelLongSuffix))
 
 			_, err := app.Append(0, lbls, ts, 0)
 			assert.NoError(t, err)
@@ -2339,7 +2339,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		tsLabel := j*opts.Series*opts.SamplesPerSeries + i*opts.SamplesPerSeries
 		ref, err := app.Append(
 			0,
-			labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%07d%s", tsLabel, LabelLongSuffix)),
+			labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix)),
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)
