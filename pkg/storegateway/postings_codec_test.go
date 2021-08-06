@@ -5,7 +5,7 @@
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
 
-package store
+package storegateway
 
 import (
 	"context"
@@ -25,24 +25,27 @@ import (
 func TestDiffVarintCodec(t *testing.T) {
 	chunksDir, err := ioutil.TempDir("", "diff_varint_codec")
 	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, os.RemoveAll(chunksDir))
+	})
 
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = chunksDir
 	headOpts.ChunkRange = 1000
 	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)
-	defer func() {
+	t.Cleanup(func() {
 		assert.NoError(t, h.Close())
 		assert.NoError(t, os.RemoveAll(chunksDir))
-	}()
+	})
 
-	appendTestData(t, h.Appender(context.Background()), 1e6)
+	appendTestData(t, h.Appender(context.Background()), 1e4)
 
 	idx, err := h.Index()
 	assert.NoError(t, err)
-	defer func() {
+	t.Cleanup(func() {
 		assert.NoError(t, idx.Close())
-	}()
+	})
 
 	postingsMap := map[string]index.Postings{
 		"all":      allPostings(t, idx),
@@ -97,21 +100,18 @@ func TestDiffVarintCodec(t *testing.T) {
 func comparePostings(t *testing.T, p1, p2 index.Postings) {
 	for p1.Next() {
 		if !p2.Next() {
-			t.Log("p1 has more values")
-			t.Fail()
+			t.Fatal("p1 has more values")
 			return
 		}
 
 		if p1.At() != p2.At() {
-			t.Logf("values differ: %d, %d", p1.At(), p2.At())
-			t.Fail()
+			t.Fatalf("values differ: %d, %d", p1.At(), p2.At())
 			return
 		}
 	}
 
 	if p2.Next() {
-		t.Log("p2 has more values")
-		t.Fail()
+		t.Fatal("p2 has more values")
 		return
 	}
 

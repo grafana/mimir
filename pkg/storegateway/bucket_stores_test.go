@@ -36,7 +36,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storegateway/store"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
@@ -289,7 +288,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 			// Sync user stores and count the number of times the callback is called.
 			var storesCount atomic.Int32
-			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *store.BucketStore) error {
+			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *BucketStore) error {
 				storesCount.Inc()
 				return nil
 			})
@@ -348,17 +347,17 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 		"query the beginning of the block": {
 			reqMinTime:      0,
 			reqMaxTime:      100,
-			expectedSamples: store.MaxSamplesPerChunk,
+			expectedSamples: MaxSamplesPerChunk,
 		},
 		"query the middle of the block": {
 			reqMinTime:      4000,
 			reqMaxTime:      4050,
-			expectedSamples: store.MaxSamplesPerChunk,
+			expectedSamples: MaxSamplesPerChunk,
 		},
 		"query the end of the block": {
 			reqMinTime:      9800,
 			reqMaxTime:      10000,
-			expectedSamples: (store.MaxSamplesPerChunk * 2) + (10000 % store.MaxSamplesPerChunk),
+			expectedSamples: (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
 		},
 	}
 

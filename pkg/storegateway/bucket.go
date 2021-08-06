@@ -2,7 +2,7 @@
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
 
-package store
+package storegateway
 
 import (
 	"bufio"
@@ -33,10 +33,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
-	"golang.org/x/sync/errgroup"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
-
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -54,6 +50,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/thanos-io/thanos/pkg/strutil"
 	"github.com/thanos-io/thanos/pkg/tracing"
+	"golang.org/x/sync/errgroup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const (
@@ -64,9 +65,7 @@ const (
 	// because you barely get any improvements in compression when the number of samples is beyond this.
 	// Take a look at Figure 6 in this whitepaper http://www.vldb.org/pvldb/vol8/p1816-teller.pdf.
 	MaxSamplesPerChunk = 120
-	// EstimatedMaxChunkSize is average max of chunk size. This can be exceeded though in very rare (valid) cases.
-	EstimatedMaxChunkSize = 16000
-	maxSeriesSize         = 64 * 1024
+	maxSeriesSize      = 64 * 1024
 	// Relatively large in order to reduce memory waste, yet small enough to avoid excessive allocations.
 	chunkBytesPoolMinSize = 64 * 1024        // 64 KiB
 	chunkBytesPoolMaxSize = 64 * 1024 * 1024 // 64 MiB
@@ -82,13 +81,6 @@ const (
 	// This label name is intentionally against Prometheus label style.
 	// TODO(bwplotka): Remove it at some point.
 	CompatibilityTypeLabelName = "@thanos_compatibility_store_type"
-
-	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
-	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
-	// not too small (too much memory).
-	DefaultPostingOffsetInMemorySampling = 32
-
-	PartitionerMaxGapSize = 512 * 1024
 
 	// Labels for metrics.
 	labelEncode = "encode"
@@ -2220,47 +2212,6 @@ type Partitioner interface {
 	Partition(length int, rng func(int) (uint64, uint64)) []Part
 }
 
-type gapBasedPartitioner struct {
-	maxGapSize uint64
-}
-
-func NewGapBasedPartitioner(maxGapSize uint64) Partitioner {
-	return gapBasedPartitioner{
-		maxGapSize: maxGapSize,
-	}
-}
-
-// Partition partitions length entries into n <= length ranges that cover all
-// input ranges by combining entries that are separated by reasonably small gaps.
-// It is used to combine multiple small ranges from object storage into bigger, more efficient/cheaper ones.
-func (g gapBasedPartitioner) Partition(length int, rng func(int) (uint64, uint64)) (parts []Part) {
-	j := 0
-	k := 0
-	for k < length {
-		j = k
-		k++
-
-		p := Part{}
-		p.Start, p.End = rng(j)
-
-		// Keep growing the range until the end or we encounter a large gap.
-		for ; k < length; k++ {
-			s, e := rng(k)
-
-			if p.End+g.maxGapSize < s {
-				break
-			}
-
-			if p.End <= e {
-				p.End = e
-			}
-		}
-		p.ElemRng = [2]int{j, k}
-		parts = append(parts, p)
-	}
-	return parts
-}
-
 type symbolizedLabel struct {
 	name, value uint32
 }
@@ -2424,7 +2375,7 @@ func (r *bucketChunkReader) load(res []seriesEntry, aggrs []storepb.Aggr) error 
 			return pIdxs[i].offset < pIdxs[j].offset
 		})
 		parts := r.block.partitioner.Partition(len(pIdxs), func(i int) (start, end uint64) {
-			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + EstimatedMaxChunkSize
+			return uint64(pIdxs[i].offset), uint64(pIdxs[i].offset) + cortex_tsdb.EstimatedMaxChunkSize
 		})
 
 		for _, p := range parts {
@@ -2450,7 +2401,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		return errors.Wrap(err, "get range reader")
 	}
 	defer runutil.CloseWithLogOnErr(r.block.logger, reader, "readChunkRange close range reader")
-	bufReader := bufio.NewReaderSize(reader, EstimatedMaxChunkSize)
+	bufReader := bufio.NewReaderSize(reader, cortex_tsdb.EstimatedMaxChunkSize)
 
 	locked := true
 	r.mtx.Lock()
@@ -2467,7 +2418,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 	r.stats.chunksFetchedSizeSum += int(part.End - part.Start)
 
 	var (
-		buf        = make([]byte, EstimatedMaxChunkSize)
+		buf        = make([]byte, cortex_tsdb.EstimatedMaxChunkSize)
 		readOffset = int(pIdxs[0].offset)
 
 		// Save a few allocations.
@@ -2489,7 +2440,7 @@ func (r *bucketChunkReader) loadChunks(ctx context.Context, res []seriesEntry, a
 		// Presume chunk length to be reasonably large for common use cases.
 		// However, declaration for EstimatedMaxChunkSize warns us some chunks could be larger in some rare cases.
 		// This is handled further down below.
-		chunkLen = EstimatedMaxChunkSize
+		chunkLen = cortex_tsdb.EstimatedMaxChunkSize
 		if i+1 < len(pIdxs) {
 			if diff = pIdxs[i+1].offset - pIdx.offset; int(diff) < chunkLen {
 				chunkLen = int(diff)

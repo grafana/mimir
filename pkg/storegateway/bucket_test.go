@@ -5,7 +5,7 @@
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
 
-package store
+package storegateway
 
 import (
 	"bytes"
@@ -44,8 +44,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
-	"go.uber.org/atomic"
-
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -59,6 +57,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
+	"go.uber.org/atomic"
+
+	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -498,64 +501,6 @@ func TestBucketBlockSet_labelMatchers(t *testing.T) {
 	}
 }
 
-func TestGapBasedPartitioner_Partition(t *testing.T) {
-	const maxGapSize = 1024 * 512
-
-	for _, c := range []struct {
-		input    [][2]int
-		expected []Part
-	}{
-		{
-			input:    [][2]int{{1, 10}},
-			expected: []Part{{Start: 1, End: 10, ElemRng: [2]int{0, 1}}},
-		},
-		{
-			input:    [][2]int{{1, 2}, {3, 5}, {7, 10}},
-			expected: []Part{{Start: 1, End: 10, ElemRng: [2]int{0, 3}}},
-		},
-		{
-			input: [][2]int{
-				{1, 2},
-				{3, 5},
-				{20, 30},
-				{maxGapSize + 31, maxGapSize + 32},
-			},
-			expected: []Part{
-				{Start: 1, End: 30, ElemRng: [2]int{0, 3}},
-				{Start: maxGapSize + 31, End: maxGapSize + 32, ElemRng: [2]int{3, 4}},
-			},
-		},
-		// Overlapping ranges.
-		{
-			input: [][2]int{
-				{1, 30},
-				{1, 4},
-				{3, 28},
-				{maxGapSize + 31, maxGapSize + 32},
-				{maxGapSize + 31, maxGapSize + 40},
-			},
-			expected: []Part{
-				{Start: 1, End: 30, ElemRng: [2]int{0, 3}},
-				{Start: maxGapSize + 31, End: maxGapSize + 40, ElemRng: [2]int{3, 5}},
-			},
-		},
-		{
-			input: [][2]int{
-				// Mimick AllPostingsKey, where range specified whole range.
-				{1, 15},
-				{1, maxGapSize + 100},
-				{maxGapSize + 31, maxGapSize + 40},
-			},
-			expected: []Part{{Start: 1, End: maxGapSize + 100, ElemRng: [2]int{0, 3}}},
-		},
-	} {
-		res := gapBasedPartitioner{maxGapSize: maxGapSize}.Partition(len(c.input), func(i int) (uint64, uint64) {
-			return uint64(c.input[i][0]), uint64(c.input[i][1])
-		})
-		assert.Equal(t, c.expected, res)
-	}
-}
-
 func TestBucketStore_Info(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -574,10 +519,10 @@ func TestBucketStore_Info(t *testing.T) {
 		dir,
 		NewChunksLimiterFactory(0),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		true,
-		DefaultPostingOffsetInMemorySampling,
+		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 		false,
 		false,
 		0,
@@ -666,7 +611,7 @@ func TestBucketStore_Sharding(t *testing.T) {
 func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ulid.ULID) {
 	var cached []ulid.ULID
 
-	logger := log.NewLogfmtLogger(os.Stderr)
+	logger := log.NewNopLogger()
 	for _, sc := range []struct {
 		name              string
 		relabel           string
@@ -822,10 +767,10 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 				dir,
 				NewChunksLimiterFactory(0),
 				NewSeriesLimiterFactory(0),
-				NewGapBasedPartitioner(PartitionerMaxGapSize),
+				newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 				20,
 				true,
-				DefaultPostingOffsetInMemorySampling,
+				cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 				false,
 				false,
 				0,
@@ -983,7 +928,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
-	tb := NewTB(t)
+	tb := test.NewTB(t)
 
 	tmpDir, err := ioutil.TempDir("", "test-expanded-postings")
 	assert.NoError(tb, err)
@@ -995,14 +940,14 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 	id := uploadTestBlock(tb, tmpDir, bkt, 500)
 
-	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, DefaultPostingOffsetInMemorySampling)
+	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(tb, err)
 
 	benchmarkExpandedPostings(tb, bkt, id, r, 500)
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
-	tb := NewTB(b)
+	tb := test.NewTB(b)
 
 	tmpDir, err := ioutil.TempDir("", "bench-expanded-postings")
 	assert.NoError(tb, err)
@@ -1013,7 +958,7 @@ func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	defer func() { assert.NoError(tb, bkt.Close()) }()
 
 	id := uploadTestBlock(tb, tmpDir, bkt, 50e5)
-	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, DefaultPostingOffsetInMemorySampling)
+	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(tb, err)
 
 	benchmarkExpandedPostings(tb, bkt, id, r, 50e5)
@@ -1084,7 +1029,7 @@ func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 // Very similar benchmark to ths: https://github.com/prometheus/prometheus/blob/1d1732bc25cc4b47f513cb98009a4eb91879f175/tsdb/querier_bench_test.go#L82,
 // but with postings results check when run as test.
 func benchmarkExpandedPostings(
-	t TB,
+	t test.TB,
 	bkt objstore.BucketReader,
 	id ulid.ULID,
 	r indexheader.Reader,
@@ -1131,7 +1076,7 @@ func benchmarkExpandedPostings(
 	}
 
 	for _, c := range cases {
-		t.Run(c.name, func(t TB) {
+		t.Run(c.name, func(t test.TB) {
 			b := &bucketBlock{
 				logger:            log.NewNopLogger(),
 				metrics:           newBucketStoreMetrics(nil),
@@ -1139,7 +1084,7 @@ func benchmarkExpandedPostings(
 				indexCache:        noopCache{},
 				bkt:               bkt,
 				meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-				partitioner:       NewGapBasedPartitioner(PartitionerMaxGapSize),
+				partitioner:       newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 			}
 
 			indexr := newBucketIndexReader(context.Background(), b)
@@ -1155,36 +1100,36 @@ func benchmarkExpandedPostings(
 }
 
 func TestBucketSeries(t *testing.T) {
-	tb := NewTB(t)
-	runSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
+	tb := test.NewTB(t)
+	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1)
 	})
 }
 
 func TestBucketSkipChunksSeries(t *testing.T) {
-	tb := NewTB(t)
-	runSeriesInterestingCases(tb, 200e3, 200e3, func(t TB, samplesPerSeries, series int) {
+	tb := test.NewTB(t)
+	runSeriesInterestingCases(tb, 10000, 10000, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1)
 	})
 }
 
 func BenchmarkBucketSeries(b *testing.B) {
-	tb := NewTB(b)
+	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
-	runSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, false, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
 	})
 }
 
 func BenchmarkBucketSkipChunksSeries(b *testing.B) {
-	tb := NewTB(b)
+	tb := test.NewTB(b)
 	// 10e6 samples = ~1736 days with 15s scrape
-	runSeriesInterestingCases(tb, 10e6, 10e5, func(t TB, samplesPerSeries, series int) {
+	runSeriesInterestingCases(tb, 10e6, 10e5, func(t test.TB, samplesPerSeries, series int) {
 		benchBucketSeries(t, true, samplesPerSeries, series, 1/100e6, 1/10e4, 1)
 	})
 }
 
-func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, requestedRatios ...float64) {
+func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries int, requestedRatios ...float64) {
 	const numOfBlocks = 4
 
 	tmpDir, err := ioutil.TempDir("", "testorbench-bucketseries")
@@ -1256,10 +1201,10 @@ func benchBucketSeries(t TB, skipChunk bool, samplesPerSeries, totalSeries int, 
 		tmpDir,
 		NewChunksLimiterFactory(0),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		1,
 		false,
-		DefaultPostingOffsetInMemorySampling,
+		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 		false,
 		false,
 		0,
@@ -1417,11 +1362,11 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:     newBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
-			partitioner: NewGapBasedPartitioner(PartitionerMaxGapSize),
+			partitioner: newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
-		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, DefaultPostingOffsetInMemorySampling)
+		b1.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b1.meta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
 		assert.NoError(t, err)
 	}
 
@@ -1456,11 +1401,11 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 			metrics:     newBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
-			partitioner: NewGapBasedPartitioner(PartitionerMaxGapSize),
+			partitioner: newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 			chunkObjs:   []string{filepath.Join(id.String(), "chunks", "000001")},
 			chunkPool:   chunkPool,
 		}
-		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, DefaultPostingOffsetInMemorySampling)
+		b2.indexHeaderReader, err = indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, b2.meta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
 		assert.NoError(t, err)
 	}
 
@@ -1483,7 +1428,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	}
 
 	t.Run("invoke series for one block. Fill the cache on the way.", func(t *testing.T) {
-		srv := newStoreSeriesServer(context.Background())
+		srv := newBucketStoreSeriesServer(context.Background())
 		assert.NoError(t, store.Series(&storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
@@ -1498,7 +1443,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		assert.Equal(t, numSeries, len(srv.SeriesSet))
 	})
 	t.Run("invoke series for second block. This should revoke previous cache.", func(t *testing.T) {
-		srv := newStoreSeriesServer(context.Background())
+		srv := newBucketStoreSeriesServer(context.Background())
 		assert.NoError(t, store.Series(&storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
@@ -1515,7 +1460,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	t.Run("remove second block. Cache stays. Ask for first again.", func(t *testing.T) {
 		assert.NoError(t, store.removeBlock(b2.meta.ULID))
 
-		srv := newStoreSeriesServer(context.Background())
+		srv := newBucketStoreSeriesServer(context.Background())
 		assert.NoError(t, store.Series(&storepb.SeriesRequest{
 			MinTime: 0,
 			MaxTime: int64(numSeries) - 1,
@@ -1546,11 +1491,9 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 				},
 			},
 			ExpectedSeries: seriesSet1,
-			ExpectedHints: []hintspb.SeriesResponseHints{
-				{
-					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String()},
-					},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
 				},
 			},
 		}, {
@@ -1563,12 +1506,10 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 				},
 			},
 			ExpectedSeries: append(append([]*storepb.Series{}, seriesSet1...), seriesSet2...),
-			ExpectedHints: []hintspb.SeriesResponseHints{
-				{
-					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String()},
-						{Id: block2.String()},
-					},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
+					{Id: block2.String()},
 				},
 			},
 		}, {
@@ -1586,11 +1527,9 @@ func TestSeries_RequestAndResponseHints(t *testing.T) {
 				}),
 			},
 			ExpectedSeries: seriesSet1,
-			ExpectedHints: []hintspb.SeriesResponseHints{
-				{
-					QueriedBlocks: []hintspb.Block{
-						{Id: block1.String()},
-					},
+			ExpectedHints: hintspb.SeriesResponseHints{
+				QueriedBlocks: []hintspb.Block{
+					{Id: block1.String()},
 				},
 			},
 		},
@@ -1627,10 +1566,10 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		tmpDir,
 		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
-		DefaultPostingOffsetInMemorySampling,
+		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
 		0,
@@ -1652,7 +1591,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		Hints: mustMarshalAny(&hintspb.SeriesResponseHints{}),
 	}
 
-	srv := newStoreSeriesServer(context.Background())
+	srv := newBucketStoreSeriesServer(context.Background())
 	err = store.Series(req, srv)
 	assert.Error(t, err)
 	assert.Equal(t, true, regexp.MustCompile(".*unmarshal series request hints.*").MatchString(err.Error()))
@@ -1717,10 +1656,10 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		tmpDir,
 		NewChunksLimiterFactory(100000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
-		DefaultPostingOffsetInMemorySampling,
+		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
 		0,
@@ -1767,7 +1706,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 				},
 			}
 
-			srv := newStoreSeriesServer(context.Background())
+			srv := newBucketStoreSeriesServer(context.Background())
 			err = store.Series(req, srv)
 			assert.NoError(t, err)
 			assert.True(t, len(srv.SeriesSet) == 1)
@@ -1812,7 +1751,7 @@ func TestBigEndianPostingsCount(t *testing.T) {
 	assert.Equal(t, count, c)
 }
 
-func createBlockWithOneSeriesWithStep(t TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
+func createBlockWithOneSeriesWithStep(t test.TB, dir string, lbls labels.Labels, blockIndex, totalSamples int, random *rand.Rand, step int64) ulid.ULID {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = dir
 	headOpts.ChunkRange = int64(totalSamples) * step
@@ -1834,8 +1773,8 @@ func createBlockWithOneSeriesWithStep(t TB, dir string, lbls labels.Labels, bloc
 	return createBlockFromHead(t, dir, h)
 }
 
-func setupStoreForHintsTest(t *testing.T) (TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
-	tb := NewTB(t)
+func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Series, []*storepb.Series, ulid.ULID, ulid.ULID, func()) {
+	tb := test.NewTB(t)
 
 	closers := []func(){}
 
@@ -1900,10 +1839,10 @@ func setupStoreForHintsTest(t *testing.T) (TB, *BucketStore, []*storepb.Series, 
 		tmpDir,
 		NewChunksLimiterFactory(10000/MaxSamplesPerChunk),
 		NewSeriesLimiterFactory(0),
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil),
 		10,
 		false,
-		DefaultPostingOffsetInMemorySampling,
+		cortex_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		false,
 		0,
@@ -2101,7 +2040,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	})
 
 	// Create a block.
-	blockID := createBlockWithOneSeriesWithStep(NewTB(b), tmpDir, labels.FromStrings("__name__", "test"), 0, 100000, rand.New(rand.NewSource(0)), 5000)
+	blockID := createBlockWithOneSeriesWithStep(test.NewTB(b), tmpDir, labels.FromStrings("__name__", "test"), 0, 100000, rand.New(rand.NewSource(0)), 5000)
 
 	// Upload the block to the bucket.
 	thanosMeta := metadata.Thanos{
@@ -2204,10 +2143,10 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 	chunkPool, err := NewDefaultChunkBytesPool(64 * 1024 * 1024 * 1024)
 	assert.NoError(b, err)
 
-	partitioner := NewGapBasedPartitioner(PartitionerMaxGapSize)
+	partitioner := newGapBasedPartitioner(cortex_tsdb.DefaultPartitionerMaxGapSize, nil)
 
 	// Create an index header reader.
-	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, DefaultPostingOffsetInMemorySampling)
+	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bkt, tmpDir, blockMeta.ULID, cortex_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(b, err)
 	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(logger, nil, storecache.DefaultInMemoryIndexCacheConfig)
 	assert.NoError(b, err)
@@ -2312,7 +2251,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 		opts.ScrapeInterval = 1 * time.Millisecond
 	}
 
-	fmt.Printf(
+	t.Logf(
 		"Creating %d %d-sample series with %s interval in %s\n",
 		opts.Series,
 		opts.SamplesPerSeries,
@@ -2396,7 +2335,7 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	return h, expected
 }
 
-func runSeriesInterestingCases(t TB, maxSamples, maxSeries int, f func(t TB, samplesPerSeries, series int)) {
+func runSeriesInterestingCases(t test.TB, maxSamples, maxSeries int, f func(t test.TB, samplesPerSeries, series int)) {
 	for _, tc := range []struct {
 		samplesPerSeries int
 		series           int
@@ -2414,7 +2353,7 @@ func runSeriesInterestingCases(t TB, maxSamples, maxSeries int, f func(t TB, sam
 			series:           1,
 		},
 	} {
-		if ok := t.Run(fmt.Sprintf("%dSeriesWith%dSamples", tc.series, tc.samplesPerSeries), func(t TB) {
+		if ok := t.Run(fmt.Sprintf("%dSeriesWith%dSamples", tc.series, tc.samplesPerSeries), func(t test.TB) {
 			f(t, tc.samplesPerSeries, tc.series)
 		}); !ok {
 			return
@@ -2431,20 +2370,19 @@ type seriesCase struct {
 	// Exact expectations are checked only for tests. For benchmarks only length is assured.
 	ExpectedSeries   []*storepb.Series
 	ExpectedWarnings []string
-	ExpectedHints    []hintspb.SeriesResponseHints
+	ExpectedHints    hintspb.SeriesResponseHints
 }
 
 // runTestServerSeries runs tests against given cases.
-func runTestServerSeries(t TB, store storepb.StoreServer, cases ...*seriesCase) {
+func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesCase) {
 	for _, c := range cases {
-		t.Run(c.Name, func(t TB) {
+		t.Run(c.Name, func(t test.TB) {
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				srv := newStoreSeriesServer(context.Background())
+				srv := newBucketStoreSeriesServer(context.Background())
 				assert.NoError(t, store.Series(c.Req, srv))
 				assert.Equal(t, len(c.ExpectedWarnings), len(srv.Warnings), "%v", srv.Warnings)
 				assert.Equal(t, len(c.ExpectedSeries), len(srv.SeriesSet))
-				assert.Equal(t, len(c.ExpectedHints), len(srv.HintsSet))
 
 				if !t.IsBenchmark() {
 					if len(c.ExpectedSeries) == 1 {
@@ -2471,13 +2409,7 @@ func runTestServerSeries(t TB, store storepb.StoreServer, cases ...*seriesCase) 
 						assert.Equal(t, c.ExpectedSeries, srv.SeriesSet)
 					}
 
-					var actualHints []hintspb.SeriesResponseHints
-					for _, anyHints := range srv.HintsSet {
-						hints := hintspb.SeriesResponseHints{}
-						assert.NoError(t, types.UnmarshalAny(anyHints, &hints))
-						actualHints = append(actualHints, hints)
-					}
-					assert.Equal(t, c.ExpectedHints, actualHints)
+					assert.Equal(t, c.ExpectedHints, srv.Hints)
 				}
 			}
 		})
