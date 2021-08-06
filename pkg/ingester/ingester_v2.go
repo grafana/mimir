@@ -35,7 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/concurrency"
@@ -604,7 +604,7 @@ func (i *Ingester) startingV2(ctx context.Context) error {
 	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
 		interval := i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval
 		if interval == 0 {
-			interval = cortex_tsdb.DefaultCloseIdleTSDBInterval
+			interval = mimir_tsdb.DefaultCloseIdleTSDBInterval
 		}
 		closeIdleService := services.NewTimerService(interval, nil, i.closeAndDeleteIdleUserTSDBs, nil)
 		servs = append(servs, closeIdleService)
@@ -1623,10 +1623,10 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	// the series from the storage.
 	l := labels.Labels{
 		{
-			Name:  cortex_tsdb.TenantIDExternalLabel,
+			Name:  mimir_tsdb.TenantIDExternalLabel,
 			Value: userID,
 		}, {
-			Name:  cortex_tsdb.IngesterIDExternalLabel,
+			Name:  mimir_tsdb.IngesterIDExternalLabel,
 			Value: i.TSDBState.shipperIngesterID,
 		},
 	}
@@ -1872,11 +1872,11 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 			return nil
 		}
 
-		if time.Since(time.Unix(userDB.lastDeletionMarkCheck.Load(), 0)) > cortex_tsdb.DeletionMarkCheckInterval {
+		if time.Since(time.Unix(userDB.lastDeletionMarkCheck.Load(), 0)) > mimir_tsdb.DeletionMarkCheckInterval {
 			// Even if check fails with error, we don't want to repeat it too often.
 			userDB.lastDeletionMarkCheck.Store(time.Now().Unix())
 
-			deletionMarkExists, err := cortex_tsdb.TenantDeletionMarkExists(ctx, i.TSDBState.bucket, userID)
+			deletionMarkExists, err := mimir_tsdb.TenantDeletionMarkExists(ctx, i.TSDBState.bucket, userID)
 			if err != nil {
 				// If we cannot check for deletion mark, we continue anyway, even though in production shipper will likely fail too.
 				// This however simplifies unit tests, where tenant deletion check is enabled by default, but tests don't setup bucket.

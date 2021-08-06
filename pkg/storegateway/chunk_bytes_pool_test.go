@@ -10,18 +10,18 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestChunkBytesPool_Get(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	p, err := newChunkBytesPool(cortex_tsdb.ChunkPoolDefaultMinBucketSize, cortex_tsdb.ChunkPoolDefaultMaxBucketSize, 0, reg)
+	p, err := newChunkBytesPool(mimir_tsdb.ChunkPoolDefaultMinBucketSize, mimir_tsdb.ChunkPoolDefaultMaxBucketSize, 0, reg)
 	require.NoError(t, err)
 
-	_, err = p.Get(cortex_tsdb.EstimatedMaxChunkSize - 1)
+	_, err = p.Get(mimir_tsdb.EstimatedMaxChunkSize - 1)
 	require.NoError(t, err)
 
-	_, err = p.Get(cortex_tsdb.EstimatedMaxChunkSize + 1)
+	_, err = p.Get(mimir_tsdb.EstimatedMaxChunkSize + 1)
 	require.NoError(t, err)
 
 	assert.NoError(t, testutil.GatherAndCompare(reg, bytes.NewBufferString(fmt.Sprintf(`
@@ -32,5 +32,5 @@ func TestChunkBytesPool_Get(t *testing.T) {
 		# HELP cortex_bucket_store_chunk_pool_returned_bytes_total Total bytes returned by the chunk bytes pool.
 		# TYPE cortex_bucket_store_chunk_pool_returned_bytes_total counter
 		cortex_bucket_store_chunk_pool_returned_bytes_total %d
-	`, cortex_tsdb.EstimatedMaxChunkSize*2, cortex_tsdb.EstimatedMaxChunkSize*3))))
+	`, mimir_tsdb.EstimatedMaxChunkSize*2, mimir_tsdb.EstimatedMaxChunkSize*3))))
 }

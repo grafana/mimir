@@ -14,7 +14,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -25,7 +25,7 @@ type TenantDeletionAPI struct {
 	cfgProvider  bucket.TenantConfigProvider
 }
 
-func NewTenantDeletionAPI(storageCfg cortex_tsdb.BlocksStorageConfig, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (*TenantDeletionAPI, error) {
+func NewTenantDeletionAPI(storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider bucket.TenantConfigProvider, logger log.Logger, reg prometheus.Registerer) (*TenantDeletionAPI, error) {
 	bucketClient, err := createBucketClient(storageCfg, logger, reg)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func (api *TenantDeletionAPI) DeleteTenant(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = cortex_tsdb.WriteTenantDeletionMark(r.Context(), api.bucketClient, userID, api.cfgProvider, cortex_tsdb.NewTenantDeletionMark(time.Now()))
+	err = mimir_tsdb.WriteTenantDeletionMark(r.Context(), api.bucketClient, userID, api.cfgProvider, mimir_tsdb.NewTenantDeletionMark(time.Now()))
 	if err != nil {
 		level.Error(api.logger).Log("msg", "failed to write tenant deletion mark", "user", userID, "err", err)
 
@@ -118,7 +118,7 @@ func (api *TenantDeletionAPI) isBlocksForUserDeleted(ctx context.Context, userID
 	return true, nil
 }
 
-func createBucketClient(cfg cortex_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func createBucketClient(cfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "purger", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket client")

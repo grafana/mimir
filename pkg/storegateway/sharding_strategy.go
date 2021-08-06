@@ -12,7 +12,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/ring"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const (
@@ -127,7 +127,7 @@ func filterBlocksByRingSharding(r ring.ReadRing, instanceAddr string, metas map[
 	bufDescs, bufHosts, bufZones := ring.MakeBuffersForGet()
 
 	for blockID := range metas {
-		key := cortex_tsdb.HashBlockID(blockID)
+		key := mimir_tsdb.HashBlockID(blockID)
 
 		// Check if the block is owned by the store-gateway
 		set, err := r.Get(key, BlocksOwnerSync, bufDescs, bufHosts, bufZones)
