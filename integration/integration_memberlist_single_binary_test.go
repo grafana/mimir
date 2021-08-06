@@ -19,7 +19,6 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
-
 )
 
 func TestSingleBinaryWithMemberlist(t *testing.T) {
