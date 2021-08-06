@@ -1,0 +1,2 @@
+GONOSUMDB=github.com/grafana/dskit
+GOPRIVATE=github.com/grafana/dskit
