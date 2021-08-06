@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 type ServiceType int
@@ -49,7 +49,7 @@ var (
 	}
 )
 
-func assertServiceMetricsPrefixes(t *testing.T, serviceType ServiceType, service *e2ecortex.CortexService) {
+func assertServiceMetricsPrefixes(t *testing.T, serviceType ServiceType, service *e2emimir.CortexService) {
 	if service == nil {
 		return
 	}

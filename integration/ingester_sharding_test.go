@@ -15,7 +15,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestIngesterSharding(t *testing.T) {
@@ -61,12 +61,12 @@ func TestIngesterSharding(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 			// Start Cortex components.
-			distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester1 := e2ecortex.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester2 := e2ecortex.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester3 := e2ecortex.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
-			ingesters := e2ecortex.NewCompositeCortexService(ingester1, ingester2, ingester3)
-			querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
+			ingesters := e2emimir.NewCompositeCortexService(ingester1, ingester2, ingester3)
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
 
 			// Wait until distributor and queriers have updated the ring.
@@ -82,7 +82,7 @@ func TestIngesterSharding(t *testing.T) {
 			now := time.Now()
 			expectedVectors := map[string]model.Vector{}
 
-			client, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
 			for i := 1; i <= numSeriesToPush; i++ {
@@ -99,7 +99,7 @@ func TestIngesterSharding(t *testing.T) {
 			numIngestersWithSeries := 0
 			totalIngestedSeries := 0
 
-			for _, ing := range []*e2ecortex.CortexService{ingester1, ingester2, ingester3} {
+			for _, ing := range []*e2emimir.CortexService{ingester1, ingester2, ingester3} {
 				values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})
 				require.NoError(t, err)
 

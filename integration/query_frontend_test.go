@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 type queryFrontendTestConfig struct {
@@ -176,16 +176,16 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	})
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2ecortex.CortexService
+	var queryScheduler *e2emimir.CortexService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2ecortex.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2ecortex.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -193,9 +193,9 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2ecortex.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	distributor := e2ecortex.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	querier := e2ecortex.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontend))
@@ -213,7 +213,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	expectedVectors := make([]model.Vector, numUsers)
 
 	for u := 0; u < numUsers; u++ {
-		c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", fmt.Sprintf("user-%d", u))
+		c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", fmt.Sprintf("user-%d", u))
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
@@ -231,7 +231,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	for u := 0; u < numUsers; u++ {
 		userID := u
 
-		c, err := e2ecortex.NewClient("", queryFrontend.HTTPEndpoint(), "", "", fmt.Sprintf("user-%d", userID))
+		c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", fmt.Sprintf("user-%d", userID))
 		require.NoError(t, err)
 
 		// No need to repeat the test on missing metric name for each user.

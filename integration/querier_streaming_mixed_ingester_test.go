@@ -17,7 +17,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/cortexpb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 )
@@ -51,9 +51,9 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start Cortex components.
-	ingesterBlocks := e2ecortex.NewIngester("ingester-blocks", consul.NetworkHTTPEndpoint(), blockFlags, "")
-	ingesterChunks := e2ecortex.NewIngester("ingester-chunks", consul.NetworkHTTPEndpoint(), chunksFlags, "")
-	storeGateway := e2ecortex.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), blockFlags, "")
+	ingesterBlocks := e2emimir.NewIngester("ingester-blocks", consul.NetworkHTTPEndpoint(), blockFlags, "")
+	ingesterChunks := e2emimir.NewIngester("ingester-chunks", consul.NetworkHTTPEndpoint(), chunksFlags, "")
+	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), blockFlags, "")
 	require.NoError(t, s.StartAndWaitReady(ingesterBlocks, ingesterChunks, storeGateway))
 
 	// Sharding is disabled, pass gateway address.
@@ -61,7 +61,7 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 		"-querier.store-gateway-addresses": strings.Join([]string{storeGateway.NetworkGRPCEndpoint()}, ","),
 		"-distributor.shard-by-all-labels": "true",
 	})
-	querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), querierFlags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), querierFlags, "")
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1024), "cortex_ring_tokens_total"))
@@ -114,7 +114,7 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 		require.NoError(t, err)
 	}
 
-	c, err := e2ecortex.NewClient("", querier.HTTPEndpoint(), "", "", "user")
+	c, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "user")
 	require.NoError(t, err)
 
 	// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
