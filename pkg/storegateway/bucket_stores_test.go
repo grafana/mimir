@@ -33,6 +33,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/metadata"
 
+	"github.com/grafana/mimir/pkg/util/test"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -41,14 +43,15 @@ import (
 )
 
 func TestBucketStores_InitialSync(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	userToMetric := map[string]string{
 		"user-1": "series_1",
 		"user-2": "series_2",
 	}
 
 	ctx := context.Background()
-	cfg, cleanup := prepareStorageConfig(t)
-	defer cleanup()
+	cfg := prepareStorageConfig(t)
 
 	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
 	require.NoError(t, err)
@@ -121,9 +124,10 @@ func TestBucketStores_InitialSync(t *testing.T) {
 }
 
 func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	ctx := context.Background()
-	cfg, cleanup := prepareStorageConfig(t)
-	defer cleanup()
+	cfg := prepareStorageConfig(t)
 
 	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
 	require.NoError(t, err)
@@ -183,14 +187,15 @@ func TestBucketStores_InitialSyncShouldRetryOnFailure(t *testing.T) {
 }
 
 func TestBucketStores_SyncBlocks(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	const (
 		userID     = "user-1"
 		metricName = "series_1"
 	)
 
 	ctx := context.Background()
-	cfg, cleanup := prepareStorageConfig(t)
-	defer cleanup()
+	cfg := prepareStorageConfig(t)
 
 	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
 	require.NoError(t, err)
@@ -254,6 +259,8 @@ func TestBucketStores_SyncBlocks(t *testing.T) {
 }
 
 func TestBucketStores_syncUsersBlocks(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	allUsers := []string{"user-1", "user-2", "user-3"}
 
 	tests := map[string]struct {
@@ -276,9 +283,8 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cfg, cleanup := prepareStorageConfig(t)
+			cfg := prepareStorageConfig(t)
 			cfg.BucketStore.TenantSyncConcurrency = 2
-			defer cleanup()
 
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", allUsers, nil)
@@ -315,10 +321,9 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	)
 
 	ctx := context.Background()
-	cfg, cleanup := prepareStorageConfig(t)
+	cfg := prepareStorageConfig(t)
 	cfg.BucketStore.IndexHeaderLazyLoadingEnabled = lazyLoadingEnabled
 	cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout = time.Minute
-	defer cleanup()
 
 	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
 	require.NoError(t, err)
@@ -377,7 +382,7 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	}
 }
 
-func prepareStorageConfig(t *testing.T) (mimir_tsdb.BlocksStorageConfig, func()) {
+func prepareStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	tmpDir, err := ioutil.TempDir(os.TempDir(), "blocks-sync-*")
 	require.NoError(t, err)
 
@@ -385,11 +390,11 @@ func prepareStorageConfig(t *testing.T) (mimir_tsdb.BlocksStorageConfig, func())
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = tmpDir
 
-	cleanup := func() {
+	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
-	}
+	})
 
-	return cfg, cleanup
+	return cfg
 }
 
 func generateStorageBlock(t *testing.T, storageDir, userID string, metricName string, minT, maxT int64, step int) {
@@ -462,6 +467,8 @@ func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context 
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
+	test.VerifyNoLeak(t)
+
 	const (
 		user1 = "user-1"
 		user2 = "user-2"
@@ -473,8 +480,7 @@ func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	cfg, cleanup := prepareStorageConfig(t)
-	defer cleanup()
+	cfg := prepareStorageConfig(t)
 
 	storageDir, err := ioutil.TempDir(os.TempDir(), "storage-*")
 	require.NoError(t, err)

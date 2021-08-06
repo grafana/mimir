@@ -137,7 +137,7 @@ func createClient(backend string, prefix string, cfg StoreConfig, codec codec.Co
 		// If we use the in-memory store, make sure everyone gets the same instance
 		// within the same process.
 		inmemoryStoreInit.Do(func() {
-			inmemoryStore = consul.NewInMemoryClient(codec)
+			inmemoryStore, _ = consul.NewInMemoryClient(codec)
 		})
 		client = inmemoryStore
 

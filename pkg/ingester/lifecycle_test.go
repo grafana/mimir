@@ -33,8 +33,10 @@ import (
 
 const userID = "1"
 
-func defaultIngesterTestConfig() Config {
-	consul := consul.NewInMemoryClient(ring.GetCodec())
+func defaultIngesterTestConfig(t testing.TB) Config {
+	consul, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	flagext.DefaultValues(&cfg.BlocksStorageConfig)
@@ -66,7 +68,7 @@ func defaultLimitsTestConfig() validation.Limits {
 
 // TestIngesterRestart tests a restarting ingester doesn't keep adding more tokens.
 func TestIngesterRestart(t *testing.T) {
-	config := defaultIngesterTestConfig()
+	config := defaultIngesterTestConfig(t)
 	clientConfig := defaultClientTestConfig()
 	limits := defaultLimitsTestConfig()
 	config.LifecyclerConfig.UnregisterOnShutdown = false
@@ -99,7 +101,7 @@ func TestIngesterRestart(t *testing.T) {
 func TestIngester_ShutdownHandler(t *testing.T) {
 	for _, unregister := range []bool{false, true} {
 		t.Run(fmt.Sprintf("unregister=%t", unregister), func(t *testing.T) {
-			config := defaultIngesterTestConfig()
+			config := defaultIngesterTestConfig(t)
 			clientConfig := defaultClientTestConfig()
 			limits := defaultLimitsTestConfig()
 			config.LifecyclerConfig.UnregisterOnShutdown = unregister
@@ -127,7 +129,7 @@ func TestIngesterChunksTransfer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start the first ingester, and get it into ACTIVE state.
-	cfg1 := defaultIngesterTestConfig()
+	cfg1 := defaultIngesterTestConfig(t)
 	cfg1.LifecyclerConfig.ID = "ingester1"
 	cfg1.LifecyclerConfig.Addr = "ingester1"
 	cfg1.LifecyclerConfig.JoinAfter = 0 * time.Second
@@ -147,7 +149,7 @@ func TestIngesterChunksTransfer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start a second ingester, but let it go into PENDING
-	cfg2 := defaultIngesterTestConfig()
+	cfg2 := defaultIngesterTestConfig(t)
 	cfg2.LifecyclerConfig.RingConfig.KVStore.Mock = cfg1.LifecyclerConfig.RingConfig.KVStore.Mock
 	cfg2.LifecyclerConfig.ID = "ingester2"
 	cfg2.LifecyclerConfig.Addr = "ingester2"
@@ -195,7 +197,7 @@ func TestIngesterBadTransfer(t *testing.T) {
 	require.NoError(t, err)
 
 	// Start ingester in PENDING.
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.LifecyclerConfig.ID = "ingester1"
 	cfg.LifecyclerConfig.Addr = "ingester1"
 	cfg.LifecyclerConfig.JoinAfter = 100 * time.Second

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
@@ -335,7 +337,9 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 		amByAddr[a.myAddr] = ams[i]
 	}
 
-	kvStore := consul.NewInMemoryClient(ring.GetCodec())
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	err := kvStore.CAS(context.Background(), RingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{
