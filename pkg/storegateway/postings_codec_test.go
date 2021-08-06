@@ -25,6 +25,9 @@ import (
 func TestDiffVarintCodec(t *testing.T) {
 	chunksDir, err := ioutil.TempDir("", "diff_varint_codec")
 	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, os.RemoveAll(chunksDir))
+	})
 
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = chunksDir
@@ -36,7 +39,7 @@ func TestDiffVarintCodec(t *testing.T) {
 		assert.NoError(t, os.RemoveAll(chunksDir))
 	})
 
-	appendTestData(t, h.Appender(context.Background()), 1e6)
+	appendTestData(t, h.Appender(context.Background()), 1e4)
 
 	idx, err := h.Index()
 	assert.NoError(t, err)
