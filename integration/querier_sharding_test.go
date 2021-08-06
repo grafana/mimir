@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 type querierShardingTestConfig struct {
@@ -81,16 +81,16 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	}
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2ecortex.CortexService
+	var queryScheduler *e2emimir.CortexService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2ecortex.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2ecortex.NewQueryFrontend("query-frontend", flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -98,10 +98,10 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	querier1 := e2ecortex.NewQuerier("querier-1", consul.NetworkHTTPEndpoint(), flags, "")
-	querier2 := e2ecortex.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	querier1 := e2emimir.NewQuerier("querier-1", consul.NetworkHTTPEndpoint(), flags, "")
+	querier2 := e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
 
 	require.NoError(t, s.StartAndWaitReady(querier1, querier2, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontend))
@@ -114,7 +114,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	// Push a series for each user to Cortex.
 	now := time.Now()
 
-	distClient, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+	distClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 	require.NoError(t, err)
 
 	var series []prompb.TimeSeries
@@ -125,8 +125,8 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Send both queriers a single query, so that they both initialize their cortex_querier_request_duration_seconds metrics.
-	for _, q := range []*e2ecortex.CortexService{querier1, querier2} {
-		c, err := e2ecortex.NewClient("", q.HTTPEndpoint(), "", "", userID)
+	for _, q := range []*e2emimir.CortexService{querier1, querier2} {
+		c, err := e2emimir.NewClient("", q.HTTPEndpoint(), "", "", userID)
 		require.NoError(t, err)
 
 		_, err = c.Query("series_1", now)
@@ -148,7 +148,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 
 		go func() {
 			defer wg.Done()
-			c, err := e2ecortex.NewClient("", queryFrontend.HTTPEndpoint(), "", "", userID)
+			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
 			result, err := c.Query("series_1", now)

@@ -14,7 +14,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
@@ -39,10 +39,10 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 		"-blocks-storage.s3.insecure":          "true",
 	}
 
-	cortex := e2ecortex.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, flags, "", 9009, 9095)
+	cortex := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, flags, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortex))
 
-	c, err := e2ecortex.NewClient(cortex.HTTPEndpoint(), cortex.HTTPEndpoint(), "", "", "user-1")
+	c, err := e2emimir.NewClient(cortex.HTTPEndpoint(), cortex.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
 	// Push some series to Cortex.

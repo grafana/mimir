@@ -13,7 +13,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/runutil"
 
 	"github.com/grafana/mimir/integration/e2e"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestIndexAPIEndpoint(t *testing.T) {
@@ -24,7 +24,7 @@ func TestIndexAPIEndpoint(t *testing.T) {
 	// Start Cortex in single binary mode, reading the config from file.
 	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
 
-	cortex1 := e2ecortex.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, nil, "", 9009, 9095)
+	cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, nil, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortex1))
 
 	// GET / should succeed
@@ -46,7 +46,7 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	// Start Cortex in single binary mode, reading the config from file.
 	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
 
-	cortex1 := e2ecortex.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, nil, "", 9009, 9095)
+	cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, nil, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortex1))
 
 	// Get config from /config API endpoint.
@@ -61,6 +61,6 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	// Start again Cortex in single binary with the exported config
 	// and ensure it starts (pass the readiness probe).
 	require.NoError(t, writeFileToSharedDir(s, cortexConfigFile, body))
-	cortex2 := e2ecortex.NewSingleBinaryWithConfigFile("cortex-2", cortexConfigFile, nil, "", 9009, 9095)
+	cortex2 := e2emimir.NewSingleBinaryWithConfigFile("cortex-2", cortexConfigFile, nil, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortex2))
 }
