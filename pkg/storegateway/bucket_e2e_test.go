@@ -2,7 +2,7 @@
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
 
-package store
+package storegateway
 
 import (
 	"context"
@@ -25,6 +25,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc/codes"
+
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -166,7 +168,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, dir, bkt, series, extLset)
 
 	s := &storeSuite{
-		logger:  log.NewLogfmtLogger(os.Stderr),
+		logger:  log.NewNopLogger(),
 		cache:   &swappableCache{},
 		minTime: minTime,
 		maxTime: maxTime,
@@ -184,10 +186,10 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		dir,
 		chunksLimiterFactory,
 		seriesLimiterFactory,
-		NewGapBasedPartitioner(PartitionerMaxGapSize),
+		newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		20,
 		true,
-		DefaultPostingOffsetInMemorySampling,
+		mimir_tsdb.DefaultPostingOffsetInMemorySampling,
 		true,
 		true,
 		time.Minute,
@@ -434,7 +436,7 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 		},
 	} {
 		if ok := t.Run(fmt.Sprint(i), func(t *testing.T) {
-			srv := newStoreSeriesServer(ctx)
+			srv := newBucketStoreSeriesServer(ctx)
 
 			assert.NoError(t, s.store.Series(tcase.req, srv))
 			assert.Equal(t, len(tcase.expected), len(srv.SeriesSet))
@@ -567,7 +569,7 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 	}
 
 	s.cache.SwapWith(noopCache{})
-	srv := newStoreSeriesServer(ctx)
+	srv := newBucketStoreSeriesServer(ctx)
 
 	assert.NoError(t, s.store.Series(req, srv))
 	assert.Equal(t, len(expectedLabels), len(srv.SeriesSet))
@@ -634,7 +636,7 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			}
 
 			s.cache.SwapWith(noopCache{})
-			srv := newStoreSeriesServer(ctx)
+			srv := newBucketStoreSeriesServer(ctx)
 			err = s.store.Series(req, srv)
 
 			if testData.expectedErr == "" {

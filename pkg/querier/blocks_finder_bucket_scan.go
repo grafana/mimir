@@ -22,7 +22,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"
@@ -53,7 +53,7 @@ type BucketScanBlocksFinder struct {
 	logger          log.Logger
 	bucketClient    objstore.Bucket
 	fetchersMetrics *storegateway.MetadataFetcherMetrics
-	usersScanner    *cortex_tsdb.UsersScanner
+	usersScanner    *mimir_tsdb.UsersScanner
 
 	// We reuse the metadata fetcher instance for a given tenant both because of performance
 	// reasons (the fetcher keeps a in-memory cache) and being able to collect and group metrics.
@@ -77,7 +77,7 @@ func NewBucketScanBlocksFinder(cfg BucketScanBlocksFinderConfig, bucketClient ob
 		logger:            logger,
 		bucketClient:      bucketClient,
 		fetchers:          make(map[string]userFetcher),
-		usersScanner:      cortex_tsdb.NewUsersScanner(bucketClient, cortex_tsdb.AllUsers, logger),
+		usersScanner:      mimir_tsdb.NewUsersScanner(bucketClient, mimir_tsdb.AllUsers, logger),
 		userMetas:         make(map[string]bucketindex.Blocks),
 		userMetasLookup:   make(map[string]map[ulid.ULID]*bucketindex.Block),
 		userDeletionMarks: map[string]map[ulid.ULID]*bucketindex.BlockDeletionMark{},

@@ -20,7 +20,7 @@ import (
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -86,7 +86,7 @@ type StoreGateway struct {
 	services.Service
 
 	gatewayCfg Config
-	storageCfg cortex_tsdb.BlocksStorageConfig
+	storageCfg mimir_tsdb.BlocksStorageConfig
 	logger     log.Logger
 	stores     *BucketStores
 
@@ -101,7 +101,7 @@ type StoreGateway struct {
 	bucketSync *prometheus.CounterVec
 }
 
-func NewStoreGateway(gatewayCfg Config, storageCfg cortex_tsdb.BlocksStorageConfig, limits *validation.Overrides, logLevel logging.Level, logger log.Logger, reg prometheus.Registerer) (*StoreGateway, error) {
+func NewStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits *validation.Overrides, logLevel logging.Level, logger log.Logger, reg prometheus.Registerer) (*StoreGateway, error) {
 	var ringStore kv.Client
 
 	bucketClient, err := createBucketClient(storageCfg, logger, reg)
@@ -123,7 +123,7 @@ func NewStoreGateway(gatewayCfg Config, storageCfg cortex_tsdb.BlocksStorageConf
 	return newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, limits, logLevel, logger, reg)
 }
 
-func newStoreGateway(gatewayCfg Config, storageCfg cortex_tsdb.BlocksStorageConfig, bucketClient objstore.Bucket, ringStore kv.Client, limits *validation.Overrides, logLevel logging.Level, logger log.Logger, reg prometheus.Registerer) (*StoreGateway, error) {
+func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, bucketClient objstore.Bucket, ringStore kv.Client, limits *validation.Overrides, logLevel logging.Level, logger log.Logger, reg prometheus.Registerer) (*StoreGateway, error) {
 	var err error
 
 	g := &StoreGateway{
@@ -369,7 +369,7 @@ func (g *StoreGateway) OnRingInstanceStopping(_ *ring.BasicLifecycler)          
 func (g *StoreGateway) OnRingInstanceHeartbeat(_ *ring.BasicLifecycler, _ *ring.Desc, _ *ring.InstanceDesc) {
 }
 
-func createBucketClient(cfg cortex_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
+func createBucketClient(cfg mimir_tsdb.BlocksStorageConfig, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.Bucket, "store-gateway", logger, reg)
 	if err != nil {
 		return nil, errors.Wrap(err, "create bucket client")

@@ -28,7 +28,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
@@ -89,18 +89,18 @@ type BlocksCompactorFactory func(
 
 // Config holds the Compactor config.
 type Config struct {
-	BlockRanges           cortex_tsdb.DurationList `yaml:"block_ranges"`
-	BlockSyncConcurrency  int                      `yaml:"block_sync_concurrency"`
-	MetaSyncConcurrency   int                      `yaml:"meta_sync_concurrency"`
-	ConsistencyDelay      time.Duration            `yaml:"consistency_delay"`
-	DataDir               string                   `yaml:"data_dir"`
-	CompactionInterval    time.Duration            `yaml:"compaction_interval"`
-	CompactionRetries     int                      `yaml:"compaction_retries"`
-	CompactionConcurrency int                      `yaml:"compaction_concurrency"`
-	CleanupInterval       time.Duration            `yaml:"cleanup_interval"`
-	CleanupConcurrency    int                      `yaml:"cleanup_concurrency"`
-	DeletionDelay         time.Duration            `yaml:"deletion_delay"`
-	TenantCleanupDelay    time.Duration            `yaml:"tenant_cleanup_delay"`
+	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges"`
+	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency"`
+	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency"`
+	ConsistencyDelay      time.Duration           `yaml:"consistency_delay"`
+	DataDir               string                  `yaml:"data_dir"`
+	CompactionInterval    time.Duration           `yaml:"compaction_interval"`
+	CompactionRetries     int                     `yaml:"compaction_retries"`
+	CompactionConcurrency int                     `yaml:"compaction_concurrency"`
+	CleanupInterval       time.Duration           `yaml:"cleanup_interval"`
+	CleanupConcurrency    int                     `yaml:"cleanup_concurrency"`
+	DeletionDelay         time.Duration           `yaml:"deletion_delay"`
+	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay"`
 
 	// Whether the migration of block deletion marks to the global markers location is enabled.
 	BlockDeletionMarksMigrationEnabled bool `yaml:"block_deletion_marks_migration_enabled"`
@@ -127,7 +127,7 @@ type Config struct {
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ShardingRing.RegisterFlags(f)
 
-	cfg.BlockRanges = cortex_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
+	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
 	cfg.retryMinBackoff = 10 * time.Second
 	cfg.retryMaxBackoff = time.Minute
 
@@ -174,7 +174,7 @@ type Compactor struct {
 	services.Service
 
 	compactorCfg   Config
-	storageCfg     cortex_tsdb.BlocksStorageConfig
+	storageCfg     mimir_tsdb.BlocksStorageConfig
 	cfgProvider    ConfigProvider
 	logger         log.Logger
 	parentLogger   log.Logger
@@ -188,7 +188,7 @@ type Compactor struct {
 	blocksCompactorFactory BlocksCompactorFactory
 
 	// Users scanner, used to discover users from the bucket.
-	usersScanner *cortex_tsdb.UsersScanner
+	usersScanner *mimir_tsdb.UsersScanner
 
 	// Blocks cleaner is responsible to hard delete blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
@@ -224,7 +224,7 @@ type Compactor struct {
 }
 
 // NewCompactor makes a new Compactor.
-func NewCompactor(compactorCfg Config, storageCfg cortex_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*Compactor, error) {
+func NewCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*Compactor, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
 	}
@@ -249,7 +249,7 @@ func NewCompactor(compactorCfg Config, storageCfg cortex_tsdb.BlocksStorageConfi
 
 func newCompactor(
 	compactorCfg Config,
-	storageCfg cortex_tsdb.BlocksStorageConfig,
+	storageCfg mimir_tsdb.BlocksStorageConfig,
 	cfgProvider ConfigProvider,
 	logger log.Logger,
 	registerer prometheus.Registerer,
@@ -352,7 +352,7 @@ func (c *Compactor) starting(ctx context.Context) error {
 	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
 
 	// Create the users scanner.
-	c.usersScanner = cortex_tsdb.NewUsersScanner(c.bucketClient, c.ownUser, c.parentLogger)
+	c.usersScanner = mimir_tsdb.NewUsersScanner(c.bucketClient, c.ownUser, c.parentLogger)
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
@@ -518,7 +518,7 @@ func (c *Compactor) compactUsers(ctx context.Context) {
 
 		ownedUsers[userID] = struct{}{}
 
-		if markedForDeletion, err := cortex_tsdb.TenantDeletionMarkExists(ctx, c.bucketClient, userID); err != nil {
+		if markedForDeletion, err := mimir_tsdb.TenantDeletionMarkExists(ctx, c.bucketClient, userID); err != nil {
 			c.compactionRunSkippedTenants.Inc()
 			level.Warn(c.logger).Log("msg", "unable to check if user is marked for deletion", "user", userID, "err", err)
 			continue
@@ -621,7 +621,7 @@ func (c *Compactor) compactUser(ctx context.Context, userID string) error {
 		[]block.MetadataFilter{
 			// Remove the ingester ID because we don't shard blocks anymore, while still
 			// honoring the shard ID if sharding was done in the past.
-			NewLabelRemoverFilter([]string{cortex_tsdb.IngesterIDExternalLabel}),
+			NewLabelRemoverFilter([]string{mimir_tsdb.IngesterIDExternalLabel}),
 			block.NewConsistencyDelayMetaFilter(ulogger, c.compactorCfg.ConsistencyDelay, reg),
 			ignoreDeletionMarkFilter,
 			deduplicateBlocksFilter,

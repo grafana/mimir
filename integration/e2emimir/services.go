@@ -1,4 +1,4 @@
-package e2ecortex
+package e2emimir
 
 import (
 	"os"

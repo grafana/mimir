@@ -28,7 +28,7 @@ import (
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestRulerAPI(t *testing.T) {
@@ -61,11 +61,11 @@ func TestRulerAPI(t *testing.T) {
 
 			// Start Cortex components.
 			require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
-			ruler := e2ecortex.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(testCfg.legacyRuleStore)), "")
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(testCfg.legacyRuleStore)), "")
 			require.NoError(t, s.StartAndWaitReady(ruler))
 
 			// Create a client with the ruler address configured
-			c, err := e2ecortex.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+			c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
 			require.NoError(t, err)
 
 			// Set the rule group into the ruler
@@ -160,11 +160,11 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	// Start Cortex components.
 	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(cortexRulerUserConfigYaml)))
-	cortex := e2ecortex.NewSingleBinaryWithConfigFile("cortex", cortexConfigFile, configOverrides, "", 9009, 9095)
+	cortex := e2emimir.NewSingleBinaryWithConfigFile("cortex", cortexConfigFile, configOverrides, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortex))
 
 	// Create a client with the ruler address configured
-	c, err := e2ecortex.NewClient("", "", "", cortex.HTTPEndpoint(), "")
+	c, err := e2emimir.NewClient("", "", "", cortex.HTTPEndpoint(), "")
 	require.NoError(t, err)
 
 	// Wait until the user manager is created
@@ -192,7 +192,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.NoError(t, cortex.Stop())
 
 	// Restart Cortex with identical configs
-	cortexRestarted := e2ecortex.NewSingleBinaryWithConfigFile("cortex-restarted", cortexConfigFile, configOverrides, "", 9009, 9095)
+	cortexRestarted := e2emimir.NewSingleBinaryWithConfigFile("cortex-restarted", cortexConfigFile, configOverrides, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortexRestarted))
 
 	// Wait until the user manager is created
@@ -219,11 +219,11 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	// Start Cortex components.
 	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(cortexRulerEvalStaleNanConfigYaml)))
-	cortex := e2ecortex.NewSingleBinaryWithConfigFile("cortex", cortexConfigFile, configOverrides, "", 9009, 9095)
+	cortex := e2emimir.NewSingleBinaryWithConfigFile("cortex", cortexConfigFile, configOverrides, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(cortex))
 
 	// Create a client with the ruler address configured
-	c, err := e2ecortex.NewClient(cortex.HTTPEndpoint(), cortex.HTTPEndpoint(), "", cortex.HTTPEndpoint(), "")
+	c, err := e2emimir.NewClient(cortex.HTTPEndpoint(), cortex.HTTPEndpoint(), "", cortex.HTTPEndpoint(), "")
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -361,13 +361,13 @@ func TestRulerSharding(t *testing.T) {
 	)
 
 	// Start rulers.
-	ruler1 := e2ecortex.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags, "")
-	ruler2 := e2ecortex.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags, "")
-	rulers := e2ecortex.NewCompositeCortexService(ruler1, ruler2)
+	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags, "")
+	rulers := e2emimir.NewCompositeCortexService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
 	// Upload rule groups to one of the rulers.
-	c, err := e2ecortex.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
+	c, err := e2emimir.NewClient("", "", "", ruler1.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
 
 	for _, ruleGroup := range ruleGroups {
@@ -412,8 +412,8 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerLocalFlags())
-	am1 := e2ecortex.NewAlertmanager("alertmanager1", amFlags, "")
-	am2 := e2ecortex.NewAlertmanager("alertmanager2", amFlags, "")
+	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags, "")
+	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags, "")
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
 
 	am1URL := "http://" + am1.HTTPEndpoint()
@@ -426,11 +426,11 @@ func TestRulerAlertmanager(t *testing.T) {
 
 	// Start Ruler.
 	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
-	ruler := e2ecortex.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(false), configOverrides), "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(false), configOverrides), "")
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
-	c, err := e2ecortex.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+	c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
 
 	// Set the rule group into the ruler
@@ -493,7 +493,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 		AlertmanagerLocalFlags(),
 		getServerHTTPTLSFlags(),
 	)
-	am1 := e2ecortex.NewAlertmanagerWithTLS("alertmanager1", amFlags, "")
+	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags, "")
 	require.NoError(t, s.StartAndWaitReady(am1))
 
 	// Connect the ruler to the Alertmanager
@@ -506,11 +506,11 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start Ruler.
 	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
-	ruler := e2ecortex.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(false), configOverrides), "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(false), configOverrides), "")
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
 	// Create a client with the ruler address configured
-	c, err := e2ecortex.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
+	c, err := e2emimir.NewClient("", "", "", ruler.HTTPEndpoint(), "user-1")
 	require.NoError(t, err)
 
 	// Set the rule group into the ruler
@@ -566,9 +566,9 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	const namespace = "test"
 	const user = "user"
 
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ruler := e2ecortex.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler))
 
 	// Wait until both the distributor and ruler have updated the ring. The querier will also watch
@@ -576,7 +576,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", ruler.HTTPEndpoint(), user)
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", ruler.HTTPEndpoint(), user)
 	require.NoError(t, err)
 
 	// Push some series to Cortex -- enough so that we can hit some limits.

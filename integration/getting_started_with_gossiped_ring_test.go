@@ -14,7 +14,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestGettingStartedWithGossipedRing(t *testing.T) {
@@ -47,11 +47,11 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	}
 
 	// This cortex will fail to join the cluster configured in yaml file. That's fine.
-	cortex1 := e2ecortex.NewSingleBinaryWithConfigFile("cortex-1", "config1.yaml", e2e.MergeFlags(flags, map[string]string{
+	cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", "config1.yaml", e2e.MergeFlags(flags, map[string]string{
 		"-ingester.lifecycler.addr": networkName + "-cortex-1", // Ingester's hostname in docker setup
 	}), "", 9109, 9195)
 
-	cortex2 := e2ecortex.NewSingleBinaryWithConfigFile("cortex-2", "config2.yaml", e2e.MergeFlags(flags, map[string]string{
+	cortex2 := e2emimir.NewSingleBinaryWithConfigFile("cortex-2", "config2.yaml", e2e.MergeFlags(flags, map[string]string{
 		"-ingester.lifecycler.addr": networkName + "-cortex-2", // Ingester's hostname in docker setup
 		"-memberlist.join":          networkName + "-cortex-1:7946",
 	}), "", 9209, 9295)
@@ -89,10 +89,10 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 		labels.MustNewMatcher(labels.MatchEqual, "name", "ruler"),
 		labels.MustNewMatcher(labels.MatchEqual, "state", "ACTIVE"))))
 
-	c1, err := e2ecortex.NewClient(cortex1.HTTPEndpoint(), cortex1.HTTPEndpoint(), "", "", "user-1")
+	c1, err := e2emimir.NewClient(cortex1.HTTPEndpoint(), cortex1.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	c2, err := e2ecortex.NewClient(cortex2.HTTPEndpoint(), cortex2.HTTPEndpoint(), "", "", "user-1")
+	c2, err := e2emimir.NewClient(cortex2.HTTPEndpoint(), cortex2.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
 	// Push some series to Cortex2
@@ -114,7 +114,7 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, cortex2.WaitSumMetrics(e2e.Equals(0), "cortex_bucket_store_blocks_loaded"))
 
 	// Flush blocks from ingesters to the store.
-	for _, instance := range []*e2ecortex.CortexService{cortex1, cortex2} {
+	for _, instance := range []*e2emimir.CortexService{cortex1, cortex2} {
 		res, err = e2e.GetRequest("http://" + instance.HTTPEndpoint() + "/flush")
 		require.NoError(t, err)
 		require.Equal(t, 204, res.StatusCode)

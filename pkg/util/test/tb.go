@@ -2,7 +2,7 @@
 // Included-from-license: Apache-2.0
 // Included-from-copyright: The Thanos Authors.
 
-package store
+package test
 
 import (
 	"testing"

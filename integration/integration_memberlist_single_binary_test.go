@@ -18,7 +18,8 @@ import (
 	"github.com/grafana/mimir/integration/ca"
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
+
 )
 
 func TestSingleBinaryWithMemberlist(t *testing.T) {
@@ -48,7 +49,7 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, s.StartAndWaitReady(dynamo))
 
 	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
-	var cortex1, cortex2, cortex3 *e2ecortex.CortexService
+	var cortex1, cortex2, cortex3 *e2emimir.CortexService
 	if tlsEnabled {
 		var (
 			memberlistDNS = "cortex-memberlist"
@@ -115,7 +116,7 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, s.Stop(cortex3))
 }
 
-func newSingleBinary(name string, servername string, join string, testFlags map[string]string) *e2ecortex.CortexService {
+func newSingleBinary(name string, servername string, join string, testFlags map[string]string) *e2emimir.CortexService {
 	flags := map[string]string{
 		"-ingester.final-sleep":              "0s",
 		"-ingester.join-after":               "0s", // join quickly
@@ -133,7 +134,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		flags["-memberlist.join"] = join
 	}
 
-	serv := e2ecortex.NewSingleBinary(
+	serv := e2emimir.NewSingleBinary(
 		name,
 		mergeFlags(
 			ChunksStorageFlags(),
@@ -169,7 +170,7 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 
 	maxCortex := 20
 	minCortex := 3
-	instances := make([]*e2ecortex.CortexService, 0)
+	instances := make([]*e2emimir.CortexService, 0)
 
 	for i := 0; i < maxCortex; i++ {
 		name := fmt.Sprintf("cortex-%d", i+1)

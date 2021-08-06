@@ -13,7 +13,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 var (
@@ -106,7 +106,7 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 
 	// Start Cortex table-manager (running on current version since the backward compatibility
 	// test is about testing a rolling update of other services).
-	tableManager := e2ecortex.NewTableManager("table-manager", ChunksStorageFlags(), "")
+	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(tableManager))
 
 	// Wait until the first table-manager sync has completed, so that we're
@@ -114,8 +114,8 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
 
 	// Start other Cortex components (ingester running on previous version).
-	ingester1 := e2ecortex.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForOldImage, previousImage)
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), ChunksStorageFlags(), "")
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForOldImage, previousImage)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1))
 
 	// Wait until the distributor has updated the ring.
@@ -125,14 +125,14 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	now := time.Now()
 	series, expectedVector := generateSeries("series_1", now)
 
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
 	res, err := c.Push(series)
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	ingester2 := e2ecortex.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), map[string]string{
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), map[string]string{
 		"-ingester.join-after": "10s",
 	}), "")
 	// Start ingester-2 on new version, to ensure the transfer is backward compatible.
@@ -172,7 +172,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 
 	// Start Cortex table-manager (running on current version since the backward compatibility
 	// test is about testing a rolling update of other services).
-	tableManager := e2ecortex.NewTableManager("table-manager", ChunksStorageFlags(), "")
+	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(tableManager))
 
 	// Wait until the first table-manager sync has completed, so that we're
@@ -180,10 +180,10 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
 
 	// Start other Cortex components (ingester running on previous version).
-	ingester1 := e2ecortex.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
-	ingester2 := e2ecortex.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
-	ingester3 := e2ecortex.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flagsForNewImage, "")
+	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
+	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
+	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flagsForNewImage, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 	// Wait until the distributor has updated the ring.
@@ -193,7 +193,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	now := time.Now()
 	series, expectedVector := generateSeries("series_1", now)
 
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
 	require.NoError(t, err)
 
 	res, err := c.Push(series)
@@ -244,14 +244,14 @@ func checkQueries(
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {
 			// Start query-frontend.
-			queryFrontend := e2ecortex.NewQueryFrontend("query-frontend", c.queryFrontendFlags, c.queryFrontendImage)
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", c.queryFrontendFlags, c.queryFrontendImage)
 			require.NoError(t, s.Start(queryFrontend))
 			defer func() {
 				require.NoError(t, s.Stop(queryFrontend))
 			}()
 
 			// Start querier.
-			querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(c.querierFlags, map[string]string{
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), e2e.MergeFlagsWithoutRemovingEmpty(c.querierFlags, map[string]string{
 				"-querier.frontend-address": queryFrontend.NetworkGRPCEndpoint(),
 			}), c.querierImage)
 
@@ -266,7 +266,7 @@ func checkQueries(
 
 			// Query the series.
 			for _, endpoint := range []string{queryFrontend.HTTPEndpoint(), querier.HTTPEndpoint()} {
-				c, err := e2ecortex.NewClient("", endpoint, "", "", "user-1")
+				c, err := e2emimir.NewClient("", endpoint, "", "", "user-1")
 				require.NoError(t, err)
 
 				result, err := c.Query("series_1", now)
