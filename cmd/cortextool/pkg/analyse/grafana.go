@@ -1,8 +1,9 @@
 package analyse
 
 type MetricsInGrafana struct {
-	MetricsUsed []string           `json:"metricsUsed"`
-	Dashboards  []DashboardMetrics `json:"dashboards"`
+	MetricsUsed    []string            `json:"metricsUsed"`
+	OverallMetrics map[string]struct{} `json:"-"`
+	Dashboards     []DashboardMetrics  `json:"dashboards"`
 }
 
 type DashboardMetrics struct {

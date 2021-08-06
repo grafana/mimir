@@ -12,3 +12,4 @@ dist/
 /cortextool
 /metrics-in-grafana.json
 /prometheus-metrics.json
+/metrics-in-ruler.json

@@ -140,7 +140,7 @@ func (o *OverridesExporterCommand) updateMetrics(limitsMap map[string]*validatio
 
 func (o *OverridesExporterCommand) run(k *kingpin.ParseContext) error {
 	if o.overridesFilePath == "" {
-		return errors.New("Empty overrides file path")
+		return errors.New("empty overrides file path")
 	}
 
 	// Update the metrics once before starting.

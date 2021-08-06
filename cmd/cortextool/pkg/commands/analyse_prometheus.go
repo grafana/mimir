@@ -8,7 +8,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/grafana/cortex-tools/pkg/analyse"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
@@ -17,6 +16,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
+
+	"github.com/grafana/cortex-tools/pkg/analyse"
 )
 
 type PrometheusAnalyseCommand struct {
@@ -26,18 +27,44 @@ type PrometheusAnalyseCommand struct {
 	readTimeout time.Duration
 
 	grafanaMetricsFile string
+	rulerMetricsFile   string
 	outputFile         string
 }
 
 func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
-	grafanaMetrics := analyse.MetricsInGrafana{}
+	var (
+		hasGrafanaMetrics, hasRulerMetrics = false, false
+		grafanaMetrics                     = analyse.MetricsInGrafana{}
+		rulerMetrics                       = analyse.MetricsInRuler{}
+		metricsUsed                        []string
+	)
 
-	byt, err := ioutil.ReadFile(cmd.grafanaMetricsFile)
-	if err != nil {
-		return err
+	if _, err := os.Stat(cmd.grafanaMetricsFile); err == nil {
+		hasGrafanaMetrics = true
+		byt, err := ioutil.ReadFile(cmd.grafanaMetricsFile)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(byt, &grafanaMetrics); err != nil {
+			return err
+		}
+		metricsUsed = append(metricsUsed, grafanaMetrics.MetricsUsed...)
 	}
-	if err := json.Unmarshal(byt, &grafanaMetrics); err != nil {
-		return err
+
+	if _, err := os.Stat(cmd.rulerMetricsFile); err == nil {
+		hasRulerMetrics = true
+		byt, err := ioutil.ReadFile(cmd.rulerMetricsFile)
+		if err != nil {
+			return err
+		}
+		if err := json.Unmarshal(byt, &rulerMetrics); err != nil {
+			return err
+		}
+		metricsUsed = append(metricsUsed, rulerMetrics.MetricsUsed...)
+	}
+
+	if !hasGrafanaMetrics && !hasRulerMetrics {
+		return errors.New("No Grafana or Ruler metrics files")
 	}
 
 	rt := api.DefaultRoundTripper
@@ -45,8 +72,7 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 		rt = config.NewBasicAuthRoundTripper(cmd.username, config.Secret(cmd.password), "", api.DefaultRoundTripper)
 	}
 	promClient, err := api.NewClient(api.Config{
-		Address: cmd.address,
-
+		Address:      cmd.address,
 		RoundTripper: rt,
 	})
 	if err != nil {
@@ -69,7 +95,7 @@ func (cmd *PrometheusAnalyseCommand) run(k *kingpin.ParseContext) error {
 	}{}
 	inUseCardinality := 0
 
-	for _, metric := range grafanaMetrics.MetricsUsed {
+	for _, metric := range metricsUsed {
 		ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 		defer cancel()
 
