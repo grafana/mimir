@@ -168,7 +168,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, dir, bkt, series, extLset)
 
 	s := &storeSuite{
-		logger:  log.NewLogfmtLogger(os.Stderr),
+		logger:  log.NewNopLogger(),
 		cache:   &swappableCache{},
 		minTime: minTime,
 		maxTime: maxTime,
