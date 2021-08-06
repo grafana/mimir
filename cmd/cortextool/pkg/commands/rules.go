@@ -82,6 +82,9 @@ type RuleCommand struct {
 	Format string
 
 	DisableColor bool
+
+	// Diff Rules Config
+	Verbose bool
 }
 
 // Register rule related commands and flags with the kingpin application
@@ -182,6 +185,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		"Comma separated list of paths to directories containing rules yaml files. Each file in a directory with a .yml or .yaml suffix will be parsed.",
 	).StringVar(&r.RuleFilesPath)
 	diffRulesCmd.Flag("disable-color", "disable colored output").BoolVar(&r.DisableColor)
+	diffRulesCmd.Flag("verbose", "show diff output with rules changes").BoolVar(&r.Verbose)
 
 	// Sync Command
 	syncRulesCmd.Arg("rule-files", "The rule files to check.").ExistingFilesVar(&r.RuleFilesList)
@@ -489,7 +493,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 	}
 
 	p := printer.New(r.DisableColor)
-	return p.PrintComparisonResult(changes, false)
+	return p.PrintComparisonResult(changes, r.Verbose)
 }
 
 func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {

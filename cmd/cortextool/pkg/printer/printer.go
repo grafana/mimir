@@ -161,7 +161,7 @@ func (p *Printer) PrintComparisonResult(results []rules.NamespaceChange, verbose
 					oldYaml, _ := yaml.Marshal(c.Original)
 					separated = strings.Split(string(oldYaml), "\n")
 					for _, l := range separated {
-						p.Printf("[red]+ %v\n", l)
+						p.Printf("[red]- %v\n", l)
 					}
 				}
 			}
