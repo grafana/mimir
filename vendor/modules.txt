@@ -304,9 +304,9 @@ github.com/hashicorp/errwrap
 # github.com/hashicorp/go-cleanhttp v0.5.1
 ## explicit
 github.com/hashicorp/go-cleanhttp
-# github.com/hashicorp/go-hclog v0.12.2
+# github.com/hashicorp/go-hclog v0.12.0 => github.com/hashicorp/go-hclog v0.12.2
 github.com/hashicorp/go-hclog
-# github.com/hashicorp/go-immutable-radix v1.2.0
+# github.com/hashicorp/go-immutable-radix v1.1.0 => github.com/hashicorp/go-immutable-radix v1.2.0
 github.com/hashicorp/go-immutable-radix
 # github.com/hashicorp/go-msgpack v0.5.5
 github.com/hashicorp/go-msgpack/codec
@@ -489,7 +489,7 @@ github.com/prometheus/node_exporter/https
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20210720123808-b1ed4a0a663d
+# github.com/prometheus/prometheus v1.8.2-0.20210720123808-b1ed4a0a663d => github.com/grafana/prometheus-private v0.0.0-20210720123808-b1ed4a0a663d
 ## explicit
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1052,3 +1052,6 @@ sigs.k8s.io/yaml
 # k8s.io/api => k8s.io/api v0.20.4
 # github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
+# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210720123808-b1ed4a0a663d
+# github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
+# github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2

@@ -132,12 +132,15 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 			-v $(shell pwd)/.pkg:/go/pkg:delegated,z \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z
 
+# Mount local ssh credentials to be able to clone private repos when doing `mod-check`
+SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
+
 exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(GOVOLUMES) $(BUILD_IMAGE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) $@;
 
 else
 
@@ -219,6 +222,7 @@ shell:
 	bash
 
 mod-check:
+	go env -w GOPRIVATE=github.com/grafana/prometheus-private
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
