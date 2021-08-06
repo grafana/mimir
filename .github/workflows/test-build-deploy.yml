@@ -33,6 +33,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check White Noise.
         run: make BUILD_IN_CONTAINER=false check-white-noise
+      - name: Check License Header
+        run: make BUILD_IN_CONTAINER=false check-license
 
   test:
     runs-on: ubuntu-20.04

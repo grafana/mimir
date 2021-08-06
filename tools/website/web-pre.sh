@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/cortexproject/cortex/tools/website/web-pre.sh
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Cortex Authors.
 
 if ! [[ "$0" =~ "tools/website/web-pre.sh" ]]; then
 	echo "must be run from repository root"
