@@ -71,7 +71,7 @@ type Limits struct {
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 
 	// Querier enforced limits.
-	MaxChunksPerQueryFromStore   int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Mimir 1.12.
+	MaxChunksPerQueryFromStore   int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
 	MaxChunksPerQuery            int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
 	MaxFetchedSeriesPerQuery     int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`

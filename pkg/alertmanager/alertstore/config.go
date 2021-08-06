@@ -13,7 +13,7 @@ import (
 )
 
 // LegacyConfig configures the alertmanager storage backend using the legacy storage clients.
-// TODO remove this legacy config in Mimir 1.11.
+// TODO remove this legacy config in Cortex 1.11.
 type LegacyConfig struct {
 	Type string `yaml:"type"`
 
