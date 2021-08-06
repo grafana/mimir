@@ -55,6 +55,8 @@ The following commands are used by users to interact with their Cortex alertmana
 
     cortextool alertmanager load ./example_alertmanager_config.yaml
 
+    cortextool alertmanager load ./example_alertmanager_config.yaml template_file1.tmpl template_file2.tmpl
+
 #### Rules
 
 The following commands are used by users to interact with their Cortex ruler configuration. They can load prometheus rule files, as well as interact with individual rule groups.
