@@ -34,7 +34,7 @@ func TestZoneAwareReplication(t *testing.T) {
 	minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	// Start Cortex components.
+	// Start Mimir components.
 	ingesterFlags := func(zone string) map[string]string {
 		return mergeFlags(flags, map[string]string{
 			"-ingester.availability-zone": zone,

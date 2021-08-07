@@ -19,19 +19,19 @@ type storeConfig struct {
 }
 
 const (
-	userID                 = "e2e-user"
-	defaultNetworkName     = "e2e-mimir-test"
-	bucketName             = "cortex"
-	rulestoreBucketName    = "cortex-rules"
-	alertsBucketName       = "cortex-alerts"
-	cortexConfigFile       = "config.yaml"
-	cortexSchemaConfigFile = "schema.yaml"
-	blocksStorageEngine    = "blocks"
-	clientCertFile         = "certs/client.crt"
-	clientKeyFile          = "certs/client.key"
-	caCertFile             = "certs/root.crt"
-	serverCertFile         = "certs/server.crt"
-	serverKeyFile          = "certs/server.key"
+	userID                = "e2e-user"
+	defaultNetworkName    = "e2e-mimir-test"
+	bucketName            = "mimir"
+	rulestoreBucketName   = "mimir-rules"
+	alertsBucketName      = "mimir-alerts"
+	mimirConfigFile       = "config.yaml"
+	mimirSchemaConfigFile = "schema.yaml"
+	blocksStorageEngine   = "blocks"
+	clientCertFile        = "certs/client.crt"
+	clientKeyFile         = "certs/client.key"
+	caCertFile            = "certs/root.crt"
+	serverCertFile        = "certs/server.crt"
+	serverKeyFile         = "certs/server.key"
 )
 
 // GetNetworkName returns the docker network name to run tests within.
@@ -52,21 +52,21 @@ var (
   store: {{.IndexStore}}
   schema: v9
   index:
-    prefix: cortex_
+    prefix: mimir_
     period: 168h
   chunks:
-    prefix: cortex_chunks_
+    prefix: mimir_chunks_
     period: 168h
 `
 
-	cortexAlertmanagerUserConfigYaml = `route:
+	mimirAlertmanagerUserConfigYaml = `route:
   receiver: "example_receiver"
   group_by: ["example_groupby"]
 receivers:
   - name: "example_receiver"
 `
 
-	cortexRulerUserConfigYaml = `groups:
+	mimirRulerUserConfigYaml = `groups:
 - name: rule
   interval: 100s
   rules:
@@ -75,10 +75,10 @@ receivers:
     expr: up
     for: 0s
     labels: {}
-    annotations: {}	
+    annotations: {}
 `
 
-	cortexRulerEvalStaleNanConfigYaml = `groups:
+	mimirRulerEvalStaleNanConfigYaml = `groups:
 - name: rule
   interval: 1s
   rules:
@@ -88,7 +88,7 @@ receivers:
 )
 
 var (
-	cortexSchemaConfigYaml = buildSchemaConfigWith([]storeConfig{{From: "2019-03-20", IndexStore: "aws-dynamo"}})
+	mimirSchemaConfigYaml = buildSchemaConfigWith([]storeConfig{{From: "2019-03-20", IndexStore: "aws-dynamo"}})
 
 	AlertmanagerFlags = func() map[string]string {
 		return map[string]string{
@@ -216,7 +216,7 @@ blocks_storage:
     sync_interval: 5s
 
   s3:
-    bucket_name:       cortex
+    bucket_name:       mimir
     access_key_id:     {{.MinioAccessKey}}
     secret_access_key: {{.MinioSecretKey}}
     endpoint:          {{.MinioEndpoint}}
@@ -235,7 +235,7 @@ blocks_storage:
 		return map[string]string{
 			"-dynamodb.url":                   fmt.Sprintf("dynamodb://u:p@%s-dynamodb.:8000", networkName),
 			"-table-manager.poll-interval":    "1m",
-			"-schema-config-file":             filepath.Join(e2e.ContainerSharedDir, cortexSchemaConfigFile),
+			"-schema-config-file":             filepath.Join(e2e.ContainerSharedDir, mimirSchemaConfigFile),
 			"-table-manager.retention-period": "168h",
 		}
 	}
@@ -257,7 +257,7 @@ schema:
 		SchemaConfig string
 	}{
 		DynamoDBURL:  fmt.Sprintf("dynamodb://u:p@%s-dynamodb.:8000", networkName),
-		SchemaConfig: indentConfig(cortexSchemaConfigYaml, 2),
+		SchemaConfig: indentConfig(mimirSchemaConfigYaml, 2),
 	})
 )
 

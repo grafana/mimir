@@ -81,7 +81,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	}
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2emimir.CortexService
+	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
@@ -111,7 +111,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.NoError(t, querier1.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 
 	distClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
@@ -125,7 +125,7 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Send both queriers a single query, so that they both initialize their cortex_querier_request_duration_seconds metrics.
-	for _, q := range []*e2emimir.CortexService{querier1, querier2} {
+	for _, q := range []*e2emimir.MimirService{querier1, querier2} {
 		c, err := e2emimir.NewClient("", q.HTTPEndpoint(), "", "", userID)
 		require.NoError(t, err)
 

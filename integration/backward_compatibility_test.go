@@ -102,9 +102,9 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(dynamo, consul))
 
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 
-	// Start Cortex table-manager (running on current version since the backward compatibility
+	// Start Mimir table-manager (running on current version since the backward compatibility
 	// test is about testing a rolling update of other services).
 	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(tableManager))
@@ -113,7 +113,7 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	// sure the tables have been created.
 	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
 
-	// Start other Cortex components (ingester running on previous version).
+	// Start other Mimir components (ingester running on previous version).
 	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForOldImage, previousImage)
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1))
@@ -121,7 +121,7 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push some series to Cortex.
+	// Push some series to Mimir.
 	now := time.Now()
 	series, expectedVector := generateSeries("series_1", now)
 
@@ -168,9 +168,9 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 		"-distributor.replication-factor": "3",
 	})
 
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 
-	// Start Cortex table-manager (running on current version since the backward compatibility
+	// Start Mimir table-manager (running on current version since the backward compatibility
 	// test is about testing a rolling update of other services).
 	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(tableManager))
@@ -179,7 +179,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	// sure the tables have been created.
 	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
 
-	// Start other Cortex components (ingester running on previous version).
+	// Start other Mimir components (ingester running on previous version).
 	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
 	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
 	ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
@@ -189,7 +189,7 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(1536), "cortex_ring_tokens_total"))
 
-	// Push some series to Cortex.
+	// Push some series to Mimir.
 	now := time.Now()
 	series, expectedVector := generateSeries("series_1", now)
 

@@ -28,7 +28,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 	flags := mergeFlags(ChunksStorageFlags(), map[string]string{})
 
 	// Start dependencies.
@@ -44,7 +44,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	// sure the tables have been created.
 	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
 
-	// Start Cortex components for the write path.
+	// Start Mimir components for the write path.
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
 	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
@@ -52,7 +52,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")

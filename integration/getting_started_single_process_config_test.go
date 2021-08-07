@@ -26,10 +26,10 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	minio := e2edb.NewMinio(9000, bucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
-	// Start Cortex components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", cortexConfigFile))
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
-	// Start Cortex in single binary mode, reading the config from file and overwriting
+	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
 	flags := map[string]string{
 		"-blocks-storage.s3.access-key-id":     e2edb.MinioAccessKey,
@@ -39,13 +39,13 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 		"-blocks-storage.s3.insecure":          "true",
 	}
 
-	cortex := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, flags, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortex))
+	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, flags, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimir))
 
-	c, err := e2emimir.NewClient(cortex.HTTPEndpoint(), cortex.HTTPEndpoint(), "", "", "user-1")
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", "", "user-1")
 	require.NoError(t, err)
 
-	// Push some series to Cortex.
+	// Push some series to Mimir.
 	now := time.Now()
 	series, expectedVector := generateSeries("series_1", now, prompb.Label{Name: "foo", Value: "bar"})
 

@@ -47,8 +47,8 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	// Look ma, no Consul!
 	require.NoError(t, s.StartAndWaitReady(dynamo))
 
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
-	var cortex1, cortex2, cortex3 *e2emimir.CortexService
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
+	var mimir1, mimir2, mimir3 *e2emimir.MimirService
 	if tlsEnabled {
 		var (
 			memberlistDNS = "cortex-memberlist"
@@ -71,51 +71,51 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 			filepath.Join(s.SharedDir(), clientKeyFile),
 		))
 
-		cortex1 = newSingleBinary("cortex-1", memberlistDNS, "", flags)
-		cortex2 = newSingleBinary("cortex-2", memberlistDNS, networkName+"-cortex-1:8000", flags)
-		cortex3 = newSingleBinary("cortex-3", memberlistDNS, networkName+"-cortex-1:8000", flags)
+		mimir1 = newSingleBinary("mimir-1", memberlistDNS, "", flags)
+		mimir2 = newSingleBinary("mimir-2", memberlistDNS, networkName+"-mimir-1:8000", flags)
+		mimir3 = newSingleBinary("mimir-3", memberlistDNS, networkName+"-mimir-1:8000", flags)
 	} else {
-		cortex1 = newSingleBinary("cortex-1", "", "", flags)
-		cortex2 = newSingleBinary("cortex-2", "", networkName+"-cortex-1:8000", flags)
-		cortex3 = newSingleBinary("cortex-3", "", networkName+"-cortex-1:8000", flags)
+		mimir1 = newSingleBinary("mimir-1", "", "", flags)
+		mimir2 = newSingleBinary("mimir-2", "", networkName+"-mimir-1:8000", flags)
+		mimir3 = newSingleBinary("mimir-3", "", networkName+"-mimir-1:8000", flags)
 	}
 
-	// start cortex-1 first, as cortex-2 and cortex-3 both connect to cortex-1
-	require.NoError(t, s.StartAndWaitReady(cortex1))
-	require.NoError(t, s.StartAndWaitReady(cortex2, cortex3))
+	// start mimir-1 first, as mimir-2 and mimir-3 both connect to mimir-1
+	require.NoError(t, s.StartAndWaitReady(mimir1))
+	require.NoError(t, s.StartAndWaitReady(mimir2, mimir3))
 
-	// All three Cortex serves should see each other.
-	require.NoError(t, cortex1.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
-	require.NoError(t, cortex2.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
+	// All three Mimir serves should see each other.
+	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3), "memberlist_client_cluster_members_count"))
 
-	// All Cortex servers should have 512 tokens, altogether 3 * 512.
-	require.NoError(t, cortex1.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
-	require.NoError(t, cortex2.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
+	// All Mimir servers should have 512 tokens, altogether 3 * 512.
+	require.NoError(t, mimir1.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(3*512), "cortex_ring_tokens_total"))
 
-	// All Cortex servers should initially have no tombstones; nobody has left yet.
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
+	// All Mimir servers should initially have no tombstones; nobody has left yet.
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 
-	require.NoError(t, s.Stop(cortex1))
-	require.NoError(t, cortex2.WaitSumMetrics(e2e.Equals(2*512), "cortex_ring_tokens_total"))
-	require.NoError(t, cortex2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_kv_store_value_tombstones"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(2*512), "cortex_ring_tokens_total"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, s.Stop(mimir1))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2*512), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir2.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2*512), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_cluster_members_count"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_kv_store_value_tombstones"))
 
-	require.NoError(t, s.Stop(cortex2))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(1*512), "cortex_ring_tokens_total"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_cluster_members_count"))
-	require.NoError(t, cortex3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_kv_store_value_tombstones"))
+	require.NoError(t, s.Stop(mimir2))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1*512), "cortex_ring_tokens_total"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(1), "memberlist_client_cluster_members_count"))
+	require.NoError(t, mimir3.WaitSumMetrics(e2e.Equals(2), "memberlist_client_kv_store_value_tombstones"))
 
-	require.NoError(t, s.Stop(cortex3))
+	require.NoError(t, s.Stop(mimir3))
 }
 
-func newSingleBinary(name string, servername string, join string, testFlags map[string]string) *e2emimir.CortexService {
+func newSingleBinary(name string, servername string, join string, testFlags map[string]string) *e2emimir.MimirService {
 	flags := map[string]string{
 		"-ingester.final-sleep":              "0s",
 		"-ingester.join-after":               "0s", // join quickly
@@ -162,20 +162,20 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 
 	dynamo := e2edb.NewDynamoDB()
 	require.NoError(t, s.StartAndWaitReady(dynamo))
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 
 	// Scale up instances. These numbers seem enough to reliably reproduce some unwanted
 	// consequences of slow propagation, such as missing tombstones.
 
-	maxCortex := 20
-	minCortex := 3
-	instances := make([]*e2emimir.CortexService, 0)
+	maxMimir := 20
+	minMimir := 3
+	instances := make([]*e2emimir.MimirService, 0)
 
-	for i := 0; i < maxCortex; i++ {
-		name := fmt.Sprintf("cortex-%d", i+1)
+	for i := 0; i < maxMimir; i++ {
+		name := fmt.Sprintf("mimir-%d", i+1)
 		join := ""
 		if i > 0 {
-			join = e2e.NetworkContainerHostPort(networkName, "cortex-1", 8000)
+			join = e2e.NetworkContainerHostPort(networkName, "mimir-1", 8000)
 		}
 		c := newSingleBinary(name, "", join, nil)
 		require.NoError(t, s.StartAndWaitReady(c))
@@ -185,14 +185,14 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// Sanity check the ring membership and give each instance time to see every other instance.
 
 	for _, c := range instances {
-		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxCortex)), "cortex_ring_members"))
+		require.NoError(t, c.WaitSumMetrics(e2e.Equals(float64(maxMimir)), "cortex_ring_members"))
 		require.NoError(t, c.WaitSumMetrics(e2e.Equals(0), "memberlist_client_kv_store_value_tombstones"))
 	}
 
 	// Scale down as fast as possible but cleanly, in order to send out tombstones.
 
 	stop := errgroup.Group{}
-	for len(instances) > minCortex {
+	for len(instances) > minMimir {
 		i := len(instances) - 1
 		c := instances[i]
 		instances = instances[:i]
@@ -211,8 +211,8 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	// The logging is mildly spammy, but it has proven extremely useful for debugging convergence cases.
 	// We don't use WaitSumMetrics [over all instances] here so we can log the per-instance metrics.
 
-	expectedRingMembers := float64(minCortex)
-	expectedTombstones := float64(maxCortex - minCortex)
+	expectedRingMembers := float64(minMimir)
+	expectedTombstones := float64(maxMimir - minMimir)
 
 	require.Eventually(t, func() bool {
 		ok := true

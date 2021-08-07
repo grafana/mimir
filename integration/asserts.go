@@ -42,14 +42,14 @@ var (
 		Purger:         {"cortex_purger"},
 	}
 
-	// Blacklisted metrics prefixes across any Cortex service.
+	// Blacklisted metrics prefixes across any Mimir service.
 	blacklistedMetricsPrefixes = []string{
 		"cortex_alert_manager", // It should be "cortex_alertmanager"
 		"cortex_store_gateway", // It should be "cortex_storegateway"
 	}
 )
 
-func assertServiceMetricsPrefixes(t *testing.T, serviceType ServiceType, service *e2emimir.CortexService) {
+func assertServiceMetricsPrefixes(t *testing.T, serviceType ServiceType, service *e2emimir.MimirService) {
 	if service == nil {
 		return
 	}

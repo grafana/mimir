@@ -35,7 +35,7 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 	chunksFlags := ChunksStorageFlags()
 	blockFlags := mergeFlags(BlocksStorageFlags(), map[string]string{
 		"-blocks-storage.tsdb.block-ranges-period":      "1h",
@@ -50,7 +50,7 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 	minio := e2edb.NewMinio(9000, blockFlags["-blocks-storage.s3.bucket-name"])
 	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-	// Start Cortex components.
+	// Start Mimir components.
 	ingesterBlocks := e2emimir.NewIngester("ingester-blocks", consul.NetworkHTTPEndpoint(), blockFlags, "")
 	ingesterChunks := e2emimir.NewIngester("ingester-chunks", consul.NetworkHTTPEndpoint(), chunksFlags, "")
 	storeGateway := e2emimir.NewStoreGateway("store-gateway", consul.NetworkHTTPEndpoint(), blockFlags, "")

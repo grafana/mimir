@@ -59,8 +59,8 @@ func TestRulerAPI(t *testing.T) {
 			minio := e2edb.NewMinio(9000, rulestoreBucketName)
 			require.NoError(t, s.StartAndWaitReady(consul, minio, dynamo))
 
-			// Start Cortex components.
-			require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+			// Start Mimir components.
+			require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(testCfg.legacyRuleStore)), "")
 			require.NoError(t, s.StartAndWaitReady(ruler))
 
@@ -157,20 +157,20 @@ func TestRulerAPISingleBinary(t *testing.T) {
 		"-ruler.rule-path":               filepath.Join(e2e.ContainerSharedDir, "rule_tmp/"),
 	}
 
-	// Start Cortex components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
-	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(cortexRulerUserConfigYaml)))
-	cortex := e2emimir.NewSingleBinaryWithConfigFile("cortex", cortexConfigFile, configOverrides, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortex))
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
+	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerUserConfigYaml)))
+	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, configOverrides, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Create a client with the ruler address configured
-	c, err := e2emimir.NewClient("", "", "", cortex.HTTPEndpoint(), "")
+	c, err := e2emimir.NewClient("", "", "", mimir.HTTPEndpoint(), "")
 	require.NoError(t, err)
 
 	// Wait until the user manager is created
-	require.NoError(t, cortex.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
-	// Check to ensure the rules running in the cortex match what was set
+	// Check to ensure the rules running in the mimir match what was set
 	rgs, err := c.GetRuleGroups()
 	require.NoError(t, err)
 
@@ -180,23 +180,23 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	require.Equal(t, retrievedNamespace[0].Name, "rule")
 
 	// Check to make sure prometheus engine metrics are available for both engine types
-	require.NoError(t, cortex.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "engine", "querier"))))
 
-	require.NoError(t, cortex.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Equals(0), []string{"prometheus_engine_queries"}, e2e.WithLabelMatchers(
 		labels.MustNewMatcher(labels.MatchEqual, "engine", "ruler"))))
 
 	// Test Cleanup and Restart
 
-	// Stop the running cortex
-	require.NoError(t, cortex.Stop())
+	// Stop the running mimir
+	require.NoError(t, mimir.Stop())
 
-	// Restart Cortex with identical configs
-	cortexRestarted := e2emimir.NewSingleBinaryWithConfigFile("cortex-restarted", cortexConfigFile, configOverrides, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortexRestarted))
+	// Restart Mimir with identical configs
+	mimirRestarted := e2emimir.NewSingleBinaryWithConfigFile("mimir-restarted", mimirConfigFile, configOverrides, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimirRestarted))
 
 	// Wait until the user manager is created
-	require.NoError(t, cortexRestarted.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+	require.NoError(t, mimirRestarted.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 }
 
 func TestRulerEvaluationDelay(t *testing.T) {
@@ -216,14 +216,14 @@ func TestRulerEvaluationDelay(t *testing.T) {
 		"-ruler.evaluation-delay-duration": evaluationDelay.String(),
 	}
 
-	// Start Cortex components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
-	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(cortexRulerEvalStaleNanConfigYaml)))
-	cortex := e2emimir.NewSingleBinaryWithConfigFile("cortex", cortexConfigFile, configOverrides, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortex))
+	// Start Mimir components.
+	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
+	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerEvalStaleNanConfigYaml)))
+	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, configOverrides, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimir))
 
 	// Create a client with the ruler address configured
-	c, err := e2emimir.NewClient(cortex.HTTPEndpoint(), cortex.HTTPEndpoint(), "", cortex.HTTPEndpoint(), "")
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", mimir.HTTPEndpoint(), "")
 	require.NoError(t, err)
 
 	now := time.Now()
@@ -256,11 +256,11 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	require.Equal(t, 200, res.StatusCode)
 
 	// Get number of rule evaluations just after push
-	ruleEvaluationsAfterPush, err := cortex.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
+	ruleEvaluationsAfterPush, err := mimir.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
 	require.NoError(t, err)
 
 	// Wait until the rule is evaluated for the first time
-	require.NoError(t, cortex.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.Greater(ruleEvaluationsAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
 
 	// Query the timestamp of the latest result to ensure the evaluation is delayed
 	result, err := c.Query("timestamp(stale_nan_eval)", now)
@@ -278,7 +278,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	// Wait until all the pushed samples have been evaluated by the rule. This
 	// ensures that rule results are successfully written even after a
 	// staleness period.
-	require.NoError(t, cortex.WaitSumMetrics(e2e.GreaterOrEqual(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
+	require.NoError(t, mimir.WaitSumMetrics(e2e.GreaterOrEqual(ruleEvaluationsAfterPush[0]+float64(samplesToSend)), "cortex_prometheus_rule_evaluations_total"))
 
 	// query all results to verify rules have been evaluated correctly
 	result, err = c.QueryRange("stale_nan_eval", now.Add(-evaluationDelay), now, time.Second)
@@ -363,7 +363,7 @@ func TestRulerSharding(t *testing.T) {
 	// Start rulers.
 	ruler1 := e2emimir.NewRuler("ruler-1", consul.NetworkHTTPEndpoint(), rulerFlags, "")
 	ruler2 := e2emimir.NewRuler("ruler-2", consul.NetworkHTTPEndpoint(), rulerFlags, "")
-	rulers := e2emimir.NewCompositeCortexService(ruler1, ruler2)
+	rulers := e2emimir.NewCompositeMimirService(ruler1, ruler2)
 	require.NoError(t, s.StartAndWaitReady(ruler1, ruler2))
 
 	// Upload rule groups to one of the rulers.
@@ -408,7 +408,7 @@ func TestRulerAlertmanager(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(consul, minio, dynamo))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(cortexAlertmanagerUserConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerLocalFlags())
@@ -425,7 +425,7 @@ func TestRulerAlertmanager(t *testing.T) {
 	}
 
 	// Start Ruler.
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(false), configOverrides), "")
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
@@ -485,7 +485,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	))
 
 	// Have at least one alertmanager configuration.
-	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(cortexAlertmanagerUserConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
 
 	// Start Alertmanagers.
 	amFlags := mergeFlags(
@@ -505,7 +505,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	)
 
 	// Start Ruler.
-	require.NoError(t, writeFileToSharedDir(s, cortexSchemaConfigFile, []byte(cortexSchemaConfigYaml)))
+	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), RulerFlags(false), configOverrides), "")
 	require.NoError(t, s.StartAndWaitReady(ruler))
 
@@ -579,7 +579,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", ruler.HTTPEndpoint(), user)
 	require.NoError(t, err)
 
-	// Push some series to Cortex -- enough so that we can hit some limits.
+	// Push some series to Mimir -- enough so that we can hit some limits.
 	for i := 0; i < 10; i++ {
 		series, _ := generateSeries("metric", time.Now(), prompb.Label{Name: "foo", Value: fmt.Sprintf("%d", i)})
 
