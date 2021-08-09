@@ -258,6 +258,12 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 		case jobs <- job{userID: userID, store: bs}:
 			// Nothing to do. Will loop to push more jobs.
 		case <-ctx.Done():
+			// Wait until all workers have done, so the goroutines leak detector doesn't
+			// report any issue. This is expected to be quick, considering the done ctx
+			// is used by the worker callback function too.
+			close(jobs)
+			wg.Wait()
+
 			return ctx.Err()
 		}
 	}
