@@ -790,7 +790,7 @@ func blockSeries(
 		}
 
 		if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
-			return nil, nil, errors.Wrap(err, "Lookup labels symbols")
+			return nil, nil, errors.Wrap(err, "lookup labels symbols")
 		}
 
 		// Skip the series if it doesn't belong to the shard.
