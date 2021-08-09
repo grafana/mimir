@@ -24,6 +24,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/cache"
+	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -47,6 +48,7 @@ type Config struct {
 	CacheResults           bool `yaml:"cache_results"`
 	MaxRetries             int  `yaml:"max_retries"`
 	ShardedQueries         bool `yaml:"parallelise_shardable_queries"`
+	TotalShards            int  `yaml:"total_shards"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -56,6 +58,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "querier.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the chunks storage engine.")
+	f.IntVar(&cfg.TotalShards, "querier.total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by default. (only used for TSDB storage, in the chunk storage the shard size is configured via schema configs.)")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -68,6 +71,9 @@ func (cfg *Config) Validate() error {
 		if err := cfg.ResultsCacheConfig.Validate(); err != nil {
 			return errors.Wrap(err, "invalid ResultsCache config")
 		}
+	}
+	if cfg.ShardedQueries && cfg.TotalShards <= 0 {
+		return errors.New("querier.total-shards must be > 0 when parellelisation of shardable queries is enabled.")
 	}
 	return nil
 }
@@ -128,6 +134,7 @@ func NewTripperware(
 	codec Codec,
 	cacheExtractor Extractor,
 	schema chunk.SchemaConfig,
+	storageEngine string,
 	engineOpts promql.EngineOpts,
 	minShardingLookback time.Duration,
 	registerer prometheus.Registerer,
@@ -172,23 +179,33 @@ func NewTripperware(
 	}
 
 	if cfg.ShardedQueries {
-		if minShardingLookback == 0 {
-			return nil, nil, errInvalidMinShardingLookback
+		var queryShardingMiddleware Middleware
+		if storageEngine == storage.StorageEngineBlocks {
+			queryShardingMiddleware = NewTSDBQueryShardingMiddleware(
+				log,
+				promql.NewEngine(engineOpts),
+				cfg.TotalShards,
+				registerer,
+			)
+		} else {
+			if minShardingLookback == 0 {
+				return nil, nil, errInvalidMinShardingLookback
+			}
+			queryShardingMiddleware = NewQueryShardMiddleware(
+				log,
+				promql.NewEngine(engineOpts),
+				schema.Configs,
+				codec,
+				minShardingLookback,
+				metrics,
+				registerer,
+			)
 		}
-
-		shardingware := NewQueryShardMiddleware(
-			log,
-			promql.NewEngine(engineOpts),
-			schema.Configs,
-			codec,
-			minShardingLookback,
-			metrics,
-			registerer,
-		)
 
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
-			shardingware, // instrumentation is included in the sharding middleware
+			InstrumentMiddleware("querysharding", metrics),
+			queryShardingMiddleware,
 		)
 	}
 
@@ -246,7 +263,6 @@ func NewRoundTripper(next http.RoundTripper, codec Codec, middlewares ...Middlew
 }
 
 func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-
 	request, err := q.codec.DecodeRequest(r.Context(), r)
 	if err != nil {
 		return nil, err
