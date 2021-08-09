@@ -20,43 +20,11 @@ var (
 	// If you change the image tag, remember to update it in the preloading done
 	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
 	previousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.0.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.1.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.2.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.3.0": preCortex14Flags,
-		"quay.io/cortexproject/cortex:v1.4.0": preCortex16Flags,
-		"quay.io/cortexproject/cortex:v1.5.0": preCortex16Flags,
-		"quay.io/cortexproject/cortex:v1.6.0": preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.7.0": preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.8.0": preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.9.0": preCortex110Flags,
+		"quay.io/cortexproject/cortex:v1.8.0":  preCortex110Flags,
+		"quay.io/cortexproject/cortex:v1.9.0":  preCortex110Flags,
+		"quay.io/cortexproject/cortex:v1.10.0": nil,
 	}
 )
-
-func preCortex14Flags(flags map[string]string) map[string]string {
-	return e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
-		// Blocks storage CLI flags removed the "experimental" prefix in 1.4.
-		"-store-gateway.sharding-enabled":                 "",
-		"-store-gateway.sharding-ring.store":              "",
-		"-store-gateway.sharding-ring.consul.hostname":    "",
-		"-store-gateway.sharding-ring.replication-factor": "",
-		// Query-scheduler has been introduced in 1.6.0
-		"-frontend.scheduler-dns-lookup-period": "",
-		// Store-gateway "wait ring stability" has been introduced in 1.10.0
-		"-store-gateway.sharding-ring.wait-stability-min-duration": "",
-		"-store-gateway.sharding-ring.wait-stability-max-duration": "",
-	})
-}
-
-func preCortex16Flags(flags map[string]string) map[string]string {
-	return e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
-		// Query-scheduler has been introduced in 1.6.0
-		"-frontend.scheduler-dns-lookup-period": "",
-		// Store-gateway "wait ring stability" has been introduced in 1.10.0
-		"-store-gateway.sharding-ring.wait-stability-min-duration": "",
-		"-store-gateway.sharding-ring.wait-stability-max-duration": "",
-	})
-}
 
 func preCortex110Flags(flags map[string]string) map[string]string {
 	return e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
