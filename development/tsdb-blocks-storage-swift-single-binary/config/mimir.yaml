@@ -42,13 +42,13 @@ blocks_storage:
   backend: swift
 
   tsdb:
-    dir: /data/cortex-tsdb-ingester
+    dir: /data/mimir-tsdb-ingester
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
 
   bucket_store:
-    sync_dir: /data/cortex-tsdb-querier
+    sync_dir: /data/mimir-tsdb-querier
 
   swift:
     auth_url:          http://swift:5000/v2.0
@@ -56,7 +56,7 @@ blocks_storage:
     password:          s3cr3t
     project_name:      admin
     region_name:       RegionOne
-    container_name:    cortex-tsdb
+    container_name:    mimir-tsdb
 
 storage:
   engine: blocks
@@ -79,7 +79,7 @@ ruler_storage:
     password:          s3cr3t
     project_name:      admin
     region_name:       RegionOne
-    container_name: cortex-rules
+    container_name: mimir-rules
 
 runtime_config:
   file: ./config/runtime.yaml

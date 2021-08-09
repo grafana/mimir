@@ -11,7 +11,7 @@ services:
     image: minio/minio
     command: [ "server", "/data" ]
     environment:
-      - MINIO_ACCESS_KEY=cortex
+      - MINIO_ACCESS_KEY=mimir
       - MINIO_SECRET_KEY=supersecret
     ports:
       - 9000:9000
@@ -86,7 +86,7 @@ services:
       - 18002:18002
     volumes:
       - ./config:/mimir/config
-      - .data-ingester-1:/tmp/cortex-tsdb-ingester:delegated
+      - .data-ingester-1:/tmp/mimir-tsdb-ingester:delegated
 
   ingester-2:
     build:
@@ -108,7 +108,7 @@ services:
       - 18003:18003
     volumes:
       - ./config:/mimir/config
-      - .data-ingester-2:/tmp/cortex-tsdb-ingester:delegated
+      - .data-ingester-2:/tmp/mimir-tsdb-ingester:delegated
 
   querier:
     build:

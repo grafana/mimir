@@ -1,4 +1,4 @@
 *
-!cortex-rules
-!cortex-tsdb
+!mimir-rules
+!mimir-tsdb
 !.gitignore

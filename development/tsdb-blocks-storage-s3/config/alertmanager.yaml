@@ -1,4 +1,4 @@
-# Example alertmanager config file to load to Cortex via the alertmanager API.
+# Example alertmanager config file to load to Mimir via the alertmanager API.
 global:
   # The smarthost and SMTP sender used for mail notifications.
   smtp_smarthost: 'localhost:25'
