@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 )
 
 // orSquasher is a custom squasher which mimics the intuitive but less efficient OR'ing of sharded vectors.
@@ -170,36 +172,36 @@ func TestShardSummerWithEncoding(t *testing.T) {
 func TestParseShard(t *testing.T) {
 	var testExpr = []struct {
 		input  string
-		output ShardAnnotation
+		output querysharding.ShardSelector
 		err    bool
 	}{
 		{
 			input:  "lsdjf",
-			output: ShardAnnotation{},
+			output: querysharding.ShardSelector{},
 			err:    true,
 		},
 		{
 			input:  "a_of_3",
-			output: ShardAnnotation{},
+			output: querysharding.ShardSelector{},
 			err:    true,
 		},
 		{
 			input:  "3_of_3",
-			output: ShardAnnotation{},
+			output: querysharding.ShardSelector{},
 			err:    true,
 		},
 		{
 			input: "1_of_2",
-			output: ShardAnnotation{
-				Shard: 1,
-				Of:    2,
+			output: querysharding.ShardSelector{
+				ShardIndex: 1,
+				ShardCount: 2,
 			},
 		},
 	}
 
 	for _, c := range testExpr {
 		t.Run(fmt.Sprint(c.input), func(t *testing.T) {
-			shard, err := ParseShard(c.input)
+			shard, err := querysharding.ParseShard(c.input)
 			if c.err {
 				require.NotNil(t, err)
 			} else {
@@ -214,7 +216,7 @@ func TestParseShard(t *testing.T) {
 func TestShardFromMatchers(t *testing.T) {
 	var testExpr = []struct {
 		input []*labels.Matcher
-		shard *ShardAnnotation
+		shard *querysharding.ShardSelector
 		idx   int
 		err   bool
 	}{
@@ -222,18 +224,18 @@ func TestShardFromMatchers(t *testing.T) {
 			input: []*labels.Matcher{
 				{},
 				{
-					Name: ShardLabel,
+					Name: querysharding.ShardLabel,
 					Type: labels.MatchEqual,
-					Value: ShardAnnotation{
-						Shard: 10,
-						Of:    16,
+					Value: querysharding.ShardSelector{
+						ShardIndex: 10,
+						ShardCount: 16,
 					}.String(),
 				},
 				{},
 			},
-			shard: &ShardAnnotation{
-				Shard: 10,
-				Of:    16,
+			shard: &querysharding.ShardSelector{
+				ShardIndex: 10,
+				ShardCount: 16,
 			},
 			idx: 1,
 			err: false,
@@ -241,7 +243,7 @@ func TestShardFromMatchers(t *testing.T) {
 		{
 			input: []*labels.Matcher{
 				{
-					Name:  ShardLabel,
+					Name:  querysharding.ShardLabel,
 					Type:  labels.MatchEqual,
 					Value: "invalid-fmt",
 				},
@@ -260,7 +262,7 @@ func TestShardFromMatchers(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			shard, idx, err := ShardFromMatchers(c.input)
+			shard, idx, err := querysharding.ShardFromMatchers(c.input)
 			if c.err {
 				require.NotNil(t, err)
 			} else {
