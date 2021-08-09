@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 )
 
 var (
@@ -604,13 +604,13 @@ func (m *testMatrix) Err() error { return nil }
 func (m *testMatrix) Warnings() storage.Warnings { return nil }
 
 func (m *testMatrix) Select(_ bool, selectParams *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	s, _, err := astmapper.ShardFromMatchers(matchers)
+	s, _, err := querysharding.ShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
 	if s != nil {
-		return splitByShard(s.Shard, s.Of, m)
+		return splitByShard(s.ShardIndex, s.ShardCount, m)
 	}
 
 	return m.Copy()

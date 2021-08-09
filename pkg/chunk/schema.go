@@ -18,7 +18,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 
-	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
+
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -55,7 +56,7 @@ type BaseSchema interface {
 	GetReadQueriesForMetric(from, through model.Time, userID string, metricName string) ([]IndexQuery, error)
 	GetReadQueriesForMetricLabel(from, through model.Time, userID string, metricName string, labelName string) ([]IndexQuery, error)
 	GetReadQueriesForMetricLabelValue(from, through model.Time, userID string, metricName string, labelName string, labelValue string) ([]IndexQuery, error)
-	FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery
+	FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery
 }
 
 // StoreSchema is a schema used by store
@@ -347,7 +348,7 @@ func (s seriesStoreSchema) GetLabelNamesForSeries(from, through model.Time, user
 	return result, nil
 }
 
-func (s baseSchema) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery {
+func (s baseSchema) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
 	return s.entries.FilterReadQueries(queries, shard)
 }
 
@@ -355,7 +356,7 @@ type baseEntries interface {
 	GetReadMetricQueries(bucket Bucket, metricName string) ([]IndexQuery, error)
 	GetReadMetricLabelQueries(bucket Bucket, metricName string, labelName string) ([]IndexQuery, error)
 	GetReadMetricLabelValueQueries(bucket Bucket, metricName string, labelName string, labelValue string) ([]IndexQuery, error)
-	FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery
+	FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery
 }
 
 // used by storeSchema
@@ -434,7 +435,7 @@ func (originalEntries) GetReadMetricLabelValueQueries(bucket Bucket, metricName 
 	}, nil
 }
 
-func (originalEntries) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery {
+func (originalEntries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
 	return queries
 }
 
@@ -535,7 +536,7 @@ func (labelNameInHashKeyEntries) GetReadMetricLabelValueQueries(bucket Bucket, m
 	}, nil
 }
 
-func (labelNameInHashKeyEntries) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery {
+func (labelNameInHashKeyEntries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
 	return queries
 }
 
@@ -598,7 +599,7 @@ func (v5Entries) GetReadMetricLabelValueQueries(bucket Bucket, metricName string
 	}, nil
 }
 
-func (v5Entries) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery {
+func (v5Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
 	return queries
 }
 
@@ -667,7 +668,7 @@ func (v6Entries) GetReadMetricLabelValueQueries(bucket Bucket, metricName string
 	}, nil
 }
 
-func (v6Entries) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery {
+func (v6Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
 	return queries
 }
 
@@ -766,7 +767,7 @@ func (v9Entries) GetLabelNamesForSeries(_ Bucket, _ []byte) ([]IndexQuery, error
 	return nil, ErrNotSupported
 }
 
-func (v9Entries) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) []IndexQuery {
+func (v9Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
 	return queries
 }
 
@@ -878,7 +879,7 @@ func (v10Entries) GetLabelNamesForSeries(_ Bucket, _ []byte) ([]IndexQuery, erro
 }
 
 // FilterReadQueries will return only queries that match a certain shard
-func (v10Entries) FilterReadQueries(queries []IndexQuery, shard *astmapper.ShardAnnotation) (matches []IndexQuery) {
+func (v10Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) (matches []IndexQuery) {
 	if shard == nil {
 		return queries
 	}
@@ -897,7 +898,7 @@ func (v10Entries) FilterReadQueries(queries []IndexQuery, shard *astmapper.Shard
 			)
 		}
 
-		if err == nil && n == shard.Shard {
+		if err == nil && n == shard.ShardIndex {
 			matches = append(matches, query)
 		}
 	}

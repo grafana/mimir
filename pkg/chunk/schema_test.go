@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/test"
 
-	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 )
 
 type ByHashRangeKey []IndexEntry
@@ -424,7 +424,7 @@ func TestV10IndexQueries(t *testing.T) {
 	var testExprs = []struct {
 		name     string
 		queries  []IndexQuery
-		shard    *astmapper.ShardAnnotation
+		shard    *querysharding.ShardSelector
 		expected []IndexQuery
 	}{
 		{
@@ -436,16 +436,16 @@ func TestV10IndexQueries(t *testing.T) {
 		{
 			name:    "out of bounds shard returns 0 matches",
 			queries: fromShards(2),
-			shard: &astmapper.ShardAnnotation{
-				Shard: 3,
+			shard: &querysharding.ShardSelector{
+				ShardIndex: 3,
 			},
 			expected: nil,
 		},
 		{
 			name:    "return correct shard",
 			queries: fromShards(3),
-			shard: &astmapper.ShardAnnotation{
-				Shard: 1,
+			shard: &querysharding.ShardSelector{
+				ShardIndex: 1,
 			},
 			expected: []IndexQuery{fromShards(2)[1]},
 		},
