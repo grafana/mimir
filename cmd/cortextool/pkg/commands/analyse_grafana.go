@@ -35,7 +35,11 @@ func (cmd *GrafanaAnalyseCommand) run(k *kingpin.ParseContext) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cmd.readTimeout)
 	defer cancel()
 
-	c := sdk.NewClient(cmd.address, cmd.apiKey, sdk.DefaultHTTPClient)
+	c, err := sdk.NewClient(cmd.address, cmd.apiKey, sdk.DefaultHTTPClient)
+	if err != nil {
+		return err
+	}
+
 	boardLinks, err := c.SearchDashboards(ctx, "", false)
 	if err != nil {
 		return err
