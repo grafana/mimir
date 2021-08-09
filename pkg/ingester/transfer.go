@@ -19,7 +19,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/util"
@@ -350,7 +350,7 @@ func (i *Ingester) transferOut(ctx context.Context) error {
 			err = client.SendTimeSeriesChunk(stream, &client.TimeSeriesChunk{
 				FromIngesterId: i.lifecycler.ID,
 				UserId:         userID,
-				Labels:         cortexpb.FromLabelsToLabelAdapters(pair.series.metric),
+				Labels:         mimirpb.FromLabelsToLabelAdapters(pair.series.metric),
 				Chunks:         chunks,
 			})
 			state.fpLocker.Unlock(pair.fp)

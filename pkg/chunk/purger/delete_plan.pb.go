@@ -7,8 +7,8 @@ import (
 	fmt "fmt"
 	_ "github.com/gogo/protobuf/gogoproto"
 	proto "github.com/gogo/protobuf/proto"
-	_ "github.com/grafana/mimir/pkg/cortexpb"
-	github_com_grafana_mimir_pkg_cortexpb "github.com/grafana/mimir/pkg/cortexpb"
+	_ "github.com/grafana/mimir/pkg/mimirpb."
+	github_com_grafana_mimir_pkg_cortexpb "github.com/grafana/mimir/pkg/mimirpb."
 	io "io"
 	math "math"
 	math_bits "math/bits"
@@ -82,7 +82,7 @@ func (m *DeletePlan) GetChunksGroup() []ChunksGroup {
 
 // ChunksGroup holds ChunkDetails and Labels for a group of chunks which have same series ID
 type ChunksGroup struct {
-	Labels []github_com_grafana_mimir_pkg_cortexpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/cortexpb.LabelAdapter" json:"labels"`
+	Labels []github_com_grafana_mimir_pkg_mimirpb.LabelAdapter `protobuf:"bytes,1,rep,name=labels,proto3,customtype=github.com/grafana/mimir/pkg/mimirpb.LabelAdapter" json:"labels"`
 	Chunks []ChunkDetails                                       `protobuf:"bytes,2,rep,name=chunks,proto3" json:"chunks"`
 }
 
@@ -966,7 +966,7 @@ func (m *ChunksGroup) Unmarshal(dAtA []byte) error {
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
 			}
-			m.Labels = append(m.Labels, github_com_grafana_mimir_pkg_cortexpb.LabelAdapter{})
+			m.Labels = append(m.Labels, github_com_grafana_mimir_pkg_mimirpb.LabelAdapter{})
 			if err := m.Labels[len(m.Labels)-1].Unmarshal(dAtA[iNdEx:postIndex]); err != nil {
 				return err
 			}

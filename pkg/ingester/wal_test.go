@@ -22,7 +22,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/util/services"
 )
 
@@ -89,14 +89,14 @@ func TestWAL(t *testing.T) {
 	lastSample := sampleStream.Values[len(sampleStream.Values)-1]
 
 	// In-order and out of order sample in the same request.
-	metric := cortexpb.FromLabelAdaptersToLabels(cortexpb.FromMetricsToLabelAdapters(sampleStream.Metric))
-	outOfOrderSample := cortexpb.Sample{TimestampMs: int64(lastSample.Timestamp - 10), Value: 99}
-	inOrderSample := cortexpb.Sample{TimestampMs: int64(lastSample.Timestamp + 10), Value: 999}
+	metric := mimirpb.FromLabelAdaptersToLabels(mimirpb.FromMetricsToLabelAdapters(sampleStream.Metric))
+	outOfOrderSample := mimirpb.Sample{TimestampMs: int64(lastSample.Timestamp - 10), Value: 99}
+	inOrderSample := mimirpb.Sample{TimestampMs: int64(lastSample.Timestamp + 10), Value: 999}
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = ing.Push(ctx, cortexpb.ToWriteRequest(
+	_, err = ing.Push(ctx, mimirpb.ToWriteRequest(
 		[]labels.Labels{metric, metric},
-		[]cortexpb.Sample{outOfOrderSample, inOrderSample}, nil, cortexpb.API))
+		[]mimirpb.Sample{outOfOrderSample, inOrderSample}, nil, mimirpb.API))
 	require.Equal(t, httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(makeMetricValidationError(sampleOutOfOrder, metric,
 		fmt.Errorf("sample timestamp out of order; last timestamp: %v, incoming timestamp: %v", lastSample.Timestamp, model.Time(outOfOrderSample.TimestampMs))), userID).Error()), err)
 

@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 )
 
 func TestFromValue(t *testing.T) {
@@ -38,7 +38,7 @@ func TestFromValue(t *testing.T) {
 			err:   false,
 			expected: []SampleStream{
 				{
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -70,11 +70,11 @@ func TestFromValue(t *testing.T) {
 			err: false,
 			expected: []SampleStream{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -82,11 +82,11 @@ func TestFromValue(t *testing.T) {
 					},
 				},
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							Value:       2,
 							TimestampMs: 2,
@@ -124,11 +124,11 @@ func TestFromValue(t *testing.T) {
 			err: false,
 			expected: []SampleStream{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							Value:       1,
 							TimestampMs: 1,
@@ -140,11 +140,11 @@ func TestFromValue(t *testing.T) {
 					},
 				},
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a2"},
 						{Name: "b", Value: "b2"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							Value:       8,
 							TimestampMs: 1,

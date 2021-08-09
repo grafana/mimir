@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/querier/series"
@@ -167,7 +167,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 			continue
 		}
 
-		ls := cortexpb.FromLabelAdaptersToLabels(result.Labels)
+		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 		sort.Sort(ls)
 
 		chunks, err := chunkcompat.FromChunks(userID, ls, result.Chunks)
@@ -280,8 +280,8 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 	var e exemplar.QueryResult
 	ret := make([]exemplar.QueryResult, len(allResults.Timeseries))
 	for i, ts := range allResults.Timeseries {
-		e.SeriesLabels = cortexpb.FromLabelAdaptersToLabels(ts.Labels)
-		e.Exemplars = cortexpb.FromExemplarProtosToExemplars(ts.Exemplars)
+		e.SeriesLabels = mimirpb.FromLabelAdaptersToLabels(ts.Labels)
+		e.Exemplars = mimirpb.FromExemplarProtosToExemplars(ts.Exemplars)
 		ret[i] = e
 	}
 	return ret, nil

@@ -30,8 +30,8 @@ import (
 	"google.golang.org/grpc/codes"
 
 	cortex_chunk "github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -64,7 +64,7 @@ var (
 
 // Config for an Ingester.
 type Config struct {
-	WALConfig        WALConfig             `yaml:"walconfig" doc:"description=Configures the Write-Ahead Log (WAL) for the Cortex chunks storage. This config is ignored when running the Cortex blocks storage."`
+	WALConfig        WALConfig             `yaml:"walconfig" doc:"description=Configures the Write-Ahead Log (WAL) for the Mimir chunks storage. This config is ignored when running the Mimir blocks storage."`
 	LifecyclerConfig ring.LifecyclerConfig `yaml:"lifecycler"`
 
 	// Config for transferring chunks. Zero or negative = no retries.
@@ -487,7 +487,7 @@ func (i *Ingester) checkRunningOrStopping() error {
 }
 
 // Push implements client.IngesterServer
-func (i *Ingester) Push(ctx context.Context, req *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error) {
+func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	if err := i.checkRunningOrStopping(); err != nil {
 		return nil, err
 	}
@@ -509,7 +509,7 @@ func (i *Ingester) Push(ctx context.Context, req *cortexpb.WriteRequest) (*corte
 
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the call to ReuseSlice
-	defer cortexpb.ReuseSlice(req.Timeseries)
+	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -573,15 +573,15 @@ func (i *Ingester) Push(ctx context.Context, req *cortexpb.WriteRequest) (*corte
 
 	if firstPartialErr != nil {
 		// grpcForwardableError turns the error into a string so it no longer references `req`
-		return &cortexpb.WriteResponse{}, grpcForwardableError(userID, firstPartialErr.code, firstPartialErr)
+		return &mimirpb.WriteResponse{}, grpcForwardableError(userID, firstPartialErr.code, firstPartialErr)
 	}
 
-	return &cortexpb.WriteResponse{}, nil
+	return &mimirpb.WriteResponse{}, nil
 }
 
 // NOTE: memory for `labels` is unsafe; anything retained beyond the
 // life of this function must be copied
-func (i *Ingester) append(ctx context.Context, userID string, labels labelPairs, timestamp model.Time, value model.SampleValue, source cortexpb.WriteRequest_SourceEnum, record *WALRecord) error {
+func (i *Ingester) append(ctx context.Context, userID string, labels labelPairs, timestamp model.Time, value model.SampleValue, source mimirpb.WriteRequest_SourceEnum, record *WALRecord) error {
 	labels.removeBlanks()
 
 	var (
@@ -647,9 +647,9 @@ func (i *Ingester) append(ctx context.Context, userID string, labels labelPairs,
 	i.metrics.memoryChunks.Add(float64(len(series.chunkDescs) - prevNumChunks))
 	i.metrics.ingestedSamples.Inc()
 	switch source {
-	case cortexpb.RULE:
+	case mimirpb.RULE:
 		state.ingestedRuleSamples.Inc()
-	case cortexpb.API:
+	case mimirpb.API:
 		fallthrough
 	default:
 		state.ingestedAPISamples.Inc()
@@ -659,7 +659,7 @@ func (i *Ingester) append(ctx context.Context, userID string, labels labelPairs,
 }
 
 // pushMetadata returns number of ingested metadata.
-func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*cortexpb.MetricMetadata) int {
+func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*mimirpb.MetricMetadata) int {
 	ingestedMetadata := 0
 	failedMetadata := 0
 
@@ -690,7 +690,7 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 	return ingestedMetadata
 }
 
-func (i *Ingester) appendMetadata(userID string, m *cortexpb.MetricMetadata) error {
+func (i *Ingester) appendMetadata(userID string, m *mimirpb.MetricMetadata) error {
 	i.userStatesMtx.RLock()
 	if i.stopped {
 		i.userStatesMtx.RUnlock()
@@ -815,12 +815,12 @@ func (i *Ingester) Query(ctx context.Context, req *client.QueryRequest) (*client
 			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "exceeded maximum number of samples in a query (%d)", maxSamplesPerQuery)
 		}
 
-		ts := cortexpb.TimeSeries{
-			Labels:  cortexpb.FromLabelsToLabelAdapters(series.metric),
-			Samples: make([]cortexpb.Sample, 0, len(values)),
+		ts := mimirpb.TimeSeries{
+			Labels:  mimirpb.FromLabelsToLabelAdapters(series.metric),
+			Samples: make([]mimirpb.Sample, 0, len(values)),
 		}
 		for _, s := range values {
-			ts.Samples = append(ts.Samples, cortexpb.Sample{
+			ts.Samples = append(ts.Samples, mimirpb.Sample{
 				Value:       float64(s.Value),
 				TimestampMs: int64(s.Timestamp),
 			})
@@ -891,7 +891,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 		numChunks += len(wireChunks)
 		batch = append(batch, client.TimeSeriesChunk{
-			Labels: cortexpb.FromLabelsToLabelAdapters(series.metric),
+			Labels: mimirpb.FromLabelsToLabelAdapters(series.metric),
 			Chunks: wireChunks,
 		})
 
@@ -1044,10 +1044,10 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 	}
 
 	result := &client.MetricsForLabelMatchersResponse{
-		Metric: make([]*cortexpb.Metric, 0, len(lss)),
+		Metric: make([]*mimirpb.Metric, 0, len(lss)),
 	}
 	for _, ls := range lss {
-		result.Metric = append(result.Metric, &cortexpb.Metric{Labels: cortexpb.FromLabelsToLabelAdapters(ls)})
+		result.Metric = append(result.Metric, &mimirpb.Metric{Labels: mimirpb.FromLabelsToLabelAdapters(ls)})
 	}
 
 	return result, nil
@@ -1148,9 +1148,9 @@ func (i *Ingester) CheckReady(ctx context.Context) error {
 }
 
 // labels will be copied if needed.
-func (i *Ingester) updateActiveSeries(userID string, now time.Time, labels []cortexpb.LabelAdapter) {
+func (i *Ingester) updateActiveSeries(userID string, now time.Time, labels []mimirpb.LabelAdapter) {
 	i.userStatesMtx.RLock()
 	defer i.userStatesMtx.RUnlock()
 
-	i.userStates.updateActiveSeriesForUser(userID, now, cortexpb.FromLabelAdaptersToLabels(labels))
+	i.userStates.updateActiveSeriesForUser(userID, now, mimirpb.FromLabelAdaptersToLabels(labels))
 }

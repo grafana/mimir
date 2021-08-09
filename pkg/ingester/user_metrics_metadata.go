@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -34,7 +34,7 @@ func newMetadataMap(l *Limiter, m *ingesterMetrics, userID string) *userMetricsM
 	}
 }
 
-func (mm *userMetricsMetadata) add(metric string, metadata *cortexpb.MetricMetadata) error {
+func (mm *userMetricsMetadata) add(metric string, metadata *mimirpb.MetricMetadata) error {
 	mm.mtx.Lock()
 	defer mm.mtx.Unlock()
 
@@ -85,10 +85,10 @@ func (mm *userMetricsMetadata) purge(deadline time.Time) {
 	mm.metrics.memMetadataRemovedTotal.WithLabelValues(mm.userID).Add(float64(deleted))
 }
 
-func (mm *userMetricsMetadata) toClientMetadata() []*cortexpb.MetricMetadata {
+func (mm *userMetricsMetadata) toClientMetadata() []*mimirpb.MetricMetadata {
 	mm.mtx.RLock()
 	defer mm.mtx.RUnlock()
-	r := make([]*cortexpb.MetricMetadata, 0, len(mm.metricToMetadata))
+	r := make([]*mimirpb.MetricMetadata, 0, len(mm.metricToMetadata))
 	for _, set := range mm.metricToMetadata {
 		for m := range set {
 			r = append(r, &m)
@@ -97,7 +97,7 @@ func (mm *userMetricsMetadata) toClientMetadata() []*cortexpb.MetricMetadata {
 	return r
 }
 
-type metricMetadataSet map[cortexpb.MetricMetadata]time.Time
+type metricMetadataSet map[mimirpb.MetricMetadata]time.Time
 
 // If deadline is zero time, all metrics are purged.
 func (mms metricMetadataSet) purge(deadline time.Time) int {

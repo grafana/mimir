@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package cortexpb
+package mimirpb
 
 import (
 	"flag"
@@ -103,14 +103,14 @@ func (bs *LabelAdapter) MarshalToSizedBuffer(buf []byte) (n int, err error) {
 	if len(ls.Value) > 0 {
 		i -= len(ls.Value)
 		copy(buf[i:], ls.Value)
-		i = encodeVarintCortex(buf, i, uint64(len(ls.Value)))
+		i = encodeVarintMimir(buf, i, uint64(len(ls.Value)))
 		i--
 		buf[i] = 0x12
 	}
 	if len(ls.Name) > 0 {
 		i -= len(ls.Name)
 		copy(buf[i:], ls.Name)
-		i = encodeVarintCortex(buf, i, uint64(len(ls.Name)))
+		i = encodeVarintMimir(buf, i, uint64(len(ls.Name)))
 		i--
 		buf[i] = 0xa
 	}
@@ -128,7 +128,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 		var wire uint64
 		for shift := uint(0); ; shift += 7 {
 			if shift >= 64 {
-				return ErrIntOverflowCortex
+				return ErrIntOverflowMimir
 			}
 			if iNdEx >= l {
 				return io.ErrUnexpectedEOF
@@ -156,7 +156,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowCortex
+					return ErrIntOverflowMimir
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -169,11 +169,11 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 				}
 			}
 			if byteLen < 0 {
-				return ErrInvalidLengthCortex
+				return ErrInvalidLengthMimir
 			}
 			postIndex := iNdEx + byteLen
 			if postIndex < 0 {
-				return ErrInvalidLengthCortex
+				return ErrInvalidLengthMimir
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -187,7 +187,7 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 			var byteLen int
 			for shift := uint(0); ; shift += 7 {
 				if shift >= 64 {
-					return ErrIntOverflowCortex
+					return ErrIntOverflowMimir
 				}
 				if iNdEx >= l {
 					return io.ErrUnexpectedEOF
@@ -200,11 +200,11 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 				}
 			}
 			if byteLen < 0 {
-				return ErrInvalidLengthCortex
+				return ErrInvalidLengthMimir
 			}
 			postIndex := iNdEx + byteLen
 			if postIndex < 0 {
-				return ErrInvalidLengthCortex
+				return ErrInvalidLengthMimir
 			}
 			if postIndex > l {
 				return io.ErrUnexpectedEOF
@@ -213,15 +213,15 @@ func (bs *LabelAdapter) Unmarshal(dAtA []byte) error {
 			iNdEx = postIndex
 		default:
 			iNdEx = preIndex
-			skippy, err := skipCortex(dAtA[iNdEx:])
+			skippy, err := skipMimir(dAtA[iNdEx:])
 			if err != nil {
 				return err
 			}
 			if skippy < 0 {
-				return ErrInvalidLengthCortex
+				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) < 0 {
-				return ErrInvalidLengthCortex
+				return ErrInvalidLengthMimir
 			}
 			if (iNdEx + skippy) > l {
 				return io.ErrUnexpectedEOF
@@ -250,11 +250,11 @@ func (bs *LabelAdapter) Size() (n int) {
 	_ = l
 	l = len(ls.Name)
 	if l > 0 {
-		n += 1 + l + sovCortex(uint64(l))
+		n += 1 + l + sovMimir(uint64(l))
 	}
 	l = len(ls.Value)
 	if l > 0 {
-		n += 1 + l + sovCortex(uint64(l))
+		n += 1 + l + sovMimir(uint64(l))
 	}
 	return n
 }

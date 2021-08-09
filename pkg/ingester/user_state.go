@@ -20,7 +20,7 @@ import (
 	"github.com/segmentio/fasthash/fnv1a"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ingester/index"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -113,7 +113,7 @@ func (us *userStates) updateRates() {
 // Labels will be copied if they are kept.
 func (us *userStates) updateActiveSeriesForUser(userID string, now time.Time, lbls []labels.Label) {
 	if s, ok := us.get(userID); ok {
-		s.activeSeries.UpdateSeries(lbls, now, func(l labels.Labels) labels.Labels { return cortexpb.CopyLabels(l) })
+		s.activeSeries.UpdateSeries(lbls, now, func(l labels.Labels) labels.Labels { return mimirpb.CopyLabels(l) })
 	}
 }
 
@@ -194,7 +194,7 @@ func (us *userStates) getViaContext(ctx context.Context) (*userState, bool, erro
 
 // NOTE: memory for `labels` is unsafe; anything retained beyond the
 // life of this function must be copied
-func (us *userStates) getOrCreateSeries(ctx context.Context, userID string, labels []cortexpb.LabelAdapter, record *WALRecord) (*userState, model.Fingerprint, *memorySeries, error) {
+func (us *userStates) getOrCreateSeries(ctx context.Context, userID string, labels []mimirpb.LabelAdapter, record *WALRecord) (*userState, model.Fingerprint, *memorySeries, error) {
 	state := us.getOrCreate(userID)
 	// WARNING: `err` may have a reference to unsafe memory in `labels`
 	fp, series, err := state.getSeries(labels, record)
@@ -249,7 +249,7 @@ func (u *userState) createSeriesWithFingerprint(fp model.Fingerprint, metric lab
 		// Check if the per-metric limit has been exceeded
 		if err = u.seriesInMetric.canAddSeriesFor(u.userID, metricName); err != nil {
 			// WARNING: returns a reference to `metric`
-			return nil, makeMetricLimitError(perMetricSeriesLimit, cortexpb.FromLabelAdaptersToLabels(metric), u.limiter.FormatError(u.userID, err))
+			return nil, makeMetricLimitError(perMetricSeriesLimit, mimirpb.FromLabelAdaptersToLabels(metric), u.limiter.FormatError(u.userID, err))
 		}
 	}
 

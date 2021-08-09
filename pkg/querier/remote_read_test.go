@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/series"
 )
@@ -72,12 +72,12 @@ func TestRemoteReadHandler(t *testing.T) {
 	expected := client.ReadResponse{
 		Results: []*client.QueryResponse{
 			{
-				Timeseries: []cortexpb.TimeSeries{
+				Timeseries: []mimirpb.TimeSeries{
 					{
-						Labels: []cortexpb.LabelAdapter{
+						Labels: []mimirpb.LabelAdapter{
 							{Name: "foo", Value: "bar"},
 						},
-						Samples: []cortexpb.Sample{
+						Samples: []mimirpb.Sample{
 							{Value: 0, TimestampMs: 0},
 							{Value: 1, TimestampMs: 1},
 							{Value: 2, TimestampMs: 2},

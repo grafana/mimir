@@ -47,7 +47,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ring"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -59,8 +59,8 @@ import (
 )
 
 func TestIngester_v2Push(t *testing.T) {
-	metricLabelAdapters := []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabels := cortexpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -74,40 +74,40 @@ func TestIngester_v2Push(t *testing.T) {
 	userID := "test"
 
 	tests := map[string]struct {
-		reqs                      []*cortexpb.WriteRequest
+		reqs                      []*mimirpb.WriteRequest
 		expectedErr               error
-		expectedIngested          []cortexpb.TimeSeries
-		expectedMetadataIngested  []*cortexpb.MetricMetadata
-		expectedExemplarsIngested []cortexpb.TimeSeries
+		expectedIngested          []mimirpb.TimeSeries
+		expectedMetadataIngested  []*mimirpb.MetricMetadata
+		expectedExemplarsIngested []mimirpb.TimeSeries
 		expectedMetrics           string
 		additionalMetrics         []string
 		disableActiveSeries       bool
 		maxExemplars              int
 	}{
 		"should succeed on valid series and metadata": {
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
-					[]*cortexpb.MetricMetadata{
-						{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: cortexpb.COUNTER},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+					[]*mimirpb.MetricMetadata{
+						{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 					},
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
-					[]*cortexpb.MetricMetadata{
-						{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: cortexpb.GAUGE},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					[]*mimirpb.MetricMetadata{
+						{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
 					},
-					cortexpb.API),
+					mimirpb.API),
 			},
 			expectedErr: nil,
-			expectedIngested: []cortexpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 9}, {Value: 2, TimestampMs: 10}}},
+			expectedIngested: []mimirpb.TimeSeries{
+				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}, {Value: 2, TimestampMs: 10}}},
 			},
-			expectedMetadataIngested: []*cortexpb.MetricMetadata{
-				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: cortexpb.GAUGE},
-				{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: cortexpb.COUNTER},
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
+				{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 			},
 			additionalMetrics: []string{
 				// Metadata.
@@ -154,26 +154,26 @@ func TestIngester_v2Push(t *testing.T) {
 		},
 		"should succeed on valid series with exemplars": {
 			maxExemplars: 2,
-			reqs: []*cortexpb.WriteRequest{
+			reqs: []*mimirpb.WriteRequest{
 				// Ingesting an exemplar requires a sample to create the series first
-				cortexpb.ToWriteRequest(
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 				{
-					Timeseries: []cortexpb.PreallocTimeseries{
+					Timeseries: []mimirpb.PreallocTimeseries{
 						{
-							TimeSeries: &cortexpb.TimeSeries{
-								Labels: []cortexpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
-								Exemplars: []cortexpb.Exemplar{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []cortexpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
 									{
-										Labels:      []cortexpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
 										TimestampMs: 1001,
 										Value:       1001,
 									},
@@ -184,20 +184,20 @@ func TestIngester_v2Push(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			expectedIngested: []cortexpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 9}}},
+			expectedIngested: []mimirpb.TimeSeries{
+				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}}},
 			},
-			expectedExemplarsIngested: []cortexpb.TimeSeries{
+			expectedExemplarsIngested: []mimirpb.TimeSeries{
 				{
 					Labels: metricLabelAdapters,
-					Exemplars: []cortexpb.Exemplar{
+					Exemplars: []mimirpb.Exemplar{
 						{
-							Labels:      []cortexpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 							TimestampMs: 1000,
 							Value:       1000,
 						},
 						{
-							Labels:      []cortexpb.LabelAdapter{{Name: "traceID", Value: "456"}},
+							Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "456"}},
 							TimestampMs: 1001,
 							Value:       1001,
 						},
@@ -258,21 +258,21 @@ func TestIngester_v2Push(t *testing.T) {
 		},
 		"successful push, active series disabled": {
 			disableActiveSeries: true,
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 			},
 			expectedErr: nil,
-			expectedIngested: []cortexpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 9}, {Value: 2, TimestampMs: 10}}},
+			expectedIngested: []mimirpb.TimeSeries{
+				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}, {Value: 2, TimestampMs: 10}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -296,21 +296,21 @@ func TestIngester_v2Push(t *testing.T) {
 			`,
 		},
 		"should soft fail on sample out of order": {
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfOrderSample, model.Time(9), cortexpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
-			expectedIngested: []cortexpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []cortexpb.Sample{{Value: 2, TimestampMs: 10}}},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfOrderSample, model.Time(9), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngested: []mimirpb.TimeSeries{
+				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 10}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -340,21 +340,21 @@ func TestIngester_v2Push(t *testing.T) {
 			`,
 		},
 		"should soft fail on sample out of bound": {
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 1575043969 - (86400 * 1000)}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969 - (86400 * 1000)}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), cortexpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
-			expectedIngested: []cortexpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []cortexpb.Sample{{Value: 2, TimestampMs: 1575043969}}},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngested: []mimirpb.TimeSeries{
+				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -384,21 +384,21 @@ func TestIngester_v2Push(t *testing.T) {
 			`,
 		},
 		"should soft fail on two different sample values at the same timestamp": {
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 1575043969}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 			},
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrDuplicateSampleForTimestamp, model.Time(1575043969), cortexpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
-			expectedIngested: []cortexpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []cortexpb.Sample{{Value: 2, TimestampMs: 1575043969}}},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrDuplicateSampleForTimestamp, model.Time(1575043969), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngested: []mimirpb.TimeSeries{
+				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -429,17 +429,17 @@ func TestIngester_v2Push(t *testing.T) {
 		},
 		"should soft fail on exemplar with unknown series": {
 			maxExemplars: 1,
-			reqs: []*cortexpb.WriteRequest{
+			reqs: []*mimirpb.WriteRequest{
 				// Ingesting an exemplar requires a sample to create the series first
 				// This is not done here.
 				{
-					Timeseries: []cortexpb.PreallocTimeseries{
+					Timeseries: []mimirpb.PreallocTimeseries{
 						{
-							TimeSeries: &cortexpb.TimeSeries{
-								Labels: []cortexpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
-								Exemplars: []cortexpb.Exemplar{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{metricLabelAdapters[0]}, // Cannot reuse test slice var because it is cleared and returned to the pool
+								Exemplars: []mimirpb.Exemplar{
 									{
-										Labels:      []cortexpb.LabelAdapter{{Name: "traceID", Value: "123"}},
+										Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}},
 										TimestampMs: 1000,
 										Value:       1000,
 									},
@@ -449,7 +449,7 @@ func TestIngester_v2Push(t *testing.T) {
 					},
 				},
 			},
-			expectedErr:              httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestExemplarErr(errExemplarRef, model.Time(1000), cortexpb.FromLabelsToLabelAdapters(metricLabels), []cortexpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID).Error()),
+			expectedErr:              httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestExemplarErr(errExemplarRef, model.Time(1000), mimirpb.FromLabelsToLabelAdapters(metricLabels), []mimirpb.LabelAdapter{{Name: "traceID", Value: "123"}}), userID).Error()),
 			expectedIngested:         nil,
 			expectedMetadataIngested: nil,
 			additionalMetrics: []string{
@@ -592,8 +592,8 @@ func TestIngester_v2Push(t *testing.T) {
 }
 
 func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
-	metricLabelAdapters := []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabels := cortexpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -622,17 +622,17 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 
 	// Push timeseries for each user
 	for _, userID := range []string{"test-1", "test-2"} {
-		reqs := []*cortexpb.WriteRequest{
-			cortexpb.ToWriteRequest(
+		reqs := []*mimirpb.WriteRequest{
+			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
-				[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 				nil,
-				cortexpb.API),
-			cortexpb.ToWriteRequest(
+				mimirpb.API),
+			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
-				[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
+				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 				nil,
-				cortexpb.API),
+				mimirpb.API),
 		}
 
 		for _, req := range reqs {
@@ -677,8 +677,8 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 }
 
 func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
-	metricLabelAdapters := []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabels := cortexpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_memory_series_created_total",
 		"cortex_ingester_memory_series_removed_total",
@@ -704,17 +704,17 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 
 	// Push timeseries for each user
 	for _, userID := range []string{"test-1", "test-2"} {
-		reqs := []*cortexpb.WriteRequest{
-			cortexpb.ToWriteRequest(
+		reqs := []*mimirpb.WriteRequest{
+			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
-				[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+				[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 				nil,
-				cortexpb.API),
-			cortexpb.ToWriteRequest(
+				mimirpb.API),
+			mimirpb.ToWriteRequest(
 				[]labels.Labels{metricLabels},
-				[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
+				[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 				nil,
-				cortexpb.API),
+				mimirpb.API),
 		}
 
 		for _, req := range reqs {
@@ -773,15 +773,15 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 	})
 
 	// Push a single time series to set the TSDB min time.
-	metricLabelAdapters := []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabels := cortexpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	startTime := util.TimeToMillis(time.Now())
 
-	currTimeReq := cortexpb.ToWriteRequest(
+	currTimeReq := mimirpb.ToWriteRequest(
 		[]labels.Labels{metricLabels},
-		[]cortexpb.Sample{{Value: 1, TimestampMs: startTime}},
+		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
 		nil,
-		cortexpb.API)
+		mimirpb.API)
 	_, err = ingester.v2Push(ctx, currTimeReq)
 	require.NoError(b, err)
 
@@ -799,7 +799,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 			for i := range allSamples {
 				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
 			}
-			_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(allLabels, allSamples, nil, cortexpb.API))
+			_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
 			if !errorsExpected {
 				require.NoError(b, err)
 			}
@@ -848,26 +848,26 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 		// If this returns false, test is skipped.
 		prepareConfig   func(limits *validation.Limits, instanceLimits *InstanceLimits) bool
 		beforeBenchmark func(b *testing.B, ingester *Ingester, numSeriesPerRequest int)
-		runBenchmark    func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample)
+		runBenchmark    func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample)
 	}{
 		"out of bound samples": {
 			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool { return true },
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Push a single time series to set the TSDB min time.
-				currTimeReq := cortexpb.ToWriteRequest(
+				currTimeReq := mimirpb.ToWriteRequest(
 					[]labels.Labels{{{Name: labels.MetricName, Value: metricName}}},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
-					cortexpb.API)
+					mimirpb.API)
 				_, err := ingester.v2Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				expectedErr := storage.ErrOutOfBounds.Error()
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API)) // nolint:errcheck
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -878,22 +878,22 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// For each series, push a single sample with a timestamp greater than next pushes.
 				for i := 0; i < numSeriesPerRequest; i++ {
-					currTimeReq := cortexpb.ToWriteRequest(
+					currTimeReq := mimirpb.ToWriteRequest(
 						[]labels.Labels{{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}}},
-						[]cortexpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 						nil,
-						cortexpb.API)
+						mimirpb.API)
 
 					_, err := ingester.v2Push(ctx, currTimeReq)
 					require.NoError(b, err)
 				}
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				expectedErr := storage.ErrOutOfOrderSample.Error()
 
 				// Push out of order samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API)) // nolint:errcheck
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -906,18 +906,18 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Push a series with a metric name different than the one used during the benchmark.
-				currTimeReq := cortexpb.ToWriteRequest(
+				currTimeReq := mimirpb.ToWriteRequest(
 					[]labels.Labels{labels.FromStrings(labels.MetricName, "another")},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
-					cortexpb.API)
+					mimirpb.API)
 				_, err := ingester.v2Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with a different name than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API)) // nolint:errcheck
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-user series limit")
 				}
 			},
@@ -929,18 +929,18 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Push a series with the same metric name but different labels than the one used during the benchmark.
-				currTimeReq := cortexpb.ToWriteRequest(
+				currTimeReq := mimirpb.ToWriteRequest(
 					[]labels.Labels{labels.FromStrings(labels.MetricName, metricName, "cardinality", "another")},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
-					cortexpb.API)
+					mimirpb.API)
 				_, err := ingester.v2Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API)) // nolint:errcheck
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-metric series limit")
 				}
 			},
@@ -960,10 +960,10 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 
 				ingester.ingestionRate.Tick()
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API))
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "push rate reached")
 				}
 			},
@@ -982,10 +982,10 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API))
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "max tenants limit reached")
 				}
 			},
@@ -1002,9 +1002,9 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API))
+					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "max series limit reached")
 				}
 			},
@@ -1020,9 +1020,9 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				ingester.inflightPushRequests.Inc()
 			},
-			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []cortexpb.Sample) {
+			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.Push(ctx, cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "too many inflight push requests")
 				}
 			},
@@ -1070,10 +1070,10 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 
 					// Prepare the request.
 					metrics := make([]labels.Labels, 0, scenario.numSeriesPerRequest)
-					samples := make([]cortexpb.Sample, 0, scenario.numSeriesPerRequest)
+					samples := make([]mimirpb.Sample, 0, scenario.numSeriesPerRequest)
 					for i := 0; i < scenario.numSeriesPerRequest; i++ {
 						metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: metricName}, {Name: "cardinality", Value: strconv.Itoa(i)}})
-						samples = append(samples, cortexpb.Sample{Value: float64(i), TimestampMs: sampleTimestamp})
+						samples = append(samples, mimirpb.Sample{Value: float64(i), TimestampMs: sampleTimestamp})
 					}
 
 					// Run the benchmark.
@@ -1223,7 +1223,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 		from     int64
 		to       int64
 		matchers []*client.LabelMatcher
-		expected []cortexpb.TimeSeries
+		expected []mimirpb.TimeSeries
 	}{
 		"should return an empty response if no metric matches": {
 			from: math.MinInt64,
@@ -1231,7 +1231,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "unknown"},
 			},
-			expected: []cortexpb.TimeSeries{},
+			expected: []mimirpb.TimeSeries{},
 		},
 		"should filter series by == matcher": {
 			from: math.MinInt64,
@@ -1239,9 +1239,9 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
-			expected: []cortexpb.TimeSeries{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 100000}}},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 110000}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 100000}}},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -1250,8 +1250,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
-			expected: []cortexpb.TimeSeries{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[2].lbls), Samples: []cortexpb.Sample{{Value: 2, TimestampMs: 200000}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[2].lbls), Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -1260,9 +1260,9 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
-			expected: []cortexpb.TimeSeries{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 100000}}},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 110000}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 100000}}},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -1271,8 +1271,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
-			expected: []cortexpb.TimeSeries{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[2].lbls), Samples: []cortexpb.Sample{{Value: 2, TimestampMs: 200000}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[2].lbls), Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -1282,8 +1282,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
-			expected: []cortexpb.TimeSeries{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 110000}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -1292,8 +1292,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
-			expected: []cortexpb.TimeSeries{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []cortexpb.Sample{{Value: 1, TimestampMs: 100000}}},
+			expected: []mimirpb.TimeSeries{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 100000}}},
 			},
 		},
 	}
@@ -1408,7 +1408,7 @@ func TestIngester_v2Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	// Mock request
 	userID := "test"
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := &cortexpb.WriteRequest{}
+	req := &mimirpb.WriteRequest{}
 
 	res, err := i.v2Push(ctx, req)
 	assert.Equal(t, wrapWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error(), err.Error())
@@ -1498,7 +1498,7 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 		from     int64
 		to       int64
 		matchers []*client.LabelMatchers
-		expected []*cortexpb.Metric
+		expected []*mimirpb.Metric
 	}{
 		"should return an empty response if no metric match": {
 			from: math.MinInt64,
@@ -1508,7 +1508,7 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "unknown"},
 				},
 			}},
-			expected: []*cortexpb.Metric{},
+			expected: []*mimirpb.Metric{},
 		},
 		"should filter metrics by single matcher": {
 			from: math.MinInt64,
@@ -1518,9 +1518,9 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*cortexpb.Metric{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
 			},
 		},
 		"should filter metrics by multiple matchers": {
@@ -1538,9 +1538,9 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 					},
 				},
 			},
-			expected: []*cortexpb.Metric{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
 			},
 		},
 		"should NOT filter metrics by time range to always return known metrics even when queried for older time ranges": {
@@ -1551,9 +1551,9 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*cortexpb.Metric{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
 			},
 		},
 		"should not return duplicated metrics on overlapping matchers": {
@@ -1571,10 +1571,10 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 					},
 				},
 			},
-			expected: []*cortexpb.Metric{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
 			},
 		},
 		"should return all matching metrics even if their FastFingerprint collide": {
@@ -1585,9 +1585,9 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "collision"},
 				},
 			}},
-			expected: []*cortexpb.Metric{
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[3].lbls)},
-				{Labels: cortexpb.FromLabelsToLabelAdapters(fixtures[4].lbls)},
+			expected: []*mimirpb.Metric{
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[3].lbls)},
+				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[4].lbls)},
 			},
 		},
 	}
@@ -1719,21 +1719,21 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 
 			// Generate metrics and samples (1 for each series).
 			metrics := make([]labels.Labels, 0, batchSize)
-			samples := make([]cortexpb.Sample, 0, batchSize)
+			samples := make([]mimirpb.Sample, 0, batchSize)
 
 			for s := 0; s < batchSize; s++ {
 				metrics = append(metrics, labels.Labels{
 					{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", o+s)},
 				})
 
-				samples = append(samples, cortexpb.Sample{
+				samples = append(samples, mimirpb.Sample{
 					TimestampMs: ts,
 					Value:       1,
 				})
 			}
 
 			// Send metrics to the ingester.
-			req := cortexpb.ToWriteRequest(metrics, samples, nil, cortexpb.API)
+			req := mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)
 			_, err := i.v2Push(ctx, req)
 			require.NoError(t, err)
 		}
@@ -1862,10 +1862,10 @@ func TestIngester_v2QueryStreamManySamples(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	const samplesCount = 100000
-	samples := make([]cortexpb.Sample, 0, samplesCount)
+	samples := make([]mimirpb.Sample, 0, samplesCount)
 
 	for i := 0; i < samplesCount; i++ {
-		samples = append(samples, cortexpb.Sample{
+		samples = append(samples, mimirpb.Sample{
 			Value:       float64(i),
 			TimestampMs: int64(i),
 		})
@@ -1959,10 +1959,10 @@ func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	const samplesCount = 1000000
-	samples := make([]cortexpb.Sample, 0, samplesCount)
+	samples := make([]mimirpb.Sample, 0, samplesCount)
 
 	for i := 0; i < samplesCount; i++ {
-		samples = append(samples, cortexpb.Sample{
+		samples = append(samples, mimirpb.Sample{
 			Value:       float64(i),
 			TimestampMs: int64(i),
 		})
@@ -2043,15 +2043,15 @@ func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
 	require.Equal(t, 100000+500000+samplesCount, totalSamples)
 }
 
-func writeRequestSingleSeries(lbls labels.Labels, samples []cortexpb.Sample) *cortexpb.WriteRequest {
-	req := &cortexpb.WriteRequest{
-		Source: cortexpb.API,
+func writeRequestSingleSeries(lbls labels.Labels, samples []mimirpb.Sample) *mimirpb.WriteRequest {
+	req := &mimirpb.WriteRequest{
+		Source: mimirpb.API,
 	}
 
-	ts := cortexpb.TimeSeries{}
-	ts.Labels = cortexpb.FromLabelsToLabelAdapters(lbls)
+	ts := mimirpb.TimeSeries{}
+	ts.Labels = mimirpb.FromLabelsToLabelAdapters(lbls)
 	ts.Samples = samples
-	req.Timeseries = append(req.Timeseries, cortexpb.PreallocTimeseries{TimeSeries: &ts})
+	req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{TimeSeries: &ts})
 
 	return req
 }
@@ -2096,10 +2096,10 @@ func benchmarkV2QueryStream(b *testing.B, streamChunks bool) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 
 	const samplesCount = 1000
-	samples := make([]cortexpb.Sample, 0, samplesCount)
+	samples := make([]mimirpb.Sample, 0, samplesCount)
 
 	for i := 0; i < samplesCount; i++ {
-		samples = append(samples, cortexpb.Sample{
+		samples = append(samples, mimirpb.Sample{
 			Value:       float64(i),
 			TimestampMs: int64(i),
 		})
@@ -2132,30 +2132,30 @@ func benchmarkV2QueryStream(b *testing.B, streamChunks bool) {
 	}
 }
 
-func mockWriteRequest(t *testing.T, lbls labels.Labels, value float64, timestampMs int64) (*cortexpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
-	samples := []cortexpb.Sample{
+func mockWriteRequest(t *testing.T, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
+	samples := []mimirpb.Sample{
 		{
 			TimestampMs: timestampMs,
 			Value:       value,
 		},
 	}
 
-	req := cortexpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, cortexpb.API)
+	req := mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, mimirpb.API)
 
 	// Generate the expected response
 	expectedQueryRes := &client.QueryResponse{
-		Timeseries: []cortexpb.TimeSeries{
+		Timeseries: []mimirpb.TimeSeries{
 			{
-				Labels:  cortexpb.FromLabelsToLabelAdapters(lbls),
+				Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
 				Samples: samples,
 			},
 		},
 	}
 
 	expectedQueryStreamResSamples := &client.QueryStreamResponse{
-		Timeseries: []cortexpb.TimeSeries{
+		Timeseries: []mimirpb.TimeSeries{
 			{
-				Labels:  cortexpb.FromLabelsToLabelAdapters(lbls),
+				Labels:  mimirpb.FromLabelsToLabelAdapters(lbls),
 				Samples: samples,
 			},
 		},
@@ -2170,7 +2170,7 @@ func mockWriteRequest(t *testing.T, lbls labels.Labels, value float64, timestamp
 	expectedQueryStreamResChunks := &client.QueryStreamResponse{
 		Chunkseries: []client.TimeSeriesChunk{
 			{
-				Labels: cortexpb.FromLabelsToLabelAdapters(lbls),
+				Labels: mimirpb.FromLabelsToLabelAdapters(lbls),
 				Chunks: []client.Chunk{
 					{
 						StartTimestampMs: timestampMs,
@@ -3308,7 +3308,7 @@ func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
-	req.Metadata = append(req.Metadata, &cortexpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: cortexpb.COUNTER})
+	req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: mimirpb.COUNTER})
 	_, err := i.v2Push(ctx, req)
 	require.NoError(t, err)
 }
@@ -3629,21 +3629,21 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 func TestIngester_v2PushInstanceLimits(t *testing.T) {
 	tests := map[string]struct {
 		limits          InstanceLimits
-		reqs            map[string][]*cortexpb.WriteRequest
+		reqs            map[string][]*mimirpb.WriteRequest
 		expectedErr     error
 		expectedErrType interface{}
 	}{
 		"should succeed creating one user and series": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
-			reqs: map[string][]*cortexpb.WriteRequest{
+			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}})},
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
-						[]*cortexpb.MetricMetadata{
-							{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: cortexpb.COUNTER},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}})},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+						[]*mimirpb.MetricMetadata{
+							{MetricFamilyName: "metric_name_1", Help: "a help for metric_name_1", Unit: "", Type: mimirpb.COUNTER},
 						},
-						cortexpb.API),
+						mimirpb.API),
 				},
 			},
 			expectedErr: nil,
@@ -3652,19 +3652,19 @@ func TestIngester_v2PushInstanceLimits(t *testing.T) {
 		"should fail creating two series": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
 
-			reqs: map[string][]*cortexpb.WriteRequest{
+			reqs: map[string][]*mimirpb.WriteRequest{
 				"test": {
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
-						cortexpb.API),
+						mimirpb.API),
 
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 10}},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
-						cortexpb.API),
+						mimirpb.API),
 				},
 			},
 
@@ -3674,21 +3674,21 @@ func TestIngester_v2PushInstanceLimits(t *testing.T) {
 		"should fail creating two users": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1},
 
-			reqs: map[string][]*cortexpb.WriteRequest{
+			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
-						cortexpb.API),
+						mimirpb.API),
 				},
 
 				"user2": {
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 10}},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test2"}})}, // another series
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
-						cortexpb.API),
+						mimirpb.API),
 				},
 			},
 			expectedErr: wrapWithUser(errMaxUsersLimitReached, "user2"),
@@ -3697,19 +3697,19 @@ func TestIngester_v2PushInstanceLimits(t *testing.T) {
 		"should fail pushing samples in two requests due to rate limit": {
 			limits: InstanceLimits{MaxInMemorySeries: 1, MaxInMemoryTenants: 1, MaxIngestionRate: 0.001},
 
-			reqs: map[string][]*cortexpb.WriteRequest{
+			reqs: map[string][]*mimirpb.WriteRequest{
 				"user1": {
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 						nil,
-						cortexpb.API),
+						mimirpb.API),
 
-					cortexpb.ToWriteRequest(
-						[]labels.Labels{cortexpb.FromLabelAdaptersToLabels([]cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
-						[]cortexpb.Sample{{Value: 1, TimestampMs: 10}},
+					mimirpb.ToWriteRequest(
+						[]labels.Labels{mimirpb.FromLabelAdaptersToLabels([]mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test1"}})},
+						[]mimirpb.Sample{{Value: 1, TimestampMs: 10}},
 						nil,
-						cortexpb.API),
+						mimirpb.API),
 				},
 			},
 			expectedErr: errMaxSamplesPushRateLimitReached,
@@ -3891,17 +3891,17 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	require.NoError(t, g.Wait())
 }
 
-func generateSamplesForLabel(l labels.Labels, count int) *cortexpb.WriteRequest {
+func generateSamplesForLabel(l labels.Labels, count int) *mimirpb.WriteRequest {
 	var lbls = make([]labels.Labels, 0, count)
-	var samples = make([]cortexpb.Sample, 0, count)
+	var samples = make([]mimirpb.Sample, 0, count)
 
 	for i := 0; i < count; i++ {
-		samples = append(samples, cortexpb.Sample{
+		samples = append(samples, mimirpb.Sample{
 			Value:       float64(i),
 			TimestampMs: int64(i),
 		})
 		lbls = append(lbls, l)
 	}
 
-	return cortexpb.ToWriteRequest(lbls, samples, nil, cortexpb.API)
+	return mimirpb.ToWriteRequest(lbls, samples, nil, mimirpb.API)
 }

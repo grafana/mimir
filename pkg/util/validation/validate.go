@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/weaveworks/common/httpgrpc"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 )
@@ -109,7 +109,7 @@ type SampleValidationConfig interface {
 
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
-func ValidateSample(cfg SampleValidationConfig, userID string, ls []cortexpb.LabelAdapter, s cortexpb.Sample) ValidationError {
+func ValidateSample(cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 
 	if cfg.RejectOldSamples(userID) && model.Time(s.TimestampMs) < model.Now().Add(-cfg.RejectOldSamplesMaxAge(userID)) {
@@ -127,10 +127,10 @@ func ValidateSample(cfg SampleValidationConfig, userID string, ls []cortexpb.Lab
 
 // ValidateExemplar returns an error if the exemplar is invalid.
 // The returned error may retain the provided series labels.
-func ValidateExemplar(userID string, ls []cortexpb.LabelAdapter, e cortexpb.Exemplar) ValidationError {
+func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exemplar) ValidationError {
 	if len(e.Labels) <= 0 {
 		DiscardedExemplars.WithLabelValues(exemplarLabelsMissing, userID).Inc()
-		return newExemplarEmtpyLabelsError(ls, []cortexpb.LabelAdapter{}, e.TimestampMs)
+		return newExemplarEmtpyLabelsError(ls, []mimirpb.LabelAdapter{}, e.TimestampMs)
 	}
 
 	if e.TimestampMs == 0 {
@@ -172,7 +172,7 @@ type LabelValidationConfig interface {
 
 // ValidateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
-func ValidateLabels(cfg LabelValidationConfig, userID string, ls []cortexpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
+func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
 	if cfg.EnforceMetricName(userID) {
 		unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
 		if err != nil {
@@ -227,7 +227,7 @@ type MetadataValidationConfig interface {
 }
 
 // ValidateMetadata returns an err if a metric metadata is invalid.
-func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *cortexpb.MetricMetadata) error {
+func ValidateMetadata(cfg MetadataValidationConfig, userID string, metadata *mimirpb.MetricMetadata) error {
 	if cfg.EnforceMetadataMetricName(userID) && metadata.GetMetricFamilyName() == "" {
 		DiscardedMetadata.WithLabelValues(missingMetricName, userID).Inc()
 		return httpgrpc.Errorf(http.StatusBadRequest, errMetadataMissingMetricName)

@@ -10,20 +10,20 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 )
 
 func TestTimeSeriesSeriesSet(t *testing.T) {
 
-	timeseries := []cortexpb.TimeSeries{
+	timeseries := []mimirpb.TimeSeries{
 		{
-			Labels: []cortexpb.LabelAdapter{
+			Labels: []mimirpb.LabelAdapter{
 				{
 					Name:  "label1",
 					Value: "value1",
 				},
 			},
-			Samples: []cortexpb.Sample{
+			Samples: []mimirpb.Sample{
 				{
 					Value:       3.14,
 					TimestampMs: 1234,
@@ -48,7 +48,7 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 	require.False(t, ss.Next())
 
 	// Append a new sample to seek to
-	timeseries[0].Samples = append(timeseries[0].Samples, cortexpb.Sample{
+	timeseries[0].Samples = append(timeseries[0].Samples, mimirpb.Sample{
 		Value:       1.618,
 		TimestampMs: 2345,
 	})
@@ -64,14 +64,14 @@ func TestTimeSeriesSeriesSet(t *testing.T) {
 
 func TestTimeSeriesIterator(t *testing.T) {
 	ts := timeseries{
-		series: cortexpb.TimeSeries{
-			Labels: []cortexpb.LabelAdapter{
+		series: mimirpb.TimeSeries{
+			Labels: []mimirpb.LabelAdapter{
 				{
 					Name:  "label1",
 					Value: "value1",
 				},
 			},
-			Samples: []cortexpb.Sample{
+			Samples: []mimirpb.Sample{
 				{
 					Value:       3.14,
 					TimestampMs: 1234,

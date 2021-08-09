@@ -13,7 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	prom_chunk "github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb."
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -40,8 +40,8 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 
 	result := model.Matrix{}
 	for _, series := range serieses {
-		metric := cortexpb.FromLabelAdaptersToMetric(series.Labels)
-		chunks, err := FromChunks("", cortexpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
+		metric := mimirpb.FromLabelAdaptersToMetric(series.Labels)
+		chunks, err := FromChunks("", mimirpb.FromLabelAdaptersToLabels(series.Labels), series.Chunks)
 		if err != nil {
 			return nil, err
 		}
