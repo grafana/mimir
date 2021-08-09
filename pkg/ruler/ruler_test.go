@@ -37,7 +37,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"

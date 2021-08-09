@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

@@ -10,7 +10,7 @@ import (
 
 	"github.com/stretchr/testify/mock"
 
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 type pusherMock struct {

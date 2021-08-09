@@ -13,7 +13,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	prom_chunk "github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util"
 )

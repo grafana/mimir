@@ -30,7 +30,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/spanlogger"

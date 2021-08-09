@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/mimirpb." //lint:ignore faillint allowed to import other protobuf
+	"github.com/grafana/mimir/pkg/mimirpb" //lint:ignore faillint allowed to import other protobuf
 )
 
 // ToProto transforms a formatted prometheus rulegroup to a rule group protobuf

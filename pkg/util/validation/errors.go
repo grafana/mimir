@@ -12,7 +12,7 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ValidationError is an error returned by series validation.

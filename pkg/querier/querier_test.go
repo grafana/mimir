@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 
 	"github.com/prometheus/common/model"

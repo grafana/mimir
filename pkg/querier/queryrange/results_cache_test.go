@@ -20,7 +20,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 

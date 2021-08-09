@@ -29,7 +29,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/mimirpb."
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	ring_client "github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/ring/kv"
