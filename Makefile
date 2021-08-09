@@ -223,7 +223,6 @@ shell:
 	bash
 
 mod-check:
-	go env -w GOPRIVATE=github.com/grafana/prometheus-private
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
