@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 type queryFrontendTestConfig struct {
@@ -97,12 +97,12 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		testMissingMetricName: false,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			require.NoError(t, writeFileToSharedDir(s, cortexConfigFile, []byte(BlocksStorageConfig)))
+			require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, []byte(BlocksStorageConfig)))
 
 			minio := e2edb.NewMinio(9000, BlocksStorageFlags()["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
-			return cortexConfigFile, e2e.EmptyFlags()
+			return mimirConfigFile, e2e.EmptyFlags()
 		},
 	})
 }
@@ -122,7 +122,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			// set the ca
-			cert := ca.New("Cortex Test")
+			cert := ca.New("Mimir Test")
 
 			// Ensure the entire path of directories exist.
 			require.NoError(t, os.MkdirAll(filepath.Join(s.SharedDir(), "certs"), os.ModePerm))
@@ -176,16 +176,16 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	})
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2ecortex.CortexService
+	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2ecortex.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 	}
 
 	// Start the query-frontend.
-	queryFrontend := e2ecortex.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -193,9 +193,9 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	}
 
 	// Start all other services.
-	ingester := e2ecortex.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	distributor := e2ecortex.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
-	querier := e2ecortex.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
 	require.NoError(t, s.WaitReady(queryFrontend))
@@ -208,12 +208,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 	expectedVectors := make([]model.Vector, numUsers)
 
 	for u := 0; u < numUsers; u++ {
-		c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", fmt.Sprintf("user-%d", u))
+		c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", fmt.Sprintf("user-%d", u))
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
@@ -231,7 +231,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	for u := 0; u < numUsers; u++ {
 		userID := u
 
-		c, err := e2ecortex.NewClient("", queryFrontend.HTTPEndpoint(), "", "", fmt.Sprintf("user-%d", userID))
+		c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", fmt.Sprintf("user-%d", userID))
 		require.NoError(t, err)
 
 		// No need to repeat the test on missing metric name for each user.
@@ -265,7 +265,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*$", res.Header.Values("Server-Timing")[0])
 		}
 
-		// In this test we do ensure that the /series start/end time is ignored and Cortex
+		// In this test we do ensure that the /series start/end time is ignored and Mimir
 		// always returns series in ingesters memory. No need to repeat it for each user.
 		if userID == 0 {
 			start := now.Add(-1000 * time.Hour)

@@ -11,7 +11,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -110,7 +110,7 @@ func (m *Block) ThanosMeta(userID string) *metadata.Meta {
 		Thanos: metadata.Thanos{
 			Version: metadata.ThanosVersion1,
 			Labels: map[string]string{
-				cortex_tsdb.TenantIDExternalLabel: userID,
+				mimir_tsdb.TenantIDExternalLabel: userID,
 			},
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 		},

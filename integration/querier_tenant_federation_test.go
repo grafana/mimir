@@ -17,7 +17,7 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 type querierTenantFederationConfig struct {
@@ -68,9 +68,9 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	})
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2ecortex.CortexService
+	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
-		queryScheduler = e2ecortex.NewQueryScheduler("query-scheduler", flags, "")
+		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
 		flags["-frontend.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
 		flags["-querier.scheduler-address"] = queryScheduler.NetworkGRPCEndpoint()
@@ -85,7 +85,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start the query-frontend.
-	queryFrontend := e2ecortex.NewQueryFrontend("query-frontend", flags, "")
+	queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
 	require.NoError(t, s.Start(queryFrontend))
 
 	if !cfg.querySchedulerEnabled {
@@ -93,13 +93,13 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	}
 
 	// Start all other services.
-	ingester := e2ecortex.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2ecortex.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 
-	var querier2 *e2ecortex.CortexService
+	var querier2 *e2emimir.MimirService
 	if cfg.shuffleShardingEnabled {
-		querier2 = e2ecortex.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
+		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
 	}
 
 	require.NoError(t, s.StartAndWaitReady(querier, ingester, distributor))
@@ -115,14 +115,14 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	}
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 	expectedVectors := make([]model.Vector, numUsers)
 	tenantIDs := make([]string, numUsers)
 
 	for u := 0; u < numUsers; u++ {
 		tenantIDs[u] = fmt.Sprintf("user-%d", u)
-		c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantIDs[u])
+		c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantIDs[u])
 		require.NoError(t, err)
 
 		var series []prompb.TimeSeries
@@ -134,7 +134,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	}
 
 	// query all tenants
-	c, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", strings.Join(tenantIDs, "|"))
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", strings.Join(tenantIDs, "|"))
 	require.NoError(t, err)
 
 	result, err := c.Query("series_1", now)

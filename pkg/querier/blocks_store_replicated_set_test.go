@@ -16,7 +16,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -31,10 +31,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 	block3 := ulid.MustNew(5, nil) // hash: 2931974232
 	block4 := ulid.MustNew(6, nil) // hash: 3092880371
 
-	block1Hash := cortex_tsdb.HashBlockID(block1)
-	block2Hash := cortex_tsdb.HashBlockID(block2)
-	block3Hash := cortex_tsdb.HashBlockID(block3)
-	block4Hash := cortex_tsdb.HashBlockID(block4)
+	block1Hash := mimir_tsdb.HashBlockID(block1)
+	block2Hash := mimir_tsdb.HashBlockID(block2)
+	block3Hash := mimir_tsdb.HashBlockID(block3)
+	block4Hash := mimir_tsdb.HashBlockID(block4)
 
 	userID := "user-A"
 	registeredAt := time.Now()

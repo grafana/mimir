@@ -22,7 +22,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -99,7 +99,7 @@ func TestBucketScanBlocksFinder_InitialScanFailure(t *testing.T) {
 	// Mock the storage to simulate a failure when reading objects.
 	bucket.MockIter("", []string{"user-1"}, nil)
 	bucket.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
-	bucket.MockExists(path.Join("user-1", cortex_tsdb.TenantDeletionMarkPath), false, nil)
+	bucket.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucket.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/meta.json", "invalid", errors.New("mocked error"))
 
 	require.NoError(t, s.StartAsync(ctx))
@@ -144,7 +144,7 @@ func TestBucketScanBlocksFinder_StopWhileRunningTheInitialScanOnManyTenants(t *t
 		bucket.MockIterWithCallback(tenantID+"/", []string{}, nil, func() {
 			time.Sleep(time.Second)
 		})
-		bucket.MockExists(path.Join(tenantID, cortex_tsdb.TenantDeletionMarkPath), false, nil)
+		bucket.MockExists(path.Join(tenantID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	}
 
 	cacheDir, err := ioutil.TempDir(os.TempDir(), "blocks-scanner-test-cache")

@@ -33,7 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
@@ -167,7 +167,7 @@ func NewBlocksStoreQueryable(
 	return q, nil
 }
 
-func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg cortex_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
+func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegateway.Config, storageCfg mimir_tsdb.BlocksStorageConfig, limits BlocksStoreLimits, logger log.Logger, reg prometheus.Registerer) (*BlocksStoreQueryable, error) {
 	var stores BlocksStoreSet
 
 	bucketClient, err := bucket.NewClient(context.Background(), storageCfg.Bucket, "querier", logger, reg)
@@ -176,7 +176,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 	}
 
 	// Blocks finder doesn't use chunks, but we pass config for consistency.
-	cachingBucket, err := cortex_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
+	cachingBucket, err := mimir_tsdb.CreateCachingBucket(storageCfg.BucketStore.ChunksCache, storageCfg.BucketStore.MetadataCache, bucketClient, logger, extprom.WrapRegistererWith(prometheus.Labels{"component": "querier"}, reg))
 	if err != nil {
 		return nil, errors.Wrap(err, "create caching bucket")
 	}
@@ -566,7 +566,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 	leftChunksLimit int,
 ) ([]storage.SeriesSet, []ulid.ULID, storage.Warnings, int, error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, cortex_tsdb.TenantIDExternalLabel, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, mimir_tsdb.TenantIDExternalLabel, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		seriesSets    = []storage.SeriesSet(nil)
@@ -708,7 +708,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 	matchers []storepb.LabelMatcher,
 ) ([][]string, storage.Warnings, []ulid.ULID, error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, cortex_tsdb.TenantIDExternalLabel, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, mimir_tsdb.TenantIDExternalLabel, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		nameSets      = [][]string{}
@@ -785,7 +785,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 	matchers ...*labels.Matcher,
 ) ([][]string, storage.Warnings, []ulid.ULID, error) {
 	var (
-		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, cortex_tsdb.TenantIDExternalLabel, q.userID)
+		reqCtx        = grpc_metadata.AppendToOutgoingContext(ctx, mimir_tsdb.TenantIDExternalLabel, q.userID)
 		g, gCtx       = errgroup.WithContext(reqCtx)
 		mtx           = sync.Mutex{}
 		valueSets     = [][]string{}

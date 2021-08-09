@@ -27,7 +27,6 @@ import (
 	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/store"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/logging"
@@ -36,7 +35,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
@@ -289,7 +288,7 @@ func TestBucketStores_syncUsersBlocks(t *testing.T) {
 
 			// Sync user stores and count the number of times the callback is called.
 			var storesCount atomic.Int32
-			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *store.BucketStore) error {
+			err = stores.syncUsersBlocks(context.Background(), func(ctx context.Context, bs *BucketStore) error {
 				storesCount.Inc()
 				return nil
 			})
@@ -348,17 +347,17 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 		"query the beginning of the block": {
 			reqMinTime:      0,
 			reqMaxTime:      100,
-			expectedSamples: store.MaxSamplesPerChunk,
+			expectedSamples: MaxSamplesPerChunk,
 		},
 		"query the middle of the block": {
 			reqMinTime:      4000,
 			reqMaxTime:      4050,
-			expectedSamples: store.MaxSamplesPerChunk,
+			expectedSamples: MaxSamplesPerChunk,
 		},
 		"query the end of the block": {
 			reqMinTime:      9800,
 			reqMaxTime:      10000,
-			expectedSamples: (store.MaxSamplesPerChunk * 2) + (10000 % store.MaxSamplesPerChunk),
+			expectedSamples: (MaxSamplesPerChunk * 2) + (10000 % MaxSamplesPerChunk),
 		},
 	}
 
@@ -378,11 +377,11 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 	}
 }
 
-func prepareStorageConfig(t *testing.T) (cortex_tsdb.BlocksStorageConfig, func()) {
+func prepareStorageConfig(t *testing.T) (mimir_tsdb.BlocksStorageConfig, func()) {
 	tmpDir, err := ioutil.TempDir(os.TempDir(), "blocks-sync-*")
 	require.NoError(t, err)
 
-	cfg := cortex_tsdb.BlocksStorageConfig{}
+	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 	cfg.BucketStore.SyncDir = tmpDir
 
@@ -459,7 +458,7 @@ func mockLoggingLevel() logging.Level {
 func setUserIDToGRPCContext(ctx context.Context, userID string) context.Context {
 	// We have to store it in the incoming metadata because we have to emulate the
 	// case it's coming from a gRPC request, while here we're running everything in-memory.
-	return metadata.NewIncomingContext(ctx, metadata.Pairs(cortex_tsdb.TenantIDExternalLabel, userID))
+	return metadata.NewIncomingContext(ctx, metadata.Pairs(mimir_tsdb.TenantIDExternalLabel, userID))
 }
 
 func TestBucketStores_deleteLocalFilesForExcludedTenants(t *testing.T) {

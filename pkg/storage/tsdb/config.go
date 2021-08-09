@@ -10,7 +10,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/wal"
-	"github.com/thanos-io/thanos/pkg/store"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 )
@@ -28,17 +27,29 @@ const (
 	// and can be used to shard blocks.
 	ShardIDExternalLabel = "__shard_id__"
 
-	// How often are open TSDBs checked for being idle and closed.
+	// DefaultCloseIdleTSDBInterval is how often are open TSDBs checked for being idle and closed.
 	DefaultCloseIdleTSDBInterval = 5 * time.Minute
 
-	// How often to check for tenant deletion mark.
+	// DeletionMarkCheckInterval is how often to check for tenant deletion mark.
 	DeletionMarkCheckInterval = 1 * time.Hour
 
-	// Default minimum bucket size (bytes) of the chunk pool.
-	ChunkPoolDefaultMinBucketSize = store.EstimatedMaxChunkSize
+	// EstimatedMaxChunkSize is average max of chunk size. This can be exceeded though in very rare (valid) cases.
+	EstimatedMaxChunkSize = 16000
 
-	// Default maximum bucket size (bytes) of the chunk pool.
+	// ChunkPoolDefaultMinBucketSize is the default minimum bucket size (bytes) of the chunk pool.
+	ChunkPoolDefaultMinBucketSize = EstimatedMaxChunkSize
+
+	// ChunkPoolDefaultMaxBucketSize is the default maximum bucket size (bytes) of the chunk pool.
 	ChunkPoolDefaultMaxBucketSize = 50e6
+
+	// DefaultPostingOffsetInMemorySampling represents default value for --store.index-header-posting-offsets-in-mem-sampling.
+	// 32 value is chosen as it's a good balance for common setups. Sampling that is not too large (too many CPU cycles) and
+	// not too small (too much memory).
+	DefaultPostingOffsetInMemorySampling = 32
+
+	// DefaultPartitionerMaxGapSize is the default max size - in bytes - of a gap for which the store-gateway
+	// partitioner aggregates together two bucket GET object requests.
+	DefaultPartitionerMaxGapSize = uint64(512 * 1024)
 )
 
 // Validation errors
@@ -277,10 +288,10 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.IgnoreDeletionMarksDelay, "blocks-storage.bucket-store.ignore-deletion-marks-delay", time.Hour*6, "Duration after which the blocks marked for deletion will be filtered out while fetching blocks. "+
 		"The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. "+
 		"Default is 6h, half of the default value for -compactor.deletion-delay.")
-	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", store.DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
+	f.IntVar(&cfg.PostingOffsetsInMemSampling, "blocks-storage.bucket-store.posting-offsets-in-mem-sampling", DefaultPostingOffsetInMemorySampling, "Controls what is the ratio of postings offsets that the store will hold in memory.")
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", false, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 20*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
-	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", store.PartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
+	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
 }
 
 // Validate the config.

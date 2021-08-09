@@ -16,7 +16,7 @@ import (
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
-	"github.com/grafana/mimir/integration/e2ecortex"
+	"github.com/grafana/mimir/integration/e2emimir"
 )
 
 func TestIngesterGlobalLimits(t *testing.T) {
@@ -62,11 +62,11 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-			// Start Cortex components.
-			distributor := e2ecortex.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester1 := e2ecortex.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester2 := e2ecortex.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester3 := e2ecortex.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
+			// Start Mimir components.
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 			// Wait until distributor has updated the ring.
@@ -80,7 +80,7 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			time.Sleep(2 * time.Second)
 
 			now := time.Now()
-			client, err := e2ecortex.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", userID)
 			require.NoError(t, err)
 
 			numSeriesWithSameMetricName := 0

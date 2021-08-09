@@ -16,7 +16,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/concurrency"
@@ -39,7 +39,7 @@ type BlocksCleaner struct {
 	cfgProvider  ConfigProvider
 	logger       log.Logger
 	bucketClient objstore.Bucket
-	usersScanner *cortex_tsdb.UsersScanner
+	usersScanner *mimir_tsdb.UsersScanner
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
@@ -58,7 +58,7 @@ type BlocksCleaner struct {
 	tenantBucketIndexLastUpdate *prometheus.GaugeVec
 }
 
-func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, usersScanner *cortex_tsdb.UsersScanner, cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, usersScanner *mimir_tsdb.UsersScanner, cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
 		cfg:          cfg,
 		bucketClient: bucketClient,
@@ -246,7 +246,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 		level.Info(userLogger).Log("msg", "deleted blocks for tenant marked for deletion", "deletedBlocks", deletedBlocks)
 	}
 
-	mark, err := cortex_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID)
+	mark, err := mimir_tsdb.ReadTenantDeletionMark(ctx, c.bucketClient, userID)
 	if err != nil {
 		return errors.Wrap(err, "failed to read tenant deletion mark")
 	}
@@ -260,7 +260,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	if deletedBlocks > 0 || mark.FinishedTime == 0 {
 		level.Info(userLogger).Log("msg", "updating finished time in tenant deletion mark")
 		mark.FinishedTime = time.Now().Unix()
-		return errors.Wrap(cortex_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mark), "failed to update tenant deletion mark")
+		return errors.Wrap(mimir_tsdb.WriteTenantDeletionMark(ctx, c.bucketClient, userID, c.cfgProvider, mark), "failed to update tenant deletion mark")
 	}
 
 	if time.Since(time.Unix(mark.FinishedTime, 0)) < c.cfg.TenantCleanupDelay {

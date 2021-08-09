@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	s3 "github.com/grafana/mimir/pkg/chunk/aws"
-	cortex_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
+	mimir_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
@@ -85,7 +85,7 @@ func TestS3Client(t *testing.T) {
 				Insecure:         true,
 				AccessKeyID:      e2edb.MinioAccessKey,
 				SecretAccessKey:  e2edb.MinioSecretKey,
-				SSEConfig: cortex_s3.SSEConfig{
+				SSEConfig: mimir_s3.SSEConfig{
 					Type: "SSE-S3",
 				},
 			},

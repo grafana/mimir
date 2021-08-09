@@ -28,7 +28,7 @@ func NewMinio(port int, bktNames ...string) *e2e.HTTPService {
 	m := e2e.NewHTTPService(
 		fmt.Sprintf("minio-%v", port),
 		images.Minio,
-		// Create the "cortex" bucket before starting minio
+		// Create the "mimir" bucket before starting minio
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", strings.Join(commands, " && ")),
 		e2e.NewHTTPReadinessProbe(port, "/minio/health/ready", 200, 200),
 		port,

@@ -39,7 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
@@ -817,9 +817,9 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	for idx, blockID := range blockIDs {
 		meta := metadata.Thanos{
 			Labels: map[string]string{
-				cortex_tsdb.TenantIDExternalLabel:   userID,
-				cortex_tsdb.IngesterIDExternalLabel: fmt.Sprintf("ingester-%d", idx),
-				cortex_tsdb.ShardIDExternalLabel:    fmt.Sprintf("shard-%d", idx),
+				mimir_tsdb.TenantIDExternalLabel:   userID,
+				mimir_tsdb.IngesterIDExternalLabel: fmt.Sprintf("ingester-%d", idx),
+				mimir_tsdb.ShardIDExternalLabel:    fmt.Sprintf("shard-%d", idx),
 			},
 			Source: metadata.TestSource,
 		}
@@ -974,14 +974,14 @@ func mockGatewayConfig() Config {
 	return cfg
 }
 
-func mockStorageConfig(t *testing.T) cortex_tsdb.BlocksStorageConfig {
+func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 	tmpDir, err := ioutil.TempDir(os.TempDir(), "store-gateway-test-*")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 
-	cfg := cortex_tsdb.BlocksStorageConfig{}
+	cfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&cfg)
 
 	cfg.BucketStore.ConsistencyDelay = 0

@@ -45,7 +45,7 @@ import (
 	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/ring"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -2449,7 +2449,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	numObjects := len(bucket.Objects())
 	require.NotZero(t, numObjects)
 
-	require.NoError(t, cortex_tsdb.WriteTenantDeletionMark(context.Background(), bucket, userID, nil, cortex_tsdb.NewTenantDeletionMark(time.Now())))
+	require.NoError(t, mimir_tsdb.WriteTenantDeletionMark(context.Background(), bucket, userID, nil, mimir_tsdb.NewTenantDeletionMark(time.Now())))
 	numObjects++ // For deletion marker
 
 	db := i.getTSDB(userID)
@@ -2481,7 +2481,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	bucket := objstore.NewInMemBucket()
 
 	// Write tenant deletion mark.
-	require.NoError(t, cortex_tsdb.WriteTenantDeletionMark(context.Background(), bucket, userID, nil, cortex_tsdb.NewTenantDeletionMark(time.Now())))
+	require.NoError(t, mimir_tsdb.WriteTenantDeletionMark(context.Background(), bucket, userID, nil, mimir_tsdb.NewTenantDeletionMark(time.Now())))
 
 	i.TSDBState.bucket = bucket
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
