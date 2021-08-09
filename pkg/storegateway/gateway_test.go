@@ -40,6 +40,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/querier/querysharding"
+
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -919,6 +921,100 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	}
 }
 
+func TestBucketStore_Series_QuerySharding(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	var (
+		ctx    = context.Background()
+		userID = "user-1"
+		series = []labels.Labels{
+			labels.New(labels.Label{Name: labels.MetricName, Value: "series_1"}), // Hash: 12248531033489120077
+			labels.New(labels.Label{Name: labels.MetricName, Value: "series_2"}), // Hash: 4624373102974193462
+			labels.New(labels.Label{Name: labels.MetricName, Value: "series_3"}), // Hash: 11488854180004364397
+			labels.New(labels.Label{Name: labels.MetricName, Value: "series_4"}), // Hash: 7076372709108762848
+			labels.New(labels.Label{Name: labels.MetricName, Value: "series_5"}), // Hash: 2682489904774096023
+		}
+	)
+
+	tests := map[string]struct {
+		matchers        []storepb.LabelMatcher
+		expectedMetrics []string
+	}{
+		"should touch all series on sharding disabled": {
+			matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+			},
+			expectedMetrics: []string{
+				"series_1", "series_2", "series_3", "series_4", "series_5",
+			},
+		},
+		"should touch only series belonging to the specified shard": {
+			matchers: []storepb.LabelMatcher{
+				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+				{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+					ShardIndex: 2,
+					ShardCount: 3,
+				}.Label().Value},
+			},
+			expectedMetrics: []string{
+				"series_2", "series_4",
+			},
+		},
+	}
+
+	// Prepare the storage dir.
+	bucketClient, storageDir := cortex_testutil.PrepareFilesystemBucket(t)
+
+	// Generate a TSDB block in the storage dir, containing the fixture series.
+	mockTSDBWithGenerator(t, path.Join(storageDir, userID), func() func() (bool, labels.Labels, int64, float64) {
+		nextID := 0
+		return func() (bool, labels.Labels, int64, float64) {
+			if nextID >= len(series) {
+				return false, labels.Labels{}, 0, 0
+			}
+
+			nextSeries := series[nextID]
+			nextID++
+
+			return true, nextSeries, util.TimeToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
+		}
+	}())
+
+	createBucketIndex(t, bucketClient, userID)
+
+	// Create a store-gateway.
+	gatewayCfg := mockGatewayConfig()
+	gatewayCfg.ShardingEnabled = false
+	storageCfg := mockStorageConfig(t)
+	storageCfg.BucketStore.BucketIndex.Enabled = true
+
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &storepb.SeriesRequest{
+				MinTime:  math.MinInt64,
+				MaxTime:  math.MaxInt64,
+				Matchers: testData.matchers,
+			}
+
+			srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
+			err = g.Series(req, srv)
+			require.NoError(t, err)
+			assert.Empty(t, srv.Warnings)
+
+			actualMetrics := make([]string, 0, len(srv.SeriesSet))
+			for _, s := range srv.SeriesSet {
+				actualMetrics = append(actualMetrics, s.PromLabels().Get(labels.MetricName))
+			}
+			assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
+		})
+	}
+}
+
 func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testing.T) {
 	test.VerifyNoLeak(t)
 
@@ -1082,6 +1178,39 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 
 	require.NoError(t, db.Snapshot(dir, true))
 
+	require.NoError(t, db.Close())
+}
+
+func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.Labels, int64, float64)) {
+	// Create a new TSDB on a temporary directory. The blocks
+	// will be then snapshotted to the input dir.
+	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, os.RemoveAll(tempDir)) })
+
+	db, err := tsdb.Open(tempDir, nil, nil, &tsdb.Options{
+		MinBlockDuration:  2 * time.Hour.Milliseconds(),
+		MaxBlockDuration:  2 * time.Hour.Milliseconds(),
+		RetentionDuration: 15 * 24 * time.Hour.Milliseconds(),
+	}, nil)
+	require.NoError(t, err)
+
+	db.DisableCompactions()
+
+	for {
+		hasNext, lbls, timestamp, value := next()
+		if !hasNext {
+			break
+		}
+
+		app := db.Appender(context.Background())
+		_, err := app.Append(0, lbls, timestamp, value)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+		require.NoError(t, db.Compact())
+	}
+
+	require.NoError(t, db.Snapshot(dir, true))
 	require.NoError(t, db.Close())
 }
 

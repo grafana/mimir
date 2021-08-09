@@ -55,6 +55,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -742,6 +743,7 @@ func blockSeries(
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr *bucketChunkReader, // Chunk reader for block.
 	matchers []*labels.Matcher, // Series matchers.
+	shard *querysharding.ShardSelector, // Shard selector.
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded.
@@ -787,7 +789,20 @@ func blockSeries(
 			continue
 		}
 
+		if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
+			return nil, nil, errors.Wrap(err, "Lookup labels symbols")
+		}
+
+		// Skip the series if it doesn't belong to the shard.
+		if shard != nil {
+			if lset.Hash()%uint64(shard.ShardCount) != uint64(shard.ShardIndex) {
+				continue
+			}
+		}
+
 		s := seriesEntry{}
+		s.lset = labelpb.ExtendSortedLabels(lset, extLset)
+
 		if !skipChunks {
 			// Schedule loading chunks.
 			s.refs = make([]uint64, 0, len(chks))
@@ -810,11 +825,7 @@ func blockSeries(
 				return nil, nil, errors.Wrap(err, "exceeded chunks limit")
 			}
 		}
-		if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
-			return nil, nil, errors.Wrap(err, "Lookup labels symbols")
-		}
 
-		s.lset = labelpb.ExtendSortedLabels(lset, extLset)
 		res = append(res, s)
 	}
 
@@ -956,6 +967,12 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	req.MinTime = s.limitMinTime(req.MinTime)
 	req.MaxTime = s.limitMaxTime(req.MaxTime)
 
+	// Check if matchers include the query shard selector.
+	shardSelector, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
+	}
+
 	var (
 		ctx              = srv.Context()
 		stats            = &queryStats{}
@@ -1019,6 +1036,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 					indexr,
 					chunkr,
 					blockMatchers,
+					shardSelector,
 					chunksLimiter,
 					seriesLimiter,
 					req.SkipChunks,
@@ -1213,7 +1231,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 				result = strutil.MergeSlices(res, extRes)
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
@@ -1338,7 +1356,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 				}
 				result = res
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
