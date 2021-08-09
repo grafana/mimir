@@ -12,8 +12,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )

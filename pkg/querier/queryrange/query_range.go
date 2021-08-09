@@ -326,7 +326,7 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 // UnmarshalJSON implements json.Unmarshaler.
 func (s *SampleStream) UnmarshalJSON(data []byte) error {
 	var stream struct {
-		Metric model.Metric      `json:"metric"`
+		Metric model.Metric     `json:"metric"`
 		Values []mimirpb.Sample `json:"values"`
 	}
 	if err := json.Unmarshal(data, &stream); err != nil {
@@ -340,7 +340,7 @@ func (s *SampleStream) UnmarshalJSON(data []byte) error {
 // MarshalJSON implements json.Marshaler.
 func (s *SampleStream) MarshalJSON() ([]byte, error) {
 	stream := struct {
-		Metric model.Metric      `json:"metric"`
+		Metric model.Metric     `json:"metric"`
 		Values []mimirpb.Sample `json:"values"`
 	}{
 		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
