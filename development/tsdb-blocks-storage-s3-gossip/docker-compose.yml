@@ -11,7 +11,7 @@ services:
     image: minio/minio
     command: [ "server", "/data" ]
     environment:
-      - MINIO_ACCESS_KEY=cortex
+      - MINIO_ACCESS_KEY=mimir
       - MINIO_SECRET_KEY=supersecret
     ports:
       - 9000:9000
