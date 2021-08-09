@@ -1,4 +1,9 @@
 #!/bin/sh
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/cortexproject/cortex/tools/website/web-deploy.sh
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Cortex Authors.
+
 set -e
 
 # show where we are on the machine

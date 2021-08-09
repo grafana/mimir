@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image
+.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license
 .DEFAULT_GOAL := all
 
 # Version number
@@ -247,6 +247,13 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
 	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/guides/overrides-exporter.md
+
+# Add license header to files.
+license:
+	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image
+
+check-license: license
+	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
 endif
 
