@@ -87,7 +87,6 @@ replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
 replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210720123808-b1ed4a0a663d
-
+// Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
-
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
