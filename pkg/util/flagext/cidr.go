@@ -6,6 +6,7 @@
 package flagext
 
 import (
+	"encoding/json"
 	"net"
 	"strings"
 
@@ -84,4 +85,25 @@ func (c *CIDRSliceCSV) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // MarshalYAML implements yaml.Marshaler.
 func (c CIDRSliceCSV) MarshalYAML() (interface{}, error) {
 	return c.String(), nil
+}
+
+// UnmarshalJSON implements the json.Unmarshaler interface.
+func (c *CIDRSliceCSV) UnmarshalJSON(bytes []byte) error {
+	var s string
+	if err := json.Unmarshal(bytes, &s); err != nil {
+		return err
+	}
+
+	// An empty string means no CIDRs has been configured.
+	if s == "" {
+		*c = nil
+		return nil
+	}
+
+	return c.Set(s)
+}
+
+// MarshalJSON implements the json.Marshaler interface.
+func (c CIDRSliceCSV) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.String())
 }
