@@ -817,12 +817,14 @@ func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunni
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
 	bucketClient.MockUpload("user-2/bucket-index.json.gz", nil)
 
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	cfg := prepareConfig()
 	cfg.ShardingEnabled = true
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = consul.NewInMemoryClient(ring.GetCodec())
-
+	cfg.ShardingRing.KVStore.Mock = ringStore
 	c, _, tsdbPlanner, logs, _ := prepare(t, cfg, bucketClient)
 
 	// Mock the planner as if there's no compaction to do,
@@ -894,7 +896,8 @@ func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndM
 	}
 
 	// Create a shared KV Store
-	kvstore := consul.NewInMemoryClient(ring.GetCodec())
+	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
 	var compactors []*Compactor
@@ -1216,7 +1219,8 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	}
 
 	// Create a shared KV Store
-	kvstore := consul.NewInMemoryClient(ring.GetCodec())
+	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
 	var compactors []*Compactor
@@ -1290,11 +1294,14 @@ func TestCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{}, nil)
 
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	cfg := prepareConfig()
 	cfg.ShardingEnabled = true
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = consul.NewInMemoryClient(ring.GetCodec())
+	cfg.ShardingRing.KVStore.Mock = ringStore
 
 	// Set ObservePeriod to longer than the timeout period to mock a timeout while waiting on ring to become ACTIVE
 	cfg.ShardingRing.ObservePeriod = time.Second * 10

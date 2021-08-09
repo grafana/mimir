@@ -27,14 +27,6 @@ type Fixture interface {
 	Clients() (chunk.IndexClient, chunk.Client, chunk.TableClient, chunk.SchemaConfig, io.Closer, error)
 }
 
-// CloserFunc is to io.Closer as http.HandlerFunc is to http.Handler.
-type CloserFunc func() error
-
-// Close implements io.Closer.
-func (f CloserFunc) Close() error {
-	return f()
-}
-
 // DefaultSchemaConfig returns default schema for use in test fixtures
 func DefaultSchemaConfig(kind string) chunk.SchemaConfig {
 	schemaConfig := chunk.DefaultSchemaConfig(kind, "v1", model.Now().Add(-time.Hour*2))

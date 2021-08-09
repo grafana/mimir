@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/objectclient"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -83,7 +84,7 @@ func (f *fixture) Clients() (
 		cClient = newBigtableObjectClient(Config{}, schemaConfig, client)
 	}
 
-	closer = testutils.CloserFunc(func() error {
+	closer = util.CloserFunc(func() error {
 		conn.Close()
 		return nil
 	})
