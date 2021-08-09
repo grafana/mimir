@@ -45,7 +45,7 @@ var Fixtures = []testutils.Fixture{
 				metrics:                 newMetrics(nil),
 			}
 			object := objectclient.NewClient(&S3ObjectClient{S3: newMockS3()}, nil)
-			return index, object, table, schemaConfig, testutils.CloserFunc(func() error {
+			return index, object, table, schemaConfig, util.CloserFunc(func() error {
 				table.Stop()
 				index.Stop()
 				object.Stop()
@@ -86,7 +86,7 @@ func dynamoDBFixture(provisionedErr, gangsize, maxParallelism int) testutils.Fix
 				schemaCfg:               schemaCfg,
 				metrics:                 newMetrics(nil),
 			}
-			return storage, storage, table, schemaCfg, testutils.CloserFunc(func() error {
+			return storage, storage, table, schemaCfg, util.CloserFunc(func() error {
 				table.Stop()
 				storage.Stop()
 				return nil

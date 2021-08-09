@@ -2,12 +2,15 @@ package consul
 
 import (
 	"fmt"
+	"io"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
+
+	"github.com/grafana/mimir/pkg/util"
 
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -18,28 +21,46 @@ type mockKV struct {
 	cond    *sync.Cond
 	kvps    map[string]*consul.KVPair
 	current uint64 // the current 'index in the log'
+
+	// Channel closed once the in-memory consul mock should be closed.
+	close   chan struct{}
+	closeWg sync.WaitGroup
 }
 
 // NewInMemoryClient makes a new mock consul client.
-func NewInMemoryClient(codec codec.Codec) *Client {
+func NewInMemoryClient(codec codec.Codec) (*Client, io.Closer) {
 	return NewInMemoryClientWithConfig(codec, Config{})
 }
 
 // NewInMemoryClientWithConfig makes a new mock consul client with supplied Config.
-func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config) *Client {
+func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config) (*Client, io.Closer) {
 	m := mockKV{
 		kvps: map[string]*consul.KVPair{},
 		// Always start from 1, we NEVER want to report back index 0 in the responses.
 		// This is in line with Consul, and our new checks for index return value in client.go.
 		current: 1,
+		close:   make(chan struct{}),
 	}
 	m.cond = sync.NewCond(&m.mtx)
+
+	// Create a closer function used to close the main loop and wait until it's done.
+	// We need to wait until done, otherwise the goroutine leak finder used in tests
+	// may still report it as leaked.
+	closer := util.CloserFunc(func() error {
+		close(m.close)
+		m.closeWg.Wait()
+		return nil
+	})
+
+	// Start the main loop in a dedicated goroutine.
+	m.closeWg.Add(1)
 	go m.loop()
+
 	return &Client{
 		kv:    &m,
 		codec: codec,
 		cfg:   cfg,
-	}
+	}, closer
 }
 
 func copyKVPair(in *consul.KVPair) *consul.KVPair {
@@ -51,10 +72,17 @@ func copyKVPair(in *consul.KVPair) *consul.KVPair {
 
 // periodic loop to wake people up, so they can honour timeouts
 func (m *mockKV) loop() {
-	for range time.Tick(1 * time.Second) {
-		m.mtx.Lock()
-		m.cond.Broadcast()
-		m.mtx.Unlock()
+	defer m.closeWg.Done()
+
+	for {
+		select {
+		case <-m.close:
+			return
+		case <-time.After(time.Second):
+			m.mtx.Lock()
+			m.cond.Broadcast()
+			m.mtx.Unlock()
+		}
 	}
 }
 

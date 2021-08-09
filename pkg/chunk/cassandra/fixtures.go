@@ -7,6 +7,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
@@ -50,7 +51,7 @@ func (f *fixture) Clients() (chunk.IndexClient, chunk.Client, chunk.TableClient,
 		return nil, nil, nil, schemaConfig, nil, err
 	}
 
-	closer := testutils.CloserFunc(func() error {
+	closer := util.CloserFunc(func() error {
 		storageClient.Stop()
 		objectClient.Stop()
 		tableClient.Stop()

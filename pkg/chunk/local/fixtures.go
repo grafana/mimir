@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/objectclient"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type fixture struct {
@@ -65,7 +66,7 @@ func (f *fixture) Clients() (
 		}},
 	}
 
-	closer = testutils.CloserFunc(func() error {
+	closer = util.CloserFunc(func() error {
 		return os.RemoveAll(f.dirname)
 	})
 
