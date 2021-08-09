@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -133,7 +133,7 @@ func (c *seriesStore) Get(ctx context.Context, userID string, from, through mode
 	}
 
 	// inject artificial __cortex_shard__ labels if present in the query. GetChunkRefs guarantees any chunk refs match the shard.
-	shard, _, err := astmapper.ShardFromMatchers(allMatchers)
+	shard, _, err := querysharding.ShardFromMatchers(allMatchers)
 	if err != nil {
 		return nil, err
 	}
@@ -269,7 +269,7 @@ func (c *seriesStore) lookupSeriesByMetricNameMatchers(ctx context.Context, from
 
 	// Check if one of the labels is a shard annotation, pass that information to lookupSeriesByMetricNameMatcher,
 	// and remove the label.
-	shard, shardLabelIndex, err := astmapper.ShardFromMatchers(matchers)
+	shard, shardLabelIndex, err := querysharding.ShardFromMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -348,7 +348,7 @@ func (c *seriesStore) lookupSeriesByMetricNameMatchers(ctx context.Context, from
 	return ids, nil
 }
 
-func (c *seriesStore) lookupSeriesByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher, shard *astmapper.ShardAnnotation) ([]string, error) {
+func (c *seriesStore) lookupSeriesByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher, shard *querysharding.ShardSelector) ([]string, error) {
 	return c.lookupIdsByMetricNameMatcher(ctx, from, through, userID, metricName, matcher, func(queries []IndexQuery) []IndexQuery {
 		return c.schema.FilterReadQueries(queries, shard)
 	})
@@ -529,7 +529,7 @@ func (c *seriesStore) calculateIndexEntries(ctx context.Context, from, through m
 	return result, missing, nil
 }
 
-func injectShardLabels(chunks []Chunk, shard astmapper.ShardAnnotation) {
+func injectShardLabels(chunks []Chunk, shard querysharding.ShardSelector) {
 	for i, chunk := range chunks {
 		b := labels.NewBuilder(chunk.Metric)
 		l := shard.Label()
