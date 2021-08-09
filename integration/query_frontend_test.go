@@ -97,12 +97,12 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
 		testMissingMetricName: false,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
-			require.NoError(t, writeFileToSharedDir(s, cortexConfigFile, []byte(BlocksStorageConfig)))
+			require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, []byte(BlocksStorageConfig)))
 
 			minio := e2edb.NewMinio(9000, BlocksStorageFlags()["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(minio))
 
-			return cortexConfigFile, e2e.EmptyFlags()
+			return mimirConfigFile, e2e.EmptyFlags()
 		},
 	})
 }
@@ -122,7 +122,7 @@ func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 			require.NoError(t, s.StartAndWaitReady(minio))
 
 			// set the ca
-			cert := ca.New("Cortex Test")
+			cert := ca.New("Mimir Test")
 
 			// Ensure the entire path of directories exist.
 			require.NoError(t, os.MkdirAll(filepath.Join(s.SharedDir(), "certs"), os.ModePerm))
@@ -176,7 +176,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	})
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2emimir.CortexService
+	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
@@ -208,7 +208,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 	expectedVectors := make([]model.Vector, numUsers)
 
@@ -265,7 +265,7 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*$", res.Header.Values("Server-Timing")[0])
 		}
 
-		// In this test we do ensure that the /series start/end time is ignored and Cortex
+		// In this test we do ensure that the /series start/end time is ignored and Mimir
 		// always returns series in ingesters memory. No need to repeat it for each user.
 		if userID == 0 {
 			start := now.Add(-1000 * time.Hour)

@@ -60,12 +60,12 @@ func TestIngesterSharding(t *testing.T) {
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-			// Start Cortex components.
+			// Start Mimir components.
 			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
 			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
 			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
 			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
-			ingesters := e2emimir.NewCompositeCortexService(ingester1, ingester2, ingester3)
+			ingesters := e2emimir.NewCompositeMimirService(ingester1, ingester2, ingester3)
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
 
@@ -99,7 +99,7 @@ func TestIngesterSharding(t *testing.T) {
 			numIngestersWithSeries := 0
 			totalIngestedSeries := 0
 
-			for _, ing := range []*e2emimir.CortexService{ingester1, ingester2, ingester3} {
+			for _, ing := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
 				values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})
 				require.NoError(t, err)
 

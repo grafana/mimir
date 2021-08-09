@@ -29,7 +29,7 @@ import (
 
 var ErrNotFound = errors.New("not found")
 
-// Client is a client used to interact with Cortex in integration tests
+// Client is a client used to interact with Mimir in integration tests
 type Client struct {
 	alertmanagerClient  promapi.Client
 	querierAddress      string
@@ -42,7 +42,7 @@ type Client struct {
 	orgID               string
 }
 
-// NewClient makes a new Cortex client
+// NewClient makes a new Mimir client
 func NewClient(
 	distributorAddress string,
 	querierAddress string,

@@ -68,7 +68,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	})
 
 	// Start the query-scheduler if enabled.
-	var queryScheduler *e2emimir.CortexService
+	var queryScheduler *e2emimir.MimirService
 	if cfg.querySchedulerEnabled {
 		queryScheduler = e2emimir.NewQueryScheduler("query-scheduler", flags, "")
 		require.NoError(t, s.StartAndWaitReady(queryScheduler))
@@ -97,7 +97,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 
-	var querier2 *e2emimir.CortexService
+	var querier2 *e2emimir.MimirService
 	if cfg.shuffleShardingEnabled {
 		querier2 = e2emimir.NewQuerier("querier-2", consul.NetworkHTTPEndpoint(), flags, "")
 	}
@@ -115,7 +115,7 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 		require.NoError(t, querier2.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	}
 
-	// Push a series for each user to Cortex.
+	// Push a series for each user to Mimir.
 	now := time.Now()
 	expectedVectors := make([]model.Vector, numUsers)
 	tenantIDs := make([]string, numUsers)

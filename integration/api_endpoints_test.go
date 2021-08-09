@@ -21,19 +21,19 @@ func TestIndexAPIEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	// Start Cortex in single binary mode, reading the config from file.
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
+	// Start Mimir in single binary mode, reading the config from file.
+	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
 
-	cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, nil, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortex1))
+	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, nil, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimir1))
 
 	// GET / should succeed
-	res, err := e2e.GetRequest(fmt.Sprintf("http://%s", cortex1.Endpoint(9009)))
+	res, err := e2e.GetRequest(fmt.Sprintf("http://%s", mimir1.Endpoint(9009)))
 	require.NoError(t, err)
 	assert.Equal(t, 200, res.StatusCode)
 
 	// POST / should fail
-	res, err = e2e.PostRequest(fmt.Sprintf("http://%s", cortex1.Endpoint(9009)))
+	res, err = e2e.PostRequest(fmt.Sprintf("http://%s", mimir1.Endpoint(9009)))
 	require.NoError(t, err)
 	assert.Equal(t, 405, res.StatusCode)
 }
@@ -43,14 +43,14 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	// Start Cortex in single binary mode, reading the config from file.
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", cortexConfigFile))
+	// Start Mimir in single binary mode, reading the config from file.
+	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
 
-	cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, nil, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortex1))
+	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, nil, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimir1))
 
 	// Get config from /config API endpoint.
-	res, err := e2e.GetRequest(fmt.Sprintf("http://%s/config", cortex1.Endpoint(9009)))
+	res, err := e2e.GetRequest(fmt.Sprintf("http://%s/config", mimir1.Endpoint(9009)))
 	require.NoError(t, err)
 
 	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "config API response")
@@ -58,9 +58,9 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, res.StatusCode)
 
-	// Start again Cortex in single binary with the exported config
+	// Start again Mimir in single binary with the exported config
 	// and ensure it starts (pass the readiness probe).
-	require.NoError(t, writeFileToSharedDir(s, cortexConfigFile, body))
-	cortex2 := e2emimir.NewSingleBinaryWithConfigFile("cortex-2", cortexConfigFile, nil, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(cortex2))
+	require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, body))
+	mimir2 := e2emimir.NewSingleBinaryWithConfigFile("mimir-2", mimirConfigFile, nil, "", 9009, 9095)
+	require.NoError(t, s.StartAndWaitReady(mimir2))
 }
