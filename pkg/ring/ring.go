@@ -1,6 +1,12 @@
-package ring
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/stathat/consistent/blob/master/consistent.go
+// Provenance-includes-license: MIT
+// Provenance-includes-copyright: Numerotron Inc.
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/ring.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
 
-// Based on https://raw.githubusercontent.com/stathat/consistent/master/consistent.go
+package ring
 
 import (
 	"context"

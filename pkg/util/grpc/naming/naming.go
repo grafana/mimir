@@ -1,6 +1,9 @@
-package naming
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/grpc/grpc-go/tree/v1.29.x/naming
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: gRPC authors.
 
-// Copied from https://github.com/grpc/grpc-go/tree/v1.29.x/naming.
+package naming
 
 // Operation defines the corresponding operations for a name resolution change.
 //

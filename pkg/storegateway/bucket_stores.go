@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/storegateway/bucket_stores.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package storegateway
 
 import (
@@ -258,6 +263,12 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 		case jobs <- job{userID: userID, store: bs}:
 			// Nothing to do. Will loop to push more jobs.
 		case <-ctx.Done():
+			// Wait until all workers have done, so the goroutines leak detector doesn't
+			// report any issue. This is expected to be quick, considering the done ctx
+			// is used by the worker callback function too.
+			close(jobs)
+			wg.Wait()
+
 			return ctx.Err()
 		}
 	}

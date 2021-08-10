@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/test_utils.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package queryrange
 
 import (
@@ -10,7 +15,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
+
 	"github.com/grafana/mimir/pkg/querier/series"
 )
 
@@ -87,7 +93,7 @@ func (q *MockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (s
 func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
-	shard, _, err := astmapper.ShardFromMatchers(matchers)
+	shard, _, err := querysharding.ShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -102,8 +108,8 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 		end = len(q.series)
 	} else {
 		// return the series range associated with this shard
-		seriesPerShard := len(q.series) / shard.Of
-		start = shard.Shard * seriesPerShard
+		seriesPerShard := len(q.series) / shard.ShardCount
+		start = shard.ShardIndex * seriesPerShard
 		end = start + seriesPerShard
 
 		// if we're clipping an odd # of series, add the final series to the last shard
@@ -132,7 +138,7 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 	// takes 1/nth of the time.
 	duration := q.delayPerSeries * time.Duration(len(q.series))
 	if shard != nil {
-		duration = duration / time.Duration(shard.Of)
+		duration = duration / time.Duration(shard.ShardCount)
 	}
 
 	remaining := time.Until(tStart.Add(duration))
@@ -146,7 +152,7 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 
 // ShardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels
 type ShardLabelSeries struct {
-	shard *astmapper.ShardAnnotation
+	shard *querysharding.ShardSelector
 	name  string
 	storage.Series
 }

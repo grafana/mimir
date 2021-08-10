@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/test_utils_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package queryrange
 
 import (
@@ -8,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 )
 
 func TestGenLabelsCorrectness(t *testing.T) {
@@ -110,10 +115,10 @@ func TestNewMockShardedqueryable(t *testing.T) {
 
 			set := q.Select(false, nil, &labels.Matcher{
 				Type: labels.MatchEqual,
-				Name: astmapper.ShardLabel,
-				Value: astmapper.ShardAnnotation{
-					Shard: i,
-					Of:    tc.shards,
+				Name: querysharding.ShardLabel,
+				Value: querysharding.ShardSelector{
+					ShardIndex: i,
+					ShardCount: tc.shards,
 				}.String(),
 			})
 

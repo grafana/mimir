@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image
+.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license
 .DEFAULT_GOAL := all
 
 # Version number
@@ -132,12 +132,15 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 			-v $(shell pwd)/.pkg:/go/pkg:delegated,z \
 			-v $(shell pwd):/go/src/github.com/grafana/mimir:delegated,z
 
+# Mount local ssh credentials to be able to clone private repos when doing `mod-check`
+SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
+
 exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(GOVOLUMES) $(BUILD_IMAGE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) $@;
 
 else
 
@@ -182,6 +185,7 @@ lint: lint-packaging-scripts
 	faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/querysharding/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
@@ -219,6 +223,7 @@ shell:
 	bash
 
 mod-check:
+	go env -w GOPRIVATE=github.com/grafana/prometheus-private
 	GO111MODULE=on go mod download
 	GO111MODULE=on go mod verify
 	GO111MODULE=on go mod tidy
@@ -247,6 +252,13 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
 	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/guides/overrides-exporter.md
+
+# Add license header to files.
+license:
+	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image
+
+check-license: license
+	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
 endif
 

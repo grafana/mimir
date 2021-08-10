@@ -1,4 +1,8 @@
 #!/bin/bash
+# SPDX-License-Identifier: AGPL-3.0-only
+# Provenance-includes-location: https://github.com/cortexproject/cortex/development/tsdb-blocks-storage-s3-single-binary/compose-up.sh
+# Provenance-includes-license: Apache-2.0
+# Provenance-includes-copyright: The Cortex Authors.
 
 SCRIPT_DIR=$(cd `dirname $0` && pwd)
 
