@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/kv/consul/client_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package consul
 
 import (
@@ -9,6 +14,7 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
@@ -29,10 +35,11 @@ func writeValuesToKV(client *Client, key string, start, end int, sleep time.Dura
 }
 
 func TestWatchKeyWithRateLimit(t *testing.T) {
-	c := NewInMemoryClientWithConfig(codec.String{}, Config{
+	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 5.0,
 		WatchKeyBurstSize: 1,
 	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	const key = "test"
 	const max = 100
@@ -61,9 +68,10 @@ func TestWatchKeyWithRateLimit(t *testing.T) {
 }
 
 func TestWatchKeyNoRateLimit(t *testing.T) {
-	c := NewInMemoryClientWithConfig(codec.String{}, Config{
+	c, closer := NewInMemoryClientWithConfig(codec.String{}, Config{
 		WatchKeyRateLimit: 0,
 	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	const key = "test"
 	const max = 100
@@ -82,7 +90,8 @@ func TestWatchKeyNoRateLimit(t *testing.T) {
 }
 
 func TestReset(t *testing.T) {
-	c := NewInMemoryClient(codec.String{})
+	c, closer := NewInMemoryClient(codec.String{})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	const key = "test"
 	const max = 5
@@ -136,7 +145,8 @@ func observeValueForSomeTime(client *Client, key string, timeout time.Duration) 
 }
 
 func TestWatchKeyWithNoStartValue(t *testing.T) {
-	c := NewInMemoryClient(codec.String{})
+	c, closer := NewInMemoryClient(codec.String{})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	const key = "test"
 

@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/alertmanager/distributor_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package alertmanager
 
 import (
@@ -12,6 +17,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/ring"
@@ -335,7 +342,9 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 		amByAddr[a.myAddr] = ams[i]
 	}
 
-	kvStore := consul.NewInMemoryClient(ring.GetCodec())
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	err := kvStore.CAS(context.Background(), RingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{

@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ingester/user_state_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ingester
 
 import (
@@ -84,7 +89,7 @@ func TestForSeriesMatchingBatching(t *testing.T) {
 func TestTeardown(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	_, ing := newTestStore(t,
-		defaultIngesterTestConfig(),
+		defaultIngesterTestConfig(t),
 		defaultClientTestConfig(),
 		defaultLimitsTestConfig(),
 		reg)

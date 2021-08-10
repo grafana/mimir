@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/kv/client.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package kv
 
 import (
@@ -137,7 +142,7 @@ func createClient(backend string, prefix string, cfg StoreConfig, codec codec.Co
 		// If we use the in-memory store, make sure everyone gets the same instance
 		// within the same process.
 		inmemoryStoreInit.Do(func() {
-			inmemoryStore = consul.NewInMemoryClient(codec)
+			inmemoryStore, _ = consul.NewInMemoryClient(codec)
 		})
 		client = inmemoryStore
 

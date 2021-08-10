@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/chunk/gcp/fixtures.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package gcp
 
 import (
@@ -14,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/objectclient"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -83,7 +89,7 @@ func (f *fixture) Clients() (
 		cClient = newBigtableObjectClient(Config{}, schemaConfig, client)
 	}
 
-	closer = testutils.CloserFunc(func() error {
+	closer = util.CloserFunc(func() error {
 		conn.Close()
 		return nil
 	})

@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/storegateway/sharding_strategy_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package storegateway
 
 import (
@@ -242,7 +247,8 @@ func TestDefaultShardingStrategy(t *testing.T) {
 			t.Parallel()
 
 			ctx := context.Background()
-			store := consul.NewInMemoryClient(ring.GetCodec())
+			store, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Initialize the ring state.
 			require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
@@ -599,7 +605,8 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			t.Parallel()
 
 			ctx := context.Background()
-			store := consul.NewInMemoryClient(ring.GetCodec())
+			store, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Initialize the ring state.
 			require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {

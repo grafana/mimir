@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/distributor/distributor_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package distributor
 
 import (
@@ -685,7 +690,11 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 				})
 				defer stopAll(ds, r)
 				codec := GetReplicaDescCodec()
-				mock := kv.PrefixClient(consul.NewInMemoryClient(codec), "prefix")
+
+				ringStore, closer := consul.NewInMemoryClient(codec)
+				t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+				mock := kv.PrefixClient(ringStore, "prefix")
 				d := ds[0]
 
 				if tc.enableTracker {
@@ -1582,7 +1591,9 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		b.Run(testName, func(b *testing.B) {
 
 			// Create an in-memory KV store for the ring with 1 ingester registered.
-			kvStore := consul.NewInMemoryClient(ring.GetCodec())
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			b.Cleanup(func() { assert.NoError(b, closer.Close()) })
+
 			err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
@@ -2030,7 +2041,9 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, *rin
 		ingestersByAddr[addr] = &ingesters[i]
 	}
 
-	kvStore := consul.NewInMemoryClient(ring.GetCodec())
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{

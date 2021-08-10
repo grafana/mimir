@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/basic_lifecycler_delegates_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ring
 
 import (
@@ -31,7 +36,7 @@ func TestLeaveOnStoppingDelegate(t *testing.T) {
 	}
 
 	leaveDelegate := NewLeaveOnStoppingDelegate(testDelegate, log.NewNopLogger())
-	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(cfg, leaveDelegate)
+	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(t, cfg, leaveDelegate)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
 
@@ -58,7 +63,7 @@ func TestTokensPersistencyDelegate_ShouldSkipTokensLoadingIfFileDoesNotExist(t *
 
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
-	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(cfg, persistencyDelegate)
+	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(t, cfg, persistencyDelegate)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
@@ -102,7 +107,7 @@ func TestTokensPersistencyDelegate_ShouldLoadTokensFromFileIfFileExist(t *testin
 
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
-	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(cfg, persistencyDelegate)
+	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(t, cfg, persistencyDelegate)
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, lifecycler))
@@ -166,7 +171,7 @@ func TestTokensPersistencyDelegate_ShouldHandleTheCaseTheInstanceIsAlreadyInTheR
 
 			ctx := context.Background()
 			cfg := prepareBasicLifecyclerConfig()
-			lifecycler, store, err := prepareBasicLifecyclerWithDelegate(cfg, persistencyDelegate)
+			lifecycler, store, err := prepareBasicLifecyclerWithDelegate(t, cfg, persistencyDelegate)
 			require.NoError(t, err)
 			defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
@@ -214,7 +219,7 @@ func TestDelegatesChain(t *testing.T) {
 
 	ctx := context.Background()
 	cfg := prepareBasicLifecyclerConfig()
-	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(cfg, chain)
+	lifecycler, _, err := prepareBasicLifecyclerWithDelegate(t, cfg, chain)
 	require.NoError(t, err)
 	defer services.StopAndAwaitTerminated(ctx, lifecycler) //nolint:errcheck
 
@@ -273,7 +278,7 @@ func TestAutoForgetDelegate(t *testing.T) {
 			testDelegate := &mockDelegate{}
 
 			autoForgetDelegate := NewAutoForgetDelegate(forgetPeriod, testDelegate, log.NewNopLogger())
-			lifecycler, store, err := prepareBasicLifecyclerWithDelegate(cfg, autoForgetDelegate)
+			lifecycler, store, err := prepareBasicLifecyclerWithDelegate(t, cfg, autoForgetDelegate)
 			require.NoError(t, err)
 
 			// Setup the initial state of the ring.

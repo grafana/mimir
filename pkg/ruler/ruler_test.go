@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ruler/ruler_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ruler
 
 import (
@@ -45,12 +50,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/services"
 )
 
-func defaultRulerConfig(store rulestore.RuleStore) (Config, func()) {
+func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()) {
 	// Create a new temporary directory for the rules, so that
 	// each test will run in isolation.
 	rulesDir, _ := ioutil.TempDir("/tmp", "ruler-tests")
+
 	codec := ring.GetCodec()
-	consul := consul.NewInMemoryClient(codec)
+	consul, closer := consul.NewInMemoryClient(codec)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.RulePath = rulesDir
@@ -179,7 +187,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 	defer ts.Close()
 
 	// We create an empty rule store so that the ruler will not load any rule from it.
-	cfg, cleanup := defaultRulerConfig(newMockRuleStore(nil))
+	cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(nil))
 	defer cleanup()
 
 	cfg.AlertmanagerURL = ts.URL
@@ -211,7 +219,7 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 }
 
 func TestRuler_Rules(t *testing.T) {
-	cfg, cleanup := defaultRulerConfig(newMockRuleStore(mockRules))
+	cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 	defer cleanup()
 
 	r, rcleanup := newTestRuler(t, cfg)
@@ -639,7 +647,8 @@ func TestSharding(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			kvStore := consul.NewInMemoryClient(ring.GetCodec())
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{
@@ -847,7 +856,7 @@ type ruleGroupKey struct {
 }
 
 func TestRuler_ListAllRules(t *testing.T) {
-	cfg, cleanup := defaultRulerConfig(newMockRuleStore(mockRules))
+	cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 	defer cleanup()
 
 	r, rcleanup := newTestRuler(t, cfg)

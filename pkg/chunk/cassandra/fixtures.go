@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/chunk/cassandra/fixtures.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package cassandra
 
 import (
@@ -7,6 +12,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
@@ -50,7 +56,7 @@ func (f *fixture) Clients() (chunk.IndexClient, chunk.Client, chunk.TableClient,
 		return nil, nil, nil, schemaConfig, nil, err
 	}
 
-	closer := testutils.CloserFunc(func() error {
+	closer := util.CloserFunc(func() error {
 		storageClient.Stop()
 		objectClient.Stop()
 		tableClient.Stop()

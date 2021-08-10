@@ -49,13 +49,13 @@ blocks_storage:
   backend: s3
 
   tsdb:
-    dir: /tmp/cortex-tsdb-ingester
+    dir: /tmp/mimir-tsdb-ingester
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
 
   bucket_store:
-    sync_dir: /tmp/cortex-tsdb-querier
+    sync_dir: /tmp/mimir-tsdb-querier
     consistency_delay: 5s
 
     index_cache:
@@ -75,8 +75,8 @@ blocks_storage:
 
   s3:
     endpoint:          minio:9000
-    bucket_name:       cortex-tsdb
-    access_key_id:     cortex
+    bucket_name:       mimir-tsdb
+    access_key_id:     mimir
     secret_access_key: supersecret
     insecure:          true
 
@@ -95,9 +95,9 @@ ruler:
 ruler_storage:
   backend: s3
   s3:
-    bucket_name:       cortex-ruler
+    bucket_name:       mimir-ruler
     endpoint:          minio:9000
-    access_key_id:     cortex
+    access_key_id:     mimir
     secret_access_key: supersecret
     insecure: true
 
@@ -107,9 +107,9 @@ alertmanager:
 alertmanager_storage:
   backend: s3
   s3:
-    bucket_name:       cortex-alertmanager
+    bucket_name:       mimir-alertmanager
     endpoint:          minio:9000
-    access_key_id:     cortex
+    access_key_id:     mimir
     secret_access_key: supersecret
     insecure:          true
 
@@ -118,7 +118,7 @@ storage:
 
 compactor:
   compaction_interval: 30s
-  data_dir:            /tmp/cortex-compactor
+  data_dir:            /tmp/mimir-compactor
   consistency_delay:   1m
   sharding_enabled:    true
   sharding_ring:

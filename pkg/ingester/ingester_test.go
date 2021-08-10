@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ingester/ingester_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ingester
 
 import (
@@ -44,7 +49,7 @@ type testStore struct {
 	chunks map[string][]chunk.Chunk
 }
 
-func newTestStore(t require.TestingT, cfg Config, clientConfig client.Config, limits validation.Limits, reg prometheus.Registerer) (*testStore, *Ingester) {
+func newTestStore(t testing.TB, cfg Config, clientConfig client.Config, limits validation.Limits, reg prometheus.Registerer) (*testStore, *Ingester) {
 	store := &testStore{
 		chunks: map[string][]chunk.Chunk{},
 	}
@@ -58,9 +63,9 @@ func newTestStore(t require.TestingT, cfg Config, clientConfig client.Config, li
 	return store, ing
 }
 
-func newDefaultTestStore(t require.TestingT) (*testStore, *Ingester) {
+func newDefaultTestStore(t testing.TB) (*testStore, *Ingester) {
 	return newTestStore(t,
-		defaultIngesterTestConfig(),
+		defaultIngesterTestConfig(t),
 		defaultClientTestConfig(),
 		defaultLimitsTestConfig(), nil)
 }
@@ -259,7 +264,7 @@ func TestIngesterMetadataAppend(t *testing.T) {
 		t.Run(tc.desc, func(t *testing.T) {
 			limits := defaultLimitsTestConfig()
 			limits.MaxLocalMetadataPerMetric = 50
-			_, ing := newTestStore(t, defaultIngesterTestConfig(), defaultClientTestConfig(), limits, nil)
+			_, ing := newTestStore(t, defaultIngesterTestConfig(t), defaultClientTestConfig(), limits, nil)
 			userIDs, _ := pushTestMetadata(t, ing, tc.numMetadata, tc.metadataPerMetric)
 
 			for _, userID := range userIDs {
@@ -289,7 +294,7 @@ func TestIngesterMetadataAppend(t *testing.T) {
 }
 
 func TestIngesterPurgeMetadata(t *testing.T) {
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.MetadataRetainPeriod = 20 * time.Millisecond
 	_, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), nil)
 	userIDs, _ := pushTestMetadata(t, ing, 10, 3)
@@ -307,7 +312,7 @@ func TestIngesterPurgeMetadata(t *testing.T) {
 
 func TestIngesterMetadataMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.MetadataRetainPeriod = 20 * time.Millisecond
 	_, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), reg)
 	_, _ = pushTestMetadata(t, ing, 10, 3)
@@ -379,7 +384,7 @@ func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
 
 func TestIngesterIdleFlush(t *testing.T) {
 	// Create test ingester with short flush cycle
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.FlushCheckPeriod = 20 * time.Millisecond
 	cfg.MaxChunkIdle = 100 * time.Millisecond
 	cfg.RetainPeriod = 500 * time.Millisecond
@@ -414,7 +419,7 @@ func TestIngesterIdleFlush(t *testing.T) {
 
 func TestIngesterSpreadFlush(t *testing.T) {
 	// Create test ingester with short flush cycle
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.SpreadFlushes = true
 	cfg.FlushCheckPeriod = 20 * time.Millisecond
 	store, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), nil)
@@ -523,7 +528,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	require.NoError(t, os.Mkdir(blocksDir, os.ModePerm))
 
 	chunksIngesterGenerator := func() *Ingester {
-		cfg := defaultIngesterTestConfig()
+		cfg := defaultIngesterTestConfig(t)
 		cfg.WALConfig.WALEnabled = true
 		cfg.WALConfig.Recover = true
 		cfg.WALConfig.Dir = chunksDir
@@ -534,7 +539,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	}
 
 	blocksIngesterGenerator := func() *Ingester {
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(), limits, blocksDir, nil)
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, blocksDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 		// Wait until it's ACTIVE
@@ -646,7 +651,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	require.NoError(t, os.Mkdir(blocksDir, os.ModePerm))
 
 	chunksIngesterGenerator := func() *Ingester {
-		cfg := defaultIngesterTestConfig()
+		cfg := defaultIngesterTestConfig(t)
 		cfg.WALConfig.WALEnabled = true
 		cfg.WALConfig.Recover = true
 		cfg.WALConfig.Dir = chunksDir
@@ -657,7 +662,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	}
 
 	blocksIngesterGenerator := func() *Ingester {
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(), limits, blocksDir, nil)
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, blocksDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 		// Wait until it's ACTIVE
@@ -929,7 +934,7 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []cortexp
 }
 
 func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpected bool) {
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(b)
 	clientCfg := defaultClientTestConfig()
 
 	const (
@@ -972,7 +977,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 }
 
 func BenchmarkIngester_QueryStream(b *testing.B) {
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(b)
 	clientCfg := defaultClientTestConfig()
 	limits := defaultLimitsTestConfig()
 	_, ing := newTestStore(b, cfg, clientCfg, limits, nil)
@@ -1071,7 +1076,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			registry := prometheus.NewRegistry()
 
 			// Create a mocked ingester
-			cfg := defaultIngesterTestConfig()
+			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 

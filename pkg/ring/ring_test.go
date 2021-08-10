@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/ring_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ring
 
 import (
@@ -1926,7 +1931,8 @@ func compareReplicationSets(first, second ReplicationSet) (added, removed []stri
 
 // This test verifies that ring is getting updates, even after extending check in the loop method.
 func TestRingUpdates(t *testing.T) {
-	inmem := consul.NewInMemoryClient(GetCodec())
+	inmem, closer := consul.NewInMemoryClient(GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{
 		KVStore:           kv.Config{Mock: inmem},
@@ -2019,10 +2025,11 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 // This test checks if shuffle-sharded ring can be reused, and whether it receives
 // updates from "main" ring.
 func TestShuffleShardWithCaching(t *testing.T) {
-	inmem := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
+	inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,
 	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{
 		KVStore:              kv.Config{Mock: inmem},

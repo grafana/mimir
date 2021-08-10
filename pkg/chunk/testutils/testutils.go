@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/chunk/testutils/testutils.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package testutils
 
 import (
@@ -25,14 +30,6 @@ const (
 type Fixture interface {
 	Name() string
 	Clients() (chunk.IndexClient, chunk.Client, chunk.TableClient, chunk.SchemaConfig, io.Closer, error)
-}
-
-// CloserFunc is to io.Closer as http.HandlerFunc is to http.Handler.
-type CloserFunc func() error
-
-// Close implements io.Closer.
-func (f CloserFunc) Close() error {
-	return f()
 }
 
 // DefaultSchemaConfig returns default schema for use in test fixtures

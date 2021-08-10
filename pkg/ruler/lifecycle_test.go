@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ruler/lifecycle_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ruler
 
 import (
@@ -6,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ring"
@@ -19,14 +25,15 @@ import (
 func TestRulerShutdown(t *testing.T) {
 	ctx := context.Background()
 
-	config, cleanup := defaultRulerConfig(newMockRuleStore(mockRules))
+	config, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 	defer cleanup()
 
 	r, rcleanup := newRuler(t, config)
 	defer rcleanup()
 
 	r.cfg.EnableSharding = true
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := enableSharding(r, ringStore)
 	require.NoError(t, err)
@@ -54,7 +61,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	const heartbeatTimeout = time.Minute
 
 	ctx := context.Background()
-	config, cleanup := defaultRulerConfig(newMockRuleStore(mockRules))
+	config, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 	defer cleanup()
 	r, rcleanup := newRuler(t, config)
 	defer rcleanup()
@@ -62,7 +69,8 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	r.cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond
 	r.cfg.Ring.HeartbeatTimeout = heartbeatTimeout
 
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := enableSharding(r, ringStore)
 	require.NoError(t, err)

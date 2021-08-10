@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/kv/kv_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package kv
 
 import (
@@ -23,7 +28,8 @@ func withFixtures(t *testing.T, f func(*testing.T, Client)) {
 		factory func() (Client, io.Closer, error)
 	}{
 		{"consul", func() (Client, io.Closer, error) {
-			return consul.NewInMemoryClient(codec.String{}), etcd.NopCloser, nil
+			client, closer := consul.NewInMemoryClient(codec.String{})
+			return client, closer, nil
 		}},
 		{"etcd", func() (Client, io.Closer, error) {
 			return etcd.Mock(codec.String{})

@@ -11,7 +11,7 @@ services:
     image: minio/minio
     command: [ "server", "/data" ]
     environment:
-      - MINIO_ACCESS_KEY=cortex
+      - MINIO_ACCESS_KEY=mimir
       - MINIO_SECRET_KEY=supersecret
     ports:
       - 9000:9000
@@ -46,7 +46,7 @@ services:
     build:
       context:    .
       dockerfile: dev.dockerfile
-    image: cortex
+    image: mimir
     command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
     depends_on:
       - consul
@@ -61,13 +61,13 @@ services:
       - 8001:8001
     volumes:
       - ./config:/mimir/config
-      - .data-cortex-1:/data:delegated
+      - .data-mimir-1:/data:delegated
 
   mimir-2:
     build:
       context:    .
       dockerfile: dev.dockerfile
-    image: cortex
+    image: mimir
     command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=all -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
     depends_on:
       - consul
@@ -82,4 +82,4 @@ services:
       - 8002:8002
     volumes:
       - ./config:/mimir/config
-      - .data-cortex-2:/data:delegated
+      - .data-mimir-2:/data:delegated

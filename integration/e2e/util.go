@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/e2e/util.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package e2e
 
 import (
@@ -159,6 +164,11 @@ func GetTempDirectory() (string, error) {
 
 	tmpDir, err := ioutil.TempDir(dir, "e2e_integration_test")
 	if err != nil {
+		return "", err
+	}
+	// Allow group use of the temporary directory to allow testing with non-root
+	// users.
+	if err := os.Chmod(tmpDir, 0770); err != nil {
 		return "", err
 	}
 	absDir, err := filepath.Abs(tmpDir)

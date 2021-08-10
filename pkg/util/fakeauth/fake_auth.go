@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/fakeauth/fake_auth.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 // Package fakeauth provides middlewares thats injects a fake userID, so the rest of the code
 // can continue to be multitenant.
 package fakeauth

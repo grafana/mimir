@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/kv/etcd/mock.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package etcd
 
 import (
@@ -8,6 +13,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 
 	"go.etcd.io/etcd/server/v3/embed"
@@ -46,7 +52,7 @@ func Mock(codec codec.Codec) (*Client, io.Closer, error) {
 		return nil, nil, fmt.Errorf("server took too long to start")
 	}
 
-	closer := CloserFunc(func() error {
+	closer := util.CloserFunc(func() error {
 		etcd.Server.Stop()
 		return nil
 	})
@@ -62,19 +68,6 @@ func Mock(codec codec.Codec) (*Client, io.Closer, error) {
 
 	return client, closer, nil
 }
-
-// CloserFunc is like http.HandlerFunc but for io.Closers.
-type CloserFunc func() error
-
-// Close implements io.Closer.
-func (f CloserFunc) Close() error {
-	return f()
-}
-
-// NopCloser does nothing.
-var NopCloser = CloserFunc(func() error {
-	return nil
-})
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

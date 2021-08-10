@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ingester/wal_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package ingester
 
 import (
@@ -28,7 +33,7 @@ func TestWAL(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dirname))
 	}()
 
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.WALConfig.WALEnabled = true
 	cfg.WALConfig.CheckpointEnabled = true
 	cfg.WALConfig.Recover = true
@@ -108,7 +113,7 @@ func TestWAL(t *testing.T) {
 }
 
 func TestCheckpointRepair(t *testing.T) {
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(t)
 	cfg.WALConfig.WALEnabled = true
 	cfg.WALConfig.CheckpointEnabled = true
 	cfg.WALConfig.Recover = true
@@ -290,7 +295,7 @@ func BenchmarkWALReplay(b *testing.B) {
 		require.NoError(b, os.RemoveAll(dirname))
 	}()
 
-	cfg := defaultIngesterTestConfig()
+	cfg := defaultIngesterTestConfig(b)
 	cfg.WALConfig.WALEnabled = true
 	cfg.WALConfig.CheckpointEnabled = true
 	cfg.WALConfig.Recover = true

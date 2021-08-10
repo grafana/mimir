@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/blocks_store_replicated_set_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package querier
 
 import (
@@ -328,7 +333,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			ctx := context.Background()
 
 			// Setup the ring state.
-			ringStore := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
 				d := ring.NewDesc()
 				testData.setup(d)
@@ -386,7 +393,9 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	block1 := ulid.MustNew(1, nil)
 
 	// Create a ring.
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
 		d := ring.NewDesc()
 		for n := 1; n <= numInstances; n++ {

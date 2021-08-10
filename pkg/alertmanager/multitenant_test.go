@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/alertmanager/multitenant_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package alertmanager
 
 import (
@@ -604,7 +609,9 @@ func TestMultitenantAlertmanager_deleteUnusedLocalUserState(t *testing.T) {
 func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 	ctx := context.Background()
 	alertStore := prepareInMemoryAlertStore()
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	const (
 		user1 = "user1"
 		user2 = "user2"
@@ -682,7 +689,8 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 	)
 
 	alertStore := prepareInMemoryAlertStore()
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	createInstance := func(i int) *MultitenantAlertmanager {
 		reg := prometheus.NewPedanticRegistry()
@@ -998,7 +1006,8 @@ func TestMultitenantAlertmanager_InitialSyncWithSharding(t *testing.T) {
 			ctx := context.Background()
 			amConfig := mockAlertmanagerConfig(t)
 			amConfig.ShardingEnabled = true
-			ringStore := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Use an alert store with a mocked backend.
 			bkt := &bucket.ClientMock{}
@@ -1102,7 +1111,9 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ringStore := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			alertStore := prepareInMemoryAlertStore()
 
 			var instances []*MultitenantAlertmanager
@@ -1289,7 +1300,9 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			amConfig.ShardingRing.RingCheckPeriod = 100 * time.Millisecond
 			amConfig.PollInterval = time.Hour // Don't trigger the periodic check.
 
-			ringStore := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			alertStore := prepareInMemoryAlertStore()
 
 			reg := prometheus.NewPedanticRegistry()
@@ -1340,7 +1353,9 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 	amConfig.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
 	amConfig.ShardingRing.HeartbeatTimeout = heartbeatTimeout
 
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	alertStore := prepareInMemoryAlertStore()
 
 	am, err := createMultitenantAlertmanager(amConfig, nil, nil, alertStore, ringStore, nil, log.NewNopLogger(), nil)
@@ -1372,7 +1387,8 @@ func TestMultitenantAlertmanager_InitialSyncFailureWithSharding(t *testing.T) {
 	ctx := context.Background()
 	amConfig := mockAlertmanagerConfig(t)
 	amConfig.ShardingEnabled = true
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Mock the store to fail listing configs.
 	bkt := &bucket.ClientMock{}
@@ -1394,7 +1410,9 @@ func TestMultitenantAlertmanager_InitialSyncFailureWithSharding(t *testing.T) {
 
 func TestAlertmanager_ReplicasPosition(t *testing.T) {
 	ctx := context.Background()
-	ringStore := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	mockStore := prepareInMemoryAlertStore()
 	require.NoError(t, mockStore.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
 		User:      "user-1",
@@ -1493,7 +1511,9 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ringStore := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			mockStore := prepareInMemoryAlertStore()
 			clientPool := newPassthroughAlertmanagerClientPool()
 			externalURL := flagext.URLValue{}
@@ -1686,7 +1706,9 @@ func TestAlertmanager_StateReplicationWithSharding_InitialSyncFromPeers(t *testi
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ringStore := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			mockStore := prepareInMemoryAlertStore()
 			clientPool := newPassthroughAlertmanagerClientPool()
 			externalURL := flagext.URLValue{}

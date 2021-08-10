@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/chunk/local/fixtures.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
+
 package local
 
 import (
@@ -11,6 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/objectclient"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 type fixture struct {
@@ -65,7 +71,7 @@ func (f *fixture) Clients() (
 		}},
 	}
 
-	closer = testutils.CloserFunc(func() error {
+	closer = util.CloserFunc(func() error {
 		return os.RemoveAll(f.dirname)
 	})
 
