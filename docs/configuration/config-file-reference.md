@@ -1155,8 +1155,7 @@ results_cache:
 [parallelise_shardable_queries: <boolean> | default = false]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# default. (only used for TSDB storage, in the chunk storage the shard size is
-# configured via schema configs.)
+# default. This option is only used for blocks storage.
 # CLI flag: -querier.total-shards
 [total_shards: <int> | default = 16]
 ```
