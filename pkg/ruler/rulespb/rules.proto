@@ -26,7 +26,7 @@ message RuleGroupDesc {
       [(gogoproto.nullable) = false, (gogoproto.stdduration) = true];
   repeated RuleDesc rules = 4;
   string user = 6;
-  // The options field can be used to extend Cortex Ruler functionality without
+  // The options field can be used to extend Mimir Ruler functionality without
   // having to repeatedly redefine the proto description. It can also be leveraged
   // to create custom `ManagerOpts` based on rule configs which can then be passed
   // to the Prometheus Manager.
