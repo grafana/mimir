@@ -28,6 +28,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.3
 	github.com/gorilla/mux v1.7.3
+	github.com/grafana/dskit v0.0.0-20210810201338-0661abf708eb
 	github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 	github.com/hashicorp/consul/api v1.8.1
 	github.com/hashicorp/go-cleanhttp v0.5.1
