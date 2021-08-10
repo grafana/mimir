@@ -13,7 +13,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -22,14 +22,14 @@ func TestMarshall(t *testing.T) {
 	const numSeries = 10
 	recorder := httptest.NewRecorder()
 	{
-		req := cortexpb.WriteRequest{}
+		req := mimirpb.WriteRequest{}
 		for i := 0; i < numSeries; i++ {
-			req.Timeseries = append(req.Timeseries, cortexpb.PreallocTimeseries{
-				TimeSeries: &cortexpb.TimeSeries{
-					Labels: []cortexpb.LabelAdapter{
+			req.Timeseries = append(req.Timeseries, mimirpb.PreallocTimeseries{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "foo", Value: strconv.Itoa(i)},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{TimestampMs: int64(i), Value: float64(i)},
 					},
 				},
@@ -44,7 +44,7 @@ func TestMarshall(t *testing.T) {
 			tooSmallSize = 1
 			plentySize   = 1024 * 1024
 		)
-		req := cortexpb.WriteRequest{}
+		req := mimirpb.WriteRequest{}
 		err := util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), tooSmallSize, &req, util.RawSnappy)
 		require.Error(t, err)
 		err = util.ParseProtoReader(context.Background(), recorder.Body, recorder.Body.Len(), plentySize, &req, util.RawSnappy)

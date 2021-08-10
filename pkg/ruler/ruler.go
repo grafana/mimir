@@ -29,7 +29,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	ring_client "github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/ring/kv"
@@ -694,8 +694,8 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 				for _, a := range rule.ActiveAlerts() {
 					alerts = append(alerts, &AlertStateDesc{
 						State:       a.State.String(),
-						Labels:      cortexpb.FromLabelsToLabelAdapters(a.Labels),
-						Annotations: cortexpb.FromLabelsToLabelAdapters(a.Annotations),
+						Labels:      mimirpb.FromLabelsToLabelAdapters(a.Labels),
+						Annotations: mimirpb.FromLabelsToLabelAdapters(a.Annotations),
 						Value:       a.Value,
 						ActiveAt:    a.ActiveAt,
 						FiredAt:     a.FiredAt,
@@ -709,8 +709,8 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 						Expr:        rule.Query().String(),
 						Alert:       rule.Name(),
 						For:         rule.HoldDuration(),
-						Labels:      cortexpb.FromLabelsToLabelAdapters(rule.Labels()),
-						Annotations: cortexpb.FromLabelsToLabelAdapters(rule.Annotations()),
+						Labels:      mimirpb.FromLabelsToLabelAdapters(rule.Labels()),
+						Annotations: mimirpb.FromLabelsToLabelAdapters(rule.Annotations()),
 					},
 					State:               rule.State().String(),
 					Health:              string(rule.Health()),
@@ -724,7 +724,7 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 					Rule: &rulespb.RuleDesc{
 						Record: rule.Name(),
 						Expr:   rule.Query().String(),
-						Labels: cortexpb.FromLabelsToLabelAdapters(rule.Labels()),
+						Labels: mimirpb.FromLabelsToLabelAdapters(rule.Labels()),
 					},
 					Health:              string(rule.Health()),
 					LastError:           lastError,

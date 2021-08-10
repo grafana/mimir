@@ -26,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
@@ -34,6 +33,7 @@ import (
 	frontendv2 "github.com/grafana/mimir/pkg/frontend/v2"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -249,7 +249,7 @@ type Ingester interface {
 	client.IngesterServer
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)
-	Push(context.Context, *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error)
+	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 }
 
 // RegisterIngester registers the ingesters HTTP and GRPC service

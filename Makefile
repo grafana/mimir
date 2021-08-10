@@ -88,7 +88,7 @@ endef
 $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 
 # Manually declared dependencies And what goes into each exe
-pkg/cortexpb/cortex.pb.go: pkg/cortexpb/cortex.proto
+pkg/mimirpb/mimir.pb.go: pkg/mimirpb/mimir.proto
 pkg/ingester/client/ingester.pb.go: pkg/ingester/client/ingester.proto
 pkg/distributor/distributorpb/distributor.pb.go: pkg/distributor/distributorpb/distributor.proto
 pkg/ingester/wal.pb.go: pkg/ingester/wal.proto

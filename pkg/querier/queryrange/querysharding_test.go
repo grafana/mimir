@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -125,11 +125,11 @@ func sampleMatrixResponse() *PrometheusResponse {
 			ResultType: string(parser.ValueTypeMatrix),
 			Result: []SampleStream{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							TimestampMs: 5,
 							Value:       1,
@@ -141,11 +141,11 @@ func sampleMatrixResponse() *PrometheusResponse {
 					},
 				},
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							TimestampMs: 5,
 							Value:       8,

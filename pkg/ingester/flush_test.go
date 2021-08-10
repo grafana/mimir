@@ -21,8 +21,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util"
@@ -104,8 +104,8 @@ func TestFlushPanicIssue2743(t *testing.T) {
 	time.Sleep(2 * time.Second)
 }
 
-func pushSample(t *testing.T, ing *Ingester, sample cortexpb.Sample) {
-	_, err := ing.Push(user.InjectOrgID(context.Background(), userID), cortexpb.ToWriteRequest(singleTestLabel, []cortexpb.Sample{sample}, nil, cortexpb.API))
+func pushSample(t *testing.T, ing *Ingester, sample mimirpb.Sample) {
+	_, err := ing.Push(user.InjectOrgID(context.Background(), userID), mimirpb.ToWriteRequest(singleTestLabel, []mimirpb.Sample{sample}, nil, mimirpb.API))
 	require.NoError(t, err)
 }
 
@@ -161,8 +161,8 @@ func emptyIngesterConfig() Config {
 	}
 }
 
-func newSampleGenerator(t *testing.T, initTime time.Time, step time.Duration) <-chan cortexpb.Sample {
-	ts := make(chan cortexpb.Sample)
+func newSampleGenerator(t *testing.T, initTime time.Time, step time.Duration) <-chan mimirpb.Sample {
+	ts := make(chan mimirpb.Sample)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -171,7 +171,7 @@ func newSampleGenerator(t *testing.T, initTime time.Time, step time.Duration) <-
 		c := initTime
 		for {
 			select {
-			case ts <- cortexpb.Sample{Value: 0, TimestampMs: util.TimeToMillis(c)}:
+			case ts <- mimirpb.Sample{Value: 0, TimestampMs: util.TimeToMillis(c)}:
 			case <-ctx.Done():
 				return
 			}
@@ -218,7 +218,7 @@ func TestIssue3139(t *testing.T) {
 
 	// Generates a sample. While it is flushed for the first time (which returns error), it will be put on the queue
 	// again.
-	pushSample(t, ing, cortexpb.Sample{Value: 100, TimestampMs: int64(model.Now())})
+	pushSample(t, ing, mimirpb.Sample{Value: 100, TimestampMs: int64(model.Now())})
 
 	// stop ingester -- no flushing should happen yet
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
