@@ -31,7 +31,7 @@ func orSquasher(nodes ...parser.Node) (parser.Expr, error) {
 }
 
 func TestShardSummer(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		shards   int
 		input    string
 		expected string
@@ -125,8 +125,7 @@ func TestShardSummer(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-
-			summer, err := NewShardSummer(c.shards, orSquasher, nil)
+			summer, err := newShardSummer(c.shards, orSquasher, nil)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
@@ -154,7 +153,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			summer, err := NewShardSummer(c.shards, VectorSquasher, nil)
+			summer, err := newShardSummer(c.shards, vectorSquasher, nil)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
@@ -170,7 +169,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 }
 
 func TestParseShard(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		input  string
 		output querysharding.ShardSelector
 		err    bool
@@ -210,11 +209,10 @@ func TestParseShard(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 func TestShardFromMatchers(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		input []*labels.Matcher
 		shard *querysharding.ShardSelector
 		idx   int
@@ -272,5 +270,4 @@ func TestShardFromMatchers(t *testing.T) {
 			}
 		})
 	}
-
 }

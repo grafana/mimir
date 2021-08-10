@@ -523,7 +523,6 @@ func (t *Cortex) initQueryFrontendTripperware() (serv services.Service, err erro
 		t.Overrides,
 		queryrange.PrometheusCodec,
 		queryrange.PrometheusResponseExtractor{},
-		t.Cfg.Schema,
 		t.Cfg.Storage.Engine,
 		promql.EngineOpts{
 			Logger:           util_log.Logger,
@@ -535,7 +534,6 @@ func (t *Cortex) initQueryFrontendTripperware() (serv services.Service, err erro
 				return t.Cfg.Querier.DefaultEvaluationInterval.Milliseconds()
 			},
 		},
-		t.Cfg.Querier.QueryIngestersWithin,
 		prometheus.DefaultRegisterer,
 		t.TombstonesLoader,
 	)

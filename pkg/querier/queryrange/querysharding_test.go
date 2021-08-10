@@ -15,14 +15,13 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -86,17 +85,10 @@ func TestQueryshardingMiddleware(t *testing.T) {
 				Timeout:    time.Minute,
 			})
 
-			handler := NewQueryShardMiddleware(
+			handler := NewQueryShardingMiddleware(
 				log.NewNopLogger(),
 				engine,
-				ShardingConfigs{
-					{
-						RowShards: 3,
-					},
-				},
-				PrometheusCodec,
-				0,
-				nil,
+				3,
 				nil,
 			).Wrap(c.next)
 
@@ -182,125 +174,6 @@ func defaultReq() *PrometheusRequest {
 	}
 }
 
-func TestShardingConfigs_ValidRange(t *testing.T) {
-	reqWith := func(start, end string) *PrometheusRequest {
-		r := defaultReq()
-
-		if start != "" {
-			r.Start = int64(parseDate(start))
-		}
-
-		if end != "" {
-			r.End = int64(parseDate(end))
-		}
-
-		return r
-	}
-
-	testExpr := []struct {
-		name     string
-		confs    ShardingConfigs
-		req      *PrometheusRequest
-		expected chunk.PeriodConfig
-		err      error
-	}{
-		{
-			name:  "0 ln configs fail",
-			confs: ShardingConfigs{},
-			req:   defaultReq(),
-			err:   errInvalidShardingRange,
-		},
-		{
-			name: "request starts before beginning config",
-			confs: ShardingConfigs{
-				{
-					From:      chunk.DayTime{Time: parseDate("2019-10-16")},
-					RowShards: 1,
-				},
-			},
-			req: reqWith("2019-10-15", ""),
-			err: errInvalidShardingRange,
-		},
-		{
-			name: "request spans multiple configs",
-			confs: ShardingConfigs{
-				{
-					From:      chunk.DayTime{Time: parseDate("2019-10-16")},
-					RowShards: 1,
-				},
-				{
-					From:      chunk.DayTime{Time: parseDate("2019-11-16")},
-					RowShards: 2,
-				},
-			},
-			req: reqWith("2019-10-15", "2019-11-17"),
-			err: errInvalidShardingRange,
-		},
-		{
-			name: "selects correct config ",
-			confs: ShardingConfigs{
-				{
-					From:      chunk.DayTime{Time: parseDate("2019-10-16")},
-					RowShards: 1,
-				},
-				{
-					From:      chunk.DayTime{Time: parseDate("2019-11-16")},
-					RowShards: 2,
-				},
-				{
-					From:      chunk.DayTime{Time: parseDate("2019-12-16")},
-					RowShards: 3,
-				},
-			},
-			req: reqWith("2019-11-20", "2019-11-25"),
-			expected: chunk.PeriodConfig{
-				From:      chunk.DayTime{Time: parseDate("2019-11-16")},
-				RowShards: 2,
-			},
-		},
-	}
-
-	for _, c := range testExpr {
-		t.Run(c.name, func(t *testing.T) {
-			out, err := c.confs.ValidRange(c.req.Start, c.req.End)
-
-			if c.err != nil {
-				require.EqualError(t, err, c.err.Error())
-			} else {
-				require.Nil(t, err)
-				require.Equal(t, c.expected, out)
-			}
-		})
-	}
-}
-
-func parseDate(in string) model.Time {
-	t, err := time.Parse("2006-01-02", in)
-	if err != nil {
-		panic(err)
-	}
-	return model.Time(t.UnixNano())
-}
-
-// mappingValidator can be injected into a middleware chain to assert that a query matches an expected query
-type mappingValidator struct {
-	expected string
-	next     Handler
-}
-
-func (v *mappingValidator) Do(ctx context.Context, req Request) (Response, error) {
-	expr, err := parser.ParseExpr(req.GetQuery())
-	if err != nil {
-		return nil, err
-	}
-
-	if v.expected != expr.String() {
-		return nil, errors.Errorf("bad query mapping: expected [%s], got [%s]", v.expected, expr.String())
-	}
-
-	return v.next.Do(ctx, req)
-}
-
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
 func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	require.Equal(t, a.Status, b.Status)
@@ -331,7 +204,6 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 }
 
 func TestQueryshardingCorrectness(t *testing.T) {
-	shardFactor := 2
 	req := &PrometheusRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
@@ -376,45 +248,28 @@ func TestQueryshardingCorrectness(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			shardingConf := ShardingConfigs{
-				chunk.PeriodConfig{
-					Schema:    "v10",
-					RowShards: uint32(shardFactor),
-				},
-			}
-			shardingware := NewQueryShardMiddleware(
+			shardingware := NewQueryShardingMiddleware(
 				log.NewNopLogger(),
 				engine,
-				// ensure that all requests are shard compatbile
-				shardingConf,
-				PrometheusCodec,
-				0,
-				nil,
+				2,
 				nil,
 			)
+
+			// todo(ctovena): move this to its own package and test.
+			mapper, err := astmapper.NewSharding(2, nil)
+			require.Nil(t, err)
+			expr, err := parser.ParseExpr(tc.query)
+			require.Nil(t, err)
+			mapped, err := mapper.Map(expr)
+			require.Nil(t, err)
+			require.Equal(t, tc.mapped, mapped.String())
 
 			downstream := &downstreamHandler{
 				engine:    engine,
 				queryable: shardAwareQueryable,
 			}
 
-			assertionMWare := MiddlewareFunc(func(next Handler) Handler {
-				return &mappingValidator{
-					expected: tc.mapped,
-					next:     next,
-				}
-			})
-
-			mapperware := MiddlewareFunc(func(next Handler) Handler {
-				return newASTMapperware(shardingConf, next, log.NewNopLogger(), nil)
-			})
-
 			r := req.WithQuery(tc.query)
-
-			// ensure the expected ast mapping occurs
-			_, err := MergeMiddlewares(mapperware, assertionMWare).Wrap(downstream).Do(context.Background(), r)
-			require.Nil(t, err)
-
 			shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), r)
 			require.Nil(t, err)
 
@@ -426,88 +281,12 @@ func TestQueryshardingCorrectness(t *testing.T) {
 	}
 }
 
-func TestShardSplitting(t *testing.T) {
-	for _, tc := range []struct {
-		desc        string
-		lookback    time.Duration
-		shouldShard bool
-	}{
-		{
-			desc:        "older than lookback",
-			lookback:    -1, // a negative lookback will ensure the entire query doesn't cross the sharding boundary & can safely be sharded.
-			shouldShard: true,
-		},
-		{
-			desc:        "overlaps lookback",
-			lookback:    end.Sub(start) / 2, // intersect the request causing it to avoid sharding
-			shouldShard: false,
-		},
-		{
-			desc:        "newer than lookback",
-			lookback:    end.Sub(start) + 1,
-			shouldShard: false,
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			req := &PrometheusRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  int64(step) / int64(time.Second),
-				Query: "sum(rate(bar1[1m]))",
-			}
-
-			shardingware := NewQueryShardMiddleware(
-				log.NewNopLogger(),
-				engine,
-				// ensure that all requests are shard compatbile
-				ShardingConfigs{
-					chunk.PeriodConfig{
-						Schema:    "v10",
-						RowShards: uint32(2),
-					},
-				},
-				PrometheusCodec,
-				tc.lookback,
-				nil,
-				nil,
-			)
-
-			downstream := &downstreamHandler{
-				engine:    engine,
-				queryable: shardAwareQueryable,
-			}
-
-			handler := shardingware.Wrap(downstream).(*shardSplitter)
-			handler.now = func() time.Time { return end } // make the split cut the request in half (don't use time.Now)
-
-			var didShard bool
-
-			old := handler.shardingware
-			handler.shardingware = HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
-				didShard = true
-				return old.Do(ctx, req)
-			})
-
-			resp, err := handler.Do(context.Background(), req)
-			require.Nil(t, err)
-
-			require.Equal(t, tc.shouldShard, didShard)
-
-			unaltered, err := downstream.Do(context.Background(), req)
-			require.Nil(t, err)
-
-			approximatelyEquals(t, unaltered.(*PrometheusResponse), resp.(*PrometheusResponse))
-		})
-	}
-}
-
 func BenchmarkQuerySharding(b *testing.B) {
-	var shards []uint32
+	var shards []int
 
 	// max out at half available cpu cores in order to minimize noisy neighbor issues while benchmarking
 	for shard := 1; shard <= runtime.NumCPU()/2; shard = shard * 2 {
-		shards = append(shards, uint32(shard))
+		shards = append(shards, shard)
 	}
 
 	for _, tc := range []struct {
@@ -583,19 +362,10 @@ func BenchmarkQuerySharding(b *testing.B) {
 			}
 
 			for _, shardFactor := range shards {
-				shardingware := NewQueryShardMiddleware(
+				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					// ensure that all requests are shard compatbile
-					ShardingConfigs{
-						chunk.PeriodConfig{
-							Schema:    "v10",
-							RowShards: shardFactor,
-						},
-					},
-					PrometheusCodec,
-					0,
-					nil,
+					shardFactor,
 					nil,
 				).Wrap(downstream)
 

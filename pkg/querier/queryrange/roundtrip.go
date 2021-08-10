@@ -22,7 +22,6 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -37,7 +36,7 @@ var (
 		return next
 	})
 
-	errInvalidMinShardingLookback = errors.New("a non-zero value is required for querier.query-ingesters-within when -querier.parallelise-shardable-queries is enabled")
+	errInvalidShardingStorage = errors.New("query sharding support is only available for block storage")
 )
 
 // Config for query_range middleware chain.
@@ -57,8 +56,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.SplitQueriesByInterval, "querier.split-queries-by-interval", 0, "Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
-	f.BoolVar(&cfg.ShardedQueries, "querier.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the chunks storage engine.")
-	f.IntVar(&cfg.TotalShards, "querier.total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by default. This option is only used for blocks storage.")
+	f.BoolVar(&cfg.ShardedQueries, "querier.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the block storage engine.")
+	f.IntVar(&cfg.TotalShards, "querier.total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by default.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -133,10 +132,8 @@ func NewTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
-	schema chunk.SchemaConfig,
 	storageEngine string,
 	engineOpts promql.EngineOpts,
-	minShardingLookback time.Duration,
 	registerer prometheus.Registerer,
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
@@ -179,33 +176,22 @@ func NewTripperware(
 	}
 
 	if cfg.ShardedQueries {
-		var queryShardingMiddleware Middleware
-		if storageEngine == storage.StorageEngineBlocks {
-			queryShardingMiddleware = NewBlockStorageQueryShardingMiddleware(
-				log,
-				promql.NewEngine(engineOpts),
-				cfg.TotalShards,
-				registerer,
-			)
-		} else {
-			if minShardingLookback == 0 {
-				return nil, nil, errInvalidMinShardingLookback
+		if storageEngine != storage.StorageEngineBlocks {
+			if c != nil {
+				c.Stop()
 			}
-			queryShardingMiddleware = NewQueryShardMiddleware(
-				log,
-				promql.NewEngine(engineOpts),
-				schema.Configs,
-				codec,
-				minShardingLookback,
-				metrics,
-				registerer,
-			)
+			return nil, nil, errInvalidShardingStorage
 		}
 
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics),
-			queryShardingMiddleware,
+			NewQueryShardingMiddleware(
+				log,
+				promql.NewEngine(engineOpts),
+				cfg.TotalShards,
+				registerer,
+			),
 		)
 	}
 
