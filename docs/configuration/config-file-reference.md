@@ -53,7 +53,7 @@ Where default_value is the value to use if the environment variable is undefined
 ### Supported contents and default values of the config file
 
 ```yaml
-# Comma-separated list of Cortex modules to load. The alias 'all' can be used in
+# Comma-separated list of Mimir modules to load. The alias 'all' can be used in
 # the list to load a number of core modules and will enable single-binary mode.
 # Use '-modules' command line flag to get a list of available modules, and to
 # see which modules are included in 'all'.
@@ -64,7 +64,7 @@ Where default_value is the value to use if the environment variable is undefined
 # CLI flag: -auth.enabled
 [auth_enabled: <boolean> | default = true]
 
-# HTTP path prefix for Cortex API.
+# HTTP path prefix for Mimir API.
 # CLI flag: -http.prefix
 [http_prefix: <string> | default = "/api/prom"]
 
@@ -86,48 +86,48 @@ api:
 # service(s).
 [server: <server_config>]
 
-# The distributor_config configures the Cortex distributor.
+# The distributor_config configures the Mimir distributor.
 [distributor: <distributor_config>]
 
-# The querier_config configures the Cortex querier.
+# The querier_config configures the Mimir querier.
 [querier: <querier_config>]
 
-# The ingester_client_config configures how the Cortex distributors connect to
+# The ingester_client_config configures how the Mimir distributors connect to
 # the ingesters.
 [ingester_client: <ingester_client_config>]
 
-# The ingester_config configures the Cortex ingester.
+# The ingester_config configures the Mimir ingester.
 [ingester: <ingester_config>]
 
 # The flusher_config configures the WAL flusher target, used to manually run
 # one-time flushes when scaling down ingesters.
 [flusher: <flusher_config>]
 
-# The storage_config configures where Cortex stores the data (chunks storage
+# The storage_config configures where Mimir stores the data (chunks storage
 # engine).
 [storage: <storage_config>]
 
-# The chunk_store_config configures how Cortex stores the data (chunks storage
+# The chunk_store_config configures how Mimir stores the data (chunks storage
 # engine).
 [chunk_store: <chunk_store_config>]
 
-# The limits_config configures default and per-tenant limits imposed by Cortex
+# The limits_config configures default and per-tenant limits imposed by Mimir
 # services (ie. distributor, ingester, ...).
 [limits: <limits_config>]
 
-# The frontend_worker_config configures the worker - running within the Cortex
+# The frontend_worker_config configures the worker - running within the Mimir
 # querier - picking up and executing queries enqueued by the query-frontend or
 # query-scheduler.
 [frontend_worker: <frontend_worker_config>]
 
-# The query_frontend_config configures the Cortex query-frontend.
+# The query_frontend_config configures the Mimir query-frontend.
 [frontend: <query_frontend_config>]
 
-# The query_range_config configures the query splitting and caching in the
-# Cortex query-frontend.
+# The query_range_config configures the query splitting and caching in the Mimir
+# query-frontend.
 [query_range: <query_range_config>]
 
-# The table_manager_config configures the Cortex table-manager.
+# The table_manager_config configures the Mimir table-manager.
 [table_manager: <table_manager_config>]
 
 # The blocks_storage_config configures the blocks storage.
@@ -144,22 +144,22 @@ api:
 [purger: <purger_config>]
 
 tenant_federation:
-  # If enabled on all Cortex services, queries can be federated across multiple
+  # If enabled on all Mimir services, queries can be federated across multiple
   # tenants. The tenant IDs involved need to be specified separated by a `|`
   # character in the `X-Scope-OrgID` header (experimental).
   # CLI flag: -tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
-# The ruler_config configures the Cortex ruler.
+# The ruler_config configures the Mimir ruler.
 [ruler: <ruler_config>]
 
-# The ruler_storage_config configures the Cortex ruler storage backend.
+# The ruler_storage_config configures the Mimir ruler storage backend.
 [ruler_storage: <ruler_storage_config>]
 
-# The alertmanager_config configures the Cortex alertmanager.
+# The alertmanager_config configures the Mimir alertmanager.
 [alertmanager: <alertmanager_config>]
 
-# The alertmanager_storage_config configures the Cortex alertmanager storage
+# The alertmanager_storage_config configures the Mimir alertmanager storage
 # backend.
 [alertmanager_storage: <alertmanager_storage_config>]
 
@@ -424,7 +424,7 @@ grpc_tls_config:
 
 ### `distributor_config`
 
-The `distributor_config` configures the Cortex distributor.
+The `distributor_config` configures the Mimir distributor.
 
 ```yaml
 pool:
@@ -590,7 +590,7 @@ instance_limits:
 
 ### `ingester_config`
 
-The `ingester_config` configures the Cortex ingester.
+The `ingester_config` configures the Mimir ingester.
 
 ```yaml
 # Configures the Write-Ahead Log (WAL) for the Mimir chunks storage. This config
@@ -826,7 +826,7 @@ instance_limits:
 
 ### `querier_config`
 
-The `querier_config` configures the Cortex querier.
+The `querier_config` configures the Mimir querier.
 
 ```yaml
 # The maximum number of concurrent queries.
@@ -893,8 +893,8 @@ The `querier_config` configures the Cortex querier.
 [default_evaluation_interval: <duration> | default = 1m]
 
 # Active query tracker monitors active queries, and writes them to the file in
-# given directory. If Cortex discovers any queries in this log during startup,
-# it will log them to the log file. Setting to empty value disables active query
+# given directory. If Mimir discovers any queries in this log during startup, it
+# will log them to the log file. Setting to empty value disables active query
 # tracker, which also disables -querier.max-concurrent option.
 # CLI flag: -querier.active-query-tracker-dir
 [active_query_tracker_dir: <string> | default = "./active-query-tracker"]
@@ -961,7 +961,7 @@ store_gateway_client:
 
 ### `query_frontend_config`
 
-The `query_frontend_config` configures the Cortex query-frontend.
+The `query_frontend_config` configures the Mimir query-frontend.
 
 ```yaml
 # Log queries that are slower than the specified duration. Set to 0 to disable.
@@ -1084,7 +1084,7 @@ grpc_client_config:
 
 ### `query_range_config`
 
-The `query_range_config` configures the query splitting and caching in the Cortex query-frontend.
+The `query_range_config` configures the query splitting and caching in the Mimir query-frontend.
 
 ```yaml
 # Split queries by an interval and execute in parallel, 0 disables it. You
@@ -1162,7 +1162,7 @@ results_cache:
 
 ### `ruler_config`
 
-The `ruler_config` configures the Cortex ruler.
+The `ruler_config` configures the Mimir ruler.
 
 ```yaml
 # URL of alerts return path.
@@ -1636,7 +1636,7 @@ ring:
 
 ### `ruler_storage_config`
 
-The `ruler_storage_config` configures the Cortex ruler storage backend.
+The `ruler_storage_config` configures the Mimir ruler storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -1844,7 +1844,7 @@ local:
 
 ### `alertmanager_config`
 
-The `alertmanager_config` configures the Cortex alertmanager.
+The `alertmanager_config` configures the Mimir alertmanager.
 
 ```yaml
 # Base path for data storage.
@@ -1863,7 +1863,7 @@ The `alertmanager_config` configures the Cortex alertmanager.
 # CLI flag: -alertmanager.web.external-url
 [external_url: <url> | default = ]
 
-# How frequently to poll Cortex configs
+# How frequently to poll Mimir configs
 # CLI flag: -alertmanager.configs.poll-interval
 [poll_interval: <duration> | default = 15s]
 
@@ -2170,7 +2170,7 @@ alertmanager_client:
 
 ### `alertmanager_storage_config`
 
-The `alertmanager_storage_config` configures the Cortex alertmanager storage backend.
+The `alertmanager_storage_config` configures the Mimir alertmanager storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -2378,7 +2378,7 @@ local:
 
 ### `table_manager_config`
 
-The `table_manager_config` configures the Cortex table-manager.
+The `table_manager_config` configures the Mimir table-manager.
 
 ```yaml
 # If true, disable all changes to DB capacity
@@ -2713,7 +2713,7 @@ chunk_tables_provisioning:
 
 ### `storage_config`
 
-The `storage_config` configures where Cortex stores the data (chunks storage engine).
+The `storage_config` configures where Mimir stores the data (chunks storage engine).
 
 ```yaml
 # The storage engine to use: chunks (deprecated) or blocks.
@@ -3370,7 +3370,7 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 # CLI flag: -flusher.flush-op-timeout
 [flush_op_timeout: <duration> | default = 2m]
 
-# Stop Cortex after flush has finished. If false, Cortex process will keep
+# Stop Mimir after flush has finished. If false, Mimir process will keep
 # running, doing nothing.
 # CLI flag: -flusher.exit-after-flush
 [exit_after_flush: <boolean> | default = true]
@@ -3378,7 +3378,7 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 
 ### `chunk_store_config`
 
-The `chunk_store_config` configures how Cortex stores the data (chunks storage engine).
+The `chunk_store_config` configures how Mimir stores the data (chunks storage engine).
 
 ```yaml
 chunk_cache_config:
@@ -3465,7 +3465,7 @@ write_dedupe_cache_config:
 
 ### `ingester_client_config`
 
-The `ingester_client_config` configures how the Cortex distributors connect to the ingesters.
+The `ingester_client_config` configures how the Mimir distributors connect to the ingesters.
 
 ```yaml
 grpc_client_config:
@@ -3539,7 +3539,7 @@ grpc_client_config:
 
 ### `frontend_worker_config`
 
-The `frontend_worker_config` configures the worker - running within the Cortex querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
+The `frontend_worker_config` configures the worker - running within the Mimir querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
 
 ```yaml
 # Address of query frontend service, in host:port format. If
@@ -3888,7 +3888,7 @@ The `memberlist_config` configures the Gossip memberlist.
 
 ### `limits_config`
 
-The `limits_config` configures default and per-tenant limits imposed by Cortex services (ie. distributor, ingester, ...).
+The `limits_config` configures default and per-tenant limits imposed by Mimir services (ie. distributor, ingester, ...).
 
 ```yaml
 # Per-user ingestion rate limit in samples per second.
@@ -3982,13 +3982,13 @@ The `limits_config` configures default and per-tenant limits imposed by Cortex s
 # The maximum number of series for which a query can fetch samples from each
 # ingester. This limit is enforced only in the ingesters (when querying samples
 # not flushed to the storage yet) and it's a per-instance limit. This limit is
-# ignored when running the Cortex blocks storage. When running Cortex with
-# blocks storage use -querier.max-fetched-series-per-query limit instead.
+# ignored when running the Mimir blocks storage. When running Mimir with blocks
+# storage use -querier.max-fetched-series-per-query limit instead.
 # CLI flag: -ingester.max-series-per-query
 [max_series_per_query: <int> | default = 100000]
 
 # The maximum number of samples that a query can return. This limit only applies
-# when running the Cortex chunks storage with -querier.ingester-streaming=false.
+# when running the Mimir chunks storage with -querier.ingester-streaming=false.
 # CLI flag: -ingester.max-samples-per-query
 [max_samples_per_query: <int> | default = 1000000]
 
@@ -4014,7 +4014,7 @@ The `limits_config` configures default and per-tenant limits imposed by Cortex s
 
 # Minimum number of samples in an idle chunk to flush it to the store. Use with
 # care, if chunks are less than this size they will be discarded. This option is
-# ignored when running the Cortex blocks storage. 0 to disable.
+# ignored when running the Mimir blocks storage. 0 to disable.
 # CLI flag: -ingester.min-chunk-length
 [min_chunk_length: <int> | default = 0]
 
@@ -4040,8 +4040,8 @@ The `limits_config` configures default and per-tenant limits imposed by Cortex s
 # Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
 # respective YAML config option instead. Maximum number of chunks that can be
 # fetched in a single query. This limit is enforced when fetching chunks from
-# the long-term storage only. When running the Cortex chunks storage, this limit
-# is enforced in the querier and ruler, while when running the Cortex blocks
+# the long-term storage only. When running the Mimir chunks storage, this limit
+# is enforced in the querier and ruler, while when running the Mimir blocks
 # storage this limit is enforced in the querier, ruler and store-gateway. 0 to
 # disable.
 # CLI flag: -store.query-chunk-limit
@@ -4056,13 +4056,13 @@ The `limits_config` configures default and per-tenant limits imposed by Cortex s
 
 # The maximum number of unique series for which a query can fetch samples from
 # each ingesters and blocks storage. This limit is enforced in the querier only
-# when running Cortex with blocks storage. 0 to disable
+# when running Mimir with blocks storage. 0 to disable
 # CLI flag: -querier.max-fetched-series-per-query
 [max_fetched_series_per_query: <int> | default = 0]
 
 # The maximum size of all chunks in bytes that a query can fetch from each
 # ingester and storage. This limit is enforced in the querier and ruler only
-# when running Cortex with blocks storage. 0 to disable.
+# when running Mimir with blocks storage. 0 to disable.
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
 
@@ -4085,7 +4085,7 @@ The `limits_config` configures default and per-tenant limits imposed by Cortex s
 [max_query_parallelism: <int> | default = 14]
 
 # Cardinality limit for index queries. This limit is ignored when running the
-# Cortex blocks storage. 0 to disable.
+# Mimir blocks storage. 0 to disable.
 # CLI flag: -store.cardinality-limit
 [cardinality_limit: <int> | default = 100000]
 
@@ -4105,7 +4105,7 @@ The `limits_config` configures default and per-tenant limits imposed by Cortex s
 [max_queriers_per_tenant: <int> | default = 0]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
-# have been pushed to Cortex.
+# have been pushed to Mimir.
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 0s]
 
@@ -4920,9 +4920,8 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.ship-concurrency
   [ship_concurrency: <int> | default = 10]
 
-  # How frequently does Cortex try to compact TSDB head. Block is only created
-  # if data covers smallest block range. Must be greater than 0 and max 5
-  # minutes.
+  # How frequently does Mimir try to compact TSDB head. Block is only created if
+  # data covers smallest block range. Must be greater than 0 and max 5 minutes.
   # CLI flag: -blocks-storage.tsdb.head-compaction-interval
   [head_compaction_interval: <duration> | default = 1m]
 

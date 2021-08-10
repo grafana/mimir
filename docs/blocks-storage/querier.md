@@ -92,7 +92,7 @@ This section described the querier configuration. For the general Cortex configu
 
 ### `querier_config`
 
-The `querier_config` configures the Cortex querier.
+The `querier_config` configures the Mimir querier.
 
 ```yaml
 querier:
@@ -160,7 +160,7 @@ querier:
   [default_evaluation_interval: <duration> | default = 1m]
 
   # Active query tracker monitors active queries, and writes them to the file in
-  # given directory. If Cortex discovers any queries in this log during startup,
+  # given directory. If Mimir discovers any queries in this log during startup,
   # it will log them to the log file. Setting to empty value disables active
   # query tracker, which also disables -querier.max-concurrent option.
   # CLI flag: -querier.active-query-tracker-dir
@@ -759,7 +759,7 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.ship-concurrency
     [ship_concurrency: <int> | default = 10]
 
-    # How frequently does Cortex try to compact TSDB head. Block is only created
+    # How frequently does Mimir try to compact TSDB head. Block is only created
     # if data covers smallest block range. Must be greater than 0 and max 5
     # minutes.
     # CLI flag: -blocks-storage.tsdb.head-compaction-interval
