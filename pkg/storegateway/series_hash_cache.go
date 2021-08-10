@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package storegateway
 
 import (
@@ -76,7 +78,6 @@ func (c *SeriesHashCache) GetBlockCache(blockID string) *BlockSeriesHashCache {
 	return blockCache
 }
 
-// gc garbage collects
 func (c *SeriesHashCache) gc() {
 	c.generationsMx.Lock()
 	defer c.generationsMx.Unlock()
