@@ -267,14 +267,14 @@ type tsdbQuerySharding struct {
 	shardedQueriesCounter prometheus.Counter
 }
 
-// NewTSDBQueryShardingMiddleware creates a middleware that will split queries by shard.
+// NewBlockStorageQueryShardingMiddleware creates a middleware that will split queries by shard.
 // It first looks at the query to determine if it is shardable or not.
 // Then rewrite the query into a sharded query and use the PromQL engine to execute the query.
 // Sub shard queries are embedded into a single vector selector and a modified `Queryable` (see ShardedQueryable) is passed
 // to the PromQL engine.
 // Finally we can translate the embedded vector selector back into subqueries in the Queryable and send them in parallel to downstream.
 // todo(ctovena): rename to NewQueryShardingMiddleware when we will remove the chunk code.
-func NewTSDBQueryShardingMiddleware(
+func NewBlockStorageQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
 	totalShards int,
@@ -301,8 +301,6 @@ func NewTSDBQueryShardingMiddleware(
 }
 
 func (s *tsdbQuerySharding) Do(ctx context.Context, r Request) (Response, error) {
-	// todo(ctovena): handle per query sharding configuration
-
 	shardSummer, err := astmapper.NewShardSummer(s.totalShards, astmapper.VectorSquasher, s.shardedQueriesCounter)
 	if err != nil {
 		return nil, err

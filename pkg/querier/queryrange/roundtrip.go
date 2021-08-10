@@ -58,7 +58,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "querier.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the chunks storage engine.")
-	f.IntVar(&cfg.TotalShards, "querier.total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by default. (only used for TSDB storage, in the chunk storage the shard size is configured via schema configs.)")
+	f.IntVar(&cfg.TotalShards, "querier.total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by default. This option is only used for blocks storage.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -73,7 +73,7 @@ func (cfg *Config) Validate() error {
 		}
 	}
 	if cfg.ShardedQueries && cfg.TotalShards <= 0 {
-		return errors.New("querier.total-shards must be > 0 when parellelisation of shardable queries is enabled.")
+		return errors.New("querier.total-shards must be > 0 when parallelisation of shardable queries is enabled")
 	}
 	return nil
 }
@@ -181,7 +181,7 @@ func NewTripperware(
 	if cfg.ShardedQueries {
 		var queryShardingMiddleware Middleware
 		if storageEngine == storage.StorageEngineBlocks {
-			queryShardingMiddleware = NewTSDBQueryShardingMiddleware(
+			queryShardingMiddleware = NewBlockStorageQueryShardingMiddleware(
 				log,
 				promql.NewEngine(engineOpts),
 				cfg.TotalShards,
