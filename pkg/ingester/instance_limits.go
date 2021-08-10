@@ -8,7 +8,7 @@ package ingester
 import "github.com/pkg/errors"
 
 var (
-	// We don't include values in the message to avoid leaking Cortex cluster configuration to users.
+	// We don't include values in the message to avoid leaking Mimir cluster configuration to users.
 	errMaxSamplesPushRateLimitReached = errors.New("cannot push more samples: ingester's samples push rate limit reached")
 	errMaxUsersLimitReached           = errors.New("cannot create TSDB: ingesters's max tenants limit reached")
 	errMaxSeriesLimitReached          = errors.New("cannot add series: ingesters's max series limit reached")

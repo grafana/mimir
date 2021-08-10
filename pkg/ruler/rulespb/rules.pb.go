@@ -39,7 +39,7 @@ type RuleGroupDesc struct {
 	Interval  time.Duration `protobuf:"bytes,3,opt,name=interval,proto3,stdduration" json:"interval"`
 	Rules     []*RuleDesc   `protobuf:"bytes,4,rep,name=rules,proto3" json:"rules,omitempty"`
 	User      string        `protobuf:"bytes,6,opt,name=user,proto3" json:"user,omitempty"`
-	// The options field can be used to extend Cortex Ruler functionality without
+	// The options field can be used to extend Mimir Ruler functionality without
 	// having to repeatedly redefine the proto description. It can also be leveraged
 	// to create custom `ManagerOpts` based on rule configs which can then be passed
 	// to the Prometheus Manager.

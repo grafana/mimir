@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-// Map Cortex Backoff into AWS Retryer interface
+// Map Mimir Backoff into AWS Retryer interface
 type retryer struct {
 	*util.Backoff
 	maxRetries int

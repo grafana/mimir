@@ -23,7 +23,7 @@ func changeTargetConfig(c *Config) {
 func TestAPIConfig(t *testing.T) {
 	actualCfg := newDefaultConfig()
 
-	cortex := &Cortex{
+	cortex := &Mimir{
 		Server: &server.Server{},
 	}
 
@@ -105,7 +105,7 @@ func TestAPIConfig(t *testing.T) {
 	}
 }
 
-func TestCortex_InitRulerStorage(t *testing.T) {
+func TestMimir_InitRulerStorage(t *testing.T) {
 	tests := map[string]struct {
 		config       *Config
 		expectedInit bool
@@ -152,7 +152,7 @@ func TestCortex_InitRulerStorage(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cortex := &Cortex{
+			cortex := &Mimir{
 				Server: &server.Server{},
 				Cfg:    *testData.config,
 			}

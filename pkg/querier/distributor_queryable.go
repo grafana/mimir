@@ -98,7 +98,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	// Kludge: Prometheus passes nil SelectParams if it is doing a 'series' operation,
 	// which needs only metadata. For this specific case we shouldn't apply the queryIngestersWithin
 	// time range manipulation, otherwise we'll end up returning no series at all for
-	// older time ranges (while in Cortex we do ignore the start/end and always return
+	// older time ranges (while in Mimir we do ignore the start/end and always return
 	// series in ingesters).
 	// Also, in the recent versions of Prometheus, we pass in the hint but with Func set to "series".
 	// See: https://github.com/prometheus/prometheus/pull/8050

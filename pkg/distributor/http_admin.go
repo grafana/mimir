@@ -22,10 +22,10 @@ const tpl = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex Ingester Stats</title>
+		<title>Mimir Ingester Stats</title>
 	</head>
 	<body>
-		<h1>Cortex Ingester Stats</h1>
+		<h1>Mimir Ingester Stats</h1>
 		<p>Current time: {{ .Now }}</p>
 		<p><b>NB stats do not account for replication factor, which is currently set to {{ .ReplicationFactor }}</b></p>
 		<form action="" method="POST">

@@ -27,7 +27,7 @@ const (
 	noBucketIndex        = "no-bucket-index"
 )
 
-// BucketIndexMetadataFetcher is a Thanos MetadataFetcher implementation leveraging on the Cortex bucket index.
+// BucketIndexMetadataFetcher is a Thanos MetadataFetcher implementation leveraging on the Mimir bucket index.
 type BucketIndexMetadataFetcher struct {
 	userID      string
 	bkt         objstore.Bucket

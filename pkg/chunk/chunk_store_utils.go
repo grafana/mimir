@@ -167,7 +167,7 @@ func (c *Fetcher) FetchChunks(ctx context.Context, chunks []Chunk, keys []string
 	}
 
 	if err != nil {
-		// Don't rely on Cortex error translation here.
+		// Don't rely on Mimir error translation here.
 		return nil, promql.ErrStorage{Err: err}
 	}
 

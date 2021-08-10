@@ -905,7 +905,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 			for seriesID := 0; seriesID < numSeries; seriesID++ {
 				actual := srv.SeriesSet[seriesID]
 
-				// Ensure Cortex external labels have been removed.
+				// Ensure Mimir external labels have been removed.
 				assert.Equal(t, []labelpb.ZLabel{{Name: "series_id", Value: strconv.Itoa(seriesID)}}, actual.Labels)
 
 				// Ensure samples have been correctly queried. The Thanos store also deduplicate samples

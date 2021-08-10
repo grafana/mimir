@@ -60,57 +60,57 @@ var (
 		{
 			name:       "distributor_config",
 			structType: reflect.TypeOf(distributor.Config{}),
-			desc:       "The distributor_config configures the Cortex distributor.",
+			desc:       "The distributor_config configures the Mimir distributor.",
 		},
 		{
 			name:       "ingester_config",
 			structType: reflect.TypeOf(ingester.Config{}),
-			desc:       "The ingester_config configures the Cortex ingester.",
+			desc:       "The ingester_config configures the Mimir ingester.",
 		},
 		{
 			name:       "querier_config",
 			structType: reflect.TypeOf(querier.Config{}),
-			desc:       "The querier_config configures the Cortex querier.",
+			desc:       "The querier_config configures the Mimir querier.",
 		},
 		{
 			name:       "query_frontend_config",
 			structType: reflect.TypeOf(frontend.CombinedFrontendConfig{}),
-			desc:       "The query_frontend_config configures the Cortex query-frontend.",
+			desc:       "The query_frontend_config configures the Mimir query-frontend.",
 		},
 		{
 			name:       "query_range_config",
 			structType: reflect.TypeOf(queryrange.Config{}),
-			desc:       "The query_range_config configures the query splitting and caching in the Cortex query-frontend.",
+			desc:       "The query_range_config configures the query splitting and caching in the Mimir query-frontend.",
 		},
 		{
 			name:       "ruler_config",
 			structType: reflect.TypeOf(ruler.Config{}),
-			desc:       "The ruler_config configures the Cortex ruler.",
+			desc:       "The ruler_config configures the Mimir ruler.",
 		},
 		{
 			name:       "ruler_storage_config",
 			structType: reflect.TypeOf(rulestore.Config{}),
-			desc:       "The ruler_storage_config configures the Cortex ruler storage backend.",
+			desc:       "The ruler_storage_config configures the Mimir ruler storage backend.",
 		},
 		{
 			name:       "alertmanager_config",
 			structType: reflect.TypeOf(alertmanager.MultitenantAlertmanagerConfig{}),
-			desc:       "The alertmanager_config configures the Cortex alertmanager.",
+			desc:       "The alertmanager_config configures the Mimir alertmanager.",
 		},
 		{
 			name:       "alertmanager_storage_config",
 			structType: reflect.TypeOf(alertstore.Config{}),
-			desc:       "The alertmanager_storage_config configures the Cortex alertmanager storage backend.",
+			desc:       "The alertmanager_storage_config configures the Mimir alertmanager storage backend.",
 		},
 		{
 			name:       "table_manager_config",
 			structType: reflect.TypeOf(chunk.TableManagerConfig{}),
-			desc:       "The table_manager_config configures the Cortex table-manager.",
+			desc:       "The table_manager_config configures the Mimir table-manager.",
 		},
 		{
 			name:       "storage_config",
 			structType: reflect.TypeOf(storage.Config{}),
-			desc:       "The storage_config configures where Cortex stores the data (chunks storage engine).",
+			desc:       "The storage_config configures where Mimir stores the data (chunks storage engine).",
 		},
 		{
 			name:       "flusher_config",
@@ -120,17 +120,17 @@ var (
 		{
 			name:       "chunk_store_config",
 			structType: reflect.TypeOf(chunk.StoreConfig{}),
-			desc:       "The chunk_store_config configures how Cortex stores the data (chunks storage engine).",
+			desc:       "The chunk_store_config configures how Mimir stores the data (chunks storage engine).",
 		},
 		{
 			name:       "ingester_client_config",
 			structType: reflect.TypeOf(client.Config{}),
-			desc:       "The ingester_client_config configures how the Cortex distributors connect to the ingesters.",
+			desc:       "The ingester_client_config configures how the Mimir distributors connect to the ingesters.",
 		},
 		{
 			name:       "frontend_worker_config",
 			structType: reflect.TypeOf(querier_worker.Config{}),
-			desc:       "The frontend_worker_config configures the worker - running within the Cortex querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.",
+			desc:       "The frontend_worker_config configures the worker - running within the Mimir querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.",
 		},
 		{
 			name:       "etcd_config",
@@ -150,7 +150,7 @@ var (
 		{
 			name:       "limits_config",
 			structType: reflect.TypeOf(validation.Limits{}),
-			desc:       "The limits_config configures default and per-tenant limits imposed by Cortex services (ie. distributor, ingester, ...).",
+			desc:       "The limits_config configures default and per-tenant limits imposed by Mimir services (ie. distributor, ingester, ...).",
 		},
 		{
 			name:       "redis_config",

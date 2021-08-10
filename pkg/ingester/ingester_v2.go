@@ -480,7 +480,7 @@ func newTSDBState(bucketClient objstore.Bucket, registerer prometheus.Registerer
 	}
 }
 
-// NewV2 returns a new Ingester that uses Cortex block storage instead of chunks storage.
+// NewV2 returns a new Ingester that uses Mimir block storage instead of chunks storage.
 func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, registerer)
 	if err != nil {
@@ -713,7 +713,7 @@ func (i *Ingester) v2UpdateActiveSeries() {
 	}
 }
 
-// GetRef() is an extra method added to TSDB to let Cortex check before calling Add()
+// GetRef() is an extra method added to TSDB to let Mimir check before calling Add()
 type extendedAppender interface {
 	storage.Appender
 	storage.GetRef
@@ -1008,7 +1008,7 @@ func (i *Ingester) v2Query(ctx context.Context, req *client.QueryRequest) (*clie
 	}
 	defer q.Close()
 
-	// It's not required to return sorted series because series are sorted by the Cortex querier.
+	// It's not required to return sorted series because series are sorted by the Mimir querier.
 	ss := q.Select(false, nil, matchers...)
 	if ss.Err() != nil {
 		return nil, ss.Err()
@@ -1339,7 +1339,7 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 	}
 	defer q.Close()
 
-	// It's not required to return sorted series because series are sorted by the Cortex querier.
+	// It's not required to return sorted series because series are sorted by the Mimir querier.
 	ss := q.Select(false, nil, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
@@ -1408,7 +1408,7 @@ func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, 
 	}
 	defer q.Close()
 
-	// It's not required to return sorted series because series are sorted by the Cortex querier.
+	// It's not required to return sorted series because series are sorted by the Mimir querier.
 	ss := q.Select(false, nil, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
@@ -1645,8 +1645,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			bucket.NewUserBucketClient(userID, i.TSDBState.bucket, i.limits),
 			func() labels.Labels { return l },
 			metadata.ReceiveSource,
-			false, // No need to upload compacted blocks. Cortex compactor takes care of that.
-			true,  // Allow out of order uploads. It's fine in Cortex's context.
+			false, // No need to upload compacted blocks. Mimir compactor takes care of that.
+			true,  // Allow out of order uploads. It's fine in Mimir's context.
 			metadata.NoneFunc,
 		)
 

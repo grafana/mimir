@@ -39,7 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/services"
 )
 
-func TestCortex(t *testing.T) {
+func TestMimir(t *testing.T) {
 	rulerURL, err := url.Parse("inmemory:///rules")
 	require.NoError(t, err)
 
@@ -172,7 +172,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 	msch := &mockGrpcServiceHandler{}
 	ctx := context.Background()
 
-	// Setup server, using Cortex config. This includes authentication middleware.
+	// Setup server, using Mimir config. This includes authentication middleware.
 	{
 		c, err := New(cfg)
 		require.NoError(t, err)

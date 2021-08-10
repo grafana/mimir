@@ -35,7 +35,7 @@ func main() {
 	flag.StringVar(&configFilename, "config", "", "Path to bucket config YAML")
 	flag.BoolVar(&dryRun, "dry-run", false, "Don't make changes; only report what needs to be done")
 	flag.Usage = func() {
-		fmt.Fprintf(flag.CommandLine.Output(), "%s is a tool to convert block metadata from Thanos to Cortex.\nPlease see %s for instructions on how to run it.\n\n", os.Args[0], "https://cortexmetrics.io/docs/blocks-storage/migrate-storage-from-thanos-and-prometheus/")
+		fmt.Fprintf(flag.CommandLine.Output(), "%s is a tool to convert block metadata from Thanos to Mimir.\nPlease see %s for instructions on how to run it.\n\n", os.Args[0], "https://cortexmetrics.io/docs/blocks-storage/migrate-storage-from-thanos-and-prometheus/")
 		fmt.Fprintf(flag.CommandLine.Output(), "Flags:\n")
 		flag.PrintDefaults()
 	}

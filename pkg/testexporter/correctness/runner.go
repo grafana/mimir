@@ -64,7 +64,7 @@ func (cfg *RunnerConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.testQueryMaxSize, "test-query-max-size", 60*time.Minute, "The max query size to Prometheus.")
 
 	f.StringVar(&cfg.PrometheusAddr, "prometheus-address", "", "Address of Prometheus instance to query.")
-	f.StringVar(&cfg.UserID, "user-id", "", "UserID to send to Cortex.")
+	f.StringVar(&cfg.UserID, "user-id", "", "UserID to send to Mimir.")
 
 	f.StringVar(&cfg.ExtraSelectors, "extra-selectors", "", "Extra selectors to be included in queries, eg to identify different instances of this job.")
 	f.BoolVar(&cfg.EnableDeleteSeriesTest, "enable-delete-series-test", false, "Enable tests for checking deletion of series.")

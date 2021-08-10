@@ -242,7 +242,7 @@ func buildS3Config(cfg S3Config) (*aws.Config, []string, error) {
 	}
 
 	// While extending S3 configuration this http config was copied in order to
-	// to maintain backwards compatibility with previous versions of Cortex while providing
+	// to maintain backwards compatibility with previous versions of Mimir while providing
 	// more flexible configuration of the http client
 	// https://github.com/weaveworks/common/blob/4b1847531bc94f54ce5cf210a771b2a86cd34118/aws/config.go#L23
 	transport := http.RoundTripper(&http.Transport{

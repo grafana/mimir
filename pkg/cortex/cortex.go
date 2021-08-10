@@ -70,7 +70,7 @@ var (
 	errInvalidHTTPPrefix = errors.New("HTTP prefix should be empty or start with /")
 )
 
-// The design pattern for Cortex is a series of config objects, which are
+// The design pattern for Mimir is a series of config objects, which are
 // registered for command line flags, and then a series of components that
 // are instantiated and composed.  Some rules of thumb:
 // - Config types should only contain 'simple' types (ints, strings, urls etc).
@@ -87,7 +87,7 @@ var (
 // - First argument for a components constructor should be its matching config
 //   object.
 
-// Config is the root config for Cortex.
+// Config is the root config for Mimir.
 type Config struct {
 	Target      flagext.StringSliceCSV `yaml:"target"`
 	AuthEnabled bool                   `yaml:"auth_enabled"`
@@ -134,13 +134,13 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	// Set the default module list to 'all'
 	c.Target = []string{All}
 
-	f.Var(&c.Target, "target", "Comma-separated list of Cortex modules to load. "+
+	f.Var(&c.Target, "target", "Comma-separated list of Mimir modules to load. "+
 		"The alias 'all' can be used in the list to load a number of core modules and will enable single-binary mode. "+
 		"Use '-modules' command line flag to get a list of available modules, and to see which modules are included in 'all'.")
 
 	f.BoolVar(&c.AuthEnabled, "auth.enabled", true, "Set to false to disable auth.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
-	f.StringVar(&c.HTTPPrefix, "http.prefix", "/api/prom", "HTTP path prefix for Cortex API.")
+	f.StringVar(&c.HTTPPrefix, "http.prefix", "/api/prom", "HTTP path prefix for Mimir API.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -302,8 +302,8 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 	})
 }
 
-// Cortex is the root datastructure for Cortex.
-type Cortex struct {
+// Mimir is the root datastructure for Mimir.
+type Mimir struct {
 	Cfg Config
 
 	// set during initialization
@@ -342,8 +342,8 @@ type Cortex struct {
 	StoreQueryables []querier.QueryableWithFilter
 }
 
-// New makes a new Cortex.
-func New(cfg Config) (*Cortex, error) {
+// New makes a new Mimir.
+func New(cfg Config) (*Mimir, error) {
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)
@@ -371,7 +371,7 @@ func New(cfg Config) (*Cortex, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		})
 
-	cortex := &Cortex{
+	cortex := &Mimir{
 		Cfg: cfg,
 	}
 
@@ -386,13 +386,13 @@ func New(cfg Config) (*Cortex, error) {
 
 // setupThanosTracing appends a gRPC middleware used to inject our tracer into the custom
 // context used by Thanos, in order to get Thanos spans correctly attached to our traces.
-func (t *Cortex) setupThanosTracing() {
+func (t *Mimir) setupThanosTracing() {
 	t.Cfg.Server.GRPCMiddleware = append(t.Cfg.Server.GRPCMiddleware, ThanosTracerUnaryInterceptor)
 	t.Cfg.Server.GRPCStreamMiddleware = append(t.Cfg.Server.GRPCStreamMiddleware, ThanosTracerStreamInterceptor)
 }
 
-// Run starts Cortex running, and blocks until a Cortex stops.
-func (t *Cortex) Run() error {
+// Run starts Mimir running, and blocks until a Mimir stops.
+func (t *Mimir) Run() error {
 	// Register custom process metrics.
 	if c, err := process.NewProcessCollector(); err == nil {
 		prometheus.MustRegister(c)
@@ -426,15 +426,15 @@ func (t *Cortex) Run() error {
 	}
 
 	// before starting servers, register /ready handler and gRPC health check service.
-	// It should reflect entire Cortex.
+	// It should reflect entire Mimir.
 	t.Server.HTTP.Path("/ready").Handler(t.readyHandler(sm))
 	grpc_health_v1.RegisterHealthServer(t.Server.GRPC, healthcheck.New(sm))
 
 	// Let's listen for events from this manager, and log them.
-	healthy := func() { level.Info(util_log.Logger).Log("msg", "Cortex started") }
-	stopped := func() { level.Info(util_log.Logger).Log("msg", "Cortex stopped") }
+	healthy := func() { level.Info(util_log.Logger).Log("msg", "Mimir started") }
+	stopped := func() { level.Info(util_log.Logger).Log("msg", "Mimir stopped") }
 	serviceFailed := func(service services.Service) {
-		// if any service fails, stop entire Cortex
+		// if any service fails, stop entire Mimir
 		sm.StopAsync()
 
 		// let's find out which module failed
@@ -487,7 +487,7 @@ func (t *Cortex) Run() error {
 	return err
 }
 
-func (t *Cortex) readyHandler(sm *services.Manager) http.HandlerFunc {
+func (t *Mimir) readyHandler(sm *services.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !sm.IsHealthy() {
 			msg := bytes.Buffer{}
