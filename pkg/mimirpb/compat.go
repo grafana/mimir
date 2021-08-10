@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package cortexpb
+package mimirpb
 
 import (
 	stdjson "encoding/json"
@@ -232,14 +232,14 @@ func SampleJsoniterEncode(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 
 func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	if !iter.ReadArray() {
-		iter.ReportError("cortexpb.Sample", "expected [")
+		iter.ReportError("mimirpb.Sample", "expected [")
 		return
 	}
 
 	t := model.Time(iter.ReadFloat64() * float64(time.Second/time.Millisecond))
 
 	if !iter.ReadArray() {
-		iter.ReportError("cortexpb.Sample", "expected ,")
+		iter.ReportError("mimirpb.Sample", "expected ,")
 		return
 	}
 
@@ -247,7 +247,7 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	ss := *(*string)(unsafe.Pointer(&bs))
 	v, err := strconv.ParseFloat(ss, 64)
 	if err != nil {
-		iter.ReportError("cortexpb.Sample", err.Error())
+		iter.ReportError("mimirpb.Sample", err.Error())
 		return
 	}
 
@@ -257,7 +257,7 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 	}
 
 	if iter.ReadArray() {
-		iter.ReportError("cortexpb.Sample", "expected ]")
+		iter.ReportError("mimirpb.Sample", "expected ]")
 	}
 
 	*(*Sample)(ptr) = Sample{
@@ -267,6 +267,6 @@ func SampleJsoniterDecode(ptr unsafe.Pointer, iter *jsoniter.Iterator) {
 }
 
 func init() {
-	jsoniter.RegisterTypeEncoderFunc("cortexpb.Sample", SampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
-	jsoniter.RegisterTypeDecoderFunc("cortexpb.Sample", SampleJsoniterDecode)
+	jsoniter.RegisterTypeEncoderFunc("mimirpb.Sample", SampleJsoniterEncode, func(unsafe.Pointer) bool { return false })
+	jsoniter.RegisterTypeDecoderFunc("mimirpb.Sample", SampleJsoniterDecode)
 }

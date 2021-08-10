@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/weaveworks/common/instrument"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -211,8 +211,8 @@ func (d *Distributor) queryIngesters(ctx context.Context, replicationSet ring.Re
 // mergeExemplarSets merges and dedupes two sets of already sorted exemplar pairs.
 // Both a and b should be lists of exemplars from the same series.
 // Defined here instead of pkg/util to avoid a import cycle.
-func mergeExemplarSets(a, b []cortexpb.Exemplar) []cortexpb.Exemplar {
-	result := make([]cortexpb.Exemplar, 0, len(a)+len(b))
+func mergeExemplarSets(a, b []mimirpb.Exemplar) []mimirpb.Exemplar {
+	result := make([]mimirpb.Exemplar, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		if a[i].TimestampMs < b[j].TimestampMs {
@@ -258,11 +258,11 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 
 	// Merge results from replication set.
 	var keys []string
-	exemplarResults := make(map[string]cortexpb.TimeSeries)
+	exemplarResults := make(map[string]mimirpb.TimeSeries)
 	for _, result := range results {
 		r := result.(*ingester_client.ExemplarQueryResponse)
 		for _, ts := range r.Timeseries {
-			lbls := cortexpb.FromLabelAdaptersToLabels(ts.Labels).String()
+			lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels).String()
 			e, ok := exemplarResults[lbls]
 			if !ok {
 				exemplarResults[lbls] = ts
@@ -276,7 +276,7 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 	// Query results from each ingester were sorted, but are not necessarily still sorted after merging.
 	sort.Strings(keys)
 
-	result := make([]cortexpb.TimeSeries, len(exemplarResults))
+	result := make([]mimirpb.TimeSeries, len(exemplarResults))
 	for i, k := range keys {
 		result[i] = exemplarResults[k]
 	}
@@ -351,14 +351,14 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	}
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
-	hashToTimeSeries := map[string]cortexpb.TimeSeries{}
+	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
 
 	for _, result := range results {
 		response := result.(*ingester_client.QueryStreamResponse)
 
 		// Parse any chunk series
 		for _, series := range response.Chunkseries {
-			key := ingester_client.LabelsToKeyString(cortexpb.FromLabelAdaptersToLabels(series.Labels))
+			key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
 			existing := hashToChunkseries[key]
 			existing.Labels = series.Labels
 			existing.Chunks = append(existing.Chunks, series.Chunks...)
@@ -367,7 +367,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 		// Parse any time series
 		for _, series := range response.Timeseries {
-			key := ingester_client.LabelsToKeyString(cortexpb.FromLabelAdaptersToLabels(series.Labels))
+			key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
 			existing := hashToTimeSeries[key]
 			existing.Labels = series.Labels
 			if existing.Samples == nil {
@@ -381,7 +381,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 
 	resp := &ingester_client.QueryStreamResponse{
 		Chunkseries: make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
-		Timeseries:  make([]cortexpb.TimeSeries, 0, len(hashToTimeSeries)),
+		Timeseries:  make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
 	}
 	for _, series := range hashToChunkseries {
 		resp.Chunkseries = append(resp.Chunkseries, series)
@@ -398,12 +398,12 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 }
 
 // Merges and dedupes two sorted slices with samples together.
-func mergeSamples(a, b []cortexpb.Sample) []cortexpb.Sample {
+func mergeSamples(a, b []mimirpb.Sample) []mimirpb.Sample {
 	if sameSamples(a, b) {
 		return a
 	}
 
-	result := make([]cortexpb.Sample, 0, len(a)+len(b))
+	result := make([]mimirpb.Sample, 0, len(a)+len(b))
 	i, j := 0, 0
 	for i < len(a) && j < len(b) {
 		if a[i].TimestampMs < b[j].TimestampMs {
@@ -424,7 +424,7 @@ func mergeSamples(a, b []cortexpb.Sample) []cortexpb.Sample {
 	return result
 }
 
-func sameSamples(a, b []cortexpb.Sample) bool {
+func sameSamples(a, b []mimirpb.Sample) bool {
 	if len(a) != len(b) {
 		return false
 	}

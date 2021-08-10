@@ -10,7 +10,7 @@ package purgeplan;
 option go_package = "purger";
 
 import "github.com/gogo/protobuf/gogoproto/gogo.proto";
-import "github.com/grafana/mimir/pkg/cortexpb/cortex.proto";
+import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
@@ -24,7 +24,7 @@ message DeletePlan {
 
 // ChunksGroup holds ChunkDetails and Labels for a group of chunks which have same series ID
 message ChunksGroup {
-  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/cortexpb.LabelAdapter"];
+  repeated cortexpb.LabelPair labels = 1 [(gogoproto.nullable) = false, (gogoproto.customtype) = "github.com/grafana/mimir/pkg/mimirpb.LabelAdapter"];
   repeated ChunkDetails chunks = 2 [(gogoproto.nullable) = false];
 }
 

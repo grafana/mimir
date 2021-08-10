@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	"github.com/grafana/mimir/pkg/util"
@@ -466,9 +466,9 @@ func (e tooManyClustersError) Is(err error) bool {
 	return ok1 || ok2
 }
 
-func findHALabels(replicaLabel, clusterLabel string, labels []cortexpb.LabelAdapter) (string, string) {
+func findHALabels(replicaLabel, clusterLabel string, labels []mimirpb.LabelAdapter) (string, string) {
 	var cluster, replica string
-	var pair cortexpb.LabelAdapter
+	var pair mimirpb.LabelAdapter
 
 	for _, pair = range labels {
 		if pair.Name == replicaLabel {

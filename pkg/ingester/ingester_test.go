@@ -34,8 +34,8 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -125,11 +125,11 @@ func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matr
 	return m
 }
 
-func matrixToSamples(m model.Matrix) []cortexpb.Sample {
-	var samples []cortexpb.Sample
+func matrixToSamples(m model.Matrix) []mimirpb.Sample {
+	var samples []mimirpb.Sample
 	for _, ss := range m {
 		for _, sp := range ss.Values {
-			samples = append(samples, cortexpb.Sample{
+			samples = append(samples, mimirpb.Sample{
 				TimestampMs: int64(sp.Timestamp),
 				Value:       float64(sp.Value),
 			})
@@ -143,7 +143,7 @@ func matrixToLables(m model.Matrix) []labels.Labels {
 	var labels []labels.Labels
 	for _, ss := range m {
 		for range ss.Values {
-			labels = append(labels, cortexpb.FromLabelAdaptersToLabels(cortexpb.FromMetricsToLabelAdapters(ss.Metric)))
+			labels = append(labels, mimirpb.FromLabelAdaptersToLabels(mimirpb.FromMetricsToLabelAdapters(ss.Metric)))
 		}
 	}
 	return labels
@@ -171,18 +171,18 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	return res, req, nil
 }
 
-func pushTestMetadata(t *testing.T, ing *Ingester, numMetadata, metadataPerMetric int) ([]string, map[string][]*cortexpb.MetricMetadata) {
+func pushTestMetadata(t *testing.T, ing *Ingester, numMetadata, metadataPerMetric int) ([]string, map[string][]*mimirpb.MetricMetadata) {
 	userIDs := []string{"1", "2", "3"}
 
 	// Create test metadata.
 	// Map of userIDs, to map of metric => metadataSet
-	testData := map[string][]*cortexpb.MetricMetadata{}
+	testData := map[string][]*mimirpb.MetricMetadata{}
 	for _, userID := range userIDs {
-		metadata := make([]*cortexpb.MetricMetadata, 0, metadataPerMetric)
+		metadata := make([]*mimirpb.MetricMetadata, 0, metadataPerMetric)
 		for i := 0; i < numMetadata; i++ {
 			metricName := fmt.Sprintf("testmetric_%d", i)
 			for j := 0; j < metadataPerMetric; j++ {
-				m := &cortexpb.MetricMetadata{MetricFamilyName: metricName, Help: fmt.Sprintf("a help for %d", j), Unit: "", Type: cortexpb.COUNTER}
+				m := &mimirpb.MetricMetadata{MetricFamilyName: metricName, Help: fmt.Sprintf("a help for %d", j), Unit: "", Type: mimirpb.COUNTER}
 				metadata = append(metadata, m)
 			}
 		}
@@ -192,7 +192,7 @@ func pushTestMetadata(t *testing.T, ing *Ingester, numMetadata, metadataPerMetri
 	// Append metadata.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		_, err := ing.Push(ctx, cortexpb.ToWriteRequest(nil, nil, testData[userID], cortexpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, testData[userID], mimirpb.API))
 		require.NoError(t, err)
 	}
 
@@ -211,7 +211,7 @@ func pushTestSamples(t testing.TB, ing *Ingester, numSeries, samplesPerSeries, o
 	// Append samples.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		_, err := ing.Push(ctx, cortexpb.ToWriteRequest(matrixToLables(testData[userID]), matrixToSamples(testData[userID]), nil, cortexpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(testData[userID]), matrixToSamples(testData[userID]), nil, mimirpb.API))
 		require.NoError(t, err)
 	}
 
@@ -460,22 +460,22 @@ func TestIngesterAppendOutOfOrderAndDuplicate(t *testing.T) {
 		{Name: model.MetricNameLabel, Value: "testmetric"},
 	}
 	ctx := context.Background()
-	err := ing.append(ctx, userID, m, 1, 0, cortexpb.API, nil)
+	err := ing.append(ctx, userID, m, 1, 0, mimirpb.API, nil)
 	require.NoError(t, err)
 
 	// Two times exactly the same sample (noop).
-	err = ing.append(ctx, userID, m, 1, 0, cortexpb.API, nil)
+	err = ing.append(ctx, userID, m, 1, 0, mimirpb.API, nil)
 	require.NoError(t, err)
 
 	// Earlier sample than previous one.
-	err = ing.append(ctx, userID, m, 0, 0, cortexpb.API, nil)
+	err = ing.append(ctx, userID, m, 0, 0, mimirpb.API, nil)
 	require.Contains(t, err.Error(), "sample timestamp out of order")
 	errResp, ok := err.(*validationError)
 	require.True(t, ok)
 	require.Equal(t, errResp.code, 400)
 
 	// Same timestamp as previous sample, but different value.
-	err = ing.append(ctx, userID, m, 1, 1, cortexpb.API, nil)
+	err = ing.append(ctx, userID, m, 1, 1, mimirpb.API, nil)
 	require.Contains(t, err.Error(), "sample with repeated timestamp but different value")
 	errResp, ok = err.(*validationError)
 	require.True(t, ok)
@@ -493,7 +493,7 @@ func TestIngesterAppendBlankLabel(t *testing.T) {
 		{Name: "bar", Value: ""},
 	}
 	ctx := user.InjectOrgID(context.Background(), userID)
-	err := ing.append(ctx, userID, lp, 1, 0, cortexpb.API, nil)
+	err := ing.append(ctx, userID, lp, 1, 0, mimirpb.API, nil)
 	require.NoError(t, err)
 
 	res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, labels.MetricName, "testmetric")
@@ -558,38 +558,38 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 			userID := "1"
 			// Series
 			labels1 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
-			sample1 := cortexpb.Sample{
+			sample1 := mimirpb.Sample{
 				TimestampMs: 0,
 				Value:       1,
 			}
-			sample2 := cortexpb.Sample{
+			sample2 := mimirpb.Sample{
 				TimestampMs: 1,
 				Value:       2,
 			}
 			labels3 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
-			sample3 := cortexpb.Sample{
+			sample3 := mimirpb.Sample{
 				TimestampMs: 1,
 				Value:       3,
 			}
 			// Metadata
-			metadata1 := &cortexpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: cortexpb.COUNTER}
-			metadata2 := &cortexpb.MetricMetadata{MetricFamilyName: "testmetric2", Help: "a help for testmetric2", Type: cortexpb.COUNTER}
+			metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+			metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric2", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
 
 			// Append only one series and one metadata first, expect no error.
 			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err = ing.Push(ctx, cortexpb.ToWriteRequest([]labels.Labels{labels1}, []cortexpb.Sample{sample1}, []*cortexpb.MetricMetadata{metadata1}, cortexpb.API))
+			_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 			require.NoError(t, err)
 
 			testLimits := func() {
 				// Append to two series, expect series-exceeded error.
-				_, err = ing.Push(ctx, cortexpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []cortexpb.Sample{sample2, sample3}, nil, cortexpb.API))
+				_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, mimirpb.API))
 				httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 				require.True(t, ok, "returned error is not an httpgrpc response")
 				assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
 				assert.Equal(t, wrapWithUser(makeLimitError(perUserSeriesLimit, ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 				// Append two metadata, expect no error since metadata is a best effort approach.
-				_, err = ing.Push(ctx, cortexpb.ToWriteRequest(nil, nil, []*cortexpb.MetricMetadata{metadata1, metadata2}, cortexpb.API))
+				_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
 				require.NoError(t, err)
 
 				// Read samples back via ingester queries.
@@ -598,7 +598,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 				expected := model.Matrix{
 					{
-						Metric: cortexpb.FromLabelAdaptersToMetric(cortexpb.FromLabelsToLabelAdapters(labels1)),
+						Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
 						Values: []model.SamplePair{
 							{
 								Timestamp: model.Time(sample1.TimestampMs),
@@ -618,7 +618,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 				// Verify metadata
 				m, err := ing.MetricsMetadata(ctx, nil)
 				require.NoError(t, err)
-				assert.Equal(t, []*cortexpb.MetricMetadata{metadata1}, m.Metadata)
+				assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
 			}
 
 			testLimits()
@@ -680,39 +680,39 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 
 			userID := "1"
 			labels1 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
-			sample1 := cortexpb.Sample{
+			sample1 := mimirpb.Sample{
 				TimestampMs: 0,
 				Value:       1,
 			}
-			sample2 := cortexpb.Sample{
+			sample2 := mimirpb.Sample{
 				TimestampMs: 1,
 				Value:       2,
 			}
 			labels3 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
-			sample3 := cortexpb.Sample{
+			sample3 := mimirpb.Sample{
 				TimestampMs: 1,
 				Value:       3,
 			}
 
 			// Metadata
-			metadata1 := &cortexpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: cortexpb.COUNTER}
-			metadata2 := &cortexpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric2", Type: cortexpb.COUNTER}
+			metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+			metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
 
 			// Append only one series and one metadata first, expect no error.
 			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err = ing.Push(ctx, cortexpb.ToWriteRequest([]labels.Labels{labels1}, []cortexpb.Sample{sample1}, []*cortexpb.MetricMetadata{metadata1}, cortexpb.API))
+			_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 			require.NoError(t, err)
 
 			testLimits := func() {
 				// Append two series, expect series-exceeded error.
-				_, err = ing.Push(ctx, cortexpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []cortexpb.Sample{sample2, sample3}, nil, cortexpb.API))
+				_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, mimirpb.API))
 				httpResp, ok := httpgrpc.HTTPResponseFromError(err)
 				require.True(t, ok, "returned error is not an httpgrpc response")
 				assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
 				assert.Equal(t, wrapWithUser(makeMetricLimitError(perMetricSeriesLimit, labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
 
 				// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
-				_, err = ing.Push(ctx, cortexpb.ToWriteRequest(nil, nil, []*cortexpb.MetricMetadata{metadata1, metadata2}, cortexpb.API))
+				_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
 				require.NoError(t, err)
 
 				// Read samples back via ingester queries.
@@ -722,7 +722,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 				// Verify Series
 				expected := model.Matrix{
 					{
-						Metric: cortexpb.FromLabelAdaptersToMetric(cortexpb.FromLabelsToLabelAdapters(labels1)),
+						Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
 						Values: []model.SamplePair{
 							{
 								Timestamp: model.Time(sample1.TimestampMs),
@@ -741,7 +741,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 				// Verify metadata
 				m, err := ing.MetricsMetadata(ctx, nil)
 				require.NoError(t, err)
-				assert.Equal(t, []*cortexpb.MetricMetadata{metadata1}, m.Metadata)
+				assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
 			}
 
 			testLimits()
@@ -764,13 +764,13 @@ func TestIngesterValidation(t *testing.T) {
 	m := labelPairs{{Name: labels.MetricName, Value: "testmetric"}}
 
 	// As a setup, let's append samples.
-	err := ing.append(context.Background(), userID, m, 1, 0, cortexpb.API, nil)
+	err := ing.append(context.Background(), userID, m, 1, 0, mimirpb.API, nil)
 	require.NoError(t, err)
 
 	for _, tc := range []struct {
 		desc    string
 		lbls    []labels.Labels
-		samples []cortexpb.Sample
+		samples []mimirpb.Sample
 		err     error
 	}{
 		{
@@ -779,7 +779,7 @@ func TestIngesterValidation(t *testing.T) {
 				{{Name: labels.MetricName, Value: "testmetric"}},
 				{{Name: labels.MetricName, Value: "testmetric"}},
 			},
-			samples: []cortexpb.Sample{
+			samples: []mimirpb.Sample{
 				{TimestampMs: 0, Value: 0}, // earlier timestamp, out of order.
 				{TimestampMs: 1, Value: 2}, // same timestamp different value.
 			},
@@ -787,7 +787,7 @@ func TestIngesterValidation(t *testing.T) {
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
-			_, err := ing.Push(ctx, cortexpb.ToWriteRequest(tc.lbls, tc.samples, nil, cortexpb.API))
+			_, err := ing.Push(ctx, mimirpb.ToWriteRequest(tc.lbls, tc.samples, nil, mimirpb.API))
 			require.Equal(t, tc.err, err)
 		})
 	}
@@ -829,7 +829,7 @@ func TestIngesterLabelNames(t *testing.T) {
 	sort.Sort(m)
 
 	// Append samples.
-	_, err := ing.Push(ctx, cortexpb.ToWriteRequest(matrixToLables(m), matrixToSamples(m), nil, cortexpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(m), matrixToSamples(m), nil, mimirpb.API))
 	require.NoError(t, err)
 
 	t.Run("without matchers", func(t *testing.T) {
@@ -884,14 +884,14 @@ func benchmarkIngesterSeriesCreationLocking(b *testing.B, parallelism int) {
 			defer wg.Done()
 
 			for j := from; j < through; j++ {
-				_, err := ing.Push(ctx, &cortexpb.WriteRequest{
-					Timeseries: []cortexpb.PreallocTimeseries{
+				_, err := ing.Push(ctx, &mimirpb.WriteRequest{
+					Timeseries: []mimirpb.PreallocTimeseries{
 						{
-							TimeSeries: &cortexpb.TimeSeries{
-								Labels: []cortexpb.LabelAdapter{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: []mimirpb.LabelAdapter{
 									{Name: model.MetricNameLabel, Value: fmt.Sprintf("metric_%d", j)},
 								},
-								Samples: []cortexpb.Sample{
+								Samples: []mimirpb.Sample{
 									{TimestampMs: int64(j), Value: float64(j)},
 								},
 							},
@@ -919,7 +919,7 @@ func BenchmarkIngesterPushErrors(b *testing.B) {
 }
 
 // Construct a set of realistic-looking samples, all with slightly different label sets
-func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []cortexpb.Sample) {
+func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb.Sample) {
 	for j := 0; j < nSeries; j++ {
 		labels := chunk.BenchmarkLabels.Copy()
 		for i := range labels {
@@ -928,7 +928,7 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []cortexp
 			}
 		}
 		allLabels = append(allLabels, labels)
-		allSamples = append(allSamples, cortexpb.Sample{TimestampMs: 0, Value: float64(j)})
+		allSamples = append(allSamples, mimirpb.Sample{TimestampMs: 0, Value: float64(j)})
 	}
 	return
 }
@@ -964,7 +964,7 @@ func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpecte
 					for i := range allSamples {
 						allSamples[i].TimestampMs = int64(j + 1)
 					}
-					_, err := ing.Push(ctx, cortexpb.ToWriteRequest(allLabels, allSamples, nil, cortexpb.API))
+					_, err := ing.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
 					if !errorsExpected {
 						require.NoError(b, err)
 					}
@@ -996,7 +996,7 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 			allSamples[i].TimestampMs = int64(j + 1)
 			allSamples[i].Value = rand.Float64()
 		}
-		_, err := ing.Push(ctx, cortexpb.ToWriteRequest(allLabels, allSamples, nil, cortexpb.API))
+		_, err := ing.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
 		require.NoError(b, err)
 	}
 
@@ -1022,30 +1022,30 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 }
 
 func TestIngesterActiveSeries(t *testing.T) {
-	metricLabelAdapters := []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabels := cortexpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
+	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_active_series",
 	}
 	userID := "test"
 
 	tests := map[string]struct {
-		reqs                []*cortexpb.WriteRequest
+		reqs                []*mimirpb.WriteRequest
 		expectedMetrics     string
 		disableActiveSeries bool
 	}{
 		"should succeed on valid series and metadata": {
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_active_series Number of currently active series per user.
@@ -1055,17 +1055,17 @@ func TestIngesterActiveSeries(t *testing.T) {
 		},
 		"successful push, active series disabled": {
 			disableActiveSeries: true,
-			reqs: []*cortexpb.WriteRequest{
-				cortexpb.ToWriteRequest(
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 1, TimestampMs: 9}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
 					nil,
-					cortexpb.API),
-				cortexpb.ToWriteRequest(
+					mimirpb.API),
+				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
-					[]cortexpb.Sample{{Value: 2, TimestampMs: 10}},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
 					nil,
-					cortexpb.API),
+					mimirpb.API),
 			},
 			expectedMetrics: ``,
 		},

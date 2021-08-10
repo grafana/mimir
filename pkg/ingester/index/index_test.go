@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestIndex(t *testing.T) {
@@ -31,7 +31,7 @@ func TestIndex(t *testing.T) {
 		{model.Metric{"foo": "baz", "flip": "flop"}, 1},
 		{model.Metric{"foo": "baz", "flip": "flap"}, 0},
 	} {
-		index.Add(cortexpb.FromMetricsToLabelAdapters(entry.m), entry.fp)
+		index.Add(mimirpb.FromMetricsToLabelAdapters(entry.m), entry.fp)
 	}
 
 	for _, tc := range []struct {
@@ -80,7 +80,7 @@ func BenchmarkSetRegexLookup(b *testing.B) {
 	for _, l := range seriesLabels {
 		for i := 0; i < seriesPerLabel; i++ {
 			lbls := labels.FromStrings("foo", l, "bar", strconv.Itoa(i))
-			idx.Add(cortexpb.FromLabelsToLabelAdapters(lbls), model.Fingerprint(lbls.Hash()))
+			idx.Add(mimirpb.FromLabelsToLabelAdapters(lbls), model.Fingerprint(lbls.Hash()))
 		}
 	}
 
@@ -153,7 +153,7 @@ func TestIndex_Delete(t *testing.T) {
 		{model.Metric{"common": "label", "foo": "baz", "flip": "flap"}, 3},
 	}
 	for _, entry := range testData {
-		index.Add(cortexpb.FromMetricsToLabelAdapters(entry.m), entry.fp)
+		index.Add(mimirpb.FromMetricsToLabelAdapters(entry.m), entry.fp)
 	}
 
 	for _, tc := range []struct {
