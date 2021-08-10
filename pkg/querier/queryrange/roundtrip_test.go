@@ -22,6 +22,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/storage"
 )
 
 func TestRoundTrip(t *testing.T) {
@@ -56,6 +57,7 @@ func TestRoundTrip(t *testing.T) {
 		PrometheusCodec,
 		nil,
 		chunk.SchemaConfig{},
+		storage.StorageEngineChunks,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
 			Reg:        nil,
@@ -66,7 +68,6 @@ func TestRoundTrip(t *testing.T) {
 		nil,
 		nil,
 	)
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,6 +120,7 @@ func Test_ShardingConfigError(t *testing.T) {
 		nil,
 		nil,
 		chunk.SchemaConfig{},
+		storage.StorageEngineChunks,
 		promql.EngineOpts{},
 		0,
 		nil,

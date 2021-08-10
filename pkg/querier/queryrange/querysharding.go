@@ -24,9 +24,7 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-var (
-	errInvalidShardingRange = errors.New("Query does not fit in a single sharding configuration")
-)
+var errInvalidShardingRange = errors.New("Query does not fit in a single sharding configuration")
 
 // ShardingConfigs is a slice of chunk shard configs
 type ShardingConfigs []chunk.PeriodConfig
@@ -54,7 +52,6 @@ func (confs ShardingConfigs) ValidRange(start, end int64) (chunk.PeriodConfig, e
 // GetConf will extract a shardable config corresponding to a request and the shardingconfigs
 func (confs ShardingConfigs) GetConf(r Request) (chunk.PeriodConfig, error) {
 	conf, err := confs.ValidRange(r.GetStart(), r.GetEnd())
-
 	// query exists across multiple sharding configs
 	if err != nil {
 		return conf, err
@@ -124,15 +121,13 @@ func NewQueryShardMiddleware(
 			codec:               codec,
 			MinShardingLookback: minShardingLookback,
 			shardingware: MergeMiddlewares(
-				InstrumentMiddleware("shardingware", metrics),
 				mapperware,
 				shardingware,
 			).Wrap(next),
 			now:  time.Now,
-			next: InstrumentMiddleware("sharding-bypass", metrics).Wrap(next),
+			next: next,
 		}
 	})
-
 }
 
 type astMapperware struct {
@@ -188,7 +183,6 @@ func (ast *astMapperware) Do(ctx context.Context, r Request) (Response, error) {
 		),
 		strQuery,
 	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +192,6 @@ func (ast *astMapperware) Do(ctx context.Context, r Request) (Response, error) {
 	ast.mappedASTCounter.Inc()
 
 	return ast.next.Do(ctx, r.WithQuery(strMappedQuery))
-
 }
 
 type queryShard struct {
@@ -225,7 +218,6 @@ func (qs *queryShard) Do(ctx context.Context, r Request) (Response, error) {
 		util.TimeFromMillis(r.GetEnd()),
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +225,6 @@ func (qs *queryShard) Do(ctx context.Context, r Request) (Response, error) {
 	extracted, err := FromResult(res)
 	if err != nil {
 		return nil, err
-
 	}
 	return &PrometheusResponse{
 		Status: StatusSuccess,
@@ -263,4 +254,100 @@ func (splitter *shardSplitter) Do(ctx context.Context, r Request) (Response, err
 		return splitter.next.Do(ctx, r)
 	}
 	return splitter.shardingware.Do(ctx, r)
+}
+
+type tsdbQuerySharding struct {
+	totalShards int
+
+	engine *promql.Engine
+	next   Handler
+	logger log.Logger
+
+	mappedASTCounter      prometheus.Counter
+	shardedQueriesCounter prometheus.Counter
+}
+
+// NewBlockStorageQueryShardingMiddleware creates a middleware that will split queries by shard.
+// It first looks at the query to determine if it is shardable or not.
+// Then rewrite the query into a sharded query and use the PromQL engine to execute the query.
+// Sub shard queries are embedded into a single vector selector and a modified `Queryable` (see ShardedQueryable) is passed
+// to the PromQL engine.
+// Finally we can translate the embedded vector selector back into subqueries in the Queryable and send them in parallel to downstream.
+// todo(ctovena): rename to NewQueryShardingMiddleware when we will remove the chunk code.
+func NewBlockStorageQueryShardingMiddleware(
+	logger log.Logger,
+	engine *promql.Engine,
+	totalShards int,
+	registerer prometheus.Registerer,
+) Middleware {
+	return MiddlewareFunc(func(next Handler) Handler {
+		return &tsdbQuerySharding{
+			next: next,
+			mappedASTCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+				Namespace: "cortex",
+				Name:      "frontend_mapped_asts_total",
+				Help:      "Total number of queries that have undergone AST mapping",
+			}),
+			shardedQueriesCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+				Namespace: "cortex",
+				Name:      "frontend_sharded_queries_total",
+				Help:      "Total number of sharded queries",
+			}),
+			engine:      engine,
+			totalShards: totalShards,
+			logger:      logger,
+		}
+	})
+}
+
+func (s *tsdbQuerySharding) Do(ctx context.Context, r Request) (Response, error) {
+	shardSummer, err := astmapper.NewShardSummer(s.totalShards, astmapper.VectorSquasher, s.shardedQueriesCounter)
+	if err != nil {
+		return nil, err
+	}
+
+	subtreeFolder := astmapper.NewSubtreeFolder()
+
+	strQuery := r.GetQuery()
+	mappedQuery, err := mapQuery(
+		astmapper.NewMultiMapper(
+			shardSummer,
+			subtreeFolder,
+		),
+		strQuery,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	strMappedQuery := mappedQuery.String()
+	level.Debug(s.logger).Log("msg", "mapped query", "original", strQuery, "mapped", strMappedQuery)
+	s.mappedASTCounter.Inc()
+	r = r.WithQuery(strMappedQuery)
+
+	shardedQueryable := &ShardedQueryable{Req: r, Handler: s.next}
+
+	qry, err := s.engine.NewRangeQuery(
+		lazyquery.NewLazyQueryable(shardedQueryable),
+		r.GetQuery(),
+		util.TimeFromMillis(r.GetStart()),
+		util.TimeFromMillis(r.GetEnd()),
+		time.Duration(r.GetStep())*time.Millisecond,
+	)
+	if err != nil {
+		return nil, err
+	}
+	res := qry.Exec(ctx)
+	extracted, err := FromResult(res)
+	if err != nil {
+		return nil, err
+	}
+	return &PrometheusResponse{
+		Status: StatusSuccess,
+		Data: PrometheusData{
+			ResultType: string(res.Value.Type()),
+			Result:     extracted,
+		},
+		Headers: shardedQueryable.getResponseHeaders(),
+	}, nil
 }
