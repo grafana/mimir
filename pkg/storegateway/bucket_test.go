@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -60,6 +61,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -526,6 +528,7 @@ func TestBucketStore_Info(t *testing.T) {
 		false,
 		false,
 		0,
+		NewSeriesHashCache(1024*1024),
 		WithChunkPool(chunkPool),
 		WithFilterConfig(allowAllFilterConf),
 	)
@@ -774,6 +777,7 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 				false,
 				false,
 				0,
+				NewSeriesHashCache(1024*1024),
 				WithLogger(logger),
 				WithFilterConfig(allowAllFilterConf),
 			)
@@ -1208,6 +1212,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		false,
 		false,
 		0,
+		NewSeriesHashCache(1024*1024),
 		WithLogger(logger),
 		WithChunkPool(chunkPool),
 	)
@@ -1573,6 +1578,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		true,
 		false,
 		0,
+		NewSeriesHashCache(1024*1024),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
 	)
@@ -1663,6 +1669,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		true,
 		false,
 		0,
+		NewSeriesHashCache(1024*1024),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
 	)
@@ -1846,6 +1853,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		true,
 		false,
 		0,
+		NewSeriesHashCache(1024*1024),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
 	)
@@ -2080,9 +2088,11 @@ func BenchmarkBlockSeries(b *testing.B) {
 
 	aggrs := []storepb.Aggr{storepb.Aggr_RAW}
 	for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
-		b.Run(fmt.Sprintf("concurrency: %d", concurrency), func(b *testing.B) {
-			benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, aggrs)
-		})
+		for _, queryShardingEnabled := range []bool{false, true} {
+			b.Run(fmt.Sprintf("concurrency: %d, query sharding enabled: %v", concurrency, queryShardingEnabled), func(b *testing.B) {
+				benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, aggrs, queryShardingEnabled)
+			})
+		}
 	}
 }
 
@@ -2157,7 +2167,7 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 	return blk, blockMeta
 }
 
-func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMeta *metadata.Meta, blk *bucketBlock, aggrs []storepb.Aggr) {
+func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMeta *metadata.Meta, blk *bucketBlock, aggrs []storepb.Aggr, queryShardingEnabled bool) {
 	ctx := context.Background()
 
 	// Run the same number of queries per goroutine.
@@ -2166,6 +2176,9 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 	// No limits.
 	chunksLimiter := NewChunksLimiterFactory(0)(nil)
 	seriesLimiter := NewSeriesLimiterFactory(0)(nil)
+
+	// Create the series hash cached used when query sharding is enabled.
+	seriesHashCache := NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCache(blockMeta.ULID.String())
 
 	// Run multiple workers to execute the queries.
 	wg := sync.WaitGroup{}
@@ -2176,37 +2189,52 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 			defer wg.Done()
 
 			for n := 0; n < queriesPerWorker; n++ {
-				// Each query touches a subset of series. To make it reproducible and make sure
-				// we just don't query consecutive series (as is in the real world), we do create
-				// a label matcher which looks for a short integer within the label value.
-				labelMatcher := fmt.Sprintf(".*%d.*", n%20)
+				var reqMatchers []storepb.LabelMatcher
+				var shardSelector *querysharding.ShardSelector
+
+				if queryShardingEnabled {
+					// Each query touches the same series but a different shard.
+					reqMatchers = []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "i", Value: ".+"},
+					}
+
+					shardSelector = &querysharding.ShardSelector{
+						ShardIndex: n % 20,
+						ShardCount: 20,
+					}
+				} else {
+					// Each query touches a subset of series. To make it reproducible and make sure
+					// we just don't query consecutive series (as is in the real world), we do create
+					// a label matcher which looks for a short integer within the label value.
+					reqMatchers = []storepb.LabelMatcher{
+						{Type: storepb.LabelMatcher_RE, Name: "i", Value: fmt.Sprintf(".*%d.*", n%20)},
+					}
+				}
 
 				req := &storepb.SeriesRequest{
-					MinTime: blockMeta.MinTime,
-					MaxTime: blockMeta.MaxTime,
-					Matchers: []storepb.LabelMatcher{
-						{Type: storepb.LabelMatcher_RE, Name: "i", Value: labelMatcher},
-					},
+					MinTime:    blockMeta.MinTime,
+					MaxTime:    blockMeta.MaxTime,
+					Matchers:   reqMatchers,
 					SkipChunks: false,
 					Aggregates: aggrs,
 				}
 
 				matchers, err := storepb.MatchersToPromMatchers(req.Matchers...)
-				// TODO FIXME! assert.NoError calls b.Fatalf under the hood, which
+				// TODO FIXME! require.NoError calls b.Fatalf under the hood, which
 				// must be called only from the goroutine running the Benchmark function.
-				assert.NoError(b, err)
+				require.NoError(b, err)
 
 				indexReader := blk.indexReader(ctx)
 				chunkReader := blk.chunkReader(ctx)
 
-				seriesSet, _, err := blockSeries(nil, indexReader, chunkReader, matchers, nil, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
-				assert.NoError(b, err)
+				seriesSet, _, err := blockSeries(nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
+				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
-				assert.Equal(b, true, seriesSet.Next())
+				require.Equal(b, true, seriesSet.Next())
 
-				assert.NoError(b, indexReader.Close())
-				assert.NoError(b, chunkReader.Close())
+				require.NoError(b, indexReader.Close())
+				require.NoError(b, chunkReader.Close())
 			}
 		}()
 	}
@@ -2221,7 +2249,7 @@ func BenchmarkDownsampledBlockSeries(b *testing.B) {
 		aggrs = append(aggrs, storepb.Aggr(i))
 		for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
 			b.Run(fmt.Sprintf("aggregates: %v, concurrency: %d", aggrs, concurrency), func(b *testing.B) {
-				benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, aggrs)
+				benchmarkBlockSeriesWithConcurrency(b, concurrency, blockMeta, blk, aggrs, false)
 			})
 		}
 	}
@@ -2414,4 +2442,71 @@ func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesC
 			}
 		})
 	}
+}
+
+func TestFilterPostingsByCachedShardHash(t *testing.T) {
+	tests := map[string]struct {
+		inputPostings    []uint64
+		shard            *querysharding.ShardSelector
+		cacheEntries     [][2]uint64 // List of cache entries where each entry is the pair [seriesID, hash]
+		expectedPostings []uint64
+	}{
+		"should be a noop if the cache is empty": {
+			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			cacheEntries:     [][2]uint64{},
+			expectedPostings: []uint64{0, 1, 2, 3, 4, 5},
+		},
+		"should filter postings at the beginning of the slice": {
+			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			shard:            &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
+			expectedPostings: []uint64{1, 2, 3, 4, 5},
+		},
+		"should filter postings in the middle of the slice": {
+			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
+			expectedPostings: []uint64{0, 2, 3, 4, 5},
+		},
+		"should filter postings at the end of the slice": {
+			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			cacheEntries:     [][2]uint64{{4, 4}, {5, 5}},
+			expectedPostings: []uint64{0, 1, 2, 3, 4},
+		},
+		"should filter postings when all postings are in the cache": {
+			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
+			expectedPostings: []uint64{0, 2, 4},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+			for _, pair := range testData.cacheEntries {
+				cache.Store(pair[0], pair[1])
+			}
+
+			actualPostings := filterPostingsByCachedShardHash(testData.inputPostings, testData.shard, cache)
+			assert.Equal(t, testData.expectedPostings, actualPostings)
+		})
+	}
+}
+
+func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
+	inputPostings := []uint64{0, 1, 2, 3, 4, 5}
+	shard := &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
+	cacheEntries := [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}
+
+	cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	for _, pair := range cacheEntries {
+		cache.Store(pair[0], pair[1])
+	}
+
+	assert.Equal(t, float64(0), testing.AllocsPerRun(1, func() {
+		filterPostingsByCachedShardHash(inputPostings, shard, cache)
+	}))
 }

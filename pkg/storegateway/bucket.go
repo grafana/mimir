@@ -261,6 +261,7 @@ type BucketStore struct {
 	indexCache      storecache.IndexCache
 	indexReaderPool *indexheader.ReaderPool
 	chunkPool       pool.Bytes
+	seriesHashCache *SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	mtx       sync.RWMutex
@@ -372,6 +373,7 @@ func NewBucketStore(
 	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
+	seriesHashCache *SeriesHashCache,
 	options ...BucketStoreOption,
 ) (*BucketStore, error) {
 	s := &BucketStore{
@@ -391,6 +393,7 @@ func NewBucketStore(
 		enableCompatibilityLabel:    enableCompatibilityLabel,
 		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
 		enableSeriesResponseHints:   enableSeriesResponseHints,
+		seriesHashCache:             seriesHashCache,
 	}
 
 	for _, option := range options {
@@ -744,6 +747,7 @@ func blockSeries(
 	chunkr *bucketChunkReader, // Chunk reader for block.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *querysharding.ShardSelector, // Shard selector.
+	seriesHashCache *BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded.
@@ -755,13 +759,15 @@ func blockSeries(
 		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
 
-	if len(ps) == 0 {
-		return storepb.EmptySeriesSet(), indexr.stats, nil
+	// We can't compute the series hash yet because we're still missing the series labels.
+	// However, if the hash is already in the cache, then we can remove all postings for series
+	// not belonging to the shard.
+	if shard != nil {
+		ps = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
 	}
 
-	// Reserve series seriesLimiter
-	if err := seriesLimiter.Reserve(uint64(len(ps))); err != nil {
-		return nil, nil, errors.Wrap(err, "exceeded series limit")
+	if len(ps) == 0 {
+		return storepb.EmptySeriesSet(), indexr.stats, nil
 	}
 
 	// Preload all series index data.
@@ -795,9 +801,20 @@ func blockSeries(
 
 		// Skip the series if it doesn't belong to the shard.
 		if shard != nil {
-			if lset.Hash()%uint64(shard.ShardCount) != uint64(shard.ShardIndex) {
+			hash, ok := seriesHashCache.Fetch(id)
+			if !ok {
+				hash = lset.Hash()
+				seriesHashCache.Store(id, hash)
+			}
+
+			if hash%uint64(shard.ShardCount) != uint64(shard.ShardIndex) {
 				continue
 			}
+		}
+
+		// Check series limit after filtering out series not belonging to the requested shard (if any).
+		if err := seriesLimiter.Reserve(1); err != nil {
+			return nil, nil, errors.Wrap(err, "exceeded series limit")
 		}
 
 		s := seriesEntry{}
@@ -838,6 +855,37 @@ func blockSeries(
 	}
 
 	return newBucketSeriesSet(res), indexr.stats.merge(chunkr.stats), nil
+}
+
+// filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only
+// postings for which we have their series hash already in the cache; if a series is not in the cache,
+// postings will be kept in the output.
+func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSelector, seriesHashCache *BlockSeriesHashCache) []uint64 {
+	writeIdx := 0
+
+	for readIdx := 0; readIdx < len(ps); readIdx++ {
+		seriesID := ps[readIdx]
+		hash, ok := seriesHashCache.Fetch(seriesID)
+
+		// Keep the posting if it's not in the cache, or it's in the cache and doesn't belong to our shard.
+		if !ok || hash%uint64(shard.ShardCount) == uint64(shard.ShardIndex) {
+			// We need to write the value only if it has been shifted ahead.
+			if readIdx != writeIdx {
+				ps[writeIdx] = seriesID
+			}
+
+			writeIdx++
+			continue
+		}
+
+		// We can filter out the series because doesn't belong to the requested shard,
+		// so we're not going to increase the writeIdx.
+	}
+
+	// Shrink the size.
+	ps = ps[0:writeIdx]
+
+	return ps
 }
 
 func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Aggr, save func([]byte) ([]byte, error)) error {
@@ -1030,6 +1078,13 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			// Defer all closes to the end of Series method.
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "series block")
 
+			// If query sharding is enabled we have to get the block-specific series hash cache
+			// which is used by blockSeries().
+			var blockSeriesHashCache *BlockSeriesHashCache
+			if shardSelector != nil {
+				blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
+			}
+
 			g.Go(func() error {
 				part, pstats, err := blockSeries(
 					b.extLset,
@@ -1037,6 +1092,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 					chunkr,
 					blockMatchers,
 					shardSelector,
+					blockSeriesHashCache,
 					chunksLimiter,
 					seriesLimiter,
 					req.SkipChunks,
@@ -1231,7 +1287,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 				result = strutil.MergeSlices(res, extRes)
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
@@ -1356,7 +1412,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 				}
 				result = res
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
