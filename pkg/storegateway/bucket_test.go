@@ -2490,7 +2490,7 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 				cache.Store(pair[0], pair[1])
 			}
 
-			actualPostings := filterPostingsByCachedShardHash(testData.inputPostings, testData.shard, cache)
+			actualPostings, _ := filterPostingsByCachedShardHash(testData.inputPostings, testData.shard, cache)
 			assert.Equal(t, testData.expectedPostings, actualPostings)
 		})
 	}
