@@ -16,7 +16,7 @@ import (
 	"github.com/ncw/swift"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	cortex_swift "github.com/grafana/mimir/pkg/storage/bucket/swift"
+	mimir_swift "github.com/grafana/mimir/pkg/storage/bucket/swift"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -27,7 +27,7 @@ type SwiftObjectClient struct {
 
 // SwiftConfig is config for the Swift Chunk Client.
 type SwiftConfig struct {
-	cortex_swift.Config `yaml:",inline"`
+	mimir_swift.Config `yaml:",inline"`
 }
 
 // RegisterFlags registers flags.

@@ -21,16 +21,16 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	cortex_tls "github.com/grafana/mimir/pkg/util/tls"
+	mimir_tls "github.com/grafana/mimir/pkg/util/tls"
 )
 
 // Config for a new etcd.Client.
 type Config struct {
-	Endpoints   []string                `yaml:"endpoints"`
-	DialTimeout time.Duration           `yaml:"dial_timeout"`
-	MaxRetries  int                     `yaml:"max_retries"`
-	EnableTLS   bool                    `yaml:"tls_enabled"`
-	TLS         cortex_tls.ClientConfig `yaml:",inline"`
+	Endpoints   []string               `yaml:"endpoints"`
+	DialTimeout time.Duration          `yaml:"dial_timeout"`
+	MaxRetries  int                    `yaml:"max_retries"`
+	EnableTLS   bool                   `yaml:"tls_enabled"`
+	TLS         mimir_tls.ClientConfig `yaml:",inline"`
 
 	UserName string `yaml:"username"`
 	Password string `yaml:"password"`

@@ -16,11 +16,11 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestReadIndex_ShouldReturnErrorIfIndexDoesNotExist(t *testing.T) {
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	idx, err := ReadIndex(context.Background(), bkt, "user-1", nil, log.NewNopLogger())
 	require.Equal(t, ErrIndexNotFound, err)
@@ -31,7 +31,7 @@ func TestReadIndex_ShouldReturnErrorIfIndexIsCorrupted(t *testing.T) {
 	const userID = "user-1"
 
 	ctx := context.Background()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Write a corrupted index.
 	require.NoError(t, bkt.Upload(ctx, path.Join(userID, IndexCompressedFilename), strings.NewReader("invalid!}")))
@@ -47,7 +47,7 @@ func TestReadIndex_ShouldReturnTheParsedIndexOnSuccess(t *testing.T) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Mock some blocks in the storage.
 	bkt = BucketWithGlobalMarkers(bkt)
@@ -77,7 +77,7 @@ func BenchmarkReadIndex(b *testing.B) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(b)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(b)
 
 	// Mock some blocks and deletion marks in the storage.
 	bkt = BucketWithGlobalMarkers(bkt)
@@ -114,7 +114,7 @@ func BenchmarkReadIndex(b *testing.B) {
 
 func TestDeleteIndex_ShouldNotReturnErrorIfIndexDoesNotExist(t *testing.T) {
 	ctx := context.Background()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	assert.NoError(t, DeleteIndex(ctx, bkt, "user-1", nil))
 }

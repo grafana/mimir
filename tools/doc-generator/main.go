@@ -23,12 +23,12 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/cortex"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/queryrange"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
@@ -319,7 +319,7 @@ func main() {
 	// In order to match YAML config fields with CLI flags, we do map
 	// the memory address of the CLI flag variables and match them with
 	// the config struct fields address.
-	cfg := &cortex.Config{}
+	cfg := &mimir.Config{}
 	flags := parseFlags(cfg)
 
 	// Parse the config, mapping each config field with the related CLI flag.

@@ -226,7 +226,7 @@ type QueryableWithFilter interface {
 	UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool
 }
 
-// NewQueryable creates a new Queryable for cortex.
+// NewQueryable creates a new Queryable for mimir.
 func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, tombstonesLoader *purger.TombstonesLoader) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()

@@ -47,7 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -240,7 +240,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
 	test.VerifyNoLeak(t)
 
-	bucketClient, storageDir := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// This tests uses real TSDB blocks. 24h time range, 2h block range period,
 	// 2 users = total (24 / 12) * 2 = 24 blocks.
@@ -404,7 +404,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		expectedBlocksLoaded = 3 * numBlocks // blocks are replicated 3 times
 	)
 
-	bucketClient, storageDir := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// This tests uses real TSDB blocks. 24h time range, 2h block range period,
 	// 2 users = total (24 / 12) * 2 = 24 blocks.
@@ -962,7 +962,7 @@ func TestBucketStore_Series_QuerySharding(t *testing.T) {
 	}
 
 	// Prepare the storage dir.
-	bucketClient, storageDir := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Generate a TSDB block in the storage dir, containing the fixture series.
 	mockTSDBWithGenerator(t, path.Join(storageDir, userID), func() func() (bool, labels.Labels, int64, float64) {

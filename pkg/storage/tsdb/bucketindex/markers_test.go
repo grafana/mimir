@@ -20,7 +20,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestBlockDeletionMarkFilepath(t *testing.T) {
@@ -47,7 +47,7 @@ func TestIsBlockDeletionMarkFilename(t *testing.T) {
 }
 
 func TestMigrateBlockDeletionMarksToGlobalLocation(t *testing.T) {
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	ctx := context.Background()
 
 	// Create some fixtures.

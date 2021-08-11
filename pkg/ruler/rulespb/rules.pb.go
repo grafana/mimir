@@ -32,7 +32,7 @@ var _ = time.Kitchen
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-// RuleGroupDesc is a proto representation of a cortex rule group.
+// RuleGroupDesc is a proto representation of a mimir rule group.
 type RuleGroupDesc struct {
 	Name      string        `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	Namespace string        `protobuf:"bytes,2,opt,name=namespace,proto3" json:"namespace,omitempty"`

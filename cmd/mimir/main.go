@@ -24,7 +24,7 @@ import (
 	"github.com/weaveworks/common/tracing"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/cortex"
+	"github.com/grafana/mimir/pkg/mimir"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -63,7 +63,7 @@ var testMode = false
 
 func main() {
 	var (
-		cfg                  cortex.Config
+		cfg                  mimir.Config
 		eventSampleRate      int
 		ballastBytes         int
 		mutexProfileFraction int
@@ -134,7 +134,7 @@ func main() {
 	}
 
 	// Continue on if -modules flag is given. Code handling the
-	// -modules flag will not start cortex.
+	// -modules flag will not start mimir.
 	if testMode && !printModules {
 		DumpYaml(&cfg)
 		return
@@ -173,11 +173,11 @@ func main() {
 	// Initialise seed for randomness usage.
 	rand.Seed(time.Now().UnixNano())
 
-	t, err := cortex.New(cfg)
-	util_log.CheckFatal("initializing cortex", err)
+	t, err := mimir.New(cfg)
+	util_log.CheckFatal("initializing application", err)
 
 	if printModules {
-		allDeps := t.ModuleManager.DependenciesForModule(cortex.All)
+		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
 
 		for _, m := range t.ModuleManager.UserVisibleModuleNames() {
 			ix := sort.SearchStrings(allDeps, m)
@@ -200,7 +200,7 @@ func main() {
 	err = t.Run()
 
 	runtime.KeepAlive(ballast)
-	util_log.CheckFatal("running cortex", err)
+	util_log.CheckFatal("running application", err)
 }
 
 // Parse -config.file and -config.expand-env option via separate flag set, to avoid polluting default one and calling flag.Parse on it twice.
@@ -225,7 +225,7 @@ func parseConfigFileParameter(args []string) (configFile string, expandEnv bool)
 }
 
 // LoadConfig read YAML-formatted config from filename into cfg.
-func LoadConfig(filename string, expandENV bool, cfg *cortex.Config) error {
+func LoadConfig(filename string, expandENV bool, cfg *mimir.Config) error {
 	buf, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return errors.Wrap(err, "Error reading config file")
@@ -249,7 +249,7 @@ func LoadConfig(filename string, expandENV bool, cfg *cortex.Config) error {
 	return nil
 }
 
-func DumpYaml(cfg *cortex.Config) {
+func DumpYaml(cfg *mimir.Config) {
 	out, err := yaml.Marshal(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

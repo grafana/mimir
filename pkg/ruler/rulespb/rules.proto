@@ -17,7 +17,7 @@ import "github.com/grafana/mimir/pkg/mimirpb/mimir.proto";
 option (gogoproto.marshaler_all) = true;
 option (gogoproto.unmarshaler_all) = true;
 
-// RuleGroupDesc is a proto representation of a cortex rule group.
+// RuleGroupDesc is a proto representation of a mimir rule group.
 message RuleGroupDesc {
   reserved 5, 7, 8;
   string name = 1;

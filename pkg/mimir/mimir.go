@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package cortex
+package mimir
 
 import (
 	"bytes"
@@ -177,7 +177,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&chunk_util.QueryParallelism, "querier.query-parallelism", 100, "Max subqueries run in parallel per higher-level query.")
 }
 
-// Validate the cortex config and returns an error if the validation
+// Validate the mimir config and return an error if the validation
 // doesn't pass
 func (c *Config) Validate(log log.Logger) error {
 	if err := c.validateYAMLEmptyNodes(); err != nil {
@@ -371,17 +371,17 @@ func New(cfg Config) (*Mimir, error) {
 			"/schedulerpb.SchedulerForQuerier/NotifyQuerierShutdown",
 		})
 
-	cortex := &Mimir{
+	mimir := &Mimir{
 		Cfg: cfg,
 	}
 
-	cortex.setupThanosTracing()
+	mimir.setupThanosTracing()
 
-	if err := cortex.setupModuleManager(); err != nil {
+	if err := mimir.setupModuleManager(); err != nil {
 		return nil, err
 	}
 
-	return cortex, nil
+	return mimir, nil
 }
 
 // setupThanosTracing appends a gRPC middleware used to inject our tracer into the custom

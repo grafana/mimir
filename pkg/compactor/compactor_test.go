@@ -44,7 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/concurrency"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/services"
-	cortex_testutil "github.com/grafana/mimir/pkg/util/test"
+	mimir_testutil "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -139,7 +139,7 @@ func TestCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until a run has completed.
-	cortex_testutil.Poll(t, time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 	})
 
@@ -284,7 +284,7 @@ func TestCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUsersFromBucket
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until all retry attempts have completed.
-	cortex_testutil.Poll(t, time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsFailed)
 	})
 
@@ -438,7 +438,7 @@ func TestCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASingleTenant(
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until all retry attempts have completed.
-	cortex_testutil.Poll(t, time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsFailed)
 	})
 
@@ -495,7 +495,7 @@ func TestCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until a run has completed.
-	cortex_testutil.Poll(t, time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 	})
 
@@ -622,7 +622,7 @@ func TestCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until a run has completed.
-	cortex_testutil.Poll(t, time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 	})
 
@@ -730,7 +730,7 @@ func TestCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t *testing.T)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until a run has completed.
-	cortex_testutil.Poll(t, time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 	})
 
@@ -841,7 +841,7 @@ func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunni
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until a run has completed.
-	cortex_testutil.Poll(t, 5*time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, 5*time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 	})
 
@@ -937,7 +937,7 @@ func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndM
 
 	// Wait until a run has been completed on each compactor
 	for _, c := range compactors {
-		cortex_testutil.Poll(t, 10*time.Second, 1.0, func() interface{} {
+		mimir_testutil.Poll(t, 10*time.Second, 1.0, func() interface{} {
 			return prom_testutil.ToFloat64(c.compactionRunsCompleted)
 		})
 	}
@@ -1264,7 +1264,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c1))
 
 	// Wait until a run has been completed on first compactor. This happens as soon as compactor starts.
-	cortex_testutil.Poll(t, 10*time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, 10*time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c1.compactionRunsCompleted)
 	})
 
@@ -1275,7 +1275,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 
 	// Now start second compactor, and wait until it runs compaction.
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c2))
-	cortex_testutil.Poll(t, 10*time.Second, 1.0, func() interface{} {
+	mimir_testutil.Poll(t, 10*time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c2.compactionRunsCompleted)
 	})
 
