@@ -27,8 +27,8 @@ var (
 
 // ShardSelector holds information about the configured query shard.
 type ShardSelector struct {
-	ShardIndex int
-	ShardCount int
+	ShardIndex uint64
+	ShardCount uint64
 }
 
 // LabelValue returns the label value to use to select this shard.
@@ -64,8 +64,8 @@ func ParseShard(input string) (parsed ShardSelector, err error) {
 		return parsed, errors.Errorf("query shards out of bounds: [%d] >= [%d]", x, of)
 	}
 	return ShardSelector{
-		ShardIndex: x,
-		ShardCount: of,
+		ShardIndex: uint64(x),
+		ShardCount: uint64(of),
 	}, err
 }
 

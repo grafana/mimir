@@ -606,7 +606,7 @@ func (m *testMatrix) Select(_ bool, selectParams *storage.SelectHints, matchers 
 	}
 
 	if s != nil {
-		return splitByShard(s.ShardIndex, s.ShardCount, m)
+		return splitByShard(s, m)
 	}
 
 	return m.Copy()
@@ -655,10 +655,10 @@ func factor(f float64) func(float64) float64 {
 // splitByShard returns the shard subset of a testMatrix.
 // e.g if a testMatrix has 6 series, and we want 3 shard, then each shard will contain
 // 2 series.
-func splitByShard(shardIndex, shardTotal int, testMatrices *testMatrix) *testMatrix {
+func splitByShard(shard *querysharding.ShardSelector, testMatrices *testMatrix) *testMatrix {
 	res := &testMatrix{}
 	for i, s := range testMatrices.series {
-		if i%shardTotal != shardIndex {
+		if uint64(i)%shard.ShardCount != shard.ShardIndex {
 			continue
 		}
 		var points []promql.Point
@@ -672,7 +672,7 @@ func splitByShard(shardIndex, shardTotal int, testMatrices *testMatrix) *testMat
 
 		}
 		lbs := s.Labels().Copy()
-		lbs = append(lbs, labels.Label{Name: "__query_shard__", Value: fmt.Sprintf("%d_of_%d", shardIndex, shardTotal)})
+		lbs = append(lbs, labels.Label{Name: "__query_shard__", Value: fmt.Sprintf("%d_of_%d", shard.ShardIndex, shard.ShardCount)})
 		sort.Sort(lbs)
 		res.series = append(res.series, promql.NewStorageSeries(promql.Series{
 			Metric: lbs,
