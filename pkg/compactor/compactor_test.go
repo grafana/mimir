@@ -1093,9 +1093,6 @@ func prepareConfig() Config {
 	compactorCfg.retryMinBackoff = 0
 	compactorCfg.retryMaxBackoff = 0
 
-	// The migration is tested in a dedicated test.
-	compactorCfg.BlockDeletionMarksMigrationEnabled = false
-
 	// Do not wait for ring stability by default, in order to speed up tests.
 	compactorCfg.ShardingRing.WaitStabilityMinDuration = 0
 	compactorCfg.ShardingRing.WaitStabilityMaxDuration = 0

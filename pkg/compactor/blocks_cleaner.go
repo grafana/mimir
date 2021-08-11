@@ -30,11 +30,10 @@ import (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay                      time.Duration
-	CleanupInterval                    time.Duration
-	CleanupConcurrency                 int
-	BlockDeletionMarksMigrationEnabled bool          // TODO Discuss whether we should remove it in Cortex 1.8.0 and document that upgrading to 1.7.0 before 1.8.0 is required.
-	TenantCleanupDelay                 time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeletionDelay      time.Duration
+	CleanupInterval    time.Duration
+	CleanupConcurrency int
+	TenantCleanupDelay time.Duration // Delay before removing tenant deletion mark and "debug".
 }
 
 type BlocksCleaner struct {
@@ -306,7 +305,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, firstRun b
 	}()
 
 	// Migrate block deletion marks to the global markers location. This operation is a best-effort.
-	if firstRun && c.cfg.BlockDeletionMarksMigrationEnabled {
+	if firstRun {
 		if err := bucketindex.MigrateBlockDeletionMarksToGlobalLocation(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
 			level.Warn(userLogger).Log("msg", "failed to migrate block deletion marks to the global markers location", "err", err)
 		} else {

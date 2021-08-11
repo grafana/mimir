@@ -110,11 +110,10 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	}
 
 	cfg := BlocksCleanerConfig{
-		DeletionDelay:                      deletionDelay,
-		CleanupInterval:                    time.Minute,
-		CleanupConcurrency:                 options.concurrency,
-		BlockDeletionMarksMigrationEnabled: options.markersMigrationEnabled,
-		TenantCleanupDelay:                 options.tenantDeletionDelay,
+		DeletionDelay:      deletionDelay,
+		CleanupInterval:    time.Minute,
+		CleanupConcurrency: options.concurrency,
+		TenantCleanupDelay: options.tenantDeletionDelay,
 	}
 
 	reg := prometheus.NewPedanticRegistry()
