@@ -962,7 +962,7 @@ func TestBucketStore_Series_QuerySharding(t *testing.T) {
 	}
 
 	// Prepare the storage dir.
-	bucketClient, storageDir := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Generate a TSDB block in the storage dir, containing the fixture series.
 	mockTSDBWithGenerator(t, path.Join(storageDir, userID), func() func() (bool, labels.Labels, int64, float64) {

@@ -29,7 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/services"
 )
 
@@ -37,10 +37,10 @@ func TestBucketScanBlocksFinder_InitialScan(t *testing.T) {
 	ctx := context.Background()
 	s, bucket, _, reg := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	user1Block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
-	user1Block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
-	user2Block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-2", 10, 20)
-	user2Mark1 := bucketindex.BlockDeletionMarkFromThanosMarker(cortex_testutil.MockStorageDeletionMark(t, bucket, "user-2", user2Block1))
+	user1Block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	user1Block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	user2Block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-2", 10, 20)
+	user2Mark1 := bucketindex.BlockDeletionMarkFromThanosMarker(mimir_testutil.MockStorageDeletionMark(t, bucket, "user-2", user2Block1))
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -224,9 +224,9 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsNewUser(t *testing.T) {
 	require.Equal(t, 0, len(blocks))
 	assert.Empty(t, deletionMarks)
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
-	mark2 := bucketindex.BlockDeletionMarkFromThanosMarker(cortex_testutil.MockStorageDeletionMark(t, bucket, "user-1", block2))
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	mark2 := bucketindex.BlockDeletionMarkFromThanosMarker(mimir_testutil.MockStorageDeletionMark(t, bucket, "user-1", block2))
 
 	// Trigger a periodic sync
 	require.NoError(t, s.scan(ctx))
@@ -247,7 +247,7 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsNewBlock(t *testing.T) {
 	ctx := context.Background()
 	s, bucket, _, _ := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -258,7 +258,7 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsNewBlock(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), blocks[0].GetUploadedAt(), 5*time.Second)
 	assert.Empty(t, deletionMarks)
 
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
 
 	// Trigger a periodic sync
 	require.NoError(t, s.scan(ctx))
@@ -277,8 +277,8 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsBlockMarkedForDeletion(t *testi
 	ctx := context.Background()
 	s, bucket, _, _ := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -289,7 +289,7 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsBlockMarkedForDeletion(t *testi
 	assert.Equal(t, block1.ULID, blocks[1].ID)
 	assert.Empty(t, deletionMarks)
 
-	mark1 := bucketindex.BlockDeletionMarkFromThanosMarker(cortex_testutil.MockStorageDeletionMark(t, bucket, "user-1", block1))
+	mark1 := bucketindex.BlockDeletionMarkFromThanosMarker(mimir_testutil.MockStorageDeletionMark(t, bucket, "user-1", block1))
 
 	// Trigger a periodic sync
 	require.NoError(t, s.scan(ctx))
@@ -308,8 +308,8 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsDeletedBlock(t *testing.T) {
 	ctx := context.Background()
 	s, bucket, _, _ := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -336,8 +336,8 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsDeletedUser(t *testing.T) {
 	ctx := context.Background()
 	s, bucket, _, _ := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -363,8 +363,8 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsUserWhichWasPreviouslyDeleted(t
 	ctx := context.Background()
 	s, bucket, _, _ := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 20)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -385,7 +385,7 @@ func TestBucketScanBlocksFinder_PeriodicScanFindsUserWhichWasPreviouslyDeleted(t
 	require.Equal(t, 0, len(blocks))
 	assert.Empty(t, deletionMarks)
 
-	block3 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 30, 40)
+	block3 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 30, 40)
 
 	// Trigger a periodic sync
 	require.NoError(t, s.scan(ctx))
@@ -401,11 +401,11 @@ func TestBucketScanBlocksFinder_GetBlocks(t *testing.T) {
 	ctx := context.Background()
 	s, bucket, _, _ := prepareBucketScanBlocksFinder(t, prepareBucketScanBlocksFinderConfig())
 
-	block1 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 10, 15)
-	block2 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 12, 20)
-	block3 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
-	block4 := cortex_testutil.MockStorageBlock(t, bucket, "user-1", 30, 40)
-	mark3 := bucketindex.BlockDeletionMarkFromThanosMarker(cortex_testutil.MockStorageDeletionMark(t, bucket, "user-1", block3))
+	block1 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 10, 15)
+	block2 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 12, 20)
+	block3 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 20, 30)
+	block4 := mimir_testutil.MockStorageBlock(t, bucket, "user-1", 30, 40)
+	mark3 := bucketindex.BlockDeletionMarkFromThanosMarker(mimir_testutil.MockStorageDeletionMark(t, bucket, "user-1", block3))
 
 	require.NoError(t, services.StartAndAwaitRunning(ctx, s))
 
@@ -492,7 +492,7 @@ func prepareBucketScanBlocksFinder(t *testing.T, cfg BucketScanBlocksFinderConfi
 		require.NoError(t, os.RemoveAll(cacheDir))
 	})
 
-	bkt, storageDir := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	reg := prometheus.NewPedanticRegistry()
 	cfg.CacheDir = cacheDir
