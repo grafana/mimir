@@ -223,7 +223,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), log.NewNopLogger(), newBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, nil)
+	b, err := newBucketBlock(context.Background(), log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, nil)
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -529,6 +529,7 @@ func TestBucketStore_Info(t *testing.T) {
 		false,
 		0,
 		NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
 		WithChunkPool(chunkPool),
 		WithFilterConfig(allowAllFilterConf),
 	)
@@ -778,6 +779,7 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 				false,
 				0,
 				NewSeriesHashCache(1024*1024),
+				NewBucketStoreMetrics(nil),
 				WithLogger(logger),
 				WithFilterConfig(allowAllFilterConf),
 			)
@@ -863,7 +865,7 @@ func expectedTouchedBlockOps(all, expected, cached []ulid.ULID) []string {
 func TestReadIndexCache_LoadSeries(t *testing.T) {
 	bkt := objstore.NewInMemBucket()
 
-	s := newBucketStoreMetrics(nil)
+	s := NewBucketStoreMetrics(nil)
 	b := &bucketBlock{
 		meta: &metadata.Meta{
 			BlockMeta: tsdb.BlockMeta{
@@ -1083,7 +1085,7 @@ func benchmarkExpandedPostings(
 		t.Run(c.name, func(t test.TB) {
 			b := &bucketBlock{
 				logger:            log.NewNopLogger(),
-				metrics:           newBucketStoreMetrics(nil),
+				metrics:           NewBucketStoreMetrics(nil),
 				indexHeaderReader: r,
 				indexCache:        noopCache{},
 				bkt:               bkt,
@@ -1213,6 +1215,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		false,
 		0,
 		NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithChunkPool(chunkPool),
 	)
@@ -1364,7 +1367,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		b1 = &bucketBlock{
 			indexCache:  indexCache,
 			logger:      logger,
-			metrics:     newBucketStoreMetrics(nil),
+			metrics:     NewBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
 			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1403,7 +1406,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		b2 = &bucketBlock{
 			indexCache:  indexCache,
 			logger:      logger,
-			metrics:     newBucketStoreMetrics(nil),
+			metrics:     NewBucketStoreMetrics(nil),
 			bkt:         bkt,
 			meta:        meta,
 			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
@@ -1419,7 +1422,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 		logger:          logger,
 		indexCache:      indexCache,
 		indexReaderPool: indexheader.NewReaderPool(log.NewNopLogger(), false, 0, nil),
-		metrics:         newBucketStoreMetrics(nil),
+		metrics:         NewBucketStoreMetrics(nil),
 		blockSets: map[uint64]*bucketBlockSet{
 			labels.Labels{{Name: "ext1", Value: "1"}}.Hash(): {blocks: [][]*bucketBlock{{b1, b2}}},
 		},
@@ -1579,6 +1582,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		false,
 		0,
 		NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
 	)
@@ -1670,6 +1674,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		false,
 		0,
 		NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
 	)
@@ -1854,6 +1859,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		false,
 		0,
 		NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
 	)
@@ -2067,7 +2073,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	assert.NoError(b, err)
 
 	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), logger, newBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, nil)
+	blk, err := newBucketBlock(context.Background(), logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, nil)
 	assert.NoError(b, err)
 
 	b.ResetTimer()
@@ -2162,7 +2168,7 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 	assert.NoError(b, err)
 
 	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), logger, newBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, indexCache, chunkPool, indexHeaderReader, partitioner)
+	blk, err := newBucketBlock(context.Background(), logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, indexCache, chunkPool, indexHeaderReader, partitioner)
 	assert.NoError(b, err)
 	return blk, blockMeta
 }
