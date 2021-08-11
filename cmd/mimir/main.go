@@ -174,7 +174,7 @@ func main() {
 	rand.Seed(time.Now().UnixNano())
 
 	t, err := mimir.New(cfg)
-	util_log.CheckFatal("initializing mimir", err)
+	util_log.CheckFatal("initializing application", err)
 
 	if printModules {
 		allDeps := t.ModuleManager.DependenciesForModule(mimir.All)
@@ -200,7 +200,7 @@ func main() {
 	err = t.Run()
 
 	runtime.KeepAlive(ballast)
-	util_log.CheckFatal("running mimir", err)
+	util_log.CheckFatal("running application", err)
 }
 
 // Parse -config.file and -config.expand-env option via separate flag set, to avoid polluting default one and calling flag.Parse on it twice.
