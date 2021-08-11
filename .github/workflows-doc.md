@@ -1,6 +1,6 @@
 # GitHub Actions CI/CD
 
-The purpose of this workflow is to run all continuous integration (CI) and continuous deployment (CD) jobs when needed while respecting their internal dependencies. The continuous integration jobs serve to ensure new code passes linting, unit tests and integration tests before reaching the master branch. The continuous deployment jobs serve to deploy the latest version of the code to mimir and the website when merged with master.
+The purpose of this workflow is to run all continuous integration (CI) and continuous deployment (CD) jobs when needed while respecting their internal dependencies. The continuous integration jobs serve to ensure new code passes linting, unit tests and integration tests before reaching the main branch. The continuous deployment jobs serve to deploy the latest version of the code to mimir and the website when merged with main.
 
 ## Contributing
 
@@ -8,7 +8,7 @@ If you wish to add a new CI or CD job, add it to the existing current test-build
 
 ## Test, Build and Deploy
 
-test-build-deploy.yml specifies a workflow that runs all Mimir continuous integration and continuous deployment jobs. The workflow is triggered on every pull request and commit to master, however the CD jobs only run when changes are merged onto master . The workflow combines both CI and CD jobs, because the CD jobs are dependent on artifacts produced the CI jobs.
+test-build-deploy.yml specifies a workflow that runs all Mimir continuous integration and continuous deployment jobs. The workflow is triggered on every pull request and commit to main, however the CD jobs only run when changes are merged onto main. The workflow combines both CI and CD jobs, because the CD jobs are dependent on artifacts produced the CI jobs.
 
 
 ## Specific Jobs
