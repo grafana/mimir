@@ -47,6 +47,9 @@ type BucketStoreMetrics struct {
 	indexHeaderLazyUnloadCount       *prometheus.Desc
 	indexHeaderLazyUnloadFailedCount *prometheus.Desc
 	indexHeaderLazyLoadDuration      *prometheus.Desc
+
+	seriesHashCacheRequests *prometheus.Desc
+	seriesHashCacheHits     *prometheus.Desc
 }
 
 func NewBucketStoreMetrics() *BucketStoreMetrics {
@@ -165,6 +168,15 @@ func NewBucketStoreMetrics() *BucketStoreMetrics {
 			"cortex_bucket_store_indexheader_lazy_load_duration_seconds",
 			"Duration of the index-header lazy loading in seconds.",
 			nil, nil),
+
+		seriesHashCacheRequests: prometheus.NewDesc(
+			"cortex_bucket_store_series_hash_cache_requests_total",
+			"Total number of fetch attempts to the in-memory series hash cache.",
+			nil, nil),
+		seriesHashCacheHits: prometheus.NewDesc(
+			"cortex_bucket_store_series_hash_cache_hits_total",
+			"Total number of fetch hits to the in-memory series hash cache.",
+			nil, nil),
 	}
 }
 
@@ -207,6 +219,9 @@ func (m *BucketStoreMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- m.indexHeaderLazyUnloadCount
 	out <- m.indexHeaderLazyUnloadFailedCount
 	out <- m.indexHeaderLazyLoadDuration
+
+	out <- m.seriesHashCacheRequests
+	out <- m.seriesHashCacheHits
 }
 
 func (m *BucketStoreMetrics) Collect(out chan<- prometheus.Metric) {
@@ -245,4 +260,7 @@ func (m *BucketStoreMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCounters(out, m.indexHeaderLazyUnloadCount, "thanos_bucket_store_indexheader_lazy_unload_total")
 	data.SendSumOfCounters(out, m.indexHeaderLazyUnloadFailedCount, "thanos_bucket_store_indexheader_lazy_unload_failed_total")
 	data.SendSumOfHistograms(out, m.indexHeaderLazyLoadDuration, "thanos_bucket_store_indexheader_lazy_load_duration_seconds")
+
+	data.SendSumOfCounters(out, m.seriesHashCacheRequests, "thanos_bucket_store_series_hash_cache_requests_total")
+	data.SendSumOfCounters(out, m.seriesHashCacheHits, "thanos_bucket_store_series_hash_cache_hits_total")
 }
