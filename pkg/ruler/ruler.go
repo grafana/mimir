@@ -428,7 +428,7 @@ func (r *Ruler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			<html>
 				<head>
 					<meta charset="UTF-8">
-					<title>Mimir Ruler Status</title>
+					<title>Ruler Status</title>
 				</head>
 				<body>
 					<h1>Ruler Status</h1>
