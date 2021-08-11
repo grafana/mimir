@@ -87,7 +87,7 @@ func TestFlagParsing(t *testing.T) {
 
 		"version": {
 			arguments:     []string{"-version"},
-			stdoutMessage: "Cortex, version",
+			stdoutMessage: "Mimir, version",
 		},
 
 		// we cannot test the happy path, as mimir would then fully start

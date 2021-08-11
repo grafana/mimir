@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -30,8 +31,8 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+
 	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
 	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
@@ -222,7 +223,7 @@ func (p *builderProcessor) ProcessPlanEntries(ctx context.Context, planEntryCh c
 
 	// Finish block.
 	ulid, err := tsdbBuilder.finishBlock("blocksconvert", map[string]string{
-		cortex_tsdb.TenantIDExternalLabel: p.userID,
+		mimir_tsdb.TenantIDExternalLabel: p.userID,
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "failed to finish block building")
@@ -260,7 +261,7 @@ func (p *builderProcessor) ProcessPlanEntries(ctx context.Context, planEntryCh c
 }
 
 func uploadBlock(ctx context.Context, planLog log.Logger, userBucket objstore.Bucket, blockDir string) error {
-	boff := util.NewBackoff(ctx, util.BackoffConfig{
+	boff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 1 * time.Second,
 		MaxBackoff: 5 * time.Second,
 		MaxRetries: 5,
@@ -302,7 +303,7 @@ func getBlockSize(dir string) (int64, error) {
 }
 
 func fetchAndBuild(ctx context.Context, f *Fetcher, input chan blocksconvert.PlanEntry, tb *tsdbBuilder, log log.Logger, chunksNotFound prometheus.Counter) error {
-	b := util.NewBackoff(ctx, util.BackoffConfig{
+	b := backoff.New(ctx, backoff.Config{
 		MinBackoff: 1 * time.Second,
 		MaxBackoff: 5 * time.Second,
 		MaxRetries: 5,

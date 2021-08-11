@@ -23,6 +23,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/services"
@@ -134,10 +135,11 @@ var (
 
 // Config for a Ring
 type Config struct {
-	KVStore              kv.Config     `yaml:"kvstore"`
-	HeartbeatTimeout     time.Duration `yaml:"heartbeat_timeout"`
-	ReplicationFactor    int           `yaml:"replication_factor"`
-	ZoneAwarenessEnabled bool          `yaml:"zone_awareness_enabled"`
+	KVStore              kv.Config              `yaml:"kvstore"`
+	HeartbeatTimeout     time.Duration          `yaml:"heartbeat_timeout"`
+	ReplicationFactor    int                    `yaml:"replication_factor"`
+	ZoneAwarenessEnabled bool                   `yaml:"zone_awareness_enabled"`
+	ExcludedZones        flagext.StringSliceCSV `yaml:"excluded_zones"`
 
 	// Whether the shuffle-sharding subring cache is disabled. This option is set
 	// internally and never exposed to the user.
@@ -156,6 +158,7 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.DurationVar(&cfg.HeartbeatTimeout, prefix+"ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which ingesters are skipped for reads/writes. 0 = never (timeout disabled).")
 	f.IntVar(&cfg.ReplicationFactor, prefix+"distributor.replication-factor", 3, "The number of ingesters to write to and read from.")
 	f.BoolVar(&cfg.ZoneAwarenessEnabled, prefix+"distributor.zone-awareness-enabled", false, "True to enable the zone-awareness and replicate ingested samples across different availability zones.")
+	f.Var(&cfg.ExcludedZones, prefix+"distributor.excluded-zones", "Comma-separated list of zones to exclude from the ring. Instances in excluded zones will be filtered out from the ring.")
 }
 
 type instanceInfo struct {
@@ -303,6 +306,15 @@ func (r *Ring) updateRingState(ringDesc *Desc) {
 	r.mtx.RLock()
 	prevRing := r.ringDesc
 	r.mtx.RUnlock()
+
+	// Filter out all instances belonging to excluded zones.
+	if len(r.cfg.ExcludedZones) > 0 {
+		for instanceID, instance := range ringDesc.Ingesters {
+			if util.StringsContain(r.cfg.ExcludedZones, instance.Zone) {
+				delete(ringDesc.Ingesters, instanceID)
+			}
+		}
+	}
 
 	rc := prevRing.RingCompare(ringDesc)
 	if rc == Equal || rc == EqualButStatesAndTimestamps {

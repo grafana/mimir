@@ -119,7 +119,7 @@ func (cfg *MultitenantAlertmanagerConfig) RegisterFlags(f *flag.FlagSet) {
 
 	f.StringVar(&cfg.FallbackConfigFile, "alertmanager.configs.fallback", "", "Filename of fallback config to use if none specified for instance.")
 	f.StringVar(&cfg.AutoWebhookRoot, "alertmanager.configs.auto-webhook-root", "", "Root of URL to generate if config is "+autoWebhookURL)
-	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Cortex configs")
+	f.DurationVar(&cfg.PollInterval, "alertmanager.configs.poll-interval", 15*time.Second, "How frequently to poll Alertmanager configs.")
 
 	f.BoolVar(&cfg.EnableAPI, "experimental.alertmanager.enable-api", false, "Enable the experimental alertmanager config api.")
 
@@ -254,6 +254,10 @@ type MultitenantAlertmanager struct {
 	ring           *ring.Ring
 	distributor    *Distributor
 	grpcServer     *server.Server
+
+	// Last ring state. This variable is not protected with a mutex because it's always
+	// accessed by a single goroutine at a time.
+	ringLastState ring.ReplicationSet
 
 	// Subservices manager (ring, lifecycler)
 	subservices        *services.Manager
@@ -493,6 +497,10 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	}
 
 	if am.cfg.ShardingEnabled {
+		// Store the ring state after the initial Alertmanager configs sync has been done and before we do change
+		// our state in the ring.
+		am.ringLastState, _ = am.ring.GetAllHealthy(RingOp)
+
 		// Make sure that all the alertmanagers we were initially configured with have
 		// fetched state from the replicas, before advertising as ACTIVE. This will
 		// reduce the possibility that we lose state when new instances join/leave.
@@ -636,10 +644,8 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 	defer tick.Stop()
 
 	var ringTickerChan <-chan time.Time
-	var ringLastState ring.ReplicationSet
 
 	if am.cfg.ShardingEnabled {
-		ringLastState, _ = am.ring.GetAllHealthy(RingOp)
 		ringTicker := time.NewTicker(util.DurationWithJitter(am.cfg.ShardingRing.RingCheckPeriod, 0.2))
 		defer ringTicker.Stop()
 		ringTickerChan = ringTicker.C
@@ -661,8 +667,8 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 			// replication set which we use to compare with the previous state.
 			currRingState, _ := am.ring.GetAllHealthy(RingOp)
 
-			if ring.HasReplicationSetChanged(ringLastState, currRingState) {
-				ringLastState = currRingState
+			if ring.HasReplicationSetChanged(am.ringLastState, currRingState) {
+				am.ringLastState = currRingState
 				if err := am.loadAndSyncConfigs(ctx, reasonRingChange); err != nil {
 					level.Warn(am.logger).Log("msg", "error while synchronizing alertmanager configs", "err", err)
 				}
@@ -862,7 +868,7 @@ func (am *MultitenantAlertmanager) setConfig(cfg alertspb.AlertConfigDesc) error
 			// This means that if a user has a working config and
 			// they submit a broken one, the Manager will keep running the last known
 			// working configuration.
-			return fmt.Errorf("invalid Cortex configuration for %v: %v", cfg.User, err)
+			return fmt.Errorf("invalid Alertmanager configuration for %v: %v", cfg.User, err)
 		}
 	}
 

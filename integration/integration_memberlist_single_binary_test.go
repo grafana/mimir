@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/backoff"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
@@ -22,7 +23,6 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestSingleBinaryWithMemberlist(t *testing.T) {
@@ -149,7 +149,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		8000,
 	)
 
-	backOff := util.BackoffConfig{
+	backOff := backoff.Config{
 		MinBackoff: 200 * time.Millisecond,
 		MaxBackoff: 500 * time.Millisecond, // Bump max backoff... things take little longer with memberlist.
 		MaxRetries: 100,

@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -28,7 +28,7 @@ import (
 func TestLoader_GetIndex_ShouldLazyLoadBucketIndex(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create a bucket index.
 	idx := &Index{
@@ -93,7 +93,7 @@ func TestLoader_GetIndex_ShouldLazyLoadBucketIndex(t *testing.T) {
 func TestLoader_GetIndex_ShouldCacheError(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create the loader.
 	loader := NewLoader(prepareLoaderConfig(), bkt, nil, log.NewNopLogger(), reg)
@@ -132,7 +132,7 @@ func TestLoader_GetIndex_ShouldCacheError(t *testing.T) {
 func TestLoader_GetIndex_ShouldCacheIndexNotFoundError(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create the loader.
 	loader := NewLoader(prepareLoaderConfig(), bkt, nil, log.NewNopLogger(), reg)
@@ -168,7 +168,7 @@ func TestLoader_GetIndex_ShouldCacheIndexNotFoundError(t *testing.T) {
 func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create a bucket index.
 	idx := &Index{
@@ -233,7 +233,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadSuccess(t *testing.T)
 func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadFailure(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Write a corrupted index.
 	require.NoError(t, bkt.Upload(ctx, path.Join("user-1", IndexCompressedFilename), strings.NewReader("invalid!}")))
@@ -289,7 +289,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousLoadFailure(t *testing.T)
 func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousIndexNotFound(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create the loader.
 	cfg := LoaderConfig{
@@ -342,7 +342,7 @@ func TestLoader_ShouldUpdateIndexInBackgroundOnPreviousIndexNotFound(t *testing.
 func TestLoader_ShouldNotCacheCriticalErrorOnBackgroundUpdates(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create a bucket index.
 	idx := &Index{
@@ -398,7 +398,7 @@ func TestLoader_ShouldNotCacheCriticalErrorOnBackgroundUpdates(t *testing.T) {
 func TestLoader_ShouldCacheIndexNotFoundOnBackgroundUpdates(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create a bucket index.
 	idx := &Index{
@@ -458,7 +458,7 @@ func TestLoader_ShouldCacheIndexNotFoundOnBackgroundUpdates(t *testing.T) {
 func TestLoader_ShouldOffloadIndexIfNotFoundDuringBackgroundUpdates(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create a bucket index.
 	idx := &Index{
@@ -513,7 +513,7 @@ func TestLoader_ShouldOffloadIndexIfNotFoundDuringBackgroundUpdates(t *testing.T
 func TestLoader_ShouldOffloadIndexIfIdleTimeoutIsReachedDuringBackgroundUpdates(t *testing.T) {
 	ctx := context.Background()
 	reg := prometheus.NewPedanticRegistry()
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// Create a bucket index.
 	idx := &Index{

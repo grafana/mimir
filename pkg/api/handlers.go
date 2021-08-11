@@ -83,10 +83,10 @@ var indexPageTemplate = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex</title>
+		<title>Mimir</title>
 	</head>
 	<body>
-		<h1>Cortex</h1>
+		<h1>Mimir</h1>
 		{{ range $s, $links := . }}
 		<p>{{ $s }}</p>
 		<ul>
@@ -225,7 +225,7 @@ func NewQuerierHandler(
 	router := mux.NewRouter()
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
-	// running Cortex as a single binary.
+	// running Mimir as a single binary.
 	inst := middleware.Instrument{
 		RouteMatcher:     router,
 		Duration:         querierRequestDuration,

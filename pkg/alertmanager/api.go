@@ -404,7 +404,7 @@ func validateAlertmanagerConfig(cfg interface{}) error {
 }
 
 // validateReceiverHTTPConfig validates the HTTP config and returns an error if it contains
-// settings not allowed by Cortex.
+// settings not allowed by Mimir.
 func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 	if cfg.BasicAuth != nil && cfg.BasicAuth.PasswordFile != "" {
 		return errPasswordFileNotAllowed
@@ -425,7 +425,7 @@ func validateReceiverHTTPConfig(cfg commoncfg.HTTPClientConfig) error {
 }
 
 // validateReceiverTLSConfig validates the TLS config and returns an error if it contains
-// settings not allowed by Cortex.
+// settings not allowed by Mimir.
 func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
 	if cfg.CAFile != "" || cfg.CertFile != "" || cfg.KeyFile != "" {
 		return errTLSFileNotAllowed
@@ -434,7 +434,7 @@ func validateReceiverTLSConfig(cfg commoncfg.TLSConfig) error {
 }
 
 // validateGlobalConfig validates the Global config and returns an error if it contains
-// settings now allowed by Cortex.
+// settings now allowed by Mimir.
 func validateGlobalConfig(cfg config.GlobalConfig) error {
 	if cfg.SlackAPIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
@@ -443,7 +443,7 @@ func validateGlobalConfig(cfg config.GlobalConfig) error {
 }
 
 // validateSlackConfig validates the Slack config and returns an error if it contains
-// settings now allowed by Cortex.
+// settings now allowed by Mimir.
 func validateSlackConfig(cfg config.SlackConfig) error {
 	if cfg.APIURLFile != "" {
 		return errSlackAPIURLFileNotAllowed
@@ -452,7 +452,7 @@ func validateSlackConfig(cfg config.SlackConfig) error {
 }
 
 // validateVictorOpsConfig validates the VictorOps config and returns an error if it contains
-// settings now allowed by Cortex.
+// settings now allowed by Mimir.
 func validateVictorOpsConfig(cfg config.VictorOpsConfig) error {
 	if cfg.APIKeyFile != "" {
 		return errVictorOpsAPIKeyFileNotAllowed

@@ -13,24 +13,24 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.etcd.io/etcd/pkg/transport"
 
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	cortex_tls "github.com/grafana/mimir/pkg/util/tls"
+	mimir_tls "github.com/grafana/mimir/pkg/util/tls"
 )
 
 // Config for a new etcd.Client.
 type Config struct {
-	Endpoints   []string                `yaml:"endpoints"`
-	DialTimeout time.Duration           `yaml:"dial_timeout"`
-	MaxRetries  int                     `yaml:"max_retries"`
-	EnableTLS   bool                    `yaml:"tls_enabled"`
-	TLS         cortex_tls.ClientConfig `yaml:",inline"`
+	Endpoints   []string               `yaml:"endpoints"`
+	DialTimeout time.Duration          `yaml:"dial_timeout"`
+	MaxRetries  int                    `yaml:"max_retries"`
+	EnableTLS   bool                   `yaml:"tls_enabled"`
+	TLS         mimir_tls.ClientConfig `yaml:",inline"`
 
 	UserName string `yaml:"username"`
 	Password string `yaml:"password"`
@@ -183,7 +183,7 @@ func (c *Client) CAS(ctx context.Context, key string, f func(in interface{}) (ou
 
 // WatchKey implements kv.Client.
 func (c *Client) WatchKey(ctx context.Context, key string, f func(interface{}) bool) {
-	backoff := util.NewBackoff(ctx, util.BackoffConfig{
+	backoff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 1 * time.Second,
 		MaxBackoff: 1 * time.Minute,
 	})
@@ -219,7 +219,7 @@ outer:
 
 // WatchPrefix implements kv.Client.
 func (c *Client) WatchPrefix(ctx context.Context, key string, f func(string, interface{}) bool) {
-	backoff := util.NewBackoff(ctx, util.BackoffConfig{
+	backoff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 1 * time.Second,
 		MaxBackoff: 1 * time.Minute,
 	})
@@ -240,7 +240,7 @@ outer:
 
 			for _, event := range resp.Events {
 				if event.Kv.Version == 0 && event.Kv.Value == nil {
-					// Delete notification. Since not all KV store clients (and Cortex codecs) support this, we ignore it.
+					// Delete notification. Since not all KV store clients (and Mimir codecs) support this, we ignore it.
 					continue
 				}
 

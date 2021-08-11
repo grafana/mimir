@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,7 +39,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -57,6 +57,9 @@ type BucketStores struct {
 
 	// Index cache shared across all tenants.
 	indexCache storecache.IndexCache
+
+	// Series hash cache shared across all tenants.
+	seriesHashCache *SeriesHashCache
 
 	// Chunks bytes pool shared across all tenants.
 	chunksPool pool.Bytes
@@ -105,6 +108,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
+		seriesHashCache:    NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncTimes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_bucket_stores_blocks_sync_seconds",
 			Help:    "The total time it takes to perform a sync stores",
@@ -164,7 +168,7 @@ func (u *BucketStores) SyncBlocks(ctx context.Context) error {
 }
 
 func (u *BucketStores) syncUsersBlocksWithRetries(ctx context.Context, f func(context.Context, *BucketStore) error) error {
-	retries := util.NewBackoff(ctx, util.BackoffConfig{
+	retries := backoff.New(ctx, backoff.Config{
 		MinBackoff: 1 * time.Second,
 		MaxBackoff: 10 * time.Second,
 		MaxRetries: 3,
@@ -442,7 +446,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	}...)
 
 	modifiers := []block.MetadataModifier{
-		// Remove Cortex external labels so that they're not injected when querying blocks.
+		// Remove Mimir external labels so that they're not injected when querying blocks.
 		NewReplicaLabelRemover(userLogger, []string{
 			tsdb.TenantIDExternalLabel,
 			tsdb.IngesterIDExternalLabel,
@@ -510,6 +514,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		true, // Enable series hints.
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
+		u.seriesHashCache,
 		bucketStoreOpts...,
 	)
 	if err != nil {

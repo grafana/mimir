@@ -26,7 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestIgnoreDeletionMarkFilter_Filter(t *testing.T) {
@@ -45,7 +45,7 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 	logger := log.NewNopLogger()
 
 	// Create a bucket backed by filesystem.
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bkt = bucketindex.BucketWithGlobalMarkers(bkt)
 	userBkt := bucket.NewUserBucketClient(userID, bkt, nil)
 

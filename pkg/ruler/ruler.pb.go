@@ -116,7 +116,7 @@ func (m *RulesResponse) GetGroups() []*GroupStateDesc {
 	return nil
 }
 
-// GroupStateDesc is a proto representation of a cortex rule group
+// GroupStateDesc is a proto representation of a mimir rule group
 type GroupStateDesc struct {
 	Group               *rulespb.RuleGroupDesc `protobuf:"bytes,1,opt,name=group,proto3" json:"group,omitempty"`
 	ActiveRules         []*RuleStateDesc       `protobuf:"bytes,2,rep,name=active_rules,json=activeRules,proto3" json:"active_rules,omitempty"`

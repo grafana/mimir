@@ -28,7 +28,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/services"
 )
@@ -63,7 +63,7 @@ func TestBlocksCleaner(t *testing.T) {
 }
 
 func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions) {
-	bucketClient, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// If the markers migration is enabled, then we create the fixture blocks without
 	// writing the deletion marks in the global location, because they will be migrated
@@ -225,7 +225,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	const userID = "user-1"
 
-	bucketClient, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
@@ -290,7 +290,7 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	const userID = "user-1"
 
-	bucketClient, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
@@ -347,7 +347,7 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 }
 
 func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShard(t *testing.T) {
-	bucketClient, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
@@ -416,7 +416,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 }
 
 func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
-	bucketClient, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 	ctx := context.Background()
 	logger := log.NewNopLogger()
@@ -474,7 +474,7 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 }
 
 func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
-	bucketClient, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 
 	ts := func(hours int) int64 {

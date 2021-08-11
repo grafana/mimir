@@ -2,6 +2,7 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Removed query sharding for the chunks storage. Query sharding is now only supported for blocks storage. #86 #119
 * [CHANGE] Renamed build image to us.gcr.io/kubernetes-dev/mimir-build-image. #40
 * [CHANGE] Renamed metric `deprecated_flags_inuse_total` as `deprecated_flags_used_total`. #35
 * [CHANGE] Renamed metric `experimental_features_in_use_total` as `experimental_features_used_total`. #32
@@ -16,7 +17,13 @@
 * [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
 * [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-frontend.query-stats-enabled=false`. #83
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
-* [FEATURE] Query Frontend: Add experimental querysharding for the block storage. You can now enabled querysharding for block storage (`-store.engine`) by setting `-querier.parallelise-shardable-queries` to `true`. #80
+* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100
+  * New config options:
+    * `-querier.total-shards`: The amount of shards to use when doing parallelisation via query sharding.
+    * `-blocks-storage.bucket-store.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the store-gateway.
+  * New exported metrics:
+    * `cortex_bucket_store_series_hash_cache_requests_total`
+    * `cortex_bucket_store_series_hash_cache_hits_total`
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`
@@ -24,6 +31,7 @@
   * `ruler_max_rule_groups_per_tenant`
 * [ENHANCEMENT] Querier now can use the `LabelNames` call with matchers, if matchers are provided in the `/labels` API call, instead of using the more expensive `MetricsForLabelMatchers` call as before. This can be enabled by enabling the `-querier.query-label-names-with-matchers-enabled` flag once the ingesters are updated to this version. In the future this is expected to become the default behavior. #3
 * [ENHANCEMENT] Ingester: added option `-ingester.readiness-check-ring-health` to disable the ring health check in the readiness endpoint. #48
+* [ENHANCEMENT] Added option `-distributor.excluded-zones` to exclude ingesters running in specific zones both on write and read path. #51
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
 

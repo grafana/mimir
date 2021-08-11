@@ -136,7 +136,7 @@ type Config struct {
 	// for testing and for extending the ingester by adding calls to the client
 	IngesterClientFactory ring_client.PoolFactory `yaml:"-"`
 
-	// when true the distributor does not validate the label name, Cortex doesn't directly use
+	// when true the distributor does not validate the label name, Mimir doesn't directly use
 	// this (and should never use it) but this feature is used by other projects built on top of it
 	SkipLabelNameValidation bool `yaml:"-"`
 
@@ -646,7 +646,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		}
 
 		// If we found both the cluster and replica labels, we only want to include the cluster label when
-		// storing series in Cortex. If we kept the replica label we would end up with another series for the same
+		// storing series in Mimir. If we kept the replica label we would end up with another series for the same
 		// series we're trying to dedupe when HA tracking moves over to a different replica.
 		if removeReplica {
 			removeLabel(d.limits.HAReplicaLabel(userID), &ts.Labels)
@@ -1094,10 +1094,10 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			<html>
 				<head>
 					<meta charset="UTF-8">
-					<title>Cortex Distributor Status</title>
+					<title>Distributor Status</title>
 				</head>
 				<body>
-					<h1>Cortex Distributor Status</h1>
+					<h1>Distributor Status</h1>
 					<p>Distributor is not running with global limits enabled</p>
 				</body>
 			</html>`

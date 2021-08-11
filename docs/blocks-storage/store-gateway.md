@@ -781,6 +781,11 @@ blocks_storage:
     # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
     [max_chunk_pool_bytes: <int> | default = 2147483648]
 
+    # Max size - in bytes - of the in-memory series hash cache. The cache is
+    # used only when query sharding is enabled and shared across all tenants.
+    # CLI flag: -blocks-storage.bucket-store.series-hash-cache-max-size-bytes
+    [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
+
     # If enabled, store-gateway will lazy load an index-header only once
     # required by a query.
     # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-enabled
@@ -816,7 +821,7 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.ship-concurrency
     [ship_concurrency: <int> | default = 10]
 
-    # How frequently does Cortex try to compact TSDB head. Block is only created
+    # How frequently ingesters try to compact TSDB head. Block is only created
     # if data covers smallest block range. Must be greater than 0 and max 5
     # minutes.
     # CLI flag: -blocks-storage.tsdb.head-compaction-interval

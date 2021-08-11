@@ -17,7 +17,7 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 
-	"github.com/grafana/mimir/pkg/cortex"
+	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
@@ -51,7 +51,7 @@ func main() {
 
 	util_log.InitLogger(&cfg.ServerConfig)
 
-	cortex.DisableSignalHandling(&cfg.ServerConfig)
+	mimir.DisableSignalHandling(&cfg.ServerConfig)
 	serv, err := server.New(cfg.ServerConfig)
 	if err != nil {
 		level.Error(util_log.Logger).Log("msg", "Unable to initialize server", "err", err.Error())
@@ -81,7 +81,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	servService := cortex.NewServerService(serv, func() []services.Service {
+	servService := mimir.NewServerService(serv, func() []services.Service {
 		return []services.Service{targetService}
 	})
 	servManager, err := services.NewManager(servService, targetService)

@@ -235,6 +235,14 @@ func TestBucketStoreMetrics(t *testing.T) {
 			# HELP cortex_bucket_store_indexheader_lazy_unload_total Total number of index-header lazy unload operations.
 			# TYPE cortex_bucket_store_indexheader_lazy_unload_total counter
 			cortex_bucket_store_indexheader_lazy_unload_total 1.396178e+06
+
+			# HELP cortex_bucket_store_series_hash_cache_requests_total Total number of fetch attempts to the in-memory series hash cache.
+			# TYPE cortex_bucket_store_series_hash_cache_requests_total counter
+			cortex_bucket_store_series_hash_cache_requests_total 1.486254e+06
+
+			# HELP cortex_bucket_store_series_hash_cache_hits_total Total number of fetch hits to the in-memory series hash cache.
+			# TYPE cortex_bucket_store_series_hash_cache_hits_total counter
+			cortex_bucket_store_series_hash_cache_hits_total 1.508773e+06
 `))
 	require.NoError(t, err)
 }
@@ -341,6 +349,9 @@ func populateMockedBucketStoreMetrics(base float64) *prometheus.Registry {
 	m.indexHeaderLazyUnloadFailedCount.Add(63 * base)
 	m.indexHeaderLazyLoadDuration.Observe(0.65)
 
+	m.seriesHashCacheRequests.Add(66 * base)
+	m.seriesHashCacheHits.Add(67 * base)
+
 	return reg
 }
 
@@ -377,6 +388,9 @@ type mockedBucketStoreMetrics struct {
 	indexHeaderLazyUnloadCount       prometheus.Counter
 	indexHeaderLazyUnloadFailedCount prometheus.Counter
 	indexHeaderLazyLoadDuration      prometheus.Histogram
+
+	seriesHashCacheRequests prometheus.Counter
+	seriesHashCacheHits     prometheus.Counter
 }
 
 func newMockedBucketStoreMetrics(reg prometheus.Registerer) *mockedBucketStoreMetrics {
@@ -509,6 +523,15 @@ func newMockedBucketStoreMetrics(reg prometheus.Registerer) *mockedBucketStoreMe
 		Name:    "thanos_bucket_store_indexheader_lazy_load_duration_seconds",
 		Help:    "Duration of the index-header lazy loading in seconds.",
 		Buckets: []float64{0.01, 0.02, 0.05, 0.1, 0.2, 0.5, 1, 2, 5},
+	})
+
+	m.seriesHashCacheRequests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "thanos_bucket_store_series_hash_cache_requests_total",
+		Help: "Total number of fetch attempts to the in-memory series hash cache.",
+	})
+	m.seriesHashCacheHits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Name: "thanos_bucket_store_series_hash_cache_hits_total",
+		Help: "Total number of fetch hits to the in-memory series hash cache.",
 	})
 
 	return &m

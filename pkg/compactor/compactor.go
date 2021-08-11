@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -245,7 +246,7 @@ func NewCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig
 
 	cortexCompactor, err := newCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create Cortex blocks compactor")
+		return nil, errors.Wrap(err, "failed to create blocks compactor")
 	}
 
 	return cortexCompactor, nil
@@ -578,7 +579,7 @@ func (c *Compactor) compactUsers(ctx context.Context) {
 func (c *Compactor) compactUserWithRetries(ctx context.Context, userID string) error {
 	var lastErr error
 
-	retries := util.NewBackoff(ctx, util.BackoffConfig{
+	retries := backoff.New(ctx, backoff.Config{
 		MinBackoff: c.compactorCfg.retryMinBackoff,
 		MaxBackoff: c.compactorCfg.retryMaxBackoff,
 		MaxRetries: c.compactorCfg.CompactionRetries,
@@ -675,7 +676,7 @@ func (c *Compactor) compactUser(ctx context.Context, userID string) error {
 func (c *Compactor) discoverUsersWithRetries(ctx context.Context) ([]string, error) {
 	var lastErr error
 
-	retries := util.NewBackoff(ctx, util.BackoffConfig{
+	retries := backoff.New(ctx, backoff.Config{
 		MinBackoff: c.compactorCfg.retryMinBackoff,
 		MaxBackoff: c.compactorCfg.retryMaxBackoff,
 		MaxRetries: c.compactorCfg.CompactionRetries,

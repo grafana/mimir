@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/weaveworks/common/user"
@@ -22,7 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -280,7 +280,7 @@ func (i *Ingester) TransferOut(ctx context.Context) error {
 	if i.cfg.MaxTransferRetries <= 0 {
 		return ring.ErrTransferDisabled
 	}
-	backoff := util.NewBackoff(ctx, util.BackoffConfig{
+	backoff := backoff.New(ctx, backoff.Config{
 		MinBackoff: 100 * time.Millisecond,
 		MaxBackoff: 5 * time.Second,
 		MaxRetries: i.cfg.MaxTransferRetries,

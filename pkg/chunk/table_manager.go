@@ -447,7 +447,7 @@ func (m *TableManager) partitionTables(ctx context.Context, descriptions []Table
 	}
 
 	if m.cfg.RetentionPeriod > 0 {
-		// Ensure we only delete tables which have a prefix managed by Cortex.
+		// Ensure we only delete tables which have a prefix managed by Mimir.
 		tablePrefixes := map[string]struct{}{}
 		for _, cfg := range m.schemaCfg.Configs {
 			if cfg.IndexTables.Prefix != "" {

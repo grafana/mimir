@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package cortex
+package mimir
 
 import (
 	"errors"
@@ -23,7 +23,7 @@ var (
 	errMultipleDocuments = errors.New("the provided runtime configuration contains multiple documents")
 )
 
-// runtimeConfigValues are values that can be reloaded from configuration file while Cortex is running.
+// runtimeConfigValues are values that can be reloaded from configuration file while Mimir is running.
 // Reloading is done by runtime_config.Manager, which also keeps the currently loaded config.
 // These values are then pushed to the components that are interested in them.
 type runtimeConfigValues struct {

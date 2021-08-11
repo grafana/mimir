@@ -32,7 +32,7 @@ import (
 	"github.com/weaveworks/common/instrument"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	cortex_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
+	mimir_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
@@ -70,15 +70,15 @@ type S3Config struct {
 	S3ForcePathStyle bool
 
 	BucketNames      string
-	Endpoint         string              `yaml:"endpoint"`
-	Region           string              `yaml:"region"`
-	AccessKeyID      string              `yaml:"access_key_id"`
-	SecretAccessKey  string              `yaml:"secret_access_key"`
-	Insecure         bool                `yaml:"insecure"`
-	SSEEncryption    bool                `yaml:"sse_encryption"`
-	HTTPConfig       HTTPConfig          `yaml:"http_config"`
-	SignatureVersion string              `yaml:"signature_version"`
-	SSEConfig        cortex_s3.SSEConfig `yaml:"sse"`
+	Endpoint         string             `yaml:"endpoint"`
+	Region           string             `yaml:"region"`
+	AccessKeyID      string             `yaml:"access_key_id"`
+	SecretAccessKey  string             `yaml:"secret_access_key"`
+	Insecure         bool               `yaml:"insecure"`
+	SSEEncryption    bool               `yaml:"sse_encryption"`
+	HTTPConfig       HTTPConfig         `yaml:"http_config"`
+	SignatureVersion string             `yaml:"signature_version"`
+	SSEConfig        mimir_s3.SSEConfig `yaml:"sse"`
 
 	Inject InjectRequestMiddleware `yaml:"-"`
 }
@@ -171,8 +171,8 @@ func buildSSEParsedConfig(cfg S3Config) (*SSEParsedConfig, error) {
 
 	// deprecated, but if used it assumes SSE-S3 type
 	if cfg.SSEEncryption {
-		return NewSSEParsedConfig(cortex_s3.SSEConfig{
-			Type: cortex_s3.SSES3,
+		return NewSSEParsedConfig(mimir_s3.SSEConfig{
+			Type: mimir_s3.SSES3,
 		})
 	}
 
@@ -242,7 +242,7 @@ func buildS3Config(cfg S3Config) (*aws.Config, []string, error) {
 	}
 
 	// While extending S3 configuration this http config was copied in order to
-	// to maintain backwards compatibility with previous versions of Cortex while providing
+	// to maintain backwards compatibility with previous versions of Mimir while providing
 	// more flexible configuration of the http client
 	// https://github.com/weaveworks/common/blob/4b1847531bc94f54ce5cf210a771b2a86cd34118/aws/config.go#L23
 	transport := http.RoundTripper(&http.Transport{
