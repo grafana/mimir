@@ -17,7 +17,13 @@
 * [CHANGE] Some files and directories created by Mimir components on local disk now have stricter permissions, and are only readable by owner, but not group or others. #58
 * [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-frontend.query-stats-enabled=false`. #83
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
-* [FEATURE] Query Frontend: Add experimental querysharding for the block storage. You can now enabled querysharding for block storage (`-store.engine`) by setting `-querier.parallelise-shardable-queries` to `true`. #80
+* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100
+  * New config options:
+    * `-querier.total-shards`: The amount of shards to use when doing parallelisation via query sharding.
+    * `-blocks-storage.bucket-store.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the store-gateway.
+  * New exported metrics:
+    * `cortex_bucket_store_series_hash_cache_requests_total`
+    * `cortex_bucket_store_series_hash_cache_hits_total`
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`

@@ -58,6 +58,9 @@ type BucketStores struct {
 	// Index cache shared across all tenants.
 	indexCache storecache.IndexCache
 
+	// Series hash cache shared across all tenants.
+	seriesHashCache *SeriesHashCache
+
 	// Chunks bytes pool shared across all tenants.
 	chunksPool pool.Bytes
 
@@ -105,6 +108,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
+		seriesHashCache:    NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 		syncTimes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Name:    "cortex_bucket_stores_blocks_sync_seconds",
 			Help:    "The total time it takes to perform a sync stores",
@@ -510,6 +514,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		true, // Enable series hints.
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
+		u.seriesHashCache,
 		bucketStoreOpts...,
 	)
 	if err != nil {
