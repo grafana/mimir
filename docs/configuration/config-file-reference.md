@@ -1258,7 +1258,7 @@ storage:
     [environment: <string> | default = "AzureGlobal"]
 
     # Name of the blob container used to store chunks. This container must be
-    # created before running cortex.
+    # created prior to execution.
     # CLI flag: -ruler.storage.azure.container-name
     [container_name: <string> | default = "cortex"]
 
@@ -1961,7 +1961,7 @@ storage:
     [environment: <string> | default = "AzureGlobal"]
 
     # Name of the blob container used to store chunks. This container must be
-    # created before running cortex.
+    # created prior to execution.
     # CLI flag: -alertmanager.storage.azure.container-name
     [container_name: <string> | default = "cortex"]
 
@@ -2863,7 +2863,7 @@ azure:
   [environment: <string> | default = "AzureGlobal"]
 
   # Name of the blob container used to store chunks. This container must be
-  # created before running cortex.
+  # created prior to execution.
   # CLI flag: -azure.container-name
   [container_name: <string> | default = "cortex"]
 
