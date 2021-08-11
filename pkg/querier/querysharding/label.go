@@ -4,7 +4,6 @@ package querysharding
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -18,11 +17,6 @@ const (
 
 	// ShardLabelFmt is the format of the ShardLabel value.
 	ShardLabelFmt = "%d_of_%d"
-)
-
-var (
-	// ShardLabelRE is a regexp used to parse ShardLabel value.
-	ShardLabelRE = regexp.MustCompile("^[0-9]+_of_[0-9]+$")
 )
 
 // ShardSelector holds information about the configured query shard.
@@ -44,28 +38,28 @@ func (shard ShardSelector) Label() labels.Label {
 	}
 }
 
-// ParseShard parses the input label value and extracts the shard information.
-func ParseShard(input string) (parsed ShardSelector, err error) {
-	if !ShardLabelRE.MatchString(input) {
-		return parsed, errors.Errorf("invalid query sharding label value: [%s]", input)
-	}
-
+// parseShard parses the input label value and extracts the shard information.
+func parseShard(input string) (parsed ShardSelector, err error) {
 	matches := strings.Split(input, "_")
-	x, err := strconv.Atoi(matches[0])
+	if len(matches) != 3 || matches[1] != "of" {
+		return parsed, errors.Errorf("invalid query sharding label value: %s", input)
+	}
+
+	index, err := strconv.ParseUint(matches[0], 10, 64)
 	if err != nil {
 		return parsed, err
 	}
-	of, err := strconv.Atoi(matches[2])
+	count, err := strconv.ParseUint(matches[2], 10, 64)
 	if err != nil {
 		return parsed, err
 	}
 
-	if x >= of {
-		return parsed, errors.Errorf("query shards out of bounds: [%d] >= [%d]", x, of)
+	if index >= count {
+		return parsed, errors.Errorf("query shards out of bounds: %d >= %d", index, count)
 	}
 	return ShardSelector{
-		ShardIndex: uint64(x),
-		ShardCount: uint64(of),
+		ShardIndex: index,
+		ShardCount: count,
 	}, err
 }
 
@@ -73,7 +67,7 @@ func ParseShard(input string) (parsed ShardSelector, err error) {
 func ShardFromMatchers(matchers []*labels.Matcher) (shard *ShardSelector, idx int, err error) {
 	for i, matcher := range matchers {
 		if matcher.Name == ShardLabel && matcher.Type == labels.MatchEqual {
-			shard, err := ParseShard(matcher.Value)
+			shard, err := parseShard(matcher.Value)
 			if err != nil {
 				return nil, i, err
 			}

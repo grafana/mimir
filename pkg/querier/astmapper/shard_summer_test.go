@@ -9,11 +9,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/querier/querysharding"
 )
 
 // orSquasher is a custom squasher which mimics the intuitive but less efficient OR'ing of sharded vectors.
@@ -164,110 +161,6 @@ func TestShardSummerWithEncoding(t *testing.T) {
 			require.Nil(t, err)
 
 			require.Equal(t, expected.String(), res.String())
-		})
-	}
-}
-
-func TestParseShard(t *testing.T) {
-	testExpr := []struct {
-		input  string
-		output querysharding.ShardSelector
-		err    bool
-	}{
-		{
-			input:  "lsdjf",
-			output: querysharding.ShardSelector{},
-			err:    true,
-		},
-		{
-			input:  "a_of_3",
-			output: querysharding.ShardSelector{},
-			err:    true,
-		},
-		{
-			input:  "3_of_3",
-			output: querysharding.ShardSelector{},
-			err:    true,
-		},
-		{
-			input: "1_of_2",
-			output: querysharding.ShardSelector{
-				ShardIndex: 1,
-				ShardCount: 2,
-			},
-		},
-	}
-
-	for _, c := range testExpr {
-		t.Run(fmt.Sprint(c.input), func(t *testing.T) {
-			shard, err := querysharding.ParseShard(c.input)
-			if c.err {
-				require.NotNil(t, err)
-			} else {
-				require.Nil(t, err)
-				require.Equal(t, c.output, shard)
-			}
-		})
-	}
-}
-
-func TestShardFromMatchers(t *testing.T) {
-	testExpr := []struct {
-		input []*labels.Matcher
-		shard *querysharding.ShardSelector
-		idx   int
-		err   bool
-	}{
-		{
-			input: []*labels.Matcher{
-				{},
-				{
-					Name: querysharding.ShardLabel,
-					Type: labels.MatchEqual,
-					Value: querysharding.ShardSelector{
-						ShardIndex: 10,
-						ShardCount: 16,
-					}.LabelValue(),
-				},
-				{},
-			},
-			shard: &querysharding.ShardSelector{
-				ShardIndex: 10,
-				ShardCount: 16,
-			},
-			idx: 1,
-			err: false,
-		},
-		{
-			input: []*labels.Matcher{
-				{
-					Name:  querysharding.ShardLabel,
-					Type:  labels.MatchEqual,
-					Value: "invalid-fmt",
-				},
-			},
-			shard: nil,
-			idx:   0,
-			err:   true,
-		},
-		{
-			input: []*labels.Matcher{},
-			shard: nil,
-			idx:   0,
-			err:   false,
-		},
-	}
-
-	for i, c := range testExpr {
-		t.Run(fmt.Sprint(i), func(t *testing.T) {
-			shard, idx, err := querysharding.ShardFromMatchers(c.input)
-			if c.err {
-				require.NotNil(t, err)
-			} else {
-				require.Nil(t, err)
-				require.Equal(t, c.shard, shard)
-				require.Equal(t, c.idx, idx)
-			}
 		})
 	}
 }
