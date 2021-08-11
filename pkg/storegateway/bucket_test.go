@@ -2510,3 +2510,49 @@ func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
 		filterPostingsByCachedShardHash(inputPostings, shard, cache)
 	}))
 }
+
+func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
+	// This benchmark tests the case only the 1st posting is removed
+	// and so all subsequent postings will be shifted.
+	cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	cache.Store(0, 0)
+	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
+
+	// Create a long list of postings.
+	const numPostings = 10000
+	originalPostings := make([]uint64, numPostings)
+	for i := 0; i < numPostings; i++ {
+		originalPostings[i] = uint64(i)
+	}
+
+	inputPostings := make([]uint64, numPostings)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		// Copy the original postings into the input ones, since they will be overwritten.
+		inputPostings = inputPostings[0:numPostings]
+		copy(inputPostings, originalPostings)
+
+		filterPostingsByCachedShardHash(inputPostings, shard, cache)
+	}
+}
+
+func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
+	// This benchmark tests the case the output postings is equal to the input one.
+	cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
+
+	// Create a long list of postings.
+	const numPostings = 10000
+	ps := make([]uint64, numPostings)
+	for i := 0; i < numPostings; i++ {
+		ps[i] = uint64(i)
+	}
+
+	for n := 0; n < b.N; n++ {
+		// We reuse the same postings slice because we expect this test to not
+		// modify it (cache is empty).
+		filterPostingsByCachedShardHash(ps, shard, cache)
+	}
+}

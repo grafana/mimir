@@ -890,11 +890,7 @@ func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSele
 
 		// Keep the posting if it's not in the cache, or it's in the cache and belongs to our shard.
 		if !ok || hash%uint64(shard.ShardCount) == uint64(shard.ShardIndex) {
-			// We need to write the value only if it has been shifted ahead.
-			if readIdx != writeIdx {
-				ps[writeIdx] = seriesID
-			}
-
+			ps[writeIdx] = seriesID
 			writeIdx++
 			continue
 		}
