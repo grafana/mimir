@@ -431,7 +431,7 @@ func (r *Ruler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 					<title>Mimir Ruler Status</title>
 				</head>
 				<body>
-					<h1>Mimir Ruler Status</h1>
+					<h1>Ruler Status</h1>
 					<p>Ruler running with shards disabled</p>
 				</body>
 			</html>`

@@ -21,10 +21,10 @@ var (
 	<html>
 		<head>
 			<meta charset="UTF-8">
-			<title>Mimir Store Gateway Ring</title>
+			<title>Store Gateway Ring</title>
 		</head>
 		<body>
-			<h1>Mimir Store Gateway Ring</h1>
+			<h1>Store Gateway Ring</h1>
 			<p>{{ .Message }}</p>
 		</body>
 	</html>`))

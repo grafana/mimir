@@ -21,10 +21,10 @@ var (
 	<html>
 		<head>
 			<meta charset="UTF-8">
-			<title>Mimir Alertmanager Ring</title>
+			<title>Alertmanager Ring</title>
 		</head>
 		<body>
-			<h1>Mimir Alertmanager Ring</h1>
+			<h1>Alertmanager Ring</h1>
 			<p>{{ .Message }}</p>
 		</body>
 	</html>`))
@@ -32,9 +32,9 @@ var (
 	statusTemplate = template.Must(template.New("statusPage").Parse(`
     <!doctype html>
     <html>
-        <head><title>Mimir Alertmanager Status</title></head>
+        <head><title>Alertmanager Status</title></head>
         <body>
-            <h1>Mimir Alertmanager Status</h1>
+            <h1>Alertmanager Status</h1>
             {{ if not .ClusterInfo }}
                 <p>Alertmanager gossip-based clustering is disabled.</p>
             {{ else }}
