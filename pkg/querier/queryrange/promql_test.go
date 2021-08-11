@@ -42,7 +42,7 @@ var (
 func Test_PromQL(t *testing.T) {
 	t.Parallel()
 
-	var tests = []struct {
+	tests := []struct {
 		normalQuery string
 		shardQuery  string
 		shouldEqual bool
@@ -319,7 +319,6 @@ func Test_PromQL(t *testing.T) {
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.normalQuery, func(t *testing.T) {
-
 			baseQuery, err := engine.NewRangeQuery(shardAwareQueryable, tt.normalQuery, start, end, step)
 			require.Nil(t, err)
 			shardQuery, err := engine.NewRangeQuery(shardAwareQueryable, tt.shardQuery, start, end, step)
@@ -335,7 +334,6 @@ func Test_PromQL(t *testing.T) {
 			require.NotEqual(t, baseResult, shardResult)
 		})
 	}
-
 }
 
 func Test_FunctionParallelism(t *testing.T) {
@@ -523,7 +521,6 @@ func Test_FunctionParallelism(t *testing.T) {
 			approximate:  true,
 		},
 	} {
-
 		t.Run(tc.fn, func(t *testing.T) {
 			baseQuery, err := engine.NewRangeQuery(
 				shardAwareQueryable,
@@ -566,7 +563,6 @@ func Test_FunctionParallelism(t *testing.T) {
 			}
 		})
 	}
-
 }
 
 var shardAwareQueryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -619,6 +615,7 @@ func (m *testMatrix) Select(_ bool, selectParams *storage.SelectHints, matchers 
 func (m *testMatrix) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
+
 func (m *testMatrix) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
@@ -654,10 +651,6 @@ func factor(f float64) func(float64) float64 {
 		return res
 	}
 }
-
-// var identity(t int64) float64 {
-// 	return float64(t)
-// }
 
 // splitByShard returns the shard subset of a testMatrix.
 // e.g if a testMatrix has 6 series, and we want 3 shard, then each shard will contain

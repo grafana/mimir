@@ -101,7 +101,7 @@ func TestSubtreeMapper(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			mapper := NewSubtreeFolder()
+			mapper := newSubtreeFolder()
 
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
@@ -112,7 +112,6 @@ func TestSubtreeMapper(t *testing.T) {
 			require.Nil(t, err)
 
 			require.Equal(t, expected.String(), res.String())
-
 		})
 	}
 }

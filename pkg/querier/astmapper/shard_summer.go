@@ -18,6 +18,19 @@ import (
 
 type squasher = func(...parser.Node) (parser.Expr, error)
 
+// NewSharding creates a new query sharding mapper.
+func NewSharding(shards int, shardedQueries prometheus.Counter) (ASTMapper, error) {
+	shardSummer, err := newShardSummer(shards, vectorSquasher, shardedQueries)
+	if err != nil {
+		return nil, err
+	}
+	subtreeFolder := newSubtreeFolder()
+	return NewMultiMapper(
+		shardSummer,
+		subtreeFolder,
+	), nil
+}
+
 type shardSummer struct {
 	shards       int
 	currentShard *int
@@ -27,8 +40,8 @@ type shardSummer struct {
 	shardedQueries prometheus.Counter
 }
 
-// NewShardSummer instantiates an ASTMapper which will fan out sum queries by shard
-func NewShardSummer(shards int, squasher squasher, shardedQueries prometheus.Counter) (ASTMapper, error) {
+// newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
+func newShardSummer(shards int, squasher squasher, shardedQueries prometheus.Counter) (ASTMapper, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
 	}
@@ -50,7 +63,6 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 
 // shardSummer expands a query AST by sharding and re-summing when possible
 func (summer *shardSummer) MapNode(node parser.Node) (parser.Node, bool, error) {
-
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
 		if CanParallelize(n) && n.Op == parser.SUM {
@@ -81,14 +93,12 @@ func (summer *shardSummer) MapNode(node parser.Node) (parser.Node, bool, error) 
 
 // shardSum contains the logic for how we split/stitch legs of a parallelized sum query
 func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (parser.Node, error) {
-
 	parent, subSums, err := summer.splitSum(expr)
 	if err != nil {
 		return nil, err
 	}
 
 	combinedSums, err := summer.squash(subSums...)
-
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +209,7 @@ func (summer *shardSummer) splitSum(
 
 // ShardSummer is explicitly passed a prometheus.Counter during construction
 // in order to prevent duplicate metric registerings (ShardSummers are created per request).
-//recordShards prevents calling nil interfaces (commonly used in tests).
+// recordShards prevents calling nil interfaces (commonly used in tests).
 func (summer *shardSummer) recordShards(n float64) {
 	if summer.shardedQueries != nil {
 		summer.shardedQueries.Add(float64(summer.shards))
