@@ -39,19 +39,19 @@ func TestShardSummer(t *testing.T) {
 		{
 			shards: 3,
 			input:  `sum(rate(bar1{baz="blip"}[1m]))`,
-			expected: `sum without(__cortex_shard__) (
-			  sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="0_of_3",baz="blip"}[1m])) or
-			  sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="1_of_3",baz="blip"}[1m])) or
-			  sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="2_of_3",baz="blip"}[1m]))
+			expected: `sum without(__query_shard__) (
+			  sum by(__query_shard__) (rate(bar1{__query_shard__="0_of_3",baz="blip"}[1m])) or
+			  sum by(__query_shard__) (rate(bar1{__query_shard__="1_of_3",baz="blip"}[1m])) or
+			  sum by(__query_shard__) (rate(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))
 			)`,
 		},
 		{
 			shards: 3,
 			input:  `sum by(foo) (rate(bar1{baz="blip"}[1m]))`,
 			expected: `sum by(foo) (
-			  sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="0_of_3",baz="blip"}[1m])) or
-			  sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="1_of_3",baz="blip"}[1m])) or
-			  sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="2_of_3",baz="blip"}[1m]))
+			  sum by(foo, __query_shard__) (rate(bar1{__query_shard__="0_of_3",baz="blip"}[1m])) or
+			  sum by(foo, __query_shard__) (rate(bar1{__query_shard__="1_of_3",baz="blip"}[1m])) or
+			  sum by(foo, __query_shard__) (rate(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))
 			)`,
 		},
 		{
@@ -63,13 +63,13 @@ func TestShardSummer(t *testing.T) {
 			)`,
 			expected: `sum(
 			  sum by(foo) (
-				sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-				sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+				sum by(foo, __query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+				sum by(foo, __query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			  )
 			  /
 			  sum by(foo) (
-				sum by(foo, __cortex_shard__) (rate(foo{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-				sum by(foo, __cortex_shard__) (rate(foo{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+				sum by(foo, __query_shard__) (rate(foo{__query_shard__="0_of_2",baz="blip"}[1m])) or
+				sum by(foo, __query_shard__) (rate(foo{__query_shard__="1_of_2",baz="blip"}[1m]))
 			  )
 			)`,
 		},
@@ -80,8 +80,8 @@ func TestShardSummer(t *testing.T) {
 			input:  `sum(sum by(foo) (rate(bar1{baz="blip"}[1m])))`,
 			expected: `sum(
 			  sum by(foo) (
-			    sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			    sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			    sum by(foo, __query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			    sum by(foo, __query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			  )
 			)`,
 		},
@@ -89,9 +89,9 @@ func TestShardSummer(t *testing.T) {
 		{
 			shards: 2,
 			input:  `sum without(foo) (rate(bar1{baz="blip"}[1m]))`,
-			expected: `sum without(__cortex_shard__) (
-			  sum without(foo) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum without(foo) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			expected: `sum without(__query_shard__) (
+			  sum without(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum without(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)`,
 		},
 		// multiple dimensions
@@ -99,8 +99,8 @@ func TestShardSummer(t *testing.T) {
 			shards: 2,
 			input:  `sum by(foo, bom) (rate(bar1{baz="blip"}[1m]))`,
 			expected: `sum by(foo, bom) (
-			  sum by(foo, bom, __cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum by(foo, bom, __cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			  sum by(foo, bom, __query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum by(foo, bom, __query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)`,
 		},
 		// sharding histogram inputs
@@ -110,8 +110,8 @@ func TestShardSummer(t *testing.T) {
 			expected: `histogram_quantile(
 				    0.9,
 				    sum by(job, le) (
-				      sum by(job, le, __cortex_shard__) (rate(alertmanager_http_request_duration_seconds_bucket{__cortex_shard__="0_of_2"}[10m])) or
-				      sum by(job, le, __cortex_shard__) (rate(alertmanager_http_request_duration_seconds_bucket{__cortex_shard__="1_of_2"}[10m]))
+				      sum by(job, le, __query_shard__) (rate(alertmanager_http_request_duration_seconds_bucket{__query_shard__="0_of_2"}[10m])) or
+				      sum by(job, le, __query_shard__) (rate(alertmanager_http_request_duration_seconds_bucket{__query_shard__="1_of_2"}[10m]))
 				    )
 				  )`,
 		},
@@ -149,7 +149,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		{
 			shards:   3,
 			input:    `sum(rate(bar1{baz="blip"}[1m]))`,
-			expected: `sum without(__cortex_shard__) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(__cortex_shard__) (rate(bar1{__cortex_shard__=\\\"0_of_3\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(__cortex_shard__) (rate(bar1{__cortex_shard__=\\\"1_of_3\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(__cortex_shard__) (rate(bar1{__cortex_shard__=\\\"2_of_3\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
+			expected: `sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(__query_shard__) (rate(bar1{__query_shard__=\\\"0_of_3\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(__query_shard__) (rate(bar1{__query_shard__=\\\"1_of_3\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(__query_shard__) (rate(bar1{__query_shard__=\\\"2_of_3\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {

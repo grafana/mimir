@@ -14,7 +14,7 @@ import (
 
 const (
 	// ShardLabel is a reserved label referencing a shard.
-	ShardLabel = "__cortex_shard__"
+	ShardLabel = "__query_shard__"
 
 	// ShardLabelFmt is the format of the ShardLabel value.
 	ShardLabelFmt = "%d_of_%d"

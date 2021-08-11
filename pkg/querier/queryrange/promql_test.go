@@ -48,54 +48,54 @@ func Test_PromQL(t *testing.T) {
 		shouldEqual bool
 	}{
 		// Vector can be parallelized but we need to remove the cortex shard label.
-		// It should be noted that the __cortex_shard__ label is required by the engine
+		// It should be noted that the __query_shard__ label is required by the engine
 		// and therefore should be returned by the storage.
 		// Range vectors `bar1{baz="blip"}[1m]` are not tested here because it is not supported
 		// by range queries.
 		{
 			`bar1{baz="blip"}`,
 			`label_replace(
-				bar1{__cortex_shard__="0_of_3",baz="blip"} or
-				bar1{__cortex_shard__="1_of_3",baz="blip"} or
-				bar1{__cortex_shard__="2_of_3",baz="blip"},
-				"__cortex_shard__","","",""
+				bar1{__query_shard__="0_of_3",baz="blip"} or
+				bar1{__query_shard__="1_of_3",baz="blip"} or
+				bar1{__query_shard__="2_of_3",baz="blip"},
+				"__query_shard__","","",""
 			)`,
 			true,
 		},
-		// __cortex_shard__ label is required otherwise the or will keep only the first series.
+		// __query_shard__ label is required otherwise the or will keep only the first series.
 		{
 			`sum(bar1{baz="blip"})`,
 			`sum(
-				sum (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				sum (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				sum (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				sum (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				sum (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				sum (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			false,
 		},
 		{
 			`sum(bar1{baz="blip"})`,
 			`sum(
-				sum without(__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				sum without(__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				sum without(__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				sum without(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				sum without(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				sum without(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			true,
 		},
 		{
 			`sum by (foo) (bar1{baz="blip"})`,
 			`sum by (foo) (
-				sum by(foo,__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				sum by(foo,__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				sum by(foo,__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				sum by(foo,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				sum by(foo,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				sum by(foo,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			true,
 		},
 		{
 			`sum by (foo,bar) (bar1{baz="blip"})`,
 			`sum by (foo,bar)(
-				sum by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				sum by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				sum by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				sum by(foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				sum by(foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				sum by(foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			true,
 		},
@@ -103,27 +103,27 @@ func Test_PromQL(t *testing.T) {
 		{
 			`sum without (foo,bar) (bar1{baz="blip"})`,
 			`sum without (foo,bar)(
-				sum without(__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				sum without(__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				sum without(__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				sum without(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				sum without(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				sum without(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			true,
 		},
 		{
 			`min by (foo,bar) (bar1{baz="blip"})`,
 			`min by (foo,bar)(
-				min by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				min by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				min by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				min by(foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				min by(foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				min by(foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			true,
 		},
 		{
 			`max by (foo,bar) (bar1{baz="blip"})`,
 			` max by (foo,bar)(
-				max by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				max by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				max by(foo,bar,__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				max by(foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				max by(foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				max by(foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			true,
 		},
@@ -131,9 +131,9 @@ func Test_PromQL(t *testing.T) {
 		{
 			`avg(bar1{baz="blip"})`,
 			`avg(
-				avg by(__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				avg by(__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				avg by(__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				avg by(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				avg by(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				avg by(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			false,
 		},
@@ -141,9 +141,9 @@ func Test_PromQL(t *testing.T) {
 		{
 			`stddev(bar1{baz="blip"})`,
 			` stddev(
-				stddev by(__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				stddev by(__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				stddev by(__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				stddev by(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				stddev by(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				stddev by(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			false,
 		},
@@ -151,27 +151,27 @@ func Test_PromQL(t *testing.T) {
 		{
 			`stdvar(bar1{baz="blip"})`,
 			`stdvar(
-				stdvar by(__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				stdvar by(__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				stdvar by(__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				stdvar by(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				stdvar by(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				stdvar by(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			  )`,
 			false,
 		},
 		{
 			`count(bar1{baz="blip"})`,
 			`count(
-				count without (__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				count without (__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				count without (__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				count without (__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				count without (__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				count without (__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 				)`,
 			true,
 		},
 		{
 			`count by (foo,bar) (bar1{baz="blip"})`,
 			`count by (foo,bar) (
-				count by (foo,bar,__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				count by (foo,bar,__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				count by (foo,bar,__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				count by (foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				count by (foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				count by (foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			)`,
 			true,
 		},
@@ -179,27 +179,27 @@ func Test_PromQL(t *testing.T) {
 		{
 			`count without (foo) (bar1{baz="blip"})`,
 			`count without (foo) (
-				count without (__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				count without (__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				count without (__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				count without (__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				count without (__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				count without (__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			)`,
 			true,
 		},
 		{
 			`count without (foo) (bar1{baz="blip"})`,
-			`sum without (__cortex_shard__) (
-				count without (foo) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				count without (foo) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				count without (foo) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+			`sum without (__query_shard__) (
+				count without (foo) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				count without (foo) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				count without (foo) (bar1{__query_shard__="2_of_3",baz="blip"})
 			)`,
 			true,
 		},
 		{
 			`count without (foo, bar) (bar1{baz="blip"})`,
 			`count without (foo, bar) (
-				count without (__cortex_shard__) (bar1{__cortex_shard__="0_of_3",baz="blip"}) or
-				count without (__cortex_shard__) (bar1{__cortex_shard__="1_of_3",baz="blip"}) or
-				count without (__cortex_shard__) (bar1{__cortex_shard__="2_of_3",baz="blip"})
+				count without (__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
+				count without (__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
+				count without (__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
 			)`,
 			true,
 		},
@@ -207,39 +207,39 @@ func Test_PromQL(t *testing.T) {
 			`topk(2,bar1{baz="blip"})`,
 			`label_replace(
 				topk(2,
-					topk(2,(bar1{__cortex_shard__="0_of_3",baz="blip"})) without(__cortex_shard__) or
-					topk(2,(bar1{__cortex_shard__="1_of_3",baz="blip"})) without(__cortex_shard__) or
-					topk(2,(bar1{__cortex_shard__="2_of_3",baz="blip"})) without(__cortex_shard__)
+					topk(2,(bar1{__query_shard__="0_of_3",baz="blip"})) without(__query_shard__) or
+					topk(2,(bar1{__query_shard__="1_of_3",baz="blip"})) without(__query_shard__) or
+					topk(2,(bar1{__query_shard__="2_of_3",baz="blip"})) without(__query_shard__)
 				),
-                          "__cortex_shard__","","","")`,
+                          "__query_shard__","","","")`,
 			true,
 		},
 		{
 			`bottomk(2,bar1{baz="blip"})`,
 			`label_replace(
 				bottomk(2,
-					bottomk(2,(bar1{__cortex_shard__="0_of_3",baz="blip"})) without(__cortex_shard__) or
-					bottomk(2,(bar1{__cortex_shard__="1_of_3",baz="blip"})) without(__cortex_shard__) or
-					bottomk(2,(bar1{__cortex_shard__="2_of_3",baz="blip"})) without(__cortex_shard__)
+					bottomk(2,(bar1{__query_shard__="0_of_3",baz="blip"})) without(__query_shard__) or
+					bottomk(2,(bar1{__query_shard__="1_of_3",baz="blip"})) without(__query_shard__) or
+					bottomk(2,(bar1{__query_shard__="2_of_3",baz="blip"})) without(__query_shard__)
 				),
-                          "__cortex_shard__","","","")`,
+                          "__query_shard__","","","")`,
 			true,
 		},
 		{
 			`sum by (foo,bar) (avg_over_time(bar1{baz="blip"}[1m]))`,
 			`sum by (foo,bar)(
-				sum by(foo,bar,__cortex_shard__) (avg_over_time(bar1{__cortex_shard__="0_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__cortex_shard__) (avg_over_time(bar1{__cortex_shard__="1_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__cortex_shard__) (avg_over_time(bar1{__cortex_shard__="2_of_3",baz="blip"}[1m]))
+				sum by(foo,bar,__query_shard__) (avg_over_time(bar1{__query_shard__="0_of_3",baz="blip"}[1m])) or
+				sum by(foo,bar,__query_shard__) (avg_over_time(bar1{__query_shard__="1_of_3",baz="blip"}[1m])) or
+				sum by(foo,bar,__query_shard__) (avg_over_time(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))
 			  )`,
 			true,
 		},
 		{
 			`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
 			`sum by (foo,bar)(
-				sum by(foo,bar,__cortex_shard__) (min_over_time(bar1{__cortex_shard__="0_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__cortex_shard__) (min_over_time(bar1{__cortex_shard__="1_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__cortex_shard__) (min_over_time(bar1{__cortex_shard__="2_of_3",baz="blip"}[1m]))
+				sum by(foo,bar,__query_shard__) (min_over_time(bar1{__query_shard__="0_of_3",baz="blip"}[1m])) or
+				sum by(foo,bar,__query_shard__) (min_over_time(bar1{__query_shard__="1_of_3",baz="blip"}[1m])) or
+				sum by(foo,bar,__query_shard__) (min_over_time(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))
 			  )`,
 			true,
 		},
@@ -251,12 +251,12 @@ func Test_PromQL(t *testing.T) {
 			  )  by (foo,bazz)
 			)`,
 			`
-			  sum without(__cortex_shard__) (
-			    sum by(__cortex_shard__) (
-			      count by(foo, bazz) (foo{__cortex_shard__="0_of_2",bar="baz"})
+			  sum without(__query_shard__) (
+			    sum by(__query_shard__) (
+			      count by(foo, bazz) (foo{__query_shard__="0_of_2",bar="baz"})
 			    ) or
-			    sum by(__cortex_shard__) (
-			      count by(foo, bazz) (foo{__cortex_shard__="1_of_2",bar="baz"})
+			    sum by(__query_shard__) (
+			      count by(foo, bazz) (foo{__query_shard__="1_of_2",bar="baz"})
 			    )
 			  )
 `,
@@ -264,7 +264,7 @@ func Test_PromQL(t *testing.T) {
 		},
 		{
 			// Note: this is a speculative optimization that we don't currently include due to mapping complexity.
-			// Certain sub aggregations may inject __cortex_shard__ for all (by) subgroupings.
+			// Certain sub aggregations may inject __query_shard__ for all (by) subgroupings.
 			// This is the same as the previous test with the exception that the shard label is injected to the count grouping
 			`sum(
 			  count(
@@ -272,12 +272,12 @@ func Test_PromQL(t *testing.T) {
 			  )  by (foo,bazz)
 			)`,
 			`
-			  sum without(__cortex_shard__) (
-			    sum by(__cortex_shard__) (
-			      count by(foo, bazz, __cortex_shard__) (foo{__cortex_shard__="0_of_2",bar="baz"})
+			  sum without(__query_shard__) (
+			    sum by(__query_shard__) (
+			      count by(foo, bazz, __query_shard__) (foo{__query_shard__="0_of_2",bar="baz"})
 			    ) or
-			    sum by(__cortex_shard__) (
-			      count by(foo, bazz, __cortex_shard__) (foo{__cortex_shard__="1_of_2",bar="baz"})
+			    sum by(__query_shard__) (
+			      count by(foo, bazz, __query_shard__) (foo{__query_shard__="1_of_2",bar="baz"})
 			    )
 			  )
 `,
@@ -286,7 +286,7 @@ func Test_PromQL(t *testing.T) {
 		{
 			// Note: this is a speculative optimization that we don't currently include due to mapping complexity
 			// This example details multiple layers of aggregations.
-			// Sub aggregations must inject __cortex_shard__ for all (by) subgroupings.
+			// Sub aggregations must inject __query_shard__ for all (by) subgroupings.
 			`sum(
 			  count(
 			    count(
@@ -295,18 +295,18 @@ func Test_PromQL(t *testing.T) {
 			  )  by (bazz)
 			)`,
 			`
-			  sum without(__cortex_shard__) (
-			    sum by(__cortex_shard__) (
-			      count by(bazz, __cortex_shard__) (
-				count by(foo, bazz, __cortex_shard__) (
-				  foo{__cortex_shard__="0_of_2", bar="baz"}
+			  sum without(__query_shard__) (
+			    sum by(__query_shard__) (
+			      count by(bazz, __query_shard__) (
+				count by(foo, bazz, __query_shard__) (
+				  foo{__query_shard__="0_of_2", bar="baz"}
 				)
 			      )
 			    ) or
-			    sum by(__cortex_shard__) (
-			      count by(bazz, __cortex_shard__) (
-				count by(foo, bazz, __cortex_shard__) (
-				  foo{__cortex_shard__="1_of_2", bar="baz"}
+			    sum by(__query_shard__) (
+			      count by(bazz, __query_shard__) (
+				count by(foo, bazz, __query_shard__) (
+				  foo{__query_shard__="1_of_2", bar="baz"}
 				)
 			      )
 			    )
@@ -339,9 +339,9 @@ func Test_PromQL(t *testing.T) {
 func Test_FunctionParallelism(t *testing.T) {
 	tpl := `sum(<fn>(bar1{}<fArgs>))`
 	shardTpl := `sum(
-				sum without(__cortex_shard__) (<fn>(bar1{__cortex_shard__="0_of_3"}<fArgs>)) or
-				sum without(__cortex_shard__) (<fn>(bar1{__cortex_shard__="1_of_3"}<fArgs>)) or
-				sum without(__cortex_shard__) (<fn>(bar1{__cortex_shard__="2_of_3"}<fArgs>))
+				sum without(__query_shard__) (<fn>(bar1{__query_shard__="0_of_3"}<fArgs>)) or
+				sum without(__query_shard__) (<fn>(bar1{__query_shard__="1_of_3"}<fArgs>)) or
+				sum without(__query_shard__) (<fn>(bar1{__query_shard__="2_of_3"}<fArgs>))
 			  )`
 
 	mkQuery := func(tpl, fn string, testMatrix bool, fArgs []string) (result string) {
@@ -672,7 +672,7 @@ func splitByShard(shardIndex, shardTotal int, testMatrices *testMatrix) *testMat
 
 		}
 		lbs := s.Labels().Copy()
-		lbs = append(lbs, labels.Label{Name: "__cortex_shard__", Value: fmt.Sprintf("%d_of_%d", shardIndex, shardTotal)})
+		lbs = append(lbs, labels.Label{Name: "__query_shard__", Value: fmt.Sprintf("%d_of_%d", shardIndex, shardTotal)})
 		sort.Sort(lbs)
 		res.series = append(res.series, promql.NewStorageSeries(promql.Series{
 			Metric: lbs,
