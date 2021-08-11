@@ -1614,10 +1614,6 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	enableExemplars := false
-	if maxExemplars > 0 {
-		enableExemplars = true
-	}
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:         i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -1630,7 +1626,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		WALSegmentSize:            i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		SeriesLifecycleCallback:   userDB,
 		BlocksToDelete:            userDB.blocksToDelete,
-		EnableExemplarStorage:     enableExemplars,
+		EnableExemplarStorage:     true, // enable for everyone so we can raise the limit later
 		MaxExemplars:              int64(maxExemplars),
 	}, nil)
 	if err != nil {
