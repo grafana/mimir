@@ -1150,7 +1150,7 @@ results_cache:
 [max_retries: <int> | default = 5]
 
 # Perform query parallelisations based on storage sharding configuration and
-# query ASTs. This feature is supported only by the block storage engine.
+# query ASTs. This feature is supported only by the blocks storage engine.
 # CLI flag: -querier.parallelise-shardable-queries
 [parallelise_shardable_queries: <boolean> | default = false]
 

@@ -36,7 +36,7 @@ var (
 		return next
 	})
 
-	errInvalidShardingStorage = errors.New("query sharding support is only available for block storage")
+	errInvalidShardingStorage = errors.New("query sharding support is only available for blocks storage")
 )
 
 // Config for query_range middleware chain.
@@ -56,7 +56,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.SplitQueriesByInterval, "querier.split-queries-by-interval", 0, "Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
-	f.BoolVar(&cfg.ShardedQueries, "querier.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the block storage engine.")
+	f.BoolVar(&cfg.ShardedQueries, "querier.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
 	f.IntVar(&cfg.TotalShards, "querier.total-shards", 16, "The amount of shards to use when doing parallelisation via query sharding by default.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
