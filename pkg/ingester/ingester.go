@@ -182,6 +182,7 @@ type Ingester struct {
 	lifecycler         *ring.Lifecycler
 	limits             *validation.Overrides
 	limiter            *Limiter
+	prevLimits         map[string]*validation.Limits
 	subservicesWatcher *services.FailureWatcher
 
 	userStatesMtx sync.RWMutex // protects userStates and stopped

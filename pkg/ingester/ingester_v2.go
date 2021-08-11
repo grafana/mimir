@@ -1834,32 +1834,47 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 	return nil
 }
 
-// Receive updates to maxExemplars via push notification.
+// Receive updates to maxExemplars via channel notification.
 // TSDB may need to shuffle data around on resize, so we do it outside of push calls.
 func (i *Ingester) watchTenantLimitChan(ch <-chan map[string]*validation.Limits) {
-	for data := range ch {
-		for userID, limits := range data {
-			// We populate a Config struct with just one value, which is OK
-			// because Head.ApplyConfig only looks at one value.
-			// The other fields in Config are things like Rules, Scrape
-			// settings, which don't apply to Head.
-			cfg := config.Config{
-				StorageConfig: config.StorageConfig{
-					ExemplarsConfig: &config.ExemplarsConfig{
-						MaxExemplars: int64(i.limiter.convertGlobalToLocalLimit(userID, limits.MaxGlobalExemplarsPerUser)),
-					},
-				},
-			}
-			tsdb := i.getTSDB(userID)
-			if tsdb == nil {
-				// No TSDB for this tenant; maybe it hasn't sent any data yet.
-				continue
-			}
-			if err := tsdb.Head().ApplyConfig(&cfg); err != nil {
+	for newLimits := range ch {
+		for userID, limits := range newLimits {
+			if err := i.applyExemplarsSetting(userID, limits.MaxGlobalExemplarsPerUser); err != nil {
 				level.Error(i.logger).Log("msg", "failed to apply runtime config to TSDB", "user", userID, "err", err)
 			}
 		}
+		// for any user who had limits in the previous set which are not in the new set, apply default setting.
+		for userID := range i.prevLimits {
+			if _, found := newLimits[userID]; found {
+				continue
+			}
+			maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
+			if err := i.applyExemplarsSetting(userID, maxExemplars); err != nil {
+				level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
+			}
+		}
+		i.prevLimits = newLimits
 	}
+}
+
+func (i *Ingester) applyExemplarsSetting(userID string, value int) error {
+	// We populate a Config struct with just one value, which is OK
+	// because Head.ApplyConfig only looks at one value.
+	// The other fields in Config are things like Rules, Scrape
+	// settings, which don't apply to Head.
+	cfg := config.Config{
+		StorageConfig: config.StorageConfig{
+			ExemplarsConfig: &config.ExemplarsConfig{
+				MaxExemplars: int64(i.limiter.convertGlobalToLocalLimit(userID, value)),
+			},
+		},
+	}
+	tsdb := i.getTSDB(userID)
+	if tsdb == nil {
+		// No TSDB for this tenant; maybe it hasn't sent any data yet.
+		return nil
+	}
+	return tsdb.Head().ApplyConfig(&cfg)
 }
 
 // getMemorySeriesMetric returns the total number of in-memory series across all open TSDBs.
