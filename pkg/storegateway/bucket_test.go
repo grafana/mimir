@@ -2205,7 +2205,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 					}
 
 					shardSelector = &querysharding.ShardSelector{
-						ShardIndex: n % 20,
+						ShardIndex: uint64(n) % 20,
 						ShardCount: 20,
 					}
 				} else {

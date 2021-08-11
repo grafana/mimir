@@ -674,7 +674,7 @@ func blockSeries(
 				seriesCacheStats.seriesHashCacheHits++
 			}
 
-			if hash%uint64(shard.ShardCount) != uint64(shard.ShardIndex) {
+			if hash%shard.ShardCount != shard.ShardIndex {
 				continue
 			}
 		}

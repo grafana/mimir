@@ -86,10 +86,10 @@ The ingester query API was improved over time, but defaults to the old behaviour
    `sum by (foo) (rate(bar{baz=”blip”}[1m]))` ->
    ```
    sum by (foo) (
-    sum by (foo) (rate(bar{baz=”blip”,__cortex_shard__=”0of16”}[1m])) or
-    sum by (foo) (rate(bar{baz=”blip”,__cortex_shard__=”1of16”}[1m])) or
+    sum by (foo) (rate(bar{baz=”blip”,__query_shard__=”0of16”}[1m])) or
+    sum by (foo) (rate(bar{baz=”blip”,__query_shard__=”1of16”}[1m])) or
     ...
-    sum by (foo) (rate(bar{baz=”blip”,__cortex_shard__=”15of16”}[1m]))
+    sum by (foo) (rate(bar{baz=”blip”,__query_shard__=”15of16”}[1m]))
    )
    ```
    When enabled, the query-frontend requires a schema config to determine how/when to shard queries, either from a file or from flags (i.e. by the `-schema-config-file` CLI flag). This is the same schema config the queriers consume.
