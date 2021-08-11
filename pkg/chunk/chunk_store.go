@@ -411,7 +411,7 @@ func (c *store) lookupChunksByMetricName(ctx context.Context, userID string, fro
 	incomingErrors := make(chan error)
 	for _, matcher := range matchers {
 		go func(matcher *labels.Matcher) {
-			chunkIDs, err := c.lookupIdsByMetricNameMatcher(ctx, from, through, userID, metricName, matcher, nil)
+			chunkIDs, err := c.lookupIdsByMetricNameMatcher(ctx, from, through, userID, metricName, matcher)
 			if err != nil {
 				incomingErrors <- err
 			} else {
@@ -446,7 +446,7 @@ func (c *store) lookupChunksByMetricName(ctx context.Context, userID string, fro
 	return c.convertChunkIDsToChunks(ctx, userID, chunkIDs)
 }
 
-func (c *baseStore) lookupIdsByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher, filter func([]IndexQuery) []IndexQuery) ([]string, error) {
+func (c *baseStore) lookupIdsByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher) ([]string, error) {
 	formattedMatcher := formatMatcher(matcher)
 	log, ctx := spanlogger.New(ctx, "Store.lookupIdsByMetricNameMatcher", "metricName", metricName, "matcher", formattedMatcher)
 	defer log.Span.Finish()
@@ -467,11 +467,6 @@ func (c *baseStore) lookupIdsByMetricNameMatcher(ctx context.Context, from, thro
 		return nil, err
 	}
 	level.Debug(log).Log("matcher", formattedMatcher, "queries", len(queries))
-
-	if filter != nil {
-		queries = filter(queries)
-		level.Debug(log).Log("matcher", formattedMatcher, "filteredQueries", len(queries))
-	}
 
 	entries, err := c.lookupEntriesByQueries(ctx, queries)
 	if e, ok := err.(CardinalityExceededError); ok {

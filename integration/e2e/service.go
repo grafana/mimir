@@ -18,11 +18,10 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/expfmt"
 	"github.com/thanos-io/thanos/pkg/runutil"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 var (
@@ -48,7 +47,7 @@ type ConcreteService struct {
 	networkPortsContainerToLocal map[int]int
 
 	// Generic retry backoff.
-	retryBackoff *util.Backoff
+	retryBackoff *backoff.Backoff
 
 	// docker NetworkName used to start this container.
 	// If empty it means service is stopped.
@@ -69,7 +68,7 @@ func NewConcreteService(
 		command:                      command,
 		networkPortsContainerToLocal: map[int]int{},
 		readiness:                    readiness,
-		retryBackoff: util.NewBackoff(context.Background(), util.BackoffConfig{
+		retryBackoff: backoff.New(context.Background(), backoff.Config{
 			MinBackoff: 300 * time.Millisecond,
 			MaxBackoff: 600 * time.Millisecond,
 			MaxRetries: 50, // Sometimes the CI is slow ¯\_(ツ)_/¯
@@ -85,8 +84,8 @@ func (s *ConcreteService) Name() string { return s.name }
 
 // Less often used options.
 
-func (s *ConcreteService) SetBackoff(cfg util.BackoffConfig) {
-	s.retryBackoff = util.NewBackoff(context.Background(), cfg)
+func (s *ConcreteService) SetBackoff(cfg backoff.Config) {
+	s.retryBackoff = backoff.New(context.Background(), cfg)
 }
 
 func (s *ConcreteService) SetEnvVars(env map[string]string) {
