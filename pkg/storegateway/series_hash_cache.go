@@ -104,7 +104,8 @@ type cacheGeneration struct {
 	// blocks maps the block ID with blockCacheGeneration.
 	blocks *sync.Map
 
-	// Keeps track of the number of items added to the cache.
+	// Keeps track of the number of items added to the cache. This counter
+	// is passed to each blockCacheGeneration belonging to this generation.
 	length *atomic.Uint64
 }
 
@@ -114,7 +115,8 @@ type blockCacheGeneration struct {
 	hashesMx sync.RWMutex
 	hashes   map[uint64]uint64
 
-	// Keeps track of the number of items added to the cache.
+	// Keeps track of the number of items added to the cache. This counter is
+	// shared with all blockCacheGeneration in the "parent" cacheGeneration.
 	length *atomic.Uint64
 }
 

@@ -888,7 +888,7 @@ func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSele
 			stats.seriesHashCacheHits++
 		}
 
-		// Keep the posting if it's not in the cache, or it's in the cache and doesn't belong to our shard.
+		// Keep the posting if it's not in the cache, or it's in the cache and belongs to our shard.
 		if !ok || hash%uint64(shard.ShardCount) == uint64(shard.ShardIndex) {
 			// We need to write the value only if it has been shifted ahead.
 			if readIdx != writeIdx {
@@ -904,7 +904,7 @@ func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSele
 	}
 
 	// Shrink the size.
-	ps = ps[0:writeIdx]
+	ps = ps[:writeIdx]
 
 	return ps, stats
 }
