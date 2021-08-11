@@ -497,7 +497,8 @@ func (am *MultitenantAlertmanager) starting(ctx context.Context) (err error) {
 	}
 
 	if am.cfg.ShardingEnabled {
-		// Store the ring state after the Alertmanager configs have been synced.
+		// Store the ring state after the initial Alertmanager configs sync has been done and before we do change
+		// our state in the ring.
 		am.ringLastState, _ = am.ring.GetAllHealthy(RingOp)
 
 		// Make sure that all the alertmanagers we were initially configured with have
