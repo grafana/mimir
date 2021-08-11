@@ -1094,10 +1094,10 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			<html>
 				<head>
 					<meta charset="UTF-8">
-					<title>Mimir Distributor Status</title>
+					<title>Distributor Status</title>
 				</head>
 				<body>
-					<h1>Mimir Distributor Status</h1>
+					<h1>Distributor Status</h1>
 					<p>Distributor is not running with global limits enabled</p>
 				</body>
 			</html>`

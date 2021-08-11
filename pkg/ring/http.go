@@ -25,10 +25,10 @@ const pageContent = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Mimir Ring Status</title>
+		<title>Ring Status</title>
 	</head>
 	<body>
-		<h1>Mimir Ring Status</h1>
+		<h1>Ring Status</h1>
 		<p>Current time: {{ .Now }}</p>
 		<form action="" method="POST">
 			<input type="hidden" name="csrf_token" value="$__CSRF_TOKEN_PLACEHOLDER__">

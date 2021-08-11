@@ -21,7 +21,6 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 )
 
@@ -56,7 +55,6 @@ func TestRoundTrip(t *testing.T) {
 		mockLimits{},
 		PrometheusCodec,
 		nil,
-		chunk.SchemaConfig{},
 		storage.StorageEngineChunks,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
@@ -64,7 +62,6 @@ func TestRoundTrip(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
-		0,
 		nil,
 		nil,
 	)
@@ -119,13 +116,11 @@ func Test_ShardingConfigError(t *testing.T) {
 		nil,
 		nil,
 		nil,
-		chunk.SchemaConfig{},
 		storage.StorageEngineChunks,
 		promql.EngineOpts{},
-		0,
 		nil,
 		nil,
 	)
 
-	require.EqualError(t, err, errInvalidMinShardingLookback.Error())
+	require.EqualError(t, err, errInvalidShardingStorage.Error())
 }

@@ -17,9 +17,9 @@ subtrees of an AST that have not already been parallelized.
 */
 type subtreeFolder struct{}
 
-// NewSubtreeFolder creates a subtreeFolder which can reduce an AST
+// newSubtreeFolder creates a subtreeFolder which can reduce an AST
 // to one embedded query if it contains no embedded queries yet
-func NewSubtreeFolder() ASTMapper {
+func newSubtreeFolder() ASTMapper {
 	return NewASTNodeMapper(&subtreeFolder{})
 }
 
@@ -40,7 +40,7 @@ func (f *subtreeFolder) MapNode(node parser.Node) (parser.Node, bool, error) {
 		return node, false, nil
 	}
 
-	expr, err := VectorSquasher(node)
+	expr, err := vectorSquasher(node)
 	return expr, true, err
 }
 
