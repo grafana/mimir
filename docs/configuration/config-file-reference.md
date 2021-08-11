@@ -1150,12 +1150,12 @@ results_cache:
 [max_retries: <int> | default = 5]
 
 # Perform query parallelisations based on storage sharding configuration and
-# query ASTs. This feature is supported only by the chunks storage engine.
+# query ASTs. This feature is supported only by the blocks storage engine.
 # CLI flag: -querier.parallelise-shardable-queries
 [parallelise_shardable_queries: <boolean> | default = false]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# default. This option is only used for blocks storage.
+# default.
 # CLI flag: -querier.total-shards
 [total_shards: <int> | default = 16]
 ```

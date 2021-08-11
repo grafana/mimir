@@ -509,21 +509,12 @@ func (t *Cortex) initDeleteRequestsStore() (serv services.Service, err error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Cortex) initQueryFrontendTripperware() (serv services.Service, err error) {
-	// Load the schema only if sharded queries is set for the chunk storage.
-	if t.Cfg.QueryRange.ShardedQueries && t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		err := t.Cfg.Schema.Load()
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	tripperware, cache, err := queryrange.NewTripperware(
 		t.Cfg.QueryRange,
 		util_log.Logger,
 		t.Overrides,
 		queryrange.PrometheusCodec,
 		queryrange.PrometheusResponseExtractor{},
-		t.Cfg.Schema,
 		t.Cfg.Storage.Engine,
 		promql.EngineOpts{
 			Logger:           util_log.Logger,
@@ -535,7 +526,6 @@ func (t *Cortex) initQueryFrontendTripperware() (serv services.Service, err erro
 				return t.Cfg.Querier.DefaultEvaluationInterval.Milliseconds()
 			},
 		},
-		t.Cfg.Querier.QueryIngestersWithin,
 		prometheus.DefaultRegisterer,
 		t.TombstonesLoader,
 	)
