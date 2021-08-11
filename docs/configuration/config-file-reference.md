@@ -144,7 +144,7 @@ api:
 [purger: <purger_config>]
 
 tenant_federation:
-  # If enabled on all Mimir services, queries can be federated across multiple
+  # If enabled on all services, queries can be federated across multiple
   # tenants. The tenant IDs involved need to be specified separated by a `|`
   # character in the `X-Scope-OrgID` header (experimental).
   # CLI flag: -tenant-federation.enabled
@@ -893,7 +893,7 @@ The `querier_config` configures the Mimir querier.
 [default_evaluation_interval: <duration> | default = 1m]
 
 # Active query tracker monitors active queries, and writes them to the file in
-# given directory. If Mimir discovers any queries in this log during startup, it
+# given directory. If any queries are discovered in this file during startup, it
 # will log them to the log file. Setting to empty value disables active query
 # tracker, which also disables -querier.max-concurrent option.
 # CLI flag: -querier.active-query-tracker-dir
@@ -1863,7 +1863,7 @@ The `alertmanager_config` configures the Mimir alertmanager.
 # CLI flag: -alertmanager.web.external-url
 [external_url: <url> | default = ]
 
-# How frequently to poll Mimir configs
+# How frequently to poll Alertmanager configs.
 # CLI flag: -alertmanager.configs.poll-interval
 [poll_interval: <duration> | default = 15s]
 
@@ -3370,8 +3370,8 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 # CLI flag: -flusher.flush-op-timeout
 [flush_op_timeout: <duration> | default = 2m]
 
-# Stop Mimir after flush has finished. If false, Mimir process will keep
-# running, doing nothing.
+# Stop after flush has finished. If false, process will keep running, doing
+# nothing.
 # CLI flag: -flusher.exit-after-flush
 [exit_after_flush: <boolean> | default = true]
 ```
@@ -3982,13 +3982,13 @@ The `limits_config` configures default and per-tenant limits imposed by Mimir se
 # The maximum number of series for which a query can fetch samples from each
 # ingester. This limit is enforced only in the ingesters (when querying samples
 # not flushed to the storage yet) and it's a per-instance limit. This limit is
-# ignored when running the Mimir blocks storage. When running Mimir with blocks
-# storage use -querier.max-fetched-series-per-query limit instead.
+# ignored when using blocks storage. When running with blocks storage use
+# -querier.max-fetched-series-per-query limit instead.
 # CLI flag: -ingester.max-series-per-query
 [max_series_per_query: <int> | default = 100000]
 
 # The maximum number of samples that a query can return. This limit only applies
-# when running the Mimir chunks storage with -querier.ingester-streaming=false.
+# when using chunks storage with -querier.ingester-streaming=false.
 # CLI flag: -ingester.max-samples-per-query
 [max_samples_per_query: <int> | default = 1000000]
 
@@ -4014,7 +4014,7 @@ The `limits_config` configures default and per-tenant limits imposed by Mimir se
 
 # Minimum number of samples in an idle chunk to flush it to the store. Use with
 # care, if chunks are less than this size they will be discarded. This option is
-# ignored when running the Mimir blocks storage. 0 to disable.
+# ignored when using blocks storage. 0 to disable.
 # CLI flag: -ingester.min-chunk-length
 [min_chunk_length: <int> | default = 0]
 
@@ -4040,10 +4040,9 @@ The `limits_config` configures default and per-tenant limits imposed by Mimir se
 # Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
 # respective YAML config option instead. Maximum number of chunks that can be
 # fetched in a single query. This limit is enforced when fetching chunks from
-# the long-term storage only. When running the Mimir chunks storage, this limit
-# is enforced in the querier and ruler, while when running the Mimir blocks
-# storage this limit is enforced in the querier, ruler and store-gateway. 0 to
-# disable.
+# the long-term storage only. When using chunks storage, this limit is enforced
+# in the querier and ruler, while when using blocks storage this limit is
+# enforced in the querier, ruler and store-gateway. 0 to disable.
 # CLI flag: -store.query-chunk-limit
 [max_chunks_per_query: <int> | default = 2000000]
 
@@ -4056,13 +4055,13 @@ The `limits_config` configures default and per-tenant limits imposed by Mimir se
 
 # The maximum number of unique series for which a query can fetch samples from
 # each ingesters and blocks storage. This limit is enforced in the querier only
-# when running Mimir with blocks storage. 0 to disable
+# when running with blocks storage. 0 to disable
 # CLI flag: -querier.max-fetched-series-per-query
 [max_fetched_series_per_query: <int> | default = 0]
 
 # The maximum size of all chunks in bytes that a query can fetch from each
 # ingester and storage. This limit is enforced in the querier and ruler only
-# when running Mimir with blocks storage. 0 to disable.
+# when running with blocks storage. 0 to disable.
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
 
@@ -4084,8 +4083,8 @@ The `limits_config` configures default and per-tenant limits imposed by Mimir se
 # CLI flag: -querier.max-query-parallelism
 [max_query_parallelism: <int> | default = 14]
 
-# Cardinality limit for index queries. This limit is ignored when running the
-# Mimir blocks storage. 0 to disable.
+# Cardinality limit for index queries. This limit is ignored when using blocks
+# storage. 0 to disable.
 # CLI flag: -store.cardinality-limit
 [cardinality_limit: <int> | default = 100000]
 
@@ -4105,7 +4104,7 @@ The `limits_config` configures default and per-tenant limits imposed by Mimir se
 [max_queriers_per_tenant: <int> | default = 0]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
-# have been pushed to Mimir.
+# have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 0s]
 
@@ -4920,7 +4919,7 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.ship-concurrency
   [ship_concurrency: <int> | default = 10]
 
-  # How frequently does Mimir try to compact TSDB head. Block is only created if
+  # How frequently ingesters try to compact TSDB head. Block is only created if
   # data covers smallest block range. Must be greater than 0 and max 5 minutes.
   # CLI flag: -blocks-storage.tsdb.head-compaction-interval
   [head_compaction_interval: <duration> | default = 1m]
