@@ -31,7 +31,7 @@ func TestHandler_remoteWrite(t *testing.T) {
 }
 
 func TestHandler_cortexWriteRequest(t *testing.T) {
-	req := createRequest(t, createCortexWriteRequestProtobuf(t, false))
+	req := createRequest(t, createMimirWriteRequestProtobuf(t, false))
 	resp := httptest.NewRecorder()
 	sourceIPs, _ := middleware.NewSourceIPs("SomeField", "(.*)")
 	handler := Handler(100000, sourceIPs, verifyWriteRequestHandler(t, mimirpb.RULE))
@@ -41,8 +41,8 @@ func TestHandler_cortexWriteRequest(t *testing.T) {
 
 func TestHandler_ignoresSkipLabelNameValidationIfSet(t *testing.T) {
 	for _, req := range []*http.Request{
-		createRequest(t, createCortexWriteRequestProtobuf(t, true)),
-		createRequest(t, createCortexWriteRequestProtobuf(t, false)),
+		createRequest(t, createMimirWriteRequestProtobuf(t, true)),
+		createRequest(t, createMimirWriteRequestProtobuf(t, false)),
 	} {
 		resp := httptest.NewRecorder()
 		handler := Handler(100000, nil, verifyWriteRequestHandler(t, mimirpb.RULE))
@@ -92,7 +92,7 @@ func createPrometheusRemoteWriteProtobuf(t *testing.T) []byte {
 	require.NoError(t, err)
 	return inoutBytes
 }
-func createCortexWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
+func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool) []byte {
 	t.Helper()
 	ts := mimirpb.PreallocTimeseries{
 		TimeSeries: &mimirpb.TimeSeries{

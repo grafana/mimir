@@ -53,7 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-// The various modules that make up Cortex.
+// The various modules that make up Mimir.
 const (
 	API                      string = "api"
 	Ring                     string = "ring"
@@ -95,7 +95,7 @@ func newDefaultConfig() *Config {
 	return defaultConfig
 }
 
-func (t *Cortex) initAPI() (services.Service, error) {
+func (t *Mimir) initAPI() (services.Service, error) {
 	t.Cfg.API.ServerPrefix = t.Cfg.Server.PathPrefix
 	t.Cfg.API.LegacyHTTPPrefix = t.Cfg.HTTPPrefix
 
@@ -110,8 +110,8 @@ func (t *Cortex) initAPI() (services.Service, error) {
 	return nil, nil
 }
 
-func (t *Cortex) initServer() (services.Service, error) {
-	// Cortex handles signals on its own.
+func (t *Mimir) initServer() (services.Service, error) {
+	// Mimir handles signals on its own.
 	DisableSignalHandling(&t.Cfg.Server)
 	serv, err := server.New(t.Cfg.Server)
 	if err != nil {
@@ -136,7 +136,7 @@ func (t *Cortex) initServer() (services.Service, error) {
 	return s, nil
 }
 
-func (t *Cortex) initRing() (serv services.Service, err error) {
+func (t *Mimir) initRing() (serv services.Service, err error) {
 	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Ring, err = ring.New(t.Cfg.Ingester.LifecyclerConfig.RingConfig, "ingester", ring.IngesterRingKey, prometheus.DefaultRegisterer)
 	if err != nil {
@@ -149,7 +149,7 @@ func (t *Cortex) initRing() (serv services.Service, err error) {
 	return t.Ring, nil
 }
 
-func (t *Cortex) initRuntimeConfig() (services.Service, error) {
+func (t *Mimir) initRuntimeConfig() (services.Service, error) {
 	if t.Cfg.RuntimeConfig.LoadPath == "" {
 		// no need to initialize module if load path is empty
 		return nil, nil
@@ -172,14 +172,14 @@ func (t *Cortex) initRuntimeConfig() (services.Service, error) {
 	return serv, err
 }
 
-func (t *Cortex) initOverrides() (serv services.Service, err error) {
+func (t *Mimir) initOverrides() (serv services.Service, err error) {
 	t.Overrides, err = validation.NewOverrides(t.Cfg.LimitsConfig, t.TenantLimits)
 	// overrides don't have operational state, nor do they need to do anything more in starting/stopping phase,
 	// so there is no need to return any service.
 	return nil, err
 }
 
-func (t *Cortex) initOverridesExporter() (services.Service, error) {
+func (t *Mimir) initOverridesExporter() (services.Service, error) {
 	if t.Cfg.isModuleEnabled(OverridesExporter) && t.TenantLimits == nil {
 		// This target isn't enabled by default ("all") and requires per-tenant limits to
 		// work. Fail if it can't be setup correctly since the user explicitly wanted this
@@ -195,7 +195,7 @@ func (t *Cortex) initOverridesExporter() (services.Service, error) {
 	return nil, nil
 }
 
-func (t *Cortex) initDistributorService() (serv services.Service, err error) {
+func (t *Mimir) initDistributorService() (serv services.Service, err error) {
 	t.Cfg.Distributor.DistributorRing.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Distributor.ShuffleShardingLookbackPeriod = t.Cfg.Querier.ShuffleShardingIngestersLookbackPeriod
 
@@ -212,15 +212,15 @@ func (t *Cortex) initDistributorService() (serv services.Service, err error) {
 	return t.Distributor, nil
 }
 
-func (t *Cortex) initDistributor() (serv services.Service, err error) {
+func (t *Mimir) initDistributor() (serv services.Service, err error) {
 	t.API.RegisterDistributor(t.Distributor, t.Cfg.Distributor)
 
 	return nil, nil
 }
 
 // initQueryable instantiates the queryable and promQL engine used to service queries to
-// Cortex. It also registers the API endpoints associated with those two services.
-func (t *Cortex) initQueryable() (serv services.Service, err error) {
+// Mimir. It also registers the API endpoints associated with those two services.
+func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, prometheus.DefaultRegisterer)
 
 	// Create a querier queryable and PromQL engine
@@ -233,7 +233,7 @@ func (t *Cortex) initQueryable() (serv services.Service, err error) {
 }
 
 // Enable merge querier if multi tenant query federation is enabled
-func (t *Cortex) initTenantFederation() (serv services.Service, err error) {
+func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 	if t.Cfg.TenantFederation.Enabled {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
@@ -245,9 +245,9 @@ func (t *Cortex) initTenantFederation() (serv services.Service, err error) {
 }
 
 // initQuerier registers an internal HTTP router with a Prometheus API backed by the
-// Cortex Queryable. Then it does one of the following:
+// Mimir Queryable. Then it does one of the following:
 //
-// 1. Query-Frontend Enabled: If Cortex has an All or QueryFrontend target, the internal
+// 1. Query-Frontend Enabled: If Mimir has an All or QueryFrontend target, the internal
 //    HTTP router is wrapped with Tenant ID parsing middleware and passed to the frontend
 //    worker.
 //
@@ -294,9 +294,9 @@ func (t *Cortex) initTenantFederation() (serv services.Service, err error) {
 //                                            │                  │
 //                                            └──────────────────┘
 //
-func (t *Cortex) initQuerier() (serv services.Service, err error) {
+func (t *Mimir) initQuerier() (serv services.Service, err error) {
 	// Create a internal HTTP handler that is configured with the Prometheus API routes and points
-	// to a Prometheus API struct instantiated with the Cortex Queryable.
+	// to a Prometheus API struct instantiated with the Mimir Queryable.
 	internalQuerierRouter := api.NewQuerierHandler(
 		t.Cfg.API,
 		t.QuerierQueryable,
@@ -309,7 +309,7 @@ func (t *Cortex) initQuerier() (serv services.Service, err error) {
 	)
 
 	// If the querier is running standalone without the query-frontend or query-scheduler, we must register it's internal
-	// HTTP handler externally and provide the external Cortex Server HTTP handler to the frontend worker
+	// HTTP handler externally and provide the external Mimir Server HTTP handler to the frontend worker
 	// to ensure requests it processes use the default middleware instrumentation.
 	if !t.Cfg.isModuleEnabled(QueryFrontend) && !t.Cfg.isModuleEnabled(QueryScheduler) && !t.Cfg.isModuleEnabled(All) {
 		// First, register the internal querier handler with the external HTTP server
@@ -321,7 +321,7 @@ func (t *Cortex) initQuerier() (serv services.Service, err error) {
 		internalQuerierRouter = t.Server.HTTPServer.Handler
 	} else {
 		// Single binary mode requires a query frontend endpoint for the worker. If no frontend and scheduler endpoint
-		// is configured, Cortex will default to using frontend on localhost on it's own GRPC listening port.
+		// is configured, Mimir will default to using frontend on localhost on it's own GRPC listening port.
 		if t.Cfg.Worker.FrontendAddress == "" && t.Cfg.Worker.SchedulerAddress == "" {
 			address := fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
 			level.Warn(util_log.Logger).Log("msg", "Worker address is empty in single binary mode.  Attempting automatic worker configuration.  If queries are unresponsive consider configuring the worker explicitly.", "address", address)
@@ -348,7 +348,7 @@ func (t *Cortex) initQuerier() (serv services.Service, err error) {
 	return querier_worker.NewQuerierWorker(t.Cfg.Worker, httpgrpc_server.NewServer(internalQuerierRouter), util_log.Logger, prometheus.DefaultRegisterer)
 }
 
-func (t *Cortex) initStoreQueryables() (services.Service, error) {
+func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
 
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
@@ -414,12 +414,12 @@ func initQueryableForEngine(engine string, cfg Config, chunkStore chunk.Store, l
 	}
 }
 
-func (t *Cortex) tsdbIngesterConfig() {
+func (t *Mimir) tsdbIngesterConfig() {
 	t.Cfg.Ingester.BlocksStorageEnabled = t.Cfg.Storage.Engine == storage.StorageEngineBlocks
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
 
-func (t *Cortex) initIngesterService() (serv services.Service, err error) {
+func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.DistributorShardingStrategy = t.Cfg.Distributor.ShardingStrategy
@@ -436,13 +436,13 @@ func (t *Cortex) initIngesterService() (serv services.Service, err error) {
 	return t.Ingester, nil
 }
 
-func (t *Cortex) initIngester() (serv services.Service, err error) {
+func (t *Mimir) initIngester() (serv services.Service, err error) {
 	t.API.RegisterIngester(t.Ingester, t.Cfg.Distributor)
 
 	return nil, nil
 }
 
-func (t *Cortex) initFlusher() (serv services.Service, err error) {
+func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	t.tsdbIngesterConfig()
 
 	t.Flusher, err = flusher.New(
@@ -460,7 +460,7 @@ func (t *Cortex) initFlusher() (serv services.Service, err error) {
 	return t.Flusher, nil
 }
 
-func (t *Cortex) initChunkStore() (serv services.Service, err error) {
+func (t *Mimir) initChunkStore() (serv services.Service, err error) {
 	if t.Cfg.Storage.Engine != storage.StorageEngineChunks && t.Cfg.Querier.SecondStoreEngine != storage.StorageEngineChunks {
 		return nil, nil
 	}
@@ -480,7 +480,7 @@ func (t *Cortex) initChunkStore() (serv services.Service, err error) {
 	}), nil
 }
 
-func (t *Cortex) initDeleteRequestsStore() (serv services.Service, err error) {
+func (t *Mimir) initDeleteRequestsStore() (serv services.Service, err error) {
 	if t.Cfg.Storage.Engine != storage.StorageEngineChunks || !t.Cfg.PurgerConfig.Enable {
 		// until we need to explicitly enable delete series support we need to do create TombstonesLoader without DeleteStore which acts as noop
 		t.TombstonesLoader = purger.NewTombstonesLoader(nil, nil)
@@ -508,7 +508,7 @@ func (t *Cortex) initDeleteRequestsStore() (serv services.Service, err error) {
 
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
-func (t *Cortex) initQueryFrontendTripperware() (serv services.Service, err error) {
+func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	tripperware, cache, err := queryrange.NewTripperware(
 		t.Cfg.QueryRange,
 		util_log.Logger,
@@ -544,7 +544,7 @@ func (t *Cortex) initQueryFrontendTripperware() (serv services.Service, err erro
 	}), nil
 }
 
-func (t *Cortex) initQueryFrontend() (serv services.Service, err error) {
+func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	roundTripper, frontendV1, frontendV2, err := frontend.InitFrontend(t.Cfg.Frontend, t.Overrides, t.Cfg.Server.GRPCListenPort, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
 		return nil, err
@@ -570,7 +570,7 @@ func (t *Cortex) initQueryFrontend() (serv services.Service, err error) {
 	return nil, nil
 }
 
-func (t *Cortex) initTableManager() (services.Service, error) {
+func (t *Mimir) initTableManager() (services.Service, error) {
 	if t.Cfg.Storage.Engine == storage.StorageEngineBlocks {
 		return nil, nil // table manager isn't used in v2
 	}
@@ -625,7 +625,7 @@ func (t *Cortex) initTableManager() (services.Service, error) {
 	return t.TableManager, err
 }
 
-func (t *Cortex) initRulerStorage() (serv services.Service, err error) {
+func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// if the ruler is not configured and we're in single binary then let's just log an error and continue.
 	// unfortunately there is no way to generate a "default" config and compare default against actual
 	// to determine if it's unconfigured.  the following check, however, correctly tests this.
@@ -643,7 +643,7 @@ func (t *Cortex) initRulerStorage() (serv services.Service, err error) {
 	return
 }
 
-func (t *Cortex) initRuler() (serv services.Service, err error) {
+func (t *Mimir) initRuler() (serv services.Service, err error) {
 	if t.RulerStorage == nil {
 		level.Info(util_log.Logger).Log("msg", "RulerStorage is nil.  Not starting the ruler.")
 		return nil, nil
@@ -683,7 +683,7 @@ func (t *Cortex) initRuler() (serv services.Service, err error) {
 	return t.Ruler, nil
 }
 
-func (t *Cortex) initAlertManager() (serv services.Service, err error) {
+func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	// Initialise the store.
@@ -706,7 +706,7 @@ func (t *Cortex) initAlertManager() (serv services.Service, err error) {
 	return t.Alertmanager, nil
 }
 
-func (t *Cortex) initCompactor() (serv services.Service, err error) {
+func (t *Mimir) initCompactor() (serv services.Service, err error) {
 	t.Cfg.Compactor.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.Compactor, err = compactor.NewCompactor(t.Cfg.Compactor, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
@@ -719,7 +719,7 @@ func (t *Cortex) initCompactor() (serv services.Service, err error) {
 	return t.Compactor, nil
 }
 
-func (t *Cortex) initStoreGateway() (serv services.Service, err error) {
+func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
 		if !t.Cfg.isModuleEnabled(All) {
 			return nil, fmt.Errorf("storage engine must be set to blocks to enable the store-gateway")
@@ -740,7 +740,7 @@ func (t *Cortex) initStoreGateway() (serv services.Service, err error) {
 	return t.StoreGateway, nil
 }
 
-func (t *Cortex) initMemberlistKV() (services.Service, error) {
+func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.MemberlistKV.MetricsRegisterer = prometheus.DefaultRegisterer
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
@@ -759,7 +759,7 @@ func (t *Cortex) initMemberlistKV() (services.Service, error) {
 	return t.MemberlistKV, nil
 }
 
-func (t *Cortex) initChunksPurger() (services.Service, error) {
+func (t *Mimir) initChunksPurger() (services.Service, error) {
 	if t.Cfg.Storage.Engine != storage.StorageEngineChunks || !t.Cfg.PurgerConfig.Enable {
 		return nil, nil
 	}
@@ -779,7 +779,7 @@ func (t *Cortex) initChunksPurger() (services.Service, error) {
 	return t.Purger, nil
 }
 
-func (t *Cortex) initTenantDeletionAPI() (services.Service, error) {
+func (t *Mimir) initTenantDeletionAPI() (services.Service, error) {
 	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
 		return nil, nil
 	}
@@ -794,7 +794,7 @@ func (t *Cortex) initTenantDeletionAPI() (services.Service, error) {
 	return nil, nil
 }
 
-func (t *Cortex) initQueryScheduler() (services.Service, error) {
+func (t *Mimir) initQueryScheduler() (services.Service, error) {
 	s, err := scheduler.NewScheduler(t.Cfg.QueryScheduler, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
 		return nil, errors.Wrap(err, "query-scheduler init")
@@ -804,7 +804,7 @@ func (t *Cortex) initQueryScheduler() (services.Service, error) {
 	return s, nil
 }
 
-func (t *Cortex) setupModuleManager() error {
+func (t *Mimir) setupModuleManager() error {
 	mm := modules.NewManager()
 
 	// Register all modules here.

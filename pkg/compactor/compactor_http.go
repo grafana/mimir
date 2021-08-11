@@ -21,10 +21,10 @@ var (
 	<html>
 		<head>
 			<meta charset="UTF-8">
-			<title>Cortex Compactor Ring</title>
+			<title>Compactor Ring</title>
 		</head>
 		<body>
-			<h1>Cortex Compactor Ring</h1>
+			<h1>Compactor Ring</h1>
 			<p>{{ .Message }}</p>
 		</body>
 	</html>`))

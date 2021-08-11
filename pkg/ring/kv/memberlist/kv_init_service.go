@@ -97,7 +97,7 @@ func (kvs *KVInitService) stopping(_ error) error {
 func (kvs *KVInitService) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	kv := kvs.getKV()
 	if kv == nil {
-		util.WriteTextResponse(w, "This Cortex instance doesn't use memberlist.")
+		util.WriteTextResponse(w, "This instance doesn't use memberlist.")
 		return
 	}
 
@@ -271,10 +271,10 @@ const pageContent = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex Memberlist Status</title>
+		<title>Memberlist Status</title>
 	</head>
 	<body>
-		<h1>Cortex Memberlist Status</h1>
+		<h1>Memberlist Status</h1>
 		<p>Current time: {{ .Now }}</p>
 
 		<ul>

@@ -22,7 +22,7 @@ import (
 	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
-// ThanosBlockConverter converts blocks written by Thanos to make them readable by Cortex
+// ThanosBlockConverter converts blocks written by Thanos to make them readable by Mimir
 type ThanosBlockConverter struct {
 	logger log.Logger
 	bkt    objstore.Bucket

@@ -240,7 +240,7 @@ outer:
 
 			for _, event := range resp.Events {
 				if event.Kv.Version == 0 && event.Kv.Value == nil {
-					// Delete notification. Since not all KV store clients (and Cortex codecs) support this, we ignore it.
+					// Delete notification. Since not all KV store clients (and Mimir codecs) support this, we ignore it.
 					continue
 				}
 

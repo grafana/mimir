@@ -96,7 +96,7 @@ func main() {
 	flag.IntVar(&ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	flag.IntVar(&mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	flag.IntVar(&blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
-	flag.BoolVar(&printVersion, "version", false, "Print Cortex version and exit.")
+	flag.BoolVar(&printVersion, "version", false, "Print application version and exit.")
 	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
 
 	usage := flag.CommandLine.Usage
@@ -119,7 +119,7 @@ func main() {
 	}
 
 	if printVersion {
-		fmt.Fprintln(os.Stdout, version.Print("Cortex"))
+		fmt.Fprintln(os.Stdout, version.Print("Mimir"))
 		return
 	}
 
@@ -195,7 +195,7 @@ func main() {
 		return
 	}
 
-	level.Info(util_log.Logger).Log("msg", "Starting Cortex", "version", version.Info())
+	level.Info(util_log.Logger).Log("msg", "Starting application", "version", version.Info())
 
 	err = t.Run()
 

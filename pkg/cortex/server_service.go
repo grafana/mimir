@@ -19,7 +19,7 @@ import (
 // NewServerService constructs service from Server component.
 // servicesToWaitFor is called when server is stopping, and should return all
 // services that need to terminate before server actually stops.
-// N.B.: this function is NOT Cortex specific, please let's keep it that way.
+// N.B.: this function is NOT Mimir specific, please let's keep it that way.
 // Passed server should not react on signals. Early return from Run function is considered to be an error.
 func NewServerService(serv *server.Server, servicesToWaitFor func() []services.Service) services.Service {
 	serverDone := make(chan error, 1)

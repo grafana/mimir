@@ -428,10 +428,10 @@ func (r *Ruler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			<html>
 				<head>
 					<meta charset="UTF-8">
-					<title>Cortex Ruler Status</title>
+					<title>Ruler Status</title>
 				</head>
 				<body>
-					<h1>Cortex Ruler Status</h1>
+					<h1>Ruler Status</h1>
 					<p>Ruler running with shards disabled</p>
 				</body>
 			</html>`
@@ -834,7 +834,7 @@ func (r *Ruler) DeleteTenantConfiguration(w http.ResponseWriter, req *http.Reque
 
 	userID, err := tenant.TenantID(req.Context())
 	if err != nil {
-		// When Cortex is running, it uses Auth Middleware for checking X-Scope-OrgID and injecting tenant into context.
+		// When Mimir is running, it uses Auth Middleware for checking X-Scope-OrgID and injecting tenant into context.
 		// Auth Middleware sends http.StatusUnauthorized if X-Scope-OrgID is missing, so we do too here, for consistency.
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

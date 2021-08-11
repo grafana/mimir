@@ -12,7 +12,7 @@ import (
 )
 
 // ManagerMetrics aggregates metrics exported by the Prometheus
-// rules package and returns them as Cortex metrics
+// rules package and returns them as Mimir metrics
 type ManagerMetrics struct {
 	regs *util.UserRegistries
 

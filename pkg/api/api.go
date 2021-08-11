@@ -205,7 +205,7 @@ func (a *API) RegisterAlertmanager(am *alertmanager.MultitenantAlertmanager, tar
 	}
 }
 
-// RegisterAPI registers the standard endpoints associated with a running Cortex.
+// RegisterAPI registers the standard endpoints associated with a running Mimir.
 func (a *API) RegisterAPI(httpPathPrefix string, actualCfg interface{}, defaultCfg interface{}) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config", "Current Config (including the default values)")
 	a.indexPage.AddLink(SectionAdminEndpoints, "/config?mode=diff", "Current Config (show only values that differ from the defaults)")
@@ -398,7 +398,7 @@ func (a *API) RegisterQueryAPI(handler http.Handler) {
 }
 
 // RegisterQueryFrontend registers the Prometheus routes supported by the
-// Cortex querier service. Currently this can not be registered simultaneously
+// Mimir querier service. Currently this can not be registered simultaneously
 // with the Querier.
 func (a *API) RegisterQueryFrontendHandler(h http.Handler) {
 	a.RegisterQueryAPI(h)
@@ -417,7 +417,7 @@ func (a *API) RegisterQueryScheduler(f *scheduler.Scheduler) {
 	schedulerpb.RegisterSchedulerForQuerierServer(a.server.GRPC, f)
 }
 
-// RegisterServiceMapHandler registers the Cortex structs service handler
+// RegisterServiceMapHandler registers the Mimir structs service handler
 // TODO: Refactor this code to be accomplished using the services.ServiceManager
 // or a future module manager #2291
 func (a *API) RegisterServiceMapHandler(handler http.Handler) {

@@ -816,7 +816,7 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.ship-concurrency
     [ship_concurrency: <int> | default = 10]
 
-    # How frequently does Cortex try to compact TSDB head. Block is only created
+    # How frequently ingesters try to compact TSDB head. Block is only created
     # if data covers smallest block range. Must be greater than 0 and max 5
     # minutes.
     # CLI flag: -blocks-storage.tsdb.head-compaction-interval
