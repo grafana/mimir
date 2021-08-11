@@ -27,7 +27,7 @@ function ready() {
     sleep "${sleep_interval}"
     until curl -s localhost:"${port}"/ready | grep -q ready; do
         if [[ ${attempt} -eq ${max_attempts} ]]; then
-            echo "Application not ready in ${max_attempts} attempts"
+            echo "Mimir not ready in ${max_attempts} attempts"
             return 1
         else
             (( attempt++ ))
