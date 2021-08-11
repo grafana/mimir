@@ -19,8 +19,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/test"
-
-	"github.com/grafana/mimir/pkg/querier/querysharding"
 )
 
 type ByHashRangeKey []IndexEntry
@@ -406,56 +404,4 @@ func BenchmarkEncodeLabelsString(b *testing.B) {
 	}
 	b.Log("data size", len(data))
 	b.Log("decode", decoded)
-}
-
-func TestV10IndexQueries(t *testing.T) {
-	fromShards := func(n int) (res []IndexQuery) {
-		for i := 0; i < n; i++ {
-			res = append(res, IndexQuery{
-				TableName:       "tbl",
-				HashValue:       fmt.Sprintf("%02d:%s:%s:%s", i, "hash", "metric", "label"),
-				RangeValueStart: []byte(fmt.Sprint(i)),
-				ValueEqual:      []byte(fmt.Sprint(i)),
-			})
-		}
-		return res
-	}
-
-	var testExprs = []struct {
-		name     string
-		queries  []IndexQuery
-		shard    *querysharding.ShardSelector
-		expected []IndexQuery
-	}{
-		{
-			name:     "passthrough when no shard specified",
-			queries:  fromShards(2),
-			shard:    nil,
-			expected: fromShards(2),
-		},
-		{
-			name:    "out of bounds shard returns 0 matches",
-			queries: fromShards(2),
-			shard: &querysharding.ShardSelector{
-				ShardIndex: 3,
-			},
-			expected: nil,
-		},
-		{
-			name:    "return correct shard",
-			queries: fromShards(3),
-			shard: &querysharding.ShardSelector{
-				ShardIndex: 1,
-			},
-			expected: []IndexQuery{fromShards(2)[1]},
-		},
-	}
-
-	for _, c := range testExprs {
-		t.Run(c.name, func(t *testing.T) {
-			s := v10Entries{}
-			filtered := s.FilterReadQueries(c.queries, c.shard)
-			require.Equal(t, c.expected, filtered)
-		})
-	}
 }

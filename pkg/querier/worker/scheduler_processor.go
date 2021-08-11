@@ -32,7 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/grpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	cortex_middleware "github.com/grafana/mimir/pkg/util/middleware"
+	mimir_middleware "github.com/grafana/mimir/pkg/util/middleware"
 	"github.com/grafana/mimir/pkg/util/services"
 )
 
@@ -204,7 +204,7 @@ func (sp *schedulerProcessor) createFrontendClient(addr string) (client.PoolClie
 	opts, err := sp.grpcConfig.DialOption([]grpc.UnaryClientInterceptor{
 		otgrpc.OpenTracingClientInterceptor(opentracing.GlobalTracer()),
 		middleware.ClientUserHeaderInterceptor,
-		cortex_middleware.PrometheusGRPCUnaryInstrumentation(sp.frontendClientRequestDuration),
+		mimir_middleware.PrometheusGRPCUnaryInstrumentation(sp.frontendClientRequestDuration),
 	}, nil)
 
 	if err != nil {

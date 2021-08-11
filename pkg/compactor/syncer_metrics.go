@@ -31,7 +31,7 @@ type syncerMetrics struct {
 	verticalCompactions       prometheus.Counter
 }
 
-// Copied (and modified with Cortex prefix) from Thanos, pkg/compact/compact.go
+// Copied (and modified with Mimir prefix) from Thanos, pkg/compact/compact.go
 // We also ignore "group" label, since we only use a single group.
 func newSyncerMetrics(reg prometheus.Registerer) *syncerMetrics {
 	var m syncerMetrics

@@ -99,4 +99,4 @@ Currently experimental features are:
     - `-store-gateway.sharding-ring.heartbeat-period=0`
 - `LabelNames` calls using matchers
   - `-querier.query-label-names-with-matchers-enabled`
-
+- Exclude ingesters running in specific zones (`-distributor.excluded-zones`)

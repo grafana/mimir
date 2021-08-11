@@ -19,11 +19,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 )
 
 func TestGlobalMarkersBucket_Delete_ShouldSucceedIfDeletionMarkDoesNotExistInTheBlockButExistInTheGlobalLocation(t *testing.T) {
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 
 	ctx := context.Background()
 	bkt = BucketWithGlobalMarkers(bkt)
@@ -92,7 +92,7 @@ func TestBucketWithGlobalMarkers_ShouldWorkCorrectlyWithBucketMetrics(t *testing
 	// We wrap the underlying filesystem bucket client with metrics,
 	// global markers (intentionally in the middle of the chain) and
 	// user prefix.
-	bkt, _ := cortex_testutil.PrepareFilesystemBucket(t)
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bkt = objstore.BucketWithMetrics("", bkt, reg)
 	bkt = BucketWithGlobalMarkers(bkt)
 	userBkt := bucket.NewUserBucketClient("user-1", bkt, nil)

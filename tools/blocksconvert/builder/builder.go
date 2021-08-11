@@ -31,7 +31,8 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+
 	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
 	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
@@ -222,7 +223,7 @@ func (p *builderProcessor) ProcessPlanEntries(ctx context.Context, planEntryCh c
 
 	// Finish block.
 	ulid, err := tsdbBuilder.finishBlock("blocksconvert", map[string]string{
-		cortex_tsdb.TenantIDExternalLabel: p.userID,
+		mimir_tsdb.TenantIDExternalLabel: p.userID,
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "failed to finish block building")

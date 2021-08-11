@@ -57,7 +57,7 @@ func (r *bigtableIndexReader) IndexTableNames(ctx context.Context) ([]string, er
 	return client.Tables(ctx)
 }
 
-// This reader supports both used versions of BigTable index client used by Cortex:
+// This reader supports both used versions of BigTable index client used by Mimir:
 //
 // 1) newStorageClientV1 ("gcp"), which sets
 //    - RowKey = entry.HashValue + \0 + entry.RangeValue

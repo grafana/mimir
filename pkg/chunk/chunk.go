@@ -285,7 +285,7 @@ func (c *Chunk) Decode(decodeContext *DecodeContext, input []byte) error {
 		return errors.Wrap(err, "when decoding chunk metadata")
 	}
 	metadataRead := len(input) - r.Len()
-	// Older versions of Cortex included the initial length word; newer versions do not.
+	// Older versions of Mimir included the initial length word; newer versions do not.
 	if !(metadataRead == int(metadataLen) || metadataRead == int(metadataLen)+4) {
 		return errors.Wrapf(ErrMetadataLength, "expected %d, got %d", metadataLen, metadataRead)
 	}

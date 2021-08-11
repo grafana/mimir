@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package cortex
+package mimir
 
 import (
 	"html/template"
@@ -19,10 +19,10 @@ const tpl = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Cortex Services Status</title>
+		<title>Services Status</title>
 	</head>
 	<body>
-		<h1>Cortex Services Status</h1>
+		<h1>Services Status</h1>
 		<p>Current time: {{ .Now }}</p>
 		<table border="1">
 			<thead>
@@ -54,7 +54,7 @@ func init() {
 	tmpl = template.Must(template.New("webpage").Parse(tpl))
 }
 
-func (t *Cortex) servicesHandler(w http.ResponseWriter, r *http.Request) {
+func (t *Mimir) servicesHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	w.Header().Set("Content-Type", "text/plain")
 

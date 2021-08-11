@@ -24,7 +24,7 @@ import (
 	"github.com/weaveworks/common/logging"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	cortex_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	utillog "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -74,16 +74,16 @@ func TestThanosBlockConverter(t *testing.T) {
 			name: "bucket fully converted is a noop",
 			bucketData: fakeBucket{
 				"user1": map[string]metadata.Meta{
-					block1: cortexMeta("user1"),
-					block2: cortexMeta("user1"),
-					block3: cortexMeta("user1"),
+					block1: mimirMeta("user1"),
+					block2: mimirMeta("user1"),
+					block3: mimirMeta("user1"),
 				},
 				"user2": map[string]metadata.Meta{
-					block1: cortexMeta("user2"),
-					block2: cortexMeta("user2"),
+					block1: mimirMeta("user2"),
+					block2: mimirMeta("user2"),
 				},
 				"user3": map[string]metadata.Meta{
-					block1: cortexMeta("user3"),
+					block1: mimirMeta("user3"),
 				},
 			},
 			assertions: func(t *testing.T, bkt *bucket.ClientMock, results Results, err error) {
@@ -108,13 +108,13 @@ func TestThanosBlockConverter(t *testing.T) {
 			name: "bucket with some blocks to convert",
 			bucketData: fakeBucket{
 				"user1": map[string]metadata.Meta{
-					block1: cortexMeta("user1"),
+					block1: mimirMeta("user1"),
 					block2: thanosMeta(),
-					block3: cortexMeta("user1"),
+					block3: mimirMeta("user1"),
 				},
 				"user2": map[string]metadata.Meta{
-					block1: cortexMeta("user2"),
-					block2: cortexMeta("user2"),
+					block1: mimirMeta("user2"),
+					block2: mimirMeta("user2"),
 				},
 				"user3": map[string]metadata.Meta{
 					block1: thanosMeta(),
@@ -142,13 +142,13 @@ func TestThanosBlockConverter(t *testing.T) {
 			name: "bucket with failed blocks",
 			bucketData: fakeBucket{
 				"user1": map[string]metadata.Meta{
-					block1:              cortexMeta("user1"),
-					blockWithGetFailure: cortexMeta("user1"),
-					block3:              cortexMeta("user1"),
+					block1:              mimirMeta("user1"),
+					blockWithGetFailure: mimirMeta("user1"),
+					block3:              mimirMeta("user1"),
 				},
 				"user2": map[string]metadata.Meta{
-					block1: cortexMeta("user2"),
-					block2: cortexMeta("user2"),
+					block1: mimirMeta("user2"),
+					block2: mimirMeta("user2"),
 				},
 				"user3": map[string]metadata.Meta{
 					blockWithUploadFailure: thanosMeta(),
@@ -182,14 +182,14 @@ func TestThanosBlockConverter(t *testing.T) {
 	}
 }
 
-func cortexMeta(user string) metadata.Meta {
+func mimirMeta(user string) metadata.Meta {
 	return metadata.Meta{
 		BlockMeta: tsdb.BlockMeta{
 			Version: metadata.ThanosVersion1,
 		},
 		Thanos: metadata.Thanos{
 			Labels: map[string]string{
-				cortex_tsdb.TenantIDExternalLabel: user,
+				mimir_tsdb.TenantIDExternalLabel: user,
 			},
 		},
 	}
@@ -301,14 +301,14 @@ func TestConvertMetadata(t *testing.T) {
 			in: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
 					},
 				},
 			},
 			out: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
 					},
 				},
 			},
@@ -325,7 +325,7 @@ func TestConvertMetadata(t *testing.T) {
 			out: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
 					},
 				},
 			},
@@ -342,7 +342,7 @@ func TestConvertMetadata(t *testing.T) {
 			out: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
 					},
 				},
 			},
@@ -354,16 +354,16 @@ func TestConvertMetadata(t *testing.T) {
 			in: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
-						"extra":                           "label",
-						"cluster":                         "foo",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
+						"extra":                          "label",
+						"cluster":                        "foo",
 					},
 				},
 			},
 			out: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
 					},
 				},
 			},
@@ -375,14 +375,14 @@ func TestConvertMetadata(t *testing.T) {
 			in: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "wrong_user",
+						mimir_tsdb.TenantIDExternalLabel: "wrong_user",
 					},
 				},
 			},
 			out: metadata.Meta{
 				Thanos: metadata.Thanos{
 					Labels: map[string]string{
-						cortex_tsdb.TenantIDExternalLabel: "user1",
+						mimir_tsdb.TenantIDExternalLabel: "user1",
 					},
 				},
 			},

@@ -267,21 +267,10 @@ func (c *seriesStore) lookupSeriesByMetricNameMatchers(ctx context.Context, from
 	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupSeriesByMetricNameMatchers", "metricName", metricName, "matchers", len(matchers))
 	defer log.Span.Finish()
 
-	// Check if one of the labels is a shard annotation, pass that information to lookupSeriesByMetricNameMatcher,
-	// and remove the label.
-	shard, shardLabelIndex, err := querysharding.ShardFromMatchers(matchers)
-	if err != nil {
-		return nil, err
-	}
-
-	if shard != nil {
-		matchers = append(matchers[:shardLabelIndex], matchers[shardLabelIndex+1:]...)
-	}
-
 	// Just get series for metric if there are no matchers
 	if len(matchers) == 0 {
 		indexLookupsPerQuery.Observe(1)
-		series, err := c.lookupSeriesByMetricNameMatcher(ctx, from, through, userID, metricName, nil, shard)
+		series, err := c.lookupSeriesByMetricNameMatcher(ctx, from, through, userID, metricName, nil)
 		if err != nil {
 			preIntersectionPerQuery.Observe(float64(len(series)))
 			postIntersectionPerQuery.Observe(float64(len(series)))
@@ -295,7 +284,7 @@ func (c *seriesStore) lookupSeriesByMetricNameMatchers(ctx context.Context, from
 	indexLookupsPerQuery.Observe(float64(len(matchers)))
 	for _, matcher := range matchers {
 		go func(matcher *labels.Matcher) {
-			ids, err := c.lookupSeriesByMetricNameMatcher(ctx, from, through, userID, metricName, matcher, shard)
+			ids, err := c.lookupSeriesByMetricNameMatcher(ctx, from, through, userID, metricName, matcher)
 			if err != nil {
 				incomingErrors <- err
 				return
@@ -348,10 +337,8 @@ func (c *seriesStore) lookupSeriesByMetricNameMatchers(ctx context.Context, from
 	return ids, nil
 }
 
-func (c *seriesStore) lookupSeriesByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher, shard *querysharding.ShardSelector) ([]string, error) {
-	return c.lookupIdsByMetricNameMatcher(ctx, from, through, userID, metricName, matcher, func(queries []IndexQuery) []IndexQuery {
-		return c.schema.FilterReadQueries(queries, shard)
-	})
+func (c *seriesStore) lookupSeriesByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher) ([]string, error) {
+	return c.lookupIdsByMetricNameMatcher(ctx, from, through, userID, metricName, matcher)
 }
 
 func (c *seriesStore) lookupChunksBySeries(ctx context.Context, from, through model.Time, userID string, seriesIDs []string) ([]string, error) {

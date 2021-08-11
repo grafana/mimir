@@ -28,7 +28,7 @@ type SeriesLimiter interface {
 }
 
 // ChunksLimiterFactory is used to create a new ChunksLimiter. The factory is useful for
-// projects depending on Thanos (eg. Cortex) which have dynamic limits.
+// projects depending on Thanos which have dynamic limits.
 type ChunksLimiterFactory func(failedCounter prometheus.Counter) ChunksLimiter
 
 // SeriesLimiterFactory is used to create a new SeriesLimiter.
