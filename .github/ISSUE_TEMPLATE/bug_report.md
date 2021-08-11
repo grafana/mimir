@@ -12,7 +12,7 @@ A clear and concise description of what the bug is.
 
 **To Reproduce**
 Steps to reproduce the behavior:
-1. Start Cortex (SHA or version)
+1. Start Mimir (SHA or version)
 2. Perform Operations(Read/Write/Others)
 
 **Expected behavior**
