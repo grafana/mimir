@@ -953,7 +953,7 @@ func TestBucketStore_Series_QuerySharding(t *testing.T) {
 				{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
 					ShardIndex: 2,
 					ShardCount: 3,
-				}.Label().Value},
+				}.LabelValue()},
 			},
 			expectedMetrics: []string{
 				"series_2", "series_4",

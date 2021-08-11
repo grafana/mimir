@@ -31,8 +31,8 @@ type ShardSelector struct {
 	ShardCount int
 }
 
-// String encodes the selector into a label value.
-func (shard ShardSelector) String() string {
+// LabelValue returns the label value to use to select this shard.
+func (shard ShardSelector) LabelValue() string {
 	return fmt.Sprintf(ShardLabelFmt, shard.ShardIndex, shard.ShardCount)
 }
 
@@ -40,7 +40,7 @@ func (shard ShardSelector) String() string {
 func (shard ShardSelector) Label() labels.Label {
 	return labels.Label{
 		Name:  ShardLabel,
-		Value: shard.String(),
+		Value: shard.LabelValue(),
 	}
 }
 

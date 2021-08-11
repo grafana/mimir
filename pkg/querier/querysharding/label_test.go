@@ -31,7 +31,7 @@ func TestRemoveShardFromMatchers(t *testing.T) {
 		"should return matching shard and filter out its matcher": {
 			input: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test"),
-				labels.MustNewMatcher(labels.MatchEqual, ShardLabel, ShardSelector{ShardIndex: 1, ShardCount: 8}.Label().Value),
+				labels.MustNewMatcher(labels.MatchEqual, ShardLabel, ShardSelector{ShardIndex: 1, ShardCount: 8}.LabelValue()),
 				labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"),
 			},
 			expectedShard: &ShardSelector{

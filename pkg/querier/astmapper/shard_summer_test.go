@@ -227,7 +227,7 @@ func TestShardFromMatchers(t *testing.T) {
 					Value: querysharding.ShardSelector{
 						ShardIndex: 10,
 						ShardCount: 16,
-					}.String(),
+					}.LabelValue(),
 				},
 				{},
 			},
