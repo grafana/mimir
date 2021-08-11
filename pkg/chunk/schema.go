@@ -10,17 +10,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
-	"github.com/go-kit/kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
-
-	"github.com/grafana/mimir/pkg/querier/querysharding"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -56,7 +50,6 @@ type BaseSchema interface {
 	GetReadQueriesForMetric(from, through model.Time, userID string, metricName string) ([]IndexQuery, error)
 	GetReadQueriesForMetricLabel(from, through model.Time, userID string, metricName string, labelName string) ([]IndexQuery, error)
 	GetReadQueriesForMetricLabelValue(from, through model.Time, userID string, metricName string, labelName string, labelValue string) ([]IndexQuery, error)
-	FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery
 }
 
 // StoreSchema is a schema used by store
@@ -348,15 +341,10 @@ func (s seriesStoreSchema) GetLabelNamesForSeries(from, through model.Time, user
 	return result, nil
 }
 
-func (s baseSchema) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
-	return s.entries.FilterReadQueries(queries, shard)
-}
-
 type baseEntries interface {
 	GetReadMetricQueries(bucket Bucket, metricName string) ([]IndexQuery, error)
 	GetReadMetricLabelQueries(bucket Bucket, metricName string, labelName string) ([]IndexQuery, error)
 	GetReadMetricLabelValueQueries(bucket Bucket, metricName string, labelName string, labelValue string) ([]IndexQuery, error)
-	FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery
 }
 
 // used by storeSchema
@@ -433,10 +421,6 @@ func (originalEntries) GetReadMetricLabelValueQueries(bucket Bucket, metricName 
 			RangeValuePrefix: rangeValuePrefix([]byte(labelName), []byte(labelValue)),
 		},
 	}, nil
-}
-
-func (originalEntries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
-	return queries
 }
 
 // v3Schema went to base64 encoded label values & a version ID
@@ -536,10 +520,6 @@ func (labelNameInHashKeyEntries) GetReadMetricLabelValueQueries(bucket Bucket, m
 	}, nil
 }
 
-func (labelNameInHashKeyEntries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
-	return queries
-}
-
 // v5 schema is an extension of v4, with the chunk end time in the
 // range key to improve query latency.  However, it did it wrong
 // so the chunk end times are ignored.
@@ -597,10 +577,6 @@ func (v5Entries) GetReadMetricLabelValueQueries(bucket Bucket, metricName string
 			HashValue: fmt.Sprintf("%s:%s:%s", bucket.hashKey, metricName, labelName),
 		},
 	}, nil
-}
-
-func (v5Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
-	return queries
 }
 
 // v6Entries fixes issues with v5 time encoding being wrong (see #337), and
@@ -666,10 +642,6 @@ func (v6Entries) GetReadMetricLabelValueQueries(bucket Bucket, metricName string
 			ValueEqual:      []byte(labelValue),
 		},
 	}, nil
-}
-
-func (v6Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
-	return queries
 }
 
 // v9Entries adds a layer of indirection between labels -> series -> chunks.
@@ -765,10 +737,6 @@ func (v9Entries) GetChunksForSeries(bucket Bucket, seriesID []byte) ([]IndexQuer
 
 func (v9Entries) GetLabelNamesForSeries(_ Bucket, _ []byte) ([]IndexQuery, error) {
 	return nil, ErrNotSupported
-}
-
-func (v9Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) []IndexQuery {
-	return queries
 }
 
 // v10Entries builds on v9 by sharding index rows to reduce their size.
@@ -876,33 +844,6 @@ func (v10Entries) GetChunksForSeries(bucket Bucket, seriesID []byte) ([]IndexQue
 
 func (v10Entries) GetLabelNamesForSeries(_ Bucket, _ []byte) ([]IndexQuery, error) {
 	return nil, ErrNotSupported
-}
-
-// FilterReadQueries will return only queries that match a certain shard
-func (v10Entries) FilterReadQueries(queries []IndexQuery, shard *querysharding.ShardSelector) (matches []IndexQuery) {
-	if shard == nil {
-		return queries
-	}
-
-	for _, query := range queries {
-		s := strings.Split(query.HashValue, ":")[0]
-		n, err := strconv.Atoi(s)
-		if err != nil {
-			level.Error(util_log.Logger).Log(
-				"msg",
-				"Unable to determine shard from IndexQuery",
-				"HashValue",
-				query.HashValue,
-				"schema",
-				"v10",
-			)
-		}
-
-		if err == nil && n == shard.ShardIndex {
-			matches = append(matches, query)
-		}
-	}
-	return matches
 }
 
 // v11Entries builds on v10 but adds index entries for each series to store respective labels.
