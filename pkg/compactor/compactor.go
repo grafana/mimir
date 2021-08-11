@@ -240,12 +240,12 @@ func NewCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig
 		blocksCompactorFactory = DefaultBlocksCompactorFactory
 	}
 
-	cortexCompactor, err := newCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
+	mimirCompactor, err := newCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create blocks compactor")
 	}
 
-	return cortexCompactor, nil
+	return mimirCompactor, nil
 }
 
 func newCompactor(

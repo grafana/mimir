@@ -23,7 +23,7 @@ func changeTargetConfig(c *Config) {
 func TestAPIConfig(t *testing.T) {
 	actualCfg := newDefaultConfig()
 
-	cortex := &Mimir{
+	mimir := &Mimir{
 		Server: &server.Server{},
 	}
 
@@ -81,20 +81,20 @@ func TestAPIConfig(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cortex.Server.HTTP = mux.NewRouter()
+			mimir.Server.HTTP = mux.NewRouter()
 
-			cortex.Cfg = *actualCfg
+			mimir.Cfg = *actualCfg
 			if tc.actualCfg != nil {
-				tc.actualCfg(&cortex.Cfg)
+				tc.actualCfg(&mimir.Cfg)
 			}
 
-			_, err := cortex.initAPI()
+			_, err := mimir.initAPI()
 			require.NoError(t, err)
 
 			req := httptest.NewRequest("GET", tc.path, nil)
 			resp := httptest.NewRecorder()
 
-			cortex.Server.HTTP.ServeHTTP(resp, req)
+			mimir.Server.HTTP.ServeHTTP(resp, req)
 
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)
 
@@ -152,18 +152,18 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cortex := &Mimir{
+			mimir := &Mimir{
 				Server: &server.Server{},
 				Cfg:    *testData.config,
 			}
 
-			_, err := cortex.initRulerStorage()
+			_, err := mimir.initRulerStorage()
 			require.NoError(t, err)
 
 			if testData.expectedInit {
-				assert.NotNil(t, cortex.RulerStorage)
+				assert.NotNil(t, mimir.RulerStorage)
 			} else {
-				assert.Nil(t, cortex.RulerStorage)
+				assert.Nil(t, mimir.RulerStorage)
 			}
 		})
 	}

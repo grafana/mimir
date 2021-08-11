@@ -108,8 +108,8 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 		end = len(q.series)
 	} else {
 		// return the series range associated with this shard
-		seriesPerShard := len(q.series) / shard.ShardCount
-		start = shard.ShardIndex * seriesPerShard
+		seriesPerShard := len(q.series) / int(shard.ShardCount)
+		start = int(shard.ShardIndex) * seriesPerShard
 		end = start + seriesPerShard
 
 		// if we're clipping an odd # of series, add the final series to the last shard

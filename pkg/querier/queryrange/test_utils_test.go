@@ -91,8 +91,9 @@ func TestGenLabelsSize(t *testing.T) {
 
 func TestNewMockShardedqueryable(t *testing.T) {
 	for _, tc := range []struct {
-		shards, nSamples, labelBuckets int
-		labelSet                       []string
+		shards                 uint64
+		nSamples, labelBuckets int
+		labelSet               []string
 	}{
 		{
 			nSamples:     100,
@@ -111,7 +112,7 @@ func TestNewMockShardedqueryable(t *testing.T) {
 		expectedSeries := int(math.Pow(float64(tc.labelBuckets), float64(len(tc.labelSet))))
 
 		seriesCt := 0
-		for i := 0; i < tc.shards; i++ {
+		for i := uint64(0); i < tc.shards; i++ {
 
 			set := q.Select(false, nil, &labels.Matcher{
 				Type: labels.MatchEqual,
@@ -119,7 +120,7 @@ func TestNewMockShardedqueryable(t *testing.T) {
 				Value: querysharding.ShardSelector{
 					ShardIndex: i,
 					ShardCount: tc.shards,
-				}.String(),
+				}.LabelValue(),
 			})
 
 			require.Nil(t, set.Err())
