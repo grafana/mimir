@@ -53,10 +53,10 @@ Where default_value is the value to use if the environment variable is undefined
 ### Supported contents and default values of the config file
 
 ```yaml
-# Comma-separated list of Mimir modules to load. The alias 'all' can be used in
-# the list to load a number of core modules and will enable single-binary mode.
-# Use '-modules' command line flag to get a list of available modules, and to
-# see which modules are included in 'all'.
+# Comma-separated list of modules to load. The alias 'all' can be used in the
+# list to load a number of core modules and will enable single-binary mode. Use
+# '-modules' command line flag to get a list of available modules, and to see
+# which modules are included in 'all'.
 # CLI flag: -target
 [target: <string> | default = "all"]
 
@@ -64,7 +64,7 @@ Where default_value is the value to use if the environment variable is undefined
 # CLI flag: -auth.enabled
 [auth_enabled: <boolean> | default = true]
 
-# HTTP path prefix for Mimir API.
+# HTTP path prefix for API.
 # CLI flag: -http.prefix
 [http_prefix: <string> | default = "/api/prom"]
 
@@ -86,48 +86,48 @@ api:
 # service(s).
 [server: <server_config>]
 
-# The distributor_config configures the Mimir distributor.
+# The distributor_config configures the distributor.
 [distributor: <distributor_config>]
 
-# The querier_config configures the Mimir querier.
+# The querier_config configures the querier.
 [querier: <querier_config>]
 
-# The ingester_client_config configures how the Mimir distributors connect to
-# the ingesters.
+# The ingester_client_config configures how the distributors connect to the
+# ingesters.
 [ingester_client: <ingester_client_config>]
 
-# The ingester_config configures the Mimir ingester.
+# The ingester_config configures the ingester.
 [ingester: <ingester_config>]
 
 # The flusher_config configures the WAL flusher target, used to manually run
 # one-time flushes when scaling down ingesters.
 [flusher: <flusher_config>]
 
-# The storage_config configures where Mimir stores the data (chunks storage
+# The storage_config configures where the data is stored (chunks storage
 # engine).
 [storage: <storage_config>]
 
-# The chunk_store_config configures how Mimir stores the data (chunks storage
+# The chunk_store_config configures how the data is stored (chunks storage
 # engine).
 [chunk_store: <chunk_store_config>]
 
-# The limits_config configures default and per-tenant limits imposed by Mimir
-# services (ie. distributor, ingester, ...).
+# The limits_config configures default and per-tenant limits imposed by services
+# (ie. distributor, ingester, ...).
 [limits: <limits_config>]
 
-# The frontend_worker_config configures the worker - running within the Mimir
-# querier - picking up and executing queries enqueued by the query-frontend or
+# The frontend_worker_config configures the worker - running within the querier
+# - picking up and executing queries enqueued by the query-frontend or
 # query-scheduler.
 [frontend_worker: <frontend_worker_config>]
 
-# The query_frontend_config configures the Mimir query-frontend.
+# The query_frontend_config configures the query-frontend.
 [frontend: <query_frontend_config>]
 
-# The query_range_config configures the query splitting and caching in the Mimir
+# The query_range_config configures the query splitting and caching in the
 # query-frontend.
 [query_range: <query_range_config>]
 
-# The table_manager_config configures the Mimir table-manager.
+# The table_manager_config configures the table-manager.
 [table_manager: <table_manager_config>]
 
 # The blocks_storage_config configures the blocks storage.
@@ -150,17 +150,16 @@ tenant_federation:
   # CLI flag: -tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
-# The ruler_config configures the Mimir ruler.
+# The ruler_config configures the ruler.
 [ruler: <ruler_config>]
 
-# The ruler_storage_config configures the Mimir ruler storage backend.
+# The ruler_storage_config configures the ruler storage backend.
 [ruler_storage: <ruler_storage_config>]
 
-# The alertmanager_config configures the Mimir alertmanager.
+# The alertmanager_config configures the alertmanager.
 [alertmanager: <alertmanager_config>]
 
-# The alertmanager_storage_config configures the Mimir alertmanager storage
-# backend.
+# The alertmanager_storage_config configures the alertmanager storage backend.
 [alertmanager_storage: <alertmanager_storage_config>]
 
 runtime_config:
@@ -424,7 +423,7 @@ grpc_tls_config:
 
 ### `distributor_config`
 
-The `distributor_config` configures the Mimir distributor.
+The `distributor_config` configures the distributor.
 
 ```yaml
 pool:
@@ -590,7 +589,7 @@ instance_limits:
 
 ### `ingester_config`
 
-The `ingester_config` configures the Mimir ingester.
+The `ingester_config` configures the ingester.
 
 ```yaml
 # Configures the Write-Ahead Log (WAL) for the Mimir chunks storage. This config
@@ -826,7 +825,7 @@ instance_limits:
 
 ### `querier_config`
 
-The `querier_config` configures the Mimir querier.
+The `querier_config` configures the querier.
 
 ```yaml
 # The maximum number of concurrent queries.
@@ -961,7 +960,7 @@ store_gateway_client:
 
 ### `query_frontend_config`
 
-The `query_frontend_config` configures the Mimir query-frontend.
+The `query_frontend_config` configures the query-frontend.
 
 ```yaml
 # Log queries that are slower than the specified duration. Set to 0 to disable.
@@ -1084,7 +1083,7 @@ grpc_client_config:
 
 ### `query_range_config`
 
-The `query_range_config` configures the query splitting and caching in the Mimir query-frontend.
+The `query_range_config` configures the query splitting and caching in the query-frontend.
 
 ```yaml
 # Split queries by an interval and execute in parallel, 0 disables it. You
@@ -1162,7 +1161,7 @@ results_cache:
 
 ### `ruler_config`
 
-The `ruler_config` configures the Mimir ruler.
+The `ruler_config` configures the ruler.
 
 ```yaml
 # URL of alerts return path.
@@ -1636,7 +1635,7 @@ ring:
 
 ### `ruler_storage_config`
 
-The `ruler_storage_config` configures the Mimir ruler storage backend.
+The `ruler_storage_config` configures the ruler storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -1844,7 +1843,7 @@ local:
 
 ### `alertmanager_config`
 
-The `alertmanager_config` configures the Mimir alertmanager.
+The `alertmanager_config` configures the alertmanager.
 
 ```yaml
 # Base path for data storage.
@@ -2170,7 +2169,7 @@ alertmanager_client:
 
 ### `alertmanager_storage_config`
 
-The `alertmanager_storage_config` configures the Mimir alertmanager storage backend.
+The `alertmanager_storage_config` configures the alertmanager storage backend.
 
 ```yaml
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
@@ -2378,7 +2377,7 @@ local:
 
 ### `table_manager_config`
 
-The `table_manager_config` configures the Mimir table-manager.
+The `table_manager_config` configures the table-manager.
 
 ```yaml
 # If true, disable all changes to DB capacity
@@ -2713,7 +2712,7 @@ chunk_tables_provisioning:
 
 ### `storage_config`
 
-The `storage_config` configures where Mimir stores the data (chunks storage engine).
+The `storage_config` configures where the data is stored (chunks storage engine).
 
 ```yaml
 # The storage engine to use: chunks (deprecated) or blocks.
@@ -3378,7 +3377,7 @@ The `flusher_config` configures the WAL flusher target, used to manually run one
 
 ### `chunk_store_config`
 
-The `chunk_store_config` configures how Mimir stores the data (chunks storage engine).
+The `chunk_store_config` configures how the data is stored (chunks storage engine).
 
 ```yaml
 chunk_cache_config:
@@ -3465,7 +3464,7 @@ write_dedupe_cache_config:
 
 ### `ingester_client_config`
 
-The `ingester_client_config` configures how the Mimir distributors connect to the ingesters.
+The `ingester_client_config` configures how the distributors connect to the ingesters.
 
 ```yaml
 grpc_client_config:
@@ -3539,7 +3538,7 @@ grpc_client_config:
 
 ### `frontend_worker_config`
 
-The `frontend_worker_config` configures the worker - running within the Mimir querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
+The `frontend_worker_config` configures the worker - running within the querier - picking up and executing queries enqueued by the query-frontend or query-scheduler.
 
 ```yaml
 # Address of query frontend service, in host:port format. If
@@ -3888,7 +3887,7 @@ The `memberlist_config` configures the Gossip memberlist.
 
 ### `limits_config`
 
-The `limits_config` configures default and per-tenant limits imposed by Mimir services (ie. distributor, ingester, ...).
+The `limits_config` configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).
 
 ```yaml
 # Per-user ingestion rate limit in samples per second.

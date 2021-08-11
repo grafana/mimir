@@ -92,7 +92,7 @@ This section described the querier configuration. For the general Cortex configu
 
 ### `querier_config`
 
-The `querier_config` configures the Mimir querier.
+The `querier_config` configures the querier.
 
 ```yaml
 querier:

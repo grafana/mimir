@@ -19,10 +19,10 @@ const tpl = `
 <html>
 	<head>
 		<meta charset="UTF-8">
-		<title>Mimir Services Status</title>
+		<title>Services Status</title>
 	</head>
 	<body>
-		<h1>Mimir Services Status</h1>
+		<h1>Services Status</h1>
 		<p>Current time: {{ .Now }}</p>
 		<table border="1">
 			<thead>

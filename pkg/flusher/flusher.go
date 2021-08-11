@@ -107,6 +107,6 @@ func (f *Flusher) running(ctx context.Context) error {
 		return util.ErrStopProcess
 	}
 
-	// Return normally -- this keep Mimir running.
+	// Return normally -- this keeps Mimir running.
 	return nil
 }
