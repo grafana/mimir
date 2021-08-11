@@ -21,11 +21,11 @@ var summableAggregates = map[parser.ItemType]struct{}{
 	parser.TOPK:    {},
 	parser.BOTTOMK: {},
 	parser.COUNT:   {},
+	parser.AVG:     {},
 }
 
 var nonParallelFuncs = []string{
 	"histogram_quantile",
-	"quantile_over_time",
 	"absent",
 }
 
@@ -98,12 +98,10 @@ func CanParallelize(node parser.Node) bool {
 		level.Error(util_log.Logger).Log("err", fmt.Sprintf("CanParallel: unhandled node type %T", node)) //lint:ignore faillint allow global logger for now
 		return false
 	}
-
 }
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.
 func ParallelizableFunc(f parser.Function) bool {
-
 	for _, v := range nonParallelFuncs {
 		if v == f.Name {
 			return false

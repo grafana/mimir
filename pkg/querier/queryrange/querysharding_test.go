@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -223,17 +222,17 @@ func TestQueryshardingCorrectness(t *testing.T) {
 		{
 			desc:   "entire query with shard summer",
 			query:  `sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
-			mapped: `sum by(foo, bar) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(foo, bar, __query_shard__) (min_over_time(bar1{__query_shard__=\\\"0_of_2\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(foo, bar, __query_shard__) (min_over_time(bar1{__query_shard__=\\\"1_of_2\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
+			mapped: `sum by(foo, bar) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(foo, bar) (min_over_time(bar1{__query_shard__=\\\"0_of_2\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(foo, bar) (min_over_time(bar1{__query_shard__=\\\"1_of_2\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
 		},
 		{
 			desc:   "shard one leg encode the other",
 			query:  "sum(rate(bar1[1m])) or rate(bar1[1m])",
-			mapped: `sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(__query_shard__) (rate(bar1{__query_shard__=\\\"0_of_2\\\"}[1m]))\",\"sum by(__query_shard__) (rate(bar1{__query_shard__=\\\"1_of_2\\\"}[1m]))\"]}"}) or __embedded_queries__{__cortex_queries__="{\"Concat\":[\"rate(bar1[1m])\"]}"}`,
+			mapped: `sum(__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum(rate(bar1{__query_shard__=\\\"0_of_2\\\"}[1m]))\",\"sum(rate(bar1{__query_shard__=\\\"1_of_2\\\"}[1m]))\"]}"}) or __embedded_queries__{__cortex_queries__="{\"Concat\":[\"rate(bar1[1m])\"]}"}`,
 		},
 		{
 			desc:   "should skip encoding leaf scalar/strings",
 			query:  `histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
-			mapped: `histogram_quantile(0.5, sum by(le) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(le, __query_shard__) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__=\\\"0_of_2\\\"}[5m]))\",\"sum by(le, __query_shard__) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__=\\\"1_of_2\\\"}[5m]))\"]}"}))`,
+			mapped: `histogram_quantile(0.5, sum by(le) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__=\\\"0_of_2\\\"}[5m]))\",\"sum by(le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__=\\\"1_of_2\\\"}[5m]))\"]}"}))`,
 		},
 		{
 			desc: "ensure sharding sub aggregations are skipped to avoid non-associative series merging across shards",
@@ -244,7 +243,7 @@ func TestQueryshardingCorrectness(t *testing.T) {
 				    )  by (drive,instance)
 				  )  by (instance)
 				)`,
-			mapped: `__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum(count by(instance) (count by(drive, instance) (bar1)))\"]}"}`,
+			mapped: `sum(count by(instance) (sum by(drive, instance) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"count by(drive, instance) (bar1{__query_shard__=\\\"0_of_2\\\"})\",\"count by(drive, instance) (bar1{__query_shard__=\\\"1_of_2\\\"})\"]}"})))`,
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
@@ -254,21 +253,10 @@ func TestQueryshardingCorrectness(t *testing.T) {
 				2,
 				nil,
 			)
-
-			// todo(ctovena): move this to its own package and test.
-			mapper, err := astmapper.NewSharding(2, nil)
-			require.Nil(t, err)
-			expr, err := parser.ParseExpr(tc.query)
-			require.Nil(t, err)
-			mapped, err := mapper.Map(expr)
-			require.Nil(t, err)
-			require.Equal(t, tc.mapped, mapped.String())
-
 			downstream := &downstreamHandler{
 				engine:    engine,
 				queryable: shardAwareQueryable,
 			}
-
 			r := req.WithQuery(tc.query)
 			shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), r)
 			require.Nil(t, err)
