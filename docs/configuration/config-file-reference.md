@@ -593,8 +593,8 @@ instance_limits:
 The `ingester_config` configures the Cortex ingester.
 
 ```yaml
-# Configures the Write-Ahead Log (WAL) for the Cortex chunks storage. This
-# config is ignored when running the Cortex blocks storage.
+# Configures the Write-Ahead Log (WAL) for the Mimir chunks storage. This config
+# is ignored when running the Mimir blocks storage.
 walconfig:
   # Enable writing of ingested data into WAL.
   # CLI flag: -ingester.wal-enabled
@@ -973,10 +973,10 @@ The `query_frontend_config` configures the Cortex query-frontend.
 # CLI flag: -frontend.max-body-size
 [max_body_size: <int> | default = 10485760]
 
-# True to enable query statistics tracking. When enabled, a message with some
+# False to disable query statistics tracking. When enabled, a message with some
 # statistics is logged for every query.
 # CLI flag: -frontend.query-stats-enabled
-[query_stats_enabled: <boolean> | default = false]
+[query_stats_enabled: <boolean> | default = true]
 
 # Maximum number of outstanding requests per tenant per frontend; requests
 # beyond this error with HTTP 429.
@@ -1153,6 +1153,11 @@ results_cache:
 # query ASTs. This feature is supported only by the chunks storage engine.
 # CLI flag: -querier.parallelise-shardable-queries
 [parallelise_shardable_queries: <boolean> | default = false]
+
+# The amount of shards to use when doing parallelisation via query sharding by
+# default. This option is only used for blocks storage.
+# CLI flag: -querier.total-shards
+[total_shards: <int> | default = 16]
 ```
 
 ### `ruler_config`

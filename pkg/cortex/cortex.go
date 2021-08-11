@@ -35,13 +35,13 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/queryrange"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
@@ -105,7 +105,7 @@ type Config struct {
 	ChunkStore       chunk.StoreConfig               `yaml:"chunk_store"`
 	Schema           chunk.SchemaConfig              `yaml:"schema" doc:"hidden"` // Doc generation tool doesn't support it because part of the SchemaConfig doesn't support CLI flags (needs manual documentation)
 	LimitsConfig     validation.Limits               `yaml:"limits"`
-	Prealloc         cortexpb.PreallocConfig         `yaml:"prealloc" doc:"hidden"`
+	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
 	QueryRange       queryrange.Config               `yaml:"query_range"`

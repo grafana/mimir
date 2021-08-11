@@ -22,12 +22,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestQueryshardingMiddleware(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		name     string
 		next     Handler
 		input    Request
@@ -65,7 +65,6 @@ func TestQueryshardingMiddleware(t *testing.T) {
 			name: "successful trip",
 			next: mockHandlerWith(sampleMatrixResponse(), nil),
 			override: func(t *testing.T, handler Handler) {
-
 				// pre-encode the query so it doesn't try to re-split. We're just testing if it passes through correctly
 				qry := defaultReq().WithQuery(
 					`__embedded_queries__{__cortex_queries__="{\"Concat\":[\"http_requests_total{cluster=\\\"prod\\\"}\"]}"}`,
@@ -115,7 +114,6 @@ func TestQueryshardingMiddleware(t *testing.T) {
 				require.Nil(t, err)
 				require.Equal(t, c.expected, out)
 			}
-
 		})
 	}
 }
@@ -127,11 +125,11 @@ func sampleMatrixResponse() *PrometheusResponse {
 			ResultType: string(parser.ValueTypeMatrix),
 			Result: []SampleStream{
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							TimestampMs: 5,
 							Value:       1,
@@ -143,11 +141,11 @@ func sampleMatrixResponse() *PrometheusResponse {
 					},
 				},
 				{
-					Labels: []cortexpb.LabelAdapter{
+					Labels: []mimirpb.LabelAdapter{
 						{Name: "a", Value: "a1"},
 						{Name: "b", Value: "b1"},
 					},
-					Samples: []cortexpb.Sample{
+					Samples: []mimirpb.Sample{
 						{
 							TimestampMs: 5,
 							Value:       8,
@@ -199,7 +197,7 @@ func TestShardingConfigs_ValidRange(t *testing.T) {
 		return r
 	}
 
-	var testExpr = []struct {
+	testExpr := []struct {
 		name     string
 		confs    ShardingConfigs
 		req      *PrometheusRequest
@@ -429,7 +427,6 @@ func TestQueryshardingCorrectness(t *testing.T) {
 }
 
 func TestShardSplitting(t *testing.T) {
-
 	for _, tc := range []struct {
 		desc        string
 		lookback    time.Duration
@@ -501,14 +498,11 @@ func TestShardSplitting(t *testing.T) {
 			require.Nil(t, err)
 
 			approximatelyEquals(t, unaltered.(*PrometheusResponse), resp.(*PrometheusResponse))
-
 		})
 	}
-
 }
 
 func BenchmarkQuerySharding(b *testing.B) {
-
 	var shards []uint32
 
 	// max out at half available cpu cores in order to minimize noisy neighbor issues while benchmarking
@@ -647,7 +641,6 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 		util.TimeFromMillis(r.GetEnd()),
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
-
 	if err != nil {
 		return nil, err
 	}
@@ -656,7 +649,6 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 	extracted, err := FromResult(res)
 	if err != nil {
 		return nil, err
-
 	}
 
 	return &PrometheusResponse{

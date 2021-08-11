@@ -36,8 +36,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -720,12 +720,12 @@ type extendedAppender interface {
 }
 
 // v2Push adds metrics to a block
-func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error) {
+func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	var firstPartialErr error
 
 	// NOTE: because we use `unsafe` in deserialisation, we must not
 	// retain anything from `req` past the call to ReuseSlice
-	defer cortexpb.ReuseSlice(req.Timeseries)
+	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -753,7 +753,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 	i.userStatesMtx.RUnlock()
 
 	if err := db.acquireAppendLock(); err != nil {
-		return &cortexpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
 	}
 	defer db.releaseAppendLock()
 
@@ -789,7 +789,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 		// has sorted labels once hit the ingester).
 
 		// Look up a reference for this series.
-		ref, copiedLabels := app.GetRef(cortexpb.FromLabelAdaptersToLabels(ts.Labels))
+		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 
 		// To find out if any sample was added to this series, we keep old value.
 		oldSucceededSamplesCount := succeededSamplesCount
@@ -806,7 +806,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
-				copiedLabels = cortexpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
+				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
 
 				// Retain the reference in case there are multiple samples for the series.
 				if ref, err = app.Append(0, copiedLabels, s.TimestampMs, s.Value); err == nil {
@@ -859,7 +859,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 		}
 
 		if i.cfg.ActiveSeriesMetricsEnabled && succeededSamplesCount > oldSucceededSamplesCount {
-			db.activeSeries.UpdateSeries(cortexpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
+			db.activeSeries.UpdateSeries(mimirpb.FromLabelAdaptersToLabels(ts.Labels), startAppend, func(l labels.Labels) labels.Labels {
 				// we must already have copied the labels if succeededSamplesCount has been incremented.
 				return copiedLabels
 			})
@@ -880,7 +880,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 						Value:  ex.Value,
 						Ts:     ex.TimestampMs,
 						HasTs:  true,
-						Labels: cortexpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
+						Labels: mimirpb.FromLabelAdaptersToLabelsWithCopy(ex.Labels),
 					}
 
 					if _, err = app.AppendExemplar(ref, nil, e); err == nil {
@@ -940,9 +940,9 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 	i.ingestionRate.Add(int64(succeededSamplesCount + ingestedMetadata))
 
 	switch req.Source {
-	case cortexpb.RULE:
+	case mimirpb.RULE:
 		db.ingestedRuleSamples.Add(int64(succeededSamplesCount))
-	case cortexpb.API:
+	case mimirpb.API:
 		fallthrough
 	default:
 		db.ingestedAPISamples.Add(int64(succeededSamplesCount))
@@ -954,10 +954,10 @@ func (i *Ingester) v2Push(ctx context.Context, req *cortexpb.WriteRequest) (*cor
 		if errors.As(firstPartialErr, &ve) {
 			code = ve.code
 		}
-		return &cortexpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
+		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(code, wrapWithUser(firstPartialErr, userID).Error())
 	}
 
-	return &cortexpb.WriteResponse{}, nil
+	return &mimirpb.WriteResponse{}, nil
 }
 
 func (u *userTSDB) acquireAppendLock() error {
@@ -1020,14 +1020,14 @@ func (i *Ingester) v2Query(ctx context.Context, req *client.QueryRequest) (*clie
 	for ss.Next() {
 		series := ss.At()
 
-		ts := cortexpb.TimeSeries{
-			Labels: cortexpb.FromLabelsToLabelAdapters(series.Labels()),
+		ts := mimirpb.TimeSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 		}
 
 		it := series.Iterator()
 		for it.Next() {
 			t, v := it.At()
-			ts.Samples = append(ts.Samples, cortexpb.Sample{Value: v, TimestampMs: t})
+			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}
 
 		numSamples += len(ts.Samples)
@@ -1073,9 +1073,9 @@ func (i *Ingester) v2QueryExemplars(ctx context.Context, req *client.ExemplarQue
 
 	result := &client.ExemplarQueryResponse{}
 	for _, es := range res {
-		ts := cortexpb.TimeSeries{
-			Labels:    cortexpb.FromLabelsToLabelAdapters(es.SeriesLabels),
-			Exemplars: cortexpb.FromExemplarsToExemplarProtos(es.Exemplars),
+		ts := mimirpb.TimeSeries{
+			Labels:    mimirpb.FromLabelsToLabelAdapters(es.SeriesLabels),
+			Exemplars: mimirpb.FromExemplarsToExemplarProtos(es.Exemplars),
 		}
 
 		numExemplars += len(ts.Exemplars)
@@ -1210,7 +1210,7 @@ func (i *Ingester) v2MetricsForLabelMatchers(ctx context.Context, req *client.Me
 
 	// Generate the response merging all series sets.
 	result := &client.MetricsForLabelMatchersResponse{
-		Metric: make([]*cortexpb.Metric, 0),
+		Metric: make([]*mimirpb.Metric, 0),
 	}
 
 	mergedSet := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
@@ -1220,8 +1220,8 @@ func (i *Ingester) v2MetricsForLabelMatchers(ctx context.Context, req *client.Me
 			return nil, ctx.Err()
 		}
 
-		result.Metric = append(result.Metric, &cortexpb.Metric{
-			Labels: cortexpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
+		result.Metric = append(result.Metric, &mimirpb.Metric{
+			Labels: mimirpb.FromLabelsToLabelAdapters(mergedSet.At().Labels()),
 		})
 	}
 
@@ -1345,20 +1345,20 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 		return 0, 0, ss.Err()
 	}
 
-	timeseries := make([]cortexpb.TimeSeries, 0, queryStreamBatchSize)
+	timeseries := make([]mimirpb.TimeSeries, 0, queryStreamBatchSize)
 	batchSizeBytes := 0
 	for ss.Next() {
 		series := ss.At()
 
 		// convert labels to LabelAdapter
-		ts := cortexpb.TimeSeries{
-			Labels: cortexpb.FromLabelsToLabelAdapters(series.Labels()),
+		ts := mimirpb.TimeSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 		}
 
 		it := series.Iterator()
 		for it.Next() {
 			t, v := it.At()
-			ts.Samples = append(ts.Samples, cortexpb.Sample{Value: v, TimestampMs: t})
+			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
 		}
 		numSamples += len(ts.Samples)
 		numSeries++
@@ -1421,7 +1421,7 @@ func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, 
 
 		// convert labels to LabelAdapter
 		ts := client.TimeSeriesChunk{
-			Labels: cortexpb.FromLabelsToLabelAdapters(series.Labels()),
+			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
 		}
 
 		it := series.Iterator()
@@ -2224,22 +2224,22 @@ func metadataQueryRange(queryStart, queryEnd int64, db *userTSDB) (mint, maxt in
 	return
 }
 
-func wrappedTSDBIngestErr(ingestErr error, timestamp model.Time, labels []cortexpb.LabelAdapter) error {
+func wrappedTSDBIngestErr(ingestErr error, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
 	if ingestErr == nil {
 		return nil
 	}
 
-	return fmt.Errorf(errTSDBIngest, ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano), cortexpb.FromLabelAdaptersToLabels(labels).String())
+	return fmt.Errorf(errTSDBIngest, ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano), mimirpb.FromLabelAdaptersToLabels(labels).String())
 }
 
-func wrappedTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []cortexpb.LabelAdapter) error {
+func wrappedTSDBIngestExemplarErr(ingestErr error, timestamp model.Time, seriesLabels, exemplarLabels []mimirpb.LabelAdapter) error {
 	if ingestErr == nil {
 		return nil
 	}
 
 	return fmt.Errorf(errTSDBIngestExemplar, ingestErr, timestamp.Time().UTC().Format(time.RFC3339Nano),
-		cortexpb.FromLabelAdaptersToLabels(seriesLabels).String(),
-		cortexpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
+		mimirpb.FromLabelAdaptersToLabels(seriesLabels).String(),
+		mimirpb.FromLabelAdaptersToLabels(exemplarLabels).String(),
 	)
 }
 

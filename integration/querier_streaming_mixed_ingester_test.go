@@ -22,8 +22,8 @@ import (
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
-	"github.com/grafana/mimir/pkg/cortexpb"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T) {
@@ -70,7 +70,7 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(1024), "cortex_ring_tokens_total"))
 
-	s1 := []cortexpb.Sample{
+	s1 := []mimirpb.Sample{
 		{Value: 1, TimestampMs: 1000},
 		{Value: 2, TimestampMs: 2000},
 		{Value: 3, TimestampMs: 3000},
@@ -78,7 +78,7 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 		{Value: 5, TimestampMs: 5000},
 	}
 
-	s2 := []cortexpb.Sample{
+	s2 := []mimirpb.Sample{
 		{Value: 1, TimestampMs: 1000},
 		{Value: 2.5, TimestampMs: 2500},
 		{Value: 3, TimestampMs: 3000},
@@ -94,11 +94,11 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 		require.NoError(t, err)
 		defer ingesterChunksClient.Close()
 
-		_, err = ingesterChunksClient.Push(user.InjectOrgID(context.Background(), "user"), &cortexpb.WriteRequest{
-			Timeseries: []cortexpb.PreallocTimeseries{
-				{TimeSeries: &cortexpb.TimeSeries{Labels: []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "1"}}, Samples: s1}},
-				{TimeSeries: &cortexpb.TimeSeries{Labels: []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "2"}}, Samples: s1}}},
-			Source: cortexpb.API,
+		_, err = ingesterChunksClient.Push(user.InjectOrgID(context.Background(), "user"), &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "1"}}, Samples: s1}},
+				{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "2"}}, Samples: s1}}},
+			Source: mimirpb.API,
 		})
 		require.NoError(t, err)
 	}
@@ -109,11 +109,11 @@ func testQuerierWithStreamingBlocksAndChunksIngesters(t *testing.T, streamChunks
 		require.NoError(t, err)
 		defer ingesterBlocksClient.Close()
 
-		_, err = ingesterBlocksClient.Push(user.InjectOrgID(context.Background(), "user"), &cortexpb.WriteRequest{
-			Timeseries: []cortexpb.PreallocTimeseries{
-				{TimeSeries: &cortexpb.TimeSeries{Labels: []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "2"}}, Samples: s2}},
-				{TimeSeries: &cortexpb.TimeSeries{Labels: []cortexpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "3"}}, Samples: s1}}},
-			Source: cortexpb.API,
+		_, err = ingesterBlocksClient.Push(user.InjectOrgID(context.Background(), "user"), &mimirpb.WriteRequest{
+			Timeseries: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "2"}}, Samples: s2}},
+				{TimeSeries: &mimirpb.TimeSeries{Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "s"}, {Name: "l", Value: "3"}}, Samples: s1}}},
+			Source: mimirpb.API,
 		})
 		require.NoError(t, err)
 	}

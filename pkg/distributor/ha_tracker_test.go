@@ -22,7 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
@@ -485,11 +485,11 @@ func TestFindHALabels(t *testing.T) {
 		replica string
 	}
 	cases := []struct {
-		labelsIn []cortexpb.LabelAdapter
+		labelsIn []mimirpb.LabelAdapter
 		expected expectedOutput
 	}{
 		{
-			[]cortexpb.LabelAdapter{
+			[]mimirpb.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "sample", Value: "1"},
@@ -498,7 +498,7 @@ func TestFindHALabels(t *testing.T) {
 			expectedOutput{cluster: "", replica: "1"},
 		},
 		{
-			[]cortexpb.LabelAdapter{
+			[]mimirpb.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "sample", Value: "1"},
@@ -507,7 +507,7 @@ func TestFindHALabels(t *testing.T) {
 			expectedOutput{cluster: "cluster-2", replica: ""},
 		},
 		{
-			[]cortexpb.LabelAdapter{
+			[]mimirpb.LabelAdapter{
 				{Name: "__name__", Value: "foo"},
 				{Name: "bar", Value: "baz"},
 				{Name: "sample", Value: "1"},

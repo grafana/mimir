@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/validation"
 
 	"github.com/prometheus/common/model"
@@ -700,7 +700,7 @@ func mockDistibutorFor(t *testing.T, cs mockChunkStore, through model.Time) *moc
 	require.NoError(t, err)
 
 	tsc := client.TimeSeriesChunk{
-		Labels: []cortexpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}},
+		Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}},
 		Chunks: chunks,
 	}
 	matrix, err := chunk.ChunksToMatrix(context.Background(), cs.chunks, 0, through)

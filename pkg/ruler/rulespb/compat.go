@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/pkg/cortexpb" //lint:ignore faillint allowed to import other protobuf
+	"github.com/grafana/mimir/pkg/mimirpb" //lint:ignore faillint allowed to import other protobuf
 )
 
 // ToProto transforms a formatted prometheus rulegroup to a rule group protobuf
@@ -36,8 +36,8 @@ func formattedRuleToProto(rls []rulefmt.RuleNode) []*RuleDesc {
 			Record:      rls[i].Record.Value,
 			Alert:       rls[i].Alert.Value,
 			For:         time.Duration(rls[i].For),
-			Labels:      cortexpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
-			Annotations: cortexpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Annotations)),
+			Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Labels)),
+			Annotations: mimirpb.FromLabelsToLabelAdapters(labels.FromMap(rls[i].Annotations)),
 		}
 	}
 
@@ -58,8 +58,8 @@ func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 
 		newRule := rulefmt.RuleNode{
 			Expr:        exprNode,
-			Labels:      cortexpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
-			Annotations: cortexpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
+			Labels:      mimirpb.FromLabelAdaptersToLabels(rl.Labels).Map(),
+			Annotations: mimirpb.FromLabelAdaptersToLabels(rl.Annotations).Map(),
 			For:         model.Duration(rl.GetFor()),
 		}
 

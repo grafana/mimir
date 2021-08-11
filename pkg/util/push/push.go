@@ -13,13 +13,13 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 
-	"github.com/grafana/mimir/pkg/cortexpb"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
 // Func defines the type of the push. It is similar to http.HandlerFunc.
-type Func func(context.Context, *cortexpb.WriteRequest) (*cortexpb.WriteResponse, error)
+type Func func(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(maxRecvMsgSize int, sourceIPs *middleware.SourceIPExtractor, push Func) http.Handler {
@@ -33,7 +33,7 @@ func Handler(maxRecvMsgSize int, sourceIPs *middleware.SourceIPExtractor, push F
 				logger = log.WithSourceIPs(source, logger)
 			}
 		}
-		var req cortexpb.PreallocWriteRequest
+		var req mimirpb.PreallocWriteRequest
 		err := util.ParseProtoReader(ctx, r.Body, int(r.ContentLength), maxRecvMsgSize, &req, util.RawSnappy)
 		if err != nil {
 			level.Error(logger).Log("err", err.Error())
@@ -43,7 +43,7 @@ func Handler(maxRecvMsgSize int, sourceIPs *middleware.SourceIPExtractor, push F
 
 		req.SkipLabelNameValidation = false
 		if req.Source == 0 {
-			req.Source = cortexpb.API
+			req.Source = mimirpb.API
 		}
 
 		if _, err := push(ctx, &req.WriteRequest); err != nil {
