@@ -115,7 +115,13 @@ func tenantLimitsRuntimeConfigFn(manager *runtimeconfig.Manager) func() <-chan m
 		return nil
 	}
 	return func() <-chan map[string]*validation.Limits {
-		outCh := make(chan map[string]*validation.Limits)
+		outCh := make(chan map[string]*validation.Limits, 1)
+
+		// push initial config to the channel
+		val := manager.GetConfig()
+		if cfg, ok := val.(*runtimeConfigValues); ok && cfg != nil {
+			outCh <- cfg.TenantLimits
+		}
 
 		ch := manager.CreateListenerChannel(1)
 		go func() {
