@@ -216,6 +216,27 @@ func (i *Lifecycler) CheckReady(ctx context.Context) error {
 		return nil
 	}
 
+	if err := i.checkRingHealthForReadiness(ctx); err != nil {
+		// Reset the min ready duration counter.
+		i.readySince = time.Time{}
+
+		return err
+	}
+
+	// Honor the min ready duration. The duration counter start after all readiness checks have
+	// passed.
+	if i.readySince.IsZero() {
+		i.readySince = time.Now()
+	}
+	if time.Since(i.readySince) < i.cfg.MinReadyDuration {
+		return fmt.Errorf("waiting for %v after being ready", i.cfg.MinReadyDuration)
+	}
+
+	i.ready = true
+	return nil
+}
+
+func (i *Lifecycler) checkRingHealthForReadiness(ctx context.Context) error {
 	// Ensure the instance holds some tokens.
 	if len(i.getTokens()) == 0 {
 		return fmt.Errorf("this instance owns no tokens")
@@ -253,16 +274,6 @@ func (i *Lifecycler) CheckReady(ctx context.Context) error {
 		}
 	}
 
-	// Honor the min ready duration. The duration counter start after all readiness checks have
-	// passed.
-	if i.readySince.IsZero() {
-		i.readySince = time.Now()
-	}
-	if time.Since(i.readySince) < i.cfg.MinReadyDuration {
-		return fmt.Errorf("waiting for %v after being ready", i.cfg.MinReadyDuration)
-	}
-
-	i.ready = true
 	return nil
 }
 
