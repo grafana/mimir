@@ -309,7 +309,7 @@ func (m *MockClient) WatchPrefix(ctx context.Context, prefix string, f func(stri
 }
 
 // Ensure a check ready returns error when consul returns a nil key and the ingester already holds keys. This happens if the ring key gets deleted
-func TestCheckReady(t *testing.T) {
+func TestCheckReady_NoRingInKVStore(t *testing.T) {
 	ctx := context.Background()
 
 	var ringConfig Config
@@ -335,9 +335,9 @@ func TestCheckReady(t *testing.T) {
 
 	l1.setTokens([]uint32{1})
 
-	// Delete the ring key before checking ready
 	err = l1.CheckReady(context.Background())
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "no ring returned from the KV store")
 }
 
 func TestCheckReady_MinReadyDuration(t *testing.T) {
