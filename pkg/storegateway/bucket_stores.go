@@ -52,6 +52,7 @@ type BucketStores struct {
 	bucket             objstore.Bucket
 	logLevel           logging.Level
 	bucketStoreMetrics *BucketStoreMetrics
+	indexHeaderMetrics *IndexHeaderMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
 
@@ -79,6 +80,7 @@ type BucketStores struct {
 	syncLastSuccess   prometheus.Gauge
 	tenantsDiscovered prometheus.Gauge
 	tenantsSynced     prometheus.Gauge
+	blocksLoaded      prometheus.GaugeFunc
 }
 
 // NewBucketStores makes a new BucketStores.
@@ -104,29 +106,36 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		shardingStrategy:   shardingStrategy,
 		stores:             map[string]*BucketStore{},
 		logLevel:           logLevel,
-		bucketStoreMetrics: NewBucketStoreMetrics(),
+		bucketStoreMetrics: NewBucketStoreMetrics(reg),
+		indexHeaderMetrics: NewIndexHeaderMetrics(),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
 		seriesHashCache:    NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
-		syncTimes: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_bucket_stores_blocks_sync_seconds",
-			Help:    "The total time it takes to perform a sync stores",
-			Buckets: []float64{0.1, 1, 10, 30, 60, 120, 300, 600, 900},
-		}),
-		syncLastSuccess: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds",
-			Help: "Unix timestamp of the last successful blocks sync.",
-		}),
-		tenantsDiscovered: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_bucket_stores_tenants_discovered",
-			Help: "Number of tenants discovered in the bucket.",
-		}),
-		tenantsSynced: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
-			Name: "cortex_bucket_stores_tenants_synced",
-			Help: "Number of tenants synced.",
-		}),
 	}
+
+	// Register metrics.
+	u.syncTimes = promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+		Name:    "cortex_bucket_stores_blocks_sync_seconds",
+		Help:    "The total time it takes to perform a sync stores",
+		Buckets: []float64{0.1, 1, 10, 30, 60, 120, 300, 600, 900},
+	})
+	u.syncLastSuccess = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_bucket_stores_blocks_last_successful_sync_timestamp_seconds",
+		Help: "Unix timestamp of the last successful blocks sync.",
+	})
+	u.tenantsDiscovered = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_bucket_stores_tenants_discovered",
+		Help: "Number of tenants discovered in the bucket.",
+	})
+	u.tenantsSynced = promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+		Name: "cortex_bucket_stores_tenants_synced",
+		Help: "Number of tenants synced.",
+	})
+	u.blocksLoaded = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "cortex_bucket_store_blocks_loaded",
+		Help: "Number of currently loaded blocks.",
+	}, u.getBlocksLoadedMetric)
 
 	// Init the index cache.
 	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
@@ -139,7 +148,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}
 
 	if reg != nil {
-		reg.MustRegister(u.bucketStoreMetrics, u.metaFetcherMetrics)
+		reg.MustRegister(u.indexHeaderMetrics, u.metaFetcherMetrics)
 	}
 
 	return u, nil
@@ -398,7 +407,7 @@ func (u *BucketStores) closeEmptyBucketStore(userID string) error {
 	u.storesMu.Unlock()
 
 	u.metaFetcherMetrics.RemoveUserRegistry(userID)
-	u.bucketStoreMetrics.RemoveUserRegistry(userID)
+	u.indexHeaderMetrics.RemoveUserRegistry(userID)
 	return bs.Close()
 }
 
@@ -515,6 +524,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
 		u.seriesHashCache,
+		u.bucketStoreMetrics,
 		bucketStoreOpts...,
 	)
 	if err != nil {
@@ -523,7 +533,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 
 	u.stores[userID] = bs
 	u.metaFetcherMetrics.AddUserRegistry(userID, fetcherReg)
-	u.bucketStoreMetrics.AddUserRegistry(userID, bucketStoreReg)
+	u.indexHeaderMetrics.AddUserRegistry(userID, bucketStoreReg)
 
 	return bs, nil
 }
@@ -567,6 +577,19 @@ func (u *BucketStores) deleteLocalFilesForExcludedTenants(includeUserIDs map[str
 			level.Warn(u.logger).Log("msg", "failed to delete user sync directory", "dir", userSyncDir, "err", err)
 		}
 	}
+}
+
+// getBlocksLoadedMetric returns the number of blocks currently loaded across all bucket stores.
+func (u *BucketStores) getBlocksLoadedMetric() float64 {
+	count := 0
+
+	u.storesMu.RLock()
+	for _, store := range u.stores {
+		count += store.Stats().BlocksLoaded
+	}
+	u.storesMu.RUnlock()
+
+	return float64(count)
 }
 
 func getUserIDFromGRPCContext(ctx context.Context) string {

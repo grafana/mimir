@@ -132,7 +132,7 @@ func (c *seriesStore) Get(ctx context.Context, userID string, from, through mode
 		return nil, err
 	}
 
-	// inject artificial __cortex_shard__ labels if present in the query. GetChunkRefs guarantees any chunk refs match the shard.
+	// inject artificial __query_shard__ labels if present in the query. GetChunkRefs guarantees any chunk refs match the shard.
 	shard, _, err := querysharding.ShardFromMatchers(allMatchers)
 	if err != nil {
 		return nil, err

@@ -125,13 +125,13 @@ func (summer *shardSummer) splitSum(
 		/*
 			parallelizing a sum using without(foo) is representable naively as
 			sum without(foo) (
-			  sum without(__cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum without(__cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			  sum without(__query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum without(__query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)
 			or (more optimized):
-			sum without(__cortex_shard__) (
-			  sum without(foo) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum without(foo) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			sum without(__query_shard__) (
+			  sum without(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum without(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)
 
 		*/
@@ -146,8 +146,8 @@ func (summer *shardSummer) splitSum(
 		/*
 			parallelizing a sum using by(foo) is representable as
 			sum by(foo) (
-			  sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum by(foo, __cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			  sum by(foo, __query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum by(foo, __query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)
 		*/
 		parent.Grouping = expr.Grouping
@@ -162,13 +162,13 @@ func (summer *shardSummer) splitSum(
 		/*
 			parallelizing a non-parameterized sum is representable as
 			sum(
-			  sum without(__cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum without(__cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			  sum without(__query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum without(__query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)
 			or (more optimized):
-			sum without(__cortex_shard__) (
-			  sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="1_of_2",baz="blip"}[1m]))
+			sum without(__query_shard__) (
+			  sum by(__query_shard__) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+			  sum by(__query_shard__) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
 			)
 		*/
 		parent.Grouping = []string{querysharding.ShardLabel}

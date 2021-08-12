@@ -195,6 +195,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		true,
 		time.Minute,
 		NewSeriesHashCache(1024*1024),
+		NewBucketStoreMetrics(nil),
 		WithLogger(s.logger),
 		WithIndexCache(s.cache),
 		WithFilterConfig(filterConf),

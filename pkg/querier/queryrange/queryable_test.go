@@ -200,18 +200,18 @@ func TestSelectConcurrent(t *testing.T) {
 		{
 			name: "concats queries",
 			queries: []string{
-				`sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="0_of_3",baz="blip"}[1m]))`,
-				`sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="1_of_3",baz="blip"}[1m]))`,
-				`sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="2_of_3",baz="blip"}[1m]))`,
+				`sum by(__query_shard__) (rate(bar1{__query_shard__="0_of_3",baz="blip"}[1m]))`,
+				`sum by(__query_shard__) (rate(bar1{__query_shard__="1_of_3",baz="blip"}[1m]))`,
+				`sum by(__query_shard__) (rate(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))`,
 			},
 			err: nil,
 		},
 		{
 			name: "errors",
 			queries: []string{
-				`sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="0_of_3",baz="blip"}[1m]))`,
-				`sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="1_of_3",baz="blip"}[1m]))`,
-				`sum by(__cortex_shard__) (rate(bar1{__cortex_shard__="2_of_3",baz="blip"}[1m]))`,
+				`sum by(__query_shard__) (rate(bar1{__query_shard__="0_of_3",baz="blip"}[1m]))`,
+				`sum by(__query_shard__) (rate(bar1{__query_shard__="1_of_3",baz="blip"}[1m]))`,
+				`sum by(__query_shard__) (rate(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))`,
 			},
 			err: errors.Errorf("some-err"),
 		},

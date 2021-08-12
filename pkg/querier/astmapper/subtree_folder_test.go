@@ -46,7 +46,7 @@ func TestPredicate(t *testing.T) {
 			err:      false,
 		},
 		{
-			input:    `sum without(__cortex_shard__) (__embedded_queries__{__cortex_queries__="tstquery"}) or sum(selector)`,
+			input:    `sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"}) or sum(selector)`,
 			fn:       predicate(isEmbedded),
 			expected: true,
 			err:      false,
@@ -88,10 +88,10 @@ func TestSubtreeMapper(t *testing.T) {
 		// which has already been embedded.
 		{
 			input: `sum(histogram_quantile(0.5, rate(selector[1m]))) +
-				sum without(__cortex_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})`,
+				sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})`,
 			expected: `
 			  __embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum(histogram_quantile(0.5, rate(selector[1m])))\"]}"} +
-			  sum without(__cortex_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})
+			  sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})
 `,
 		},
 		// should not embed scalars
