@@ -700,7 +700,7 @@ lifecycler:
   # before they proceed with a rolling update, to give the rest of the cluster
   # instances enough time to receive ring updates.
   # CLI flag: -ingester.min-ready-duration
-  [min_ready_duration: <duration> | default = 1m]
+  [min_ready_duration: <duration> | default = 15s]
 
   # Name of network interface to read address from.
   # CLI flag: -ingester.lifecycler.interface
