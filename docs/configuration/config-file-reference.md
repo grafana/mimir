@@ -694,8 +694,11 @@ lifecycler:
   # CLI flag: -ingester.join-after
   [join_after: <duration> | default = 0s]
 
-  # Minimum duration to wait before becoming ready. This is to work around race
-  # conditions with ingesters exiting and updating the ring.
+  # Minimum duration to wait after the internal readiness checks have passed but
+  # before succeeding the readiness endpoint. This is used to slowdown
+  # deployment controllers (eg. Kubernetes) after an instance is ready and
+  # before they proceed with a rolling update, to give the rest of the cluster
+  # instances enough time to receive ring updates.
   # CLI flag: -ingester.min-ready-duration
   [min_ready_duration: <duration> | default = 1m]
 
@@ -723,9 +726,10 @@ lifecycler:
   [unregister_on_shutdown: <boolean> | default = true]
 
   # When enabled the readiness probe succeeds only after all instances are
-  # ACTIVE and healthy in the ring. This option should be disabled if in your
-  # cluster multiple instances can be rolled out simultaneously, otherwise
-  # rolling updates may be slowed down.
+  # ACTIVE and healthy in the ring, otherwise only the instance itself is
+  # checked. This option should be disabled if in your cluster multiple
+  # instances can be rolled out simultaneously, otherwise rolling updates may be
+  # slowed down.
   # CLI flag: -ingester.readiness-check-ring-health
   [readiness_check_ring_health: <boolean> | default = true]
 

@@ -102,16 +102,15 @@ func (d *Desc) FindIngestersByState(state InstanceState) []InstanceDesc {
 	return result
 }
 
-// Ready returns no error when all ingesters are active and healthy.
-func (d *Desc) Ready(now time.Time, heartbeatTimeout time.Duration) error {
+// IsReady returns no error when all instance are ACTIVE and healthy,
+// and the ring has some tokens.
+func (d *Desc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
 	numTokens := 0
-	for id, ingester := range d.Ingesters {
-		if !ingester.IsHeartbeatHealthy(heartbeatTimeout, now) {
-			return fmt.Errorf("instance %s past heartbeat timeout", id)
-		} else if ingester.State != ACTIVE {
-			return fmt.Errorf("instance %s in state %v", id, ingester.State)
+	for _, instance := range d.Ingesters {
+		if err := instance.IsReady(now, heartbeatTimeout); err != nil {
+			return err
 		}
-		numTokens += len(ingester.Tokens)
+		numTokens += len(instance.Tokens)
 	}
 
 	if numTokens == 0 {
@@ -151,6 +150,17 @@ func (i *InstanceDesc) IsHeartbeatHealthy(heartbeatTimeout time.Duration, now ti
 		return true
 	}
 	return now.Sub(time.Unix(i.Timestamp, 0)) <= heartbeatTimeout
+}
+
+// IsReady returns no error if the instance is ACTIVE and healthy.
+func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) error {
+	if !i.IsHeartbeatHealthy(heartbeatTimeout, now) {
+		return fmt.Errorf("instance %s past heartbeat timeout", i.Addr)
+	}
+	if i.State != ACTIVE {
+		return fmt.Errorf("instance %s in state %v", i.Addr, i.State)
+	}
+	return nil
 }
 
 // Merge merges other ring into this one. Returns sub-ring that represents the change,

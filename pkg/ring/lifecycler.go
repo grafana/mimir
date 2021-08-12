@@ -7,7 +7,6 @@ package ring
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/pkg/errors"
 	perrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -93,7 +93,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.DurationVar(&cfg.HeartbeatPeriod, prefix+"heartbeat-period", 5*time.Second, "Period at which to heartbeat to consul. 0 = disabled.")
 	f.DurationVar(&cfg.JoinAfter, prefix+"join-after", 0*time.Second, "Period to wait for a claim from another member; will join automatically after this.")
 	f.DurationVar(&cfg.ObservePeriod, prefix+"observe-period", 0*time.Second, "Observe tokens after generating to resolve collisions. Useful when using gossiping ring.")
-	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 1*time.Minute, "Minimum duration to wait before becoming ready. This is to work around race conditions with ingesters exiting and updating the ring.")
+	f.DurationVar(&cfg.MinReadyDuration, prefix+"min-ready-duration", 1*time.Minute, "Minimum duration to wait after the internal readiness checks have passed but before succeeding the readiness endpoint. This is used to slowdown deployment controllers (eg. Kubernetes) after an instance is ready and before they proceed with a rolling update, to give the rest of the cluster instances enough time to receive ring updates.")
 	f.DurationVar(&cfg.FinalSleep, prefix+"final-sleep", 30*time.Second, "Duration to sleep for before exiting, to ensure metrics are scraped.")
 	f.StringVar(&cfg.TokensFilePath, prefix+"tokens-file-path", "", "File path where tokens are stored. If empty, tokens are not stored at shutdown and restored at startup.")
 
@@ -110,7 +110,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	f.StringVar(&cfg.ID, prefix+"lifecycler.ID", hostname, "ID to register in the ring.")
 	f.StringVar(&cfg.Zone, prefix+"availability-zone", "", "The availability zone where this instance is running.")
 	f.BoolVar(&cfg.UnregisterOnShutdown, prefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown. It can be useful to disable for rolling restarts with consistent naming in conjunction with -distributor.extend-writes=false.")
-	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
+	f.BoolVar(&cfg.ReadinessCheckRingHealth, prefix+"readiness-check-ring-health", true, "When enabled the readiness probe succeeds only after all instances are ACTIVE and healthy in the ring, otherwise only the instance itself is checked. This option should be disabled if in your cluster multiple instances can be rolled out simultaneously, otherwise rolling updates may be slowed down.")
 }
 
 // Lifecycler is responsible for managing the lifecycle of entries in the ring.
@@ -142,9 +142,9 @@ type Lifecycler struct {
 	registeredAt time.Time
 
 	// Controls the ready-reporting
-	readyLock sync.Mutex
-	startTime time.Time
-	ready     bool
+	readyLock  sync.Mutex
+	ready      bool
+	readySince time.Time
 
 	// Keeps stats updated at every heartbeat period
 	countersLock          sync.RWMutex
@@ -182,10 +182,9 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 	}
 
 	l := &Lifecycler{
-		cfg:             cfg,
-		flushTransferer: flushTransferer,
-		KVStore:         store,
-
+		cfg:                  cfg,
+		flushTransferer:      flushTransferer,
+		KVStore:              store,
 		Addr:                 fmt.Sprintf("%s:%d", addr, port),
 		ID:                   cfg.ID,
 		RingName:             ringName,
@@ -193,11 +192,8 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		flushOnShutdown:      atomic.NewBool(flushOnShutdown),
 		unregisterOnShutdown: atomic.NewBool(cfg.UnregisterOnShutdown),
 		Zone:                 zone,
-
-		actorChan: make(chan func()),
-
-		state:     PENDING,
-		startTime: time.Now(),
+		actorChan:            make(chan func()),
+		state:                PENDING,
 	}
 
 	tokensToOwn.WithLabelValues(l.RingName).Set(float64(cfg.NumTokens))
@@ -220,37 +216,50 @@ func (i *Lifecycler) CheckReady(ctx context.Context) error {
 		return nil
 	}
 
-	// Ingester always take at least minReadyDuration to become ready to work
-	// around race conditions with ingesters exiting and updating the ring
-	if time.Since(i.startTime) < i.cfg.MinReadyDuration {
-		return fmt.Errorf("waiting for %v after startup", i.cfg.MinReadyDuration)
-	}
-
 	// Ensure the instance holds some tokens.
 	if len(i.getTokens()) == 0 {
 		return fmt.Errorf("this instance owns no tokens")
 	}
 
-	// Ensure all instances in the ring are ACTIVE and healthy.
+	// If ring health checking is enabled we make sure all instances in the ring are ACTIVE and healthy,
+	// otherwise we just check this instance.
+	desc, err := i.KVStore.Get(ctx, i.RingKey)
+	if err != nil {
+		level.Error(log.Logger).Log("msg", "error talking to the KV store", "ring", i.RingName, "err", err)
+		return fmt.Errorf("error talking to the KV store: %s", err)
+	}
+
+	ringDesc, ok := desc.(*Desc)
+	if !ok || ringDesc == nil {
+		return fmt.Errorf("no ring returned from the KV store")
+	}
+
 	if i.cfg.ReadinessCheckRingHealth {
-		desc, err := i.KVStore.Get(ctx, i.RingKey)
-		if err != nil {
-			level.Error(log.Logger).Log("msg", "error talking to the KV store", "ring", i.RingName, "err", err)
-			return fmt.Errorf("error talking to the KV store: %s", err)
-		}
-
-		ringDesc, ok := desc.(*Desc)
-		if !ok || ringDesc == nil {
-			return fmt.Errorf("no ring returned from the KV store")
-		}
-
-		if err := ringDesc.Ready(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
+		if err := ringDesc.IsReady(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
 			level.Warn(log.Logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
 				"this instance cannot become ready until this problem is resolved. "+
 				"The /ring http endpoint on the distributor (or single binary) provides visibility into the ring.",
 				"ring", i.RingName, "err", err)
 			return err
 		}
+	} else {
+		instance, ok := ringDesc.Ingesters[i.ID]
+		if !ok {
+			return fmt.Errorf("instance %s not found in the ring", i.ID)
+		}
+
+		if err := instance.IsReady(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
+			return err
+		}
+	}
+
+	// Honor the min ready duration. The duration counter start after all readiness checks have
+	// passed.
+	if i.readySince.IsZero() {
+		i.readySince = time.Now()
+	}
+	if time.Since(i.readySince) < i.cfg.MinReadyDuration {
+		return fmt.Errorf("waiting for %v after being ready", i.cfg.MinReadyDuration)
 	}
 
 	i.ready = true

@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -309,29 +310,172 @@ func (m *MockClient) WatchPrefix(ctx context.Context, prefix string, f func(stri
 
 // Ensure a check ready returns error when consul returns a nil key and the ingester already holds keys. This happens if the ring key gets deleted
 func TestCheckReady(t *testing.T) {
+	ctx := context.Background()
+
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	ringConfig.KVStore.Mock = &MockClient{}
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
-	require.NoError(t, r.StartAsync(context.Background()))
+	require.NoError(t, r.StartAsync(ctx))
 	// This is very atypical, but if we used AwaitRunning, that would fail, because of how quickly service terminates ...
 	// by the time we check for Running state, it is already terminated, because mock ring has no WatchFunc, so it
 	// will just exit.
-	require.NoError(t, r.AwaitTerminated(context.Background()))
+	require.NoError(t, r.AwaitTerminated(ctx))
 
 	cfg := testLifecyclerConfig(ringConfig, "ring1")
 	cfg.MinReadyDuration = 1 * time.Nanosecond
 	l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ingester", IngesterRingKey, true, nil)
 	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), l1))
+	require.NoError(t, services.StartAndAwaitRunning(ctx, l1))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, l1))
+	})
 
-	l1.setTokens(Tokens([]uint32{1}))
+	l1.setTokens([]uint32{1})
 
 	// Delete the ring key before checking ready
 	err = l1.CheckReady(context.Background())
 	require.Error(t, err)
+}
+
+func TestCheckReady_MinReadyDuration(t *testing.T) {
+	tests := map[string]struct {
+		minReadyDuration time.Duration
+		expectedMinDelay time.Duration
+	}{
+		"should immediately pass the check if the instance is ACTIVE and healthy and min ready duration is disabled": {
+			minReadyDuration: 0,
+			expectedMinDelay: 0,
+		},
+		"should wait min ready duration before passing the check after the instance is ACTIVE and healthy": {
+			minReadyDuration: time.Second,
+			expectedMinDelay: time.Second,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := context.Background()
+
+			ringStore, closer := consul.NewInMemoryClient(GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			var ringConfig Config
+			flagext.DefaultValues(&ringConfig)
+			ringConfig.KVStore.Mock = ringStore
+
+			cfg := testLifecyclerConfig(ringConfig, "instance-1")
+			cfg.ReadinessCheckRingHealth = false
+			cfg.MinReadyDuration = testData.minReadyDuration
+
+			l, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ring", IngesterRingKey, true, nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, l))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, l))
+			})
+
+			startTime := time.Now()
+
+			// Wait until the instance is ACTIVE and healthy in the ring.
+			waitRingInstance(t, 3*time.Second, l, func(instance InstanceDesc) error {
+				return instance.IsReady(time.Now(), cfg.RingConfig.HeartbeatTimeout)
+			})
+
+			if testData.expectedMinDelay == 0 {
+				// We expect it to be immediately ready.
+				assert.NoError(t, l.CheckReady(ctx))
+			} else {
+				// Poll the readiness check until ready and measure how much time it takes.
+				test.Poll(t, 3*time.Second, nil, func() interface{} {
+					return l.CheckReady(ctx)
+				})
+
+				assert.GreaterOrEqual(t, time.Since(startTime), testData.expectedMinDelay)
+			}
+		})
+	}
+}
+
+func TestCheckReady_CheckRingHealth(t *testing.T) {
+	tests := map[string]struct {
+		checkRingHealthEnabled bool
+		firstJoinAfter         time.Duration
+		secondJoinAfter        time.Duration
+		expectedFirstMinReady  time.Duration
+		expectedFirstMaxReady  time.Duration
+	}{
+		"should wait until the self instance is ACTIVE and healthy in the ring when 'check ring health' is disabled": {
+			checkRingHealthEnabled: false,
+			firstJoinAfter:         time.Second,
+			secondJoinAfter:        3 * time.Second,
+			expectedFirstMinReady:  time.Second,
+			expectedFirstMaxReady:  2 * time.Second,
+		},
+		"should wait until all instances are ACTIVE and healthy in the ring when 'check ring health' is enabled": {
+			checkRingHealthEnabled: true,
+			firstJoinAfter:         time.Second,
+			secondJoinAfter:        3 * time.Second,
+			expectedFirstMinReady:  3 * time.Second,
+			expectedFirstMaxReady:  4 * time.Second,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := context.Background()
+
+			ringStore, closer := consul.NewInMemoryClient(GetCodec())
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			var ringConfig Config
+			flagext.DefaultValues(&ringConfig)
+			ringConfig.KVStore.Mock = ringStore
+
+			// Create lifecycler #1.
+			cfg := testLifecyclerConfig(ringConfig, "instance-1")
+			cfg.ReadinessCheckRingHealth = testData.checkRingHealthEnabled
+			cfg.MinReadyDuration = 0
+			cfg.JoinAfter = testData.firstJoinAfter
+
+			l1, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ring", IngesterRingKey, true, nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, l1))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, l1))
+			})
+
+			// Create lifecycler #2.
+			cfg = testLifecyclerConfig(ringConfig, "instance-2")
+			cfg.ReadinessCheckRingHealth = testData.checkRingHealthEnabled
+			cfg.MinReadyDuration = 0
+			cfg.JoinAfter = testData.secondJoinAfter
+
+			l2, err := NewLifecycler(cfg, &nopFlushTransferer{}, "ring", IngesterRingKey, true, nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(ctx, l2))
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, l2))
+			})
+
+			startTime := time.Now()
+
+			// Wait until both instances are registered in the ring. We expect them to be registered
+			// immediately and then switch to ACTIVE after the configured auto join delay.
+			waitRingInstance(t, 3*time.Second, l1, func(instance InstanceDesc) error { return nil })
+			waitRingInstance(t, 3*time.Second, l2, func(instance InstanceDesc) error { return nil })
+
+			// Poll the readiness check until ready and measure how much time it takes.
+			test.Poll(t, 5*time.Second, nil, func() interface{} {
+				return l1.CheckReady(ctx)
+			})
+
+			assert.GreaterOrEqual(t, time.Since(startTime), testData.expectedFirstMinReady)
+			assert.LessOrEqual(t, time.Since(startTime), testData.expectedFirstMaxReady)
+		})
+	}
 }
 
 type noopFlushTransferer struct {
@@ -686,5 +830,26 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 			desc.Ingesters["ing1"].Zone == l1.Zone &&
 			desc.Ingesters["ing2"].Zone == ""
 
+	})
+}
+
+func waitRingInstance(t *testing.T, timeout time.Duration, l *Lifecycler, check func(instance InstanceDesc) error) {
+	test.Poll(t, timeout, nil, func() interface{} {
+		desc, err := l.KVStore.Get(context.Background(), l.RingKey)
+		if err != nil {
+			return err
+		}
+
+		ringDesc, ok := desc.(*Desc)
+		if !ok || ringDesc == nil {
+			return errors.New("empty ring")
+		}
+
+		instance, ok := ringDesc.Ingesters[l.ID]
+		if !ok {
+			return errors.New("no instance in the ring")
+		}
+
+		return check(instance)
 	})
 }
