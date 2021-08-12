@@ -254,6 +254,8 @@ func getFieldType(t reflect.Type) (string, error) {
 		return "url", nil
 	case "time.Duration":
 		return "duration", nil
+	case "cortex.moduleName":
+		return "string", nil
 	case "flagext.StringSliceCSV":
 		return "string", nil
 	case "flagext.CIDRSliceCSV":
