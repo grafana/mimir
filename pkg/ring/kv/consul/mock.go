@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	consul "github.com/hashicorp/consul/api"
 
 	"github.com/grafana/mimir/pkg/util"

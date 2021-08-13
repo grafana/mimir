@@ -8,8 +8,8 @@ package log
 import (
 	"context"
 
-	"github.com/go-kit/kit/log"
-	kitlog "github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	kitlog "github.com/go-kit/log"
 	"github.com/weaveworks/common/middleware"
 
 	"github.com/grafana/mimir/pkg/tenant"

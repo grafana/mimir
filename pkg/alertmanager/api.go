@@ -21,8 +21,8 @@ import (
 	"github.com/grafana/mimir/pkg/util/concurrency"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/template"

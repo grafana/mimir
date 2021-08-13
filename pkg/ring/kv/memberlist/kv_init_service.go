@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/hashicorp/memberlist"
 	"go.uber.org/atomic"
 

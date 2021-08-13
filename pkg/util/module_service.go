@@ -9,7 +9,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"

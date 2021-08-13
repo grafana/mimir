@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
