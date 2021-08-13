@@ -11,8 +11,8 @@ package storegateway
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-
-	"github.com/grafana/mimir/pkg/util"
+	"github.com/thanos-io/thanos/pkg/block/indexheader"
+	"github.com/thanos-io/thanos/pkg/extprom"
 )
 
 // BucketStoreMetrics holds all the metrics tracked by BucketStore. These metrics
@@ -47,6 +47,8 @@ type BucketStoreMetrics struct {
 
 	seriesFetchDuration   prometheus.Histogram
 	postingsFetchDuration prometheus.Histogram
+
+	indexHeaderReaderMetrics *indexheader.ReaderPoolMetrics
 }
 
 func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
@@ -172,70 +174,7 @@ func NewBucketStoreMetrics(reg prometheus.Registerer) *BucketStoreMetrics {
 		},
 	})
 
+	m.indexHeaderReaderMetrics = indexheader.NewReaderPoolMetrics(extprom.WrapRegistererWithPrefix("cortex_bucket_store_", reg))
+
 	return &m
-}
-
-// IndexHeaderMetrics aggregates metrics exported by Thanos index-header lazy loader
-// and re-exports those aggregates as Mimir metrics.
-type IndexHeaderMetrics struct {
-	regs *util.UserRegistries
-
-	indexHeaderLazyLoadCount         *prometheus.Desc
-	indexHeaderLazyLoadFailedCount   *prometheus.Desc
-	indexHeaderLazyUnloadCount       *prometheus.Desc
-	indexHeaderLazyUnloadFailedCount *prometheus.Desc
-	indexHeaderLazyLoadDuration      *prometheus.Desc
-}
-
-func NewIndexHeaderMetrics() *IndexHeaderMetrics {
-	return &IndexHeaderMetrics{
-		regs: util.NewUserRegistries(),
-
-		indexHeaderLazyLoadCount: prometheus.NewDesc(
-			"cortex_bucket_store_indexheader_lazy_load_total",
-			"Total number of index-header lazy load operations.",
-			nil, nil),
-		indexHeaderLazyLoadFailedCount: prometheus.NewDesc(
-			"cortex_bucket_store_indexheader_lazy_load_failed_total",
-			"Total number of failed index-header lazy load operations.",
-			nil, nil),
-		indexHeaderLazyUnloadCount: prometheus.NewDesc(
-			"cortex_bucket_store_indexheader_lazy_unload_total",
-			"Total number of index-header lazy unload operations.",
-			nil, nil),
-		indexHeaderLazyUnloadFailedCount: prometheus.NewDesc(
-			"cortex_bucket_store_indexheader_lazy_unload_failed_total",
-			"Total number of failed index-header lazy unload operations.",
-			nil, nil),
-		indexHeaderLazyLoadDuration: prometheus.NewDesc(
-			"cortex_bucket_store_indexheader_lazy_load_duration_seconds",
-			"Duration of the index-header lazy loading in seconds.",
-			nil, nil),
-	}
-}
-
-func (m *IndexHeaderMetrics) AddUserRegistry(user string, reg *prometheus.Registry) {
-	m.regs.AddUserRegistry(user, reg)
-}
-
-func (m *IndexHeaderMetrics) RemoveUserRegistry(user string) {
-	m.regs.RemoveUserRegistry(user, false)
-}
-
-func (m *IndexHeaderMetrics) Describe(out chan<- *prometheus.Desc) {
-	out <- m.indexHeaderLazyLoadCount
-	out <- m.indexHeaderLazyLoadFailedCount
-	out <- m.indexHeaderLazyUnloadCount
-	out <- m.indexHeaderLazyUnloadFailedCount
-	out <- m.indexHeaderLazyLoadDuration
-}
-
-func (m *IndexHeaderMetrics) Collect(out chan<- prometheus.Metric) {
-	data := m.regs.BuildMetricFamiliesPerUser()
-
-	data.SendSumOfCounters(out, m.indexHeaderLazyLoadCount, "thanos_bucket_store_indexheader_lazy_load_total")
-	data.SendSumOfCounters(out, m.indexHeaderLazyLoadFailedCount, "thanos_bucket_store_indexheader_lazy_load_failed_total")
-	data.SendSumOfCounters(out, m.indexHeaderLazyUnloadCount, "thanos_bucket_store_indexheader_lazy_unload_total")
-	data.SendSumOfCounters(out, m.indexHeaderLazyUnloadFailedCount, "thanos_bucket_store_indexheader_lazy_unload_failed_total")
-	data.SendSumOfHistograms(out, m.indexHeaderLazyLoadDuration, "thanos_bucket_store_indexheader_lazy_load_duration_seconds")
 }
