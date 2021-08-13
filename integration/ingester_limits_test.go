@@ -177,7 +177,7 @@ overrides:
 			require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
 
 			// Start Cortex in single binary mode, reading the config from file.
-			require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", cortexConfigFile))
+			require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
 			flags := map[string]string{
 				"-runtime-config.reload-period":  "100ms",
@@ -186,7 +186,7 @@ overrides:
 				"-ruler-storage.local.directory": "/tmp", // Avoid warning "unable to list rules".
 				"-runtime-config.file":           filepath.Join(e2e.ContainerSharedDir, overridesFile),
 			}
-			cortex1 := e2ecortex.NewSingleBinaryWithConfigFile("cortex-1", cortexConfigFile, flags, "", 9009, 9095)
+			cortex1 := e2emimir.NewSingleBinaryWithConfigFile("cortex-1", mimirConfigFile, flags, "", 9009, 9095)
 			require.NoError(t, s.StartAndWaitReady(cortex1))
 
 			// Populate the overrides we want, then wait long enough for it to be read
@@ -195,7 +195,7 @@ overrides:
 			time.Sleep(500 * time.Millisecond)
 
 			now := time.Now()
-			client, err := e2ecortex.NewClient(cortex1.HTTPEndpoint(), "", "", "", userID)
+			client, err := e2emimir.NewClient(cortex1.HTTPEndpoint(), "", "", "", userID)
 			require.NoError(t, err)
 
 			numSeriesWithSameMetricName := 0
