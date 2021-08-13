@@ -22,8 +22,8 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestWAL(t *testing.T) {

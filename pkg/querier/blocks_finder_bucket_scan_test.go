@@ -26,11 +26,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
-	"github.com/grafana/dskit/services"
 )
 
 func TestBucketScanBlocksFinder_InitialScan(t *testing.T) {

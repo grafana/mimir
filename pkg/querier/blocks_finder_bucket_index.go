@@ -15,9 +15,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/dskit/services"
 )
 
 var (

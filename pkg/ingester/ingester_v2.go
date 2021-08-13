@@ -35,6 +35,7 @@ import (
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -47,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/extract"
 	logutil "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

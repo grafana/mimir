@@ -36,6 +36,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"gopkg.in/yaml.v2"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
@@ -47,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/dskit/services"
 )
 
 func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()) {

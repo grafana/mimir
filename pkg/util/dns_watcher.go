@@ -12,8 +12,8 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/grafana/mimir/pkg/util/grpc/naming"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util/grpc/naming"
 )
 
 // Notifications about address resolution. All notifications are sent on the same goroutine.

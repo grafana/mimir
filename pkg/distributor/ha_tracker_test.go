@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
@@ -29,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

@@ -22,11 +22,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/dskit/services"
 )
 
 var (

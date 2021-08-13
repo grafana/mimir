@@ -26,10 +26,10 @@ import (
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	"github.com/thanos-io/thanos/pkg/extprom"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 )
 
 const (

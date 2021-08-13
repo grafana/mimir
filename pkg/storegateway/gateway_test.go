@@ -40,6 +40,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
@@ -50,7 +51,6 @@ import (
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

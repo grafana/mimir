@@ -22,13 +22,13 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/logging"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

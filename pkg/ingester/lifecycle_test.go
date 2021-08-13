@@ -24,6 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -31,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/ring/testutils"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

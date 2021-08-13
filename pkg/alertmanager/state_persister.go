@@ -17,9 +17,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/dskit/services"
 )
 
 const (

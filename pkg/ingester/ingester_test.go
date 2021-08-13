@@ -32,13 +32,13 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

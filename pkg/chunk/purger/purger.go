@@ -25,10 +25,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 )
 
 const (

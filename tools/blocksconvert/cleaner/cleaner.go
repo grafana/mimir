@@ -20,9 +20,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/storage"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
 	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
 )

@@ -27,8 +27,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/tools/blocksconvert"
 )
 

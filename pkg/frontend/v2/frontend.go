@@ -23,13 +23,13 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/grpcutil"
-	"github.com/grafana/dskit/services"
 )
 
 // Config for a Frontend.

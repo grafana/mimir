@@ -32,6 +32,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -43,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/concurrency"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 )
 
 const (

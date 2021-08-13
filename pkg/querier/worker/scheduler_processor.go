@@ -25,6 +25,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/ring/client"
@@ -33,7 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/grpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	mimir_middleware "github.com/grafana/mimir/pkg/util/middleware"
-	"github.com/grafana/dskit/services"
 )
 
 func newSchedulerProcessor(cfg Config, handler RequestHandler, log log.Logger, reg prometheus.Registerer) (*schedulerProcessor, []services.Service) {

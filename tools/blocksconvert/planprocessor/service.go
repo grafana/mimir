@@ -26,8 +26,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/tools/blocksconvert"
 )
 

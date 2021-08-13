@@ -1937,7 +1937,7 @@ func (this *TableDesc) GoString() string {
 	s = append(s, "ProvisionedRead: "+fmt.Sprintf("%#v", this.ProvisionedRead)+",\n")
 	s = append(s, "ProvisionedWrite: "+fmt.Sprintf("%#v", this.ProvisionedWrite)+",\n")
 	keysForTags := make([]string, 0, len(this.Tags))
-	for k, _ := range this.Tags {
+	for k := range this.Tags {
 		keysForTags = append(keysForTags, k)
 	}
 	github_com_gogo_protobuf_sortkeys.Strings(keysForTags)
@@ -3932,7 +3932,7 @@ func (this *TableDesc) String() string {
 		return "nil"
 	}
 	keysForTags := make([]string, 0, len(this.Tags))
-	for k, _ := range this.Tags {
+	for k := range this.Tags {
 		keysForTags = append(keysForTags, k)
 	}
 	github_com_gogo_protobuf_sortkeys.Strings(keysForTags)

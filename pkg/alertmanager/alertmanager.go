@@ -50,10 +50,10 @@ import (
 	"github.com/prometheus/common/route"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_net "github.com/grafana/mimir/pkg/util/net"
-	"github.com/grafana/dskit/services"
 )
 
 const (

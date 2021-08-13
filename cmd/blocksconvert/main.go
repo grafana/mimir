@@ -17,9 +17,9 @@ import (
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/tools/blocksconvert"
 	"github.com/grafana/mimir/tools/blocksconvert/builder"
 	"github.com/grafana/mimir/tools/blocksconvert/cleaner"

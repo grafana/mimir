@@ -29,6 +29,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/dskit/services"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
@@ -40,7 +41,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

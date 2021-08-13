@@ -20,13 +20,13 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

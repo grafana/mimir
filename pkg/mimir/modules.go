@@ -24,6 +24,7 @@ import (
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
@@ -49,7 +50,6 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/modules"
 	"github.com/grafana/mimir/pkg/util/runtimeconfig"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

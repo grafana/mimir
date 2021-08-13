@@ -20,13 +20,13 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 
 	"github.com/prometheus/client_golang/prometheus"

@@ -23,8 +23,8 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/mtime"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/dskit/services"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (

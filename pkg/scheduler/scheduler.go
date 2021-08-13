@@ -25,6 +25,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
@@ -32,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/grpcutil"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

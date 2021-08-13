@@ -23,13 +23,13 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager/merger"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 )
 
 // Distributor forwards requests to individual alertmanagers.

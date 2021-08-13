@@ -29,6 +29,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	ring_client "github.com/grafana/mimir/pkg/ring/client"
@@ -41,7 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

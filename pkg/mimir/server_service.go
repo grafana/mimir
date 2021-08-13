@@ -12,8 +12,8 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/weaveworks/common/server"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/dskit/services"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // NewServerService constructs service from Server component.

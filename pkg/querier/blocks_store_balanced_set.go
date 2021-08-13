@@ -20,9 +20,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	"github.com/thanos-io/thanos/pkg/extprom"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/dskit/services"
 )
 
 // BlocksStoreSet implementation used when the blocks are not sharded in the store-gateway

@@ -18,10 +18,10 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/dskit/services"
 )
 
 type frontendSchedulerWorkers struct {

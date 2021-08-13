@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"gopkg.in/yaml.v2"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
@@ -62,7 +63,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/modules"
 	"github.com/grafana/mimir/pkg/util/process"
 	"github.com/grafana/mimir/pkg/util/runtimeconfig"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

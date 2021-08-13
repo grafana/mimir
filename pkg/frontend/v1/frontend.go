@@ -20,13 +20,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/grpcutil"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

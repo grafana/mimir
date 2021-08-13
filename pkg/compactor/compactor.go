@@ -31,6 +31,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -38,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 )
 
 const (

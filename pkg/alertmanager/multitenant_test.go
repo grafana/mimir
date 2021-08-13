@@ -41,6 +41,7 @@ import (
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
@@ -51,7 +52,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/concurrency"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

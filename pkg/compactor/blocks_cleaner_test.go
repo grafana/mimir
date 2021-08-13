@@ -26,11 +26,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/dskit/services"
 )
 
 type testBlocksCleanerOptions struct {

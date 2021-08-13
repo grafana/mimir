@@ -20,11 +20,11 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

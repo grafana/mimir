@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk/aws"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
@@ -36,7 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/dskit/services"
 )
 
 func TestMimir(t *testing.T) {

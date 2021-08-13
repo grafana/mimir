@@ -19,12 +19,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

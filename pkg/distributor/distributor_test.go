@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -47,7 +48,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

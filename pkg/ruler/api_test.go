@@ -21,8 +21,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 func TestRuler_rules(t *testing.T) {
