@@ -329,7 +329,7 @@ func (this *Desc) GoString() string {
 	s := make([]string, 0, 5)
 	s = append(s, "&ring.Desc{")
 	keysForIngesters := make([]string, 0, len(this.Ingesters))
-	for k := range this.Ingesters {
+	for k, _ := range this.Ingesters {
 		keysForIngesters = append(keysForIngesters, k)
 	}
 	github_com_gogo_protobuf_sortkeys.Strings(keysForIngesters)
@@ -557,7 +557,7 @@ func (this *Desc) String() string {
 		return "nil"
 	}
 	keysForIngesters := make([]string, 0, len(this.Ingesters))
-	for k := range this.Ingesters {
+	for k, _ := range this.Ingesters {
 		keysForIngesters = append(keysForIngesters, k)
 	}
 	github_com_gogo_protobuf_sortkeys.Strings(keysForIngesters)
