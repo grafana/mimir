@@ -200,6 +200,32 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 					createAggrChunkWithSineSamples([]timeRange{{now.Add(20 * time.Second), now.Add(30 * time.Second)}}, 5*time.Millisecond),
 				},
 			},
+
+			// overlapping 3. Chunks here cover the same time range, but the first one has a gap in it.
+			{
+				Labels: mkZLabels("__name__", "overlapping3"),
+				Chunks: []storepb.AggrChunk{
+					// Chunk covers time range 0-10, but it has a gap from 3 until 6
+					createAggrChunkWithSineSamples([]timeRange{
+						{now, now.Add(3 * time.Second)},
+						{now.Add(6 * time.Second), now.Add(10 * time.Second)},
+					}, 5*time.Millisecond),
+				},
+			},
+			{
+				Labels: mkZLabels("__name__", "overlapping3"),
+				Chunks: []storepb.AggrChunk{
+					// Chunk covers time range 0-10, without any gaps
+					createAggrChunkWithSineSamples([]timeRange{{now, now.Add(10 * time.Second)}}, 5*time.Millisecond),
+				},
+			},
+			{
+				Labels: mkZLabels("__name__", "overlapping3"),
+				Chunks: []storepb.AggrChunk{
+					// Chunk covers time range 0-10, without any gaps
+					createAggrChunkWithSineSamples([]timeRange{{now, now.Add(10 * time.Second)}}, 5*time.Millisecond),
+				},
+			},
 		},
 	}
 
@@ -207,6 +233,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 	verifyNextSeries(t, bss, labels.FromStrings("__name__", "second"), 120000)
 	verifyNextSeries(t, bss, labels.FromStrings("__name__", "overlapping"), 3000)
 	verifyNextSeries(t, bss, labels.FromStrings("__name__", "overlapping2"), 4000)
+	verifyNextSeries(t, bss, labels.FromStrings("__name__", "overlapping3"), 2000)
 	require.False(t, bss.Next())
 }
 
