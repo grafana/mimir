@@ -22,7 +22,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 func TestRuler_rules(t *testing.T) {

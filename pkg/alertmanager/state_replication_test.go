@@ -25,7 +25,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 type fakeState struct {

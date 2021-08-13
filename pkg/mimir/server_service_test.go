@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
 
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 func TestServerStopViaContext(t *testing.T) {

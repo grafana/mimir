@@ -43,7 +43,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/concurrency"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 	mimir_testutil "github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )

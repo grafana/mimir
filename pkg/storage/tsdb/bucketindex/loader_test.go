@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 

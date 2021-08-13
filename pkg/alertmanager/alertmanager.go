@@ -53,7 +53,7 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_net "github.com/grafana/mimir/pkg/util/net"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 const (

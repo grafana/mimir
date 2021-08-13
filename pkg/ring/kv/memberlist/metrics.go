@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 func (m *KV) createAndRegisterMetrics() {

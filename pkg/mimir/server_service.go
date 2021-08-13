@@ -13,7 +13,7 @@ import (
 	"github.com/weaveworks/common/server"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 // NewServerService constructs service from Server component.

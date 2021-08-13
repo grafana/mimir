@@ -22,7 +22,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 // BlocksStoreSet implementation used when the blocks are not sharded in the store-gateway

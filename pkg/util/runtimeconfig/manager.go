@@ -22,7 +22,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 // Loader loads the configuration from file.

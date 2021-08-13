@@ -22,7 +22,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 // This service initialized memberlist.KV on first call to GetMemberlistKV, and starts it. On stop,

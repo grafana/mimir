@@ -7,7 +7,7 @@ package modules
 
 import (
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 // This function wraps module service, and adds waiting for dependencies to start before starting,

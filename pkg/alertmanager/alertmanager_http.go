@@ -12,7 +12,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
+	"github.com/grafana/dskit/services"
 )
 
 var (
