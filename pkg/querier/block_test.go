@@ -115,6 +115,11 @@ func mockTSDBChunkData() []byte {
 	return chunk.Bytes()
 }
 
+type timeRange struct {
+	minTime time.Time
+	maxTime time.Time
+}
+
 func TestBlockQuerierSeriesSet(t *testing.T) {
 	now := time.Now()
 
@@ -127,7 +132,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			{
 				Labels: mkZLabels("__name__", "first", "a", "a"),
 				Chunks: []storepb.AggrChunk{
-					createAggrChunkWithSineSamples(now, now.Add(100*time.Second), 3*time.Millisecond), // ceil(100 / 0.003) samples (= 33334)
+					createAggrChunkWithSineSamples([]timeRange{{now, now.Add(100 * time.Second)}}, 3*time.Millisecond), // ceil(100 / 0.003) samples (= 33334)
 				},
 			},
 
@@ -135,7 +140,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			{
 				Labels: mkZLabels("__name__", "first", "a", "a"),
 				Chunks: []storepb.AggrChunk{
-					createAggrChunkWithSineSamples(now.Add(100*time.Second), now.Add(200*time.Second), 3*time.Millisecond), // ceil(100 / 0.003) samples more, 66668 in total
+					createAggrChunkWithSineSamples([]timeRange{{now.Add(100 * time.Second), now.Add(200 * time.Second)}}, 3*time.Millisecond), // ceil(100 / 0.003) samples more, 66668 in total
 				},
 			},
 
@@ -144,9 +149,9 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 				Labels: mkZLabels("__name__", "second"),
 				Chunks: []storepb.AggrChunk{
 					// unordered chunks
-					createAggrChunkWithSineSamples(now.Add(400*time.Second), now.Add(600*time.Second), 5*time.Millisecond), // 200 / 0.005 (= 40000 samples, = 120000 in total)
-					createAggrChunkWithSineSamples(now.Add(200*time.Second), now.Add(400*time.Second), 5*time.Millisecond), // 200 / 0.005 (= 40000 samples)
-					createAggrChunkWithSineSamples(now, now.Add(200*time.Second), 5*time.Millisecond),                      // 200 / 0.005 (= 40000 samples)
+					createAggrChunkWithSineSamples([]timeRange{{now.Add(400 * time.Second), now.Add(600 * time.Second)}}, 5*time.Millisecond), // 200 / 0.005 (= 40000 samples, = 120000 in total)
+					createAggrChunkWithSineSamples([]timeRange{{now.Add(200 * time.Second), now.Add(400 * time.Second)}}, 5*time.Millisecond), // 200 / 0.005 (= 40000 samples)
+					createAggrChunkWithSineSamples([]timeRange{{now, now.Add(200 * time.Second)}}, 5*time.Millisecond),                        // 200 / 0.005 (= 40000 samples)
 				},
 			},
 
@@ -154,14 +159,14 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			{
 				Labels: mkZLabels("__name__", "overlapping"),
 				Chunks: []storepb.AggrChunk{
-					createAggrChunkWithSineSamples(now, now.Add(10*time.Second), 5*time.Millisecond), // 10 / 0.005 = 2000 samples
+					createAggrChunkWithSineSamples([]timeRange{{now, now.Add(10 * time.Second)}}, 5*time.Millisecond), // 10 / 0.005 = 2000 samples
 				},
 			},
 			{
 				Labels: mkZLabels("__name__", "overlapping"),
 				Chunks: []storepb.AggrChunk{
 					// 10 / 0.005 = 2000 samples, but first 1000 are overlapping with previous series, so this chunk only contributes 1000
-					createAggrChunkWithSineSamples(now.Add(5*time.Second), now.Add(15*time.Second), 5*time.Millisecond),
+					createAggrChunkWithSineSamples([]timeRange{{now.Add(5 * time.Second), now.Add(15 * time.Second)}}, 5*time.Millisecond),
 				},
 			},
 
@@ -170,21 +175,21 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 				Labels: mkZLabels("__name__", "overlapping2"),
 				Chunks: []storepb.AggrChunk{
 					// entire range overlaps with the next chunk, so this chunks contributes 0 samples (it will be sorted as second)
-					createAggrChunkWithSineSamples(now.Add(3*time.Second), now.Add(7*time.Second), 5*time.Millisecond),
+					createAggrChunkWithSineSamples([]timeRange{{now.Add(3 * time.Second), now.Add(7 * time.Second)}}, 5*time.Millisecond),
 				},
 			},
 			{
 				Labels: mkZLabels("__name__", "overlapping2"),
 				Chunks: []storepb.AggrChunk{
 					// this chunk has completely overlaps previous chunk. Since its minTime is lower, it will be sorted as first.
-					createAggrChunkWithSineSamples(now, now.Add(10*time.Second), 5*time.Millisecond), // 10 / 0.005 = 2000 samples
+					createAggrChunkWithSineSamples([]timeRange{{now, now.Add(10 * time.Second)}}, 5*time.Millisecond), // 10 / 0.005 = 2000 samples
 				},
 			},
 			{
 				Labels: mkZLabels("__name__", "overlapping2"),
 				Chunks: []storepb.AggrChunk{
 					// no samples
-					createAggrChunkWithSineSamples(now, now, 5*time.Millisecond),
+					createAggrChunkWithSineSamples([]timeRange{{now, now}}, 5*time.Millisecond),
 				},
 			},
 
@@ -192,7 +197,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 				Labels: mkZLabels("__name__", "overlapping2"),
 				Chunks: []storepb.AggrChunk{
 					// 2000 samples more (10 / 0.005)
-					createAggrChunkWithSineSamples(now.Add(20*time.Second), now.Add(30*time.Second), 5*time.Millisecond),
+					createAggrChunkWithSineSamples([]timeRange{{now.Add(20 * time.Second), now.Add(30 * time.Second)}}, 5*time.Millisecond),
 				},
 			},
 		},
@@ -224,18 +229,26 @@ func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, 
 	require.Equal(t, samples, count)
 }
 
-func createAggrChunkWithSineSamples(minTime, maxTime time.Time, step time.Duration) storepb.AggrChunk {
-	var samples []promql.Point
-
-	minT := minTime.Unix() * 1000
-	maxT := maxTime.Unix() * 1000
-	stepMillis := step.Milliseconds()
-
-	for t := minT; t < maxT; t += stepMillis {
-		samples = append(samples, promql.Point{T: t, V: math.Sin(float64(t))})
+// createAggrChunkWithSineSamples takes a list of time ranges and a step size, it then writes all the
+// samples in the specified timeranges into a single chunk and returns it.
+func createAggrChunkWithSineSamples(timeRanges []timeRange, step time.Duration) storepb.AggrChunk {
+	if len(timeRanges) == 0 {
+		return createAggrChunk(0, 0)
 	}
 
-	return createAggrChunk(minT, maxT, samples...)
+	var samples []promql.Point
+	stepMillis := step.Milliseconds()
+
+	for _, timeRange := range timeRanges {
+		minT := timeRange.minTime.Unix() * 1000
+		maxT := timeRange.maxTime.Unix() * 1000
+
+		for t := minT; t < maxT; t += stepMillis {
+			samples = append(samples, promql.Point{T: t, V: math.Sin(float64(t))})
+		}
+	}
+
+	return createAggrChunk(timeRanges[0].minTime.Unix()*1000, timeRanges[len(timeRanges)-1].maxTime.Unix()*1000, samples...)
 }
 
 func createAggrChunkWithSamples(samples ...promql.Point) storepb.AggrChunk {
@@ -299,7 +312,7 @@ func Benchmark_newBlockQuerierSeries(b *testing.B) {
 		"label_9", "value_9")
 
 	chunks := []storepb.AggrChunk{
-		createAggrChunkWithSineSamples(time.Now(), time.Now().Add(-time.Hour), time.Minute),
+		createAggrChunkWithSineSamples([]timeRange{{time.Now(), time.Now().Add(-time.Hour)}}, time.Minute),
 	}
 
 	b.ResetTimer()
@@ -323,7 +336,7 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 
 		// Create chunks with 1 sample per second.
 		for minT := int64(0); minT < numChunksPerSeries*numSamplesPerChunk; minT += numSamplesPerChunk {
-			chunks = append(chunks, createAggrChunkWithSineSamples(util.TimeFromMillis(minT), util.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
+			chunks = append(chunks, createAggrChunkWithSineSamples([]timeRange{{util.TimeFromMillis(minT), util.TimeFromMillis(minT + numSamplesPerChunk)}}, time.Millisecond))
 		}
 
 		series = append(series, &storepb.Series{
