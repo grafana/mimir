@@ -26,6 +26,10 @@
 
       'querier.second-store-engine': $._config.querier_second_storage_engine,
 
+      // We request high memory but the Go heap is typically very low (< 100MB) and this causes
+      // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
+      'mem-ballast-size-bytes': 1 << 28,  // 256M
+
       'log.level': 'debug',
     },
 

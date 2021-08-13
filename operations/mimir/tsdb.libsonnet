@@ -115,7 +115,7 @@
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     // When the ingester needs to flush blocks to the storage, it may take quite a lot of time.
     // For this reason, we grant an high termination period (80 minutes).
-    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(4800) +
+    statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.util.podPriority('high') +
