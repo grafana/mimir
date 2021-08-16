@@ -18,6 +18,7 @@
 * [CHANGE] Query-frontend: Enable query stats by default, they can still be disabled with `-frontend.query-stats-enabled=false`. #83
 * [CHANGE] Ingester: default `-ingester.min-ready-duration` reduced from 1m to 15s. #126
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
+* [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100
   * New config options:
@@ -36,7 +37,7 @@
 * [ENHANCEMENT] Ingester: added option `-ingester.readiness-check-ring-health` to disable the ring health check in the readiness endpoint. When disabled, the health checks are run against only the ingester itself instead of all ingesters in the ring. #48 #126
 * [ENHANCEMENT] Added option `-distributor.excluded-zones` to exclude ingesters running in specific zones both on write and read path. #51
 * [ENHANCEMENT] Store-gateway: added `cortex_bucket_store_sent_chunk_size_bytes` metric, tracking the size of chunks sent from store-gateway to querier. #123
-* [ENHANCEMENT] Store-gateway: reduced CPU and memory utilization due to exported metrics aggregation for instances with a large number of tenants. #123
+* [ENHANCEMENT] Store-gateway: reduced CPU and memory utilization due to exported metrics aggregation for instances with a large number of tenants. #123 #142
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
 
