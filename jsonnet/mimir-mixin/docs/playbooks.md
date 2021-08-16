@@ -380,16 +380,14 @@ When this happen you should:
 2. Ensure the compactor has recovered
 3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
 
-To rename a block stored on GCS you can use the `gsutil` CLI:
-
+To rename a block stored on GCS you can use the `gsutil` CLI command:
 ```
-# Replace the placeholders:
-# - BUCKET: bucket name
-# - TENANT: tenant ID
-# - BLOCK:  block ID
-
 gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 ```
+Where:
+- `BUCKET` is the gcs bucket name the compactor is using. The cell's bucket name is specified as the `blocks_storage_bucket_name` in the cell configuration
+- `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
+- `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
 ### CortexBucketIndexNotUpdated
 
