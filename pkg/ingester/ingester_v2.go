@@ -1844,8 +1844,7 @@ func (i *Ingester) watchTenantLimitChan(ch <-chan map[string]*validation.Limits)
 			if _, found := newLimits[userID]; found {
 				continue
 			}
-			maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-			if err := i.applyExemplarsSetting(userID, maxExemplars); err != nil {
+			if err := i.applyExemplarsSetting(userID, i.limits.MaxGlobalExemplarsPerUser(userID)); err != nil {
 				level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
 			}
 		}
