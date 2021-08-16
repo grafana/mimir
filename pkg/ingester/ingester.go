@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/status"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -38,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	logutil "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/services"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -486,9 +486,19 @@ func (i *Ingester) checkRunningOrStopping() error {
 	return status.Error(codes.Unavailable, s.String())
 }
 
+// Using block store, the ingester is only available when it is in a Running state. The ingester is not available
+// when stopping to prevent any read or writes to the TSDB after the ingester has closed them.
+func (i *Ingester) checkRunning() error {
+	s := i.State()
+	if s == services.Running {
+		return nil
+	}
+	return status.Error(codes.Unavailable, s.String())
+}
+
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
+	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
 
@@ -768,12 +778,12 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 
 // Query implements service.IngesterServer
 func (i *Ingester) Query(ctx context.Context, req *client.QueryRequest) (*client.QueryResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2Query(ctx, req)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return nil, err
 	}
 
 	userID, err := tenant.TenantID(ctx)
@@ -835,12 +845,12 @@ func (i *Ingester) Query(ctx context.Context, req *client.QueryRequest) (*client
 
 // QueryStream implements service.IngesterServer
 func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_QueryStreamServer) error {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2QueryStream(req, stream)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return err
 	}
 
 	spanLog, ctx := spanlogger.New(stream.Context(), "QueryStream")
@@ -919,10 +929,6 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 
 // Query implements service.IngesterServer
 func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if !i.cfg.BlocksStorageEnabled {
 		return nil, errors.New("not supported")
 	}
@@ -932,12 +938,12 @@ func (i *Ingester) QueryExemplars(ctx context.Context, req *client.ExemplarQuery
 
 // LabelValues returns all label values that are associated with a given label name.
 func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesRequest) (*client.LabelValuesResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2LabelValues(ctx, req)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return nil, err
 	}
 
 	i.userStatesMtx.RLock()
@@ -957,12 +963,12 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 
 // LabelNames return all the label names.
 func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest) (*client.LabelNamesResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2LabelNames(ctx, req)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return nil, err
 	}
 
 	i.userStatesMtx.RLock()
@@ -1008,12 +1014,12 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 
 // MetricsForLabelMatchers returns all the metrics which match a set of matchers.
 func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.MetricsForLabelMatchersRequest) (*client.MetricsForLabelMatchersResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2MetricsForLabelMatchers(ctx, req)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return nil, err
 	}
 
 	i.userStatesMtx.RLock()
@@ -1078,12 +1084,12 @@ func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetad
 
 // UserStats returns ingestion statistics for the current user.
 func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) (*client.UserStatsResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2UserStats(ctx, req)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return nil, err
 	}
 
 	i.userStatesMtx.RLock()
@@ -1107,12 +1113,12 @@ func (i *Ingester) UserStats(ctx context.Context, req *client.UserStatsRequest) 
 
 // AllUserStats returns ingestion statistics for all users known to this ingester.
 func (i *Ingester) AllUserStats(ctx context.Context, req *client.UserStatsRequest) (*client.UsersStatsResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2AllUserStats(ctx, req)
+	}
+
+	if err := i.checkRunningOrStopping(); err != nil {
+		return nil, err
 	}
 
 	i.userStatesMtx.RLock()

@@ -10,10 +10,10 @@ import (
 	"fmt"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 // This service wraps module service, and adds waiting for dependencies to start before starting,

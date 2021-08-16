@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/services"
 	"github.com/hashicorp/memberlist"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
@@ -29,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 const (
@@ -985,20 +985,8 @@ func (m *KV) NotifyMsg(msg []byte) {
 	} else if version > 0 {
 		m.notifyWatchers(kvPair.Key)
 
-		m.addSentMessage(message{
-			Time:    time.Now(),
-			Size:    len(msg),
-			Pair:    kvPair,
-			Version: version,
-			Changes: changes,
-		})
-
-		// Forward this message
-		// Memberlist will modify message once this function returns, so we need to make a copy
-		msgCopy := append([]byte(nil), msg...)
-
-		// forward this message further
-		m.queueBroadcast(kvPair.Key, mod.MergeContent(), version, msgCopy)
+		// Don't resend original message, but only changes.
+		m.broadcastNewValue(kvPair.Key, mod, version, codec)
 	}
 }
 
@@ -1218,6 +1206,17 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 		total, removed := result.RemoveTombstones(limit)
 		m.storeTombstones.WithLabelValues(key).Set(float64(total))
 		m.storeRemovedTombstones.WithLabelValues(key).Add(float64(removed))
+
+		// Remove tombstones from change too. If change turns out to be empty after this,
+		// we don't need to change local value either!
+		//
+		// Note that "result" and "change" may actually be the same Mergeable. That is why we
+		// call RemoveTombstones on "result" first, so that we get the correct metrics. Calling
+		// RemoveTombstones twice with same limit should be noop.
+		change.RemoveTombstones(limit)
+		if len(change.MergeContent()) == 0 {
+			return nil, 0, nil
+		}
 	}
 
 	newVersion := curr.version + 1

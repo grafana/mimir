@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -23,7 +24,6 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func TestWAL(t *testing.T) {
