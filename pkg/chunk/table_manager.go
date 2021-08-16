@@ -24,6 +24,7 @@ import (
 	"github.com/weaveworks/common/mtime"
 
 	"github.com/grafana/dskit/services"
+
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 

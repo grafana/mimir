@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/dskit/services"
+
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 

@@ -21,6 +21,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/util"
 )

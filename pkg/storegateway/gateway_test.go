@@ -41,6 +41,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"

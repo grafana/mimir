@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/tools/blocksconvert"
 )
 

@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
 	"github.com/grafana/mimir/pkg/util/flagext"

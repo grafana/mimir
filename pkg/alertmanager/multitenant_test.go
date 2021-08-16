@@ -42,6 +42,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"

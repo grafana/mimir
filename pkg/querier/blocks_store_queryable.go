@@ -33,6 +33,7 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/querier/stats"

@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/ring/kv/codec"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/test"

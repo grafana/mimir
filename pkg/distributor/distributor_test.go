@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"

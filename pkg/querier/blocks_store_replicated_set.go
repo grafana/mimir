@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/client"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"

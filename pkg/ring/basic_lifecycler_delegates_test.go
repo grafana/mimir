@@ -18,6 +18,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/util/concurrency"
 	"github.com/grafana/mimir/pkg/util/test"
 )

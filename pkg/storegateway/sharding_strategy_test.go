@@ -20,6 +20,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"

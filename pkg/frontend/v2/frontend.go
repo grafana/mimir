@@ -24,6 +24,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"

@@ -37,6 +37,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"

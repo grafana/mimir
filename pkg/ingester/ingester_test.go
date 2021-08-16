@@ -33,6 +33,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/chunk"
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"

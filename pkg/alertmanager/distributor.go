@@ -24,6 +24,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/alertmanager/merger"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/client"

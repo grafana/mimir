@@ -33,6 +33,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"

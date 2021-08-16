@@ -30,6 +30,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/services"
+
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"

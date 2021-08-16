@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/util/grpc/naming"
 )
 

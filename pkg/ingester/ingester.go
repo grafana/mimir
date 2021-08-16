@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc/codes"
 
 	"github.com/grafana/dskit/services"
+
 	cortex_chunk "github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"

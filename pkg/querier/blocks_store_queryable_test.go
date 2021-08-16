@@ -34,6 +34,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"

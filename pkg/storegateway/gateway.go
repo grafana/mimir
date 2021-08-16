@@ -23,6 +23,7 @@ import (
 	"github.com/weaveworks/common/logging"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/storage/bucket"

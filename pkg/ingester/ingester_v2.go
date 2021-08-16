@@ -36,6 +36,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"

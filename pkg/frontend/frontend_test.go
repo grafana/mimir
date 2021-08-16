@@ -30,6 +30,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"

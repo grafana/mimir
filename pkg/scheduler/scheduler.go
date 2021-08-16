@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"

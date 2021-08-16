@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/kit/log"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 )

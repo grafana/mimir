@@ -34,6 +34,7 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/tools/blocksconvert"
 	"github.com/grafana/mimir/tools/blocksconvert/planprocessor"
 )

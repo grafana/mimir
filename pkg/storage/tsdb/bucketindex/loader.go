@@ -19,6 +19,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
 )

@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc/metadata"
 
 	"github.com/grafana/dskit/services"
+
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
