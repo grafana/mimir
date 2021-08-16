@@ -127,14 +127,14 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			{
 				Labels: mkZLabels("__name__", "first", "a", "a"),
 				Chunks: []storepb.AggrChunk{
-					createAggrChunkWithSineSamples(now, now.Add(100*time.Second), 3*time.Millisecond), // floor(100 / 0.003) samples (= 33333)
+					createAggrChunkWithSineSamples(now, now.Add(100*time.Second-time.Millisecond), 3*time.Millisecond), // ceil(100 / 0.003) samples (= 33334)
 				},
 			},
 			// continuation of previous series. Must have exact same labels.
 			{
 				Labels: mkZLabels("__name__", "first", "a", "a"),
 				Chunks: []storepb.AggrChunk{
-					createAggrChunkWithSineSamples(now.Add(100*time.Second), now.Add(200*time.Second), 3*time.Millisecond), // floor(100 / 0.003) samples more, 66666 in total
+					createAggrChunkWithSineSamples(now.Add(100*time.Second), now.Add(200*time.Second-time.Millisecond), 3*time.Millisecond), // ceil(100 / 0.003) samples (= 33334) samples more, 66668 in total
 				},
 			},
 			// second, with multiple chunks
