@@ -9,9 +9,8 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/pkg/errors"
-
 	"github.com/grafana/dskit/services"
+	"github.com/pkg/errors"
 )
 
 // module is the basic building block of the application

@@ -18,10 +18,9 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )

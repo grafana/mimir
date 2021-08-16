@@ -9,11 +9,10 @@ import (
 	"context"
 	"testing"
 
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/dskit/services"
 )
 
 func TestHealthCheck_isHealthy(t *testing.T) {

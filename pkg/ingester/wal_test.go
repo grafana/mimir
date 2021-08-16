@@ -15,14 +15,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )

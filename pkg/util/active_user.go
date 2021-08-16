@@ -10,9 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"go.uber.org/atomic"
-
 	"github.com/grafana/dskit/services"
+	"go.uber.org/atomic"
 )
 
 // ActiveUsers keeps track of latest user's activity timestamp,

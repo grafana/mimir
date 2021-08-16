@@ -13,11 +13,10 @@ import (
 	"strings"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/server"
 	"github.com/weaveworks/common/signals"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/mimir"
 	util_log "github.com/grafana/mimir/pkg/util/log"

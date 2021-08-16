@@ -10,7 +10,6 @@ import (
 	"net/http"
 
 	"github.com/go-kit/kit/log/level"
-
 	"github.com/grafana/dskit/services"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"

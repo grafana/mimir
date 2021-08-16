@@ -10,11 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/server"
-
-	"github.com/grafana/dskit/services"
 )
 
 func TestServerStopViaContext(t *testing.T) {

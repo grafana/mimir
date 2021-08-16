@@ -18,10 +18,9 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/hashicorp/memberlist"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/util"
 )
