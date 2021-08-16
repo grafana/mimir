@@ -8,7 +8,6 @@ ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 RUN apt-get update && apt-get install -y curl python-requests python-yaml file jq unzip protobuf-compiler libprotobuf-dev shellcheck && \
 	rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
-RUN go get -u golang.org/x/tools/cmd/goimports@3fce476f0a782aeb5034d592c189e63be4ba6c9e
 RUN curl -sL https://deb.nodesource.com/setup_14.x | bash -
 RUN apt-get install -y nodejs && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
