@@ -114,7 +114,7 @@ func (bqs *blockQuerierSeries) Iterator() chunkenc.Iterator {
 		return series.NewErrIterator(errors.New("no chunks"))
 	}
 
-	its := make([]blockSeriesIterator, 0, len(bqs.chunks))
+	its := make([]iteratorWithMaxTime, 0, len(bqs.chunks))
 
 	for _, c := range bqs.chunks {
 		ch, err := chunkenc.FromData(chunkenc.EncXOR, c.Raw.Data)
@@ -123,18 +123,18 @@ func (bqs *blockQuerierSeries) Iterator() chunkenc.Iterator {
 		}
 
 		it := ch.Iterator(nil)
-		its = append(its, blockSeriesIterator{it, c.MaxTime})
+		its = append(its, iteratorWithMaxTime{it, c.MaxTime})
 	}
 
 	return newBlockQuerierSeriesIterator(bqs.Labels(), its)
 }
 
-func newBlockQuerierSeriesIterator(labels labels.Labels, its []blockSeriesIterator) *blockQuerierSeriesIterator {
+func newBlockQuerierSeriesIterator(labels labels.Labels, its []iteratorWithMaxTime) *blockQuerierSeriesIterator {
 	return &blockQuerierSeriesIterator{labels: labels, iterators: its, lastT: math.MinInt64}
 }
 
-// blockSeriesIterator is an iterator which is aware of the maxT of its embedded iterator.
-type blockSeriesIterator struct {
+// iteratorWithMaxTime is an iterator which is aware of the maxT of its embedded iterator.
+type iteratorWithMaxTime struct {
 	chunkenc.Iterator
 	maxT int64
 }
@@ -145,7 +145,7 @@ type blockQuerierSeriesIterator struct {
 	// only used for error reporting
 	labels labels.Labels
 
-	iterators []blockSeriesIterator
+	iterators []iteratorWithMaxTime
 	i         int
 	lastT     int64
 }
