@@ -19,7 +19,7 @@
 * [CHANGE] Ingester: default `-ingester.min-ready-duration` reduced from 1m to 15s. #126
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
-* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100
+* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #140
   * New config options:
     * `-querier.total-shards`: The amount of shards to use when doing parallelisation via query sharding.
     * `-blocks-storage.bucket-store.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the store-gateway.
