@@ -304,15 +304,6 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, firstRun b
 		}
 	}()
 
-	// Migrate block deletion marks to the global markers location. This operation is a best-effort.
-	if firstRun {
-		if err := bucketindex.MigrateBlockDeletionMarksToGlobalLocation(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
-			level.Warn(userLogger).Log("msg", "failed to migrate block deletion marks to the global markers location", "err", err)
-		} else {
-			level.Info(userLogger).Log("msg", "migrated block deletion marks to the global markers location")
-		}
-	}
-
 	// Read the bucket index.
 	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)
 	if errors.Is(err, bucketindex.ErrIndexCorrupted) {
