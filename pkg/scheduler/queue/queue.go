@@ -10,11 +10,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 const (

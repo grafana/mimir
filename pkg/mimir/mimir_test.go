@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -36,7 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/flagext"
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func TestMimir(t *testing.T) {

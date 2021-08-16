@@ -22,10 +22,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 type fakeState struct {

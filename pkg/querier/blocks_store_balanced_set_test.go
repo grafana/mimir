@@ -12,13 +12,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func TestBlocksStoreBalancedSet_GetClientsFor(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	perrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 var (

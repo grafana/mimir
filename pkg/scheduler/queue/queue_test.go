@@ -13,11 +13,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/services"
 )
 
 func BenchmarkGetNextRequest(b *testing.B) {
