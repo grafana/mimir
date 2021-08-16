@@ -157,7 +157,9 @@ func (it *blockQuerierSeriesIterator) Seek(t int64) bool {
 		if it.iterators[it.i].maxT >= t {
 			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
 			// we try to seek to and return the result.
-			return it.iterators[it.i].Seek(t)
+			if it.iterators[it.i].Seek(t) {
+				return true
+			}
 		}
 	}
 
