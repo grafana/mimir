@@ -805,7 +805,7 @@ func (t *Mimir) initQueryScheduler() (services.Service, error) {
 }
 
 func (t *Mimir) setupModuleManager() error {
-	mm := modules.NewManager()
+	mm := modules.NewManager(util_log.Logger)
 
 	// Register all modules here.
 	// RegisterModule(name string, initFn func()(services.Service, error))

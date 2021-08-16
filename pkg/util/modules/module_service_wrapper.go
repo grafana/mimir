@@ -6,6 +6,7 @@
 package modules
 
 import (
+	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/services"
 
 	"github.com/grafana/mimir/pkg/util"
@@ -13,7 +14,7 @@ import (
 
 // This function wraps module service, and adds waiting for dependencies to start before starting,
 // and dependant modules to stop before stopping this module service.
-func newModuleServiceWrapper(serviceMap map[string]services.Service, mod string, modServ services.Service, startDeps []string, stopDeps []string) services.Service {
+func newModuleServiceWrapper(serviceMap map[string]services.Service, mod string, logger log.Logger, modServ services.Service, startDeps []string, stopDeps []string) services.Service {
 	getDeps := func(deps []string) map[string]services.Service {
 		r := map[string]services.Service{}
 		for _, m := range deps {
@@ -25,7 +26,7 @@ func newModuleServiceWrapper(serviceMap map[string]services.Service, mod string,
 		return r
 	}
 
-	return util.NewModuleService(mod, modServ,
+	return util.NewModuleService(mod, logger, modServ,
 		func(_ string) map[string]services.Service {
 			return getDeps(startDeps)
 		},
