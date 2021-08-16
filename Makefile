@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license
+.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format
 .DEFAULT_GOAL := all
 
 # Version number
@@ -118,7 +118,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= jdb-lint-packaging-scripts-b6709b71a
+LATEST_BUILD_IMAGE_TAG ?= goimports-00767679e
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -135,7 +135,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -208,6 +208,10 @@ lint: lint-packaging-scripts
 		"github.com/thanos/thanos-io/pkg/store,\
 		github.com/thanos-io/thanos/pkg/testutil/..." \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
+
+format:
+	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec gofmt -w -s {} \;
+	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test:
 	go test -tags netgo -timeout 30m -race -count 1 ./...
