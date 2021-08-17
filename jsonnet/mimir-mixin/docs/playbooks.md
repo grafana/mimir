@@ -372,7 +372,7 @@ How to **investigate**:
 The compactor may fail to compact blocks due a corrupted block index found in one of the source blocks:
 
 ```
-level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=compactor msg="failed to compact user blocks" user=REDACTED err="compaction: group 0@6672437747845546250: block with not healthy index found /data/compact/0@6672437747845546250/REDACTED; Compaction level 1; Labels: map[__org_id__:REDACTED]: 1/1183085 series have an average of 1.000 out-of-order chunks: 0.000 of these are exact duplicates (in terms of data and time range)"
+level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=compactor msg="failed to compact user blocks" user=REDACTED-TENANT err="compaction: group 0@6672437747845546250: block with not healthy index found /data/compact/0@6672437747845546250/REDACTED-BLOCK; Compaction level 1; Labels: map[__org_id__:REDACTED]: 1/1183085 series have an average of 1.000 out-of-order chunks: 0.000 of these are exact duplicates (in terms of data and time range)"
 ```
 
 When this happen you should:
@@ -380,16 +380,14 @@ When this happen you should:
 2. Ensure the compactor has recovered
 3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
 
-To rename a block stored on GCS you can use the `gsutil` CLI:
-
+To rename a block stored on GCS you can use the `gsutil` CLI command:
 ```
-# Replace the placeholders:
-# - BUCKET: bucket name
-# - TENANT: tenant ID
-# - BLOCK:  block ID
-
 gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 ```
+Where:
+- `BUCKET` is the gcs bucket name the compactor is using. The cell's bucket name is specified as the `blocks_storage_bucket_name` in the cell configuration
+- `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
+- `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
 ### CortexBucketIndexNotUpdated
 
