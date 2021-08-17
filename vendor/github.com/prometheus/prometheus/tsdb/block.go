@@ -79,8 +79,13 @@ type IndexReader interface {
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
 
+	// ShardedPostings returns a postings list filtered by the provided shardIndex
+	// out of shardCount. For a given posting, its shard MUST be computed hashing
+	// the series labels mod shardCount (eg. `labels.Hash() % shardCount == shardIndex`).
+	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
+
 	// Series populates the given labels and chunk metas for the series identified
-	// by the reference.
+	// by the reference. Chunks are skipped if chks is nil.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
@@ -468,6 +473,10 @@ func (r blockIndexReader) Postings(name string, values ...string) (index.Posting
 
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
+}
+
+func (r blockIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return r.ir.ShardedPostings(p, shardIndex, shardCount)
 }
 
 func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {

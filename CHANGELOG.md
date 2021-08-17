@@ -26,6 +26,7 @@
   * New exported metrics:
     * `cortex_bucket_store_series_hash_cache_requests_total`
     * `cortex_bucket_store_series_hash_cache_hits_total`
+* [FEATURE] PromQL: added `present_over_time` support. #139
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`
