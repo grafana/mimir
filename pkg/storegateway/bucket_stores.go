@@ -52,7 +52,6 @@ type BucketStores struct {
 	bucket             objstore.Bucket
 	logLevel           logging.Level
 	bucketStoreMetrics *BucketStoreMetrics
-	indexHeaderMetrics *IndexHeaderMetrics
 	metaFetcherMetrics *MetadataFetcherMetrics
 	shardingStrategy   ShardingStrategy
 
@@ -107,7 +106,6 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		stores:             map[string]*BucketStore{},
 		logLevel:           logLevel,
 		bucketStoreMetrics: NewBucketStoreMetrics(reg),
-		indexHeaderMetrics: NewIndexHeaderMetrics(),
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
@@ -148,7 +146,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}
 
 	if reg != nil {
-		reg.MustRegister(u.indexHeaderMetrics, u.metaFetcherMetrics)
+		reg.MustRegister(u.metaFetcherMetrics)
 	}
 
 	return u, nil
@@ -407,7 +405,6 @@ func (u *BucketStores) closeEmptyBucketStore(userID string) error {
 	u.storesMu.Unlock()
 
 	u.metaFetcherMetrics.RemoveUserRegistry(userID)
-	u.indexHeaderMetrics.RemoveUserRegistry(userID)
 	return bs.Close()
 }
 
@@ -498,10 +495,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		}
 	}
 
-	bucketStoreReg := prometheus.NewRegistry()
 	bucketStoreOpts := []BucketStoreOption{
 		WithLogger(userLogger),
-		WithRegistry(bucketStoreReg),
 		WithIndexCache(u.indexCache),
 		WithQueryGate(u.queryGate),
 		WithChunkPool(u.chunksPool),
@@ -533,7 +528,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 
 	u.stores[userID] = bs
 	u.metaFetcherMetrics.AddUserRegistry(userID, fetcherReg)
-	u.indexHeaderMetrics.AddUserRegistry(userID, bucketStoreReg)
 
 	return bs, nil
 }

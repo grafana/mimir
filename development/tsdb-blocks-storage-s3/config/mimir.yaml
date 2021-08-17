@@ -45,6 +45,7 @@ blocks_storage:
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
     consistency_delay: 5s
+    index_header_lazy_loading_enabled: true
 
     index_cache:
       backend: memcached
