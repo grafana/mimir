@@ -2,6 +2,7 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Compactor: Removed support for block deletion marks migration. #122
 * [CHANGE] Removed query sharding for the chunks storage. Query sharding is now only supported for blocks storage. #86 #119
 * [CHANGE] Renamed build image to us.gcr.io/kubernetes-dev/mimir-build-image. #40
 * [CHANGE] Renamed metric `deprecated_flags_inuse_total` as `deprecated_flags_used_total`. #35
