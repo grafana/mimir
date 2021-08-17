@@ -17,7 +17,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/grafana/mimir/pkg/ingester"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -104,7 +103,7 @@ func (f *Flusher) running(ctx context.Context) error {
 	}
 
 	if f.cfg.ExitAfterFlush {
-		return util.ErrStopProcess
+		return services.ErrStopProcess
 	}
 
 	// Return normally -- this keeps Mimir running.
