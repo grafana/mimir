@@ -23,25 +23,26 @@ func newSubtreeFolder() ASTMapper {
 	return NewASTNodeMapper(&subtreeFolder{})
 }
 
-// MapNode implements NodeMapper
-func (f *subtreeFolder) MapNode(node parser.Node) (parser.Node, bool, error) {
+// MapNode implements NodeMapper. This function always returns sharded=false because it's not
+// its responsibility to rewrite the node in a shardable way.
+func (f *subtreeFolder) MapNode(node parser.Node) (mapped parser.Node, finished, sharded bool, err error) {
 	switch n := node.(type) {
 	// do not attempt to fold number or string leaf nodes
 	case *parser.NumberLiteral, *parser.StringLiteral:
-		return n, true, nil
+		return n, true, false, nil
 	}
 
-	containsEmbedded, err := Predicate(node, predicate(isEmbedded))
+	containsEmbedded, err := Predicate(node, isEmbedded)
 	if err != nil {
-		return nil, true, err
+		return nil, true, false, err
 	}
 
 	if containsEmbedded {
-		return node, false, nil
+		return node, false, false, nil
 	}
 
 	expr, err := vectorSquasher(node)
-	return expr, true, err
+	return expr, true, false, err
 }
 
 func isEmbedded(node parser.Node) (bool, error) {

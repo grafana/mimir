@@ -28,7 +28,9 @@ type querySharding struct {
 	next   Handler
 	logger log.Logger
 
-	mappedASTCounter      prometheus.Counter
+	// Metrics.
+	shardingAttempts      prometheus.Counter
+	shardingSuccesses     prometheus.Counter
 	shardedQueriesCounter prometheus.Counter
 }
 
@@ -47,10 +49,15 @@ func NewQueryShardingMiddleware(
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &querySharding{
 			next: next,
-			mappedASTCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 				Namespace: "cortex",
-				Name:      "frontend_mapped_asts_total",
-				Help:      "Total number of queries that have undergone AST mapping",
+				Name:      "frontend_query_sharding_rewrites_attempted_total",
+				Help:      "Total number of queries the query-frontend attempted to shard.",
+			}),
+			shardingSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+				Namespace: "cortex",
+				Name:      "frontend_query_sharding_rewrites_succeeded_total",
+				Help:      "Total number of queries the query-frontend successfully rewritten in a shardable way.",
 			}),
 			shardedQueriesCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 				Namespace: "cortex",
@@ -65,6 +72,8 @@ func NewQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
+	s.shardingAttempts.Inc()
+
 	mapper, err := astmapper.NewSharding(s.totalShards, s.shardedQueriesCounter)
 	if err != nil {
 		return nil, err
@@ -74,14 +83,20 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	mappedQuery, err := mapper.Map(expr)
+	mappedQuery, sharded, err := mapper.Map(expr)
 	if err != nil {
 		return nil, err
 	}
 
+	// If the query hasn't been sharded, then we should not execute it in the query-frontend.
+	if !sharded {
+		return s.next.Do(ctx, r)
+	}
+
 	strMappedQuery := mappedQuery.String()
 	level.Debug(s.logger).Log("msg", "mapped query", "original", r.GetQuery(), "mapped", strMappedQuery)
-	s.mappedASTCounter.Inc()
+
+	s.shardingSuccesses.Inc()
 	r = r.WithQuery(strMappedQuery)
 
 	shardedQueryable := &ShardedQueryable{Req: r, Handler: s.next}
