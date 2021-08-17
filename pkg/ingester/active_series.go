@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash"
-	"github.com/grafana/mimir/pkg/util"
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"go.uber.org/atomic"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -291,8 +292,8 @@ func NewActiveSeriesMatcher(cfgs ActiveSeriesCustomTrackersConfigs) (*ActiveSeri
 	l := len(cfgs)
 
 	asm := &ActiveSeriesMatcher{
-		boolsPool: sync.Pool{New: func() interface{} { return make([]bool, l) }},
-		intsPool:  sync.Pool{New: func() interface{} { return make([]int, l) }},
+		boolsPool: sync.Pool{New: func() interface{} { s := make([]bool, l); return &s }},
+		intsPool:  sync.Pool{New: func() interface{} { s := make([]int, l); return &s }},
 	}
 
 	seenMatcherNames := map[string]int{}
@@ -349,7 +350,7 @@ func (asm *ActiveSeriesMatcher) BoolsSlice() []bool {
 		return nil
 	}
 
-	return asm.boolsPool.Get().([]bool)
+	return *asm.boolsPool.Get().(*[]bool)
 }
 
 // PutDirtyBools puts back a slice of bools. They don't need to be false values.
@@ -361,7 +362,7 @@ func (asm *ActiveSeriesMatcher) PutDirtyBools(slice []bool) {
 	for i := range slice {
 		slice[i] = false
 	}
-	asm.boolsPool.Put(slice)
+	asm.boolsPool.Put(&slice)
 }
 
 // IntsSlice provides a slice of ints with zero values, with same len as MatcherNames.
@@ -370,7 +371,7 @@ func (asm *ActiveSeriesMatcher) IntsSlice() []int {
 	if len(asm.matchers) == 0 {
 		return nil
 	}
-	return asm.intsPool.Get().([]int)
+	return *asm.intsPool.Get().(*[]int)
 }
 
 // PutDirtyInts puts back a slice of ints. They don't need to be zero values.
@@ -382,7 +383,7 @@ func (asm *ActiveSeriesMatcher) PutDirtyInts(slice []int) {
 	for i := range slice {
 		slice[i] = 0
 	}
-	asm.intsPool.Put(slice)
+	asm.intsPool.Put(&slice)
 }
 
 func labelsToLabelSet(series labels.Labels) model.LabelSet {
