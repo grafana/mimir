@@ -50,6 +50,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/ring"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -1333,6 +1334,88 @@ func Test_Ingester_v2Query(t *testing.T) {
 		})
 	}
 }
+
+func TestIngester_v2Query_QuerySharding(t *testing.T) {
+	const (
+		numSeries = 1000
+		numShards = 16
+	)
+
+	// Create ingester
+	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
+	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+
+	// Wait until it's ACTIVE
+	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
+		return i.lifecycler.GetState()
+	})
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+
+	// Push all series. We push half of the series, then we compact the TSDB head into a block (flush)
+	// and finally we push the remaining series. This way we can both test querying back series both
+	// from compacted blocks and head.
+	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		lbls := labels.Labels{
+			{Name: labels.MetricName, Value: "foo"},
+			{Name: "series_id", Value: strconv.Itoa(seriesID)},
+		}
+
+		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
+		_, err = i.v2Push(ctx, req)
+		require.NoError(t, err)
+
+		// Compact the TSDB head once half of the series have been pushed.
+		if seriesID == numSeries/2 {
+			i.Flush()
+		}
+	}
+
+	// Query all series.
+	var actualTimeseries []mimirpb.TimeSeries
+
+	for shardIndex := 0; shardIndex < numShards; shardIndex++ {
+		req := &client.QueryRequest{
+			StartTimestampMs: math.MinInt64,
+			EndTimestampMs:   math.MaxInt64,
+			Matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
+				{Type: client.EQUAL, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+					ShardIndex: uint64(shardIndex),
+					ShardCount: uint64(numShards),
+				}.LabelValue()},
+			},
+		}
+
+		res, err := i.v2Query(ctx, req)
+		require.NoError(t, err)
+
+		actualTimeseries = append(actualTimeseries, res.Timeseries...)
+	}
+
+	// We expect that all series have been returned.
+	assert.Len(t, actualTimeseries, numSeries)
+
+	actualSeriesIDs := map[int]struct{}{}
+
+	for _, series := range actualTimeseries {
+		seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+		require.NoError(t, err)
+
+		// We expect no duplicated series in the result.
+		_, exists := actualSeriesIDs[seriesID]
+		assert.False(t, exists)
+		actualSeriesIDs[seriesID] = struct{}{}
+
+		// We expect 1 sample with the same timestamp and value we've written.
+		require.Len(t, series.Samples, 1)
+		assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
+		assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+	}
+}
+
 func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
@@ -1746,7 +1829,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 
-	// change stream type in runtime.
+	// Change stream type in runtime.
 	var streamType QueryStreamType
 	cfg.StreamTypeFn = func() QueryStreamType {
 		return streamType
@@ -1762,12 +1845,28 @@ func TestIngester_v2QueryStream(t *testing.T) {
 		return i.lifecycler.GetState()
 	})
 
-	// Push series.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	lbls := labels.Labels{{Name: labels.MetricName, Value: "foo"}}
-	req, _, expectedResponseSamples, expectedResponseChunks := mockWriteRequest(t, lbls, 123000, 456)
-	_, err = i.v2Push(ctx, req)
-	require.NoError(t, err)
+
+	// Push all series. We push half of the series, then we compact the TSDB head into a block (flush)
+	// and finally we push the remaining series. This way we can both test querying back series both
+	// from compacted blocks and head.
+	const numSeries = 1000
+
+	for seriesID := 0; seriesID < numSeries; seriesID++ {
+		lbls := labels.Labels{
+			{Name: labels.MetricName, Value: "foo"},
+			{Name: "series_id", Value: strconv.Itoa(seriesID)},
+		}
+
+		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
+		_, err = i.v2Push(ctx, req)
+		require.NoError(t, err)
+
+		// Compact the TSDB head once half of the series have been pushed.
+		if seriesID == numSeries/2 {
+			i.Flush()
+		}
+	}
 
 	// Create a GRPC server used to query back the data.
 	serv := grpc.NewServer(grpc.StreamInterceptor(middleware.StreamServerUserHeaderInterceptor))
@@ -1786,64 +1885,152 @@ func TestIngester_v2QueryStream(t *testing.T) {
 	require.NoError(t, err)
 	defer c.Close()
 
-	queryRequest := &client.QueryRequest{
-		StartTimestampMs: 0,
-		EndTimestampMs:   200000,
-		Matchers: []*client.LabelMatcher{{
-			Type:  client.EQUAL,
-			Name:  model.MetricNameLabel,
-			Value: "foo",
-		}},
+	tests := map[string]struct {
+		streamType         QueryStreamType
+		numShards          int
+		expectedStreamType QueryStreamType
+	}{
+		"should query samples by default": {
+			streamType:         QueryStreamDefault,
+			expectedStreamType: QueryStreamSamples,
+		},
+		"should query samples when configured with QueryStreamSamples": {
+			streamType:         QueryStreamSamples,
+			expectedStreamType: QueryStreamSamples,
+		},
+		"should query chunks when configured with QueryStreamChunks": {
+			streamType:         QueryStreamChunks,
+			expectedStreamType: QueryStreamChunks,
+		},
+		"should support sharding when query samples": {
+			streamType:         QueryStreamSamples,
+			numShards:          16,
+			expectedStreamType: QueryStreamSamples,
+		},
+		"should support sharding when query chunks": {
+			streamType:         QueryStreamChunks,
+			numShards:          16,
+			expectedStreamType: QueryStreamChunks,
+		},
 	}
 
-	samplesTest := func(t *testing.T) {
-		s, err := c.QueryStream(ctx, queryRequest)
-		require.NoError(t, err)
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Configure the stream type.
+			streamType = testData.streamType
 
-		count := 0
-		var lastResp *client.QueryStreamResponse
-		for {
-			resp, err := s.Recv()
-			if err == io.EOF {
-				break
+			// Query all series.
+			var actualTimeseries []mimirpb.TimeSeries
+			var actualChunkseries []client.TimeSeriesChunk
+
+			runQueryAndSaveResponse := func(req *client.QueryRequest) (receivedSeries int, err error) {
+				s, err := c.QueryStream(ctx, req)
+				if err != nil {
+					return 0, err
+				}
+
+				for {
+					resp, err := s.Recv()
+					if err == io.EOF {
+						break
+					}
+					if err != nil {
+						return receivedSeries, err
+					}
+
+					actualTimeseries = append(actualTimeseries, resp.Timeseries...)
+					actualChunkseries = append(actualChunkseries, resp.Chunkseries...)
+
+					receivedSeries += len(resp.Timeseries)
+					receivedSeries += len(resp.Chunkseries)
+				}
+
+				return receivedSeries, nil
 			}
-			require.NoError(t, err)
-			require.Zero(t, len(resp.Chunkseries)) // No chunks expected
-			count += len(resp.Timeseries)
-			lastResp = resp
-		}
-		require.Equal(t, 1, count)
-		require.Equal(t, expectedResponseSamples, lastResp)
-	}
 
-	chunksTest := func(t *testing.T) {
-		s, err := c.QueryStream(ctx, queryRequest)
-		require.NoError(t, err)
+			if testData.numShards > 0 {
+				for shardIndex := 0; shardIndex < testData.numShards; shardIndex++ {
+					receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
+						StartTimestampMs: math.MinInt64,
+						EndTimestampMs:   math.MaxInt64,
+						Matchers: []*client.LabelMatcher{
+							{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
+							{Type: client.EQUAL, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+								ShardIndex: uint64(shardIndex),
+								ShardCount: uint64(testData.numShards),
+							}.LabelValue()},
+						},
+					})
 
-		count := 0
-		var lastResp *client.QueryStreamResponse
-		for {
-			resp, err := s.Recv()
-			if err == io.EOF {
-				break
+					require.NoError(t, err)
+					assert.Greater(t, receivedSeries, 0)
+				}
+			} else {
+				receivedSeries, err := runQueryAndSaveResponse(&client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers:         []*client.LabelMatcher{{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"}},
+				})
+
+				require.NoError(t, err)
+				assert.Greater(t, receivedSeries, 0)
 			}
-			require.NoError(t, err)
-			require.Zero(t, len(resp.Timeseries)) // No samples expected
-			count += len(resp.Chunkseries)
-			lastResp = resp
-		}
-		require.Equal(t, 1, count)
-		require.Equal(t, expectedResponseChunks, lastResp)
+
+			// Ensure we received the expected data types in response.
+			if testData.expectedStreamType == QueryStreamSamples {
+				assert.Len(t, actualTimeseries, numSeries)
+				assert.Empty(t, actualChunkseries)
+			} else {
+				assert.Len(t, actualChunkseries, numSeries)
+				assert.Empty(t, actualTimeseries)
+			}
+
+			// We expect that all series have been returned.
+			actualSeriesIDs := map[int]struct{}{}
+
+			for _, series := range actualTimeseries {
+				seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+				require.NoError(t, err)
+
+				// We expect no duplicated series in the result.
+				_, exists := actualSeriesIDs[seriesID]
+				assert.False(t, exists)
+				actualSeriesIDs[seriesID] = struct{}{}
+
+				// We expect 1 sample with the same timestamp and value we've written.
+				require.Len(t, series.Samples, 1)
+				assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
+				assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+			}
+
+			for _, series := range actualChunkseries {
+				seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+				require.NoError(t, err)
+
+				// We expect no duplicated series in the result.
+				_, exists := actualSeriesIDs[seriesID]
+				assert.False(t, exists)
+				actualSeriesIDs[seriesID] = struct{}{}
+
+				// We expect 1 chunk.
+				require.Len(t, series.Chunks, 1)
+
+				data, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
+				require.NoError(t, err)
+
+				// We expect 1 sample with the same timestamp and value we've written.
+				it := data.Iterator(nil)
+
+				require.True(t, it.Next())
+				actualTs, actualValue := it.At()
+				assert.Equal(t, int64(seriesID), actualTs)
+				assert.Equal(t, float64(seriesID), actualValue)
+
+				assert.False(t, it.Next())
+				assert.NoError(t, it.Err())
+			}
+		})
 	}
-
-	streamType = QueryStreamDefault
-	t.Run("default", samplesTest)
-
-	streamType = QueryStreamSamples
-	t.Run("samples", samplesTest)
-
-	streamType = QueryStreamChunks
-	t.Run("chunks", chunksTest)
 }
 
 func TestIngester_v2QueryStreamManySamples(t *testing.T) {
