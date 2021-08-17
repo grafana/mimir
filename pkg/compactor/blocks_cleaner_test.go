@@ -367,7 +367,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	cfgProvider := newMockConfigProvider()
 
 	cleaner := NewBlocksCleaner(cfg, bucketClient, scanner, cfgProvider, logger, reg)
-	require.NoError(t, cleaner.cleanUsers(ctx, true))
+	require.NoError(t, cleaner.cleanUsers(ctx))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
@@ -395,7 +395,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	createTSDBBlock(t, bucketClient, "user-1", 40, 50, nil)
 	createTSDBBlock(t, bucketClient, "user-2", 50, 60, nil)
 
-	require.NoError(t, cleaner.cleanUsers(ctx, false))
+	require.NoError(t, cleaner.cleanUsers(ctx))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
@@ -510,7 +510,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 		cfgProvider.userRetentionPeriods["user-1"] = 0
 		cfgProvider.userRetentionPeriods["user-2"] = 0
 
-		require.NoError(t, cleaner.cleanUsers(ctx, true))
+		require.NoError(t, cleaner.cleanUsers(ctx))
 		assertBlockExists("user-1", block1, true)
 		assertBlockExists("user-1", block2, true)
 		assertBlockExists("user-2", block3, true)
@@ -539,7 +539,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	{
 		cfgProvider.userRetentionPeriods["user-1"] = 9 * time.Hour
 
-		require.NoError(t, cleaner.cleanUsers(ctx, false))
+		require.NoError(t, cleaner.cleanUsers(ctx))
 		assertBlockExists("user-1", block1, true)
 		assertBlockExists("user-1", block2, true)
 		assertBlockExists("user-2", block3, true)
@@ -551,7 +551,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	{
 		cfgProvider.userRetentionPeriods["user-1"] = 7 * time.Hour
 
-		require.NoError(t, cleaner.cleanUsers(ctx, false))
+		require.NoError(t, cleaner.cleanUsers(ctx))
 		assertBlockExists("user-1", block1, true)
 		assertBlockExists("user-1", block2, true)
 		assertBlockExists("user-2", block3, true)
@@ -578,7 +578,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 
 	// Marking the block again, before the deletion occurs, should not cause an error.
 	{
-		require.NoError(t, cleaner.cleanUsers(ctx, false))
+		require.NoError(t, cleaner.cleanUsers(ctx))
 		assertBlockExists("user-1", block1, true)
 		assertBlockExists("user-1", block2, true)
 		assertBlockExists("user-2", block3, true)
@@ -589,7 +589,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	{
 		cleaner.cfg.DeletionDelay = 0
 
-		require.NoError(t, cleaner.cleanUsers(ctx, false))
+		require.NoError(t, cleaner.cleanUsers(ctx))
 		assertBlockExists("user-1", block1, false)
 		assertBlockExists("user-1", block2, true)
 		assertBlockExists("user-2", block3, true)
@@ -618,7 +618,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	{
 		cfgProvider.userRetentionPeriods["user-2"] = 5 * time.Hour
 
-		require.NoError(t, cleaner.cleanUsers(ctx, false))
+		require.NoError(t, cleaner.cleanUsers(ctx))
 		assertBlockExists("user-1", block1, false)
 		assertBlockExists("user-1", block2, true)
 		assertBlockExists("user-2", block3, false)
