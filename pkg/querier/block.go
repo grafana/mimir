@@ -195,16 +195,6 @@ func (it *blockQuerierSeriesIterator) Next() bool {
 			return false
 		}
 
-		// we must advance iterator first, to see if it has any samples.
-		if !it.iterators[it.i].Next() {
-			if it.iterators[it.i].Err() != nil {
-				return false
-			}
-
-			// Found empty iterator without error, skip it.
-			continue
-		}
-
 		// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
 		// We must ensure to skip any overlapping range between adjacent chunks.
 		return it.Seek(it.lastT + 1)
