@@ -196,7 +196,6 @@ func (it *blockQuerierSeriesIterator) Next() bool {
 		}
 
 		// we must advance iterator first, to see if it has any samples.
-		// Seek will call At() as its first operation.
 		if !it.iterators[it.i].Next() {
 			if it.iterators[it.i].Err() != nil {
 				return false
