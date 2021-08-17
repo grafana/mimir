@@ -196,6 +196,22 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 						createAggrChunkWithSineSamples(now.Add(20*time.Second), now.Add(30*time.Second-5*time.Millisecond), 5*time.Millisecond),
 					},
 				},
+				// many_empty_chunks is a series which contains many empty chunks and only a few that have data
+				{
+					Labels: mkZLabels("__name__", "many_empty_chunks"),
+					Chunks: []storepb.AggrChunk{
+						createAggrChunkWithSineSamples(now, now.Add(-5*time.Millisecond), 5*time.Millisecond),                                   // empty
+						createAggrChunkWithSineSamples(now, now.Add(10*time.Second-5*time.Millisecond), 5*time.Millisecond),                     // 10 / 0.005 (= 2000 samples)
+						createAggrChunkWithSineSamples(now.Add(10*time.Second), now.Add(10*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
+						createAggrChunkWithSineSamples(now.Add(10*time.Second), now.Add(10*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
+						createAggrChunkWithSineSamples(now.Add(10*time.Second), now.Add(20*time.Second-5*time.Millisecond), 5*time.Millisecond), // 10 / 0.005 (= 2000 samples, = 4000 in total)
+						createAggrChunkWithSineSamples(now.Add(20*time.Second), now.Add(20*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
+						createAggrChunkWithSineSamples(now.Add(20*time.Second), now.Add(20*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
+						createAggrChunkWithSineSamples(now.Add(20*time.Second), now.Add(20*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
+						createAggrChunkWithSineSamples(now.Add(20*time.Second), now.Add(30*time.Second-5*time.Millisecond), 5*time.Millisecond), // 10 / 0.005 (= 2000 samples, = 6000 in total)
+						createAggrChunkWithSineSamples(now.Add(30*time.Second), now.Add(30*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
+					},
+				},
 			},
 		}
 	}
@@ -206,6 +222,7 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "second"), 120000)
 		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "overlapping"), 3000)
 		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "overlapping2"), 4000)
+		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 6000)
 		require.False(t, ss.Next())
 	})
 
@@ -221,6 +238,8 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			{now, now.Add(10*time.Second - 5*time.Millisecond)},
 			{now.Add(20 * time.Second), now.Add(30*time.Second - 5*time.Millisecond)},
 		})
+
+		verifyNextSeriesViaSeek(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{{now, now.Add(30*time.Second - 5*time.Millisecond)}})
 	})
 }
 
