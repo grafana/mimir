@@ -188,17 +188,15 @@ func (it *blockQuerierSeriesIterator) Next() bool {
 		return false
 	}
 
-	for {
-		it.i++
+	it.i++
 
-		if it.i >= len(it.iterators) {
-			return false
-		}
-
-		// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
-		// We must ensure to skip any overlapping range between adjacent chunks.
-		return it.Seek(it.lastT + 1)
+	if it.i >= len(it.iterators) {
+		return false
 	}
+
+	// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
+	// We must ensure to skip any overlapping range between adjacent chunks.
+	return it.Seek(it.lastT + 1)
 }
 
 func (it *blockQuerierSeriesIterator) Err() error {
