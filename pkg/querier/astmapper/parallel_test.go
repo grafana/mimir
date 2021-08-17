@@ -16,7 +16,7 @@ import (
 )
 
 func TestCanParallel(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		input    parser.Expr
 		expected bool
 	}{
@@ -54,7 +54,8 @@ func TestCanParallel(t *testing.T) {
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
 								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
-							}},
+							},
+						},
 					},
 					RHS: &parser.AggregateExpr{
 						Op:       parser.SUM,
@@ -63,7 +64,8 @@ func TestCanParallel(t *testing.T) {
 							Name: "idk",
 							LabelMatchers: []*labels.Matcher{
 								mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar2"),
-							}},
+							},
+						},
 					},
 				},
 			},
@@ -78,7 +80,8 @@ func TestCanParallel(t *testing.T) {
 					Name: "idk",
 					LabelMatchers: []*labels.Matcher{
 						mustLabelMatcher(labels.MatchEqual, string(model.MetricNameLabel), "bar1"),
-					}},
+					},
+				},
 			},
 			true,
 		},
@@ -93,7 +96,7 @@ func TestCanParallel(t *testing.T) {
 }
 
 func TestCanParallel_String(t *testing.T) {
-	var testExpr = []struct {
+	testExpr := []struct {
 		input    string
 		expected bool
 	}{
@@ -109,7 +112,7 @@ func TestCanParallel_String(t *testing.T) {
 			`sum by (foo) (
 			  quantile_over_time(0.9, http_request_duration_seconds_bucket[10m])
 			)`,
-			false,
+			true,
 		},
 		{
 			`sum(
