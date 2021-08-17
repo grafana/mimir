@@ -7,7 +7,6 @@ package queryrange
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -37,304 +36,6 @@ var (
 		ActiveQueryTracker: nil,
 	})
 )
-
-// This test allows to verify which PromQL expressions can be parallelized.
-func Test_PromQL(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		normalQuery string
-		shardQuery  string
-		shouldEqual bool
-	}{
-		// Vector can be parallelized but we need to remove the cortex shard label.
-		// It should be noted that the __query_shard__ label is required by the engine
-		// and therefore should be returned by the storage.
-		// Range vectors `bar1{baz="blip"}[1m]` are not tested here because it is not supported
-		// by range queries.
-		{
-			`bar1{baz="blip"}`,
-			`label_replace(
-				bar1{__query_shard__="0_of_3",baz="blip"} or
-				bar1{__query_shard__="1_of_3",baz="blip"} or
-				bar1{__query_shard__="2_of_3",baz="blip"},
-				"__query_shard__","","",""
-			)`,
-			true,
-		},
-		// __query_shard__ label is required otherwise the or will keep only the first series.
-		{
-			`sum(bar1{baz="blip"})`,
-			`sum(
-				sum (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				sum (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				sum (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			false,
-		},
-		{
-			`sum(bar1{baz="blip"})`,
-			`sum(
-				sum without(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				sum without(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				sum without(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			true,
-		},
-		{
-			`sum by (foo) (bar1{baz="blip"})`,
-			`sum by (foo) (
-				sum by(foo,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				sum by(foo,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				sum by(foo,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			true,
-		},
-		{
-			`sum by (foo,bar) (bar1{baz="blip"})`,
-			`sum by (foo,bar)(
-				sum by(foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				sum by(foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				sum by(foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			true,
-		},
-		// since series are unique to a shard, it's safe to sum without shard first, then reaggregate
-		{
-			`sum without (foo,bar) (bar1{baz="blip"})`,
-			`sum without (foo,bar)(
-				sum without(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				sum without(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				sum without(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			true,
-		},
-		{
-			`min by (foo,bar) (bar1{baz="blip"})`,
-			`min by (foo,bar)(
-				min by(foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				min by(foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				min by(foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			true,
-		},
-		{
-			`max by (foo,bar) (bar1{baz="blip"})`,
-			` max by (foo,bar)(
-				max by(foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				max by(foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				max by(foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			true,
-		},
-		// avg generally cant be parallelized
-		{
-			`avg(bar1{baz="blip"})`,
-			`avg(
-				avg by(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				avg by(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				avg by(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			false,
-		},
-		// stddev can't be parallelized.
-		{
-			`stddev(bar1{baz="blip"})`,
-			` stddev(
-				stddev by(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				stddev by(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				stddev by(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			false,
-		},
-		// stdvar can't be parallelized.
-		{
-			`stdvar(bar1{baz="blip"})`,
-			`stdvar(
-				stdvar by(__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				stdvar by(__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				stdvar by(__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			  )`,
-			false,
-		},
-		{
-			`count(bar1{baz="blip"})`,
-			`count(
-				count without (__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				count without (__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				count without (__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-				)`,
-			true,
-		},
-		{
-			`count by (foo,bar) (bar1{baz="blip"})`,
-			`count by (foo,bar) (
-				count by (foo,bar,__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				count by (foo,bar,__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				count by (foo,bar,__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			)`,
-			true,
-		},
-		// different ways to represent count without.
-		{
-			`count without (foo) (bar1{baz="blip"})`,
-			`count without (foo) (
-				count without (__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				count without (__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				count without (__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			)`,
-			true,
-		},
-		{
-			`count without (foo) (bar1{baz="blip"})`,
-			`sum without (__query_shard__) (
-				count without (foo) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				count without (foo) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				count without (foo) (bar1{__query_shard__="2_of_3",baz="blip"})
-			)`,
-			true,
-		},
-		{
-			`count without (foo, bar) (bar1{baz="blip"})`,
-			`count without (foo, bar) (
-				count without (__query_shard__) (bar1{__query_shard__="0_of_3",baz="blip"}) or
-				count without (__query_shard__) (bar1{__query_shard__="1_of_3",baz="blip"}) or
-				count without (__query_shard__) (bar1{__query_shard__="2_of_3",baz="blip"})
-			)`,
-			true,
-		},
-		{
-			`topk(2,bar1{baz="blip"})`,
-			`label_replace(
-				topk(2,
-					topk(2,(bar1{__query_shard__="0_of_3",baz="blip"})) without(__query_shard__) or
-					topk(2,(bar1{__query_shard__="1_of_3",baz="blip"})) without(__query_shard__) or
-					topk(2,(bar1{__query_shard__="2_of_3",baz="blip"})) without(__query_shard__)
-				),
-                          "__query_shard__","","","")`,
-			true,
-		},
-		{
-			`bottomk(2,bar1{baz="blip"})`,
-			`label_replace(
-				bottomk(2,
-					bottomk(2,(bar1{__query_shard__="0_of_3",baz="blip"})) without(__query_shard__) or
-					bottomk(2,(bar1{__query_shard__="1_of_3",baz="blip"})) without(__query_shard__) or
-					bottomk(2,(bar1{__query_shard__="2_of_3",baz="blip"})) without(__query_shard__)
-				),
-                          "__query_shard__","","","")`,
-			true,
-		},
-		{
-			`sum by (foo,bar) (avg_over_time(bar1{baz="blip"}[1m]))`,
-			`sum by (foo,bar)(
-				sum by(foo,bar,__query_shard__) (avg_over_time(bar1{__query_shard__="0_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__query_shard__) (avg_over_time(bar1{__query_shard__="1_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__query_shard__) (avg_over_time(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))
-			  )`,
-			true,
-		},
-		{
-			`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
-			`sum by (foo,bar)(
-				sum by(foo,bar,__query_shard__) (min_over_time(bar1{__query_shard__="0_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__query_shard__) (min_over_time(bar1{__query_shard__="1_of_3",baz="blip"}[1m])) or
-				sum by(foo,bar,__query_shard__) (min_over_time(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))
-			  )`,
-			true,
-		},
-		{
-			// Sub aggregations must avoid non-associative series merging across shards
-			`sum(
-			  count(
-			    bar1
-			  )  by (foo,bazz)
-			)`,
-			`
-			  sum without(__query_shard__) (
-			    sum by(__query_shard__) (
-			      count by(foo, bazz) (foo{__query_shard__="0_of_2",bar="baz"})
-			    ) or
-			    sum by(__query_shard__) (
-			      count by(foo, bazz) (foo{__query_shard__="1_of_2",bar="baz"})
-			    )
-			  )
-`,
-			false,
-		},
-		{
-			// Note: this is a speculative optimization that we don't currently include due to mapping complexity.
-			// Certain sub aggregations may inject __query_shard__ for all (by) subgroupings.
-			// This is the same as the previous test with the exception that the shard label is injected to the count grouping
-			`sum(
-			  count(
-			    bar1
-			  )  by (foo,bazz)
-			)`,
-			`
-			  sum without(__query_shard__) (
-			    sum by(__query_shard__) (
-			      count by(foo, bazz, __query_shard__) (foo{__query_shard__="0_of_2",bar="baz"})
-			    ) or
-			    sum by(__query_shard__) (
-			      count by(foo, bazz, __query_shard__) (foo{__query_shard__="1_of_2",bar="baz"})
-			    )
-			  )
-`,
-			true,
-		},
-		{
-			// Note: this is a speculative optimization that we don't currently include due to mapping complexity
-			// This example details multiple layers of aggregations.
-			// Sub aggregations must inject __query_shard__ for all (by) subgroupings.
-			`sum(
-			  count(
-			    count(
-			      bar1
-			    )  by (foo,bazz)
-			  )  by (bazz)
-			)`,
-			`
-			  sum without(__query_shard__) (
-			    sum by(__query_shard__) (
-			      count by(bazz, __query_shard__) (
-				count by(foo, bazz, __query_shard__) (
-				  foo{__query_shard__="0_of_2", bar="baz"}
-				)
-			      )
-			    ) or
-			    sum by(__query_shard__) (
-			      count by(bazz, __query_shard__) (
-				count by(foo, bazz, __query_shard__) (
-				  foo{__query_shard__="1_of_2", bar="baz"}
-				)
-			      )
-			    )
-			  )
-`,
-			true,
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.normalQuery, func(t *testing.T) {
-			baseQuery, err := engine.NewRangeQuery(shardAwareQueryable, tt.normalQuery, start, end, step)
-			require.Nil(t, err)
-			shardQuery, err := engine.NewRangeQuery(shardAwareQueryable, tt.shardQuery, start, end, step)
-			require.Nil(t, err)
-			baseResult := baseQuery.Exec(ctx)
-			shardResult := shardQuery.Exec(ctx)
-			t.Logf("base: %v\n", baseResult)
-			t.Logf("shard: %v\n", shardResult)
-			if tt.shouldEqual {
-				require.Equal(t, baseResult, shardResult)
-				return
-			}
-			require.NotEqual(t, baseResult, shardResult)
-		})
-	}
-}
 
 func Test_FunctionParallelism(t *testing.T) {
 	tpl := `sum(<fn>(bar1{}<fArgs>))`
@@ -582,34 +283,32 @@ type testMatrix struct {
 	series []*promql.StorageSeries
 }
 
-func (m *testMatrix) Copy() *testMatrix {
-	cpy := *m
-	return &cpy
-}
-
-func (m testMatrix) Next() bool { return len(m.series) != 0 }
-
-func (m *testMatrix) At() storage.Series {
-	res := m.series[0]
-	m.series = m.series[1:]
-	return res
-}
-
-func (m *testMatrix) Err() error { return nil }
-
-func (m *testMatrix) Warnings() storage.Warnings { return nil }
-
-func (m *testMatrix) Select(_ bool, selectParams *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	s, _, err := querysharding.ShardFromMatchers(matchers)
+func (m *testMatrix) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	if s != nil {
-		return splitByShard(s, m)
+	// Filter series by label matchers.
+	var filtered []*promql.StorageSeries
+
+	for _, series := range m.series {
+		if seriesMatches(series, matchers...) {
+			filtered = append(filtered, series)
+		}
 	}
 
-	return m.Copy()
+	// Filter series by shard (if any)
+	filtered = filterSeriesByShard(filtered, shard)
+
+	// Honor the sorting.
+	if sorted {
+		sort.Slice(filtered, func(i, j int) bool {
+			return labels.Compare(filtered[i].Labels(), filtered[j].Labels()) < 0
+		})
+	}
+
+	return newSeriesIteratorMock(filtered)
 }
 
 func (m *testMatrix) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
@@ -619,7 +318,34 @@ func (m *testMatrix) LabelValues(name string, matchers ...*labels.Matcher) ([]st
 func (m *testMatrix) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
+
 func (m *testMatrix) Close() error { return nil }
+
+func seriesMatches(series *promql.StorageSeries, matchers ...*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(series.Labels().Get(m.Name)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func filterSeriesByShard(series []*promql.StorageSeries, shard *querysharding.ShardSelector) []*promql.StorageSeries {
+	if shard == nil {
+		return series
+	}
+
+	var filtered []*promql.StorageSeries
+
+	for _, s := range series {
+		if s.Labels().Hash()%shard.ShardCount == shard.ShardIndex {
+			filtered = append(filtered, s)
+		}
+	}
+
+	return filtered
+}
 
 func newSeries(metric labels.Labels, generator func(float64) float64) *promql.StorageSeries {
 	sort.Sort(metric)
@@ -652,32 +378,35 @@ func factor(f float64) func(float64) float64 {
 	}
 }
 
-// splitByShard returns the shard subset of a testMatrix.
-// e.g if a testMatrix has 6 series, and we want 3 shard, then each shard will contain
-// 2 series.
-func splitByShard(shard *querysharding.ShardSelector, testMatrices *testMatrix) *testMatrix {
-	res := &testMatrix{}
-	for i, s := range testMatrices.series {
-		if uint64(i)%shard.ShardCount != shard.ShardIndex {
-			continue
-		}
-		var points []promql.Point
-		it := s.Iterator()
-		for it.Next() {
-			t, v := it.At()
-			points = append(points, promql.Point{
-				T: t,
-				V: v,
-			})
+type seriesIteratorMock struct {
+	idx    int
+	series []*promql.StorageSeries
+}
 
-		}
-		lbs := s.Labels().Copy()
-		lbs = append(lbs, labels.Label{Name: "__query_shard__", Value: fmt.Sprintf("%d_of_%d", shard.ShardIndex, shard.ShardCount)})
-		sort.Sort(lbs)
-		res.series = append(res.series, promql.NewStorageSeries(promql.Series{
-			Metric: lbs,
-			Points: points,
-		}))
+func newSeriesIteratorMock(series []*promql.StorageSeries) *seriesIteratorMock {
+	return &seriesIteratorMock{
+		idx:    -1,
+		series: series,
 	}
-	return res
+}
+
+func (i *seriesIteratorMock) Next() bool {
+	i.idx++
+	return i.idx < len(i.series)
+}
+
+func (i *seriesIteratorMock) At() storage.Series {
+	if i.idx >= len(i.series) {
+		return nil
+	}
+
+	return i.series[i.idx]
+}
+
+func (i *seriesIteratorMock) Err() error {
+	return nil
+}
+
+func (i *seriesIteratorMock) Warnings() storage.Warnings {
+	return nil
 }

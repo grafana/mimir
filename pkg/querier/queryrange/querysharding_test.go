@@ -10,11 +10,13 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -175,22 +177,22 @@ func defaultReq() *PrometheusRequest {
 
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
 func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
-	require.Equal(t, a.Status, b.Status)
-	if a.Status != StatusSuccess {
-		return
-	}
+	// Ensure both queries succeeded.
+	require.Equal(t, StatusSuccess, a.Status)
+	require.Equal(t, StatusSuccess, b.Status)
+
 	as, err := ResponseToSamples(a)
 	require.Nil(t, err)
 	bs, err := ResponseToSamples(b)
 	require.Nil(t, err)
 
-	require.Equal(t, len(as), len(bs))
+	require.Equal(t, len(as), len(bs), "expected same number of series")
 
 	for i := 0; i < len(as); i++ {
 		a := as[i]
 		b := bs[i]
 		require.Equal(t, a.Labels, b.Labels)
-		require.Equal(t, len(a.Samples), len(b.Samples))
+		require.Equal(t, len(a.Samples), len(b.Samples), "expected same number of samples")
 
 		for j := 0; j < len(a.Samples); j++ {
 			aSample := &a.Samples[j]
@@ -202,70 +204,195 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	}
 }
 
-func TestQueryshardingCorrectness(t *testing.T) {
-	req := &PrometheusRequest{
-		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
-		Step:  int64(step) / int64(time.Second),
-	}
-	for _, tc := range []struct {
-		desc   string
-		query  string
-		mapped string
+func TestQueryShardingCorrectness(t *testing.T) {
+	var (
+		numSeries        = 1000
+		numHistograms    = 100
+		histogramBuckets = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+	)
+
+	tests := map[string]struct {
+		query string
 	}{
-		{
-			desc:   "fully encoded histogram_quantile",
-			query:  `histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
-			mapped: `__embedded_queries__{__cortex_queries__="{\"Concat\":[\"histogram_quantile(0.5, rate(bar1{baz=\\\"blip\\\"}[30s]))\"]}"}`,
+		"sum() no grouping": {
+			query: `sum(metric_counter)`,
 		},
-		{
-			desc:   "entire query with shard summer",
-			query:  `sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
-			mapped: `sum by(foo, bar) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(foo, bar) (min_over_time(bar1{__query_shard__=\\\"0_of_2\\\",baz=\\\"blip\\\"}[1m]))\",\"sum by(foo, bar) (min_over_time(bar1{__query_shard__=\\\"1_of_2\\\",baz=\\\"blip\\\"}[1m]))\"]}"})`,
+		"sum() grouping 'by'": {
+			query: `sum by(group_1) (metric_counter)`,
 		},
-		{
-			desc:   "shard one leg encode the other",
-			query:  "sum(rate(bar1[1m])) or rate(bar1[1m])",
-			mapped: `sum(__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum(rate(bar1{__query_shard__=\\\"0_of_2\\\"}[1m]))\",\"sum(rate(bar1{__query_shard__=\\\"1_of_2\\\"}[1m]))\"]}"}) or __embedded_queries__{__cortex_queries__="{\"Concat\":[\"rate(bar1[1m])\"]}"}`,
+		"sum() grouping 'without'": {
+			query: `sum by(unique) (metric_counter)`,
 		},
-		{
-			desc:   "should skip encoding leaf scalar/strings",
-			query:  `histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
-			mapped: `histogram_quantile(0.5, sum by(le) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum by(le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__=\\\"0_of_2\\\"}[5m]))\",\"sum by(le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__=\\\"1_of_2\\\"}[5m]))\"]}"}))`,
+		"sum(rate()) no grouping": {
+			query: `sum(rate(metric_counter[1m]))`,
 		},
-		{
-			desc: "ensure sharding sub aggregations are skipped to avoid non-associative series merging across shards",
+		"sum(rate()) grouping 'by'": {
+			query: `sum by(group_1) (rate(metric_counter[1m]))`,
+		},
+		"sum(rate()) grouping 'without'": {
+			query: `sum by(unique) (rate(metric_counter[1m]))`,
+		},
+		"histogram_quantile() no grouping": {
+			query: `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
+		},
+		"histogram_quantile() grouping 'by'": {
+			query: `histogram_quantile(0.5, sum by(group_1, le) (rate(metric_histogram_bucket[1m])))`,
+		},
+		"histogram_quantile() grouping 'without'": {
+			query: `histogram_quantile(0.5, sum without(group_1, group_2, unique) (rate(metric_histogram_bucket[1m])))`,
+		},
+		"min() no grouping": {
+			query: `min(metric_counter{group_1="0"})`,
+		},
+		"min() grouping 'by'": {
+			query: `min by(group_2) (metric_counter{group_1="0"})`,
+		},
+		"min() grouping 'without'": {
+			query: `min without(unique) (metric_counter{group_1="0"})`,
+		},
+		"max() no grouping": {
+			query: `max(metric_counter{group_1="0"})`,
+		},
+		"max() grouping 'by'": {
+			query: `max by(group_2) (metric_counter{group_1="0"})`,
+		},
+		"max() grouping 'without'": {
+			query: `max without(unique) (metric_counter{group_1="0"})`,
+		},
+		"count() no grouping": {
+			query: `count(metric_counter)`,
+		},
+		"count() grouping 'by'": {
+			query: `count by(group_2) (metric_counter)`,
+		},
+		"count() grouping 'without'": {
+			query: `count without(unique) (metric_counter)`,
+		},
+		"sum(count())": {
+			query: `sum(count by(group_1) (metric_counter))`,
+		},
+		"avg() no grouping": {
+			query: `avg(metric_counter)`,
+		},
+		"avg() grouping 'by'": {
+			query: `avg by(group_2) (metric_counter)`,
+		},
+		"avg() grouping 'without'": {
+			query: `avg without(unique) (metric_counter)`,
+		},
+		"sum(min_over_time())": {
+			query: `sum by (group_1, group_2) (min_over_time(metric_counter{const="fixed"}[2m]))`,
+		},
+		"sum(max_over_time())": {
+			query: `sum by (group_1, group_2) (max_over_time(metric_counter{const="fixed"}[2m]))`,
+		},
+		"sum(avg_over_time())": {
+			query: `sum by (group_1, group_2) (avg_over_time(metric_counter{const="fixed"}[2m]))`,
+		},
+		"or": {
+			query: `sum(rate(metric_counter{group_1="0"}[1m])) or sum(rate(metric_counter{group_1="1"}[1m]))`,
+		},
+		"and": {
+			query: `sum without(unique) (rate(metric_counter{group_1="0"}[1m])) and max without(unique) (metric_counter) > 0`,
+		},
+		"sum(rate()) > avg(rate())": {
+			query: `sum(rate(metric_counter[1m])) > avg(rate(metric_counter[1m]))`,
+		},
+		"nested count()": {
 			query: `sum(
 				  count(
-				    count(
-				      bar1
-				    )  by (drive,instance)
-				  )  by (instance)
+				    count(metric_counter) by (group_1, group_2)
+				  ) by (group_1)
 				)`,
-			mapped: `sum(count by(instance) (sum by(drive, instance) (__embedded_queries__{__cortex_queries__="{\"Concat\":[\"count by(drive, instance) (bar1{__query_shard__=\\\"0_of_2\\\"})\",\"count by(drive, instance) (bar1{__query_shard__=\\\"1_of_2\\\"})\"]}"})))`,
 		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			shardingware := NewQueryShardingMiddleware(
-				log.NewNopLogger(),
-				engine,
-				2,
-				nil,
-			)
-			downstream := &downstreamHandler{
-				engine:    engine,
-				queryable: shardAwareQueryable,
-			}
-			r := req.WithQuery(tc.query)
-			shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), r)
-			require.Nil(t, err)
 
-			res, err := downstream.Do(context.Background(), r)
-			require.Nil(t, err)
+		//
+		// The following queries are not expected to be shardable.
+		//
+		"stddev()": {
+			query: `stddev(metric_counter{const="fixed"})`,
+		},
+		"stdvar()": {
+			query: `stdvar(metric_counter{const="fixed"})`,
+		},
+	}
 
-			approximatelyEquals(t, res.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
-		})
+	// Generate fixtures (series).
+	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
+
+	for i := 0; i < numSeries; i++ {
+		series = append(series, newSeries(
+			labels.Labels{
+				{Name: "__name__", Value: "metric_counter"},    // Same metric name for all series.
+				{Name: "const", Value: "fixed"},                // A constant label.
+				{Name: "unique", Value: strconv.Itoa(i)},       // A unique label.
+				{Name: "group_1", Value: strconv.Itoa(i % 10)}, // A first grouping label.
+				{Name: "group_2", Value: strconv.Itoa(i % 5)},  // A second grouping label.
+			},
+			factor(float64(i)*0.1)))
+	}
+
+	for i := numSeries; i < numSeries+numHistograms; i++ {
+		for bucketIdx, bucketLe := range histogramBuckets {
+			series = append(series, newSeries(
+				labels.Labels{
+					{Name: "__name__", Value: "metric_histogram_bucket"}, // Same metric name for all series.
+					{Name: "le", Value: fmt.Sprintf("%f", bucketLe)},
+					{Name: "const", Value: "fixed"},                // A constant label.
+					{Name: "unique", Value: strconv.Itoa(i)},       // A unique label.
+					{Name: "group_1", Value: strconv.Itoa(i % 10)}, // A first grouping label.
+					{Name: "group_2", Value: strconv.Itoa(i % 5)},  // A second grouping label.
+				},
+				// We expect each bucket to have a value higher than the previous one.
+				factor(float64(i)*float64(bucketIdx)*0.1)))
+		}
+	}
+
+	// Create a queryable on the fixtures.
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return &testMatrix{
+			series: series,
+		}, nil
+	})
+
+	for testName, testData := range tests {
+		for _, numShards := range []int{2, 4, 8, 16} {
+			t.Run(fmt.Sprintf("%s (shards: %d)", testName, numShards), func(t *testing.T) {
+				req := &PrometheusRequest{
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+				}
+
+				shardingware := NewQueryShardingMiddleware(
+					log.NewNopLogger(),
+					engine,
+					numShards,
+					nil,
+				)
+				downstream := &downstreamHandler{
+					engine:    engine,
+					queryable: queryable,
+				}
+				r := req.WithQuery(testData.query)
+
+				// Run the query without sharding.
+				expectedRes, err := downstream.Do(context.Background(), r)
+				require.Nil(t, err)
+
+				// Ensure the query produces some results.
+				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+
+				// Run the query with sharding.
+				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), r)
+				require.Nil(t, err)
+
+				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+				// if you rerun the same query twice).
+				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+			})
+		}
 	}
 }
 

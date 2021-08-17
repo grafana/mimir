@@ -415,7 +415,7 @@ func (summer *shardSummer) splitAvg(
 // recordShards prevents calling nil interfaces (commonly used in tests).
 func (summer *shardSummer) recordShards(n float64) {
 	if summer.shardedQueries != nil {
-		summer.shardedQueries.Add(float64(summer.shards))
+		summer.shardedQueries.Add(n)
 	}
 }
 
