@@ -38,7 +38,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/component"
-	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -106,7 +105,6 @@ type BucketStoreStats struct {
 // When used with in-memory cache, memory usage should decrease overall, thanks to postings being smaller.
 type BucketStore struct {
 	logger          log.Logger
-	reg             prometheus.Registerer // TODO(metalmatze) remove and add via BucketStoreOption
 	metrics         *BucketStoreMetrics
 	bkt             objstore.InstrumentedBucketReader
 	fetcher         block.MetadataFetcher
@@ -166,13 +164,6 @@ type BucketStoreOption func(s *BucketStore)
 func WithLogger(logger log.Logger) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.logger = logger
-	}
-}
-
-// WithRegistry sets a registry that BucketStore uses to register metrics with.
-func WithRegistry(reg prometheus.Registerer) BucketStoreOption {
-	return func(s *BucketStore) {
-		s.reg = reg
 	}
 }
 
@@ -256,7 +247,7 @@ func NewBucketStore(
 	}
 
 	// Depend on the options
-	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, extprom.WrapRegistererWithPrefix("thanos_bucket_store_", s.reg))
+	s.indexReaderPool = indexheader.NewReaderPool(s.logger, lazyIndexReaderEnabled, lazyIndexReaderIdleTimeout, metrics.indexHeaderReaderMetrics)
 
 	if err := os.MkdirAll(dir, 0750); err != nil {
 		return nil, errors.Wrap(err, "create dir")

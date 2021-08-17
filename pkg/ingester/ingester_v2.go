@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -999,6 +1000,13 @@ func (i *Ingester) v2Query(ctx context.Context, req *client.QueryRequest) (*clie
 		return nil, err
 	}
 
+	// Check if query sharding is enabled for this query. If so, we need to remove the
+	// query sharding label from matchers and pass the shard info down the query execution path.
+	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+
 	i.metrics.queries.Inc()
 
 	db := i.getTSDB(userID)
@@ -1013,7 +1021,8 @@ func (i *Ingester) v2Query(ctx context.Context, req *client.QueryRequest) (*clie
 	defer q.Close()
 
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(false, nil, matchers...)
+	hints := getSelectHintsForShard(int64(from), int64(through), shard)
+	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return nil, ss.Err()
 	}
@@ -1320,6 +1329,13 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 		return err
 	}
 
+	// Check if query sharding is enabled for this query. If so, we need to remove the
+	// query sharding label from matchers and pass the shard info down the query execution path.
+	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	if err != nil {
+		return err
+	}
+
 	i.metrics.queries.Inc()
 
 	db := i.getTSDB(userID)
@@ -1349,10 +1365,10 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 
 	if streamType == QueryStreamChunks {
 		level.Debug(spanlog).Log("msg", "using v2QueryStreamChunks")
-		numSeries, numSamples, err = i.v2QueryStreamChunks(ctx, db, int64(from), int64(through), matchers, stream)
+		numSeries, numSamples, err = i.v2QueryStreamChunks(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	} else {
 		level.Debug(spanlog).Log("msg", "using v2QueryStreamSamples")
-		numSeries, numSamples, err = i.v2QueryStreamSamples(ctx, db, int64(from), int64(through), matchers, stream)
+		numSeries, numSamples, err = i.v2QueryStreamSamples(ctx, db, int64(from), int64(through), matchers, shard, stream)
 	}
 	if err != nil {
 		return err
@@ -1364,7 +1380,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 	return nil
 }
 
-func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *querysharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.Querier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
@@ -1372,7 +1388,8 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 	defer q.Close()
 
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(false, nil, matchers...)
+	hints := getSelectHintsForShard(from, through, shard)
+	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
 	}
@@ -1433,7 +1450,7 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 }
 
 // v2QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *querysharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.ChunkQuerier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
@@ -1441,7 +1458,8 @@ func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, 
 	defer q.Close()
 
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	ss := q.Select(false, nil, matchers...)
+	hints := getSelectHintsForShard(from, through, shard)
+	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
 	}
@@ -2295,4 +2313,18 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	}
 
 	return l
+}
+
+func getSelectHintsForShard(start, end int64, shard *querysharding.ShardSelector) *storage.SelectHints {
+	if shard == nil {
+		return nil
+	}
+
+	// If query sharding is enabled, we need to pass it along with hints.
+	return &storage.SelectHints{
+		Start:      start,
+		End:        end,
+		ShardIndex: shard.ShardIndex,
+		ShardCount: shard.ShardCount,
+	}
 }

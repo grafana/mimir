@@ -59,6 +59,7 @@ var (
 			reg,
 			blocksMarkedForDeletion,
 			garbageCollectedBlocks,
+			prometheus.NewCounter(prometheus.CounterOpts{}), // Do not track blocks marked for no-compact cause it's not supported by Mimir yet.
 			metadata.NoneFunc)
 	}
 
@@ -656,6 +657,7 @@ func (c *Compactor) compactUser(ctx context.Context, userID string) error {
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
+		false, // Do not skip blocks with out of order chunks.
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")
