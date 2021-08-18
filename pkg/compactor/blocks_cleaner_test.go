@@ -34,22 +34,20 @@ import (
 )
 
 type testBlocksCleanerOptions struct {
-	concurrency             int
-	markersMigrationEnabled bool
-	tenantDeletionDelay     time.Duration
-	user4FilesExist         bool // User 4 has "FinishedTime" in tenant deletion marker set to "1h" ago.
+	concurrency         int
+	tenantDeletionDelay time.Duration
+	user4FilesExist     bool // User 4 has "FinishedTime" in tenant deletion marker set to "1h" ago.
 }
 
 func (o testBlocksCleanerOptions) String() string {
-	return fmt.Sprintf("concurrency=%d, markers migration enabled=%v, tenant deletion delay=%v",
-		o.concurrency, o.markersMigrationEnabled, o.tenantDeletionDelay)
+	return fmt.Sprintf("concurrency=%d, tenant deletion delay=%v",
+		o.concurrency, o.tenantDeletionDelay)
 }
 
 func TestBlocksCleaner(t *testing.T) {
 	for _, options := range []testBlocksCleanerOptions{
 		{concurrency: 1, tenantDeletionDelay: 0, user4FilesExist: false},
 		{concurrency: 1, tenantDeletionDelay: 2 * time.Hour, user4FilesExist: true},
-		{concurrency: 1, markersMigrationEnabled: true},
 		{concurrency: 2},
 		{concurrency: 10},
 	} {
@@ -64,13 +62,7 @@ func TestBlocksCleaner(t *testing.T) {
 
 func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
-
-	// If the markers migration is enabled, then we create the fixture blocks without
-	// writing the deletion marks in the global location, because they will be migrated
-	// at statup.
-	if !options.markersMigrationEnabled {
-		bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
-	}
+	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
 	ctx := context.Background()
@@ -102,12 +94,6 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-4", nil, user4Mark))
 	user4DebugMetaFile := path.Join("user-4", block.DebugMetas, "meta.json")
 	require.NoError(t, bucketClient.Upload(context.Background(), user4DebugMetaFile, strings.NewReader("some random content here")))
-
-	// The fixtures have been created. If the bucket client wasn't wrapped to write
-	// deletion marks to the global location too, then this is the right time to do it.
-	if options.markersMigrationEnabled {
-		bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
-	}
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:      deletionDelay,
