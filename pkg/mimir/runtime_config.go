@@ -10,12 +10,12 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/grafana/dskit/runtimeconfig"
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/runtimeconfig"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
