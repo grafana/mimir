@@ -253,7 +253,7 @@ func Test_Mapping(t *testing.T) {
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
-			mapped, err := mapper.Map(expr)
+			mapped, _, err := mapper.Map(expr)
 			require.NoError(t, err)
 			require.Equal(t,
 				out.String(),
@@ -297,7 +297,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
-			res, err := summer.Map(expr)
+			res, _, err := summer.Map(expr)
 			require.Nil(t, err)
 
 			expected, err := parser.ParseExpr(c.expected)
