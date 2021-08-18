@@ -267,7 +267,7 @@ func Test_FunctionParallelism(t *testing.T) {
 }
 
 var shardAwareQueryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return &testMatrix{
+	return &querierMock{
 		series: []*promql.StorageSeries{
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, factor(5)),
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, factor(7)),
@@ -279,11 +279,11 @@ var shardAwareQueryable = storage.QueryableFunc(func(ctx context.Context, mint, 
 	}, nil
 })
 
-type testMatrix struct {
+type querierMock struct {
 	series []*promql.StorageSeries
 }
 
-func (m *testMatrix) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -311,15 +311,15 @@ func (m *testMatrix) Select(sorted bool, _ *storage.SelectHints, matchers ...*la
 	return newSeriesIteratorMock(filtered)
 }
 
-func (m *testMatrix) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
 
-func (m *testMatrix) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (m *querierMock) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, nil
 }
 
-func (m *testMatrix) Close() error { return nil }
+func (m *querierMock) Close() error { return nil }
 
 func seriesMatches(series *promql.StorageSeries, matchers ...*labels.Matcher) bool {
 	for _, m := range matchers {

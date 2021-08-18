@@ -350,7 +350,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 	// Create a queryable on the fixtures.
 	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return &testMatrix{
+		return &querierMock{
 			series: series,
 		}, nil
 	})
