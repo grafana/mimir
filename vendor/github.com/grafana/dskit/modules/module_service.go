@@ -1,4 +1,4 @@
-package services
+package modules
 
 import (
 	"context"
@@ -7,25 +7,30 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/dskit/services"
 )
+
+// ErrStopProcess is the error returned by a service as a hint to stop the server entirely.
+var ErrStopProcess = errors.New("stop process")
 
 // moduleService is a Service implementation that adds waiting for dependencies to start before starting,
 // and dependant modules to stop before stopping this module service.
 type moduleService struct {
-	Service
+	services.Service
 
-	service Service
+	service services.Service
 	name    string
 	logger  log.Logger
 
 	// startDeps, stopDeps return map of service names to services
-	startDeps, stopDeps func(string) map[string]Service
+	startDeps, stopDeps func(string) map[string]services.Service
 }
 
 // NewModuleService wraps a module service, and makes sure that dependencies are started/stopped before module service starts or stops.
 // If any dependency fails to start, this service fails as well.
 // On stop, errors from failed dependencies are ignored.
-func NewModuleService(name string, logger log.Logger, service Service, startDeps, stopDeps func(string) map[string]Service) Service {
+func NewModuleService(name string, logger log.Logger, service services.Service, startDeps, stopDeps func(string) map[string]services.Service) services.Service {
 	w := &moduleService{
 		name:      name,
 		logger:    logger,
@@ -34,7 +39,7 @@ func NewModuleService(name string, logger log.Logger, service Service, startDeps
 		stopDeps:  stopDeps,
 	}
 
-	w.Service = NewBasicService(w.start, w.run, w.stop)
+	w.Service = services.NewBasicService(w.start, w.run, w.stop)
 	return w
 }
 
@@ -74,13 +79,13 @@ func (w *moduleService) run(serviceContext context.Context) error {
 
 func (w *moduleService) stop(_ error) error {
 	var err error
-	if w.service.State() == Running {
+	if w.service.State() == services.Running {
 		// Only wait for other modules, if underlying service is still running.
 		w.waitForModulesToStop()
 
 		level.Debug(w.logger).Log("msg", "stopping", "module", w.name)
 
-		err = StopAndAwaitTerminated(context.Background(), w.service)
+		err = services.StopAndAwaitTerminated(context.Background(), w.service)
 	} else {
 		err = w.service.FailureCase()
 	}

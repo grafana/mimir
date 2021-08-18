@@ -873,8 +873,8 @@ github.com/gorilla/websocket v0.0.0-20170926233335-4201258b820c/go.mod h1:E7qHFY
 github.com/gorilla/websocket v1.4.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/gorilla/websocket v1.4.2 h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=
 github.com/gorilla/websocket v1.4.2/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
-github.com/grafana/dskit v0.0.0-20210817165311-3d765e85ddec h1:RuEH5ennl5emFXfxb0msj/rPqnilIDZfaXTCHWo9wsU=
-github.com/grafana/dskit v0.0.0-20210817165311-3d765e85ddec/go.mod h1:QaNAQaCSFOtG/NHf6Jd/zh67H25kkrVCq36U61Y2Mhw=
+github.com/grafana/dskit v0.0.0-20210818123532-6645f87e9e12 h1:tTI5ZeCBbGhSwyGBK4zCbsqCl56f10F5U2eJ3QRdnz0=
+github.com/grafana/dskit v0.0.0-20210818123532-6645f87e9e12/go.mod h1:QaNAQaCSFOtG/NHf6Jd/zh67H25kkrVCq36U61Y2Mhw=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85 h1:xLuzPoOzdfNb/RF/IENCw+oLVdZB4G21VPhkHBgwSHY=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85/go.mod h1:crI9WX6p0IhrqB+DqIUHulRW853PaNFf7o4UprV//3I=
 github.com/grafana/prometheus-private v0.0.0-20210813131603-a3ad21265842 h1:ooA3k7/sLYgexE3B6I5tIqmo1ey8Ko5HoL7+iNTO/XY=

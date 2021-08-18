@@ -20,7 +20,7 @@ func newModuleServiceWrapper(serviceMap map[string]services.Service, mod string,
 		return r
 	}
 
-	return services.NewModuleService(mod, logger, modServ,
+	return NewModuleService(mod, logger, modServ,
 		func(_ string) map[string]services.Service {
 			return getDeps(startDeps)
 		},
