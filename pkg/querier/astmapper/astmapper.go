@@ -187,6 +187,6 @@ func (nm ASTNodeMapper) Map(node parser.Node) (parser.Node, error) {
 		return n, nil
 
 	default:
-		panic(errors.Errorf("nodeMapper: unhandled node type %T", node))
+		return nil, errors.Errorf("nodeMapper: unhandled node type %T", node)
 	}
 }
