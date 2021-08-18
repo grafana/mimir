@@ -15,13 +15,11 @@ import (
 )
 
 var summableAggregates = map[parser.ItemType]struct{}{
-	parser.SUM:     {},
-	parser.MIN:     {},
-	parser.MAX:     {},
-	parser.TOPK:    {},
-	parser.BOTTOMK: {},
-	parser.COUNT:   {},
-	parser.AVG:     {},
+	parser.SUM:   {},
+	parser.MIN:   {},
+	parser.MAX:   {},
+	parser.COUNT: {},
+	parser.AVG:   {},
 }
 
 var nonParallelFuncs = []string{
@@ -52,12 +50,12 @@ func CanParallelize(node parser.Node) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggs, err := Predicate(n.Expr, func(node parser.Node) (bool, error) {
+		nestedAggrs, err := Predicate(n.Expr, func(node parser.Node) (bool, error) {
 			_, ok := node.(*parser.AggregateExpr)
 			return ok, nil
 		})
 
-		return err == nil && !nestedAggs && CanParallelize(n.Expr)
+		return err == nil && !nestedAggrs && CanParallelize(n.Expr)
 
 	case *parser.BinaryExpr:
 		// since binary exprs use each side for merging, they cannot be parallelized

@@ -357,6 +357,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:             `stdvar(metric_counter{const="fixed"})`,
 			expectedShardable: false,
 		},
+		"topk()": {
+			query:             `topk(2, metric_counter{const="fixed"})`,
+			expectedShardable: false,
+		},
+		"bottomk()": {
+			query:             `bottomk(2, metric_counter{const="fixed"})`,
+			expectedShardable: false,
+		},
 	}
 
 	// Generate fixtures (series).
