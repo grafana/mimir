@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/modules/modules.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package modules
 
 import (
@@ -10,8 +5,9 @@ import (
 	"sort"
 
 	"github.com/go-kit/kit/log"
-	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/dskit/services"
 )
 
 // module is the basic building block of the application
