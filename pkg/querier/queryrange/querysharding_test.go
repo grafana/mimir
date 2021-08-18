@@ -221,7 +221,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query: `sum by(group_1) (metric_counter)`,
 		},
 		"sum() grouping 'without'": {
-			query: `sum by(unique) (metric_counter)`,
+			query: `sum without(unique) (metric_counter)`,
 		},
 		"sum(rate()) no grouping": {
 			query: `sum(rate(metric_counter[1m]))`,
@@ -230,7 +230,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query: `sum by(group_1) (rate(metric_counter[1m]))`,
 		},
 		"sum(rate()) grouping 'without'": {
-			query: `sum by(unique) (rate(metric_counter[1m]))`,
+			query: `sum without(unique) (rate(metric_counter[1m]))`,
 		},
 		"histogram_quantile() no grouping": {
 			query: `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
@@ -293,10 +293,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query: `sum(rate(metric_counter{group_1="0"}[1m])) or sum(rate(metric_counter{group_1="1"}[1m]))`,
 		},
 		"and": {
-			query: `sum without(unique) (rate(metric_counter{group_1="0"}[1m])) and max without(unique) (metric_counter) > 0`,
+			query: `
+				sum without(unique) (rate(metric_counter{group_1="0"}[1m]))
+				and
+				max without(unique) (metric_counter) > 0`,
 		},
 		"sum(rate()) > avg(rate())": {
-			query: `sum(rate(metric_counter[1m])) > avg(rate(metric_counter[1m]))`,
+			query: `
+				sum(rate(metric_counter[1m]))
+				>
+				avg(rate(metric_counter[1m]))`,
 		},
 		"nested count()": {
 			query: `sum(
