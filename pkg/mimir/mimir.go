@@ -62,9 +62,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/grpc/healthcheck"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-
 	"github.com/grafana/mimir/pkg/util/process"
-
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
