@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -413,6 +414,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					Start: util.TimeToMillis(start),
 					End:   util.TimeToMillis(end),
 					Step:  step.Milliseconds(),
+					Query: testData.query,
 				}
 
 				reg := prometheus.NewPedanticRegistry()
@@ -426,17 +428,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					engine:    engine,
 					queryable: queryable,
 				}
-				r := req.WithQuery(testData.query)
 
 				// Run the query without sharding.
-				expectedRes, err := downstream.Do(context.Background(), r)
+				expectedRes, err := downstream.Do(context.Background(), req)
 				require.Nil(t, err)
 
 				// Ensure the query produces some results.
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
 				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), r)
+				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
 				require.Nil(t, err)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -463,6 +464,30 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "aaa{", // Invalid query.
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), engine, 16, nil)
+
+	// Mock the downstream handler, always returning success (regardless the query is valid or not).
+	downstream := &mockHandler{}
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
+
+	// Run the query with sharding middleware wrapping the downstream one.
+	// We expect the query parsing done by the query sharding middleware to fail
+	// but to fallback on the downstream one which always returns success.
+	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
 }
 
 func BenchmarkQuerySharding(b *testing.B) {

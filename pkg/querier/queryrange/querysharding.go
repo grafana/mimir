@@ -73,32 +73,22 @@ func NewQueryShardingMiddleware(
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	s.shardingAttempts.Inc()
+	shardedQuery, err := s.shardQuery(r.GetQuery())
 
-	mapper, err := astmapper.NewSharding(s.totalShards, s.shardedQueriesCounter)
-	if err != nil {
-		return nil, err
-	}
+	// If an error occurred while trying to rewrite the query or the query can't be sharded,
+	// then we should fallback to execute it via queriers.
+	if err != nil || shardedQuery == "" {
+		if err != nil {
+			level.Error(s.logger).Log("msg", "failed to rewrite the input query into a shardable query", "query", r.GetQuery(), "err", err)
+		}
 
-	expr, err := parser.ParseExpr(r.GetQuery())
-	if err != nil {
-		return nil, err
-	}
-	mappedQuery, sharded, err := mapper.Map(expr)
-	if err != nil {
-		return nil, err
-	}
-
-	// If the query hasn't been sharded, then we should not execute it in the query-frontend.
-	if !sharded {
 		return s.next.Do(ctx, r)
 	}
 
-	strMappedQuery := mappedQuery.String()
-	level.Debug(s.logger).Log("msg", "mapped query", "original", r.GetQuery(), "mapped", strMappedQuery)
-
+	level.Debug(s.logger).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
 	s.shardingSuccesses.Inc()
-	r = r.WithQuery(strMappedQuery)
 
+	r = r.WithQuery(shardedQuery)
 	shardedQueryable := &ShardedQueryable{Req: r, Handler: s.next}
 
 	qry, err := s.engine.NewRangeQuery(
@@ -124,4 +114,29 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+// shardQuery attemps to rewrite the input query in a shardable way. Returns the rewritten query
+// to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
+// can't be sharded.
+func (s *querySharding) shardQuery(query string) (string, error) {
+	mapper, err := astmapper.NewSharding(s.totalShards, s.shardedQueriesCounter)
+	if err != nil {
+		return "", err
+	}
+
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return "", err
+	}
+
+	shardedQuery, sharded, err := mapper.Map(expr)
+	if err != nil {
+		return "", err
+	}
+	if !sharded {
+		return "", nil
+	}
+
+	return shardedQuery.String(), nil
 }
