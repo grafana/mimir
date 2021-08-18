@@ -284,8 +284,8 @@ github.com/gorilla/websocket
 # github.com/grafana/dskit v0.0.0-20210817165311-3d765e85ddec
 ## explicit
 github.com/grafana/dskit/backoff
-github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/modules
+github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/services
 # github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 ## explicit
@@ -708,7 +708,6 @@ go.etcd.io/etcd/pkg/v3/idutil
 go.etcd.io/etcd/pkg/v3/ioutil
 go.etcd.io/etcd/pkg/v3/logutil
 go.etcd.io/etcd/pkg/v3/netutil
-
 go.etcd.io/etcd/pkg/v3/pbutil
 go.etcd.io/etcd/pkg/v3/runtime
 go.etcd.io/etcd/pkg/v3/schedule
