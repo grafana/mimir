@@ -50,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
