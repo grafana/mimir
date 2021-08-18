@@ -118,7 +118,9 @@ func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped pa
 		return mapped, true, true, nil
 	}
 
-	return nil, false, false, nil
+	// If the aggregation operation is not shardable, we have to return the input
+	// node as is.
+	return expr, false, false, nil
 }
 
 // splitSum forms the parent and child legs of a parallel query
