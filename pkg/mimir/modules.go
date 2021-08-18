@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/runtimeconfig"
+	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	"github.com/opentracing/opentracing-go"
@@ -49,7 +50,8 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/modules"
+
+
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

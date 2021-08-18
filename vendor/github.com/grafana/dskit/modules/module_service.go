@@ -1,9 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/module_service.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
-package util
+package modules
 
 import (
 	"context"
@@ -11,11 +6,15 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+
+	"github.com/grafana/dskit/services"
 )
 
-// This service wraps module service, and adds waiting for dependencies to start before starting,
+// ErrStopProcess is the error returned by a service as a hint to stop the server entirely.
+var ErrStopProcess = errors.New("stop process")
+
+// moduleService is a Service implementation that adds waiting for dependencies to start before starting,
 // and dependant modules to stop before stopping this module service.
 type moduleService struct {
 	services.Service

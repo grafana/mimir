@@ -62,63 +62,65 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 }
 
 // shardSummer expands a query AST by sharding and re-summing when possible
-func (summer *shardSummer) MapNode(node parser.Node) (parser.Node, bool, error) {
+func (summer *shardSummer) MapNode(node parser.Node) (mapped parser.Node, finished, sharded bool, err error) {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
 		if CanParallelize(n) {
 			return summer.shardAggregate(n)
 		}
-		return n, false, nil
+		return n, false, false, nil
 
 	case *parser.VectorSelector:
 		if summer.currentShard != nil {
 			mapped, err := shardVectorSelector(*summer.currentShard, summer.shards, n)
-			return mapped, true, err
+			return mapped, true, true, err
 		}
-		return n, true, nil
+		return n, true, false, nil
 
 	case *parser.MatrixSelector:
 		if summer.currentShard != nil {
 			mapped, err := shardMatrixSelector(*summer.currentShard, summer.shards, n)
-			return mapped, true, err
+			return mapped, true, true, err
 		}
-		return n, true, nil
+		return n, true, false, nil
 
 	default:
-		return n, false, nil
+		return n, false, false, nil
 	}
 }
 
 // shardSum contains the logic for how we split/stitch legs of a parallelized sum query
-func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (parser.Node, bool, error) {
+func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped parser.Node, finished, sharded bool, err error) {
 	switch expr.Op {
 	case parser.SUM:
-		mapped, err := summer.splitSum(expr)
+		mapped, err = summer.splitSum(expr)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
-		return mapped, true, nil
+		return mapped, true, true, nil
 	case parser.COUNT:
-		mapped, err := summer.splitCount(expr)
+		mapped, err = summer.splitCount(expr)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
-		return mapped, true, nil
+		return mapped, true, true, nil
 	case parser.MAX, parser.MIN:
-		mapped, err := summer.splitMinMax(expr)
+		mapped, err = summer.splitMinMax(expr)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
-		return mapped, true, nil
+		return mapped, true, true, nil
 	case parser.AVG:
-		mapped, err := summer.splitAvg(expr)
+		mapped, err = summer.splitAvg(expr)
 		if err != nil {
-			return nil, false, err
+			return nil, false, false, err
 		}
-		return mapped, true, nil
+		return mapped, true, true, nil
 	}
 
-	return nil, false, nil
+	// If the aggregation operation is not shardable, we have to return the input
+	// node as is.
+	return expr, false, false, nil
 }
 
 // splitSum forms the parent and child legs of a parallel query
@@ -187,7 +189,7 @@ func (summer *shardSummer) splitSum(
 		}
 
 		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned)
+		sharded, _, err := subSummer.Map(cloned)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +241,7 @@ func (summer *shardSummer) splitCount(
 		}
 
 		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned)
+		sharded, _, err := subSummer.Map(cloned)
 		if err != nil {
 			return nil, err
 		}
@@ -291,7 +293,7 @@ func (summer *shardSummer) splitMinMax(
 		}
 
 		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned)
+		sharded, _, err := subSummer.Map(cloned)
 		if err != nil {
 			return nil, err
 		}
@@ -337,7 +339,7 @@ func (summer *shardSummer) splitAvg(
 		}
 
 		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned)
+		sharded, _, err := subSummer.Map(cloned)
 		if err != nil {
 			return nil, err
 		}
@@ -377,7 +379,7 @@ func (summer *shardSummer) splitAvg(
 		}
 
 		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned)
+		sharded, _, err := subSummer.Map(cloned)
 		if err != nil {
 			return nil, err
 		}
@@ -415,7 +417,7 @@ func (summer *shardSummer) splitAvg(
 // recordShards prevents calling nil interfaces (commonly used in tests).
 func (summer *shardSummer) recordShards(n float64) {
 	if summer.shardedQueries != nil {
-		summer.shardedQueries.Add(float64(summer.shards))
+		summer.shardedQueries.Add(n)
 	}
 }
 
