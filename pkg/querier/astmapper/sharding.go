@@ -237,13 +237,6 @@ func (summer *shardSummer) shardCount(expr *parser.AggregateExpr) (result *parse
 // shardMinMax attempts to shard the given MIN/MAX aggregation expression.
 func (summer *shardSummer) shardMinMax(expr *parser.AggregateExpr) (result parser.Node, err error) {
 	// The MIN/MAX aggregation can be parallelized as the MIN/MAX of per-shard MIN/MAX.
-	parent := &parser.AggregateExpr{
-		Op:       expr.Op,
-		Param:    expr.Param,
-		Grouping: expr.Grouping,
-		Without:  expr.Without,
-	}
-
 	// Add a sub-query for each shard.
 	children := make([]parser.Node, 0, summer.shards)
 
@@ -271,14 +264,18 @@ func (summer *shardSummer) shardMinMax(expr *parser.AggregateExpr) (result parse
 
 	summer.recordShards(float64(summer.shards))
 
-	combinedSums, err := summer.squash(children...)
+	combined, err := summer.squash(children...)
 	if err != nil {
 		return nil, err
 	}
 
-	parent.Expr = combinedSums
-
-	return parent, nil
+	return &parser.AggregateExpr{
+		Op:       expr.Op,
+		Expr:     combined,
+		Param:    expr.Param,
+		Grouping: expr.Grouping,
+		Without:  expr.Without,
+	}, nil
 }
 
 // shardAvg attempts to shard the given AVG aggregation expression.
