@@ -7,18 +7,19 @@ package queryrange
 
 import (
 	"context"
+	"sync"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 )
 
-func TestSelect(t *testing.T) {
+func TestShardedQuerier_Select(t *testing.T) {
 	var testExpr = []struct {
 		name    string
 		querier *ShardedQuerier
@@ -26,17 +27,17 @@ func TestSelect(t *testing.T) {
 	}{
 		{
 			name: "errors non embedded query",
-			querier: mkQuerier(
+			querier: mkShardedQuerier(
 				nil,
 			),
 			fn: func(t *testing.T, q *ShardedQuerier) {
 				set := q.Select(false, nil)
-				require.EqualError(t, set.Err(), nonEmbeddedErrMsg)
+				require.Equal(t, set.Err(), errNoEmbeddedQueries)
 			},
 		},
 		{
 			name: "replaces query",
-			querier: mkQuerier(mockHandlerWith(
+			querier: mkShardedQuerier(mockHandlerWith(
 				&PrometheusResponse{},
 				nil,
 			)),
@@ -62,15 +63,15 @@ func TestSelect(t *testing.T) {
 				set := q.Select(
 					false,
 					nil,
-					exactMatch("__name__", astmapper.EmbeddedQueriesMetricName),
-					exactMatch(astmapper.QueryLabel, encoded),
+					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
+					labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encoded),
 				)
 				require.Nil(t, set.Err())
 			},
 		},
 		{
 			name: "propagates response error",
-			querier: mkQuerier(mockHandlerWith(
+			querier: mkShardedQuerier(mockHandlerWith(
 				&PrometheusResponse{
 					Error: "SomeErr",
 				},
@@ -82,15 +83,15 @@ func TestSelect(t *testing.T) {
 				set := q.Select(
 					false,
 					nil,
-					exactMatch("__name__", astmapper.EmbeddedQueriesMetricName),
-					exactMatch(astmapper.QueryLabel, encoded),
+					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
+					labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encoded),
 				)
 				require.EqualError(t, set.Err(), "SomeErr")
 			},
 		},
 		{
 			name: "returns SeriesSet",
-			querier: mkQuerier(mockHandlerWith(
+			querier: mkShardedQuerier(mockHandlerWith(
 				&PrometheusResponse{
 					Data: PrometheusData{
 						ResultType: string(parser.ValueTypeVector),
@@ -138,8 +139,8 @@ func TestSelect(t *testing.T) {
 				set := q.Select(
 					false,
 					nil,
-					exactMatch("__name__", astmapper.EmbeddedQueriesMetricName),
-					exactMatch(astmapper.QueryLabel, encoded),
+					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
+					labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encoded),
 				)
 				require.Nil(t, set.Err())
 				require.Equal(
@@ -191,85 +192,56 @@ func TestSelect(t *testing.T) {
 	}
 }
 
-func TestSelectConcurrent(t *testing.T) {
-	for _, c := range []struct {
-		name    string
-		queries []string
-		err     error
-	}{
-		{
-			name: "concats queries",
-			queries: []string{
-				`sum by(__query_shard__) (rate(bar1{__query_shard__="0_of_3",baz="blip"}[1m]))`,
-				`sum by(__query_shard__) (rate(bar1{__query_shard__="1_of_3",baz="blip"}[1m]))`,
-				`sum by(__query_shard__) (rate(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))`,
-			},
-			err: nil,
-		},
-		{
-			name: "errors",
-			queries: []string{
-				`sum by(__query_shard__) (rate(bar1{__query_shard__="0_of_3",baz="blip"}[1m]))`,
-				`sum by(__query_shard__) (rate(bar1{__query_shard__="1_of_3",baz="blip"}[1m]))`,
-				`sum by(__query_shard__) (rate(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))`,
-			},
-			err: errors.Errorf("some-err"),
-		},
-	} {
-
-		t.Run(c.name, func(t *testing.T) {
-			// each request will return a single samplestream
-			querier := mkQuerier(mockHandlerWith(&PrometheusResponse{
-				Data: PrometheusData{
-					ResultType: string(parser.ValueTypeVector),
-					Result: []SampleStream{
-						{
-							Labels: []mimirpb.LabelAdapter{
-								{Name: "a", Value: "1"},
-							},
-							Samples: []mimirpb.Sample{
-								{
-									Value:       1,
-									TimestampMs: 1,
-								},
-							},
-						},
-					},
-				},
-			}, c.err))
-
-			encoded, err := astmapper.JSONCodec.Encode(c.queries)
-			require.Nil(t, err)
-			set := querier.Select(
-				false,
-				nil,
-				exactMatch("__name__", astmapper.EmbeddedQueriesMetricName),
-				exactMatch(astmapper.QueryLabel, encoded),
-			)
-
-			if c.err != nil {
-				require.EqualError(t, set.Err(), c.err.Error())
-				return
-			}
-
-			var ct int
-			for set.Next() {
-				ct++
-			}
-			require.Equal(t, len(c.queries), ct)
-		})
+func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T) {
+	embeddedQueries := []string{
+		`sum(rate(metric{__query_shard__="0_of_3"}[1m]))`,
+		`sum(rate(metric{__query_shard__="1_of_3"}[1m]))`,
+		`sum(rate(metric{__query_shard__="2_of_3"}[1m]))`,
 	}
+
+	// Mock the downstream handler to wait until all concurrent queries have been
+	// received. If the test succeeds we have the guarantee they were called concurrently
+	// otherwise the test times out while hanging in the downstream handler.
+	downstreamWg := sync.WaitGroup{}
+	downstreamWg.Add(len(embeddedQueries))
+
+	querier := mkShardedQuerier(HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
+		// Wait until the downstream handler has been concurrently called for each embedded query.
+		downstreamWg.Done()
+		downstreamWg.Wait()
+
+		return &PrometheusResponse{
+			Data: PrometheusData{
+				ResultType: string(parser.ValueTypeVector),
+				Result: []SampleStream{{
+					Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
+					Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 1}},
+				}},
+			},
+		}, nil
+	}))
+
+	encodedQueries, err := astmapper.JSONCodec.Encode(embeddedQueries)
+	require.Nil(t, err)
+
+	seriesSet := querier.Select(
+		false,
+		nil,
+		labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
+		labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encodedQueries),
+	)
+
+	require.NoError(t, seriesSet.Err())
+
+	// We expect 1 resulting series for each embedded query.
+	var actualSeries int
+	for seriesSet.Next() {
+		actualSeries++
+	}
+	assert.NoError(t, seriesSet.Err())
+	require.Equal(t, len(embeddedQueries), actualSeries)
 }
 
-func exactMatch(k, v string) *labels.Matcher {
-	m, err := labels.NewMatcher(labels.MatchEqual, k, v)
-	if err != nil {
-		panic(err)
-	}
-	return m
-
-}
-
-func mkQuerier(handler Handler) *ShardedQuerier {
+func mkShardedQuerier(handler Handler) *ShardedQuerier {
 	return &ShardedQuerier{Ctx: context.Background(), Req: &PrometheusRequest{}, Handler: handler, ResponseHeaders: map[string][]string{}}
 }

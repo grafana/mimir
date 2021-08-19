@@ -16,9 +16,9 @@ import (
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 )
 
-const (
-	missingEmbeddedQueryMsg = "missing embedded query"
-	nonEmbeddedErrMsg       = "DownstreamQuerier cannot handle a non-embedded query"
+var (
+	errMissingEmbeddedQuery = errors.New("missing embedded query")
+	errNoEmbeddedQueries    = errors.New("ShardedQuerier is expecting embedded queries but didn't find any")
 )
 
 // ShardedQueryable is an implementor of the Queryable interface.
@@ -70,11 +70,11 @@ func (q *ShardedQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*lab
 		if embeddedQuery != "" {
 			return q.handleEmbeddedQuery(embeddedQuery)
 		}
-		return storage.ErrSeriesSet(errors.Errorf(missingEmbeddedQueryMsg))
+		return storage.ErrSeriesSet(errMissingEmbeddedQuery)
 
 	}
 
-	return storage.ErrSeriesSet(errors.Errorf(nonEmbeddedErrMsg))
+	return storage.ErrSeriesSet(errNoEmbeddedQueries)
 }
 
 // handleEmbeddedQuery defers execution of an encoded query to a downstream Handler
