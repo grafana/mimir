@@ -51,7 +51,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				}
 
 				// override handler func to assert new query has been substituted
-				q.Handler = HandlerFunc(
+				q.handler = HandlerFunc(
 					func(ctx context.Context, req Request) (Response, error) {
 						require.Equal(t, `http_requests_total{cluster="prod"}`, req.GetQuery())
 						return expected, nil
@@ -243,5 +243,5 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 }
 
 func mkShardedQuerier(handler Handler) *ShardedQuerier {
-	return &ShardedQuerier{Ctx: context.Background(), Req: &PrometheusRequest{}, Handler: handler, ResponseHeaders: map[string][]string{}}
+	return &ShardedQuerier{ctx: context.Background(), req: &PrometheusRequest{}, handler: handler, responseHeaders: map[string][]string{}}
 }
