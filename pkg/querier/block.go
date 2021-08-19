@@ -158,6 +158,8 @@ func (it *blockQuerierSeriesIterator) Seek(t int64) bool {
 			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
 			// we try to seek to and return the result.
 			if it.iterators[it.i].Seek(t) {
+				// Calling .At() to update it.lastT
+				it.At()
 				return true
 			}
 		}
@@ -182,6 +184,8 @@ func (it *blockQuerierSeriesIterator) Next() bool {
 	}
 
 	if it.iterators[it.i].Next() {
+		// Calling .At() to update it.lastT
+		it.At()
 		return true
 	}
 	if it.iterators[it.i].Err() != nil {
@@ -196,6 +200,7 @@ func (it *blockQuerierSeriesIterator) Next() bool {
 
 	// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
 	// We must ensure to skip any overlapping range between adjacent chunks.
+	// .Seek() will update it.lastT if it succeeds
 	return it.Seek(it.lastT + 1)
 }
 
