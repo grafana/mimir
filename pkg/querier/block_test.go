@@ -6,6 +6,7 @@
 package querier
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -216,69 +217,122 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		}
 	}
 
-	t.Run(".Next() method", func(t *testing.T) {
-		ss := getSeriesSet()
-		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 66668)
-		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "second"), 120000)
-		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "overlapping"), 3000)
-		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "overlapping2"), 4000)
-		verifyNextSeriesViaNext(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 6000)
-		require.False(t, ss.Next())
-	})
+	for _, callAtEvery := range []uint32{1, 3, 100, 971, 1000} {
+		// Test while calling .At() after varying numbers of samples have been consumed
 
-	t.Run(".Seek() method", func(t *testing.T) {
-		ss := getSeriesSet()
-		verifyNextSeriesViaSeek(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
-			{now, now.Add(100*time.Second - time.Millisecond)},
-			{now.Add(100 * time.Second), now.Add(200*time.Second - time.Millisecond)},
+		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
+			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Next() }
+			ss := getSeriesSet()
+
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
+				{now, now.Add(100*time.Second - time.Millisecond)},
+				{now.Add(100 * time.Second), now.Add(200*time.Second - time.Millisecond)},
+			}, 66668, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "second"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(600*time.Second - 5*time.Millisecond)},
+			}, 120000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(15*time.Second - 5*time.Millisecond)},
+			}, 3000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping2"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(10*time.Second - 5*time.Millisecond)},
+				{now.Add(20 * time.Second), now.Add(30*time.Second - 5*time.Millisecond)},
+			}, 4000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(30*time.Second - 5*time.Millisecond)},
+			}, 6000, callAtEvery, advance)
+
+			require.False(t, ss.Next())
 		})
-		verifyNextSeriesViaSeek(t, ss, labels.FromStrings("__name__", "second"), 5*time.Millisecond, []timeRange{{now, now.Add(600*time.Second - 5*time.Millisecond)}})
-		verifyNextSeriesViaSeek(t, ss, labels.FromStrings("__name__", "overlapping"), 5*time.Millisecond, []timeRange{{now, now.Add(15*time.Second - 5*time.Millisecond)}})
-		verifyNextSeriesViaSeek(t, ss, labels.FromStrings("__name__", "overlapping2"), 5*time.Millisecond, []timeRange{
-			{now, now.Add(10*time.Second - 5*time.Millisecond)},
-			{now.Add(20 * time.Second), now.Add(30*time.Second - 5*time.Millisecond)},
+
+		t.Run(fmt.Sprintf("consume with .Seek() method, perform .At() after every %dth call to .Seek()", callAtEvery), func(t *testing.T) {
+			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Seek(wantTs) }
+			ss := getSeriesSet()
+
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
+				{now, now.Add(100*time.Second - time.Millisecond)},
+				{now.Add(100 * time.Second), now.Add(200*time.Second - time.Millisecond)},
+			}, 66668, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "second"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(600*time.Second - 5*time.Millisecond)},
+			}, 120000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(15*time.Second - 5*time.Millisecond)},
+			}, 3000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping2"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(10*time.Second - 5*time.Millisecond)},
+				{now.Add(20 * time.Second), now.Add(30*time.Second - 5*time.Millisecond)},
+			}, 4000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(30*time.Second - 5*time.Millisecond)},
+			}, 6000, callAtEvery, advance)
+
+			require.False(t, ss.Next())
 		})
 
-		verifyNextSeriesViaSeek(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{{now, now.Add(30*time.Second - 5*time.Millisecond)}})
-	})
-}
+		t.Run(fmt.Sprintf("consume with alternating calls to .Seek() and .Next() method, perform .At() after every %dth call to .Seek() or .Next()", callAtEvery), func(t *testing.T) {
+			var seek bool
+			advance := func(it chunkenc.Iterator, wantTs int64) bool {
+				seek = !seek
+				if seek {
+					return it.Seek(wantTs)
+				}
+				return it.Next()
+			}
+			ss := getSeriesSet()
 
-func verifyNextSeriesViaNext(t *testing.T, ss storage.SeriesSet, labels labels.Labels, samples int) {
-	require.True(t, ss.Next())
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "first", "a", "a"), 3*time.Millisecond, []timeRange{
+				{now, now.Add(100*time.Second - time.Millisecond)},
+				{now.Add(100 * time.Second), now.Add(200*time.Second - time.Millisecond)},
+			}, 66668, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "second"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(600*time.Second - 5*time.Millisecond)},
+			}, 120000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(15*time.Second - 5*time.Millisecond)},
+			}, 3000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping2"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(10*time.Second - 5*time.Millisecond)},
+				{now.Add(20 * time.Second), now.Add(30*time.Second - 5*time.Millisecond)},
+			}, 4000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{
+				{now, now.Add(30*time.Second - 5*time.Millisecond)},
+			}, 6000, callAtEvery, advance)
 
-	s := ss.At()
-	require.Equal(t, labels, s.Labels())
-
-	prevTS := int64(0)
-	count := 0
-	for it := s.Iterator(); it.Next(); {
-		count++
-		ts, v := it.At()
-		require.Equal(t, math.Sin(float64(ts)), v)
-		require.Greater(t, ts, prevTS, "timestamps are increasing")
-		prevTS = ts
+			require.False(t, ss.Next())
+		})
 	}
-
-	require.Equal(t, samples, count)
 }
 
-// verifyNextSeriesViaSeek verifies a series by consuming it via the iterator's Seek() method.
-// The last parameter "ranges" is a slice of timeRanges where each timeRange consists of {minT,maxT}.
-func verifyNextSeriesViaSeek(t *testing.T, ss storage.SeriesSet, labels labels.Labels, step time.Duration, ranges []timeRange) {
+// verifyNextSeries verifies a series by consuming it via a given consumer function.
+// "step" is the time distance between samples.
+// "ranges" is a slice of timeRanges where each timeRange consists of {minT,maxT}.
+// "samples" is the expected total number of samples.
+// "callAtEvery" defines after every how many samples we want to call .At().
+// "advance" is a function which takes an iterator and advances its position.
+func verifyNextSeries(t *testing.T, ss storage.SeriesSet, labels labels.Labels, step time.Duration, ranges []timeRange, samples, callAtEvery uint32, advance func(chunkenc.Iterator, int64) bool) {
 	require.True(t, ss.Next())
 
 	s := ss.At()
 	require.Equal(t, labels, s.Labels())
 
+	var count uint32
 	it := s.Iterator()
 	for _, r := range ranges {
 		for wantTs := r.minT.UnixNano() / 1000000; wantTs <= r.maxT.UnixNano()/1000000; wantTs += step.Milliseconds() {
-			require.True(t, it.Seek(wantTs))
-			gotTs, v := it.At()
-			require.Equal(t, wantTs, gotTs)
-			require.Equal(t, math.Sin(float64(wantTs)), v)
+			require.True(t, advance(it, wantTs))
+
+			if count%callAtEvery == 0 {
+				gotTs, v := it.At()
+				require.Equal(t, wantTs, gotTs)
+				require.Equal(t, math.Sin(float64(wantTs)), v)
+			}
+
+			count++
 		}
 	}
+
+	require.Equal(t, samples, count)
 }
 
 // createAggrChunkWithSineSamples takes a min/maxTime and a step duration, it generates a chunk given these specs.
