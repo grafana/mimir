@@ -61,7 +61,9 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 	return &s
 }
 
-// shardSummer expands a query AST by sharding and re-summing when possible
+// MapNode processes the input node and checks if it can be sharded. If so, it returns
+// a new node which is expected to provide the same output when executed but splitting
+// the execution into multiple shards.
 func (summer *shardSummer) MapNode(node parser.Node) (mapped parser.Node, finished, sharded bool, err error) {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
@@ -89,29 +91,29 @@ func (summer *shardSummer) MapNode(node parser.Node) (mapped parser.Node, finish
 	}
 }
 
-// shardSum contains the logic for how we split/stitch legs of a parallelized sum query
+// shardAggregate attempts to shard the given aggregation expression.
 func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped parser.Node, finished, sharded bool, err error) {
 	switch expr.Op {
 	case parser.SUM:
-		mapped, err = summer.splitSum(expr)
+		mapped, err = summer.shardSum(expr)
 		if err != nil {
 			return nil, false, false, err
 		}
 		return mapped, true, true, nil
 	case parser.COUNT:
-		mapped, err = summer.splitCount(expr)
+		mapped, err = summer.shardCount(expr)
 		if err != nil {
 			return nil, false, false, err
 		}
 		return mapped, true, true, nil
 	case parser.MAX, parser.MIN:
-		mapped, err = summer.splitMinMax(expr)
+		mapped, err = summer.shardMinMax(expr)
 		if err != nil {
 			return nil, false, false, err
 		}
 		return mapped, true, true, nil
 	case parser.AVG:
-		mapped, err = summer.splitAvg(expr)
+		mapped, err = summer.shardAvg(expr)
 		if err != nil {
 			return nil, false, false, err
 		}
@@ -123,13 +125,8 @@ func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped pa
 	return expr, false, false, nil
 }
 
-// splitSum forms the parent and child legs of a parallel query
-func (summer *shardSummer) splitSum(
-	expr *parser.AggregateExpr,
-) (
-	result parser.Node,
-	err error,
-) {
+// shardSum attempts to shard the given SUM aggregation expression.
+func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (result parser.Node, err error) {
 	var (
 		parent   *parser.AggregateExpr
 		children []parser.Node
@@ -216,12 +213,8 @@ func (summer *shardSummer) splitSum(
 	return parent, nil
 }
 
-func (summer *shardSummer) splitCount(
-	expr *parser.AggregateExpr,
-) (
-	result parser.Node,
-	err error,
-) {
+// shardCount attempts to shard the given COUNT aggregation expression.
+func (summer *shardSummer) shardCount(expr *parser.AggregateExpr) (result parser.Node, err error) {
 	var (
 		parent   *parser.AggregateExpr
 		children []parser.Node
@@ -268,12 +261,8 @@ func (summer *shardSummer) splitCount(
 	return parent, nil
 }
 
-func (summer *shardSummer) splitMinMax(
-	expr *parser.AggregateExpr,
-) (
-	result parser.Node,
-	err error,
-) {
+// shardMinMax attempts to shard the given MIN/MAX aggregation expression.
+func (summer *shardSummer) shardMinMax(expr *parser.AggregateExpr) (result parser.Node, err error) {
 	var (
 		parent   *parser.AggregateExpr
 		children []parser.Node
@@ -320,12 +309,8 @@ func (summer *shardSummer) splitMinMax(
 	return parent, nil
 }
 
-func (summer *shardSummer) splitAvg(
-	expr *parser.AggregateExpr,
-) (
-	result parser.Node,
-	err error,
-) {
+// shardAvg attempts to shard the given AVG aggregation expression.
+func (summer *shardSummer) shardAvg(expr *parser.AggregateExpr) (result parser.Node, err error) {
 	var children []parser.Node
 	parent := &parser.BinaryExpr{
 		Op: parser.DIV,
