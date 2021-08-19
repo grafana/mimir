@@ -677,6 +677,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
+	exemplarUpdateTicker := time.NewTicker(i.cfg.ExemplarsUpdatePeriod)
+	defer exemplarUpdateTicker.Stop()
+
 	var activeSeriesTickerChan <-chan time.Time
 	if i.cfg.ActiveSeriesMetricsEnabled {
 		t := time.NewTicker(i.cfg.ActiveSeriesMetricsUpdatePeriod)
@@ -701,6 +704,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 				db.ingestedRuleSamples.Tick()
 			}
 			i.userStatesMtx.RUnlock()
+
+		case <-exemplarUpdateTicker.C:
 			i.applyExemplarsSettings()
 
 		case <-activeSeriesTickerChan:

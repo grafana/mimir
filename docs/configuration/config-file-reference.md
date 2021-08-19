@@ -805,6 +805,10 @@ lifecycler:
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
+# Period with which to update per-user max exemplars.
+# CLI flag: -ingester.exemplars-update-period
+[exemplars_update_period: <duration> | default = 15s]
+
 instance_limits:
   # Max ingestion rate (samples/sec) that ingester will accept. This limit is
   # per-ingester, not per-tenant. Additional push requests will be rejected.
