@@ -195,18 +195,17 @@ func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (result parser.N
 
 // shardCount attempts to shard the given COUNT aggregation expression.
 func (summer *shardSummer) shardCount(expr *parser.AggregateExpr) (result parser.Node, err error) {
-	var (
-		parent   *parser.AggregateExpr
-		children []parser.Node
-	)
-	parent = &parser.AggregateExpr{
+	//	The COUNT aggregation can be parallelized as the SUM of per-shard COUNT.
+	parent := &parser.AggregateExpr{
 		Op:       parser.SUM,
 		Param:    expr.Param,
 		Grouping: expr.Grouping,
 		Without:  expr.Without,
 	}
 
-	// iterate across shardFactor to create children
+	// Add a sub-query for each shard.
+	children := make([]parser.Node, 0, summer.shards)
+
 	for i := 0; i < summer.shards; i++ {
 		cloned, err := CloneNode(expr.Expr)
 		if err != nil {
