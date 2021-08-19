@@ -21,142 +21,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
-
-func TestQueryshardingMiddleware(t *testing.T) {
-	testExpr := []struct {
-		name     string
-		next     Handler
-		input    Request
-		ctx      context.Context
-		expected *PrometheusResponse
-		err      bool
-		override func(*testing.T, Handler)
-	}{
-		{
-			name: "invalid query error",
-			// if the query parses correctly force it to succeed
-			next: mockHandlerWith(&PrometheusResponse{
-				Status: "",
-				Data: PrometheusData{
-					ResultType: string(parser.ValueTypeVector),
-					Result:     []SampleStream{},
-				},
-				ErrorType: "",
-				Error:     "",
-			}, nil),
-			input:    &PrometheusRequest{Query: "^GARBAGE"},
-			ctx:      context.Background(),
-			expected: nil,
-			err:      true,
-		},
-		{
-			name:     "downstream err",
-			next:     mockHandlerWith(nil, errors.Errorf("some err")),
-			input:    defaultReq(),
-			ctx:      context.Background(),
-			expected: nil,
-			err:      true,
-		},
-		{
-			name: "successful trip",
-			next: mockHandlerWith(sampleMatrixResponse(), nil),
-			override: func(t *testing.T, handler Handler) {
-				// pre-encode the query so it doesn't try to re-split. We're just testing if it passes through correctly
-				qry := defaultReq().WithQuery(
-					`__embedded_queries__{__cortex_queries__="{\"Concat\":[\"http_requests_total{cluster=\\\"prod\\\"}\"]}"}`,
-				)
-				out, err := handler.Do(context.Background(), qry)
-				require.Nil(t, err)
-				require.Equal(t, string(parser.ValueTypeMatrix), out.(*PrometheusResponse).Data.ResultType)
-				require.Equal(t, sampleMatrixResponse(), out)
-			},
-		},
-	}
-
-	for _, c := range testExpr {
-		t.Run(c.name, func(t *testing.T) {
-			engine := promql.NewEngine(promql.EngineOpts{
-				Logger:     log.NewNopLogger(),
-				Reg:        nil,
-				MaxSamples: 1000,
-				Timeout:    time.Minute,
-			})
-
-			handler := NewQueryShardingMiddleware(
-				log.NewNopLogger(),
-				engine,
-				3,
-				nil,
-			).Wrap(c.next)
-
-			// escape hatch for custom tests
-			if c.override != nil {
-				c.override(t, handler)
-				return
-			}
-
-			out, err := handler.Do(c.ctx, c.input)
-
-			if c.err {
-				require.NotNil(t, err)
-			} else {
-				require.Nil(t, err)
-				require.Equal(t, c.expected, out)
-			}
-		})
-	}
-}
-
-func sampleMatrixResponse() *PrometheusResponse {
-	return &PrometheusResponse{
-		Status: StatusSuccess,
-		Data: PrometheusData{
-			ResultType: string(parser.ValueTypeMatrix),
-			Result: []SampleStream{
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a1"},
-						{Name: "b", Value: "b1"},
-					},
-					Samples: []mimirpb.Sample{
-						{
-							TimestampMs: 5,
-							Value:       1,
-						},
-						{
-							TimestampMs: 10,
-							Value:       2,
-						},
-					},
-				},
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a1"},
-						{Name: "b", Value: "b1"},
-					},
-					Samples: []mimirpb.Sample{
-						{
-							TimestampMs: 5,
-							Value:       8,
-						},
-						{
-							TimestampMs: 10,
-							Value:       9,
-						},
-					},
-				},
-			},
-		},
-	}
-}
 
 func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
 	return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
@@ -166,17 +37,6 @@ func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
 
 		return resp, err
 	})
-}
-
-func defaultReq() *PrometheusRequest {
-	return &PrometheusRequest{
-		Path:    "/query_range",
-		Start:   00,
-		End:     10,
-		Step:    5,
-		Timeout: time.Minute,
-		Query:   `sum(rate(http_requests_total{}[5m]))`,
-	}
 }
 
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
@@ -365,6 +225,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:             `bottomk(2, metric_counter{const="fixed"})`,
 			expectedShardable: false,
 		},
+		"vector()": {
+			query:             `vector(1)`,
+			expectedShardable: false,
+		},
 	}
 
 	// Generate fixtures (series).
@@ -413,6 +277,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					Start: util.TimeToMillis(start),
 					End:   util.TimeToMillis(end),
 					Step:  step.Milliseconds(),
+					Query: testData.query,
 				}
 
 				reg := prometheus.NewPedanticRegistry()
@@ -426,17 +291,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					engine:    engine,
 					queryable: queryable,
 				}
-				r := req.WithQuery(testData.query)
 
 				// Run the query without sharding.
-				expectedRes, err := downstream.Do(context.Background(), r)
+				expectedRes, err := downstream.Do(context.Background(), req)
 				require.Nil(t, err)
 
 				// Ensure the query produces some results.
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
 				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), r)
+				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
 				require.Nil(t, err)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -463,6 +327,52 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "aaa{", // Invalid query.
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), engine, 16, nil)
+
+	// Mock the downstream handler, always returning success (regardless the query is valid or not).
+	downstream := &mockHandler{}
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
+
+	// Run the query with sharding middleware wrapping the downstream one.
+	// We expect the query parsing done by the query sharding middleware to fail
+	// but to fallback on the downstream one which always returns success.
+	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+}
+
+func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "vector(1)", // A non shardable query.
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), engine, 16, nil)
+
+	// Mock the downstream handler to always return error.
+	downstreamErr := errors.Errorf("some err")
+	downstream := mockHandlerWith(nil, downstreamErr)
+
+	// Run the query with sharding middleware wrapping the downstream one.
+	// We expect to get the downstream error.
+	_, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	require.Error(t, err)
+	assert.Equal(t, downstreamErr, err)
 }
 
 func BenchmarkQuerySharding(b *testing.B) {
