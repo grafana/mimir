@@ -116,7 +116,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}, nil
 }
 
-// shardQuery attemps to rewrite the input query in a shardable way. Returns the rewritten query
+// shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string) (string, error) {
