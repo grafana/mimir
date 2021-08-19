@@ -7,6 +7,7 @@ package queryrange
 
 import (
 	"context"
+	"math"
 	"sync"
 	"testing"
 
@@ -240,6 +241,37 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 	}
 	assert.NoError(t, seriesSet.Err())
 	require.Equal(t, len(embeddedQueries), actualSeries)
+}
+
+func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
+	queryable := NewShardedQueryable(&PrometheusRequest{}, nil)
+	assert.Empty(t, queryable.getResponseHeaders())
+
+	// Merge some response headers from the 1st querier.
+	querier, err := queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+
+	querier.(*ShardedQuerier).mergeResponseHeaders([]*PrometheusResponseHeader{
+		{Name: "content-type", Values: []string{"application/json"}},
+		{Name: "cache-control", Values: []string{"no-cache"}},
+	})
+	assert.ElementsMatch(t, []*PrometheusResponseHeader{
+		{Name: "content-type", Values: []string{"application/json"}},
+		{Name: "cache-control", Values: []string{"no-cache"}},
+	}, queryable.getResponseHeaders())
+
+	// Merge some response headers from the 2nd querier.
+	querier, err = queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+
+	querier.(*ShardedQuerier).mergeResponseHeaders([]*PrometheusResponseHeader{
+		{Name: "content-type", Values: []string{"application/json"}},
+		{Name: "cache-control", Values: []string{"no-store"}},
+	})
+	assert.ElementsMatch(t, []*PrometheusResponseHeader{
+		{Name: "content-type", Values: []string{"application/json"}},
+		{Name: "cache-control", Values: []string{"no-cache", "no-store"}},
+	}, queryable.getResponseHeaders())
 }
 
 func mkShardedQuerier(handler Handler) *ShardedQuerier {
