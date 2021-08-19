@@ -31,12 +31,14 @@ type ShardedQueryable struct {
 	shardedQuerier *ShardedQuerier
 }
 
-// Querier implements Queryable
+// Querier implements storage.Queryable.
 func (q *ShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	q.shardedQuerier = &ShardedQuerier{ctx: ctx, req: q.Req, handler: q.Handler, responseHeaders: map[string][]string{}}
 	return q.shardedQuerier, nil
 }
 
+// getResponseHeaders returns the merged response headers received by the downstream
+// when running the embedded queries.
 func (q *ShardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 	q.shardedQuerier.responseHeadersMtx.Lock()
 	defer q.shardedQuerier.responseHeadersMtx.Unlock()
@@ -50,7 +52,9 @@ func (q *ShardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 	return headers
 }
 
-// ShardedQuerier is a an implementor of the Querier interface.
+// ShardedQuerier implements the storage.Querier interface with capabilities to parse the embedded queries
+// from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
+// through the downstream handler.
 type ShardedQuerier struct {
 	ctx     context.Context
 	req     Request
