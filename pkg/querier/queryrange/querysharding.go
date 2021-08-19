@@ -79,7 +79,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	// then we should fallback to execute it via queriers.
 	if err != nil || shardedQuery == "" {
 		if err != nil {
-			level.Error(s.logger).Log("msg", "failed to rewrite the input query into a shardable query", "query", r.GetQuery(), "err", err)
+			level.Warn(s.logger).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
 		}
 
 		return s.next.Do(ctx, r)
