@@ -21,58 +21,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
-
-func sampleMatrixResponse() *PrometheusResponse {
-	return &PrometheusResponse{
-		Status: StatusSuccess,
-		Data: PrometheusData{
-			ResultType: string(parser.ValueTypeMatrix),
-			Result: []SampleStream{
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a1"},
-						{Name: "b", Value: "b1"},
-					},
-					Samples: []mimirpb.Sample{
-						{
-							TimestampMs: 5,
-							Value:       1,
-						},
-						{
-							TimestampMs: 10,
-							Value:       2,
-						},
-					},
-				},
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "a", Value: "a1"},
-						{Name: "b", Value: "b1"},
-					},
-					Samples: []mimirpb.Sample{
-						{
-							TimestampMs: 5,
-							Value:       8,
-						},
-						{
-							TimestampMs: 10,
-							Value:       9,
-						},
-					},
-				},
-			},
-		},
-	}
-}
 
 func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
 	return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
@@ -82,17 +37,6 @@ func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
 
 		return resp, err
 	})
-}
-
-func defaultReq() *PrometheusRequest {
-	return &PrometheusRequest{
-		Path:    "/query_range",
-		Start:   00,
-		End:     10,
-		Step:    5,
-		Timeout: time.Minute,
-		Query:   `sum(rate(http_requests_total{}[5m]))`,
-	}
 }
 
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
