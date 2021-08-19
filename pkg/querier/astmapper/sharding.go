@@ -127,58 +127,37 @@ func (summer *shardSummer) shardAggregate(expr *parser.AggregateExpr) (mapped pa
 
 // shardSum attempts to shard the given SUM aggregation expression.
 func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (result parser.Node, err error) {
-	var (
-		parent   *parser.AggregateExpr
-		children []parser.Node
-	)
-	parent = &parser.AggregateExpr{
-		Op:    expr.Op,
-		Param: expr.Param,
-	}
-	var mkChild func(sharded *parser.AggregateExpr) parser.Expr
+	/*
+		parallelizing a sum using without(foo) is representable naively as
+		sum without(foo) (
+		  sum without(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+		  sum without(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
+		)
 
-	if expr.Without {
-		/*
-			parallelizing a sum using without(foo) is representable naively as
-			sum without(foo) (
-			  sum without(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum without(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
-			)
-		*/
-		parent.Grouping = expr.Grouping
-		parent.Without = true
-		mkChild = func(sharded *parser.AggregateExpr) parser.Expr {
-			sharded.Grouping = expr.Grouping
-			sharded.Without = true
-			return sharded
-		}
-	} else if len(expr.Grouping) > 0 {
-		/*
-			parallelizing a sum using by(foo) is representable as
-			sum by(foo) (
-			  sum by(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum by(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
-			)
-		*/
-		parent.Grouping = expr.Grouping
-		mkChild = func(sharded *parser.AggregateExpr) parser.Expr {
-			sharded.Grouping = expr.Grouping
-			return sharded
-		}
-	} else {
-		/*
-			parallelizing a non-parameterized sum is representable as
-			sum(
-			  sum (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
-			  sum (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
-			)
-		*/
-		mkChild = func(sharded *parser.AggregateExpr) parser.Expr {
-			return sharded
-		}
+		parallelizing a sum using by(foo) is representable as
+		sum by(foo) (
+		  sum by(foo) (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+		  sum by(foo) (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
+		)
+
+		parallelizing a non-parameterized sum is representable as
+		sum(
+		  sum (rate(bar1{__query_shard__="0_of_2",baz="blip"}[1m])) or
+		  sum (rate(bar1{__query_shard__="1_of_2",baz="blip"}[1m]))
+		)
+	*/
+
+	// Create the parent expression. We need to preserve the grouping as it was in the original one.
+	parent := &parser.AggregateExpr{
+		Op:       expr.Op,
+		Param:    expr.Param,
+		Grouping: expr.Grouping,
+		Without:  expr.Without,
 	}
 
-	// iterate across shardFactor to create children
+	// Add a sub-query for each shard.
+	children := make([]parser.Node, 0, summer.shards)
+
 	for i := 0; i < summer.shards; i++ {
 		cloned, err := CloneNode(expr.Expr)
 		if err != nil {
@@ -191,14 +170,15 @@ func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (result parser.N
 			return nil, err
 		}
 
-		subSum := mkChild(&parser.AggregateExpr{
-			Op:   expr.Op,
-			Expr: sharded.(parser.Expr),
+		// Create the child expression, which runs the sum() aggregation
+		// on a single shard. We need to preserve the grouping as it was
+		// in the original one.
+		children = append(children, &parser.AggregateExpr{
+			Op:       expr.Op,
+			Expr:     sharded.(parser.Expr),
+			Grouping: expr.Grouping,
+			Without:  expr.Without,
 		})
-
-		children = append(children,
-			subSum,
-		)
 	}
 
 	summer.recordShards(float64(summer.shards))
