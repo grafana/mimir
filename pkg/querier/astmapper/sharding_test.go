@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Mapping(t *testing.T) {
+func TestShardSummer(t *testing.T) {
 	for _, tt := range []struct {
 		in  string
 		out string
@@ -37,15 +37,29 @@ func Test_Mapping(t *testing.T) {
 				) + `)`,
 		},
 		{
-			"sum(rate(bar1[1m])) or rate(bar1[1m])",
+			"sum(rate(bar1[1m])) or rate(bar2[1m])",
 			`sum(` +
 				concat(
 					`sum(rate(bar1{__query_shard__="0_of_3"}[1m]))`,
 					`sum(rate(bar1{__query_shard__="1_of_3"}[1m]))`,
 					`sum(rate(bar1{__query_shard__="2_of_3"}[1m]))`,
 				) + `) or ` + concat(
-				`rate(bar1[1m])`,
+				`rate(bar2[1m])`,
 			),
+		},
+		{
+			"sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
+			`sum(` +
+				concat(
+					`sum(rate(bar1{__query_shard__="0_of_3"}[1m]))`,
+					`sum(rate(bar1{__query_shard__="1_of_3"}[1m]))`,
+					`sum(rate(bar1{__query_shard__="2_of_3"}[1m]))`,
+				) + `) or sum(` +
+				concat(
+					`sum(rate(bar2{__query_shard__="0_of_3"}[1m]))`,
+					`sum(rate(bar2{__query_shard__="1_of_3"}[1m]))`,
+					`sum(rate(bar2{__query_shard__="2_of_3"}[1m]))`,
+				) + `)`,
 		},
 		{
 			`histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
@@ -255,10 +269,7 @@ func Test_Mapping(t *testing.T) {
 			require.NoError(t, err)
 			mapped, _, err := mapper.Map(expr)
 			require.NoError(t, err)
-			require.Equal(t,
-				out.String(),
-				mapped.String(),
-			)
+			require.Equal(t, out.String(), mapped.String())
 		})
 	}
 }
