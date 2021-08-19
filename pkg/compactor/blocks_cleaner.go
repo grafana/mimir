@@ -30,11 +30,10 @@ import (
 )
 
 type BlocksCleanerConfig struct {
-	DeletionDelay                      time.Duration
-	CleanupInterval                    time.Duration
-	CleanupConcurrency                 int
-	BlockDeletionMarksMigrationEnabled bool          // TODO Discuss whether we should remove it in Cortex 1.8.0 and document that upgrading to 1.7.0 before 1.8.0 is required.
-	TenantCleanupDelay                 time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeletionDelay      time.Duration
+	CleanupInterval    time.Duration
+	CleanupConcurrency int
+	TenantCleanupDelay time.Duration // Delay before removing tenant deletion mark and "debug".
 }
 
 type BlocksCleaner struct {
@@ -129,22 +128,22 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, use
 func (c *BlocksCleaner) starting(ctx context.Context) error {
 	// Run a cleanup so that any other service depending on this service
 	// is guaranteed to start once the initial cleanup has been done.
-	c.runCleanup(ctx, true)
+	c.runCleanup(ctx)
 
 	return nil
 }
 
 func (c *BlocksCleaner) ticker(ctx context.Context) error {
-	c.runCleanup(ctx, false)
+	c.runCleanup(ctx)
 
 	return nil
 }
 
-func (c *BlocksCleaner) runCleanup(ctx context.Context, firstRun bool) {
+func (c *BlocksCleaner) runCleanup(ctx context.Context) {
 	level.Info(c.logger).Log("msg", "started blocks cleanup and maintenance")
 	c.runsStarted.Inc()
 
-	if err := c.cleanUsers(ctx, firstRun); err == nil {
+	if err := c.cleanUsers(ctx); err == nil {
 		level.Info(c.logger).Log("msg", "successfully completed blocks cleanup and maintenance")
 		c.runsCompleted.Inc()
 		c.runsLastSuccess.SetToCurrentTime()
@@ -157,7 +156,7 @@ func (c *BlocksCleaner) runCleanup(ctx context.Context, firstRun bool) {
 	}
 }
 
-func (c *BlocksCleaner) cleanUsers(ctx context.Context, firstRun bool) error {
+func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 	users, deleted, err := c.usersScanner.ScanUsers(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to discover users from bucket")
@@ -184,7 +183,7 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context, firstRun bool) error {
 		if isDeleted[userID] {
 			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID), "failed to delete user marked for deletion: %s", userID)
 		}
-		return errors.Wrapf(c.cleanUser(ctx, userID, firstRun), "failed to delete blocks for user: %s", userID)
+		return errors.Wrapf(c.cleanUser(ctx, userID), "failed to delete blocks for user: %s", userID)
 	})
 }
 
@@ -291,7 +290,7 @@ func (c *BlocksCleaner) deleteUserMarkedForDeletion(ctx context.Context, userID 
 	return nil
 }
 
-func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, firstRun bool) (returnErr error) {
+func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr error) {
 	userLogger := util_log.WithUserID(userID, c.logger)
 	userBucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	startTime := time.Now()
@@ -304,15 +303,6 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string, firstRun b
 			level.Info(userLogger).Log("msg", "completed blocks cleanup and maintenance", "duration", time.Since(startTime))
 		}
 	}()
-
-	// Migrate block deletion marks to the global markers location. This operation is a best-effort.
-	if firstRun && c.cfg.BlockDeletionMarksMigrationEnabled {
-		if err := bucketindex.MigrateBlockDeletionMarksToGlobalLocation(ctx, c.bucketClient, userID, c.cfgProvider); err != nil {
-			level.Warn(userLogger).Log("msg", "failed to migrate block deletion marks to the global markers location", "err", err)
-		} else {
-			level.Info(userLogger).Log("msg", "migrated block deletion marks to the global markers location")
-		}
-	}
 
 	// Read the bucket index.
 	idx, err := bucketindex.ReadIndex(ctx, c.bucketClient, userID, c.cfgProvider, c.logger)

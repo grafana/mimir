@@ -5055,13 +5055,6 @@ The `compactor_config` configures the compactor for the blocks storage.
 # CLI flag: -compactor.tenant-cleanup-delay
 [tenant_cleanup_delay: <duration> | default = 6h]
 
-# When enabled, at compactor startup the bucket will be scanned and all found
-# deletion marks inside the block location will be copied to the markers global
-# location too. This option can (and should) be safely disabled as soon as the
-# compactor has successfully run at least once.
-# CLI flag: -compactor.block-deletion-marks-migration-enabled
-[block_deletion_marks_migration_enabled: <boolean> | default = true]
-
 # Comma separated list of tenants that can be compacted. If specified, only
 # these tenants will be compacted by compactor, otherwise all tenants can be
 # compacted. Subject to sharding.
