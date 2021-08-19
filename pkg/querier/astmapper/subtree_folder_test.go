@@ -6,7 +6,6 @@
 package astmapper
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/pkg/errors"
@@ -14,93 +13,90 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestPredicate(t *testing.T) {
-	for i, tc := range []struct {
-		input    string
-		fn       predicate
-		expected bool
-		err      bool
+func TestEvalPredicate(t *testing.T) {
+	for testName, tc := range map[string]struct {
+		input       string
+		fn          predicate
+		expectedRes bool
+		expectedErr bool
 	}{
-		{
+		"should return error if the predicate returns error": {
 			input: "selector1{} or selector2{}",
-			fn: predicate(func(node parser.Node) (bool, error) {
+			fn: func(node parser.Node) (bool, error) {
 				return false, errors.New("some err")
-			}),
-			expected: false,
-			err:      true,
+			},
+			expectedRes: false,
+			expectedErr: true,
 		},
-		{
+		"should return false if the predicate returns false for all nodes in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: predicate(func(node parser.Node) (bool, error) {
+			fn: func(node parser.Node) (bool, error) {
 				return false, nil
-			}),
-			expected: false,
-			err:      false,
+			},
+			expectedRes: false,
+			expectedErr: false,
 		},
-		{
+		"should return true if the predicate returns true for at least 1 node in the subtree": {
 			input: "selector1{} or selector2{}",
-			fn: predicate(func(node parser.Node) (bool, error) {
-				return true, nil
-			}),
-			expected: true,
-			err:      false,
+			fn: func(node parser.Node) (bool, error) {
+				// Return true only for 1 node in the subtree.
+				if node.String() == "selector1" {
+					return true, nil
+				}
+				return false, nil
+			},
+			expectedRes: true,
+			expectedErr: false,
 		},
-		{
-			input:    `sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"}) or sum(selector)`,
-			fn:       predicate(isEmbedded),
-			expected: true,
-			err:      false,
+		"hasEmbeddedQueries()": {
+			input:       `sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"}) or sum(selector)`,
+			fn:          hasEmbeddedQueries,
+			expectedRes: true,
+			expectedErr: false,
 		},
 	} {
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(testName, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
 
-			res, err := Predicate(expr.(parser.Node), tc.fn)
-			if tc.err {
+			res, err := EvalPredicate(expr.(parser.Node), tc.fn)
+			if tc.expectedErr {
 				require.Error(t, err)
 			} else {
 				require.Nil(t, err)
 			}
 
-			require.Equal(t, tc.expected, res)
+			require.Equal(t, tc.expectedRes, res)
 		})
 	}
 }
 
-func TestSubtreeMapper(t *testing.T) {
-	for i, tc := range []struct {
+func TestSubtreeFolder(t *testing.T) {
+	for testName, tc := range map[string]struct {
 		input    string
 		expected string
 	}{
-		// embed an entire histogram
-		{
+		"embed an entire histogram": {
 			input:    "histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))",
 			expected: `__embedded_queries__{__cortex_queries__="{\"Concat\":[\"histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))\"]}"}`,
 		},
-		// embed a binary expression across two functions
-		{
+		"embed a binary expression across two functions": {
 			input:    `rate(http_requests_total{cluster="eu-west2"}[5m]) or rate(http_requests_total{cluster="us-central1"}[5m])`,
 			expected: `__embedded_queries__{__cortex_queries__="{\"Concat\":[\"rate(http_requests_total{cluster=\\\"eu-west2\\\"}[5m]) or rate(http_requests_total{cluster=\\\"us-central1\\\"}[5m])\"]}"}`,
 		},
-
-		// the first leg (histogram) hasn't been embedded at any level, so embed that, but ignore the right leg
-		// which has already been embedded.
-		{
+		"embed one out of two legs of the query (right leg has already been embedded)": {
 			input: `sum(histogram_quantile(0.5, rate(selector[1m]))) +
 				sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})`,
 			expected: `
 			  __embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum(histogram_quantile(0.5, rate(selector[1m])))\"]}"} +
-			  sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})
-`,
+			  sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})`,
 		},
-		// should not embed scalars
-		{
+		"should not embed scalars": {
 			input:    `histogram_quantile(0.5, __embedded_queries__{__cortex_queries__="tstquery"})`,
 			expected: `histogram_quantile(0.5, __embedded_queries__{__cortex_queries__="tstquery"})`,
 		},
 	} {
-		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
+		t.Run(testName, func(t *testing.T) {
 			mapper := newSubtreeFolder()
 
 			expr, err := parser.ParseExpr(tc.input)

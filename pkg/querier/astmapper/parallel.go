@@ -50,7 +50,7 @@ func CanParallelize(node parser.Node) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := Predicate(n.Expr, func(node parser.Node) (bool, error) {
+		nestedAggrs, err := EvalPredicate(n.Expr, func(node parser.Node) (bool, error) {
 			_, ok := node.(*parser.AggregateExpr)
 			return ok, nil
 		})
