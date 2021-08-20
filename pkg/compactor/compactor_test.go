@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -39,7 +40,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/concurrency"
@@ -818,14 +818,12 @@ func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunni
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
 	bucketClient.MockUpload("user-2/bucket-index.json.gz", nil)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
 	cfg := prepareConfig()
 	cfg.ShardingEnabled = true
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = ringStore
+	cfg.ShardingRing.KVStore.Mock = consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+
 	c, _, tsdbPlanner, logs, _ := prepare(t, cfg, bucketClient)
 
 	// Mock the planner as if there's no compaction to do,
@@ -897,8 +895,7 @@ func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndM
 	}
 
 	// Create a shared KV Store
-	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	kvstore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 	// Create two compactors
 	var compactors []*Compactor
@@ -1217,8 +1214,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	}
 
 	// Create a shared KV Store
-	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	kvstore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 	// Create two compactors
 	var compactors []*Compactor
@@ -1292,14 +1288,11 @@ func TestCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{}, nil)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
 	cfg := prepareConfig()
 	cfg.ShardingEnabled = true
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
-	cfg.ShardingRing.KVStore.Mock = ringStore
+	cfg.ShardingRing.KVStore.Mock = consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 	// Set ObservePeriod to longer than the timeout period to mock a timeout while waiting on ring to become ACTIVE
 	cfg.ShardingRing.ObservePeriod = time.Second * 10
@@ -1316,4 +1309,11 @@ func TestCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
 		`level=error component=compactor msg="compactor failed to become ACTIVE in the ring" err="context deadline exceeded"`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+}
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
 }

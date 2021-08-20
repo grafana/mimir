@@ -264,6 +264,10 @@ query_scheduler:
 The `server_config` configures the HTTP and gRPC server of the launched service(s).
 
 ```yaml
+# HTTP server listen network, default tcp
+# CLI flag: -server.http-listen-network
+[http_listen_network: <string> | default = "tcp"]
+
 # HTTP server listen address.
 # CLI flag: -server.http-listen-address
 [http_listen_address: <string> | default = ""]
@@ -275,6 +279,10 @@ The `server_config` configures the HTTP and gRPC server of the launched service(
 # Maximum number of simultaneous http connections, <=0 to disable
 # CLI flag: -server.http-conn-limit
 [http_listen_conn_limit: <int> | default = 0]
+
+# gRPC server listen network
+# CLI flag: -server.grpc-listen-network
+[grpc_listen_network: <string> | default = "tcp"]
 
 # gRPC server listen address.
 # CLI flag: -server.grpc-listen-address
@@ -3805,9 +3813,7 @@ The `memberlist_config` configures the Gossip memberlist.
 [compression_enabled: <boolean> | default = true]
 
 # Other cluster members to join. Can be specified multiple times. It can be an
-# IP, hostname or an entry specified in the DNS Service Discovery format (see
-# https://cortexmetrics.io/docs/configuration/arguments/#dns-service-discovery
-# for more details).
+# IP, hostname or an entry specified in the DNS Service Discovery format.
 # CLI flag: -memberlist.join
 [join_members: <list of string> | default = []]
 

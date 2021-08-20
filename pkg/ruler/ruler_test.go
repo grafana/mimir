@@ -23,6 +23,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,8 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/objectclient"
@@ -54,11 +54,8 @@ func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()
 	// Create a new temporary directory for the rules, so that
 	// each test will run in isolation.
 	rulesDir, _ := ioutil.TempDir("/tmp", "ruler-tests")
-
 	codec := ring.GetCodec()
-	consul, closer := consul.NewInMemoryClient(codec)
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+	consul := consul.NewInMemoryClient(codec, testLogger{})
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.RulePath = rulesDir
@@ -647,8 +644,7 @@ func TestSharding(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+			kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{
@@ -954,4 +950,11 @@ func TestSendAlerts(t *testing.T) {
 			SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
 	}
+}
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
 }

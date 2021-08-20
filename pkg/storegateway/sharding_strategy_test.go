@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,7 +22,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -247,8 +247,7 @@ func TestDefaultShardingStrategy(t *testing.T) {
 			t.Parallel()
 
 			ctx := context.Background()
-			store, closer := consul.NewInMemoryClient(ring.GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+			store := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 			// Initialize the ring state.
 			require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
@@ -605,8 +604,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 			t.Parallel()
 
 			ctx := context.Background()
-			store, closer := consul.NewInMemoryClient(ring.GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+			store := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 			// Initialize the ring state.
 			require.NoError(t, store.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {

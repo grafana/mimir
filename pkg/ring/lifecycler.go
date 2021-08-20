@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	perrors "github.com/pkg/errors"
@@ -22,7 +23,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/log"
@@ -165,6 +165,7 @@ func NewLifecycler(cfg LifecyclerConfig, flushTransferer FlushTransferer, ringNa
 		cfg.RingConfig.KVStore,
 		codec,
 		kv.RegistererWithKVName(reg, ringName+"-lifecycler"),
+		log.Logger,
 	)
 	if err != nil {
 		return nil, err

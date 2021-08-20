@@ -240,3 +240,10 @@ func testLimiter(t *testing.T, limits Limits, ops []callbackOp) {
 		assert.Equal(t, op.expectedTotalSize, totalSize, "wrong total size, op %d", ix)
 	}
 }
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
+}

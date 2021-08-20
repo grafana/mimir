@@ -1008,3 +1008,10 @@ func defaultLimitsConfig() validation.Limits {
 	flagext.DefaultValues(&limits)
 	return limits
 }
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
+}

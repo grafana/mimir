@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -43,7 +44,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -139,9 +139,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			gatewayCfg := mockGatewayConfig()
 			gatewayCfg.ShardingEnabled = true
 			storageCfg := mockStorageConfig(t)
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+			ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			bucketClient := &bucket.ClientMock{}
 
 			// Setup the initial instance state in the ring.
@@ -214,9 +212,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	gatewayCfg := mockGatewayConfig()
 	gatewayCfg.ShardingEnabled = true
 	storageCfg := mockStorageConfig(t)
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+	ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 	bucketClient := &bucket.ClientMock{}
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
@@ -318,11 +314,10 @@ func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
 				t.Log("random generator seed:", seed)
 
 				ctx := context.Background()
-				ringStore, closer := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consul.Config{
+				ringStore := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consul.Config{
 					MaxCasRetries: 20,
 					CasRetryDelay: 500 * time.Millisecond,
-				})
-				t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+				}, testLogger{})
 
 				// Create the configured number of gateways.
 				var gateways []*StoreGateway
@@ -423,8 +418,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	t.Log("random generator seed:", seed)
 
 	ctx := context.Background()
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 
 	// Create the configured number of gateways.
 	var initialGateways []*StoreGateway
@@ -598,9 +592,7 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 			gatewayCfg.ShardingRing.TokensFilePath = tokensFile.Name()
 
 			storageCfg := mockStorageConfig(t)
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+			ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", []string{}, nil)
 
@@ -727,9 +719,7 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 			storageCfg.BucketStore.SyncInterval = time.Hour // Do not trigger the periodic sync in this test.
 
 			reg := prometheus.NewPedanticRegistry()
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+			ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", []string{}, nil)
 
@@ -790,9 +780,7 @@ func TestStoreGateway_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testin
 
 	storageCfg := mockStorageConfig(t)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+	ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{}, nil)
 
@@ -1293,4 +1281,11 @@ func createBucketIndex(t *testing.T, bkt objstore.Bucket, userID string) *bucket
 	require.NoError(t, bucketindex.WriteIndex(context.Background(), bkt, userID, nil, idx))
 
 	return idx
+}
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
 }

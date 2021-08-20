@@ -18,23 +18,21 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
-	"github.com/stretchr/testify/assert"
-
-	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
-	"github.com/grafana/mimir/pkg/util/flagext"
-	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/test"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
+	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/mimir/pkg/util/flagext"
+	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributor_DistributeRequest(t *testing.T) {
@@ -342,9 +340,7 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 		amByAddr[a.myAddr] = ams[i]
 	}
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+	kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 	err := kvStore.CAS(context.Background(), RingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{

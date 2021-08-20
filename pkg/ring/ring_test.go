@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ring/kv"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -1951,8 +1951,7 @@ func TestRingUpdates(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			inmem, closer := consul.NewInMemoryClient(GetCodec())
-			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+			inmem := consul.NewInMemoryClient(GetCodec(), testLogger{})
 
 			cfg := Config{
 				KVStore:           kv.Config{Mock: inmem},
@@ -2044,11 +2043,10 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 // This test checks if shuffle-sharded ring can be reused, and whether it receives
 // updates from "main" ring.
 func TestShuffleShardWithCaching(t *testing.T) {
-	inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
+	inmem := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,
-	})
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+	}, testLogger{})
 
 	cfg := Config{
 		KVStore:              kv.Config{Mock: inmem},
@@ -2156,4 +2154,11 @@ func userToken(user, zone string, skip int) uint32 {
 		_ = r.Uint32()
 	}
 	return r.Uint32()
+}
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
 }

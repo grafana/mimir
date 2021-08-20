@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,8 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/ring"
 	ring_client "github.com/grafana/mimir/pkg/ring/client"
-	"github.com/grafana/mimir/pkg/ring/kv"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -690,11 +690,7 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 				})
 				defer stopAll(ds, r)
 				codec := GetReplicaDescCodec()
-
-				ringStore, closer := consul.NewInMemoryClient(codec)
-				t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
-				mock := kv.PrefixClient(ringStore, "prefix")
+				mock := kv.PrefixClient(consul.NewInMemoryClient(codec, testLogger{}), "prefix")
 				d := ds[0]
 
 				if tc.enableTracker {
@@ -1591,9 +1587,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		b.Run(testName, func(b *testing.B) {
 
 			// Create an in-memory KV store for the ring with 1 ingester registered.
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-			b.Cleanup(func() { assert.NoError(b, closer.Close()) })
-
+			kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
@@ -2041,9 +2035,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, *rin
 		ingestersByAddr[addr] = &ingesters[i]
 	}
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
-	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-
+	kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 	err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{
@@ -2837,4 +2829,11 @@ func countMockIngestersCalls(ingesters []mockIngester, name string) int {
 		}
 	}
 	return count
+}
+
+type testLogger struct {
+}
+
+func (l testLogger) Log(...interface{}) error {
+	return nil
 }

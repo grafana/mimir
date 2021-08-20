@@ -10,7 +10,6 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
 	github.com/alicebob/miniredis/v2 v2.14.3
-	github.com/armon/go-metrics v0.3.6
 	github.com/aws/aws-sdk-go v1.40.10
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash v1.1.0
@@ -24,16 +23,12 @@ require (
 	github.com/go-redis/redis/v8 v8.9.0
 	github.com/gocql/gocql v0.0.0-20200526081602-cd04bd7f22a7
 	github.com/gogo/protobuf v1.3.2
-	github.com/gogo/status v1.0.3
+	github.com/gogo/status v1.1.0
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210818123532-6645f87e9e12
-	github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
-	github.com/hashicorp/consul/api v1.9.1
-	github.com/hashicorp/go-cleanhttp v0.5.1
-	github.com/hashicorp/go-sockaddr v1.0.2
-	github.com/hashicorp/memberlist v0.2.3
+	github.com/grafana/dskit v0.0.0-20210820144809-22d3c35938ff
+	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.10
@@ -55,11 +50,8 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
-	github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
-	go.etcd.io/bbolt v1.3.5
-	go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
-	go.etcd.io/etcd/client/v3 v3.5.0
-	go.etcd.io/etcd/server/v3 v3.5.0-alpha.0.0.20210225194612-fa82d11a958a
+	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a
+	go.etcd.io/bbolt v1.3.6
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.10
 	golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985
