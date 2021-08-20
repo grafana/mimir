@@ -213,6 +213,22 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 						createAggrChunkWithSineSamples(now.Add(30*time.Second), now.Add(30*time.Second-5*time.Millisecond), 5*time.Millisecond), // empty
 					},
 				},
+				// Two adjacent ranges with overlapping chunks in each range. Each overlapping chunk in a
+				// range have +1 sample at +1ms timestamp compared to the previous one.
+				{
+					Labels: mkZLabels("__name__", "overlapping_chunks_with_additional_samples_in_sequence"),
+					Chunks: []storepb.AggrChunk{
+						// Range #1: [now, now+4ms]
+						createAggrChunkWithSineSamples(now, now.Add(1*time.Millisecond), time.Millisecond),
+						createAggrChunkWithSineSamples(now, now.Add(2*time.Millisecond), time.Millisecond),
+						createAggrChunkWithSineSamples(now, now.Add(3*time.Millisecond), time.Millisecond),
+						createAggrChunkWithSineSamples(now, now.Add(4*time.Millisecond), time.Millisecond),
+						// Range #2: [now+5ms, now+7ms]
+						createAggrChunkWithSineSamples(now.Add(5*time.Millisecond), now.Add(5*time.Millisecond), time.Millisecond),
+						createAggrChunkWithSineSamples(now.Add(5*time.Millisecond), now.Add(6*time.Millisecond), time.Millisecond),
+						createAggrChunkWithSineSamples(now.Add(5*time.Millisecond), now.Add(7*time.Millisecond), time.Millisecond),
+					},
+				},
 			},
 		}
 	}
@@ -241,6 +257,9 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{
 				{now, now.Add(30*time.Second - 5*time.Millisecond)},
 			}, 6000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping_chunks_with_additional_samples_in_sequence"), time.Millisecond, []timeRange{
+				{now, now.Add(7 * time.Millisecond)},
+			}, 8, callAtEvery, advance)
 
 			require.False(t, ss.Next())
 		})
@@ -266,6 +285,9 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{
 				{now, now.Add(30*time.Second - 5*time.Millisecond)},
 			}, 6000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping_chunks_with_additional_samples_in_sequence"), time.Millisecond, []timeRange{
+				{now, now.Add(7 * time.Millisecond)},
+			}, 8, callAtEvery, advance)
 
 			require.False(t, ss.Next())
 		})
@@ -298,6 +320,9 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 			verifyNextSeries(t, ss, labels.FromStrings("__name__", "many_empty_chunks"), 5*time.Millisecond, []timeRange{
 				{now, now.Add(30*time.Second - 5*time.Millisecond)},
 			}, 6000, callAtEvery, advance)
+			verifyNextSeries(t, ss, labels.FromStrings("__name__", "overlapping_chunks_with_additional_samples_in_sequence"), time.Millisecond, []timeRange{
+				{now, now.Add(7 * time.Millisecond)},
+			}, 8, callAtEvery, advance)
 
 			require.False(t, ss.Next())
 		})
