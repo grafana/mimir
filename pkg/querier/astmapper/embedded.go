@@ -24,9 +24,10 @@ be remapped into vector or matrix selectors utilizing a reserved label containin
 */
 
 const (
-	// QueryLabel is a reserved label containing an embedded query
-	QueryLabel = "__cortex_queries__"
-	// EmbeddedQueriesMetricName is a reserved label (metric name) denoting an embedded query
+	// EmbeddedQueriesLabelName is a reserved label name containing embedded queries.
+	EmbeddedQueriesLabelName = "__queries__"
+
+	// EmbeddedQueriesMetricName is a reserved metric name denoting a special metric which contains embedded queries.
 	EmbeddedQueriesMetricName = "__embedded_queries__"
 )
 
@@ -73,7 +74,7 @@ func vectorSquasher(nodes ...parser.Node) (parser.Expr, error) {
 		return nil, err
 	}
 
-	embeddedQuery, err := labels.NewMatcher(labels.MatchEqual, QueryLabel, encoded)
+	embeddedQuery, err := labels.NewMatcher(labels.MatchEqual, EmbeddedQueriesLabelName, encoded)
 	if err != nil {
 		return nil, err
 	}
