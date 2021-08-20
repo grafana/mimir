@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type querySharding struct {
@@ -72,6 +73,9 @@ func NewQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
+	defer log.Span.Finish()
+
 	s.shardingAttempts.Inc()
 	shardedQuery, err := s.shardQuery(r.GetQuery())
 
@@ -79,13 +83,15 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	// then we should fallback to execute it via queriers.
 	if err != nil || shardedQuery == "" {
 		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
+			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
+		} else {
+			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query", "query", r.GetQuery())
 		}
 
 		return s.next.Do(ctx, r)
 	}
 
-	level.Debug(s.logger).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
+	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
 	s.shardingSuccesses.Inc()
 
 	r = r.WithQuery(shardedQuery)
