@@ -504,6 +504,50 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
 			`,
 		},
+		"should succeed with a request containing only metadata": {
+			maxExemplars: 1,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Metadata: []*mimirpb.MetricMetadata{
+						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+					},
+				},
+			},
+			expectedErr:      nil,
+			expectedIngested: nil,
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+			},
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_head_active_appenders",
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 0
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total 0
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 0
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_tsdb_head_active_appenders Number of currently active TSDB appender transactions.
+				# TYPE cortex_ingester_tsdb_head_active_appenders gauge
+				cortex_ingester_tsdb_head_active_appenders 0
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
