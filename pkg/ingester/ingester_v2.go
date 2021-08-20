@@ -740,11 +740,6 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		}
 	}
 
-	db, err := i.getOrCreateTSDB(userID, false)
-	if err != nil {
-		return nil, wrapWithUser(err, userID)
-	}
-
 	// Ensure the ingester shutdown procedure hasn't started
 	i.userStatesMtx.RLock()
 	if i.stopped {
@@ -753,14 +748,19 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	}
 	i.userStatesMtx.RUnlock()
 
+	// Given metadata is a best-effort approach, and we don't halt on errors
+	// process it before samples. Otherwise, we risk returning an error before ingestion.
+	ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata())
+
+	db, err := i.getOrCreateTSDB(userID, false)
+	if err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
 	if err := db.acquireAppendLock(); err != nil {
 		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
 	}
 	defer db.releaseAppendLock()
-
-	// Given metadata is a best-effort approach, and we don't halt on errors
-	// process it before samples. Otherwise, we risk returning an error before ingestion.
-	ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata())
 
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
