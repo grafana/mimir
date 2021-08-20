@@ -76,126 +76,129 @@ func TestQueryShardingCorrectness(t *testing.T) {
 	)
 
 	tests := map[string]struct {
-		query             string
-		expectedShardable bool
+		query string
+
+		// Expected number of sharded queries per shard (the final expected
+		// number will be multiplied for the number of shards).
+		expectedShardedQueries int
 	}{
 		"sum() no grouping": {
-			query:             `sum(metric_counter)`,
-			expectedShardable: true,
+			query:                  `sum(metric_counter)`,
+			expectedShardedQueries: 1,
 		},
 		"sum() grouping 'by'": {
-			query:             `sum by(group_1) (metric_counter)`,
-			expectedShardable: true,
+			query:                  `sum by(group_1) (metric_counter)`,
+			expectedShardedQueries: 1,
 		},
 		"sum() grouping 'without'": {
-			query:             `sum without(unique) (metric_counter)`,
-			expectedShardable: true,
+			query:                  `sum without(unique) (metric_counter)`,
+			expectedShardedQueries: 1,
 		},
 		"sum(rate()) no grouping": {
-			query:             `sum(rate(metric_counter[1m]))`,
-			expectedShardable: true,
+			query:                  `sum(rate(metric_counter[1m]))`,
+			expectedShardedQueries: 1,
 		},
 		"sum(rate()) grouping 'by'": {
-			query:             `sum by(group_1) (rate(metric_counter[1m]))`,
-			expectedShardable: true,
+			query:                  `sum by(group_1) (rate(metric_counter[1m]))`,
+			expectedShardedQueries: 1,
 		},
 		"sum(rate()) grouping 'without'": {
-			query:             `sum without(unique) (rate(metric_counter[1m]))`,
-			expectedShardable: true,
+			query:                  `sum without(unique) (rate(metric_counter[1m]))`,
+			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() no grouping": {
-			query:             `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
-			expectedShardable: true,
+			query:                  `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
+			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() grouping 'by'": {
-			query:             `histogram_quantile(0.5, sum by(group_1, le) (rate(metric_histogram_bucket[1m])))`,
-			expectedShardable: true,
+			query:                  `histogram_quantile(0.5, sum by(group_1, le) (rate(metric_histogram_bucket[1m])))`,
+			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() grouping 'without'": {
-			query:             `histogram_quantile(0.5, sum without(group_1, group_2, unique) (rate(metric_histogram_bucket[1m])))`,
-			expectedShardable: true,
+			query:                  `histogram_quantile(0.5, sum without(group_1, group_2, unique) (rate(metric_histogram_bucket[1m])))`,
+			expectedShardedQueries: 1,
 		},
 		"min() no grouping": {
-			query:             `min(metric_counter{group_1="0"})`,
-			expectedShardable: true,
+			query:                  `min(metric_counter{group_1="0"})`,
+			expectedShardedQueries: 1,
 		},
 		"min() grouping 'by'": {
-			query:             `min by(group_2) (metric_counter{group_1="0"})`,
-			expectedShardable: true,
+			query:                  `min by(group_2) (metric_counter{group_1="0"})`,
+			expectedShardedQueries: 1,
 		},
 		"min() grouping 'without'": {
-			query:             `min without(unique) (metric_counter{group_1="0"})`,
-			expectedShardable: true,
+			query:                  `min without(unique) (metric_counter{group_1="0"})`,
+			expectedShardedQueries: 1,
 		},
 		"max() no grouping": {
-			query:             `max(metric_counter{group_1="0"})`,
-			expectedShardable: true,
+			query:                  `max(metric_counter{group_1="0"})`,
+			expectedShardedQueries: 1,
 		},
 		"max() grouping 'by'": {
-			query:             `max by(group_2) (metric_counter{group_1="0"})`,
-			expectedShardable: true,
+			query:                  `max by(group_2) (metric_counter{group_1="0"})`,
+			expectedShardedQueries: 1,
 		},
 		"max() grouping 'without'": {
-			query:             `max without(unique) (metric_counter{group_1="0"})`,
-			expectedShardable: true,
+			query:                  `max without(unique) (metric_counter{group_1="0"})`,
+			expectedShardedQueries: 1,
 		},
 		"count() no grouping": {
-			query:             `count(metric_counter)`,
-			expectedShardable: true,
+			query:                  `count(metric_counter)`,
+			expectedShardedQueries: 1,
 		},
 		"count() grouping 'by'": {
-			query:             `count by(group_2) (metric_counter)`,
-			expectedShardable: true,
+			query:                  `count by(group_2) (metric_counter)`,
+			expectedShardedQueries: 1,
 		},
 		"count() grouping 'without'": {
-			query:             `count without(unique) (metric_counter)`,
-			expectedShardable: true,
+			query:                  `count without(unique) (metric_counter)`,
+			expectedShardedQueries: 1,
 		},
 		"sum(count())": {
-			query:             `sum(count by(group_1) (metric_counter))`,
-			expectedShardable: true,
+			query:                  `sum(count by(group_1) (metric_counter))`,
+			expectedShardedQueries: 1,
 		},
 		"avg() no grouping": {
-			query:             `avg(metric_counter)`,
-			expectedShardable: true,
+			query:                  `avg(metric_counter)`,
+			expectedShardedQueries: 2, // avg() is parallelized as sum()/count().
 		},
 		"avg() grouping 'by'": {
-			query:             `avg by(group_2) (metric_counter)`,
-			expectedShardable: true,
+			query:                  `avg by(group_2) (metric_counter)`,
+			expectedShardedQueries: 2, // avg() is parallelized as sum()/count().
 		},
 		"avg() grouping 'without'": {
-			query:             `avg without(unique) (metric_counter)`,
-			expectedShardable: true,
+			query:                  `avg without(unique) (metric_counter)`,
+			expectedShardedQueries: 2, // avg() is parallelized as sum()/count().
 		},
 		"sum(min_over_time())": {
-			query:             `sum by (group_1, group_2) (min_over_time(metric_counter{const="fixed"}[2m]))`,
-			expectedShardable: true,
+			query:                  `sum by (group_1, group_2) (min_over_time(metric_counter{const="fixed"}[2m]))`,
+			expectedShardedQueries: 1,
 		},
 		"sum(max_over_time())": {
-			query:             `sum by (group_1, group_2) (max_over_time(metric_counter{const="fixed"}[2m]))`,
-			expectedShardable: true,
+			query:                  `sum by (group_1, group_2) (max_over_time(metric_counter{const="fixed"}[2m]))`,
+			expectedShardedQueries: 1,
 		},
 		"sum(avg_over_time())": {
-			query:             `sum by (group_1, group_2) (avg_over_time(metric_counter{const="fixed"}[2m]))`,
-			expectedShardable: true,
+			query:                  `sum by (group_1, group_2) (avg_over_time(metric_counter{const="fixed"}[2m]))`,
+			expectedShardedQueries: 1,
 		},
 		"or": {
-			query:             `sum(rate(metric_counter{group_1="0"}[1m])) or sum(rate(metric_counter{group_1="1"}[1m]))`,
-			expectedShardable: true,
+			query:                  `sum(rate(metric_counter{group_1="0"}[1m])) or sum(rate(metric_counter{group_1="1"}[1m]))`,
+			expectedShardedQueries: 2,
 		},
 		"and": {
 			query: `
 				sum without(unique) (rate(metric_counter{group_1="0"}[1m]))
 				and
 				max without(unique) (metric_counter) > 0`,
-			expectedShardable: true,
+			expectedShardedQueries: 2,
 		},
 		"sum(rate()) > avg(rate())": {
 			query: `
 				sum(rate(metric_counter[1m]))
 				>
 				avg(rate(metric_counter[1m]))`,
-			expectedShardable: true,
+			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
 		},
 		"nested count()": {
 			query: `sum(
@@ -203,31 +206,31 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				    count(metric_counter) by (group_1, group_2)
 				  ) by (group_1)
 				)`,
-			expectedShardable: true,
+			expectedShardedQueries: 1,
 		},
 
 		//
 		// The following queries are not expected to be shardable.
 		//
 		"stddev()": {
-			query:             `stddev(metric_counter{const="fixed"})`,
-			expectedShardable: false,
+			query:                  `stddev(metric_counter{const="fixed"})`,
+			expectedShardedQueries: 0,
 		},
 		"stdvar()": {
-			query:             `stdvar(metric_counter{const="fixed"})`,
-			expectedShardable: false,
+			query:                  `stdvar(metric_counter{const="fixed"})`,
+			expectedShardedQueries: 0,
 		},
 		"topk()": {
-			query:             `topk(2, metric_counter{const="fixed"})`,
-			expectedShardable: false,
+			query:                  `topk(2, metric_counter{const="fixed"})`,
+			expectedShardedQueries: 0,
 		},
 		"bottomk()": {
-			query:             `bottomk(2, metric_counter{const="fixed"})`,
-			expectedShardable: false,
+			query:                  `bottomk(2, metric_counter{const="fixed"})`,
+			expectedShardedQueries: 0,
 		},
 		"vector()": {
-			query:             `vector(1)`,
-			expectedShardable: false,
+			query:                  `vector(1)`,
+			expectedShardedQueries: 0,
 		},
 	}
 
@@ -309,7 +312,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 				// Ensure the query has been sharded/not sharded as expected.
 				expectedSharded := 0
-				if testData.expectedShardable {
+				if testData.expectedShardedQueries > 0 {
 					expectedSharded = 1
 				}
 
@@ -321,9 +324,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					# HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
 					# TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
 					cortex_frontend_query_sharding_rewrites_succeeded_total %d
-				`, expectedSharded)),
+
+					# HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
+					# TYPE cortex_frontend_sharded_queries_total counter
+					cortex_frontend_sharded_queries_total %d
+				`, expectedSharded, testData.expectedShardedQueries*numShards)),
 					"cortex_frontend_query_sharding_rewrites_attempted_total",
-					"cortex_frontend_query_sharding_rewrites_succeeded_total"))
+					"cortex_frontend_query_sharding_rewrites_succeeded_total",
+					"cortex_frontend_sharded_queries_total"))
 			})
 		}
 	}

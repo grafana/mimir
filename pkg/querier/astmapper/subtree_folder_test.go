@@ -101,7 +101,7 @@ func TestSubtreeFolder(t *testing.T) {
 
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
-			res, _, err := mapper.Map(expr)
+			res, err := mapper.Map(expr, NewMapperStats())
 			require.Nil(t, err)
 
 			expected, err := parser.ParseExpr(tc.expected)
