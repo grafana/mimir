@@ -65,7 +65,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
-					labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encoded),
+					labels.MustNewMatcher(labels.MatchEqual, astmapper.EmbeddedQueriesLabelName, encoded),
 				)
 				require.Nil(t, set.Err())
 			},
@@ -85,7 +85,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
-					labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encoded),
+					labels.MustNewMatcher(labels.MatchEqual, astmapper.EmbeddedQueriesLabelName, encoded),
 				)
 				require.EqualError(t, set.Err(), "SomeErr")
 			},
@@ -141,7 +141,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 					false,
 					nil,
 					labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
-					labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encoded),
+					labels.MustNewMatcher(labels.MatchEqual, astmapper.EmbeddedQueriesLabelName, encoded),
 				)
 				require.Nil(t, set.Err())
 				require.Equal(
@@ -229,7 +229,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 		false,
 		nil,
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", astmapper.EmbeddedQueriesMetricName),
-		labels.MustNewMatcher(labels.MatchEqual, astmapper.QueryLabel, encodedQueries),
+		labels.MustNewMatcher(labels.MatchEqual, astmapper.EmbeddedQueriesLabelName, encodedQueries),
 	)
 
 	require.NoError(t, seriesSet.Err())

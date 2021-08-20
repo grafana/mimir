@@ -76,7 +76,7 @@ func (q *ShardedQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*lab
 			isEmbedded = true
 		}
 
-		if matcher.Name == astmapper.QueryLabel {
+		if matcher.Name == astmapper.EmbeddedQueriesLabelName {
 			embeddedQuery = matcher.Value
 		}
 	}
