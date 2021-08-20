@@ -30,6 +30,7 @@
     * `cortex_bucket_store_series_hash_cache_requests_total`
     * `cortex_bucket_store_series_hash_cache_hits_total`
     * `cortex_frontend_query_sharding_rewrites_succeeded_total`
+    * `cortex_frontend_sharded_queries_per_query`
   * Renamed metrics:
     * `cortex_frontend_mapped_asts_total` to `cortex_frontend_query_sharding_rewrites_attempted_total`
 * [FEATURE] PromQL: added `present_over_time` support. #139

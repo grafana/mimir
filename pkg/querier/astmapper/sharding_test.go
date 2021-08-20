@@ -10,22 +10,26 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestShardSummer(t *testing.T) {
 	for _, tt := range []struct {
-		in  string
-		out string
+		in                     string
+		out                    string
+		expectedShardedQueries int
 	}{
 		{
 			`quantile(0.9,foo)`,
 			concat(`quantile(0.9,foo)`),
+			0,
 		},
 		{
 
 			`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
 			concat(`histogram_quantile(0.5,rate(bar1{baz="blip"}[30s]))`),
+			0,
 		},
 		{
 			`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
@@ -35,6 +39,7 @@ func TestShardSummer(t *testing.T) {
 					`sum by (foo,bar) (min_over_time(bar1{__query_shard__="1_of_3",baz="blip"}[1m]))`,
 					`sum by (foo,bar) (min_over_time(bar1{__query_shard__="2_of_3",baz="blip"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			"sum(rate(bar1[1m])) or rate(bar2[1m])",
@@ -46,6 +51,7 @@ func TestShardSummer(t *testing.T) {
 				) + `) or ` + concat(
 				`rate(bar2[1m])`,
 			),
+			3,
 		},
 		{
 			"sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
@@ -60,6 +66,7 @@ func TestShardSummer(t *testing.T) {
 					`sum(rate(bar2{__query_shard__="1_of_3"}[1m]))`,
 					`sum(rate(bar2{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			6,
 		},
 		{
 			`histogram_quantile(0.5, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le))`,
@@ -68,6 +75,7 @@ func TestShardSummer(t *testing.T) {
 				`sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="1_of_3"}[5m]))`,
 				`sum  by (le) (rate(cortex_cache_value_size_bytes_bucket{__query_shard__="2_of_3"}[5m]))`,
 			) + `))`,
+			3,
 		},
 		{
 			`sum(
@@ -87,6 +95,7 @@ func TestShardSummer(t *testing.T) {
 				  )  by (drive,instance)
 				)  by (instance)
 			  )`,
+			3,
 		},
 		{
 			`sum(rate(foo[1m]))`,
@@ -96,6 +105,7 @@ func TestShardSummer(t *testing.T) {
 					`sum(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum(rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`count(rate(foo[1m]))`,
@@ -105,6 +115,7 @@ func TestShardSummer(t *testing.T) {
 					`count(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count(rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`count(up)`,
@@ -114,6 +125,7 @@ func TestShardSummer(t *testing.T) {
 					`count(up{__query_shard__="1_of_3"})`,
 					`count(up{__query_shard__="2_of_3"})`,
 				) + `)`,
+			3,
 		},
 		{
 			`avg(count(test))`,
@@ -123,6 +135,7 @@ func TestShardSummer(t *testing.T) {
 					`count(test{__query_shard__="1_of_3"})`,
 					`count(test{__query_shard__="2_of_3"})`,
 				) + `))`,
+			3,
 		},
 		{
 			`count by (foo) (rate(foo[1m]))`,
@@ -132,6 +145,7 @@ func TestShardSummer(t *testing.T) {
 					`count by (foo)(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count by (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`count without (foo) (rate(foo[1m]))`,
@@ -141,6 +155,7 @@ func TestShardSummer(t *testing.T) {
 					`count without (foo)(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count without (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`max(rate(foo[1m]))`,
@@ -150,6 +165,7 @@ func TestShardSummer(t *testing.T) {
 					`max(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`max(rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`max by (foo) (rate(foo[1m]))`,
@@ -159,6 +175,7 @@ func TestShardSummer(t *testing.T) {
 					`max by (foo)(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`max by (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`max without (foo) (rate(foo[1m]))`,
@@ -168,6 +185,7 @@ func TestShardSummer(t *testing.T) {
 					`max without (foo)(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`max without (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`sum by (foo) (rate(foo[1m]))`,
@@ -177,6 +195,7 @@ func TestShardSummer(t *testing.T) {
 					`sum by  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum by  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`sum without (foo) (rate(foo[1m]))`,
@@ -186,6 +205,7 @@ func TestShardSummer(t *testing.T) {
 					`sum without  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`sum without  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`avg without (foo) (rate(foo[1m]))`,
@@ -200,6 +220,7 @@ func TestShardSummer(t *testing.T) {
 					`count without  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count without  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			6,
 		},
 		{
 			`avg by (foo) (rate(foo[1m]))`,
@@ -214,6 +235,7 @@ func TestShardSummer(t *testing.T) {
 					`count by  (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count by  (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			6,
 		},
 		{
 			`avg(rate(foo[1m]))`,
@@ -228,6 +250,7 @@ func TestShardSummer(t *testing.T) {
 					`count(rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count(rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `)`,
+			6,
 		},
 		{
 			`topk(10,avg by (foo)(rate(foo[1m])))`,
@@ -242,6 +265,7 @@ func TestShardSummer(t *testing.T) {
 					`count by (foo) (rate(foo{__query_shard__="1_of_3"}[1m]))`,
 					`count by (foo) (rate(foo{__query_shard__="2_of_3"}[1m]))`,
 				) + `))`,
+			6,
 		},
 
 		{
@@ -252,24 +276,29 @@ func TestShardSummer(t *testing.T) {
 					`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="1_of_3"}[7d]))`,
 					`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="2_of_3"}[7d]))`,
 				) + `)`,
+			3,
 		},
 		{
 			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
 			concat(`quantile_over_time(0.99, cortex_ingester_active_series[1w])`),
+			0,
 		},
 	} {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			mapper, err := NewSharding(3, nil)
+			mapper, err := NewSharding(3)
 			require.NoError(t, err)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
 			out, err := parser.ParseExpr(tt.out)
 			require.NoError(t, err)
-			mapped, _, err := mapper.Map(expr)
+
+			stats := NewMapperStats()
+			mapped, err := mapper.Map(expr, stats)
 			require.NoError(t, err)
 			require.Equal(t, out.String(), mapped.String())
+			assert.Equal(t, tt.expectedShardedQueries, stats.GetShardedQueries())
 		})
 	}
 }
@@ -304,13 +333,15 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			summer, err := newShardSummer(c.shards, vectorSquasher, nil)
+			summer, err := newShardSummer(c.shards, vectorSquasher)
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
-			res, _, err := summer.Map(expr)
-			require.Nil(t, err)
 
+			stats := NewMapperStats()
+			res, err := summer.Map(expr, stats)
+			require.Nil(t, err)
+			assert.Equal(t, c.shards, stats.GetShardedQueries())
 			expected, err := parser.ParseExpr(c.expected)
 			require.Nil(t, err)
 

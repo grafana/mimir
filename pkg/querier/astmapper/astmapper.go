@@ -12,9 +12,8 @@ import (
 
 // ASTMapper is the exported interface for mapping between multiple AST representations
 type ASTMapper interface {
-	// Map the input node and returns the mapped node as well as whether the
-	// returned mapped node has been rewritten in a shardable way.
-	Map(node parser.Node) (mapped parser.Node, sharded bool, err error)
+	// Map the input node and returns the mapped node.
+	Map(node parser.Node, stats *MapperStats) (mapped parser.Node, err error)
 }
 
 // MapperFunc is a function adapter for ASTMapper
@@ -31,27 +30,22 @@ type MultiMapper struct {
 }
 
 // Map implements ASTMapper
-func (m *MultiMapper) Map(node parser.Node) (parser.Node, bool, error) {
-	var result parser.Node = node
+func (m *MultiMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, error) {
+	var result = node
 	var err error
 
 	if len(m.mappers) == 0 {
-		return nil, false, errors.New("MultiMapper: No mappers registered")
+		return nil, errors.New("MultiMapper: No mappers registered")
 	}
 
-	sharded := false
 	for _, x := range m.mappers {
-		var s bool
-
-		result, s, err = x.Map(result)
+		result, err = x.Map(result, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
-
-		sharded = sharded || s
 	}
 
-	return result, sharded, nil
+	return result, nil
 }
 
 // Register adds ASTMappers into a multimapper.
@@ -75,10 +69,8 @@ func CloneNode(node parser.Node) (parser.Node, error) {
 
 type NodeMapper interface {
 	// MapNode either maps a single AST node or returns the unaltered node.
-	// It returns a finished bool to signal that no further recursion is necessary,
-	// and a sharded bool to signal whether the returned mapped node has been
-	// rewritten in a shardable way.
-	MapNode(node parser.Node) (mapped parser.Node, finished, sharded bool, err error)
+	// It returns a finished bool to signal whether no further recursion is necessary.
+	MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error)
 }
 
 // NodeMapperFunc is an adapter for NodeMapper
@@ -100,109 +92,100 @@ type ASTNodeMapper struct {
 }
 
 // Map implements ASTMapper from a NodeMapper
-func (nm ASTNodeMapper) Map(node parser.Node) (parser.Node, bool, error) {
-	node, finished, sharded, err := nm.MapNode(node)
+func (nm ASTNodeMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, error) {
+	node, finished, err := nm.MapNode(node, stats)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	if finished {
-		return node, sharded, nil
+		return node, nil
 	}
 
 	switch n := node.(type) {
 	case nil:
 		// nil handles cases where we check optional fields that are not set
-		return nil, false, nil
+		return nil, nil
 
 	case parser.Expressions:
 		for i, e := range n {
-			mapped, s, err := nm.Map(e)
+			mapped, err := nm.Map(e, stats)
 			if err != nil {
-				return nil, false, err
+				return nil, err
 			}
 			n[i] = mapped.(parser.Expr)
-			sharded = sharded || s
 		}
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.AggregateExpr:
-		expr, s, err := nm.Map(n.Expr)
+		expr, err := nm.Map(n.Expr, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.Expr = expr.(parser.Expr)
-		sharded = sharded || s
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.BinaryExpr:
-		lhs, s, err := nm.Map(n.LHS)
+		lhs, err := nm.Map(n.LHS, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.LHS = lhs.(parser.Expr)
-		sharded = sharded || s
 
-		rhs, s, err := nm.Map(n.RHS)
+		rhs, err := nm.Map(n.RHS, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.RHS = rhs.(parser.Expr)
-		sharded = sharded || s
 
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.Call:
 		for i, e := range n.Args {
-			mapped, s, err := nm.Map(e)
+			mapped, err := nm.Map(e, stats)
 			if err != nil {
-				return nil, false, err
+				return nil, err
 			}
 			n.Args[i] = mapped.(parser.Expr)
-			sharded = sharded || s
 		}
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.SubqueryExpr:
-		mapped, s, err := nm.Map(n.Expr)
+		mapped, err := nm.Map(n.Expr, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.Expr = mapped.(parser.Expr)
-		sharded = sharded || s
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.ParenExpr:
-		mapped, s, err := nm.Map(n.Expr)
+		mapped, err := nm.Map(n.Expr, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.Expr = mapped.(parser.Expr)
-		sharded = sharded || s
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.UnaryExpr:
-		mapped, s, err := nm.Map(n.Expr)
+		mapped, err := nm.Map(n.Expr, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.Expr = mapped.(parser.Expr)
-		sharded = sharded || s
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.EvalStmt:
-		mapped, s, err := nm.Map(n.Expr)
+		mapped, err := nm.Map(n.Expr, stats)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		n.Expr = mapped.(parser.Expr)
-		sharded = sharded || s
-		return n, sharded, nil
+		return n, nil
 
 	case *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector, *parser.MatrixSelector:
-		return n, false, nil
+		return n, nil
 
 	default:
-		return nil, false, errors.Errorf("nodeMapper: unhandled node type %T", node)
+		return nil, errors.Errorf("nodeMapper: unhandled node type %T", node)
 	}
 }
