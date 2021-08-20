@@ -752,6 +752,12 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	// process it before samples. Otherwise, we risk returning an error before ingestion.
 	ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata())
 
+	// Early exit if no timeseries in request - don't create a TSDB or an appender.
+	if len(req.Timeseries) == 0 {
+		i.ingestionRate.Add(int64(ingestedMetadata))
+		return &mimirpb.WriteResponse{}, nil
+	}
+
 	db, err := i.getOrCreateTSDB(userID, false)
 	if err != nil {
 		return nil, wrapWithUser(err, userID)
