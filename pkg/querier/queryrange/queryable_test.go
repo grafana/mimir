@@ -251,7 +251,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	querier, err := queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*ShardedQuerier).mergeResponseHeaders([]*PrometheusResponseHeader{
+	querier.(*ShardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache"}},
 	})
@@ -264,7 +264,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	querier, err = queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*ShardedQuerier).mergeResponseHeaders([]*PrometheusResponseHeader{
+	querier.(*ShardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-store"}},
 	})
@@ -275,5 +275,5 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 }
 
 func mkShardedQuerier(handler Handler) *ShardedQuerier {
-	return &ShardedQuerier{ctx: context.Background(), req: &PrometheusRequest{}, handler: handler, responseHeaders: map[string][]string{}}
+	return &ShardedQuerier{ctx: context.Background(), req: &PrometheusRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }

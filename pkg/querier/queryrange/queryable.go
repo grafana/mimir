@@ -26,52 +26,32 @@ var (
 
 // ShardedQueryable is an implementor of the Queryable interface.
 type ShardedQueryable struct {
-	req     Request
-	handler Handler
-
-	// Keep track of all sharded queriers created by this queryable.
-	shardedQueriersMx sync.Mutex
-	shardedQueriers   []*ShardedQuerier
+	req             Request
+	handler         Handler
+	responseHeaders *responseHeadersTracker
 }
 
+// NewShardedQueryable makes a new ShardedQueryable. We expect a new queryable is created for each
+// query, otherwise the response headers tracker doesn't work as expected, because it merges the
+// headers for all queries run through the queryable and never reset them.
 func NewShardedQueryable(req Request, next Handler) *ShardedQueryable {
 	return &ShardedQueryable{
-		req:     req,
-		handler: next,
+		req:             req,
+		handler:         next,
+		responseHeaders: newResponseHeadersTracker(),
 	}
 }
 
 // Querier implements storage.Queryable.
 func (q *ShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	querier := &ShardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: map[string][]string{}}
-
-	// Keep track of the querier.
-	q.shardedQueriersMx.Lock()
-	q.shardedQueriers = append(q.shardedQueriers, querier)
-	q.shardedQueriersMx.Unlock()
-
+	querier := &ShardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}
 	return querier, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
 // when running the embedded queries.
 func (q *ShardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
-	q.shardedQueriersMx.Lock()
-	defer q.shardedQueriersMx.Unlock()
-
-	// Merge response headers from all queriers.
-	headers := make(map[string][]string)
-	for _, querier := range q.shardedQueriers {
-		headers = mergeResponseHeaders(headers, querier.getResponseHeaders())
-	}
-
-	// Convert the response headers into the right data type.
-	out := make([]*PrometheusResponseHeader, 0, len(headers))
-	for name, values := range headers {
-		out = append(out, &PrometheusResponseHeader{Name: name, Values: values})
-	}
-
-	return out
+	return q.responseHeaders.getHeaders()
 }
 
 // ShardedQuerier implements the storage.Querier interface with capabilities to parse the embedded queries
@@ -83,8 +63,7 @@ type ShardedQuerier struct {
 	handler Handler
 
 	// Keep track of response headers received when running embedded queries.
-	responseHeadersMtx sync.Mutex
-	responseHeaders    map[string][]string
+	responseHeaders *responseHeadersTracker
 }
 
 // Select implements storage.Querier.
@@ -139,7 +118,7 @@ func (q *ShardedQuerier) handleEmbeddedQueries(queries []string) storage.SeriesS
 			return err
 		}
 
-		q.mergeResponseHeaders(resp.(*PrometheusResponse).Headers)
+		q.responseHeaders.mergeHeaders(resp.(*PrometheusResponse).Headers)
 
 		streamsMx.Lock()
 		streams = append(streams, resStreams...)
@@ -153,31 +132,6 @@ func (q *ShardedQuerier) handleEmbeddedQueries(queries []string) storage.SeriesS
 	}
 
 	return NewSeriesSet(streams)
-}
-
-// mergeResponseHeaders merges the input headers with other response headers received
-// when running embedded queries.
-func (q *ShardedQuerier) mergeResponseHeaders(headers []*PrometheusResponseHeader) {
-	q.responseHeadersMtx.Lock()
-	defer q.responseHeadersMtx.Unlock()
-
-	for _, header := range headers {
-		q.responseHeaders[header.Name] = append(q.responseHeaders[header.Name], header.Values...)
-	}
-}
-
-// getResponseHeaders returns a copy of the merged response headers received by the downstream
-// when running the embedded queries. The returned map can contain duplicated values for a given header.
-func (q *ShardedQuerier) getResponseHeaders() map[string][]string {
-	q.responseHeadersMtx.Lock()
-	defer q.responseHeadersMtx.Unlock()
-
-	out := make(map[string][]string, len(q.responseHeaders))
-	for k, v := range q.responseHeaders {
-		out[k] = append([]string{}, v...)
-	}
-
-	return out
 }
 
 // LabelValues implements storage.LabelQuerier.
@@ -195,16 +149,40 @@ func (q *ShardedQuerier) Close() error {
 	return nil
 }
 
-// mergeResponseHeaders merges "from" headers into "to", removing duplicates. Returns "to" headers.
-func mergeResponseHeaders(to, from map[string][]string) map[string][]string {
-	for name, values := range from {
-		for _, value := range values {
+type responseHeadersTracker struct {
+	headersMx sync.Mutex
+	headers   map[string][]string
+}
+
+func newResponseHeadersTracker() *responseHeadersTracker {
+	return &responseHeadersTracker{
+		headers: make(map[string][]string),
+	}
+}
+
+func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusResponseHeader) {
+	t.headersMx.Lock()
+	defer t.headersMx.Unlock()
+
+	for _, header := range headers {
+		for _, value := range header.Values {
 			// Ensure no duplicates.
-			if !util.StringsContain(to[name], value) {
-				to[name] = append(to[name], value)
+			if !util.StringsContain(t.headers[header.Name], value) {
+				t.headers[header.Name] = append(t.headers[header.Name], value)
 			}
 		}
 	}
+}
 
-	return to
+func (t *responseHeadersTracker) getHeaders() []*PrometheusResponseHeader {
+	t.headersMx.Lock()
+	defer t.headersMx.Unlock()
+
+	// Convert the response headers into the right data type.
+	out := make([]*PrometheusResponseHeader, 0, len(t.headers))
+	for name, values := range t.headers {
+		out = append(out, &PrometheusResponseHeader{Name: name, Values: values})
+	}
+
+	return out
 }
