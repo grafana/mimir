@@ -246,7 +246,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 			return nil, err
 		}
 
-		// Create the child expression, which runs the sum() aggregation
+		// Create the child expression, which runs the given aggregation operation
 		// on a single shard. We need to preserve the grouping as it was
 		// in the original one.
 		children = append(children, &parser.AggregateExpr{
