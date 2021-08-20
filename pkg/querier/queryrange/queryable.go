@@ -14,45 +14,60 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/concurrency"
 )
 
-const (
-	missingEmbeddedQueryMsg = "missing embedded query"
-	nonEmbeddedErrMsg       = "DownstreamQuerier cannot handle a non-embedded query"
+var (
+	errMissingEmbeddedQuery = errors.New("missing embedded query")
+	errNoEmbeddedQueries    = errors.New("ShardedQuerier is expecting embedded queries but didn't find any")
+	errNotImplemented       = errors.New("not implemented")
 )
 
 // ShardedQueryable is an implementor of the Queryable interface.
 type ShardedQueryable struct {
-	Req     Request
-	Handler Handler
-
-	sharededQuerier *ShardedQuerier
+	req             Request
+	handler         Handler
+	responseHeaders *responseHeadersTracker
 }
 
-// Querier implements Queryable
+// NewShardedQueryable makes a new ShardedQueryable. We expect a new queryable is created for each
+// query, otherwise the response headers tracker doesn't work as expected, because it merges the
+// headers for all queries run through the queryable and never reset them.
+func NewShardedQueryable(req Request, next Handler) *ShardedQueryable {
+	return &ShardedQueryable{
+		req:             req,
+		handler:         next,
+		responseHeaders: newResponseHeadersTracker(),
+	}
+}
+
+// Querier implements storage.Queryable.
 func (q *ShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	q.sharededQuerier = &ShardedQuerier{Ctx: ctx, Req: q.Req, Handler: q.Handler, ResponseHeaders: map[string][]string{}}
-	return q.sharededQuerier, nil
+	querier := &ShardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}
+	return querier, nil
 }
 
+// getResponseHeaders returns the merged response headers received by the downstream
+// when running the embedded queries.
 func (q *ShardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
-	q.sharededQuerier.ResponseHeadersMtx.Lock()
-	defer q.sharededQuerier.ResponseHeadersMtx.Unlock()
-
-	return headersMapToPrometheusResponseHeaders(q.sharededQuerier.ResponseHeaders)
+	return q.responseHeaders.getHeaders()
 }
 
-// ShardedQuerier is a an implementor of the Querier interface.
+// ShardedQuerier implements the storage.Querier interface with capabilities to parse the embedded queries
+// from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
+// through the downstream handler.
 type ShardedQuerier struct {
-	Ctx                context.Context
-	Req                Request
-	Handler            Handler
-	ResponseHeaders    map[string][]string
-	ResponseHeadersMtx sync.Mutex
+	ctx     context.Context
+	req     Request
+	handler Handler
+
+	// Keep track of response headers received when running embedded queries.
+	responseHeaders *responseHeadersTracker
 }
 
-// Select returns a set of series that matches the given label matchers.
-// The bool passed is ignored because the series is always sorted.
+// Select implements storage.Querier.
+// The sorted bool is ignored because the series is always sorted.
 func (q *ShardedQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var embeddedQuery string
 	var isEmbedded bool
@@ -66,94 +81,108 @@ func (q *ShardedQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*lab
 		}
 	}
 
-	if isEmbedded {
-		if embeddedQuery != "" {
-			return q.handleEmbeddedQuery(embeddedQuery)
-		}
-		return storage.ErrSeriesSet(errors.Errorf(missingEmbeddedQueryMsg))
-
+	if !isEmbedded {
+		return storage.ErrSeriesSet(errNoEmbeddedQueries)
+	}
+	if embeddedQuery == "" {
+		return storage.ErrSeriesSet(errMissingEmbeddedQuery)
 	}
 
-	return storage.ErrSeriesSet(errors.Errorf(nonEmbeddedErrMsg))
-}
-
-// handleEmbeddedQuery defers execution of an encoded query to a downstream Handler
-func (q *ShardedQuerier) handleEmbeddedQuery(encoded string) storage.SeriesSet {
-	queries, err := astmapper.JSONCodec.Decode(encoded)
+	// Decode the queries from the label value.
+	queries, err := astmapper.JSONCodec.Decode(embeddedQuery)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
 
-	ctx, cancel := context.WithCancel(q.Ctx)
-	defer cancel()
-
-	// buffer channels to length of queries to prevent leaking memory due to sending to unbuffered channels after cancel/err
-	errCh := make(chan error, len(queries))
-	samplesCh := make(chan []SampleStream, len(queries))
-	// TODO(owen-d): impl unified concurrency controls, not per middleware
-	for _, query := range queries {
-		go func(query string) {
-			resp, err := q.Handler.Do(ctx, q.Req.WithQuery(query))
-			if err != nil {
-				errCh <- err
-				return
-			}
-			streams, err := ResponseToSamples(resp)
-			if err != nil {
-				errCh <- err
-				return
-			}
-			q.setResponseHeaders(resp.(*PrometheusResponse).Headers)
-			samplesCh <- streams
-		}(query)
-	}
-
-	var samples []SampleStream
-
-	for i := 0; i < len(queries); i++ {
-		select {
-		case err := <-errCh:
-			return storage.ErrSeriesSet(err)
-		case streams := <-samplesCh:
-			samples = append(samples, streams...)
-		}
-	}
-
-	return NewSeriesSet(samples)
+	return q.handleEmbeddedQueries(queries)
 }
 
-func (q *ShardedQuerier) setResponseHeaders(headers []*PrometheusResponseHeader) {
-	q.ResponseHeadersMtx.Lock()
-	defer q.ResponseHeadersMtx.Unlock()
+// handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
+// The returned storage.SeriesSet contains sorted series.
+func (q *ShardedQuerier) handleEmbeddedQueries(queries []string) storage.SeriesSet {
+	var (
+		jobs      = concurrency.CreateJobsFromStrings(queries)
+		streamsMx sync.Mutex
+		streams   []SampleStream
+	)
 
-	for _, header := range headers {
-		if _, ok := q.ResponseHeaders[header.Name]; !ok {
-			q.ResponseHeaders[header.Name] = header.Values
-		} else {
-			q.ResponseHeaders[header.Name] = append(q.ResponseHeaders[header.Name], header.Values...)
+	// Concurrently run each query. It breaks and cancels each worker context on first error.
+	err := concurrency.ForEach(q.ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
+		resp, err := q.handler.Do(ctx, q.req.WithQuery(job.(string)))
+		if err != nil {
+			return err
 		}
+
+		resStreams, err := ResponseToSamples(resp)
+		if err != nil {
+			return err
+		}
+
+		q.responseHeaders.mergeHeaders(resp.(*PrometheusResponse).Headers)
+
+		streamsMx.Lock()
+		streams = append(streams, resStreams...)
+		streamsMx.Unlock()
+
+		return nil
+	})
+
+	if err != nil {
+		return storage.ErrSeriesSet(err)
 	}
+
+	return NewSeriesSet(streams)
 }
 
-// LabelValues returns all potential values for a label name.
+// LabelValues implements storage.LabelQuerier.
 func (q *ShardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, errors.Errorf("unimplemented")
+	return nil, nil, errNotImplemented
 }
 
-// LabelNames returns all the unique label names present in the block in sorted order.
+// LabelNames implements storage.LabelQuerier.
 func (q *ShardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, errors.Errorf("unimplemented")
+	return nil, nil, errNotImplemented
 }
 
-// Close releases the resources of the Querier.
+// Close implements storage.LabelQuerier.
 func (q *ShardedQuerier) Close() error {
 	return nil
 }
 
-func headersMapToPrometheusResponseHeaders(headersMap map[string][]string) (prs []*PrometheusResponseHeader) {
-	for h, v := range headersMap {
-		prs = append(prs, &PrometheusResponseHeader{Name: h, Values: v})
+type responseHeadersTracker struct {
+	headersMx sync.Mutex
+	headers   map[string][]string
+}
+
+func newResponseHeadersTracker() *responseHeadersTracker {
+	return &responseHeadersTracker{
+		headers: make(map[string][]string),
+	}
+}
+
+func (t *responseHeadersTracker) mergeHeaders(headers []*PrometheusResponseHeader) {
+	t.headersMx.Lock()
+	defer t.headersMx.Unlock()
+
+	for _, header := range headers {
+		for _, value := range header.Values {
+			// Ensure no duplicates.
+			if !util.StringsContain(t.headers[header.Name], value) {
+				t.headers[header.Name] = append(t.headers[header.Name], value)
+			}
+		}
+	}
+}
+
+func (t *responseHeadersTracker) getHeaders() []*PrometheusResponseHeader {
+	t.headersMx.Lock()
+	defer t.headersMx.Unlock()
+
+	// Convert the response headers into the right data type.
+	out := make([]*PrometheusResponseHeader, 0, len(t.headers))
+	for name, values := range t.headers {
+		out = append(out, &PrometheusResponseHeader{Name: name, Values: values})
 	}
 
-	return
+	return out
 }

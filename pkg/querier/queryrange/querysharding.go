@@ -89,7 +89,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	s.shardingSuccesses.Inc()
 
 	r = r.WithQuery(shardedQuery)
-	shardedQueryable := &ShardedQueryable{Req: r, Handler: s.next}
+	shardedQueryable := NewShardedQueryable(r, s.next)
 
 	qry, err := s.engine.NewRangeQuery(
 		lazyquery.NewLazyQueryable(shardedQueryable),
