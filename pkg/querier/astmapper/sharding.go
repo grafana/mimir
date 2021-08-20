@@ -148,7 +148,7 @@ func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (result *parser.
 	*/
 
 	// Create a SUM sub-query for each shard and squash it into a CONCAT expression.
-	sharded, err := summer.shardAndSquadAggregateExpr(expr, parser.SUM)
+	sharded, err := summer.shardAndSquashAggregateExpr(expr, parser.SUM)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (summer *shardSummer) shardSum(expr *parser.AggregateExpr) (result *parser.
 func (summer *shardSummer) shardCount(expr *parser.AggregateExpr) (result *parser.AggregateExpr, err error) {
 	// The COUNT aggregation can be parallelized as the SUM of per-shard COUNT.
 	// Create a COUNT sub-query for each shard and squash it into a CONCAT expression.
-	sharded, err := summer.shardAndSquadAggregateExpr(expr, parser.COUNT)
+	sharded, err := summer.shardAndSquashAggregateExpr(expr, parser.COUNT)
 	if err != nil {
 		return nil, err
 	}
@@ -190,7 +190,7 @@ func (summer *shardSummer) shardMinMax(expr *parser.AggregateExpr) (result parse
 
 	// The MIN/MAX aggregation can be parallelized as the MIN/MAX of per-shard MIN/MAX.
 	// Create a MIN/MAX sub-query for each shard and squash it into a CONCAT expression.
-	sharded, err := summer.shardAndSquadAggregateExpr(expr, expr.Op)
+	sharded, err := summer.shardAndSquashAggregateExpr(expr, expr.Op)
 	if err != nil {
 		return nil, err
 	}
@@ -224,13 +224,13 @@ func (summer *shardSummer) shardAvg(expr *parser.AggregateExpr) (result parser.N
 	}, nil
 }
 
-// shardAndSquadAggregateExpr returns a squashed CONCAT expression including N embedded
+// shardAndSquashAggregateExpr returns a squashed CONCAT expression including N embedded
 // queries, where N is the number of shards and each sub-query queries a different shard
 // with the given "op" aggregation operation.
 //
 // This function also keeps track of the number of sharded queries embeedded in the returned
 // expression, which is used to update metrics.
-func (summer *shardSummer) shardAndSquadAggregateExpr(expr *parser.AggregateExpr, op parser.ItemType) (parser.Expr, error) {
+func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExpr, op parser.ItemType) (parser.Expr, error) {
 	children := make([]parser.Node, 0, summer.shards)
 
 	// Create sub-query for each shard.
