@@ -27,13 +27,13 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	asm     *ActiveSeriesMatcher
+	asm     ActiveSeriesMatcher
 	stripes [numActiveSeriesStripes]activeSeriesStripe
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
-	asm *ActiveSeriesMatcher
+	asm ActiveSeriesMatcher
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -53,7 +53,7 @@ type activeSeriesEntry struct {
 	matches []bool        // Which matchers of ActiveSeriesMatcher does this series match
 }
 
-func NewActiveSeries(asm *ActiveSeriesMatcher) *ActiveSeries {
+func NewActiveSeries(asm ActiveSeriesMatcher) *ActiveSeries {
 	c := &ActiveSeries{asm: asm}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
@@ -61,7 +61,7 @@ func NewActiveSeries(asm *ActiveSeriesMatcher) *ActiveSeries {
 		c.stripes[i] = activeSeriesStripe{
 			asm:            asm,
 			refs:           map[uint64][]activeSeriesEntry{},
-			activeMatching: asm.IntsSlice(),
+			activeMatching: makeIntSliceIfNotEmpty(len(asm.MatcherNames())),
 		}
 	}
 
@@ -112,7 +112,7 @@ func (c *ActiveSeries) clear() {
 
 func (c *ActiveSeries) Active() (int, []int) {
 	total := 0
-	totalMatching := c.asm.IntsSlice()
+	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()))
 	for s := 0; s < numActiveSeriesStripes; s++ {
 		c.stripes[s].mu.RLock()
 		total += c.stripes[s].active
@@ -219,7 +219,7 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	defer s.mu.Unlock()
 
 	active := 0
-	activeMatching := s.asm.IntsSlice()
+	activeMatching := makeIntSliceIfNotEmpty(len(s.activeMatching))
 
 	oldest := int64(math.MaxInt64)
 	for fp, entries := range s.refs {
@@ -228,7 +228,6 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 		if len(entries) == 1 {
 			ts := entries[0].nanos.Load()
 			if ts < keepUntilNanos {
-				s.asm.PutDirtyBools(entries[0].matches)
 				delete(s.refs, fp)
 				continue
 			}
@@ -250,7 +249,6 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 		for i := 0; i < len(entries); {
 			ts := entries[i].nanos.Load()
 			if ts < keepUntilNanos {
-				s.asm.PutDirtyBools(entries[i].matches)
 				entries = append(entries[:i], entries[i+1:]...)
 			} else {
 				if ts < oldest {
@@ -284,106 +282,43 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 		s.oldestEntryTs.Store(oldest)
 	}
 	s.active = active
-	s.asm.PutDirtyInts(s.activeMatching)
 	s.activeMatching = activeMatching
 }
 
-func NewActiveSeriesMatcher(cfgs ActiveSeriesCustomTrackersConfigs) (*ActiveSeriesMatcher, error) {
-	l := len(cfgs)
-
-	asm := &ActiveSeriesMatcher{
-		boolsPool: sync.Pool{New: func() interface{} { s := make([]bool, l); return &s }},
-		intsPool:  sync.Pool{New: func() interface{} { s := make([]int, l); return &s }},
-	}
-
+func NewActiveSeriesMatcher(cfgs ActiveSeriesCustomTrackersConfigs) (asm ActiveSeriesMatcher, _ error) {
 	seenMatcherNames := map[string]int{}
 	for i, cfg := range cfgs {
 		if idx, seen := seenMatcherNames[cfg.Name]; seen {
-			return nil, fmt.Errorf("active series matcher %d duplicates the name of matcher at position %d: %q", i, idx, cfg.Name)
+			return asm, fmt.Errorf("active series matcher %d duplicates the name of matcher at position %d: %q", i, idx, cfg.Name)
 		}
 		seenMatcherNames[cfg.Name] = i
 
 		sm, err := amlabels.ParseMatchers(cfg.Matcher)
 		if err != nil {
-			return nil, fmt.Errorf("can't build active series matcher %d: %w", i, err)
+			return asm, fmt.Errorf("can't build active series matcher %d: %w", i, err)
 		}
 		asm.matchers = append(asm.matchers, sm)
 		asm.names = append(asm.names, cfg.Name)
 	}
-
 	return asm, nil
-}
-
-func newEmptyActiveSeriesMatcher() *ActiveSeriesMatcher {
-	m, err := NewActiveSeriesMatcher(nil)
-	if err != nil {
-		panic(err) // should not panic as there's nothing to match
-	}
-	return m
 }
 
 type ActiveSeriesMatcher struct {
 	names    []string
 	matchers []amlabels.Matchers
-
-	boolsPool sync.Pool
-	intsPool  sync.Pool
 }
 
-func (asm *ActiveSeriesMatcher) MatcherNames() []string {
+func (asm ActiveSeriesMatcher) MatcherNames() []string {
 	return asm.names
 }
 
-func (asm *ActiveSeriesMatcher) Matches(series labels.Labels) []bool {
+func (asm ActiveSeriesMatcher) Matches(series labels.Labels) []bool {
 	ls := labelsToLabelSet(series)
-	matches := asm.BoolsSlice()
+	matches := make([]bool, len(asm.names))
 	for i, sm := range asm.matchers {
 		matches[i] = sm.Matches(ls)
 	}
 	return matches
-}
-
-// BoolsSlice provides a slice of bools with 'false' values, with same len as MatcherNames.
-// After usage, it's nice to put it back using PutDirtyBools()
-func (asm *ActiveSeriesMatcher) BoolsSlice() []bool {
-	if len(asm.matchers) == 0 {
-		return nil
-	}
-
-	return *asm.boolsPool.Get().(*[]bool)
-}
-
-// PutDirtyBools puts back a slice of bools. They don't need to be false values.
-func (asm *ActiveSeriesMatcher) PutDirtyBools(slice []bool) {
-	if len(slice) == 0 {
-		return
-	}
-
-	for i := range slice {
-		slice[i] = false
-	}
-	asm.boolsPool.Put(&slice)
-}
-
-// IntsSlice provides a slice of ints with zero values, with same len as MatcherNames.
-// After usage, it's nice to put it back using PutDirtyInts()
-func (asm *ActiveSeriesMatcher) IntsSlice() []int {
-	if len(asm.matchers) == 0 {
-		return nil
-	}
-	return *asm.intsPool.Get().(*[]int)
-}
-
-// PutDirtyInts puts back a slice of ints. They don't need to be zero values.
-func (asm *ActiveSeriesMatcher) PutDirtyInts(slice []int) {
-	if len(slice) == 0 {
-		return
-	}
-
-	for i := range slice {
-		slice[i] = 0
-	}
-	asm.intsPool.Put(&slice)
 }
 
 func labelsToLabelSet(series labels.Labels) model.LabelSet {
@@ -392,4 +327,11 @@ func labelsToLabelSet(series labels.Labels) model.LabelSet {
 		ls[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 	}
 	return ls
+}
+
+func makeIntSliceIfNotEmpty(l int) []int {
+	if l == 0 {
+		return nil
+	}
+	return make([]int, l)
 }
