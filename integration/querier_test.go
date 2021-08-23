@@ -201,208 +201,147 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	}
 }
 
-func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
-	tests := map[string]struct {
-		blocksShardingEnabled    bool
-		ingesterStreamingEnabled bool
-		indexCacheBackend        string
-		bucketIndexEnabled       bool
-	}{
-		"blocks sharding enabled, ingester gRPC streaming disabled, inmemory index cache": {
-			blocksShardingEnabled:    true,
-			ingesterStreamingEnabled: false,
-			indexCacheBackend:        tsdb.IndexCacheBackendInMemory,
-		},
-		"blocks sharding enabled, ingester gRPC streaming enabled, inmemory index cache": {
-			blocksShardingEnabled:    true,
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendInMemory,
-		},
-		"blocks sharding disabled, ingester gRPC streaming disabled, memcached index cache": {
-			blocksShardingEnabled:    false,
-			ingesterStreamingEnabled: false,
-			// Memcached index cache is required to avoid flaky tests when the blocks sharding is disabled
-			// because two different requests may hit two different store-gateways, so if the cache is not
-			// shared there's no guarantee we'll have a cache hit.
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
-		},
-		"blocks sharding enabled, ingester gRPC streaming enabled, memcached index cache": {
-			blocksShardingEnabled:    true,
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendMemcached,
-		},
-		"blocks sharding enabled, ingester gRPC streaming enabled, memcached index cache, bucket index enabled": {
-			blocksShardingEnabled:    true,
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:       true,
-		},
+func TestQuerierWithBlocksStorageAndShardingRunningInSingleBinaryMode(t *testing.T) {
+	const blockRangePeriod = 5 * time.Second
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, bucketName)
+	memcached := e2ecache.NewMemcached()
+	require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
+
+	// Setting the replication factor equal to the number of Mimir replicas
+	// make sure each replica creates the same blocks, so the total number of
+	// blocks is stable and easy to assert on.
+	const seriesReplicationFactor = 2
+
+	// Configure the blocks storage to frequently compact TSDB head
+	// and ship blocks to the storage.
+	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
+		"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
+		"-blocks-storage.tsdb.ship-interval":                           "1s",
+		"-blocks-storage.bucket-store.sync-interval":                   "1s",
+		"-blocks-storage.tsdb.retention-period":                        ((blockRangePeriod * 2) - 1).String(),
+		"-blocks-storage.bucket-store.index-cache.backend":             tsdb.IndexCacheBackendMemcached,
+		"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-blocks-storage.bucket-store.bucket-index.enabled":            "true",
+		"-querier.ingester-streaming":                                  "true",
+		"-querier.query-store-for-labels-enabled":                      "true",
+		// Ingester.
+		"-ring.store":      "consul",
+		"-consul.hostname": consul.NetworkHTTPEndpoint(),
+		// Distributor.
+		"-distributor.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
+		// Store-gateway.
+		"-store-gateway.sharding-enabled":                 "true",
+		"-store-gateway.sharding-ring.store":              "consul",
+		"-store-gateway.sharding-ring.consul.hostname":    consul.NetworkHTTPEndpoint(),
+		"-store-gateway.sharding-ring.replication-factor": "1",
+	})
+
+	// Start Mimir replicas.
+	mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, "")
+	mimir2 := e2emimir.NewSingleBinary("mimir-2", flags, "")
+	cluster := e2emimir.NewCompositeMimirService(mimir1, mimir2)
+	require.NoError(t, s.StartAndWaitReady(mimir1, mimir2))
+
+	// Wait until Mimir replicas have updated the ring state.
+	for _, replica := range cluster.Instances() {
+		numTokensPerInstance := 512     // Ingesters ring.
+		numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
+
+		require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
 	}
 
-	for testName, testCfg := range tests {
-		t.Run(testName, func(t *testing.T) {
-			const blockRangePeriod = 5 * time.Second
+	c, err := e2emimir.NewClient(mimir1.HTTPEndpoint(), mimir2.HTTPEndpoint(), "", "", "user-1")
+	require.NoError(t, err)
 
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+	// Push some series to Mimir.
+	series1Timestamp := time.Now()
+	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+	series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, bucketName)
-			memcached := e2ecache.NewMemcached()
-			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
+	res, err := c.Push(series1)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
 
-			// Setting the replication factor equal to the number of Mimir replicas
-			// make sure each replica creates the same blocks, so the total number of
-			// blocks is stable and easy to assert on.
-			const seriesReplicationFactor = 2
+	res, err = c.Push(series2)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
 
-			// Configure the blocks storage to frequently compact TSDB head
-			// and ship blocks to the storage.
-			flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-				"-blocks-storage.tsdb.block-ranges-period":                     blockRangePeriod.String(),
-				"-blocks-storage.tsdb.ship-interval":                           "1s",
-				"-blocks-storage.bucket-store.sync-interval":                   "1s",
-				"-blocks-storage.tsdb.retention-period":                        ((blockRangePeriod * 2) - 1).String(),
-				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
-				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-querier.ingester-streaming":                                  strconv.FormatBool(testCfg.ingesterStreamingEnabled),
-				"-querier.query-store-for-labels-enabled":                      "true",
-				// Ingester.
-				"-ring.store":      "consul",
-				"-consul.hostname": consul.NetworkHTTPEndpoint(),
-				// Distributor.
-				"-distributor.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
-				// Store-gateway.
-				"-store-gateway.sharding-enabled":                 strconv.FormatBool(testCfg.blocksShardingEnabled),
-				"-store-gateway.sharding-ring.store":              "consul",
-				"-store-gateway.sharding-ring.consul.hostname":    consul.NetworkHTTPEndpoint(),
-				"-store-gateway.sharding-ring.replication-factor": "1",
-			})
+	// Wait until the TSDB head is compacted and shipped to the storage.
+	// The shipped block contains the 1st series, while the 2ns series in in the head.
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
 
-			// Start Mimir replicas.
-			mimir1 := e2emimir.NewSingleBinary("mimir-1", flags, "")
-			mimir2 := e2emimir.NewSingleBinary("mimir-2", flags, "")
-			cluster := e2emimir.NewCompositeMimirService(mimir1, mimir2)
-			require.NoError(t, s.StartAndWaitReady(mimir1, mimir2))
+	// Push another series to further compact another block and delete the first block
+	// due to expired retention.
+	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
+	series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
 
-			// Wait until Mimir replicas have updated the ring state.
-			for _, replica := range cluster.Instances() {
-				numTokensPerInstance := 512 // Ingesters ring.
-				if testCfg.blocksShardingEnabled {
-					numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
-				}
+	res, err = c.Push(series3)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
 
-				require.NoError(t, replica.WaitSumMetrics(e2e.Equals(float64(numTokensPerInstance*cluster.NumInstances())), "cortex_ring_tokens_total"))
-			}
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(3*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
 
-			c, err := e2emimir.NewClient(mimir1.HTTPEndpoint(), mimir2.HTTPEndpoint(), "", "", "user-1")
-			require.NoError(t, err)
+	// Start the compactor to have the bucket index created before querying. We need to run the compactor
+	// as a separate service because it's currently not part of the single binary.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
+	require.NoError(t, s.StartAndWaitReady(compactor))
 
-			// Push some series to Mimir.
-			series1Timestamp := time.Now()
-			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-			series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-			series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+	// Wait until the store-gateway has synched the new uploaded blocks. The number of blocks loaded
+	// may be greater than expected if the compactor is running (there may have been compacted).
+	const shippedBlocks = 2
+	require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
 
-			res, err := c.Push(series1)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
+	// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
+	result, err := c.Query("series_1", series1Timestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector1, result.(model.Vector))
 
-			res, err = c.Push(series2)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
+	result, err = c.Query("series_2", series2Timestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector2, result.(model.Vector))
 
-			// Wait until the TSDB head is compacted and shipped to the storage.
-			// The shipped block contains the 1st series, while the 2ns series in in the head.
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_shipper_uploads_total"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
+	result, err = c.Query("series_3", series3Timestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector3, result.(model.Vector))
 
-			// Push another series to further compact another block and delete the first block
-			// due to expired retention.
-			series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-			series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+	// Check the in-memory index cache metrics (in the store-gateway).
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(7*seriesReplicationFactor)), "thanos_store_index_cache_requests_total"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total")) // no cache hit cause the cache was empty
 
-			res, err = c.Push(series3)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
+	// Check memcache index cache metrics
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(11*seriesReplicationFactor)), "thanos_memcached_operations_total")) // 7 gets + 4 sets
 
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_shipper_uploads_total"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(1*cluster.NumInstances())), "cortex_ingester_memory_series"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(3*cluster.NumInstances())), "cortex_ingester_memory_series_created_total"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*cluster.NumInstances())), "cortex_ingester_memory_series_removed_total"))
+	// Query back again the 1st series from storage. This time it should use the index cache.
+	result, err = c.Query("series_1", series1Timestamp)
+	require.NoError(t, err)
+	require.Equal(t, model.ValVector, result.Type())
+	assert.Equal(t, expectedVector1, result.(model.Vector))
 
-			if testCfg.bucketIndexEnabled {
-				// Start the compactor to have the bucket index created before querying. We need to run the compactor
-				// as a separate service because it's currently not part of the single binary.
-				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
-				require.NoError(t, s.StartAndWaitReady(compactor))
-			} else {
-				// Wait until the querier has discovered the uploaded blocks (discovered both by the querier and store-gateway).
-				require.NoError(t, cluster.WaitSumMetricsWithOptions(e2e.Equals(float64(2*cluster.NumInstances()*2)), []string{"cortex_blocks_meta_synced"}, e2e.WithLabelMatchers(
-					labels.MustNewMatcher(labels.MatchEqual, "component", "querier"))))
-			}
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((7+2)*seriesReplicationFactor)), "thanos_store_index_cache_requests_total"))
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*seriesReplicationFactor)), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
-			// Wait until the store-gateway has synched the new uploaded blocks. The number of blocks loaded
-			// may be greater than expected if the compactor is running (there may have been compacted).
-			const shippedBlocks = 2
-			if testCfg.blocksShardingEnabled {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor)), "cortex_bucket_store_blocks_loaded"))
-			} else {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.GreaterOrEqual(float64(shippedBlocks*seriesReplicationFactor*cluster.NumInstances())), "cortex_bucket_store_blocks_loaded"))
-			}
+	// Check memcache index cache metrics
+	require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((11+2)*seriesReplicationFactor)), "thanos_memcached_operations_total")) // as before + 2 gets
 
-			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
-			result, err := c.Query("series_1", series1Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector1, result.(model.Vector))
-
-			result, err = c.Query("series_2", series2Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector2, result.(model.Vector))
-
-			result, err = c.Query("series_3", series3Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector3, result.(model.Vector))
-
-			// Check the in-memory index cache metrics (in the store-gateway).
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(7*seriesReplicationFactor)), "thanos_store_index_cache_requests_total"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total")) // no cache hit cause the cache was empty
-
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*2*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*2*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(11*seriesReplicationFactor)), "thanos_memcached_operations_total")) // 7 gets + 4 sets
-			}
-
-			// Query back again the 1st series from storage. This time it should use the index cache.
-			result, err = c.Query("series_1", series1Timestamp)
-			require.NoError(t, err)
-			require.Equal(t, model.ValVector, result.Type())
-			assert.Equal(t, expectedVector1, result.(model.Vector))
-
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((7+2)*seriesReplicationFactor)), "thanos_store_index_cache_requests_total"))
-			require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*seriesReplicationFactor)), "thanos_store_index_cache_hits_total")) // this time has used the index cache
-
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*2*seriesReplicationFactor)), "thanos_store_index_cache_items"))             // as before
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64(2*2*seriesReplicationFactor)), "thanos_store_index_cache_items_added_total")) // as before
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, cluster.WaitSumMetrics(e2e.Equals(float64((11+2)*seriesReplicationFactor)), "thanos_memcached_operations_total")) // as before + 2 gets
-			}
-
-			// Query metadata.
-			testMetadataQueriesWithBlocksStorage(t, c, series1[0], series2[0], series3[0], blockRangePeriod)
-		})
-	}
+	// Query metadata.
+	testMetadataQueriesWithBlocksStorage(t, c, series1[0], series2[0], series3[0], blockRangePeriod)
 }
 
 func testMetadataQueriesWithBlocksStorage(
