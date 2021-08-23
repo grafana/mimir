@@ -189,7 +189,7 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
 		if !strings.Contains(p, ":") {
-			return fmt.Errorf("-ingester.active-series-custrom-trackers value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
+			return fmt.Errorf("-ingester.active-series-custom-trackers value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
 		}
 		split := strings.SplitN(p, ":", 2)
 		name, matcher := split[0], split[1]
