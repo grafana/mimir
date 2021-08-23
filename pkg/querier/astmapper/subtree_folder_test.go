@@ -49,7 +49,7 @@ func TestEvalPredicate(t *testing.T) {
 			expectedErr: false,
 		},
 		"hasEmbeddedQueries()": {
-			input:       `sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"}) or sum(selector)`,
+			input:       `sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"}) or sum(selector)`,
 			fn:          hasEmbeddedQueries,
 			expectedRes: true,
 			expectedErr: false,
@@ -78,22 +78,22 @@ func TestSubtreeFolder(t *testing.T) {
 	}{
 		"embed an entire histogram": {
 			input:    "histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))",
-			expected: `__embedded_queries__{__cortex_queries__="{\"Concat\":[\"histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))\"]}"}`,
+			expected: `__embedded_queries__{__queries__="{\"Concat\":[\"histogram_quantile(0.5, rate(alertmanager_http_request_duration_seconds_bucket[1m]))\"]}"}`,
 		},
 		"embed a binary expression across two functions": {
 			input:    `rate(http_requests_total{cluster="eu-west2"}[5m]) or rate(http_requests_total{cluster="us-central1"}[5m])`,
-			expected: `__embedded_queries__{__cortex_queries__="{\"Concat\":[\"rate(http_requests_total{cluster=\\\"eu-west2\\\"}[5m]) or rate(http_requests_total{cluster=\\\"us-central1\\\"}[5m])\"]}"}`,
+			expected: `__embedded_queries__{__queries__="{\"Concat\":[\"rate(http_requests_total{cluster=\\\"eu-west2\\\"}[5m]) or rate(http_requests_total{cluster=\\\"us-central1\\\"}[5m])\"]}"}`,
 		},
 		"embed one out of two legs of the query (right leg has already been embedded)": {
 			input: `sum(histogram_quantile(0.5, rate(selector[1m]))) +
-				sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})`,
+				sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"})`,
 			expected: `
-			  __embedded_queries__{__cortex_queries__="{\"Concat\":[\"sum(histogram_quantile(0.5, rate(selector[1m])))\"]}"} +
-			  sum without(__query_shard__) (__embedded_queries__{__cortex_queries__="tstquery"})`,
+			  __embedded_queries__{__queries__="{\"Concat\":[\"sum(histogram_quantile(0.5, rate(selector[1m])))\"]}"} +
+			  sum without(__query_shard__) (__embedded_queries__{__queries__="tstquery"})`,
 		},
 		"should not embed scalars": {
-			input:    `histogram_quantile(0.5, __embedded_queries__{__cortex_queries__="tstquery"})`,
-			expected: `histogram_quantile(0.5, __embedded_queries__{__cortex_queries__="tstquery"})`,
+			input:    `histogram_quantile(0.5, __embedded_queries__{__queries__="tstquery"})`,
+			expected: `histogram_quantile(0.5, __embedded_queries__{__queries__="tstquery"})`,
 		},
 	} {
 		t.Run(testName, func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestSubtreeFolder(t *testing.T) {
 
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
-			res, _, err := mapper.Map(expr)
+			res, err := mapper.Map(expr, NewMapperStats())
 			require.Nil(t, err)
 
 			expected, err := parser.ParseExpr(tc.expected)

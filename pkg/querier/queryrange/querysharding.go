@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 type querySharding struct {
@@ -29,9 +30,10 @@ type querySharding struct {
 	logger log.Logger
 
 	// Metrics.
-	shardingAttempts      prometheus.Counter
-	shardingSuccesses     prometheus.Counter
-	shardedQueriesCounter prometheus.Counter
+	shardingAttempts       prometheus.Counter
+	shardingSuccesses      prometheus.Counter
+	shardedQueries         prometheus.Counter
+	shardedQueriesPerQuery prometheus.Histogram
 }
 
 // NewQueryShardingMiddleware creates a middleware that will split queries by shard.
@@ -59,10 +61,16 @@ func NewQueryShardingMiddleware(
 				Name:      "frontend_query_sharding_rewrites_succeeded_total",
 				Help:      "Total number of queries the query-frontend successfully rewritten in a shardable way.",
 			}),
-			shardedQueriesCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			shardedQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 				Namespace: "cortex",
 				Name:      "frontend_sharded_queries_total",
-				Help:      "Total number of sharded queries",
+				Help:      "Total number of sharded queries.",
+			}),
+			shardedQueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+				Namespace: "cortex",
+				Name:      "frontend_sharded_queries_per_query",
+				Help:      "Number of sharded queries a single query has been rewritten to.",
+				Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
 			}),
 			engine:      engine,
 			totalShards: totalShards,
@@ -72,21 +80,28 @@ func NewQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
-	s.shardingAttempts.Inc()
-	shardedQuery, err := s.shardQuery(r.GetQuery())
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
+	defer log.Span.Finish()
 
-	// If an error occurred while trying to rewrite the query or the query can't be sharded,
+	s.shardingAttempts.Inc()
+	shardedQuery, stats, err := s.shardQuery(r.GetQuery())
+
+	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
-	if err != nil || shardedQuery == "" {
+	if err != nil || stats.GetShardedQueries() == 0 {
 		if err != nil {
-			level.Warn(s.logger).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
+			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
+		} else {
+			level.Debug(log).Log("msg", "query is not supported for being rewritten into a shardable query", "query", r.GetQuery())
 		}
 
 		return s.next.Do(ctx, r)
 	}
 
-	level.Debug(s.logger).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
+	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
 	s.shardingSuccesses.Inc()
+	s.shardedQueries.Add(float64(stats.GetShardedQueries()))
+	s.shardedQueriesPerQuery.Observe(float64(stats.GetShardedQueries()))
 
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
@@ -119,24 +134,22 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharding) shardQuery(query string) (string, error) {
-	mapper, err := astmapper.NewSharding(s.totalShards, s.shardedQueriesCounter)
+func (s *querySharding) shardQuery(query string) (string, *astmapper.MapperStats, error) {
+	mapper, err := astmapper.NewSharding(s.totalShards)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 
-	shardedQuery, sharded, err := mapper.Map(expr)
+	stats := astmapper.NewMapperStats()
+	shardedQuery, err := mapper.Map(expr, stats)
 	if err != nil {
-		return "", err
-	}
-	if !sharded {
-		return "", nil
+		return "", nil, err
 	}
 
-	return shardedQuery.String(), nil
+	return shardedQuery.String(), stats, nil
 }

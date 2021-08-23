@@ -114,7 +114,7 @@ func (bqs *blockQuerierSeries) Iterator() chunkenc.Iterator {
 		return series.NewErrIterator(errors.New("no chunks"))
 	}
 
-	its := make([]chunkenc.Iterator, 0, len(bqs.chunks))
+	its := make([]iteratorWithMaxTime, 0, len(bqs.chunks))
 
 	for _, c := range bqs.chunks {
 		ch, err := chunkenc.FromData(chunkenc.EncXOR, c.Raw.Data)
@@ -123,14 +123,20 @@ func (bqs *blockQuerierSeries) Iterator() chunkenc.Iterator {
 		}
 
 		it := ch.Iterator(nil)
-		its = append(its, it)
+		its = append(its, iteratorWithMaxTime{it, c.MaxTime})
 	}
 
 	return newBlockQuerierSeriesIterator(bqs.Labels(), its)
 }
 
-func newBlockQuerierSeriesIterator(labels labels.Labels, its []chunkenc.Iterator) *blockQuerierSeriesIterator {
+func newBlockQuerierSeriesIterator(labels labels.Labels, its []iteratorWithMaxTime) *blockQuerierSeriesIterator {
 	return &blockQuerierSeriesIterator{labels: labels, iterators: its, lastT: math.MinInt64}
+}
+
+// iteratorWithMaxTime is an iterator which is aware of the maxT of its embedded iterator.
+type iteratorWithMaxTime struct {
+	chunkenc.Iterator
+	maxT int64
 }
 
 // blockQuerierSeriesIterator implements a series iterator on top
@@ -139,24 +145,27 @@ type blockQuerierSeriesIterator struct {
 	// only used for error reporting
 	labels labels.Labels
 
-	iterators []chunkenc.Iterator
+	iterators []iteratorWithMaxTime
 	i         int
 	lastT     int64
 }
 
 func (it *blockQuerierSeriesIterator) Seek(t int64) bool {
-	// We generally expect the chunks already to be cut down
-	// to the range we are interested in. There's not much to be gained from
-	// hopping across chunks so we just call next until we reach t.
-	for {
-		ct, _ := it.At()
-		if ct >= t {
-			return true
-		}
-		if !it.Next() {
-			return false
+	for ; it.i < len(it.iterators); it.i++ {
+		// We check the maxT property of each iterator because if the time range which its data covers ends at a lower
+		// time than the seeked <t> then we don't even need to try to seek to it, as this wouldn't succeed.
+		if it.iterators[it.i].maxT >= t {
+			// Once we found an iterator which covers a time range that reaches beyond the seeked <t>
+			// we try to seek to and return the result.
+			if it.iterators[it.i].Seek(t) {
+				// Calling .At() to update it.lastT
+				it.At()
+				return true
+			}
 		}
 	}
+
+	return false
 }
 
 func (it *blockQuerierSeriesIterator) At() (int64, float64) {
@@ -175,34 +184,24 @@ func (it *blockQuerierSeriesIterator) Next() bool {
 	}
 
 	if it.iterators[it.i].Next() {
+		// Calling .At() to update it.lastT
+		it.At()
 		return true
 	}
 	if it.iterators[it.i].Err() != nil {
 		return false
 	}
 
-	for {
-		it.i++
+	it.i++
 
-		if it.i >= len(it.iterators) {
-			return false
-		}
-
-		// we must advance iterator first, to see if it has any samples.
-		// Seek will call At() as its first operation.
-		if !it.iterators[it.i].Next() {
-			if it.iterators[it.i].Err() != nil {
-				return false
-			}
-
-			// Found empty iterator without error, skip it.
-			continue
-		}
-
-		// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
-		// We must ensure to skip any overlapping range between adjacent chunks.
-		return it.Seek(it.lastT + 1)
+	if it.i >= len(it.iterators) {
+		return false
 	}
+
+	// Chunks are guaranteed to be ordered but not generally guaranteed to not overlap.
+	// We must ensure to skip any overlapping range between adjacent chunks.
+	// .Seek() will update it.lastT if it succeeds
+	return it.Seek(it.lastT + 1)
 }
 
 func (it *blockQuerierSeriesIterator) Err() error {
