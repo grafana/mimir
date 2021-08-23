@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210820144809-22d3c35938ff
+	github.com/grafana/dskit v0.0.0-20210823064759-be1c7409790b
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
@@ -50,7 +50,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
-	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a
+	github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
 	go.etcd.io/bbolt v1.3.6
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.10

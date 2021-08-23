@@ -883,8 +883,8 @@ github.com/gorilla/websocket v0.0.0-20170926233335-4201258b820c/go.mod h1:E7qHFY
 github.com/gorilla/websocket v1.4.0/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/gorilla/websocket v1.4.2 h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=
 github.com/gorilla/websocket v1.4.2/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
-github.com/grafana/dskit v0.0.0-20210820144809-22d3c35938ff h1:wX6v3cHYUf8O5CoAGQ6zlnrjG3ubNx8kvrJcpRo8cLQ=
-github.com/grafana/dskit v0.0.0-20210820144809-22d3c35938ff/go.mod h1:gqY8X05aT5+AyPhIAGh3ETsIfnxigToPbBE5+RUl/HI=
+github.com/grafana/dskit v0.0.0-20210823064759-be1c7409790b h1:/kiecZh4sca1b7R68cTZbL9b6izZnzg3ev95cM5H5o0=
+github.com/grafana/dskit v0.0.0-20210823064759-be1c7409790b/go.mod h1:RTAqIuKJd38N3xcQFJvKyfKLLL4J0SHBMMw1cW5W81c=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85 h1:xLuzPoOzdfNb/RF/IENCw+oLVdZB4G21VPhkHBgwSHY=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85/go.mod h1:crI9WX6p0IhrqB+DqIUHulRW853PaNFf7o4UprV//3I=
 github.com/grafana/prometheus-private v0.0.0-20210813131603-a3ad21265842 h1:ooA3k7/sLYgexE3B6I5tIqmo1ey8Ko5HoL7+iNTO/XY=
@@ -1623,9 +1623,8 @@ github.com/weaveworks/common v0.0.0-20200625145055-4b1847531bc9/go.mod h1:c98fKi
 github.com/weaveworks/common v0.0.0-20200914083218-61ffdd448099/go.mod h1:hz10LOsAdzC3K/iXaKoFxOKTDRgxJl+BTGX1GY+TzO4=
 github.com/weaveworks/common v0.0.0-20201119133501-0619918236ec/go.mod h1:ykzWac1LtVfOxdCK+jD754at1Ws9dKCwFeUzkFBffPs=
 github.com/weaveworks/common v0.0.0-20210112142934-23c8d7fa6120/go.mod h1:ykzWac1LtVfOxdCK+jD754at1Ws9dKCwFeUzkFBffPs=
+github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624 h1:rbPhNKTbWNWchMqGWKKVYUocxiAk1ii5b8D/C49v/Lg=
 github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624/go.mod h1:ykzWac1LtVfOxdCK+jD754at1Ws9dKCwFeUzkFBffPs=
-github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a h1:ALomSnvy/NPeVoc4a1o7keaHHgLS76r9ZYIlwWWF+KA=
-github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a/go.mod h1:YU9FvnS7kUnRt6HY10G+2qHkwzP3n3Vb1XsXDsJTSp8=
 github.com/weaveworks/promrus v1.2.0 h1:jOLf6pe6/vss4qGHjXmGz4oDJQA+AOCqEL3FvvZGz7M=
 github.com/weaveworks/promrus v1.2.0/go.mod h1:SaE82+OJ91yqjrE1rsvBWVzNZKcHYFtMUyS1+Ogs/KA=
 github.com/willf/bitset v1.1.9/go.mod h1:RjeCKbqT1RxIR/KWY6phxZiaY1IyutSBfGjNPySAYV4=
