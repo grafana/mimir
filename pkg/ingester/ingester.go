@@ -183,18 +183,18 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
 
 func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
 	if !strings.Contains(s, ":") {
-		return fmt.Errorf("-ingester.active-series-custom-trackers value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %q", s)
+		return errors.New("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found")
 	}
 
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
 		if !strings.Contains(p, ":") {
-			return fmt.Errorf("-ingester.active-series-custom-trackers value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
+			return fmt.Errorf("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
 		}
 		split := strings.SplitN(p, ":", 2)
 		name, matcher := split[0], split[1]
 		if len(name) == 0 || len(matcher) == 0 {
-			return fmt.Errorf("colon-separated values of -ingester.active-series-custrom-trackers should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
+			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}
 		*cfgs = append(*cfgs, ActiveSeriesCustomTrackerConfig{Name: name, Matcher: matcher})
 	}
