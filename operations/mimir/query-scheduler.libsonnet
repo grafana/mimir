@@ -22,11 +22,13 @@
     $.util.resourcesRequests('2', '1Gi') +
     $.util.resourcesLimits(null, '2Gi'),
 
-
-  query_scheduler_deployment: if !$._config.query_scheduler_enabled then {} else
-    deployment.new('query-scheduler', 2, [$.query_scheduler_container]) +
+  newQuerySchedulerDeployment(name, container)::
+    deployment.new(name, 2, [container]) +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
     $.util.antiAffinity,
+
+  query_scheduler_deployment: if !$._config.query_scheduler_enabled then {} else
+    self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container),
 
   query_scheduler_service: if !$._config.query_scheduler_enabled then {} else
     $.util.serviceFor($.query_scheduler_deployment),
