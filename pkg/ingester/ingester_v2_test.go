@@ -2328,7 +2328,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 
 		for _, queryShardingEnabled := range []bool{false, true} {
 			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
-				benchmarkIngester_V2QueryStream(b, ctx, i, queryShardingEnabled, numShards)
+				benchmarkIngesterV2QueryStream(ctx, b, i, queryShardingEnabled, numShards)
 			})
 		}
 	})
@@ -2338,13 +2338,13 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 
 		for _, queryShardingEnabled := range []bool{false, true} {
 			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
-				benchmarkIngester_V2QueryStream(b, ctx, i, queryShardingEnabled, numShards)
+				benchmarkIngesterV2QueryStream(ctx, b, i, queryShardingEnabled, numShards)
 			})
 		}
 	})
 }
 
-func benchmarkIngester_V2QueryStream(b *testing.B, ctx context.Context, i *Ingester, queryShardingEnabled bool, numShards int) {
+func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, queryShardingEnabled bool, numShards int) {
 	mockStream := &mockQueryStreamServer{ctx: ctx}
 
 	metricMatcher := &client.LabelMatcher{
