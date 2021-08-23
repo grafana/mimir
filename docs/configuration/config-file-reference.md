@@ -802,7 +802,7 @@ lifecycler:
 # Additional active series metrics, matching the provided matchers. Matchers
 # should be in form <name>:<matcher>, like 'foobar:{foo="bar"}'. Multiple
 # matchers can be provided either providing the flag multiple times or providing
-# multiple colon-separated values to a single flag.
+# multiple semicolon-separated values to a single flag.
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <active_series_custom_tracker...> | default = ]
 
