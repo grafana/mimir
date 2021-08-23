@@ -178,7 +178,7 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
 	for i, cfg := range *cfgs {
 		strs[i] = cfg.String()
 	}
-	return strings.Join(strs, ",")
+	return strings.Join(strs, ";")
 }
 
 func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
