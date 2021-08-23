@@ -68,14 +68,16 @@
 
   local deployment = $.apps.v1.deployment,
 
-  query_frontend_deployment:
-    deployment.new('query-frontend', $._config.queryFrontend.replicas, [$.query_frontend_container]) +
+  newQueryFrontendDeployment(name, container)::
+    deployment.new(name, $._config.queryFrontend.replicas, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.util.antiAffinity +
     // inject storage schema in order to know what/how to shard
     if $._config.queryFrontend.sharded_queries_enabled then
       $.storage_config_mixin
     else {},
+
+  query_frontend_deployment: self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
 
   local service = $.core.v1.service,
 
