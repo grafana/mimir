@@ -2256,66 +2256,130 @@ func (m *mockQueryStreamServer) Context() context.Context {
 	return m.ctx
 }
 
-func BenchmarkIngester_v2QueryStream_Samples(b *testing.B) {
-	benchmarkV2QueryStream(b, false)
-}
+func BenchmarkIngester_V2QueryStream(b *testing.B) {
+	const (
+		numSeries       = 25000 // Number of series to push.
+		numHeadSamples  = 240   // Number of samples in the TSDB Head (2h of samples at 30s scrape interval).
+		numBlockSamples = 240   // Number of samples in compacted blocks (2h of samples at 30s scrape interval).
+		numShards       = 16    // Number of shards to query when query sharding is enabled.
+	)
 
-func BenchmarkIngester_v2QueryStream_Chunks(b *testing.B) {
-	benchmarkV2QueryStream(b, true)
-}
-
-func benchmarkV2QueryStream(b *testing.B, streamChunks bool) {
 	cfg := defaultIngesterTestConfig(b)
-	cfg.StreamChunksWhenUsingBlocks = streamChunks
+	limits := defaultLimitsTestConfig()
+	limits.MaxLocalSeriesPerMetric = 0
+	limits.MaxLocalSeriesPerUser = 0
+	limits.MaxGlobalSeriesPerMetric = 0
+	limits.MaxGlobalSeriesPerUser = 0
+
+	// Change stream type in runtime.
+	var streamType QueryStreamType
+	cfg.StreamTypeFn = func() QueryStreamType {
+		return streamType
+	}
 
 	// Create ingester.
-	i, err := prepareIngesterWithBlocksStorage(b, cfg, nil)
+	i, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, limits, "", nil)
 	require.NoError(b, err)
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), i))
-	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
+	b.Cleanup(func() {
+		require.NoError(b, services.StopAndAwaitTerminated(context.Background(), i))
+	})
 
 	// Wait until it's ACTIVE.
 	test.Poll(b, 1*time.Second, ring.ACTIVE, func() interface{} {
 		return i.lifecycler.GetState()
 	})
 
-	// Push series.
+	// Push series to a compacted block.
 	ctx := user.InjectOrgID(context.Background(), userID)
 
-	const samplesCount = 1000
-	samples := make([]mimirpb.Sample, 0, samplesCount)
+	samples := make([]mimirpb.Sample, 0, numBlockSamples)
 
-	for i := 0; i < samplesCount; i++ {
+	for i := 0; i < numBlockSamples; i++ {
 		samples = append(samples, mimirpb.Sample{
 			Value:       float64(i),
 			TimestampMs: int64(i),
 		})
 	}
 
-	const seriesCount = 100
-	for s := 0; s < seriesCount; s++ {
+	for s := 0; s < numSeries; s++ {
 		_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
 		require.NoError(b, err)
 	}
 
-	req := &client.QueryRequest{
-		StartTimestampMs: 0,
-		EndTimestampMs:   samplesCount + 1,
+	i.Flush()
 
-		Matchers: []*client.LabelMatcher{{
-			Type:  client.EQUAL,
-			Name:  model.MetricNameLabel,
-			Value: "foo",
-		}},
+	// Push series to TSDB head.
+	samples = samples[:0]
+	for i := numBlockSamples; i < numBlockSamples+numHeadSamples; i++ {
+		samples = append(samples, mimirpb.Sample{
+			Value:       float64(i),
+			TimestampMs: int64(i),
+		})
 	}
 
+	for s := 0; s < numSeries; s++ {
+		_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
+		require.NoError(b, err)
+	}
+
+	b.Run("query samples", func(b *testing.B) {
+		streamType = QueryStreamSamples
+
+		for _, queryShardingEnabled := range []bool{false, true} {
+			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
+				benchmarkIngester_V2QueryStream(b, ctx, i, queryShardingEnabled, numShards)
+			})
+		}
+	})
+
+	b.Run("query chunks", func(b *testing.B) {
+		streamType = QueryStreamChunks
+
+		for _, queryShardingEnabled := range []bool{false, true} {
+			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
+				benchmarkIngester_V2QueryStream(b, ctx, i, queryShardingEnabled, numShards)
+			})
+		}
+	})
+}
+
+func benchmarkIngester_V2QueryStream(b *testing.B, ctx context.Context, i *Ingester, queryShardingEnabled bool, numShards int) {
 	mockStream := &mockQueryStreamServer{ctx: ctx}
 
-	b.ResetTimer()
+	metricMatcher := &client.LabelMatcher{
+		Type:  client.EQUAL,
+		Name:  model.MetricNameLabel,
+		Value: "foo",
+	}
 
 	for ix := 0; ix < b.N; ix++ {
-		err := i.v2QueryStream(req, mockStream)
-		require.NoError(b, err)
+		if queryShardingEnabled {
+			// Query each shard.
+			for idx := 0; idx < numShards; idx++ {
+				req := &client.QueryRequest{
+					StartTimestampMs: math.MinInt64,
+					EndTimestampMs:   math.MaxInt64,
+					Matchers: []*client.LabelMatcher{metricMatcher, {
+						Type:  client.EQUAL,
+						Name:  querysharding.ShardLabel,
+						Value: querysharding.ShardSelector{ShardIndex: uint64(idx), ShardCount: uint64(numShards)}.LabelValue(),
+					}},
+				}
+
+				err := i.v2QueryStream(req, mockStream)
+				require.NoError(b, err)
+			}
+		} else {
+			req := &client.QueryRequest{
+				StartTimestampMs: math.MinInt64,
+				EndTimestampMs:   math.MaxInt64,
+				Matchers:         []*client.LabelMatcher{metricMatcher},
+			}
+
+			err := i.v2QueryStream(req, mockStream)
+			require.NoError(b, err)
+		}
 	}
 }
 
