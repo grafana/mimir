@@ -64,6 +64,7 @@ type ingesterMetrics struct {
 
 	activeSeriesPerUser               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
+	activeSeriesCustomTrackerNames    []string
 
 	// Global limit metrics
 	maxUsersGauge           prometheus.GaugeFunc
@@ -74,7 +75,15 @@ type ingesterMetrics struct {
 	inflightRequests        prometheus.GaugeFunc
 }
 
-func newIngesterMetrics(r prometheus.Registerer, createMetricsConflictingWithTSDB bool, activeSeriesEnabled bool, instanceLimitsFn func() *InstanceLimits, ingestionRate *util_math.EwmaRate, inflightRequests *atomic.Int64) *ingesterMetrics {
+func newIngesterMetrics(
+	r prometheus.Registerer,
+	createMetricsConflictingWithTSDB bool,
+	activeSeriesEnabled bool,
+	activeSeriesCustomTrackerNames []string,
+	instanceLimitsFn func() *InstanceLimits,
+	ingestionRate *util_math.EwmaRate,
+	inflightRequests *atomic.Int64,
+) *ingesterMetrics {
 	const (
 		instanceLimits     = "cortex_ingester_instance_limits"
 		instanceLimitsHelp = "Instance limits used by this ingester." // Must be same for all registrations.
@@ -304,6 +313,9 @@ func newIngesterMetrics(r prometheus.Registerer, createMetricsConflictingWithTSD
 			Name: "cortex_ingester_active_series_custom_tracker",
 			Help: "Number of currently active series matching a pre-configured label matchers per user.",
 		}, []string{"user", "name"}),
+		// activeSeriesCustomTrackerNames contains all the values for the `name` label of activeSeriesCustomTrackersPerUser,
+		// so we can delete all the labels for each user when needed.
+		activeSeriesCustomTrackerNames: activeSeriesCustomTrackerNames,
 	}
 
 	if activeSeriesEnabled && r != nil {
@@ -330,6 +342,9 @@ func (m *ingesterMetrics) deletePerUserMetrics(userID string) {
 	m.memMetadataCreatedTotal.DeleteLabelValues(userID)
 	m.memMetadataRemovedTotal.DeleteLabelValues(userID)
 	m.activeSeriesPerUser.DeleteLabelValues(userID)
+	for _, name := range m.activeSeriesCustomTrackerNames {
+		m.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+	}
 
 	if m.memSeriesCreatedTotal != nil {
 		m.memSeriesCreatedTotal.DeleteLabelValues(userID)

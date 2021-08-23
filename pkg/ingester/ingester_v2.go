@@ -510,7 +510,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 		activeSeriesMatcher: asm,
 	}
-	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -569,7 +569,7 @@ func NewV2ForFlusher(cfg Config, limits *validation.Overrides, registerer promet
 		TSDBState: newTSDBState(cfg, bucketClient, registerer),
 		logger:    logger,
 	}
-	i.metrics = newIngesterMetrics(registerer, false, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.TSDBState.shipperIngesterID = "flusher"
 
@@ -1754,6 +1754,9 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			for _, name := range i.metrics.activeSeriesCustomTrackerNames {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
 		}(userDB)
 	}
 
