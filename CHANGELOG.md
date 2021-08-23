@@ -35,7 +35,7 @@
   * Renamed metrics:
     * `cortex_frontend_mapped_asts_total` to `cortex_frontend_query_sharding_rewrites_attempted_total`
 * [FEATURE] PromQL: added `present_over_time` support. #139
-* [FEATURE] Ingester: can expose metrics on active series matching custom trackers. #42
+* [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`
