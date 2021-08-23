@@ -188,7 +188,7 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
 		if len(split) != 2 {
 			return fmt.Errorf("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
 		}
-		name, matcher := split[0], split[1]
+		name, matcher := strings.TrimSpace(split[0]), strings.TrimSpace(split[1])
 		if len(name) == 0 || len(matcher) == 0 {
 			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}

@@ -1145,13 +1145,33 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 			error: true,
 		},
 		{
+			name:  "empty whitespace-only matcher fails",
+			flags: []string{`-ingester.active-series-custom-trackers=foo: `},
+			error: true,
+		},
+		{
+			name:  "second empty whitespace-only matcher fails",
+			flags: []string{`-ingester.active-series-custom-trackers=foo: ;bar:{}`},
+			error: true,
+		},
+		{
 			name:  "empty name fails",
 			flags: []string{`-ingester.active-series-custom-trackers=:{}`},
 			error: true,
 		},
 		{
+			name:  "empty whitespace-only name fails",
+			flags: []string{`-ingester.active-series-custom-trackers= :{}`},
+			error: true,
+		},
+		{
 			name:     "one matcher",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`},
+			expected: ActiveSeriesCustomTrackersConfigs{{Name: `foo`, Matcher: `{foo="bar"}`}},
+		},
+		{
+			name: "whitespaces are trimmed from name and matcher",
+			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
 			expected: ActiveSeriesCustomTrackersConfigs{{Name: `foo`, Matcher: `{foo="bar"}`}},
 		},
 		{
