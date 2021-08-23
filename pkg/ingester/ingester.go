@@ -182,10 +182,6 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
 }
 
 func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
-	if !strings.Contains(s, ":") {
-		return errors.New("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found")
-	}
-
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
 		if !strings.Contains(p, ":") {
