@@ -41,7 +41,10 @@ const userID = "1"
 func defaultIngesterTestConfig(t testing.TB) Config {
 	t.Helper()
 
-	consul := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	flagext.DefaultValues(&cfg.BlocksStorageConfig)

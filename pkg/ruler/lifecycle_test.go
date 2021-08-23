@@ -31,7 +31,10 @@ func TestRulerShutdown(t *testing.T) {
 	defer rcleanup()
 
 	r.cfg.EnableSharding = true
-	ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	err := enableSharding(r, ringStore)
 	require.NoError(t, err)
@@ -67,7 +70,10 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	r.cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond
 	r.cfg.Ring.HeartbeatTimeout = heartbeatTimeout
 
-	ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	err := enableSharding(r, ringStore)
 	require.NoError(t, err)

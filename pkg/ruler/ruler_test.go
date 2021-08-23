@@ -51,11 +51,16 @@ import (
 )
 
 func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()) {
+	t.Helper()
+
 	// Create a new temporary directory for the rules, so that
 	// each test will run in isolation.
 	rulesDir, _ := ioutil.TempDir("/tmp", "ruler-tests")
 	codec := ring.GetCodec()
-	consul := consul.NewInMemoryClient(codec, testLogger{})
+	consul, closer := consul.NewInMemoryClient(codec, testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.RulePath = rulesDir
@@ -644,7 +649,10 @@ func TestSharding(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			t.Cleanup(func() {
+				_ = closer.Close()
+			})
 
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
 				cfg := Config{

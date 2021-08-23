@@ -340,7 +340,10 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 		amByAddr[a.myAddr] = ams[i]
 	}
 
-	kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 	err := kvStore.CAS(context.Background(), RingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{

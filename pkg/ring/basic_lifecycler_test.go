@@ -415,7 +415,12 @@ func prepareBasicLifecycler(t testing.TB, cfg BasicLifecyclerConfig) (*BasicLife
 }
 
 func prepareBasicLifecyclerWithDelegate(t testing.TB, cfg BasicLifecyclerConfig, delegate BasicLifecyclerDelegate) (*BasicLifecycler, kv.Client, error) {
-	store := consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Helper()
+
+	store, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	lifecycler, err := NewBasicLifecycler(cfg, testRingName, testRingKey, store, delegate, log.NewNopLogger(), nil)
 	return lifecycler, store, err

@@ -690,7 +690,11 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 				})
 				defer stopAll(ds, r)
 				codec := GetReplicaDescCodec()
-				mock := kv.PrefixClient(consul.NewInMemoryClient(codec, testLogger{}), "prefix")
+				c, closer := consul.NewInMemoryClient(codec, testLogger{})
+				t.Cleanup(func() {
+					_ = closer.Close()
+				})
+				mock := kv.PrefixClient(c, "prefix")
 				d := ds[0]
 
 				if tc.enableTracker {
@@ -1587,7 +1591,10 @@ func BenchmarkDistributor_Push(b *testing.B) {
 		b.Run(testName, func(b *testing.B) {
 
 			// Create an in-memory KV store for the ring with 1 ingester registered.
-			kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			b.Cleanup(func() {
+				_ = closer.Close()
+			})
 			err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
@@ -2035,7 +2042,10 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, *rin
 		ingestersByAddr[addr] = &ingesters[i]
 	}
 
-	kvStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 	err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{

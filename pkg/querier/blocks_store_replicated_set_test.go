@@ -333,7 +333,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			ctx := context.Background()
 
 			// Setup the ring state.
-			ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			t.Cleanup(func() {
+				_ = closer.Close()
+			})
 
 			require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
 				d := ring.NewDesc()
@@ -392,7 +395,10 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	block1 := ulid.MustNew(1, nil)
 
 	// Create a ring.
-	ringStore := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
 		d := ring.NewDesc()

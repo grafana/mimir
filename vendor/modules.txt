@@ -280,9 +280,10 @@ github.com/googleapis/gax-go/v2
 github.com/gorilla/mux
 # github.com/gorilla/websocket v1.4.2
 github.com/gorilla/websocket
-# github.com/grafana/dskit v0.0.0-20210823072454-df503e950d6f
+# github.com/grafana/dskit v0.0.0-20210823142328-021821ccb19f
 ## explicit
 github.com/grafana/dskit/backoff
+github.com/grafana/dskit/closer
 github.com/grafana/dskit/flagext
 github.com/grafana/dskit/kv
 github.com/grafana/dskit/kv/codec

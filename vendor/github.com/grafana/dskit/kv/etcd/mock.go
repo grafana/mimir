@@ -12,6 +12,7 @@ import (
 	"go.etcd.io/etcd/server/v3/embed"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v3client"
 
+	"github.com/grafana/dskit/closer"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/codec"
 )
@@ -46,7 +47,7 @@ func Mock(codec codec.Codec, logger log.Logger) (*Client, io.Closer, error) {
 		return nil, nil, fmt.Errorf("server took too long to start")
 	}
 
-	closer := CloserFunc(func() error {
+	closer := closer.Func(func() error {
 		etcd.Server.Stop()
 		return nil
 	})
@@ -63,19 +64,6 @@ func Mock(codec codec.Codec, logger log.Logger) (*Client, io.Closer, error) {
 
 	return client, closer, nil
 }
-
-// CloserFunc is like http.HandlerFunc but for io.Closers.
-type CloserFunc func() error
-
-// Close implements io.Closer.
-func (f CloserFunc) Close() error {
-	return f()
-}
-
-// NopCloser does nothing.
-var NopCloser = CloserFunc(func() error {
-	return nil
-})
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {

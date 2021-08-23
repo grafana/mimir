@@ -8,6 +8,7 @@ package ring
 import (
 	"context"
 	"fmt"
+	io "io"
 	"io/ioutil"
 	"os"
 	"sort"
@@ -51,7 +52,11 @@ func checkNormalised(d interface{}, id string) bool {
 func TestLifecycler_HealthyInstancesCount(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	ctx := context.Background()
 
@@ -98,7 +103,11 @@ func TestLifecycler_HealthyInstancesCount(t *testing.T) {
 func TestLifecycler_ZonesCount(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	events := []struct {
 		zone          string
@@ -138,7 +147,11 @@ func TestLifecycler_ZonesCount(t *testing.T) {
 func TestLifecycler_NilFlushTransferer(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 
 	// Create a lifecycler with nil FlushTransferer to make sure it operates correctly
@@ -159,7 +172,11 @@ func TestLifecycler_NilFlushTransferer(t *testing.T) {
 func TestLifecycler_TwoRingsWithDifferentKeysOnTheSameKVStore(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	// Create two lifecyclers, each on a separate ring
 	lifecyclerConfig1 := testLifecyclerConfig(ringConfig, "instance-1")
@@ -197,7 +214,11 @@ func TestLifecycler_ShouldHandleInstanceAbruptlyRestarted(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	c := GetCodec()
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(c, testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(c, testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -344,7 +365,10 @@ func TestCheckReady_MinReadyDuration(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := context.Background()
 
-			ringStore := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			ringStore, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			t.Cleanup(func() {
+				_ = closer.Close()
+			})
 
 			var ringConfig Config
 			flagext.DefaultValues(&ringConfig)
@@ -411,7 +435,10 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			ctx := context.Background()
 
-			ringStore := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			ringStore, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			t.Cleanup(func() {
+				_ = closer.Close()
+			})
 
 			var ringConfig Config
 			flagext.DefaultValues(&ringConfig)
@@ -470,7 +497,11 @@ func (f *noopFlushTransferer) TransferOut(ctx context.Context) error { return ni
 func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -570,7 +601,11 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 func TestTokensOnDisk(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -645,7 +680,11 @@ func TestJoinInLeavingState(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	c := GetCodec()
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(c, testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(c, testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -697,7 +736,11 @@ func TestJoinInJoiningState(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	c := GetCodec()
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(c, testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(c, testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -759,7 +802,11 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	var ringConfig Config
 	flagext.DefaultValues(&ringConfig)
 	codec := GetCodec()
-	ringConfig.KVStore.Mock = consul.NewInMemoryClient(codec, testLogger{})
+	var closer io.Closer
+	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(codec, testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)

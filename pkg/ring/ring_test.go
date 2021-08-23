@@ -1951,7 +1951,10 @@ func TestRingUpdates(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			inmem := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			inmem, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			t.Cleanup(func() {
+				_ = closer.Close()
+			})
 
 			cfg := Config{
 				KVStore:           kv.Config{Mock: inmem},
@@ -2043,10 +2046,13 @@ func startLifecycler(t *testing.T, cfg Config, heartbeat time.Duration, lifecycl
 // This test checks if shuffle-sharded ring can be reused, and whether it receives
 // updates from "main" ring.
 func TestShuffleShardWithCaching(t *testing.T) {
-	inmem := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
+	inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,
 	}, testLogger{})
+	t.Cleanup(func() {
+		_ = closer.Close()
+	})
 
 	cfg := Config{
 		KVStore:              kv.Config{Mock: inmem},
