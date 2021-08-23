@@ -29,53 +29,15 @@ import (
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	tests := map[string]struct {
-		blocksShardingStrategy   string // Empty means sharding is disabled.
-		tenantShardSize          int
-		ingesterStreamingEnabled bool
-		indexCacheBackend        string
-		bucketIndexEnabled       bool
+		blocksShardingStrategy string // Empty means sharding is disabled.
+		tenantShardSize        int
 	}{
-		"blocks sharding disabled, ingester gRPC streaming disabled, memcached index cache": {
-			blocksShardingStrategy:   "",
-			ingesterStreamingEnabled: false,
-			// Memcached index cache is required to avoid flaky tests when the blocks sharding is disabled
-			// because two different requests may hit two different store-gateways, so if the cache is not
-			// shared there's no guarantee we'll have a cache hit.
-			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
-		},
-		"blocks default sharding, ingester gRPC streaming disabled, inmemory index cache": {
-			blocksShardingStrategy:   "default",
-			ingesterStreamingEnabled: false,
-			indexCacheBackend:        tsdb.IndexCacheBackendInMemory,
-		},
-		"blocks default sharding, ingester gRPC streaming enabled, inmemory index cache": {
-			blocksShardingStrategy:   "default",
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendInMemory,
-		},
-		"blocks default sharding, ingester gRPC streaming enabled, memcached index cache": {
-			blocksShardingStrategy:   "default",
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendMemcached,
-		},
-		"blocks shuffle sharding, ingester gRPC streaming enabled, memcached index cache": {
-			blocksShardingStrategy:   "shuffle-sharding",
-			tenantShardSize:          1,
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendMemcached,
-		},
-		"blocks default sharding, ingester gRPC streaming enabled, inmemory index cache, bucket index enabled": {
-			blocksShardingStrategy:   "default",
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendInMemory,
-			bucketIndexEnabled:       true,
+		"blocks default sharding, ingester gRPC streaming enabled, memcached index cache, bucket index enabled": {
+			blocksShardingStrategy: "default",
 		},
 		"blocks shuffle sharding, ingester gRPC streaming enabled, memcached index cache, bucket index enabled": {
-			blocksShardingStrategy:   "shuffle-sharding",
-			tenantShardSize:          1,
-			ingesterStreamingEnabled: true,
-			indexCacheBackend:        tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:       true,
+			blocksShardingStrategy: "shuffle-sharding",
+			tenantShardSize:        1,
 		},
 	}
 
@@ -94,13 +56,13 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.tsdb.ship-interval":                "1s",
 				"-blocks-storage.bucket-store.sync-interval":        "1s",
 				"-blocks-storage.tsdb.retention-period":             ((blockRangePeriod * 2) - 1).String(),
-				"-blocks-storage.bucket-store.index-cache.backend":  testCfg.indexCacheBackend,
+				"-blocks-storage.bucket-store.index-cache.backend":  tsdb.IndexCacheBackendMemcached,
 				"-store-gateway.sharding-enabled":                   strconv.FormatBool(testCfg.blocksShardingStrategy != ""),
 				"-store-gateway.sharding-strategy":                  testCfg.blocksShardingStrategy,
 				"-store-gateway.tenant-shard-size":                  fmt.Sprintf("%d", testCfg.tenantShardSize),
-				"-querier.ingester-streaming":                       strconv.FormatBool(testCfg.ingesterStreamingEnabled),
+				"-querier.ingester-streaming":                       "true",
 				"-querier.query-store-for-labels-enabled":           "true",
-				"-blocks-storage.bucket-store.bucket-index.enabled": strconv.FormatBool(testCfg.bucketIndexEnabled),
+				"-blocks-storage.bucket-store.bucket-index.enabled": "true",
 			})
 
 			// Start dependencies.
@@ -120,12 +82,6 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			storeGateways := e2emimir.NewCompositeMimirService(storeGateway1, storeGateway2)
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway1, storeGateway2))
 
-			// Start the querier with configuring store-gateway addresses if sharding is disabled.
-			if testCfg.blocksShardingStrategy == "" {
-				flags = mergeFlags(flags, map[string]string{
-					"-querier.store-gateway-addresses": strings.Join([]string{storeGateway1.NetworkGRPCEndpoint(), storeGateway2.NetworkGRPCEndpoint()}, ","),
-				})
-			}
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 			require.NoError(t, s.StartAndWaitReady(querier))
 
@@ -176,14 +132,9 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(3), "cortex_ingester_memory_series_created_total"))
 			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_removed_total"))
 
-			if testCfg.bucketIndexEnabled {
-				// Start the compactor to have the bucket index created before querying.
-				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
-				require.NoError(t, s.StartAndWaitReady(compactor))
-			} else {
-				// Wait until the querier has discovered the uploaded blocks.
-				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(2), "cortex_blocks_meta_synced"))
-			}
+			// Start the compactor to have the bucket index created before querying.
+			compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
+			require.NoError(t, s.StartAndWaitReady(compactor))
 
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
 			// we don't known which store-gateway instance will synch the blocks, so we need to wait on
@@ -222,12 +173,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(7), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(0), "thanos_store_index_cache_hits_total")) // no cache hit cause the cache was empty
 
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2), "thanos_store_index_cache_items"))             // 2 series both for postings and series cache
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2), "thanos_store_index_cache_items_added_total")) // 2 series both for postings and series cache
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(11), "thanos_memcached_operations_total")) // 7 gets + 4 sets
-			}
+			// Check memcache index cache metrics
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(11), "thanos_memcached_operations_total")) // 7 gets + 4 sets
 
 			// Query back again the 1st series from storage. This time it should use the index cache.
 			result, err = c.Query("series_1", series1Timestamp)
@@ -238,12 +185,8 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(7+2), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
 
-			if testCfg.indexCacheBackend == tsdb.IndexCacheBackendInMemory {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2), "thanos_store_index_cache_items"))             // as before
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2*2), "thanos_store_index_cache_items_added_total")) // as before
-			} else if testCfg.indexCacheBackend == tsdb.IndexCacheBackendMemcached {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(11+2), "thanos_memcached_operations_total")) // as before + 2 gets
-			}
+			// Check memcache index cache metrics
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(11+2), "thanos_memcached_operations_total")) // as before + 2 gets
 
 			// Query metadata.
 			testMetadataQueriesWithBlocksStorage(t, c, series1[0], series2[0], series3[0], blockRangePeriod)
