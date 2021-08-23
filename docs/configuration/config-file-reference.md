@@ -264,10 +264,6 @@ query_scheduler:
 The `server_config` configures the HTTP and gRPC server of the launched service(s).
 
 ```yaml
-# HTTP server listen network, default tcp
-# CLI flag: -server.http-listen-network
-[http_listen_network: <string> | default = "tcp"]
-
 # HTTP server listen address.
 # CLI flag: -server.http-listen-address
 [http_listen_address: <string> | default = ""]
@@ -279,10 +275,6 @@ The `server_config` configures the HTTP and gRPC server of the launched service(
 # Maximum number of simultaneous http connections, <=0 to disable
 # CLI flag: -server.http-conn-limit
 [http_listen_conn_limit: <int> | default = 0]
-
-# gRPC server listen network
-# CLI flag: -server.grpc-listen-network
-[grpc_listen_network: <string> | default = "tcp"]
 
 # gRPC server listen address.
 # CLI flag: -server.grpc-listen-address

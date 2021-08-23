@@ -19,7 +19,6 @@ import (
 	"time"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/server/v3/etcdserver/api/membership"
 	"go.etcd.io/etcd/server/v3/etcdserver/api/v2store"
 )
 
@@ -53,7 +52,7 @@ func (a *reqV2HandlerStore) Post(ctx context.Context, r *RequestV2) (Response, e
 }
 
 func (a *reqV2HandlerStore) Put(ctx context.Context, r *RequestV2) (Response, error) {
-	return a.applier.Put(r, membership.ApplyBoth), nil
+	return a.applier.Put(r), nil
 }
 
 func (a *reqV2HandlerStore) Delete(ctx context.Context, r *RequestV2) (Response, error) {

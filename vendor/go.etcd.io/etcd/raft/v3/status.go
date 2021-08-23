@@ -44,7 +44,8 @@ type BasicStatus struct {
 func getProgressCopy(r *raft) map[uint64]tracker.Progress {
 	m := make(map[uint64]tracker.Progress)
 	r.prs.Visit(func(id uint64, pr *tracker.Progress) {
-		p := *pr
+		var p tracker.Progress
+		p = *pr
 		p.Inflights = pr.Inflights.Clone()
 		pr = nil
 
@@ -99,7 +100,7 @@ func (s Status) MarshalJSON() ([]byte, error) {
 func (s Status) String() string {
 	b, err := s.MarshalJSON()
 	if err != nil {
-		getLogger().Panicf("unexpected error: %v", err)
+		raftLogger.Panicf("unexpected error: %v", err)
 	}
 	return string(b)
 }

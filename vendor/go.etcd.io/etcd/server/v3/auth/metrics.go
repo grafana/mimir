@@ -15,9 +15,8 @@
 package auth
 
 import (
-	"sync"
-
 	"github.com/prometheus/client_golang/prometheus"
+	"sync"
 )
 
 var (

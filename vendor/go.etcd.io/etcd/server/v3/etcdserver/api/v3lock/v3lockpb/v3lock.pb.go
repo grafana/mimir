@@ -746,7 +746,10 @@ func (m *LockRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthV3Lock
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthV3Lock
 			}
 			if (iNdEx + skippy) > l {
@@ -867,7 +870,10 @@ func (m *LockResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthV3Lock
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthV3Lock
 			}
 			if (iNdEx + skippy) > l {
@@ -952,7 +958,10 @@ func (m *UnlockRequest) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthV3Lock
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthV3Lock
 			}
 			if (iNdEx + skippy) > l {
@@ -1039,7 +1048,10 @@ func (m *UnlockResponse) Unmarshal(dAtA []byte) error {
 			if err != nil {
 				return err
 			}
-			if (skippy < 0) || (iNdEx+skippy) < 0 {
+			if skippy < 0 {
+				return ErrInvalidLengthV3Lock
+			}
+			if (iNdEx + skippy) < 0 {
 				return ErrInvalidLengthV3Lock
 			}
 			if (iNdEx + skippy) > l {

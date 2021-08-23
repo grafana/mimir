@@ -26,7 +26,7 @@ import (
 	"sync"
 	"time"
 
-	"go.etcd.io/etcd/client/pkg/v3/fileutil"
+	"go.etcd.io/etcd/pkg/v3/fileutil"
 	"go.etcd.io/etcd/pkg/v3/pbutil"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/raft/v3/raftpb"
@@ -608,6 +608,7 @@ func ValidSnapshotEntries(lg *zap.Logger, walDir string) ([]walpb.Snapshot, erro
 		}
 	}
 	snaps = snaps[:n:n]
+
 	return snaps, nil
 }
 
@@ -618,11 +619,10 @@ func ValidSnapshotEntries(lg *zap.Logger, walDir string) ([]walpb.Snapshot, erro
 // If it cannot read out the expected snap, it will return ErrSnapshotNotFound.
 // If the loaded snap doesn't match with the expected one, it will
 // return error ErrSnapshotMismatch.
-func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) (*raftpb.HardState, error) {
+func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) error {
 	var metadata []byte
 	var err error
 	var match bool
-	var state raftpb.HardState
 
 	rec := &walpb.Record{}
 
@@ -631,14 +631,14 @@ func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) (*raftpb.HardSta
 	}
 	names, nameIndex, err := selectWALFiles(lg, walDir, snap)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// open wal files in read mode, so that there is no conflict
 	// when the same WAL is opened elsewhere in write mode
 	rs, _, closer, err := openWALFiles(lg, walDir, names, nameIndex, false)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		if closer != nil {
@@ -653,7 +653,7 @@ func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) (*raftpb.HardSta
 		switch rec.Type {
 		case metadataType:
 			if metadata != nil && !bytes.Equal(metadata, rec.Data) {
-				return nil, ErrMetadataConflict
+				return ErrMetadataConflict
 			}
 			metadata = rec.Data
 		case crcType:
@@ -661,7 +661,7 @@ func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) (*raftpb.HardSta
 			// Current crc of decoder must match the crc of the record.
 			// We need not match 0 crc, since the decoder is a new one at this point.
 			if crc != 0 && rec.Validate(crc) != nil {
-				return nil, ErrCRCMismatch
+				return ErrCRCMismatch
 			}
 			decoder.updateCRC(rec.Crc)
 		case snapshotType:
@@ -669,7 +669,7 @@ func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) (*raftpb.HardSta
 			pbutil.MustUnmarshal(&loadedSnap, rec.Data)
 			if loadedSnap.Index == snap.Index {
 				if loadedSnap.Term != snap.Term {
-					return nil, ErrSnapshotMismatch
+					return ErrSnapshotMismatch
 				}
 				match = true
 			}
@@ -677,23 +677,22 @@ func Verify(lg *zap.Logger, walDir string, snap walpb.Snapshot) (*raftpb.HardSta
 		// are not necessary for validating the WAL contents
 		case entryType:
 		case stateType:
-			pbutil.MustUnmarshal(&state, rec.Data)
 		default:
-			return nil, fmt.Errorf("unexpected block type %d", rec.Type)
+			return fmt.Errorf("unexpected block type %d", rec.Type)
 		}
 	}
 
 	// We do not have to read out all the WAL entries
 	// as the decoder is opened in read mode.
 	if err != io.EOF && err != io.ErrUnexpectedEOF {
-		return nil, err
+		return err
 	}
 
 	if !match {
-		return nil, ErrSnapshotNotFound
+		return ErrSnapshotNotFound
 	}
 
-	return &state, nil
+	return nil
 }
 
 // cut closes current file written and creates a new one ready to append.
@@ -784,16 +783,14 @@ func (w *WAL) cut() error {
 }
 
 func (w *WAL) sync() error {
+	if w.unsafeNoSync {
+		return nil
+	}
 	if w.encoder != nil {
 		if err := w.encoder.flush(); err != nil {
 			return err
 		}
 	}
-
-	if w.unsafeNoSync {
-		return nil
-	}
-
 	start := time.Now()
 	err := fileutil.Fdatasync(w.tail().File)
 
@@ -945,10 +942,6 @@ func (w *WAL) Save(st raftpb.HardState, ents []raftpb.Entry) error {
 }
 
 func (w *WAL) SaveSnapshot(e walpb.Snapshot) error {
-	if err := walpb.ValidateSnapshotForWrite(&e); err != nil {
-		return err
-	}
-
 	b := pbutil.MustMarshal(&e)
 
 	w.mu.Lock()

@@ -100,21 +100,12 @@ func (trw *txnReadWrite) Changes() []mvccpb.KeyValue { return nil }
 
 func NewReadOnlyTxnWrite(txn TxnRead) TxnWrite { return &txnReadWrite{txn} }
 
-type ReadTxMode uint32
-
-const (
-	// Use ConcurrentReadTx and the txReadBuffer is copied
-	ConcurrentReadTxMode = ReadTxMode(1)
-	// Use backend ReadTx and txReadBuffer is not copied
-	SharedBufReadTxMode = ReadTxMode(2)
-)
-
 type KV interface {
 	ReadView
 	WriteView
 
 	// Read creates a read transaction.
-	Read(mode ReadTxMode, trace *traceutil.Trace) TxnRead
+	Read(trace *traceutil.Trace) TxnRead
 
 	// Write creates a write transaction.
 	Write(trace *traceutil.Trace) TxnWrite
@@ -147,4 +138,15 @@ type Watchable interface {
 	// NewWatchStream returns a WatchStream that can be used to
 	// watch events happened or happening on the KV.
 	NewWatchStream() WatchStream
+}
+
+// ConsistentWatchableKV is a WatchableKV that understands the consistency
+// algorithm and consistent index.
+// If the consistent index of executing entry is not larger than the
+// consistent index of ConsistentWatchableKV, all operations in
+// this entry are skipped and return empty response.
+type ConsistentWatchableKV interface {
+	WatchableKV
+	// ConsistentIndex returns the current consistent index of the KV.
+	ConsistentIndex() uint64
 }

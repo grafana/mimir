@@ -20,10 +20,9 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
-	"strings"
 	"time"
 
-	"go.etcd.io/etcd/client/pkg/v3/types"
+	"go.etcd.io/etcd/pkg/v3/types"
 )
 
 // RaftAttributes represents the raft related attributes of an etcd member.
@@ -50,22 +49,29 @@ type Member struct {
 // NewMember creates a Member without an ID and generates one based on the
 // cluster name, peer URLs, and time. This is used for bootstrapping/adding new member.
 func NewMember(name string, peerURLs types.URLs, clusterName string, now *time.Time) *Member {
-	memberId := computeMemberId(peerURLs, clusterName, now)
-	return newMember(name, peerURLs, memberId, false)
+	return newMember(name, peerURLs, clusterName, now, false)
 }
 
 // NewMemberAsLearner creates a learner Member without an ID and generates one based on the
 // cluster name, peer URLs, and time. This is used for adding new learner member.
 func NewMemberAsLearner(name string, peerURLs types.URLs, clusterName string, now *time.Time) *Member {
-	memberId := computeMemberId(peerURLs, clusterName, now)
-	return newMember(name, peerURLs, memberId, true)
+	return newMember(name, peerURLs, clusterName, now, true)
 }
 
-func computeMemberId(peerURLs types.URLs, clusterName string, now *time.Time) types.ID {
-	peerURLstrs := peerURLs.StringSlice()
-	sort.Strings(peerURLstrs)
-	joinedPeerUrls := strings.Join(peerURLstrs, "")
-	b := []byte(joinedPeerUrls)
+func newMember(name string, peerURLs types.URLs, clusterName string, now *time.Time, isLearner bool) *Member {
+	m := &Member{
+		RaftAttributes: RaftAttributes{
+			PeerURLs:  peerURLs.StringSlice(),
+			IsLearner: isLearner,
+		},
+		Attributes: Attributes{Name: name},
+	}
+
+	var b []byte
+	sort.Strings(m.PeerURLs)
+	for _, p := range m.PeerURLs {
+		b = append(b, []byte(p)...)
+	}
 
 	b = append(b, []byte(clusterName)...)
 	if now != nil {
@@ -73,18 +79,7 @@ func computeMemberId(peerURLs types.URLs, clusterName string, now *time.Time) ty
 	}
 
 	hash := sha1.Sum(b)
-	return types.ID(binary.BigEndian.Uint64(hash[:8]))
-}
-
-func newMember(name string, peerURLs types.URLs, memberId types.ID, isLearner bool) *Member {
-	m := &Member{
-		RaftAttributes: RaftAttributes{
-			PeerURLs:  peerURLs.StringSlice(),
-			IsLearner: isLearner,
-		},
-		Attributes: Attributes{Name: name},
-		ID:         memberId,
-	}
+	m.ID = types.ID(binary.BigEndian.Uint64(hash[:8]))
 	return m
 }
 

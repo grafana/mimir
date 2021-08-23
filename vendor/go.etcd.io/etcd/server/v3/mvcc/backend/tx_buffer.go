@@ -19,11 +19,9 @@ import (
 	"sort"
 )
 
-const bucketBufferInitialSize = 512
-
 // txBuffer handles functionality shared between txWriteBuffer and txReadBuffer.
 type txBuffer struct {
-	buckets map[BucketID]*bucketBuffer
+	buckets map[string]*bucketBuffer
 }
 
 func (txb *txBuffer) reset() {
@@ -39,40 +37,21 @@ func (txb *txBuffer) reset() {
 // txWriteBuffer buffers writes of pending updates that have not yet committed.
 type txWriteBuffer struct {
 	txBuffer
-	// Map from bucket ID into information whether this bucket is edited
-	// sequentially (i.e. keys are growing monotonically).
-	bucket2seq map[BucketID]bool
+	seq bool
 }
 
-func (txw *txWriteBuffer) put(bucket Bucket, k, v []byte) {
-	txw.bucket2seq[bucket.ID()] = false
-	txw.putInternal(bucket, k, v)
+func (txw *txWriteBuffer) put(bucket, k, v []byte) {
+	txw.seq = false
+	txw.putSeq(bucket, k, v)
 }
 
-func (txw *txWriteBuffer) putSeq(bucket Bucket, k, v []byte) {
-	// TODO: Add (in tests?) verification whether k>b[len(b)]
-	txw.putInternal(bucket, k, v)
-}
-
-func (txw *txWriteBuffer) putInternal(bucket Bucket, k, v []byte) {
-	b, ok := txw.buckets[bucket.ID()]
+func (txw *txWriteBuffer) putSeq(bucket, k, v []byte) {
+	b, ok := txw.buckets[string(bucket)]
 	if !ok {
 		b = newBucketBuffer()
-		txw.buckets[bucket.ID()] = b
+		txw.buckets[string(bucket)] = b
 	}
 	b.add(k, v)
-}
-
-func (txw *txWriteBuffer) reset() {
-	txw.txBuffer.reset()
-	for k := range txw.bucket2seq {
-		v, ok := txw.buckets[k]
-		if !ok {
-			delete(txw.bucket2seq, k)
-		} else if v.used == 0 {
-			txw.bucket2seq[k] = true
-		}
-	}
 }
 
 func (txw *txWriteBuffer) writeback(txr *txReadBuffer) {
@@ -83,33 +62,27 @@ func (txw *txWriteBuffer) writeback(txr *txReadBuffer) {
 			txr.buckets[k] = wb
 			continue
 		}
-		if seq, ok := txw.bucket2seq[k]; ok && !seq && wb.used > 1 {
+		if !txw.seq && wb.used > 1 {
 			// assume no duplicate keys
 			sort.Sort(wb)
 		}
 		rb.merge(wb)
 	}
 	txw.reset()
-	// increase the buffer version
-	txr.bufVersion++
 }
 
 // txReadBuffer accesses buffered updates.
-type txReadBuffer struct {
-	txBuffer
-	// bufVersion is used to check if the buffer is modified recently
-	bufVersion uint64
-}
+type txReadBuffer struct{ txBuffer }
 
-func (txr *txReadBuffer) Range(bucket Bucket, key, endKey []byte, limit int64) ([][]byte, [][]byte) {
-	if b := txr.buckets[bucket.ID()]; b != nil {
+func (txr *txReadBuffer) Range(bucketName, key, endKey []byte, limit int64) ([][]byte, [][]byte) {
+	if b := txr.buckets[string(bucketName)]; b != nil {
 		return b.Range(key, endKey, limit)
 	}
 	return nil, nil
 }
 
-func (txr *txReadBuffer) ForEach(bucket Bucket, visitor func(k, v []byte) error) error {
-	if b := txr.buckets[bucket.ID()]; b != nil {
+func (txr *txReadBuffer) ForEach(bucketName []byte, visitor func(k, v []byte) error) error {
+	if b := txr.buckets[string(bucketName)]; b != nil {
 		return b.ForEach(visitor)
 	}
 	return nil
@@ -119,9 +92,8 @@ func (txr *txReadBuffer) ForEach(bucket Bucket, visitor func(k, v []byte) error)
 func (txr *txReadBuffer) unsafeCopy() txReadBuffer {
 	txrCopy := txReadBuffer{
 		txBuffer: txBuffer{
-			buckets: make(map[BucketID]*bucketBuffer, len(txr.txBuffer.buckets)),
+			buckets: make(map[string]*bucketBuffer, len(txr.txBuffer.buckets)),
 		},
-		bufVersion: 0,
 	}
 	for bucketName, bucket := range txr.txBuffer.buckets {
 		txrCopy.txBuffer.buckets[bucketName] = bucket.Copy()
@@ -142,7 +114,7 @@ type bucketBuffer struct {
 }
 
 func newBucketBuffer() *bucketBuffer {
-	return &bucketBuffer{buf: make([]kv, bucketBufferInitialSize), used: 0}
+	return &bucketBuffer{buf: make([]kv, 512), used: 0}
 }
 
 func (bb *bucketBuffer) Range(key, endKey []byte, limit int64) (keys [][]byte, vals [][]byte) {

@@ -19,12 +19,11 @@ import (
 	"math"
 
 	pb "go.etcd.io/etcd/api/v3/etcdserverpb"
-	"go.etcd.io/etcd/client/v3/credentials"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 
 	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.etcd.io/etcd/client/v3/credentials"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -43,31 +42,18 @@ func Server(s *etcdserver.EtcdServer, tls *tls.Config, gopts ...grpc.ServerOptio
 		bundle := credentials.NewBundle(credentials.Config{TLSConfig: tls})
 		opts = append(opts, grpc.Creds(bundle.TransportCredentials()))
 	}
-
-	chainUnaryInterceptors := []grpc.UnaryServerInterceptor{
+	opts = append(opts, grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(
 		newLogUnaryInterceptor(s),
 		newUnaryInterceptor(s),
 		grpc_prometheus.UnaryServerInterceptor,
-	}
-
-	chainStreamInterceptors := []grpc.StreamServerInterceptor{
+	)))
+	opts = append(opts, grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(
 		newStreamInterceptor(s),
 		grpc_prometheus.StreamServerInterceptor,
-	}
-
-	if s.Cfg.ExperimentalEnableDistributedTracing {
-		chainUnaryInterceptors = append(chainUnaryInterceptors, otelgrpc.UnaryServerInterceptor(s.Cfg.ExperimentalTracerOptions...))
-		chainStreamInterceptors = append(chainStreamInterceptors, otelgrpc.StreamServerInterceptor(s.Cfg.ExperimentalTracerOptions...))
-
-	}
-
-	opts = append(opts, grpc.UnaryInterceptor(grpc_middleware.ChainUnaryServer(chainUnaryInterceptors...)))
-	opts = append(opts, grpc.StreamInterceptor(grpc_middleware.ChainStreamServer(chainStreamInterceptors...)))
-
+	)))
 	opts = append(opts, grpc.MaxRecvMsgSize(int(s.Cfg.MaxRequestBytes+grpcOverheadBytes)))
 	opts = append(opts, grpc.MaxSendMsgSize(maxSendBytes))
 	opts = append(opts, grpc.MaxConcurrentStreams(maxStreams))
-
 	grpcServer := grpc.NewServer(append(opts, gopts...)...)
 
 	pb.RegisterKVServer(grpcServer, NewQuotaKVServer(s))

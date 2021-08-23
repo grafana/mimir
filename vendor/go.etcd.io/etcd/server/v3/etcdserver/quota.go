@@ -72,7 +72,7 @@ var (
 
 // NewBackendQuota creates a quota layer with the given storage limit.
 func NewBackendQuota(s *EtcdServer, name string) Quota {
-	lg := s.Logger()
+	lg := s.getLogger()
 	quotaBackendBytes.Set(float64(s.Cfg.QuotaBackendBytes))
 
 	if s.Cfg.QuotaBackendBytes < 0 {

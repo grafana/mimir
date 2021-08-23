@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210823064759-be1c7409790b
+	github.com/grafana/dskit v0.0.0-20210823072454-df503e950d6f
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
@@ -87,3 +87,13 @@ replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
 // TODO review the change introduced by https://github.com/grpc/grpc-go/pull/4416 before upgrading to 1.39.0
 replace google.golang.org/grpc => google.golang.org/grpc v1.38.0
+
+replace github.com/grpc-ecosystem/go-grpc-middleware => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
+
+replace go.etcd.io/etcd/server/v3 => go.etcd.io/etcd/server/v3 v3.5.0-alpha.0.0.20210225194612-fa82d11a958a
+
+replace go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
+
+replace github.com/gogo/status => github.com/gogo/status v1.0.3
+
+replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5

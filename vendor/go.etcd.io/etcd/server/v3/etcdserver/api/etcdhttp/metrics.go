@@ -39,14 +39,14 @@ const (
 // HandleMetricsHealth registers metrics and health handlers.
 func HandleMetricsHealth(lg *zap.Logger, mux *http.ServeMux, srv etcdserver.ServerV2) {
 	mux.Handle(PathMetrics, promhttp.Handler())
-	mux.Handle(PathHealth, NewHealthHandler(lg, func(excludedAlarms AlarmSet) Health { return checkV2Health(lg, srv, excludedAlarms) }))
+	mux.Handle(PathHealth, NewHealthHandler(lg, func() Health { return checkV2Health(lg, srv) }))
 }
 
 // HandleMetricsHealthForV3 registers metrics and health handlers. it checks health by using v3 range request
 // and its corresponding timeout.
 func HandleMetricsHealthForV3(lg *zap.Logger, mux *http.ServeMux, srv *etcdserver.EtcdServer) {
 	mux.Handle(PathMetrics, promhttp.Handler())
-	mux.Handle(PathHealth, NewHealthHandler(lg, func(excludedAlarms AlarmSet) Health { return checkV3Health(lg, srv, excludedAlarms) }))
+	mux.Handle(PathHealth, NewHealthHandler(lg, func() Health { return checkV3Health(lg, srv) }))
 }
 
 // HandlePrometheus registers prometheus handler on '/metrics'.
@@ -55,7 +55,7 @@ func HandlePrometheus(mux *http.ServeMux) {
 }
 
 // NewHealthHandler handles '/health' requests.
-func NewHealthHandler(lg *zap.Logger, hfunc func(excludedAlarms AlarmSet) Health) http.HandlerFunc {
+func NewHealthHandler(lg *zap.Logger, hfunc func() Health) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
@@ -63,8 +63,7 @@ func NewHealthHandler(lg *zap.Logger, hfunc func(excludedAlarms AlarmSet) Health
 			lg.Warn("/health error", zap.Int("status-code", http.StatusMethodNotAllowed))
 			return
 		}
-		excludedAlarms := getExcludedAlarms(r)
-		h := hfunc(excludedAlarms)
+		h := hfunc()
 		defer func() {
 			if h.Health == "true" {
 				healthSuccess.Inc()
@@ -111,38 +110,15 @@ type Health struct {
 	Reason string `json:"reason"`
 }
 
-type AlarmSet map[string]struct{}
+// TODO: server NOSPACE, etcdserver.ErrNoLeader in health API
 
-func getExcludedAlarms(r *http.Request) (alarms AlarmSet) {
-	alarms = make(map[string]struct{}, 2)
-	alms, found := r.URL.Query()["exclude"]
-	if found {
-		for _, alm := range alms {
-			if len(alms) == 0 {
-				continue
-			}
-			alarms[alm] = struct{}{}
-		}
-	}
-	return alarms
-}
-
-// TODO: etcdserver.ErrNoLeader in health API
-
-func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2, excludedAlarms AlarmSet) Health {
+func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2) Health {
 	h := Health{}
 	h.Health = "true"
 	as := srv.Alarms()
 	if len(as) > 0 {
+		h.Health = "false"
 		for _, v := range as {
-			alarmName := v.Alarm.String()
-			if _, found := excludedAlarms[alarmName]; found {
-				lg.Debug("/health excluded alarm", zap.String("alarm", alarmName))
-				delete(excludedAlarms, alarmName)
-				continue
-			}
-
-			h.Health = "false"
 			switch v.Alarm {
 			case etcdserverpb.AlarmType_NOSPACE:
 				h.Reason = "ALARM NOSPACE"
@@ -152,12 +128,8 @@ func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2, excludedAlarms AlarmSe
 				h.Reason = "ALARM UNKNOWN"
 			}
 			lg.Warn("serving /health false due to an alarm", zap.String("alarm", v.String()))
-			return h
 		}
-	}
-
-	if len(excludedAlarms) > 0 {
-		lg.Warn("fail exclude alarms from health check", zap.String("exclude alarms", fmt.Sprintf("%+v", excludedAlarms)))
+		return h
 	}
 
 	if uint64(srv.Leader()) == raft.None {
@@ -169,8 +141,8 @@ func checkHealth(lg *zap.Logger, srv etcdserver.ServerV2, excludedAlarms AlarmSe
 	return h
 }
 
-func checkV2Health(lg *zap.Logger, srv etcdserver.ServerV2, excludedAlarms AlarmSet) (h Health) {
-	if h = checkHealth(lg, srv, excludedAlarms); h.Health != "true" {
+func checkV2Health(lg *zap.Logger, srv etcdserver.ServerV2) (h Health) {
+	if h = checkHealth(lg, srv); h.Health != "true" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -186,8 +158,8 @@ func checkV2Health(lg *zap.Logger, srv etcdserver.ServerV2, excludedAlarms Alarm
 	return
 }
 
-func checkV3Health(lg *zap.Logger, srv *etcdserver.EtcdServer, excludedAlarms AlarmSet) (h Health) {
-	if h = checkHealth(lg, srv, excludedAlarms); h.Health != "true" {
+func checkV3Health(lg *zap.Logger, srv *etcdserver.EtcdServer) (h Health) {
+	if h = checkHealth(lg, srv); h.Health != "true" {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), srv.Cfg.ReqTimeout())

@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
-	"go.etcd.io/etcd/client/pkg/v3/types"
+	"go.etcd.io/etcd/pkg/v3/types"
 	"go.etcd.io/etcd/raft/v3"
 	"go.etcd.io/etcd/server/v3/etcdserver"
 	"go.etcd.io/etcd/server/v3/etcdserver/api"
@@ -35,7 +35,6 @@ import (
 const (
 	maxNoLeaderCnt          = 3
 	warnUnaryRequestLatency = 300 * time.Millisecond
-	snapshotMethod          = "/etcdserverpb.Maintenance/Snapshot"
 )
 
 type streamsMap struct {
@@ -215,7 +214,7 @@ func newStreamInterceptor(s *etcdserver.EtcdServer) grpc.StreamServerInterceptor
 			return rpctypes.ErrGRPCNotCapable
 		}
 
-		if s.IsMemberExist(s.ID()) && s.IsLearner() && info.FullMethod != snapshotMethod { // learner does not support stream RPC except Snapshot
+		if s.IsMemberExist(s.ID()) && s.IsLearner() { // learner does not support stream RPC
 			return rpctypes.ErrGPRCNotSupportedForLearner
 		}
 

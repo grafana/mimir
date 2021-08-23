@@ -14,7 +14,7 @@
 
 package v3rpc
 
-import "github.com/golang/protobuf/proto"
+import "github.com/gogo/protobuf/proto"
 
 type codec struct{}
 

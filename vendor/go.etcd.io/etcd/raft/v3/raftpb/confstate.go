@@ -35,6 +35,7 @@ func (cs ConfState) Equivalent(cs2 ConfState) error {
 		s(&cs.Learners)
 		s(&cs.VotersOutgoing)
 		s(&cs.LearnersNext)
+		cs.XXX_unrecognized = nil
 	}
 
 	if !reflect.DeepEqual(cs1, cs2) {
