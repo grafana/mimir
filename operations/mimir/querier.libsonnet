@@ -57,11 +57,14 @@
 
   querier_deployment_labels: {},
 
-  querier_deployment:
-    deployment.new('querier', $._config.querier.replicas, [$.querier_container], $.querier_deployment_labels) +
+  newQuerierDeployment(name, container)::
+    deployment.new(name, $._config.querier.replicas, [container], $.querier_deployment_labels) +
     $.util.antiAffinity +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     $.storage_config_mixin,
+
+  querier_deployment:
+    self.newQuerierDeployment('querier', $.querier_container),
 
   local service = $.core.v1.service,
 
