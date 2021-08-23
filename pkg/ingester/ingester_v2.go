@@ -493,7 +493,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	asm, err := NewActiveSeriesMatcher(cfg.ActiveSeriesCustomTrackers)
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
 	if err != nil {
 		return nil, err
 	}

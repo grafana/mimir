@@ -27,7 +27,7 @@ func TestActiveSeries_UpdateSeries_NoMatchers(t *testing.T) {
 	ls1 := []labels.Label{{Name: "a", Value: "1"}}
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 
-	c := NewActiveSeries(ActiveSeriesMatcher{})
+	c := NewActiveSeries(ActiveSeriesMatchers{})
 	allActive, activeMatching := c.Active()
 	assert.Equal(t, 0, allActive)
 	assert.Nil(t, activeMatching)
@@ -50,7 +50,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 	ls3 := []labels.Label{{Name: "a", Value: "3"}}
 
-	asm, err := NewActiveSeriesMatcher(ActiveSeriesCustomTrackersConfigs{{Name: "foo", Matcher: `{a=~"2|3"}`}})
+	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfigs{{Name: "foo", Matcher: `{a=~"2|3"}`}})
 	require.NoError(t, err)
 
 	c := NewActiveSeries(asm)
@@ -86,7 +86,7 @@ func TestActiveSeries_ShouldCorrectlyHandleFingerprintCollisions(t *testing.T) {
 
 	require.True(t, client.Fingerprint(ls1) == client.Fingerprint(ls2))
 
-	c := NewActiveSeries(ActiveSeriesMatcher{})
+	c := NewActiveSeries(ActiveSeriesMatchers{})
 	c.UpdateSeries(ls1, time.Now(), copyFn)
 	c.UpdateSeries(ls2, time.Now(), copyFn)
 
@@ -106,7 +106,7 @@ func TestActiveSeries_Purge_NoMatchers(t *testing.T) {
 	// Run the same test for increasing TTL values
 	for ttl := 1; ttl <= len(series); ttl++ {
 		t.Run(fmt.Sprintf("ttl: %d", ttl), func(t *testing.T) {
-			c := NewActiveSeries(ActiveSeriesMatcher{})
+			c := NewActiveSeries(ActiveSeriesMatchers{})
 
 			for i := 0; i < len(series); i++ {
 				c.UpdateSeries(series[i], time.Unix(int64(i), 0), copyFn)
@@ -133,7 +133,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 		{{Name: "_", Value: "KiqbryhzUpn"}, {Name: "__name__", Value: "logs"}},
 	}
 
-	asm, err := NewActiveSeriesMatcher(ActiveSeriesCustomTrackersConfigs{{Name: "foo", Matcher: `{_=~"y.*"}`}})
+	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfigs{{Name: "foo", Matcher: `{_=~"y.*"}`}})
 	require.NoError(t, err)
 
 	// Run the same test for increasing TTL values
@@ -169,7 +169,7 @@ func TestActiveSeries_PurgeOpt(t *testing.T) {
 	ls1 := metric.Set("_", "ypfajYg2lsv").Labels()
 	ls2 := metric.Set("_", "KiqbryhzUpn").Labels()
 
-	c := NewActiveSeries(ActiveSeriesMatcher{})
+	c := NewActiveSeries(ActiveSeriesMatchers{})
 
 	now := time.Now()
 	c.UpdateSeries(ls1, now.Add(-2*time.Minute), copyFn)
@@ -209,7 +209,7 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 		{Name: "a", Value: "a"},
 	}
 
-	c := NewActiveSeries(ActiveSeriesMatcher{})
+	c := NewActiveSeries(ActiveSeriesMatchers{})
 
 	wg := &sync.WaitGroup{}
 	start := make(chan struct{})
@@ -236,7 +236,7 @@ func benchmarkActiveSeriesConcurrencySingleSeries(b *testing.B, goroutines int) 
 }
 
 func BenchmarkActiveSeries_UpdateSeries(b *testing.B) {
-	c := NewActiveSeries(ActiveSeriesMatcher{})
+	c := NewActiveSeries(ActiveSeriesMatchers{})
 
 	// Prepare series
 	nameBuf := bytes.Buffer{}
@@ -271,7 +271,7 @@ func benchmarkPurge(b *testing.B, twice bool) {
 	const numExpiresSeries = numSeries / 25
 
 	now := time.Now()
-	c := NewActiveSeries(ActiveSeriesMatcher{})
+	c := NewActiveSeries(ActiveSeriesMatchers{})
 
 	series := [numSeries]labels.Labels{}
 	for s := 0; s < numSeries; s++ {
@@ -321,7 +321,7 @@ func TestActiveSeriesMatcher(t *testing.T) {
 					},
 				}
 
-				_, err := NewActiveSeriesMatcher(config)
+				_, err := NewActiveSeriesMatchers(config)
 				assert.Error(t, err)
 			})
 		}
@@ -347,7 +347,7 @@ func TestActiveSeriesMatcher(t *testing.T) {
 			},
 		}
 
-		asm, err := NewActiveSeriesMatcher(config)
+		asm, err := NewActiveSeriesMatchers(config)
 		require.NoError(t, err)
 
 		for _, tc := range []struct {

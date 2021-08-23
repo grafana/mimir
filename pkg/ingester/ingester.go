@@ -168,46 +168,6 @@ func (cfg *Config) getIgnoreSeriesLimitForMetricNamesMap() map[string]struct{} {
 	return result
 }
 
-var _ flag.Value = &ActiveSeriesCustomTrackersConfigs{}
-
-// ActiveSeriesCustomTrackersConfigs configures the additional custom trackers for active series in the ingester.
-type ActiveSeriesCustomTrackersConfigs []ActiveSeriesCustomTrackerConfig
-
-func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
-	strs := make([]string, len(*cfgs))
-	for i, cfg := range *cfgs {
-		strs[i] = cfg.String()
-	}
-	return strings.Join(strs, ";")
-}
-
-func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
-	pairs := strings.Split(s, ";")
-	for i, p := range pairs {
-		split := strings.SplitN(p, ":", 2)
-		if len(split) != 2 {
-			return fmt.Errorf("value should be <name>:<matcher>[;<name>:<matcher>]*, but colon was not found in the value %d: %q", i, p)
-		}
-		name, matcher := strings.TrimSpace(split[0]), strings.TrimSpace(split[1])
-		if len(name) == 0 || len(matcher) == 0 {
-			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
-		}
-		*cfgs = append(*cfgs, ActiveSeriesCustomTrackerConfig{Name: name, Matcher: matcher})
-	}
-	return nil
-}
-
-// ActiveSeriesCustomTrackerConfig configures an additional custom tracker for active series in the ingester.
-// Active series matched by the matcher will be exported in the metric labeled with the name provided.
-type ActiveSeriesCustomTrackerConfig struct {
-	Name    string `yaml:"name"`
-	Matcher string `yaml:"matcher"`
-}
-
-func (cfg ActiveSeriesCustomTrackerConfig) String() string {
-	return cfg.Name + ":" + cfg.Matcher
-}
-
 // Ingester deals with "in flight" chunks.  Based on Prometheus 1.x
 // MemorySeriesStorage.
 type Ingester struct {
@@ -219,7 +179,7 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	activeSeriesMatcher ActiveSeriesMatcher
+	activeSeriesMatcher ActiveSeriesMatchers
 
 	chunkStore         ChunkStore
 	lifecycler         *ring.Lifecycler
@@ -299,7 +259,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 		}
 	}
 
-	asm, err := NewActiveSeriesMatcher(cfg.ActiveSeriesCustomTrackers)
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
 	if err != nil {
 		return nil, err
 	}

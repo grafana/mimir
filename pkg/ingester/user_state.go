@@ -39,7 +39,7 @@ type userStates struct {
 	cfg                 Config
 	metrics             *ingesterMetrics
 	logger              log.Logger
-	activeSeriesMatcher ActiveSeriesMatcher
+	activeSeriesMatcher ActiveSeriesMatchers
 }
 
 type userState struct {
@@ -72,7 +72,7 @@ const (
 	perMetricSeriesLimit = "per_metric_series_limit"
 )
 
-func newUserStates(limiter *Limiter, cfg Config, metrics *ingesterMetrics, logger log.Logger, asm ActiveSeriesMatcher) *userStates {
+func newUserStates(limiter *Limiter, cfg Config, metrics *ingesterMetrics, logger log.Logger, asm ActiveSeriesMatchers) *userStates {
 	return &userStates{
 		limiter:             limiter,
 		cfg:                 cfg,

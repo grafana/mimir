@@ -6,14 +6,12 @@
 package ingester
 
 import (
-	"fmt"
 	"hash"
 	"math"
 	"sync"
 	"time"
 
 	"github.com/cespare/xxhash"
-	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"go.uber.org/atomic"
@@ -27,13 +25,13 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	asm     ActiveSeriesMatcher
+	asm     ActiveSeriesMatchers
 	stripes [numActiveSeriesStripes]activeSeriesStripe
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
-	asm ActiveSeriesMatcher
+	asm ActiveSeriesMatchers
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -43,17 +41,17 @@ type activeSeriesStripe struct {
 	mu             sync.RWMutex
 	refs           map[uint64][]activeSeriesEntry
 	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured ActiveSeriesMatcher.
+	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured ActiveSeriesMatchers.
 }
 
 // activeSeriesEntry holds a timestamp for single series.
 type activeSeriesEntry struct {
 	lbs     labels.Labels
 	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
-	matches []bool        // Which matchers of ActiveSeriesMatcher does this series match
+	matches []bool        // Which matchers of ActiveSeriesMatchers does this series match
 }
 
-func NewActiveSeries(asm ActiveSeriesMatcher) *ActiveSeries {
+func NewActiveSeries(asm ActiveSeriesMatchers) *ActiveSeries {
 	c := &ActiveSeries{asm: asm}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
@@ -283,50 +281,6 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	}
 	s.active = active
 	s.activeMatching = activeMatching
-}
-
-func NewActiveSeriesMatcher(cfgs ActiveSeriesCustomTrackersConfigs) (asm ActiveSeriesMatcher, _ error) {
-	seenMatcherNames := map[string]int{}
-	for i, cfg := range cfgs {
-		if idx, seen := seenMatcherNames[cfg.Name]; seen {
-			return asm, fmt.Errorf("active series matcher %d duplicates the name of matcher at position %d: %q", i, idx, cfg.Name)
-		}
-		seenMatcherNames[cfg.Name] = i
-
-		sm, err := amlabels.ParseMatchers(cfg.Matcher)
-		if err != nil {
-			return asm, fmt.Errorf("can't build active series matcher %d: %w", i, err)
-		}
-		asm.matchers = append(asm.matchers, sm)
-		asm.names = append(asm.names, cfg.Name)
-	}
-	return asm, nil
-}
-
-type ActiveSeriesMatcher struct {
-	names    []string
-	matchers []amlabels.Matchers
-}
-
-func (asm ActiveSeriesMatcher) MatcherNames() []string {
-	return asm.names
-}
-
-func (asm ActiveSeriesMatcher) Matches(series labels.Labels) []bool {
-	ls := labelsToLabelSet(series)
-	matches := make([]bool, len(asm.names))
-	for i, sm := range asm.matchers {
-		matches[i] = sm.Matches(ls)
-	}
-	return matches
-}
-
-func labelsToLabelSet(series labels.Labels) model.LabelSet {
-	ls := make(model.LabelSet)
-	for _, l := range series {
-		ls[model.LabelName(l.Name)] = model.LabelValue(l.Value)
-	}
-	return ls
 }
 
 func makeIntSliceIfNotEmpty(l int) []int {
