@@ -4,6 +4,11 @@ import (
 	"flag"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
+	amlabels "github.com/prometheus/alertmanager/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/labels"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -79,4 +84,26 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestAmlabelMatchersToProm(t *testing.T) {
+	t.Run("MatchType values are the same so we can convert the types", func(t *testing.T) {
+		lastType := amlabels.MatchNotRegexp
+		// just checking that our assumption on that MatchType enums are the same is correct
+		for mt := amlabels.MatchEqual; mt <= lastType; mt++ {
+			assert.Equal(t, mt.String(), labels.MatchType(mt).String())
+		}
+		// and that nobody just added more match types in amlabels,
+		assert.Panics(t, func() {
+			_ = (lastType + 1).String()
+		}, "amlabels.MatchNotRegexp is expected to be the last enum value, update the test and check mapping")
+	})
+
+	t.Run("happy case", func(t *testing.T) {
+		amMatcher, err := amlabels.NewMatcher(amlabels.MatchRegexp, "foo", "bar.*")
+		require.NoError(t, err)
+
+		expected := labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*")
+		assert.Equal(t, expected, amlabelMatcherToProm(amMatcher))
+	})
 }

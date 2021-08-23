@@ -148,7 +148,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 				c.UpdateSeries(series[i], time.Unix(int64(i), 0), copyFn)
 
 				// if this series is matching, and they're within the ttl
-				if asm.matchers[0].Matches(labelsToLabelSet(s)) && i >= ttl {
+				if asm.matchers[0].Matches(s) && i >= ttl {
 					expMatchingSeries++
 				}
 			}

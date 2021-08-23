@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -59,7 +58,12 @@ func NewActiveSeriesMatchers(cfgs ActiveSeriesCustomTrackersConfigs) (asm Active
 		if err != nil {
 			return asm, fmt.Errorf("can't build active series matcher %d: %w", i, err)
 		}
-		asm.matchers = append(asm.matchers, sm)
+		matchers := make(labelsMatchers, len(sm))
+		for i, m := range sm {
+			matchers[i] = amlabelMatcherToProm(m)
+		}
+
+		asm.matchers = append(asm.matchers, matchers)
 		asm.names = append(asm.names, cfg.Name)
 	}
 	return asm, nil
@@ -67,7 +71,7 @@ func NewActiveSeriesMatchers(cfgs ActiveSeriesCustomTrackersConfigs) (asm Active
 
 type ActiveSeriesMatchers struct {
 	names    []string
-	matchers []amlabels.Matchers
+	matchers []labelsMatchers
 }
 
 func (asm ActiveSeriesMatchers) MatcherNames() []string {
@@ -75,18 +79,27 @@ func (asm ActiveSeriesMatchers) MatcherNames() []string {
 }
 
 func (asm ActiveSeriesMatchers) Matches(series labels.Labels) []bool {
-	ls := labelsToLabelSet(series)
 	matches := make([]bool, len(asm.names))
 	for i, sm := range asm.matchers {
-		matches[i] = sm.Matches(ls)
+		matches[i] = sm.Matches(series)
 	}
 	return matches
 }
 
-func labelsToLabelSet(series labels.Labels) model.LabelSet {
-	ls := make(model.LabelSet)
-	for _, l := range series {
-		ls[model.LabelName(l.Name)] = model.LabelValue(l.Value)
+// labelsMatchers is like alertmanager's labels.Matchers but for Prometheus' labels.Matcher slice
+type labelsMatchers []*labels.Matcher
+
+// Matches checks whether all matchers are fulfilled against the given label set.
+// This is like amlabels.Matchers.Matches but works with labels.Labels instead of requiring a model.LabelSet which is a map
+func (ms labelsMatchers) Matches(lset labels.Labels) bool {
+	for _, m := range ms {
+		if !m.Matches(lset.Get(m.Name)) {
+			return false
+		}
 	}
-	return ls
+	return true
+}
+
+func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
+	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
 }
