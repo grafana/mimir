@@ -112,14 +112,23 @@ func (c *ActiveSeries) Active() (int, []int) {
 	total := 0
 	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()))
 	for s := 0; s < numActiveSeriesStripes; s++ {
-		c.stripes[s].mu.RLock()
-		total += c.stripes[s].active
-		for i, a := range c.stripes[s].activeMatching {
-			totalMatching[i] += a
-		}
-		c.stripes[s].mu.RUnlock()
+		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
 	return total, totalMatching
+}
+
+// getTotalAndUpdateMatching will return the total active series in the strip and also update the slice provided
+// with each matcher's total.
+func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// len(matching) == len(s.activeMatching) by design, and it could be nil
+	for i, a := range s.activeMatching {
+		matching[i] += a
+	}
+
+	return s.active
 }
 
 func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
