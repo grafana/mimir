@@ -43,7 +43,7 @@ type activeSeriesStripe struct {
 	mu             sync.RWMutex
 	refs           map[uint64][]activeSeriesEntry
 	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
-	activeMatching []int // Number of active entires in this stripe matching each matcher of the configured ActiveSeriesMatcher.
+	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured ActiveSeriesMatcher.
 }
 
 // activeSeriesEntry holds a timestamp for single series.
