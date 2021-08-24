@@ -182,7 +182,7 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		client, err := kv.NewClient(
 			cfg.KVStore,
 			GetReplicaDescCodec(),
-			kv.RegistererWithKVName(reg, "distributor-hatracker"),
+			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "distributor-hatracker"),
 			logger,
 		)
 		if err != nil {

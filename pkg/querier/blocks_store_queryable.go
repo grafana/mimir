@@ -215,7 +215,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 		storesRingBackend, err := kv.NewClient(
 			storesRingCfg.KVStore,
 			ring.GetCodec(),
-			kv.RegistererWithKVName(reg, "querier-store-gateway"),
+			kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), "querier-store-gateway"),
 			logger,
 		)
 		if err != nil {
