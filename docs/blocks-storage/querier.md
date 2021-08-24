@@ -96,14 +96,6 @@ The `querier_config` configures the querier.
 
 ```yaml
 querier:
-  # The maximum number of concurrent queries.
-  # CLI flag: -querier.max-concurrent
-  [max_concurrent: <int> | default = 20]
-
-  # The timeout for a query.
-  # CLI flag: -querier.timeout
-  [timeout: <duration> | default = 2m]
-
   # Use iterators to execute query, as opposed to fully materialising the series
   # in memory.
   # CLI flag: -querier.iterators
@@ -118,10 +110,6 @@ querier:
   # CLI flag: -querier.ingester-streaming
   [ingester_streaming: <boolean> | default = true]
 
-  # Maximum number of samples a single query can load into memory.
-  # CLI flag: -querier.max-samples
-  [max_samples: <int> | default = 50000000]
-
   # Maximum lookback beyond which queries are not sent to ingester. 0 means all
   # queries are sent to ingester.
   # CLI flag: -querier.query-ingesters-within
@@ -131,10 +119,6 @@ querier:
   # only with blocks engine.
   # CLI flag: -querier.query-store-for-labels-enabled
   [query_store_for_labels_enabled: <boolean> | default = false]
-
-  # Enable the @ modifier in PromQL.
-  # CLI flag: -querier.at-modifier-enabled
-  [at_modifier_enabled: <boolean> | default = false]
 
   # True to enable queriers to use an optimized implementation which passes down
   # to ingesters the label matchers when running the label names API. Can be
@@ -154,22 +138,6 @@ querier:
   # Maximum duration into the future you can query. 0 to disable.
   # CLI flag: -querier.max-query-into-future
   [max_query_into_future: <duration> | default = 10m]
-
-  # The default evaluation interval or step size for subqueries.
-  # CLI flag: -querier.default-evaluation-interval
-  [default_evaluation_interval: <duration> | default = 1m]
-
-  # Active query tracker monitors active queries, and writes them to the file in
-  # given directory. If any queries are discovered in this file during startup,
-  # it will log them to the log file. Setting to empty value disables active
-  # query tracker, which also disables -querier.max-concurrent option.
-  # CLI flag: -querier.active-query-tracker-dir
-  [active_query_tracker_dir: <string> | default = "./active-query-tracker"]
-
-  # Time since the last sample after which a time series is considered stale and
-  # ignored by expression evaluations.
-  # CLI flag: -querier.lookback-delta
-  [lookback_delta: <duration> | default = 5m]
 
   # Comma separated list of store-gateway addresses in DNS Service Discovery
   # format. This option should be set when using the blocks storage and the
@@ -224,6 +192,38 @@ querier:
   # sharding on read path is disabled).
   # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
   [shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
+
+  # The maximum number of concurrent queries.
+  # CLI flag: -querier.max-concurrent
+  [max_concurrent: <int> | default = 20]
+
+  # The timeout for a query.
+  # CLI flag: -querier.timeout
+  [timeout: <duration> | default = 2m]
+
+  # Maximum number of samples a single query can load into memory.
+  # CLI flag: -querier.max-samples
+  [max_samples: <int> | default = 50000000]
+
+  # Enable the @ modifier in PromQL.
+  # CLI flag: -querier.at-modifier-enabled
+  [at_modifier_enabled: <boolean> | default = false]
+
+  # The default evaluation interval or step size for subqueries.
+  # CLI flag: -querier.default-evaluation-interval
+  [default_evaluation_interval: <duration> | default = 1m]
+
+  # Active query tracker monitors active queries, and writes them to the file in
+  # given directory. If any queries are discovered in this file during startup,
+  # it will log them to the log file. Setting to empty value disables active
+  # query tracker, which also disables -querier.max-concurrent option.
+  # CLI flag: -querier.active-query-tracker-dir
+  [active_query_tracker_dir: <string> | default = "./active-query-tracker"]
+
+  # Time since the last sample after which a time series is considered stale and
+  # ignored by expression evaluations.
+  # CLI flag: -querier.lookback-delta
+  [lookback_delta: <duration> | default = 5m]
 ```
 
 ### `blocks_storage_config`
