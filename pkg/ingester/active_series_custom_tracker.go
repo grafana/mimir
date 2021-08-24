@@ -81,7 +81,10 @@ func (asm ActiveSeriesMatchers) MatcherNames() []string {
 }
 
 func (asm ActiveSeriesMatchers) Matches(series labels.Labels) []bool {
-	matches := make([]bool, len(asm.names))
+	if len(asm.matchers) == 0 {
+		return nil
+	}
+	matches := make([]bool, len(asm.matchers))
 	for i, sm := range asm.matchers {
 		matches[i] = sm.Matches(series)
 	}
