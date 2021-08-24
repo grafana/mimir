@@ -117,7 +117,7 @@ func (c *ActiveSeries) Active() (int, []int) {
 	return total, totalMatching
 }
 
-// getTotalAndUpdateMatching will return the total active series in the strip and also update the slice provided
+// getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
 // with each matcher's total.
 func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
 	s.mu.RLock()
