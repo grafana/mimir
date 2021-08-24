@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/weaveworks/common/httpgrpc"
@@ -194,7 +195,7 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		true,
 		true,
 		time.Minute,
-		NewSeriesHashCache(1024*1024),
+		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(s.logger),
 		WithIndexCache(s.cache),

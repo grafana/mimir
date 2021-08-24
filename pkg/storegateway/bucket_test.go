@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -528,7 +529,7 @@ func TestBucketStore_Info(t *testing.T) {
 		false,
 		false,
 		0,
-		NewSeriesHashCache(1024*1024),
+		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithChunkPool(chunkPool),
 		WithFilterConfig(allowAllFilterConf),
@@ -778,7 +779,7 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 				false,
 				false,
 				0,
-				NewSeriesHashCache(1024*1024),
+				hashcache.NewSeriesHashCache(1024*1024),
 				NewBucketStoreMetrics(nil),
 				WithLogger(logger),
 				WithFilterConfig(allowAllFilterConf),
@@ -1214,7 +1215,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 		false,
 		false,
 		0,
-		NewSeriesHashCache(1024*1024),
+		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithChunkPool(chunkPool),
@@ -1581,7 +1582,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 		true,
 		false,
 		0,
-		NewSeriesHashCache(1024*1024),
+		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
@@ -1673,7 +1674,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 		true,
 		false,
 		0,
-		NewSeriesHashCache(1024*1024),
+		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
@@ -1858,7 +1859,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		true,
 		false,
 		0,
-		NewSeriesHashCache(1024*1024),
+		hashcache.NewSeriesHashCache(1024*1024),
 		NewBucketStoreMetrics(nil),
 		WithLogger(logger),
 		WithIndexCache(indexCache),
@@ -2184,7 +2185,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 	seriesLimiter := NewSeriesLimiterFactory(0)(nil)
 
 	// Create the series hash cached used when query sharding is enabled.
-	seriesHashCache := NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCache(blockMeta.ULID.String())
+	seriesHashCache := hashcache.NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCache(blockMeta.ULID.String())
 
 	// Run multiple workers to execute the queries.
 	wg := sync.WaitGroup{}
@@ -2491,7 +2492,7 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+			cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 			for _, pair := range testData.cacheEntries {
 				cache.Store(pair[0], pair[1])
 			}
@@ -2507,7 +2508,7 @@ func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
 	shard := &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
 	cacheEntries := [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}
 
-	cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 	for _, pair := range cacheEntries {
 		cache.Store(pair[0], pair[1])
 	}
@@ -2520,7 +2521,7 @@ func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
 func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 	// This benchmark tests the case only the 1st posting is removed
 	// and so all subsequent postings will be shifted.
-	cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 	cache.Store(0, 0)
 	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
 
@@ -2546,7 +2547,7 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 
 func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 	// This benchmark tests the case the output postings is equal to the input one.
-	cache := NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
+	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
 
 	// Create a long list of postings.

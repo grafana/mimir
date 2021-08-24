@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
@@ -112,7 +113,7 @@ type BucketStore struct {
 	indexCache      storecache.IndexCache
 	indexReaderPool *indexheader.ReaderPool
 	chunkPool       pool.Bytes
-	seriesHashCache *SeriesHashCache
+	seriesHashCache *hashcache.SeriesHashCache
 
 	// Sets of blocks that have the same labels. They are indexed by a hash over their label set.
 	mtx       sync.RWMutex
@@ -217,7 +218,7 @@ func NewBucketStore(
 	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
-	seriesHashCache *SeriesHashCache,
+	seriesHashCache *hashcache.SeriesHashCache,
 	metrics *BucketStoreMetrics,
 	options ...BucketStoreOption,
 ) (*BucketStore, error) {
@@ -600,7 +601,7 @@ func blockSeries(
 	chunkr *bucketChunkReader, // Chunk reader for block.
 	matchers []*labels.Matcher, // Series matchers.
 	shard *querysharding.ShardSelector, // Shard selector.
-	seriesHashCache *BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
+	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
 	skipChunks bool, // If true, chunks are not loaded.
@@ -718,7 +719,7 @@ func blockSeries(
 // filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only
 // postings for which we have their series hash already in the cache; if a series is not in the cache,
 // postings will be kept in the output.
-func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSelector, seriesHashCache *BlockSeriesHashCache) (filteredPostings []uint64, stats queryStats) {
+func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []uint64, stats queryStats) {
 	writeIdx := 0
 	stats.seriesHashCacheRequests = len(ps)
 
@@ -938,7 +939,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 			// If query sharding is enabled we have to get the block-specific series hash cache
 			// which is used by blockSeries().
-			var blockSeriesHashCache *BlockSeriesHashCache
+			var blockSeriesHashCache *hashcache.BlockSeriesHashCache
 			if shardSelector != nil {
 				blockSeriesHashCache = s.seriesHashCache.GetBlockCache(b.meta.ULID.String())
 			}

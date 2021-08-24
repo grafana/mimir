@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/thanos/pkg/block"
 	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
@@ -59,7 +60,7 @@ type BucketStores struct {
 	indexCache storecache.IndexCache
 
 	// Series hash cache shared across all tenants.
-	seriesHashCache *SeriesHashCache
+	seriesHashCache *hashcache.SeriesHashCache
 
 	// Chunks bytes pool shared across all tenants.
 	chunksPool pool.Bytes
@@ -109,7 +110,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 		metaFetcherMetrics: NewMetadataFetcherMetrics(),
 		queryGate:          queryGate,
 		partitioner:        newGapBasedPartitioner(cfg.BucketStore.PartitionerMaxGapBytes, reg),
-		seriesHashCache:    NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
+		seriesHashCache:    hashcache.NewSeriesHashCache(cfg.BucketStore.SeriesHashCacheMaxBytes),
 	}
 
 	// Register metrics.
