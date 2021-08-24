@@ -186,7 +186,7 @@ func testKVScenario(t *testing.T, kvSetupFn func(t *testing.T, scenario *e2e.Sce
 	defer s.Close()
 
 	reg := prometheus.NewRegistry()
-	client := kvSetupFn(t, s, reg, testLogger{})
+	client := kvSetupFn(t, s, prometheus.WrapRegistererWithPrefix("cortex_", reg), testLogger{})
 	testFn(t, client, reg)
 }
 
