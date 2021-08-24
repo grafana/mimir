@@ -22,9 +22,9 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 		error    bool
 	}{
 		{
-			name:  "empty flag value fails",
-			flags: []string{`-ingester.active-series-custom-trackers=`},
-			error: true,
+			name:     "empty flag value produces empty config",
+			flags:    []string{`-ingester.active-series-custom-trackers=`},
+			expected: nil,
 		},
 		{
 			name:  "empty matcher fails",

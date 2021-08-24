@@ -22,6 +22,10 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
 }
 
 func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+
 	pairs := strings.Split(s, ";")
 	for i, p := range pairs {
 		split := strings.SplitN(p, ":", 2)
