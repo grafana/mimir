@@ -330,7 +330,6 @@ func NewKV(cfg KVConfig, logger log.Logger, dnsProvider DNSProvider) *KV {
 	cfg.TCPTransport.MetricsRegisterer = cfg.MetricsRegisterer
 	cfg.TCPTransport.MetricsNamespace = cfg.MetricsNamespace
 
-
 	mlkv := &KV{
 		cfg:            cfg,
 		logger:         logger,
