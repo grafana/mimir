@@ -23,9 +23,9 @@ timeseries data in S3 and index in DynamoDB, or everything in DynamoDB.
 Using just S3 is not an option, unless you use the [blocks storage](../blocks-storage/_index.md) engine.
 
 Broadly S3 is much more expensive to read and write, while DynamoDB is
-much more expensive to store over months.  S3 charges differently, so
+much more expensive to store over months. S3 charges differently, so
 the cross-over will depend on the size of your chunks, and how long
-you keep them.  Very roughly: for 3KB chunks if you keep them longer
+you keep them. Very roughly: for 3KB chunks if you keep them longer
 than 8 months then S3 is cheaper.
 
 ## DynamoDB capacity provisioning
@@ -73,19 +73,19 @@ example set of command-line parameters from a fairly modest install:
 Several things to note here:
 
 - `-metrics.url` points at a Prometheus server running within the
-   cluster, scraping Cortex.  Currently it is not possible to use
-   Cortex itself as the target here.
+  cluster, scraping Cortex. Currently it is not possible to use
+  Cortex itself as the target here.
 - `-metrics.target-queue-length`: when the ingester queue is below
-   this level, Tablemanager will not scale up. When the queue is
-   growing above this level, Tablemanager will scale up whatever
-   table is being throttled.
+  this level, Tablemanager will not scale up. When the queue is
+  growing above this level, Tablemanager will scale up whatever
+  table is being throttled.
 - The plain `throughput` values are used when the tables are first
-   created. Scale-up to any level up to this value will be very quick,
-   but if you go higher than this initial value, AWS may take tens of
-   minutes to finish scaling. In the config above they are set.
+  created. Scale-up to any level up to this value will be very quick,
+  but if you go higher than this initial value, AWS may take tens of
+  minutes to finish scaling. In the config above they are set.
 - `ondemand-throughput-mode` tells AWS to charge for what you use, as
-   opposed to continuous provisioning. This mode is cost-effective for
-   older data, which is never written and only read sporadically.
--  If you want to add AWS tags to the created DynamoDB tables you
-   can do it by adding a `tags` map to your schema definition. See
-   [`schema configuration`](./schema-config.md)
+  opposed to continuous provisioning. This mode is cost-effective for
+  older data, which is never written and only read sporadically.
+- If you want to add AWS tags to the created DynamoDB tables you
+  can do it by adding a `tags` map to your schema definition. See
+  [`schema configuration`](./schema-config.md)

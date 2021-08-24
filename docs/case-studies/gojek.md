@@ -5,7 +5,7 @@ weight: 1
 slug: gojek
 ---
 
-[Gojek](https://www.gojek.com/) launched in 2010 as a call center for booking motorcycle taxi rides in Indonesia. Today, the startup is a decacorn serving  millions of users across Southeast Asia with its mobile wallet, GoPay, and 20+ products on its super app. Want to order dinner? Book a massage? Buy movie tickets? You can do all of that with the Gojek app.
+[Gojek](https://www.gojek.com/) launched in 2010 as a call center for booking motorcycle taxi rides in Indonesia. Today, the startup is a decacorn serving millions of users across Southeast Asia with its mobile wallet, GoPay, and 20+ products on its super app. Want to order dinner? Book a massage? Buy movie tickets? You can do all of that with the Gojek app.
 
 The company’s mission is to solve everyday challenges with technology innovation. To achieve that across multiple markets the systems team at Gojek focused on building an infrastructure for speed, reliability, and scale. By 2019, the team realized it needed a new monitoring system that could keep up with Gojek’s ever-growing technology organization, which led them to [Cortex](https://github.com/cortexproject/cortex), the horizontally scalable [Prometheus](https://prometheus.io/) implementation.
 
@@ -15,17 +15,17 @@ Though the team had introduced automation for setup, managing all those Influx i
 
 Gojek was in search of a better monitoring solution that would meet the following requirements:
 
- - Kubernetes native.
- - Horizontally scalable.
- - Highly available out of the box.
- - High reliability.
- - Low operations overhead so a small team can manage it.
+- Kubernetes native.
+- Horizontally scalable.
+- Highly available out of the box.
+- High reliability.
+- Low operations overhead so a small team can manage it.
 
 Cortex met all of these requirements, and also had the following features that the Gojek team could leverage:
 
- - Multi-tenancy.
- - Customizable and modifiable, so it could be integrated with Gojek’s existing tooling.
- - Support for remote_write.
+- Multi-tenancy.
+- Customizable and modifiable, so it could be integrated with Gojek’s existing tooling.
+- Support for remote_write.
 
 Because it supports remote_write, Cortex enabled one of Gojek’s key needs: the ability to offer monitoring as a service. “With Thanos, we would have had to deploy a Thanos sidecar on every Prometheus that would have been deployed,” says Goel. “So essentially, there would be a substantial part of infrastructure on the client side that we would need to manage. We preferred Cortex because people could simply push their metrics to us, and we would have all the metrics in a single place.”
 

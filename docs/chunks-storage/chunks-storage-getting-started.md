@@ -23,6 +23,7 @@ Cortex can also make use of external memcacheds for caching and although these a
 For simplicity and to get started, we'll run it as a single process.
 
 Clone and build Cortex
+
 ```sh
 $ git clone https://github.com/cortexproject/cortex.git
 $ cd cortex
@@ -34,6 +35,7 @@ This starts a single Cortex node storing chunks and index to your local filesyst
 It is not intended for production use.
 
 Clone and build prometheus
+
 ```sh
 $ git clone https://github.com/prometheus/prometheus
 $ cd prometheus
@@ -44,7 +46,7 @@ Add the following to your Prometheus config (documentation/examples/prometheus.y
 
 ```yaml
 remote_write:
-- url: http://localhost:9009/api/v1/push
+  - url: http://localhost:9009/api/v1/push
 ```
 
 And start Prometheus with that config file:
@@ -53,7 +55,7 @@ And start Prometheus with that config file:
 $ ./prometheus --config.file=./documentation/examples/prometheus.yml
 ```
 
-Your Prometheus instance will now start pushing data to Cortex.  To query that data, start a Grafana instance:
+Your Prometheus instance will now start pushing data to Cortex. To query that data, start a Grafana instance:
 
 ```sh
 $ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
@@ -77,7 +79,7 @@ $ docker network create cortex
 $ docker run -d --name=consul --network=cortex -e CONSUL_BIND_INTERFACE=eth0 consul
 ```
 
-Next we'll run a couple of Cortex instances pointed at that Consul.  You'll note the Cortex configuration can be specified in either a config file or overridden on the command line.  See [the arguments documentation](../configuration/arguments.md) for more information about Cortex configuration options.
+Next we'll run a couple of Cortex instances pointed at that Consul. You'll note the Cortex configuration can be specified in either a config file or overridden on the command line. See [the arguments documentation](../configuration/arguments.md) for more information about Cortex configuration options.
 
 ```sh
 $ docker run -d --name=cortex1 --network=cortex \
@@ -99,14 +101,14 @@ $ docker run -d --name=cortex2 --network=cortex \
 If you go to http://localhost:9001/ring (or http://localhost:9002/ring) you should see both Cortex nodes join the ring.
 
 To demonstrate the correct operation of Cortex clustering, we'll send samples
-to one of the instances and queries to another.  In production, you'd want to
+to one of the instances and queries to another. In production, you'd want to
 load balance both pushes and queries evenly among all the nodes.
 
 Point Prometheus at the first:
 
 ```yaml
 remote_write:
-- url: http://localhost:9001/api/v1/push
+  - url: http://localhost:9001/api/v1/push
 ```
 
 ```sh
@@ -174,7 +176,7 @@ Configure Prometheus to send data to the first replica:
 
 ```yaml
 remote_write:
-- url: http://localhost:9001/api/v1/push
+  - url: http://localhost:9001/api/v1/push
 ```
 
 ```sh

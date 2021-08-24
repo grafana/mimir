@@ -161,6 +161,7 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 
 lint: lint-packaging-scripts
 	misspell -error docs
+	prettier --check "!vendor" "**/*.md"
 
 	# Configured via .golangci.yml.
 	golangci-lint run

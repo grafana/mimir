@@ -15,11 +15,11 @@ You are welcome to create draft PRs at any stage of readiness - this
 can be helpful to ask for assistance or to develop an idea. But before
 a piece of work is finished it should:
 
-* Be organised into one or more commits, each of which has a commit message that describes all changes made in that commit ('why' more than 'what' - we can read the diffs to see the code that changed).
-* Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
-* Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
-* Include a CHANGELOG message if users of Cortex need to hear about what you did.
-* If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
+- Be organised into one or more commits, each of which has a commit message that describes all changes made in that commit ('why' more than 'what' - we can read the diffs to see the code that changed).
+- Each commit should build towards the whole - don't leave in back-tracks and mistakes that you later corrected.
+- Have unit and/or [integration](./how-integration-tests-work.md) tests for new functionality or tests that would have caught the bug being fixed.
+- Include a CHANGELOG message if users of Cortex need to hear about what you did.
+- If you have made any changes to flags or config, run `make doc` and commit the changed files to update the config file documentation.
 
 ## Formatting
 
@@ -29,10 +29,9 @@ You're using an IDE you may find useful the following settings for the Cortex pr
 
 - [VSCode](vscode-goimports-settings.json)
 
-
 ## Developer Certificates of Origin (DCOs)
 
-Before submitting your work in a pull request, make sure that *all* commits are signed off with a **Developer Certificate of Origin** (DCO). Here's an example:
+Before submitting your work in a pull request, make sure that _all_ commits are signed off with a **Developer Certificate of Origin** (DCO). Here's an example:
 
 ```shell
 git commit -s -m "Here is my signed commit"
@@ -43,6 +42,7 @@ You can find further instructions [here](https://github.com/probot/dco#how-it-wo
 ## Building Cortex
 
 To build:
+
 ```
 make
 ```
@@ -52,6 +52,7 @@ with all the tools required. The source code is mounted from where you
 run `make` into the build container as a Docker volume.)
 
 To run the unit tests suite:
+
 ```
 go test ./...
 ```

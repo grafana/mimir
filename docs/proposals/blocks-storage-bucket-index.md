@@ -72,7 +72,6 @@ There are few reasons why the compactor may be a good candidate to write the buc
 - The compactor already scans the bucket to have a consistent view of the blocks before running a compaction. Writing the bucket index in the compactor would require no additional bucket API calls.
 - Queriers and store-gateways currently read only from the bucket (no writes). We believe that it may be a nice property to preserve.
 
-
 ### How to reduce bucket API calls required to discover deletion marks
 
 The `deletion-mark.json` files are stored within each block location. This means that the compactor would still need to run a "get object" operation for every single block in order to find out which block has it, while updating the bucket index.

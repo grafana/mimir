@@ -17,45 +17,44 @@ Duration arguments should be specified with a unit like `5s` or `3h`. Valid time
 
 - `-querier.max-concurrent`
 
-   The maximum number of top-level PromQL queries that will execute at the same time, per querier process.
-   If using the query frontend, this should be set to at least (`-querier.worker-parallelism` * number of query frontend replicas). Otherwise queries may queue in the queriers and not the frontend, which will affect QoS.  Alternatively, consider using `-querier.worker-match-max-concurrent` to force worker parallelism to match `-querier.max-concurrent`.
+  The maximum number of top-level PromQL queries that will execute at the same time, per querier process.
+  If using the query frontend, this should be set to at least (`-querier.worker-parallelism` \* number of query frontend replicas). Otherwise queries may queue in the queriers and not the frontend, which will affect QoS. Alternatively, consider using `-querier.worker-match-max-concurrent` to force worker parallelism to match `-querier.max-concurrent`.
 
 - `-querier.query-parallelism`
 
-   This refers to database queries against the store when running the deprecated Cortex chunks storage (e.g. Bigtable or DynamoDB).  This is the max subqueries run in parallel per higher-level query.
+  This refers to database queries against the store when running the deprecated Cortex chunks storage (e.g. Bigtable or DynamoDB). This is the max subqueries run in parallel per higher-level query.
 
 - `-querier.timeout`
 
-   The timeout for a top-level PromQL query.
+  The timeout for a top-level PromQL query.
 
 - `-querier.max-samples`
 
-   Maximum number of samples a single query can load into memory, to avoid blowing up on enormous queries.
+  Maximum number of samples a single query can load into memory, to avoid blowing up on enormous queries.
 
 The next three options only apply when the querier is used together with the Query Frontend or Query Scheduler:
 
 - `-querier.frontend-address`
 
-   Address of query frontend service, used by workers to find the frontend which will give them queries to execute.
+  Address of query frontend service, used by workers to find the frontend which will give them queries to execute.
 
 - `-querier.scheduler-address`
 
-   Address of query scheduler service, used by workers to find the scheduler which will give them queries to execute. If set, `-querier.frontend-address` is ignored, and querier will use query scheduler.
+  Address of query scheduler service, used by workers to find the scheduler which will give them queries to execute. If set, `-querier.frontend-address` is ignored, and querier will use query scheduler.
 
 - `-querier.dns-lookup-period`
 
-   How often the workers will query DNS to re-check where the query frontend or query scheduler is.
+  How often the workers will query DNS to re-check where the query frontend or query scheduler is.
 
 - `-querier.worker-parallelism`
 
-   Number of simultaneous queries to process, per query frontend or scheduler.
-   See note on `-querier.max-concurrent`
+  Number of simultaneous queries to process, per query frontend or scheduler.
+  See note on `-querier.max-concurrent`
 
 - `-querier.worker-match-max-concurrent`
 
-   Force worker concurrency to match the -querier.max-concurrent option.  Overrides `-querier.worker-parallelism`.
-   See note on `-querier.max-concurrent`
-
+  Force worker concurrency to match the -querier.max-concurrent option. Overrides `-querier.worker-parallelism`.
+  See note on `-querier.max-concurrent`
 
 ## Querier and Ruler
 
@@ -63,20 +62,20 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 - `-querier.batch-iterators`
 
-   This uses iterators to execute query, as opposed to fully materialising the series in memory, and fetches multiple results per loop.
+  This uses iterators to execute query, as opposed to fully materialising the series in memory, and fetches multiple results per loop.
 
 - `-querier.ingester-streaming`
 
-   Use streaming RPCs to query ingester, to reduce memory pressure in the ingester.
+  Use streaming RPCs to query ingester, to reduce memory pressure in the ingester.
 
 - `-querier.iterators`
 
-   This is similar to `-querier.batch-iterators` but less efficient.
-   If both `iterators` and `batch-iterators` are `true`, `batch-iterators` will take precedence.
+  This is similar to `-querier.batch-iterators` but less efficient.
+  If both `iterators` and `batch-iterators` are `true`, `batch-iterators` will take precedence.
 
 - `-promql.lookback-delta`
 
-   Time since the last sample after which a time series is considered stale and ignored by expression evaluations.
+  Time since the last sample after which a time series is considered stale and ignored by expression evaluations.
 
 ## Query Frontend
 
@@ -95,74 +94,78 @@ The ingester query API was improved over time, but defaults to the old behaviour
    When enabled, the query-frontend requires a schema config to determine how/when to shard queries, either from a file or from flags (i.e. by the `-schema-config-file` CLI flag). This is the same schema config the queriers consume.
    It's also advised to increase downstream concurrency controls as well to account for more queries of smaller sizes:
 
-   - `querier.max-outstanding-requests-per-tenant`
-   - `querier.max-query-parallelism`
-   - `querier.max-concurrent`
-   - `server.grpc-max-concurrent-streams` (for both query-frontends and queriers)
+  When enabled, the query-frontend requires a schema config to determine how/when to shard queries, either from a file or from flags (i.e. by the `-schema-config-file` CLI flag). This is the same schema config the queriers consume.
+  It's also advised to increase downstream concurrency controls as well to account for more queries of smaller sizes:
 
-   Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded). It's recommended to align this with `ingester.max-chunk-age`.
+  - `querier.max-outstanding-requests-per-tenant`
+  - `querier.max-query-parallelism`
+  - `querier.max-concurrent`
+  - `server.grpc-max-concurrent-streams` (for both query-frontends and queriers)
 
-   Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
+  Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded). It's recommended to align this with `ingester.max-chunk-age`.
+
+  Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
 
 - `-querier.align-querier-with-step`
 
-   If set to true, will cause the query frontend to mutate incoming queries and align their start and end parameters to the step parameter of the query.  This improves the cacheability of the query results.
+  If set to true, will cause the query frontend to mutate incoming queries and align their start and end parameters to the step parameter of the query. This improves the cacheability of the query results.
 
 - `-querier.split-queries-by-day`
 
-   If set to true, will cause the query frontend to split multi-day queries into multiple single-day queries and execute them in parallel.
+  If set to true, will cause the query frontend to split multi-day queries into multiple single-day queries and execute them in parallel.
 
 - `-querier.cache-results`
 
-   If set to true, will cause the querier to cache query results.  The cache will be used to answer future, overlapping queries.  The query frontend calculates extra queries required to fill gaps in the cache.
+  If set to true, will cause the querier to cache query results. The cache will be used to answer future, overlapping queries. The query frontend calculates extra queries required to fill gaps in the cache.
 
 - `-frontend.max-cache-freshness`
 
-   When caching query results, it is desirable to prevent the caching of very recent results that might still be in flux.  Use this parameter to configure the age of results that should be excluded.
+  When caching query results, it is desirable to prevent the caching of very recent results that might still be in flux. Use this parameter to configure the age of results that should be excluded.
 
 - `-frontend.memcached.{hostname, service, timeout}`
 
-   Use these flags to specify the location and timeout of the memcached cluster used to cache query results.
+  Use these flags to specify the location and timeout of the memcached cluster used to cache query results.
 
 - `-frontend.redis.{endpoint, timeout}`
 
-   Use these flags to specify the location and timeout of the Redis service used to cache query results.
+  Use these flags to specify the location and timeout of the Redis service used to cache query results.
 
 ## Distributor
 
 - `-distributor.shard-by-all-labels`
 
-   In the original Cortex design, samples were sharded amongst distributors by the combination of (userid, metric name).  Sharding by metric name was designed to reduce the number of ingesters you need to hit on the read path; the downside was that you could hotspot the write path.
+  In the original Cortex design, samples were sharded amongst distributors by the combination of (userid, metric name). Sharding by metric name was designed to reduce the number of ingesters you need to hit on the read path; the downside was that you could hotspot the write path.
 
-   In hindsight, this seems like the wrong choice: we do many orders of magnitude more writes than reads, and ingester reads are in-memory and cheap. It seems the right thing to do is to use all the labels to shard, improving load balancing and support for very high cardinality metrics.
+  In hindsight, this seems like the wrong choice: we do many orders of magnitude more writes than reads, and ingester reads are in-memory and cheap. It seems the right thing to do is to use all the labels to shard, improving load balancing and support for very high cardinality metrics.
 
-   Set this flag to `true` for the new behaviour.
+  Set this flag to `true` for the new behaviour.
 
-   Important to note is that when setting this flag to `true`, it has to be set on both the distributor and the querier (called `-distributor.shard-by-all-labels` on Querier as well). If the flag is only set on the distributor and not on the querier, you will get incomplete query results because not all ingesters are queried.
+  Important to note is that when setting this flag to `true`, it has to be set on both the distributor and the querier (called `-distributor.shard-by-all-labels` on Querier as well). If the flag is only set on the distributor and not on the querier, you will get incomplete query results because not all ingesters are queried.
 
-   **Upgrade notes**: As this flag also makes all queries always read from all ingesters, the upgrade path is pretty trivial; just enable the flag. When you do enable it, you'll see a spike in the number of active series as the writes are "reshuffled" amongst the ingesters, but over the next stale period all the old series will be flushed, and you should end up with much better load balancing. With this flag enabled in the queriers, reads will always catch all the data from all ingesters.
+  **Upgrade notes**: As this flag also makes all queries always read from all ingesters, the upgrade path is pretty trivial; just enable the flag. When you do enable it, you'll see a spike in the number of active series as the writes are "reshuffled" amongst the ingesters, but over the next stale period all the old series will be flushed, and you should end up with much better load balancing. With this flag enabled in the queriers, reads will always catch all the data from all ingesters.
 
 - `-distributor.extra-query-delay`
-   This is used by a component with an embedded distributor (Querier and Ruler) to control how long to wait until sending more than the minimum amount of queries needed for a successful response.
+  This is used by a component with an embedded distributor (Querier and Ruler) to control how long to wait until sending more than the minimum amount of queries needed for a successful response.
 
 - `distributor.ha-tracker.enable-for-all-users`
-   Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup. This defaults to false, and is technically defined in the Distributor limits.
+  Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup. This defaults to false, and is technically defined in the Distributor limits.
 
 - `distributor.ha-tracker.enable`
-   Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels). Global (for distributors), this ensures that the necessary internal data structures for the HA handling are created. The option `enable-for-all-users` is still needed to enable ingestion of HA samples for all users.
+  Enable the distributors HA tracker so that it can accept samples from Prometheus HA replicas gracefully (requires labels). Global (for distributors), this ensures that the necessary internal data structures for the HA handling are created. The option `enable-for-all-users` is still needed to enable ingestion of HA samples for all users.
 
 - `distributor.drop-label`
-   This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
+  This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.
 
 ### Ring/HA Tracker Store
 
 The KVStore client is used by both the Ring and HA Tracker (HA Tracker doesn't support memberlist as KV store).
+
 - `{ring,distributor.ha-tracker}.prefix`
-   The prefix for the keys in the store. Should end with a /. For example with a prefix of foo/, the key bar would be stored under foo/bar.
+  The prefix for the keys in the store. Should end with a /. For example with a prefix of foo/, the key bar would be stored under foo/bar.
 - `{ring,distributor.ha-tracker}.store`
-   Backend storage to use for the HA Tracker (consul, etcd, inmemory, multi).
+  Backend storage to use for the HA Tracker (consul, etcd, inmemory, multi).
 - `{ring,distributor.ring}.store`
-   Backend storage to use for the Ring (consul, etcd, inmemory, memberlist, multi).
+  Backend storage to use for the Ring (consul, etcd, inmemory, memberlist, multi).
 
 #### Consul
 
@@ -170,13 +173,13 @@ By default these flags are used to configure Consul used for the ring. To config
 prefix these flags with `distributor.ha-tracker.`
 
 - `consul.hostname`
-   Hostname and port of Consul.
+  Hostname and port of Consul.
 - `consul.acl-token`
-   ACL token used to interact with Consul.
+  ACL token used to interact with Consul.
 - `consul.client-timeout`
-   HTTP timeout when talking to Consul.
+  HTTP timeout when talking to Consul.
 - `consul.consistent-reads`
-   Enable consistent reads to Consul.
+  Enable consistent reads to Consul.
 
 #### etcd
 
@@ -184,21 +187,21 @@ By default these flags are used to configure etcd used for the ring. To configur
 prefix these flags with `distributor.ha-tracker.`
 
 - `etcd.endpoints`
-   The etcd endpoints to connect to.
+  The etcd endpoints to connect to.
 - `etcd.dial-timeout`
-   The timeout for the etcd connection.
+  The timeout for the etcd connection.
 - `etcd.max-retries`
-   The maximum number of retries to do for failed ops.
+  The maximum number of retries to do for failed ops.
 - `etcd.tls-enabled`
-   Enable TLS.
+  Enable TLS.
 - `etcd.tls-cert-path`
-   The TLS certificate file path.
+  The TLS certificate file path.
 - `etcd.tls-key-path`
-   The TLS private key file path.
+  The TLS private key file path.
 - `etcd.tls-ca-path`
-   The trusted CA file path.
+  The trusted CA file path.
 - `etcd.tls-insecure-skip-verify`
-   Skip validating server certificate.
+  Skip validating server certificate.
 
 #### memberlist
 
@@ -216,6 +219,7 @@ When a node receives a ring update, node will merge it into its own ring state, 
 Such update will be gossiped `R * log(N+1)` times by this node (R = retransmit multiplication factor, N = number of gossiping nodes in the cluster).
 
 If you find the propagation to be too slow, there are some tuning possibilities (default values are memberlist settings for LAN networks):
+
 - Decrease gossip interval (default: 200ms)
 - Increase gossip nodes (default 3)
 - Decrease push/pull sync interval (default 30s)
@@ -226,44 +230,44 @@ To find propagation delay, you can use `cortex_ring_oldest_member_timestamp{stat
 Flags for configuring KV store based on memberlist library:
 
 - `memberlist.nodename`
-   Name of the node in memberlist cluster. Defaults to hostname.
+  Name of the node in memberlist cluster. Defaults to hostname.
 - `memberlist.randomize-node-name`
-   This flag adds extra random suffix to the node name used by memberlist. Defaults to true. Using random suffix helps to prevent issues when running multiple memberlist nodes on the same machine, or when node names are reused (eg. in stateful sets).
+  This flag adds extra random suffix to the node name used by memberlist. Defaults to true. Using random suffix helps to prevent issues when running multiple memberlist nodes on the same machine, or when node names are reused (eg. in stateful sets).
 - `memberlist.retransmit-factor`
-   Multiplication factor used when sending out messages (factor * log(N+1)). If not set, default value is used.
+  Multiplication factor used when sending out messages (factor \* log(N+1)). If not set, default value is used.
 - `memberlist.join`
-   Other cluster members to join. Can be specified multiple times.
+  Other cluster members to join. Can be specified multiple times.
 - `memberlist.min-join-backoff`, `memberlist.max-join-backoff`, `memberlist.max-join-retries`
-   These flags control backoff settings when joining the cluster.
+  These flags control backoff settings when joining the cluster.
 - `memberlist.abort-if-join-fails`
-   If this node fails to join memberlist cluster, abort.
+  If this node fails to join memberlist cluster, abort.
 - `memberlist.rejoin-interval`
-   How often to try to rejoin the memberlist cluster. Defaults to 0, no rejoining. Occasional rejoin may be useful in some configurations, and is otherwise harmless.
+  How often to try to rejoin the memberlist cluster. Defaults to 0, no rejoining. Occasional rejoin may be useful in some configurations, and is otherwise harmless.
 - `memberlist.left-ingesters-timeout`
-   How long to keep LEFT ingesters in the ring. Note: this is only used for gossiping, LEFT ingesters are otherwise invisible.
+  How long to keep LEFT ingesters in the ring. Note: this is only used for gossiping, LEFT ingesters are otherwise invisible.
 - `memberlist.leave-timeout`
-   Timeout for leaving memberlist cluster.
+  Timeout for leaving memberlist cluster.
 - `memberlist.gossip-interval`
-   How often to gossip with other cluster members. Uses memberlist LAN defaults if 0.
+  How often to gossip with other cluster members. Uses memberlist LAN defaults if 0.
 - `memberlist.gossip-nodes`
-   How many nodes to gossip with in each gossip interval. Uses memberlist LAN defaults if 0.
+  How many nodes to gossip with in each gossip interval. Uses memberlist LAN defaults if 0.
 - `memberlist.pullpush-interval`
-   How often to use pull/push sync. Uses memberlist LAN defaults if 0.
+  How often to use pull/push sync. Uses memberlist LAN defaults if 0.
 - `memberlist.bind-addr`
-   IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0.
+  IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0.
 - `memberlist.bind-port`
-   Port to listen on for gossip messages. Defaults to 7946.
+  Port to listen on for gossip messages. Defaults to 7946.
 - `memberlist.packet-dial-timeout`
-   Timeout used when connecting to other nodes to send packet.
+  Timeout used when connecting to other nodes to send packet.
 - `memberlist.packet-write-timeout`
-   Timeout for writing 'packet' data.
+  Timeout for writing 'packet' data.
 - `memberlist.transport-debug`
-   Log debug transport messages. Note: global log.level must be at debug level as well.
+  Log debug transport messages. Note: global log.level must be at debug level as well.
 - `memberlist.gossip-to-dead-nodes-time`
-   How long to keep gossiping to the nodes that seem to be dead. After this time, dead node is removed from list of nodes. If "dead" node appears again, it will simply join the cluster again, if its name is not reused by other node in the meantime. If the name has been reused, such a reanimated node will be ignored by other members.
+  How long to keep gossiping to the nodes that seem to be dead. After this time, dead node is removed from list of nodes. If "dead" node appears again, it will simply join the cluster again, if its name is not reused by other node in the meantime. If the name has been reused, such a reanimated node will be ignored by other members.
 - `memberlist.dead-node-reclaim-time`
-   How soon can dead's node name be reused by a new node (using different IP). Disabled by default, name reclaim is not allowed until `gossip-to-dead-nodes-time` expires. This can be useful to set to low numbers when reusing node names, eg. in stateful sets.
-   If memberlist library detects that new node is trying to reuse the name of previous node, it will log message like this: `Conflicting address for ingester-6. Mine: 10.44.12.251:7946 Theirs: 10.44.12.54:7946 Old state: 2`. Node states are: "alive" = 0, "suspect" = 1 (doesn't respond, will be marked as dead if it doesn't respond), "dead" = 2.
+  How soon can dead's node name be reused by a new node (using different IP). Disabled by default, name reclaim is not allowed until `gossip-to-dead-nodes-time` expires. This can be useful to set to low numbers when reusing node names, eg. in stateful sets.
+  If memberlist library detects that new node is trying to reuse the name of previous node, it will log message like this: `Conflicting address for ingester-6. Mine: 10.44.12.251:7946 Theirs: 10.44.12.54:7946 Old state: 2`. Node states are: "alive" = 0, "suspect" = 1 (doesn't respond, will be marked as dead if it doesn't respond), "dead" = 2.
 
 #### Multi KV
 
@@ -288,8 +292,8 @@ Multi KV also reacts on changes done via runtime configuration. It uses this sec
 
 ```yaml
 multi_kv_config:
-    mirror_enabled: false
-    primary: memberlist
+  mirror_enabled: false
+  primary: memberlist
 ```
 
 Note that runtime configuration values take precedence over command line options.
@@ -297,10 +301,11 @@ Note that runtime configuration values take precedence over command line options
 ### HA Tracker
 
 HA tracking has two of its own flags:
+
 - `distributor.ha-tracker.cluster`
-   Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
+  Prometheus label to look for in samples to identify a Prometheus HA cluster. (default "cluster")
 - `distributor.ha-tracker.replica`
-   Prometheus label to look for in samples to identify a Prometheus HA replica. (default "`__replica__`")
+  Prometheus label to look for in samples to identify a Prometheus HA replica. (default "`__replica__`")
 
 It's reasonable to assume people probably already have a `cluster` label, or something similar. If not, they should add one along with `__replica__` via external labels in their Prometheus config. If you stick to these default values your Prometheus config could look like this (`POD_NAME` is an environment variable which must be set by you):
 
@@ -314,12 +319,13 @@ global:
 HA Tracking looks for the two labels (which can be overwritten per user)
 
 It also talks to a KVStore and has it's own copies of the same flags used by the Distributor to connect to for the ring.
+
 - `distributor.ha-tracker.failover-timeout`
-   If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
+  If we don't receive any samples from the accepted replica for a cluster in this amount of time we will failover to the next replica we receive a sample from. This value must be greater than the update timeout (default 30s)
 - `distributor.ha-tracker.store`
-   Backend storage to use for the ring (consul, etcd, inmemory, multi). Inmemory only works if there is a single distributor and ingester running in the same process (for testing purposes). (default "consul")
+  Backend storage to use for the ring (consul, etcd, inmemory, multi). Inmemory only works if there is a single distributor and ingester running in the same process (for testing purposes). (default "consul")
 - `distributor.ha-tracker.update-timeout`
-   Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
+  Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
 
 ## Ingester
 
@@ -345,19 +351,19 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 
 - `-ingester.join-after`
 
-   How long to wait in PENDING state during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). (default 0s)
+  How long to wait in PENDING state during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). (default 0s)
 
 - `-ingester.max-transfer-retries`
 
-   How many times a LEAVING ingester tries to find a PENDING ingester during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). Negative value or zero disables hand-over process completely. (default 10)
+  How many times a LEAVING ingester tries to find a PENDING ingester during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). Negative value or zero disables hand-over process completely. (default 10)
 
 - `-ingester.normalise-tokens`
 
-   Deprecated. New ingesters always write "normalised" tokens to the ring. Normalised tokens consume less memory to encode and decode; as the ring is unmarshalled regularly, this significantly reduces memory usage of anything that watches the ring.
+  Deprecated. New ingesters always write "normalised" tokens to the ring. Normalised tokens consume less memory to encode and decode; as the ring is unmarshalled regularly, this significantly reduces memory usage of anything that watches the ring.
 
-   Cortex 0.4.0 is the last version that can *write* denormalised tokens. Cortex 0.5.0 and above always write normalised tokens.
+  Cortex 0.4.0 is the last version that can _write_ denormalised tokens. Cortex 0.5.0 and above always write normalised tokens.
 
-   Cortex 0.6.0 is the last version that can *read* denormalised tokens. Starting with Cortex 0.7.0 only normalised tokens are supported, and ingesters writing denormalised tokens to the ring (running Cortex 0.4.0 or earlier with `-ingester.normalise-tokens=false`) are ignored by distributors. Such ingesters should either switch to using normalised tokens, or be upgraded to Cortex 0.5.0 or later.
+  Cortex 0.6.0 is the last version that can _read_ denormalised tokens. Starting with Cortex 0.7.0 only normalised tokens are supported, and ingesters writing denormalised tokens to the ring (running Cortex 0.4.0 or earlier with `-ingester.normalise-tokens=false`) are ignored by distributors. Such ingesters should either switch to using normalised tokens, or be upgraded to Cortex 0.5.0 or later.
 
 - `-ingester.chunk-encoding`
 
@@ -368,35 +374,35 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 
 - `-store.bigchunk-size-cap-bytes`
 
-   When using bigchunks, start a new bigchunk and flush the old one if the old one reaches this size. Use this setting to limit memory growth of ingesters with a lot of timeseries that last for days.
+  When using bigchunks, start a new bigchunk and flush the old one if the old one reaches this size. Use this setting to limit memory growth of ingesters with a lot of timeseries that last for days.
 
 - `-ingester-client.expected-timeseries`
 
-   When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. This should match the `max_samples_per_send` in your `queue_config` for Prometheus.
+  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. This should match the `max_samples_per_send` in your `queue_config` for Prometheus.
 
 - `-ingester-client.expected-samples-per-series`
 
-   When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. Under normal conditions, Prometheus scrapes should arrive with one sample per series.
+  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. Under normal conditions, Prometheus scrapes should arrive with one sample per series.
 
 - `-ingester-client.expected-labels`
 
-   When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. The optimum value will depend on how many labels are sent with your timeseries samples.
+  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. The optimum value will depend on how many labels are sent with your timeseries samples.
 
 - `-store.chunk-cache.cache-stubs`
 
-   Where you don't want to cache every chunk written by ingesters, but you do want to take advantage of chunk write deduplication, this option will make ingesters write a placeholder to the cache for each chunk.
-   Make sure you configure ingesters with a different cache to queriers, which need the whole value.
+  Where you don't want to cache every chunk written by ingesters, but you do want to take advantage of chunk write deduplication, this option will make ingesters write a placeholder to the cache for each chunk.
+  Make sure you configure ingesters with a different cache to queriers, which need the whole value.
 
 #### Flusher
 
 - `-flusher.wal-dir`
-   Directory where the WAL data should be recovered from.
+  Directory where the WAL data should be recovered from.
 
 - `-flusher.concurrent-flushes`
-   Number of concurrent flushes.
+  Number of concurrent flushes.
 
 - `-flusher.flush-op-timeout`
-   Duration after which a flush should timeout.
+  Duration after which a flush should timeout.
 
 ## Runtime Configuration file
 
@@ -418,19 +424,19 @@ overrides:
     max_series_per_query: 100000
 
 multi_kv_config:
-    mirror_enabled: false
-    primary: memberlist
+  mirror_enabled: false
+  primary: memberlist
 ```
 
-When running Cortex on Kubernetes, store this file in a config map and mount it in each services' containers.  When changing the values there is no need to restart the services, unless otherwise specified.
+When running Cortex on Kubernetes, store this file in a config map and mount it in each services' containers. When changing the values there is no need to restart the services, unless otherwise specified.
 
 The `/runtime_config` endpoint returns the whole runtime configuration, including the overrides. In case you want to get only the non-default values of the configuration you can pass the `mode` parameter with the `diff` value.
 
 ## Ingester, Distributor & Querier limits.
 
-Cortex implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster.  There are various default global limits which apply to all tenants which can be set on the command line.  These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
+Cortex implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster. There are various default global limits which apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
 
-The `overrides` field is a map of tenant ID (same values as passed in the `X-Scope-OrgID` header) to the various limits.  An example could look like:
+The `overrides` field is a map of tenant ID (same values as passed in the `X-Scope-OrgID` header) to the various limits. An example could look like:
 
 ```yaml
 overrides:
@@ -473,16 +479,16 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_series_per_user` / `-ingester.max-series-per-user`
 - `max_series_per_metric` / `-ingester.max-series-per-metric`
 
-  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have.  When running with `-distributor.shard-by-all-labels=false` (the default), this limit will enforce the maximum number of series a metric can have 'globally', as all series for a single metric will be sent to the same replication set of ingesters.  This is not the case when running with `-distributor.shard-by-all-labels=true`, so the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
+  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have. When running with `-distributor.shard-by-all-labels=false` (the default), this limit will enforce the maximum number of series a metric can have 'globally', as all series for a single metric will be sent to the same replication set of ingesters. This is not the case when running with `-distributor.shard-by-all-labels=true`, so the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
 
   An active series is a series to which a sample has been written in the last `-ingester.max-chunk-idle` duration, which defaults to 5 minutes.
 
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 
-   Like `max_series_per_user` and `max_series_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor, the `-distributor.shard-by-all-labels` setting and the current number of healthy ingesters, and is kept updated whenever the number of ingesters change.
+  Like `max_series_per_user` and `max_series_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor, the `-distributor.shard-by-all-labels` setting and the current number of healthy ingesters, and is kept updated whenever the number of ingesters change.
 
-   Requires `-distributor.replication-factor`, `-distributor.shard-by-all-labels`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+  Requires `-distributor.replication-factor`, `-distributor.shard-by-all-labels`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
 - `max_series_per_query` / `-ingester.max-series-per-query`
 
@@ -492,7 +498,7 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 - `max_metadata_per_user` / `-ingester.max-metadata-per-user`
 - `max_metadata_per_metric` / `-ingester.max-metadata-per-metric`
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have.  When running with `-distributor.shard-by-all-labels=false` (the default), this limit will enforce the maximum number of metadata a metric can have 'globally', as all metadata for a single metric will be sent to the same replication set of ingesters.  This is not the case when running with `-distributor.shard-by-all-labels=true`, so the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
+  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. When running with `-distributor.shard-by-all-labels=false` (the default), this limit will enforce the maximum number of metadata a metric can have 'globally', as all metadata for a single metric will be sent to the same replication set of ingesters. This is not the case when running with `-distributor.shard-by-all-labels=true`, so the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
 
 - `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
   When running Cortex with blocks storage this limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
@@ -500,9 +506,9 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
-   Like `max_metadata_per_user` and `max_metadata_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor, the `-distributor.shard-by-all-labels` setting and the current number of healthy ingesters, and is kept updated whenever the number of ingesters change.
+  Like `max_metadata_per_user` and `max_metadata_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor, the `-distributor.shard-by-all-labels` setting and the current number of healthy ingesters, and is kept updated whenever the number of ingesters change.
 
-   Requires `-distributor.replication-factor`, `-distributor.shard-by-all-labels`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+  Requires `-distributor.replication-factor`, `-distributor.shard-by-all-labels`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
 ## Storage
 

@@ -10,14 +10,13 @@ If you wish to add a new CI or CD job, add it to the existing current test-build
 
 test-build-deploy.yml specifies a workflow that runs all Mimir continuous integration and continuous deployment jobs. The workflow is triggered on every pull request and commit to main, however the CD jobs only run when changes are merged onto main. The workflow combines both CI and CD jobs, because the CD jobs are dependent on artifacts produced the CI jobs.
 
-
 ## Specific Jobs
 
-| Job                    | Description                                                                                                                   | Type |
-|------------------------|-------------------------------------------------------------------------------------------------------------------------------|------|
-| lint                   | Runs linting and ensures vendor directory, protos and generated documentation are consistent.                                 | CI   |
-| test                   | Runs units tests on Cassandra testing framework.                                                                              | CI   |
-| integration            | Runs integration tests after upgrading golang, pulling necessary docker images and downloading necessary module dependencies. | CI   |
-| build                  | Builds and saves an up-to-date Mimir image and website.                                                                       | CI   |
-| deploy_website         | Deploys the latest version of Mimir website to gh-pages branch. Triggered within workflow.                                    | CD   |
-| deploy                 | Deploys the latest Mimir image.                                                                                               | CD   |
+| Job            | Description                                                                                                                   | Type |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---- |
+| lint           | Runs linting and ensures vendor directory, protos and generated documentation are consistent.                                 | CI   |
+| test           | Runs units tests on Cassandra testing framework.                                                                              | CI   |
+| integration    | Runs integration tests after upgrading golang, pulling necessary docker images and downloading necessary module dependencies. | CI   |
+| build          | Builds and saves an up-to-date Mimir image and website.                                                                       | CI   |
+| deploy_website | Deploys the latest version of Mimir website to gh-pages branch. Triggered within workflow.                                    | CD   |
+| deploy         | Deploys the latest Mimir image.                                                                                               | CD   |

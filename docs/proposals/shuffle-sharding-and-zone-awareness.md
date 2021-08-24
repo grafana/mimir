@@ -12,7 +12,6 @@ slug: shuffle-sharding-and-zone-awareness
 
 ## Shuffle sharding and zone awareness
 
-
 ### Background
 
 Cortex shards the received series across all available ingesters. In a multi-tenant cluster, each tenant series are sharded across all ingesters. This allows to horizontally scale the series across the pool of ingesters but also suffers some issues:
@@ -46,9 +45,9 @@ To do it, we **treat each zone as a separate ring** and select N unique instance
 1. Generate a seed based on the tenant ID
 2. Initialise a pseudo random number generator with the tenant’s seed. The random generator must guarantee predictable numbers given the same input seed.
 3. Generate a sequence of N random numbers, where N is the number of instances to select from the zone. Each random number is used as a “token” to look up instances in the ring. For each random number:
-  1. Lookup the instance holding that token in the ring
-  2. If the instance has not been previously selected, then pick it
-  3. If the instance was previously selected (we call this a “collision”), then continue walking the ring clockwise until we find an instance which has not been selected yet
+4. Lookup the instance holding that token in the ring
+5. If the instance has not been previously selected, then pick it
+6. If the instance was previously selected (we call this a “collision”), then continue walking the ring clockwise until we find an instance which has not been selected yet
 
 ### Guaranteed properties
 
@@ -69,7 +68,7 @@ The consistency property is honored by two aspects of the algorithm:
 
 Let’s consider an initial ring with 3 instances and 1 zone (for simplicity):
 
-- I1 - Tokens: 1,  8, 15
+- I1 - Tokens: 1, 8, 15
 - I2 - Tokens: 5, 11, 19
 - I3 - Tokens: 7, 13, 21
 
@@ -80,19 +79,19 @@ With a replication factor = 2, the random sequence looks up:
 
 Then we add a new instance and the **updated ring** is:
 
-- I1 - Tokens: 1,  8, 15
+- I1 - Tokens: 1, 8, 15
 - I2 - Tokens: 5, 11, 19
 - I3 - Tokens: 7, 13, 21
-- I4 - Tokens: 4,  7, 17
+- I4 - Tokens: 4, 7, 17
 
 Now, let’s compare two different algorithms to solve collisions:
 
 - Using the random generator:<br />
-Random sequence = 3 (**I4**), 6 (I4 - collision), 12 (**I3**)<br />
-**all instances are different** (I4, I3)
+  Random sequence = 3 (**I4**), 6 (I4 - collision), 12 (**I3**)<br />
+  **all instances are different** (I4, I3)
 - Walking the ring:<br />
-Random sequence = 3 (**I4**), 6 (I4 - collision, next is **I1**)<br />
-**only 1 instance is different** (I4, I1)
+  Random sequence = 3 (**I4**), 6 (I4 - collision, next is **I1**)<br />
+  **only 1 instance is different** (I4, I1)
 
 #### Shuffling
 
@@ -107,4 +106,3 @@ We treat each zone as a separate ring and select an equal number of instances fr
 We’ve built a [reference implementation](https://github.com/cortexproject/cortex/pull/3090) of the proposed algorithm, to test the properties described above.
 
 In particular, we’ve observed that the [actual distribution](https://github.com/cortexproject/cortex/pull/3090/files#diff-121ffce90aa9932f6b87ffd138e0f36aR281) of matching instances between different tenants is very close to the [theoretical one](https://docs.google.com/spreadsheets/d/1FXbiWTXi6bdERtamH-IfmpgFq1fNL4GP_KX_yJvbRi4/edit), as well as consistency and stability properties are both honored.
-

@@ -35,7 +35,7 @@ Scanner is started by running `blocksconvert -target=scanner`. Scanner requires 
 
 - `-schema-config-file` – this is standard Cortex schema file.
 - `-bigtable.instance`, `-bigtable.project` – options for BigTable access.
-- `-dynamodb.url` - for DynamoDB access.  Example `dynamodb://us-east-1/`
+- `-dynamodb.url` - for DynamoDB access. Example `dynamodb://us-east-1/`
 - `-blocks-storage.backend` and corresponding `-blocks-storage.*` options for storing plan files.
 - `-scanner.output-dir` – specifies local directory for writing plan files to. Finished plan files are deleted after upload to the bucket. List of scanned tables is also kept in this directory, to avoid scanning the same tables multiple times when Scanner is restarted.
 - `-scanner.allowed-users` – comma-separated list of Cortex tenants that should have plans generated. If empty, plans for all found users are generated.
@@ -69,7 +69,7 @@ Scheduler is started by running `blocksconvert -target=scheduler`. It only needs
 It is expected that only single Scheduler process is running. Schedulers consume very little resources.
 
 Scheduler's metrics have `cortex_blocksconvert_scheduler` prefix (number of plans in different states, oldest/newest plan).
-Scheduler HTTP server also exposes  `/plans` page that shows currently queued plans, and all plans and their status for all users.
+Scheduler HTTP server also exposes `/plans` page that shows currently queued plans, and all plans and their status for all users.
 
 ### Builder
 

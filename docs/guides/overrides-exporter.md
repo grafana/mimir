@@ -24,7 +24,8 @@ emitted.
 
 With a `runtime.yaml` file given below
 
-[embedmd]:# (./overrides-exporter-runtime.yaml)
+[embedmd]: # "./overrides-exporter-runtime.yaml"
+
 ```yaml
 # file: runtime.yaml
 # In this example, we're overriding ingestion limits for a single tenant.

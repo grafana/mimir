@@ -31,6 +31,7 @@ Unless reconfigured this starts a single Mimir node storing blocks to S3 in buck
 It is not intended for production use.
 
 Clone and build prometheus
+
 ```sh
 $ git clone https://github.com/prometheus/prometheus
 $ cd prometheus
@@ -41,7 +42,7 @@ Add the following to your Prometheus config (documentation/examples/prometheus.y
 
 ```yaml
 remote_write:
-- url: http://localhost:9009/api/v1/push
+  - url: http://localhost:9009/api/v1/push
 ```
 
 And start Prometheus with that config file:
@@ -50,7 +51,7 @@ And start Prometheus with that config file:
 $ ./prometheus --config.file=./documentation/examples/prometheus.yml
 ```
 
-Your Prometheus instance will now start pushing data to Mimir.  To query that data, start a Grafana instance:
+Your Prometheus instance will now start pushing data to Mimir. To query that data, start a Grafana instance:
 
 ```sh
 $ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
@@ -74,7 +75,7 @@ $ docker network create mimir
 $ docker run -d --name=consul --network=mimir -e CONSUL_BIND_INTERFACE=eth0 consul
 ```
 
-Next we'll run a couple of Mimir instances pointed at that Consul.  You'll note the Mimir configuration can be specified in either a config file or overridden on the command line.  See [the arguments documentation](../configuration/arguments.md) for more information about Mimir configuration options.
+Next we'll run a couple of Mimir instances pointed at that Consul. You'll note the Mimir configuration can be specified in either a config file or overridden on the command line. See [the arguments documentation](../configuration/arguments.md) for more information about Mimir configuration options.
 
 ```sh
 $ docker run -d --name=mimir1 --network=mimir \
@@ -96,14 +97,14 @@ $ docker run -d --name=mimir2 --network=mimir \
 If you go to http://localhost:9001/ring (or http://localhost:9002/ring) you should see both Mimir nodes join the ring.
 
 To demonstrate the correct operation of Mimir clustering, we'll send samples
-to one of the instances and queries to another.  In production, you'd want to
+to one of the instances and queries to another. In production, you'd want to
 load balance both pushes and queries evenly among all the nodes.
 
 Point Prometheus at the first:
 
 ```yaml
 remote_write:
-- url: http://localhost:9001/api/v1/push
+  - url: http://localhost:9001/api/v1/push
 ```
 
 ```sh
@@ -171,17 +172,17 @@ Configure Prometheus to send data to the first replica:
 
 ```yaml
 remote_write:
-- url: http://localhost:9001/api/v1/push
+  - url: http://localhost:9001/api/v1/push
 ```
 
 ```sh
 $ ./prometheus --config.file=./documentation/examples/prometheus.yml
 ```
 
-In Grafana, add a datasource for the 3rd  Mimir replica (`http://mimir3:9009/prometheus`)
-and verify the same data appears in both Prometheus and  Mimir.
+In Grafana, add a datasource for the 3rd Mimir replica (`http://mimir3:9009/prometheus`)
+and verify the same data appears in both Prometheus and Mimir.
 
-To show that  Mimir can tolerate a node failure, hard kill one of the Mimir replicas:
+To show that Mimir can tolerate a node failure, hard kill one of the Mimir replicas:
 
 ```
 $ docker rm -f mimir2
