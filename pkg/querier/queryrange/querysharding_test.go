@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -56,23 +57,31 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		a := as[i]
 		b := bs[i]
 		require.Equal(t, a.Labels, b.Labels)
-		require.Equal(t, len(a.Samples), len(b.Samples), "expected same number of samples")
+		require.Equal(t, len(a.Samples), len(b.Samples), "expected same number of samples for series %s", a.Labels)
 
 		for j := 0; j < len(a.Samples); j++ {
-			aSample := &a.Samples[j]
-			aSample.Value = math.Round(aSample.Value*1e6) / 1e6
-			bSample := &b.Samples[j]
-			bSample.Value = math.Round(bSample.Value*1e6) / 1e6
+			expected := a.Samples[j]
+			actual := b.Samples[j]
+			require.Equalf(t, expected.TimestampMs, actual.TimestampMs, "sample timestamp at position %d for series %s", j, a.Labels)
+
+			if value.IsStaleNaN(expected.Value) {
+				require.Truef(t, value.IsStaleNaN(actual.Value), "sample value at position %d is expected to be stale marker for series %s", j, a.Labels)
+			} else if math.IsNaN(expected.Value) {
+				require.Truef(t, math.IsNaN(actual.Value), "sample value at position %d is expected to be NaN for series %s", j, a.Labels)
+			} else {
+				require.InDeltaf(t, expected.Value, actual.Value, 0.000001, "sample value at position %d with timestamp %d for series %s", j, expected.TimestampMs, a.Labels)
+			}
 		}
-		require.Equal(t, a, b)
 	}
 }
 
 func TestQueryShardingCorrectness(t *testing.T) {
 	var (
-		numSeries        = 1000
-		numHistograms    = 100
-		histogramBuckets = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
+		numSeries          = 1000
+		numStaleSeries     = 100
+		numHistograms      = 1000
+		numStaleHistograms = 100
+		histogramBuckets   = []float64{1.0, 2.0, 4.0, 10.0, 100.0, math.Inf(1)}
 	)
 
 	tests := map[string]struct {
@@ -106,6 +115,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `sum without(unique) (rate(metric_counter[1m]))`,
 			expectedShardedQueries: 1,
 		},
+		"sum(rate()) with no effective grouping because all groups have 1 series": {
+			query:                  `sum by(unique) (rate(metric_counter[1m]))`,
+			expectedShardedQueries: 1,
+		},
 		"histogram_quantile() no grouping": {
 			query:                  `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
 			expectedShardedQueries: 1,
@@ -116,6 +129,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		},
 		"histogram_quantile() grouping 'without'": {
 			query:                  `histogram_quantile(0.5, sum without(group_1, group_2, unique) (rate(metric_histogram_bucket[1m])))`,
+			expectedShardedQueries: 1,
+		},
+		"histogram_quantile() with no effective grouping because all groups have 1 series": {
+			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket[1m])))`,
 			expectedShardedQueries: 1,
 		},
 		"min() no grouping": {
@@ -238,6 +255,12 @@ func TestQueryShardingCorrectness(t *testing.T) {
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
 
 	for i := 0; i < numSeries; i++ {
+		gen := factor(float64(i) * 0.1)
+		if i >= numSeries-numStaleSeries {
+			// Wrap the generator to inject the staleness marker at minute 10 and skip samples for 10 minutes.
+			gen = stale(int((10*time.Minute)/step), int((10*time.Minute)/step), gen)
+		}
+
 		series = append(series, newSeries(
 			labels.Labels{
 				{Name: "__name__", Value: "metric_counter"},    // Same metric name for all series.
@@ -245,12 +268,18 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				{Name: "unique", Value: strconv.Itoa(i)},       // A unique label.
 				{Name: "group_1", Value: strconv.Itoa(i % 10)}, // A first grouping label.
 				{Name: "group_2", Value: strconv.Itoa(i % 5)},  // A second grouping label.
-			},
-			factor(float64(i)*0.1)))
+			}, gen))
 	}
 
 	for i := numSeries; i < numSeries+numHistograms; i++ {
 		for bucketIdx, bucketLe := range histogramBuckets {
+			// We expect each bucket to have a value higher than the previous one.
+			gen := factor(float64(i) * float64(bucketIdx) * 0.1)
+			if i >= numSeries+numHistograms-numStaleHistograms {
+				// Wrap the generator to inject the staleness marker at minute 10 and skip samples for 10 minutes.
+				gen = stale(int((10*time.Minute)/step), int((10*time.Minute)/step), gen)
+			}
+
 			series = append(series, newSeries(
 				labels.Labels{
 					{Name: "__name__", Value: "metric_histogram_bucket"}, // Same metric name for all series.
@@ -259,9 +288,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					{Name: "unique", Value: strconv.Itoa(i)},       // A unique label.
 					{Name: "group_1", Value: strconv.Itoa(i % 10)}, // A first grouping label.
 					{Name: "group_2", Value: strconv.Itoa(i % 5)},  // A second grouping label.
-				},
-				// We expect each bucket to have a value higher than the previous one.
-				factor(float64(i)*float64(bucketIdx)*0.1)))
+				}, gen))
 		}
 	}
 
@@ -284,6 +311,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				}
 
 				reg := prometheus.NewPedanticRegistry()
+				engine := newEngine()
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
@@ -346,7 +374,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 		Query: "aaa{", // Invalid query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), engine, 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
 
 	// Mock the downstream handler, always returning success (regardless the query is valid or not).
 	downstream := &mockHandler{}
@@ -370,7 +398,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), engine, 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
