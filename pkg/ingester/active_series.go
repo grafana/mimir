@@ -25,13 +25,13 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
-	asm     ActiveSeriesMatchers
+	asm     *ActiveSeriesMatchers
 	stripes [numActiveSeriesStripes]activeSeriesStripe
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
-	asm ActiveSeriesMatchers
+	asm *ActiveSeriesMatchers
 
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
@@ -51,7 +51,7 @@ type activeSeriesEntry struct {
 	matches []bool        // Which matchers of ActiveSeriesMatchers does this series match
 }
 
-func NewActiveSeries(asm ActiveSeriesMatchers) *ActiveSeries {
+func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
 	c := &ActiveSeries{asm: asm}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.

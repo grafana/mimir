@@ -179,7 +179,7 @@ type Ingester struct {
 	metrics *ingesterMetrics
 	logger  log.Logger
 
-	activeSeriesMatcher ActiveSeriesMatchers
+	activeSeriesMatcher *ActiveSeriesMatchers
 
 	chunkStore         ChunkStore
 	lifecycler         *ring.Lifecycler

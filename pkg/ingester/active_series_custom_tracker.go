@@ -62,11 +62,12 @@ func (cfg ActiveSeriesCustomTrackerConfig) String() string {
 	return cfg.Name + ":" + cfg.Matcher
 }
 
-func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (asm ActiveSeriesMatchers, _ error) {
+func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
+	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchers {
 		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
-			return asm, fmt.Errorf("can't build active series matcher %s: %w", name, err)
+			return nil, fmt.Errorf("can't build active series matcher %s: %w", name, err)
 		}
 		matchers := make(labelsMatchers, len(sm))
 		for i, m := range sm {
@@ -84,11 +85,11 @@ type ActiveSeriesMatchers struct {
 	matchers []labelsMatchers
 }
 
-func (asm ActiveSeriesMatchers) MatcherNames() []string {
+func (asm *ActiveSeriesMatchers) MatcherNames() []string {
 	return asm.names
 }
 
-func (asm ActiveSeriesMatchers) Matches(series labels.Labels) []bool {
+func (asm *ActiveSeriesMatchers) Matches(series labels.Labels) []bool {
 	if len(asm.matchers) == 0 {
 		return nil
 	}
