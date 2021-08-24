@@ -934,35 +934,42 @@ store_gateway_client:
 # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
 [shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
 
-# The maximum number of concurrent queries.
+# The maximum number of concurrent queries. This config option should be set on
+# query-frontend too when query sharding is enabled.
 # CLI flag: -querier.max-concurrent
 [max_concurrent: <int> | default = 20]
 
-# The timeout for a query.
+# The timeout for a query. This config option should be set on query-frontend
+# too when query sharding is enabled.
 # CLI flag: -querier.timeout
 [timeout: <duration> | default = 2m]
 
-# Maximum number of samples a single query can load into memory.
+# Maximum number of samples a single query can load into memory. This config
+# option should be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.max-samples
 [max_samples: <int> | default = 50000000]
 
-# Enable the @ modifier in PromQL.
+# Enable the @ modifier in PromQL. This config option should be set on
+# query-frontend too when query sharding is enabled.
 # CLI flag: -querier.at-modifier-enabled
 [at_modifier_enabled: <boolean> | default = false]
 
-# The default evaluation interval or step size for subqueries.
+# The default evaluation interval or step size for subqueries. This config
+# option should be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.default-evaluation-interval
 [default_evaluation_interval: <duration> | default = 1m]
 
 # Active query tracker monitors active queries, and writes them to the file in
 # given directory. If any queries are discovered in this file during startup, it
 # will log them to the log file. Setting to empty value disables active query
-# tracker, which also disables -querier.max-concurrent option.
+# tracker, which also disables -querier.max-concurrent option. This config
+# option should be set on query-frontend too when query sharding is enabled.
 # CLI flag: -querier.active-query-tracker-dir
 [active_query_tracker_dir: <string> | default = "./active-query-tracker"]
 
 # Time since the last sample after which a time series is considered stale and
-# ignored by expression evaluations.
+# ignored by expression evaluations. This config option should be set on
+# query-frontend too when query sharding is enabled.
 # CLI flag: -querier.lookback-delta
 [lookback_delta: <duration> | default = 5m]
 ```
