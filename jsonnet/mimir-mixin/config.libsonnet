@@ -26,12 +26,12 @@
     // These are used by the dashboards and allow for the simultaneous display of
     // microservice and single binary cortex clusters.
     job_names: {
-      ingester: '(ingester.*|cortex$)',  // Match also ingester-blocks, which is used during the migration from chunks to blocks.
+      ingester: '(ingester.*|cortex$)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex$)',
-      querier: '(querier|cortex$)',
+      querier: '(querier.*|cortex$)',  // Match also custom querier deployments.
       ruler: '(ruler|cortex$)',
-      query_frontend: '(query-frontend|cortex$)',
-      query_scheduler: 'query-scheduler',  // Not part of single-binary.
+      query_frontend: '(query-frontend.*|cortex$)',  // Match also custom query-frontend deployments.
+      query_scheduler: 'query-scheduler.*',  // Not part of single-binary. Match also custom query-scheduler deployments.
       table_manager: '(table-manager|cortex$)',
       store_gateway: '(store-gateway|cortex$)',
       gateway: '(gateway|cortex-gw|cortex-gw-internal)',
