@@ -24,7 +24,7 @@ type mockKV struct {
 
 	// Channel closed once the in-memory consul mock should be closed.
 	close   chan struct{}
-	closeWg sync.WaitGroup
+	closeWG sync.WaitGroup
 }
 
 // NewInMemoryClient makes a new mock consul client.
@@ -49,12 +49,12 @@ func NewInMemoryClientWithConfig(codec codec.Codec, cfg Config, logger log.Logge
 	// may still report it as leaked.
 	closer := closer.Func(func() error {
 		close(m.close)
-		m.closeWg.Wait()
+		m.closeWG.Wait()
 		return nil
 	})
 
 	// Start the main loop in a dedicated goroutine.
-	m.closeWg.Add(1)
+	m.closeWG.Add(1)
 	go m.loop()
 
 	return &Client{
@@ -74,7 +74,7 @@ func copyKVPair(in *consul.KVPair) *consul.KVPair {
 
 // periodic loop to wake people up, so they can honour timeouts
 func (m *mockKV) loop() {
-	defer m.closeWg.Done()
+	defer m.closeWG.Done()
 
 	for {
 		select {
