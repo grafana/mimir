@@ -106,5 +106,6 @@ func (ms labelsMatchers) Matches(lset labels.Labels) bool {
 }
 
 func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
+	// labels.MatchType(m.Type) is a risky conversion because it depends on the iota order, but we have a test for it
 	return labels.MustNewMatcher(labels.MatchType(m.Type), m.Name, m.Value)
 }
