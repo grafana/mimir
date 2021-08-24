@@ -1,6 +1,7 @@
 {
   prometheusAlerts+::
     (import 'alerts/alerts.libsonnet') +
+    (import 'alerts/alertmanager.libsonnet') +
 
     (if std.member($._config.storage_engine, 'blocks')
      then
