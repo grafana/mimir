@@ -10,20 +10,27 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
-// ActiveSeriesCustomTrackersConfigs configures the additional custom trackers for active series in the ingester.
-type ActiveSeriesCustomTrackersConfigs []ActiveSeriesCustomTrackerConfig
+// ActiveSeriesCustomTrackersConfig configures the additional custom trackers for active series in the ingester.
+type ActiveSeriesCustomTrackersConfig map[string]string
 
-func (cfgs *ActiveSeriesCustomTrackersConfigs) String() string {
-	strs := make([]string, len(*cfgs))
-	for i, cfg := range *cfgs {
-		strs[i] = cfg.String()
+func (c *ActiveSeriesCustomTrackersConfig) String() string {
+	if *c == nil {
+		return ""
+	}
+
+	strs := make([]string, 0, len(*c))
+	for name, matcher := range *c {
+		strs = append(strs, fmt.Sprintf("%s:%s", name, matcher))
 	}
 	return strings.Join(strs, ";")
 }
 
-func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
+func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 	if strings.TrimSpace(s) == "" {
 		return nil
+	}
+	if *c == nil {
+		*c = map[string]string{}
 	}
 
 	pairs := strings.Split(s, ";")
@@ -36,7 +43,10 @@ func (cfgs *ActiveSeriesCustomTrackersConfigs) Set(s string) error {
 		if len(name) == 0 || len(matcher) == 0 {
 			return fmt.Errorf("semicolon-separated values should be <name>:<matcher>, but one of the sides was empty in the value %d: %q", i, p)
 		}
-		*cfgs = append(*cfgs, ActiveSeriesCustomTrackerConfig{Name: name, Matcher: matcher})
+		if _, ok := (*c)[name]; ok {
+			return fmt.Errorf("matcher %q for active series custom trackers is provided twice", name)
+		}
+		(*c)[name] = matcher
 	}
 	return nil
 }
@@ -52,17 +62,11 @@ func (cfg ActiveSeriesCustomTrackerConfig) String() string {
 	return cfg.Name + ":" + cfg.Matcher
 }
 
-func NewActiveSeriesMatchers(cfgs ActiveSeriesCustomTrackersConfigs) (asm ActiveSeriesMatchers, _ error) {
-	seenMatcherNames := map[string]int{}
-	for i, cfg := range cfgs {
-		if idx, seen := seenMatcherNames[cfg.Name]; seen {
-			return asm, fmt.Errorf("active series matcher %d duplicates the name of matcher at position %d: %q", i, idx, cfg.Name)
-		}
-		seenMatcherNames[cfg.Name] = i
-
-		sm, err := amlabels.ParseMatchers(cfg.Matcher)
+func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (asm ActiveSeriesMatchers, _ error) {
+	for name, matcher := range matchers {
+		sm, err := amlabels.ParseMatchers(matcher)
 		if err != nil {
-			return asm, fmt.Errorf("can't build active series matcher %d: %w", i, err)
+			return asm, fmt.Errorf("can't build active series matcher %s: %w", name, err)
 		}
 		matchers := make(labelsMatchers, len(sm))
 		for i, m := range sm {
@@ -70,7 +74,7 @@ func NewActiveSeriesMatchers(cfgs ActiveSeriesCustomTrackersConfigs) (asm Active
 		}
 
 		asm.matchers = append(asm.matchers, matchers)
-		asm.names = append(asm.names, cfg.Name)
+		asm.names = append(asm.names, name)
 	}
 	return asm, nil
 }

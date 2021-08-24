@@ -18,7 +18,7 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		flags    []string
-		expected ActiveSeriesCustomTrackersConfigs
+		expected ActiveSeriesCustomTrackersConfig
 		error    bool
 	}{
 		{
@@ -54,22 +54,22 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 		{
 			name:     "one matcher",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`},
-			expected: ActiveSeriesCustomTrackersConfigs{{Name: `foo`, Matcher: `{foo="bar"}`}},
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`},
 		},
 		{
 			name: "whitespaces are trimmed from name and matcher",
 			flags: []string{`-ingester.active-series-custom-trackers= foo :	{foo="bar"}` + "\n "},
-			expected: ActiveSeriesCustomTrackersConfigs{{Name: `foo`, Matcher: `{foo="bar"}`}},
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`},
 		},
 		{
 			name:     "two matchers in one flag value",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"};baz:{baz="bar"}`},
-			expected: ActiveSeriesCustomTrackersConfigs{{Name: `foo`, Matcher: `{foo="bar"}`}, {Name: `baz`, Matcher: `{baz="bar"}`}},
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`},
 		},
 		{
 			name:     "two matchers in two flag values",
 			flags:    []string{`-ingester.active-series-custom-trackers=foo:{foo="bar"}`, `-ingester.active-series-custom-trackers=baz:{baz="bar"}`},
-			expected: ActiveSeriesCustomTrackersConfigs{{Name: `foo`, Matcher: `{foo="bar"}`}, {Name: `baz`, Matcher: `{baz="bar"}`}},
+			expected: ActiveSeriesCustomTrackersConfig{`foo`: `{foo="bar"}`, `baz`: `{baz="bar"}`},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

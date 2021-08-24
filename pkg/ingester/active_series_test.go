@@ -50,7 +50,7 @@ func TestActiveSeries_UpdateSeries_WithMatchers(t *testing.T) {
 	ls2 := []labels.Label{{Name: "a", Value: "2"}}
 	ls3 := []labels.Label{{Name: "a", Value: "3"}}
 
-	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfigs{{Name: "foo", Matcher: `{a=~"2|3"}`}})
+	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfig{"foo": `{a=~"2|3"}`})
 	require.NoError(t, err)
 
 	c := NewActiveSeries(asm)
@@ -133,7 +133,7 @@ func TestActiveSeries_Purge_WithMatchers(t *testing.T) {
 		{{Name: "_", Value: "KiqbryhzUpn"}, {Name: "__name__", Value: "logs"}},
 	}
 
-	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfigs{{Name: "foo", Matcher: `{_=~"y.*"}`}})
+	asm, err := NewActiveSeriesMatchers(ActiveSeriesCustomTrackersConfig{"foo": `{_=~"y.*"}`})
 	require.NoError(t, err)
 
 	// Run the same test for increasing TTL values
@@ -314,11 +314,8 @@ func TestActiveSeriesMatcher(t *testing.T) {
 			`{foo=~"}`,
 		} {
 			t.Run(matcher, func(t *testing.T) {
-				config := ActiveSeriesCustomTrackersConfigs{
-					{
-						Name:    "malformed",
-						Matcher: matcher,
-					},
+				config := ActiveSeriesCustomTrackersConfig{
+					"malformed": matcher,
 				}
 
 				_, err := NewActiveSeriesMatchers(config)
@@ -328,23 +325,11 @@ func TestActiveSeriesMatcher(t *testing.T) {
 	})
 
 	t.Run("matches series", func(t *testing.T) {
-		config := ActiveSeriesCustomTrackersConfigs{
-			{
-				Name:    "has_foo_label",
-				Matcher: `{foo!=""}`,
-			},
-			{
-				Name:    "does_not_have_foo_label",
-				Matcher: `{foo=""}`,
-			},
-			{
-				Name:    "has_foo_and_bar_starts_with_1",
-				Matcher: `{foo!="", bar=~"1.*"}`,
-			},
-			{
-				Name:    "bar_starts_with_1",
-				Matcher: `{bar=~"1.*"}`,
-			},
+		config := ActiveSeriesCustomTrackersConfig{
+			"has_foo_label":                 `{foo!=""}`,
+			"does_not_have_foo_label":       `{foo=""}`,
+			"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,
+			"bar_starts_with_1":             `{bar=~"1.*"}`,
 		}
 
 		asm, err := NewActiveSeriesMatchers(config)

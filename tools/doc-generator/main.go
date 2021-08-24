@@ -68,11 +68,6 @@ var (
 			desc:       "The ingester_config configures the ingester.",
 		},
 		{
-			name:       "active_series_custom_tracker_config",
-			structType: reflect.TypeOf(ingester.ActiveSeriesCustomTrackerConfig{}),
-			desc:       "The active_series_custom_tracker_config configures a custom tracker for active series in Cortex ingester.",
-		},
-		{
 			name:       "querier_config",
 			structType: reflect.TypeOf(querier.Config{}),
 			desc:       "The querier_config configures the querier.",

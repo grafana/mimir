@@ -86,10 +86,10 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period"`
 
-	ActiveSeriesMetricsEnabled      bool                              `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration                     `yaml:"active_series_metrics_update_period"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration                     `yaml:"active_series_metrics_idle_timeout"`
-	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfigs `yaml:"active_series_custom_trackers"`
+	ActiveSeriesMetricsEnabled      bool                             `yaml:"active_series_metrics_enabled"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout"`
+	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. Active series matching a provided matcher (map value) will be exposed in the custom trackers metric labeled using the tracker name (map key)."`
 
 	// Use blocks storage.
 	BlocksStorageEnabled        bool                     `yaml:"-"`
