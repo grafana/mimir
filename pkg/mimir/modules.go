@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
 
@@ -745,7 +746,15 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
 	}
-	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger)
+	var mr prometheus.Registerer
+	if t.Cfg.MemberlistKV.MetricsRegisterer != nil {
+		mr = prometheus.WrapRegistererWith(
+			prometheus.Labels{"name": "memberlist"},
+			t.Cfg.MemberlistKV.MetricsRegisterer,
+		)
+	}
+	dnsProvider := dns.NewProvider(util_log.Logger, mr, dns.GolangResolverType)
+	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider)
 	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
 	// Update the config.

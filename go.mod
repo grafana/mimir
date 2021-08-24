@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210824090727-039d9afd9208
+	github.com/grafana/dskit v0.0.0-20210824152946-998d3b314e73
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
@@ -48,7 +48,7 @@ require (
 	github.com/sony/gobreaker v0.4.1
 	github.com/spf13/afero v1.3.4
 	github.com/stretchr/testify v1.7.0
-	github.com/thanos-io/thanos v0.22.0
+	github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
 	github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a
 	go.etcd.io/bbolt v1.3.6
@@ -98,12 +98,4 @@ replace github.com/gogo/status => github.com/gogo/status v1.0.3
 
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
-replace github.com/thanos-io/thanos => github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
-
 replace github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
-
-replace github.com/mattn/go-ieproxy => github.com/mattn/go-ieproxy v0.0.0-20191113090002-7c0f6868bffe
-
-replace github.com/hashicorp/go-msgpack => github.com/hashicorp/go-msgpack v0.5.5
-
-replace github.com/sercand/kuberesolver => github.com/sercand/kuberesolver v2.4.0+incompatible

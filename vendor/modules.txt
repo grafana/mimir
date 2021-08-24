@@ -280,7 +280,7 @@ github.com/googleapis/gax-go/v2
 github.com/gorilla/mux
 # github.com/gorilla/websocket v1.4.2
 github.com/gorilla/websocket
-# github.com/grafana/dskit v0.0.0-20210824090727-039d9afd9208
+# github.com/grafana/dskit v0.0.0-20210824152946-998d3b314e73
 ## explicit
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/closer
@@ -317,11 +317,11 @@ github.com/hashicorp/consul/api
 github.com/hashicorp/errwrap
 # github.com/hashicorp/go-cleanhttp v0.5.1
 github.com/hashicorp/go-cleanhttp
-# github.com/hashicorp/go-hclog v0.12.0 => github.com/hashicorp/go-hclog v0.12.2
+# github.com/hashicorp/go-hclog v0.12.2 => github.com/hashicorp/go-hclog v0.12.2
 github.com/hashicorp/go-hclog
-# github.com/hashicorp/go-immutable-radix v1.0.0 => github.com/hashicorp/go-immutable-radix v1.2.0
+# github.com/hashicorp/go-immutable-radix v1.2.0 => github.com/hashicorp/go-immutable-radix v1.2.0
 github.com/hashicorp/go-immutable-radix
-# github.com/hashicorp/go-msgpack v0.5.3 => github.com/hashicorp/go-msgpack v0.5.5
+# github.com/hashicorp/go-msgpack v0.5.5
 github.com/hashicorp/go-msgpack/codec
 # github.com/hashicorp/go-multierror v1.1.0
 github.com/hashicorp/go-multierror
@@ -367,7 +367,7 @@ github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
 # github.com/mattn/go-colorable v0.1.8
 github.com/mattn/go-colorable
-# github.com/mattn/go-ieproxy v0.0.0-20190702010315-6dee0af9227d => github.com/mattn/go-ieproxy v0.0.0-20191113090002-7c0f6868bffe
+# github.com/mattn/go-ieproxy v0.0.0-20191113090002-7c0f6868bffe
 github.com/mattn/go-ieproxy
 # github.com/mattn/go-isatty v0.0.12
 github.com/mattn/go-isatty
@@ -554,7 +554,7 @@ github.com/sean-/seed
 # github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 ## explicit
 github.com/segmentio/fasthash/fnv1a
-# github.com/sercand/kuberesolver v2.1.0+incompatible => github.com/sercand/kuberesolver v2.4.0+incompatible
+# github.com/sercand/kuberesolver v2.4.0+incompatible
 github.com/sercand/kuberesolver
 # github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 github.com/shurcooL/httpfs/filter
@@ -582,7 +582,7 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
+# github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
 ## explicit
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/indexheader
@@ -1075,8 +1075,4 @@ sigs.k8s.io/yaml
 # go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
 # github.com/gogo/status => github.com/gogo/status v1.0.3
 # go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
-# github.com/thanos-io/thanos => github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
 # github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
-# github.com/mattn/go-ieproxy => github.com/mattn/go-ieproxy v0.0.0-20191113090002-7c0f6868bffe
-# github.com/hashicorp/go-msgpack => github.com/hashicorp/go-msgpack v0.5.5
-# github.com/sercand/kuberesolver => github.com/sercand/kuberesolver v2.4.0+incompatible
