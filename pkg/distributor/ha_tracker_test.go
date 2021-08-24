@@ -198,7 +198,7 @@ func TestCheckReplicaMultiCluster(t *testing.T) {
 		UpdateTimeout:          100 * time.Millisecond,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Second,
-	}, trackerLimits{maxClusters: 100}, reg, log.NewNopLogger())
+	}, trackerLimits{maxClusters: 100}, prometheus.WrapRegistererWithPrefix("cortex_", reg), log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
@@ -248,7 +248,7 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 		UpdateTimeout:          100 * time.Millisecond,
 		UpdateTimeoutJitterMax: 0,
 		FailoverTimeout:        time.Second,
-	}, trackerLimits{maxClusters: 100}, reg, log.NewNopLogger())
+	}, trackerLimits{maxClusters: 100}, prometheus.WrapRegistererWithPrefix("cortex_", reg), log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 	defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
