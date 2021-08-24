@@ -88,6 +88,101 @@ func TestActiveSeriesCustomTrackersConfigs(t *testing.T) {
 	}
 }
 
+func TestActiveSeriesMatcher(t *testing.T) {
+	t.Run("malformed matcher", func(t *testing.T) {
+		for _, matcher := range []string{
+			`{foo}`,
+			`{foo=~"}`,
+		} {
+			t.Run(matcher, func(t *testing.T) {
+				config := ActiveSeriesCustomTrackersConfig{
+					"malformed": matcher,
+				}
+
+				_, err := NewActiveSeriesMatchers(config)
+				assert.Error(t, err)
+			})
+		}
+	})
+
+	t.Run("matches series", func(t *testing.T) {
+		config := ActiveSeriesCustomTrackersConfig{
+			"has_foo_label":                 `{foo!=""}`,
+			"does_not_have_foo_label":       `{foo=""}`,
+			"has_foo_and_bar_starts_with_1": `{foo!="", bar=~"1.*"}`,
+			"bar_starts_with_1":             `{bar=~"1.*"}`,
+		}
+
+		asm, err := NewActiveSeriesMatchers(config)
+		require.NoError(t, err)
+
+		for _, tc := range []struct {
+			series   labels.Labels
+			expected []bool
+		}{
+			{
+				series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					true,  // has_foo_label
+					false, // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					true,  // has_foo_label
+					false, // does_not_have_foo_label
+					true,  // has_foo_and_bar_starts_with_1
+					true,  // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "foo", Value: "true"}, {Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					true,  // has_foo_label
+					false, // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "bar", Value: "200"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					false, // has_foo_label
+					true,  // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "bar", Value: "100"}, {Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					false, // has_foo_label
+					true,  // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					true,  // bar_starts_with_1
+				},
+			},
+			{
+				series: labels.Labels{{Name: "baz", Value: "unrelated"}},
+				expected: []bool{
+					false, // has_foo_label
+					true,  // does_not_have_foo_label
+					false, // has_foo_and_bar_starts_with_1
+					false, // bar_starts_with_1
+				},
+			},
+		} {
+			t.Run(tc.series.String(), func(t *testing.T) {
+				got := asm.Matches(tc.series)
+				assert.Equal(t, tc.expected, got)
+			})
+		}
+	})
+}
+
 func TestAmlabelMatchersToProm(t *testing.T) {
 	t.Run("MatchType values are the same so we can convert the types", func(t *testing.T) {
 		lastType := amlabels.MatchNotRegexp
