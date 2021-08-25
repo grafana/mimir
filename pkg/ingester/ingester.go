@@ -359,13 +359,14 @@ func NewForFlusher(cfg Config, chunkStore ChunkStore, limits *validation.Overrid
 	}
 
 	i := &Ingester{
-		cfg:              cfg,
-		chunkStore:       chunkStore,
-		flushQueues:      make([]*util.PriorityQueue, cfg.ConcurrentFlushes),
-		flushRateLimiter: rate.NewLimiter(rate.Inf, 1),
-		wal:              &noopWAL{},
-		limits:           limits,
-		logger:           logger,
+		cfg:                 cfg,
+		chunkStore:          chunkStore,
+		flushQueues:         make([]*util.PriorityQueue, cfg.ConcurrentFlushes),
+		flushRateLimiter:    rate.NewLimiter(rate.Inf, 1),
+		wal:                 &noopWAL{},
+		limits:              limits,
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
 	}
 	i.metrics = newIngesterMetrics(registerer, true, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 

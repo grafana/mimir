@@ -563,11 +563,12 @@ func NewV2ForFlusher(cfg Config, limits *validation.Overrides, registerer promet
 	}
 
 	i := &Ingester{
-		cfg:       cfg,
-		limits:    limits,
-		wal:       &noopWAL{},
-		TSDBState: newTSDBState(cfg, bucketClient, registerer),
-		logger:    logger,
+		cfg:                 cfg,
+		limits:              limits,
+		wal:                 &noopWAL{},
+		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
 	}
 	i.metrics = newIngesterMetrics(registerer, false, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
