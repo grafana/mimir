@@ -282,13 +282,20 @@
 
     alertmanager_client_type: error 'you must specify a storage backend type for the alertmanager (azure, gcs, s3, local)',
     alertmanager_s3_bucket_name: error 'you must specify the alertmanager S3 bucket name',
-    alertmanager_gcs_bucket_name: error 'must specify a GCS bucket name',
+    alertmanager_gcs_bucket_name: error 'you must specify a GCS bucket name',
+    alertmanager_azure_container_name: error 'you must specify an Azure container name',
+
 
     alertmanagerStorageClientConfig:
       {
         'alertmanager-storage.backend': $._config.alertmanager_client_type,
       } +
       {
+	azure: {
+          'alertmanager-storage.azure.account-key': $._config.alertmanager_azure_account_key,
+          'alertmanager-storage.azure.account-name': $._config.alertmanager_azure_account_name,
+          'alertmanager-storage.azure.container-name': $._config.alertmanager_azure_container_name,
+        },
         gcs: {
           'alertmanager-storage.gcs.bucket-name': $._config.alertmanager_gcs_bucket_name,
         },
