@@ -4,6 +4,7 @@ package ingester
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
@@ -51,17 +52,6 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 	return nil
 }
 
-// ActiveSeriesCustomTrackerConfig configures an additional custom tracker for active series in the ingester.
-// Active series matched by the matcher will be exported in the metric labeled with the name provided.
-type ActiveSeriesCustomTrackerConfig struct {
-	Name    string `yaml:"name"`
-	Matcher string `yaml:"matcher"`
-}
-
-func (cfg ActiveSeriesCustomTrackerConfig) String() string {
-	return cfg.Name + ":" + cfg.Matcher
-}
-
 func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchers {
@@ -77,6 +67,9 @@ func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*Active
 		asm.matchers = append(asm.matchers, matchers)
 		asm.names = append(asm.names, name)
 	}
+	// Sort the result to make it deterministic for tests.
+	// Order doesn't matter for the functionality as long as the order remains consistent during the execution of the program.
+	sort.Sort(asm)
 	return asm, nil
 }
 
@@ -112,6 +105,19 @@ func (ms labelsMatchers) Matches(lset labels.Labels) bool {
 		}
 	}
 	return true
+}
+
+func (asm *ActiveSeriesMatchers) Len() int {
+	return len(asm.names)
+}
+
+func (asm *ActiveSeriesMatchers) Less(i, j int) bool {
+	return asm.names[i] < asm.names[j]
+}
+
+func (asm *ActiveSeriesMatchers) Swap(i, j int) {
+	asm.names[i], asm.names[j] = asm.names[j], asm.names[i]
+	asm.matchers[i], asm.matchers[j] = asm.matchers[j], asm.matchers[i]
 }
 
 func amlabelMatcherToProm(m *amlabels.Matcher) *labels.Matcher {
