@@ -493,18 +493,24 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	i := &Ingester{
-		cfg:           cfg,
-		clientConfig:  clientConfig,
-		limits:        limits,
-		chunkStore:    nil,
-		usersMetadata: map[string]*userMetricsMetadata{},
-		wal:           &noopWAL{},
-		TSDBState:     newTSDBState(cfg, bucketClient, registerer),
-		logger:        logger,
-		ingestionRate: util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
+	if err != nil {
+		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+
+	i := &Ingester{
+		cfg:                 cfg,
+		clientConfig:        clientConfig,
+		limits:              limits,
+		chunkStore:          nil,
+		usersMetadata:       map[string]*userMetricsMetadata{},
+		wal:                 &noopWAL{},
+		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
+		logger:              logger,
+		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		activeSeriesMatcher: asm,
+	}
+	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -557,13 +563,14 @@ func NewV2ForFlusher(cfg Config, limits *validation.Overrides, registerer promet
 	}
 
 	i := &Ingester{
-		cfg:       cfg,
-		limits:    limits,
-		wal:       &noopWAL{},
-		TSDBState: newTSDBState(cfg, bucketClient, registerer),
-		logger:    logger,
+		cfg:                 cfg,
+		limits:              limits,
+		wal:                 &noopWAL{},
+		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
 	}
-	i.metrics = newIngesterMetrics(registerer, false, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.TSDBState.shipperIngesterID = "flusher"
 
@@ -715,7 +722,11 @@ func (i *Ingester) v2UpdateActiveSeries() {
 		}
 
 		userDB.activeSeries.Purge(purgeTime)
-		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(userDB.activeSeries.Active()))
+		allActive, activeMatching := userDB.activeSeries.Active()
+		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
+			i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+		}
 	}
 }
 
@@ -1622,7 +1633,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(),
+		activeSeries:        NewActiveSeries(i.activeSeriesMatcher),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -1744,6 +1755,9 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			for _, name := range i.metrics.activeSeriesCustomTrackerNames {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
 		}(userDB)
 	}
 

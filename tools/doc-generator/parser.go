@@ -8,15 +8,19 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/url"
 	"reflect"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/weaveworks/common/logging"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
@@ -250,16 +254,18 @@ func getFieldName(field reflect.StructField) string {
 func getFieldType(t reflect.Type) (string, error) {
 	// Handle custom data types used in the config
 	switch t.String() {
-	case "*url.URL":
+	case reflect.TypeOf(&url.URL{}).String():
 		return "url", nil
-	case "time.Duration":
+	case reflect.TypeOf(time.Duration(0)).String():
 		return "duration", nil
-	case "flagext.StringSliceCSV":
+	case reflect.TypeOf(flagext.StringSliceCSV{}).String():
 		return "string", nil
-	case "flagext.CIDRSliceCSV":
+	case reflect.TypeOf(flagext.CIDRSliceCSV{}).String():
 		return "string", nil
-	case "[]*relabel.Config":
+	case reflect.TypeOf([]*relabel.Config{}).String():
 		return "relabel_config...", nil
+	case reflect.TypeOf(ingester.ActiveSeriesCustomTrackersConfig{}).String():
+		return "map of tracker name (string) to matcher (string)", nil
 	}
 
 	// Fallback to auto-detection of built-in data types
