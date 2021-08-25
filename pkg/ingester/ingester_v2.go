@@ -733,13 +733,6 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		return nil, err
 	}
 
-	il := i.getInstanceLimits()
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			return nil, errMaxSamplesPushRateLimitReached
-		}
-	}
-
 	// Ensure the ingester shutdown procedure hasn't started
 	i.userStatesMtx.RLock()
 	if i.stopped {
@@ -748,13 +741,22 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	}
 	i.userStatesMtx.RUnlock()
 
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			return nil, errMaxSamplesPushRateLimitReached
+		}
+	}
+
 	// Given metadata is a best-effort approach, and we don't halt on errors
 	// process it before samples. Otherwise, we risk returning an error before ingestion.
-	ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata())
+	if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
+		// Distributor counts both samples and metadata, so for consistency ingester does the same.
+		i.ingestionRate.Add(int64(ingestedMetadata))
+	}
 
 	// Early exit if no timeseries in request - don't create a TSDB or an appender.
 	if len(req.Timeseries) == 0 {
-		i.ingestionRate.Add(int64(ingestedMetadata))
 		return &mimirpb.WriteResponse{}, nil
 	}
 
@@ -943,8 +945,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		validation.DiscardedSamples.WithLabelValues(perMetricSeriesLimit, userID).Add(float64(perMetricSeriesLimitCount))
 	}
 
-	// Distributor counts both samples and metadata, so for consistency ingester does the same.
-	i.ingestionRate.Add(int64(succeededSamplesCount + ingestedMetadata))
+	i.ingestionRate.Add(int64(succeededSamplesCount))
 
 	switch req.Source {
 	case mimirpb.RULE:
