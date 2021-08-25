@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/dskit/services"
 )
 
-// This service initialized memberlist.KV on first call to GetMemberlistKV, and starts it. On stop,
+// KVInitService initializes a memberlist.KV on first call to GetMemberlistKV, and starts it. On stop,
 // KV is stopped too. If KV fails, error is reported from the service.
 type KVInitService struct {
 	services.Service
@@ -49,7 +49,7 @@ func NewKVInitService(cfg *KVConfig, logger log.Logger, dnsProvider DNSProvider)
 	return kvinit
 }
 
-// This method will initialize Memberlist.KV on first call, and add it to service failure watcher.
+// GetMemberlistKV will initialize Memberlist.KV on first call, and add it to service failure watcher.
 func (kvs *KVInitService) GetMemberlistKV() (*KV, error) {
 	kvs.init.Do(func() {
 		kv := NewKV(*kvs.cfg, kvs.logger, kvs.dnsProvider)

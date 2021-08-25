@@ -162,7 +162,7 @@ type KVConfig struct {
 	Codecs []codec.Codec `yaml:"-"`
 }
 
-// RegisterFlags registers flags.
+// RegisterFlagsWithPrefix registers flags.
 func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	mlDefaults := defaultMemberlistConfig()
 
