@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/grafana/dskit/modules"
 	"github.com/grafana/dskit/runtimeconfig"
 	"github.com/grafana/dskit/services"
@@ -23,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/rules"
 	prom_storage "github.com/prometheus/prometheus/storage"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	httpgrpc_server "github.com/weaveworks/common/httpgrpc/server"
 	"github.com/weaveworks/common/server"
 
@@ -44,8 +47,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/codec"
-	"github.com/grafana/mimir/pkg/ring/kv/memberlist"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -736,7 +737,15 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
 	}
-	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger)
+	var mr prometheus.Registerer
+	if t.Cfg.MemberlistKV.MetricsRegisterer != nil {
+		mr = prometheus.WrapRegistererWith(
+			prometheus.Labels{"name": "memberlist"},
+			t.Cfg.MemberlistKV.MetricsRegisterer,
+		)
+	}
+	dnsProvider := dns.NewProvider(util_log.Logger, mr, dns.GolangResolverType)
+	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider)
 	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
 	// Update the config.

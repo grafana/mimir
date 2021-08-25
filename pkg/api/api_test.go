@@ -28,7 +28,6 @@ func TestNewApiWithoutSourceIPExtractor(t *testing.T) {
 	require.NoError(t, err)
 
 	api, err := New(cfg, serverCfg, server, &FakeLogger{})
-
 	require.NoError(t, err)
 	require.Nil(t, api.sourceIPs)
 }
@@ -43,7 +42,6 @@ func TestNewApiWithSourceIPExtractor(t *testing.T) {
 	require.NoError(t, err)
 
 	api, err := New(cfg, serverCfg, server, &FakeLogger{})
-
 	require.NoError(t, err)
 	require.NotNil(t, api.sourceIPs)
 }

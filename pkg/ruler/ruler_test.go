@@ -23,6 +23,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
@@ -40,8 +42,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/ruler/rulestore/objectclient"
@@ -51,12 +51,14 @@ import (
 )
 
 func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()) {
+	t.Helper()
+
 	// Create a new temporary directory for the rules, so that
 	// each test will run in isolation.
 	rulesDir, _ := ioutil.TempDir("/tmp", "ruler-tests")
 
 	codec := ring.GetCodec()
-	consul, closer := consul.NewInMemoryClient(codec)
+	consul, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{}
@@ -647,7 +649,7 @@ func TestSharding(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -29,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/ring/testutils"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -39,7 +39,9 @@ import (
 const userID = "1"
 
 func defaultIngesterTestConfig(t testing.TB) Config {
-	consul, closer := consul.NewInMemoryClient(ring.GetCodec())
+	t.Helper()
+
+	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{}

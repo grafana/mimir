@@ -14,6 +14,9 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/kv/etcd"
+	"github.com/grafana/dskit/kv/memberlist"
 	"github.com/weaveworks/common/server"
 
 	"github.com/grafana/mimir/pkg/alertmanager"
@@ -32,9 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/queryrange"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
-	"github.com/grafana/mimir/pkg/ring/kv/etcd"
-	"github.com/grafana/mimir/pkg/ring/kv/memberlist"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"

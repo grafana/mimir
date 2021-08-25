@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +31,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"

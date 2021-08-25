@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/log"
@@ -215,7 +215,8 @@ func New(cfg Config, name, key string, reg prometheus.Registerer) (*Ring, error)
 	store, err := kv.NewClient(
 		cfg.KVStore,
 		codec,
-		kv.RegistererWithKVName(reg, name+"-ring"),
+		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), name+"-ring"),
+		log.Logger,
 	)
 	if err != nil {
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -21,7 +22,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/flagext"
@@ -333,7 +333,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			ctx := context.Background()
 
 			// Setup the ring state.
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {
@@ -393,7 +393,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	block1 := ulid.MustNew(1, nil)
 
 	// Create a ring.
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	require.NoError(t, ringStore.CAS(ctx, "test", func(in interface{}) (interface{}, bool, error) {

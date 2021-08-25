@@ -9,9 +9,9 @@ import (
 	"context"
 
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/kv"
 
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
