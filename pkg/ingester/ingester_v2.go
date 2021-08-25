@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/shipper"
@@ -408,6 +409,9 @@ type TSDBState struct {
 	forceCompactTrigger chan requestWithUsersAndCallback
 	shipTrigger         chan requestWithUsersAndCallback
 
+	// Maps the per-block series ID with its labels hash.
+	seriesHashCache *hashcache.SeriesHashCache
+
 	// Timeout chosen for idle compactions.
 	compactionIdleTimeout time.Duration
 
@@ -428,7 +432,7 @@ type requestWithUsersAndCallback struct {
 	callback chan<- struct{}      // when compaction/shipping is finished, this channel is closed
 }
 
-func newTSDBState(bucketClient objstore.Bucket, registerer prometheus.Registerer) TSDBState {
+func newTSDBState(cfg Config, bucketClient objstore.Bucket, registerer prometheus.Registerer) TSDBState {
 	idleTsdbChecks := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
 		Name: "cortex_ingester_idle_tsdb_checks_total",
 		Help: "The total number of various results for idle TSDB checks.",
@@ -451,6 +455,7 @@ func newTSDBState(bucketClient objstore.Bucket, registerer prometheus.Registerer
 		tsdbMetrics:         newTSDBMetrics(registerer),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
+		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
 
 		compactionsTriggered: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_ingester_tsdb_compactions_triggered_total",
@@ -495,7 +500,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		chunkStore:    nil,
 		usersMetadata: map[string]*userMetricsMetadata{},
 		wal:           &noopWAL{},
-		TSDBState:     newTSDBState(bucketClient, registerer),
+		TSDBState:     newTSDBState(cfg, bucketClient, registerer),
 		logger:        logger,
 		ingestionRate: util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 	}
@@ -555,7 +560,7 @@ func NewV2ForFlusher(cfg Config, limits *validation.Overrides, registerer promet
 		cfg:       cfg,
 		limits:    limits,
 		wal:       &noopWAL{},
-		TSDBState: newTSDBState(bucketClient, registerer),
+		TSDBState: newTSDBState(cfg, bucketClient, registerer),
 		logger:    logger,
 	}
 	i.metrics = newIngesterMetrics(registerer, false, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
@@ -1644,6 +1649,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		BlocksToDelete:            userDB.blocksToDelete,
 		EnableExemplarStorage:     enableExemplars,
 		MaxExemplars:              int64(i.cfg.BlocksStorageConfig.TSDB.MaxExemplars),
+		SeriesHashCache:           i.TSDBState.seriesHashCache,
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)

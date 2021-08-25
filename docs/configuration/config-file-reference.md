@@ -4890,8 +4890,8 @@ bucket_store:
   # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
   [max_chunk_pool_bytes: <int> | default = 2147483648]
 
-  # Max size - in bytes - of the in-memory series hash cache. The cache is used
-  # only when query sharding is enabled and shared across all tenants.
+  # Max size - in bytes - of the in-memory series hash cache. The cache is
+  # shared across all tenants and it's used only when query sharding is enabled.
   # CLI flag: -blocks-storage.bucket-store.series-hash-cache-max-size-bytes
   [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
@@ -4978,6 +4978,11 @@ tsdb:
   # disables closing of idle TSDB.
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
   [close_idle_tsdb_timeout: <duration> | default = 0s]
+
+  # Max size - in bytes - of the in-memory series hash cache. The cache is
+  # shared across all tenants and it's used only when query sharding is enabled.
+  # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
+  [series_hash_cache_max_size_bytes: <int> | default = 1073741824]
 
   # limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup

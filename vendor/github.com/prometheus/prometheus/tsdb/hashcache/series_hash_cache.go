@@ -1,6 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-
-package storegateway
+package hashcache
 
 import (
 	"sync"
@@ -76,6 +74,11 @@ func (c *SeriesHashCache) GetBlockCache(blockID string) *BlockSeriesHashCache {
 	}
 
 	return blockCache
+}
+
+// GetBlockCacheProvider returns a cache provider bounded to the provided blockID.
+func (c *SeriesHashCache) GetBlockCacheProvider(blockID string) *BlockSeriesHashCacheProvider {
+	return NewBlockSeriesHashCacheProvider(c, blockID)
 }
 
 func (c *SeriesHashCache) gc() {
@@ -165,4 +168,23 @@ func (c *BlockSeriesHashCache) Store(seriesID, hash uint64) {
 	gen.hashesMx.Unlock()
 
 	gen.length.Add(1)
+}
+
+type BlockSeriesHashCacheProvider struct {
+	cache   *SeriesHashCache
+	blockID string
+}
+
+// NewBlockSeriesHashCacheProvider makes a new BlockSeriesHashCacheProvider.
+func NewBlockSeriesHashCacheProvider(cache *SeriesHashCache, blockID string) *BlockSeriesHashCacheProvider {
+	return &BlockSeriesHashCacheProvider{
+		cache:   cache,
+		blockID: blockID,
+	}
+}
+
+// SeriesHashCache returns a reference to the cache bounded to block provided
+// to NewBlockSeriesHashCacheProvider().
+func (p *BlockSeriesHashCacheProvider) SeriesHashCache() *BlockSeriesHashCache {
+	return p.cache.GetBlockCache(p.blockID)
 }
