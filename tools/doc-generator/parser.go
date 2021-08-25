@@ -15,14 +15,12 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/prometheus/prometheus/pkg/relabel"
-
-	"github.com/grafana/mimir/pkg/ingester"
-
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/weaveworks/common/logging"
 
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
