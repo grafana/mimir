@@ -35,6 +35,13 @@ func newMockTenantLimits(limits map[string]*Limits) *mockTenantLimits {
 	}
 }
 
+func newMockTenantOverrides(tenantLimits map[string]*Limits, defaults *Limits) *Overrides {
+	return &Overrides{
+		tenantLimits:  newMockTenantLimits(tenantLimits),
+		defaultLimits: defaults,
+	}
+}
+
 func (l *mockTenantLimits) ByUserID(userID string) *Limits {
 	return l.limits[userID]
 }

@@ -38,6 +38,7 @@ func NewOverridesExporter(overrides *Overrides) *OverridesExporter {
 
 func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- oe.overrideDescription
+	ch <- oe.defaultsDescription
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
