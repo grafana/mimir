@@ -141,6 +141,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			storageCfg := mockStorageConfig(t)
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			bucketClient := &bucket.ClientMock{}
 
 			// Setup the initial instance state in the ring.
@@ -215,6 +216,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	storageCfg := mockStorageConfig(t)
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	bucketClient := &bucket.ClientMock{}
 
 	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
@@ -598,6 +600,7 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 			storageCfg := mockStorageConfig(t)
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", []string{}, nil)
 
@@ -726,6 +729,7 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
 			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 			bucketClient := &bucket.ClientMock{}
 			bucketClient.MockIter("", []string{}, nil)
 
@@ -788,6 +792,7 @@ func TestStoreGateway_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testin
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{}, nil)
 

@@ -56,9 +56,11 @@ func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()
 	// Create a new temporary directory for the rules, so that
 	// each test will run in isolation.
 	rulesDir, _ := ioutil.TempDir("/tmp", "ruler-tests")
+
 	codec := ring.GetCodec()
 	consul, closer := consul.NewInMemoryClient(codec, testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	cfg.RulePath = rulesDir

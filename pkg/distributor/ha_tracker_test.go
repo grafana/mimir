@@ -124,10 +124,10 @@ func TestWatchPrefixAssignment(t *testing.T) {
 	replica := "r1"
 
 	codec := GetReplicaDescCodec()
-	cli, closer := consul.NewInMemoryClient(codec, testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(codec, testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	mock := kv.PrefixClient(cli, "prefix")
+	mock := kv.PrefixClient(kvStore, "prefix")
 	c, err := newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
@@ -311,9 +311,10 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 	user := "user"
 
 	codec := GetReplicaDescCodec()
-	cli, closer := consul.NewInMemoryClient(codec, testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(codec, testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(cli, "prefix")
+
+	mock := kv.PrefixClient(kvStore, "prefix")
 	c, err := newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
@@ -359,9 +360,10 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	cluster := "c1"
 
 	codec := GetReplicaDescCodec()
-	cli, closer := consul.NewInMemoryClient(codec, testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(codec, testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(cli, "prefix")
+
+	mock := kv.PrefixClient(kvStore, "prefix")
 	c, err := newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
@@ -438,9 +440,10 @@ func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Init HA tracker
 			codec := GetReplicaDescCodec()
-			cli, closer := consul.NewInMemoryClient(codec, testLogger{})
+			kvStore, closer := consul.NewInMemoryClient(codec, testLogger{})
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-			mock := kv.PrefixClient(cli, "prefix")
+
+			mock := kv.PrefixClient(kvStore, "prefix")
 			c, err := newHATracker(HATrackerConfig{
 				EnableHATracker:        true,
 				KVStore:                kv.Config{Mock: mock},
@@ -536,9 +539,10 @@ func TestHAClustersLimit(t *testing.T) {
 	const userID = "user"
 
 	codec := GetReplicaDescCodec()
-	cli, closer := consul.NewInMemoryClient(codec, testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(codec, testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(cli, "prefix")
+
+	mock := kv.PrefixClient(kvStore, "prefix")
 	limits := trackerLimits{maxClusters: 2}
 
 	t1, err := newHATracker(HATrackerConfig{
@@ -704,9 +708,10 @@ func TestCheckReplicaCleanup(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 
-	cli, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), testLogger{})
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
-	mock := kv.PrefixClient(cli, "prefix")
+
+	mock := kv.PrefixClient(kvStore, "prefix")
 	c, err := newHATracker(HATrackerConfig{
 		EnableHATracker:        true,
 		KVStore:                kv.Config{Mock: mock},
