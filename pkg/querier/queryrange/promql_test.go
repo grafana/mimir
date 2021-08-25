@@ -29,7 +29,6 @@ var (
 	start         = time.Now()
 	end           = start.Add(30 * time.Minute)
 	step          = 30 * time.Second
-	ctx           = context.Background()
 	lookbackDelta = 5 * time.Minute
 )
 
