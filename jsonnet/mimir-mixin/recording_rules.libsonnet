@@ -213,7 +213,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               sum by (cluster, namespace, deployment) (
                 label_replace(
                   label_replace(
-                    node_namespace_pod_container:container_cpu_usage_seconds_total:sum_rate,
+                    node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate,
                     "deployment", "$1", "pod", "(.*)-(?:([0-9]+)|([a-z0-9]+)-([a-z0-9]+))"
                   ),
                   # The question mark in "(.*?)" is used to make it non-greedy, otherwise it
