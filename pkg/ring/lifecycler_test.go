@@ -54,9 +54,7 @@ func TestLifecycler_HealthyInstancesCount(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	ctx := context.Background()
 
@@ -105,9 +103,7 @@ func TestLifecycler_ZonesCount(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	events := []struct {
 		zone          string
@@ -149,9 +145,7 @@ func TestLifecycler_NilFlushTransferer(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 	lifecyclerConfig := testLifecyclerConfig(ringConfig, "ing1")
 
 	// Create a lifecycler with nil FlushTransferer to make sure it operates correctly
@@ -174,9 +168,7 @@ func TestLifecycler_TwoRingsWithDifferentKeysOnTheSameKVStore(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two lifecyclers, each on a separate ring
 	lifecyclerConfig1 := testLifecyclerConfig(ringConfig, "instance-1")
@@ -216,9 +208,7 @@ func TestLifecycler_ShouldHandleInstanceAbruptlyRestarted(t *testing.T) {
 	c := GetCodec()
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(c, testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -366,9 +356,7 @@ func TestCheckReady_MinReadyDuration(t *testing.T) {
 			ctx := context.Background()
 
 			ringStore, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
-			t.Cleanup(func() {
-				_ = closer.Close()
-			})
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			var ringConfig Config
 			flagext.DefaultValues(&ringConfig)
@@ -436,9 +424,7 @@ func TestCheckReady_CheckRingHealth(t *testing.T) {
 			ctx := context.Background()
 
 			ringStore, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
-			t.Cleanup(func() {
-				_ = closer.Close()
-			})
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			var ringConfig Config
 			flagext.DefaultValues(&ringConfig)
@@ -499,9 +485,7 @@ func TestRestartIngester_DisabledHeartbeat_unregister_on_shutdown_false(t *testi
 	flagext.DefaultValues(&ringConfig)
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -603,9 +587,7 @@ func TestTokensOnDisk(t *testing.T) {
 	flagext.DefaultValues(&ringConfig)
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -682,9 +664,7 @@ func TestJoinInLeavingState(t *testing.T) {
 	c := GetCodec()
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(c, testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -738,9 +718,7 @@ func TestJoinInJoiningState(t *testing.T) {
 	c := GetCodec()
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(c, testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)
@@ -804,9 +782,7 @@ func TestRestoreOfZoneWhenOverwritten(t *testing.T) {
 	codec := GetCodec()
 	var closer io.Closer
 	ringConfig.KVStore.Mock, closer = consul.NewInMemoryClient(codec, testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	r, err := New(ringConfig, "ingester", IngesterRingKey, nil)
 	require.NoError(t, err)

@@ -22,6 +22,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
@@ -341,9 +342,7 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 	}
 
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 	err := kvStore.CAS(context.Background(), RingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{

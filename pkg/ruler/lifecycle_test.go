@@ -13,6 +13,7 @@ import (
 
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ring"
@@ -32,9 +33,7 @@ func TestRulerShutdown(t *testing.T) {
 
 	r.cfg.EnableSharding = true
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := enableSharding(r, ringStore)
 	require.NoError(t, err)
@@ -71,9 +70,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	r.cfg.Ring.HeartbeatTimeout = heartbeatTimeout
 
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := enableSharding(r, ringStore)
 	require.NoError(t, err)

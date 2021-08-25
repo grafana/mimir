@@ -825,9 +825,7 @@ func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunni
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	var closer io.Closer
 	cfg.ShardingRing.KVStore.Mock, closer = consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	c, _, tsdbPlanner, logs, _ := prepare(t, cfg, bucketClient)
 
@@ -901,9 +899,7 @@ func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndM
 
 	// Create a shared KV Store
 	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
 	var compactors []*Compactor
@@ -1223,9 +1219,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 
 	// Create a shared KV Store
 	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
 	var compactors []*Compactor
@@ -1305,9 +1299,7 @@ func TestCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	var closer io.Closer
 	cfg.ShardingRing.KVStore.Mock, closer = consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Set ObservePeriod to longer than the timeout period to mock a timeout while waiting on ring to become ACTIVE
 	cfg.ShardingRing.ObservePeriod = time.Second * 10

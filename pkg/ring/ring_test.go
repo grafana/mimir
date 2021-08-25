@@ -1952,9 +1952,7 @@ func TestRingUpdates(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			inmem, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
-			t.Cleanup(func() {
-				_ = closer.Close()
-			})
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			cfg := Config{
 				KVStore:           kv.Config{Mock: inmem},
@@ -2050,9 +2048,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,
 	}, testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{
 		KVStore:              kv.Config{Mock: inmem},

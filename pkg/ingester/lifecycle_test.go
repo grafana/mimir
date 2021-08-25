@@ -42,9 +42,7 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	t.Helper()
 
 	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
-	t.Cleanup(func() {
-		_ = closer.Close()
-	})
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	flagext.DefaultValues(&cfg.BlocksStorageConfig)
