@@ -86,9 +86,12 @@ type Config struct {
 
 	RateUpdatePeriod time.Duration `yaml:"rate_update_period"`
 
-	ActiveSeriesMetricsEnabled      bool          `yaml:"active_series_metrics_enabled"`
-	ActiveSeriesMetricsUpdatePeriod time.Duration `yaml:"active_series_metrics_update_period"`
-	ActiveSeriesMetricsIdleTimeout  time.Duration `yaml:"active_series_metrics_idle_timeout"`
+	ActiveSeriesMetricsEnabled      bool                             `yaml:"active_series_metrics_enabled"`
+	ActiveSeriesMetricsUpdatePeriod time.Duration                    `yaml:"active_series_metrics_update_period"`
+	ActiveSeriesMetricsIdleTimeout  time.Duration                    `yaml:"active_series_metrics_idle_timeout"`
+	ActiveSeriesCustomTrackers      ActiveSeriesCustomTrackersConfig `yaml:"active_series_custom_trackers" doc:"description=Additional custom trackers for active metrics. Active series matching a provided matcher (map value) will be exposed in the custom trackers metric labeled using the tracker name (map key)."`
+
+	ExemplarsUpdatePeriod time.Duration `yaml:"exemplars_update_period"`
 
 	// Use blocks storage.
 	BlocksStorageEnabled        bool                     `yaml:"-"`
@@ -134,7 +137,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.ActiveSeriesMetricsEnabled, "ingester.active-series-metrics-enabled", true, "Enable tracking of active series and export them as metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsUpdatePeriod, "ingester.active-series-metrics-update-period", 1*time.Minute, "How often to update active series metrics.")
 	f.DurationVar(&cfg.ActiveSeriesMetricsIdleTimeout, "ingester.active-series-metrics-idle-timeout", 10*time.Minute, "After what time a series is considered to be inactive.")
+	f.Var(&cfg.ActiveSeriesCustomTrackers, "ingester.active-series-custom-trackers", "Additional active series metrics, matching the provided matchers. Matchers should be in form <name>:<matcher>, like 'foobar:{foo=\"bar\"}'. Multiple matchers can be provided either providing the flag multiple times or providing multiple semicolon-separated values to a single flag.")
+
 	f.BoolVar(&cfg.StreamChunksWhenUsingBlocks, "ingester.stream-chunks-when-using-blocks", false, "Stream chunks when using blocks. This is experimental feature and not yet tested. Once ready, it will be made default and this config option removed.")
+	f.DurationVar(&cfg.ExemplarsUpdatePeriod, "ingester.exemplars-update-period", 15*time.Second, "Period with which to update per-user max exemplars.")
 
 	f.Float64Var(&cfg.DefaultLimits.MaxIngestionRate, "ingester.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. This limit only works when using blocks engine. 0 = unlimited.")
 	f.Int64Var(&cfg.DefaultLimits.MaxInMemoryTenants, "ingester.instance-limits.max-tenants", 0, "Max users that this ingester can hold. Requests from additional users will be rejected. This limit only works when using blocks engine. 0 = unlimited.")
@@ -175,6 +181,8 @@ type Ingester struct {
 
 	metrics *ingesterMetrics
 	logger  log.Logger
+
+	activeSeriesMatcher *ActiveSeriesMatchers
 
 	chunkStore         ChunkStore
 	lifecycler         *ring.Lifecycler
@@ -254,6 +262,11 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 		}
 	}
 
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
+	if err != nil {
+		return nil, err
+	}
+
 	i := &Ingester{
 		cfg:          cfg,
 		clientConfig: clientConfig,
@@ -265,10 +278,11 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 		usersMetadata:    map[string]*userMetricsMetadata{},
 		registerer:       registerer,
 		logger:           logger,
-	}
-	i.metrics = newIngesterMetrics(registerer, true, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
-	var err error
+		activeSeriesMatcher: asm,
+	}
+	i.metrics = newIngesterMetrics(registerer, true, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, nil, &i.inflightPushRequests)
+
 	// During WAL recovery, it will create new user states which requires the limiter.
 	// Hence initialise the limiter before creating the WAL.
 	// The '!cfg.WALConfig.WALEnabled' argument says don't flush on shutdown if the WAL is enabled.
@@ -307,7 +321,7 @@ func (i *Ingester) starting(ctx context.Context) error {
 
 	// If the WAL recover happened, then the userStates would already be set.
 	if i.userStates == nil {
-		i.userStates = newUserStates(i.limiter, i.cfg, i.metrics, i.logger)
+		i.userStates = newUserStates(i.limiter, i.cfg, i.metrics, i.logger, i.activeSeriesMatcher)
 	}
 
 	var err error
@@ -348,15 +362,16 @@ func NewForFlusher(cfg Config, chunkStore ChunkStore, limits *validation.Overrid
 	}
 
 	i := &Ingester{
-		cfg:              cfg,
-		chunkStore:       chunkStore,
-		flushQueues:      make([]*util.PriorityQueue, cfg.ConcurrentFlushes),
-		flushRateLimiter: rate.NewLimiter(rate.Inf, 1),
-		wal:              &noopWAL{},
-		limits:           limits,
-		logger:           logger,
+		cfg:                 cfg,
+		chunkStore:          chunkStore,
+		flushQueues:         make([]*util.PriorityQueue, cfg.ConcurrentFlushes),
+		flushRateLimiter:    rate.NewLimiter(rate.Inf, 1),
+		wal:                 &noopWAL{},
+		limits:              limits,
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
 	}
-	i.metrics = newIngesterMetrics(registerer, true, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, true, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.BasicService = services.NewBasicService(i.startingForFlusher, i.loopForFlusher, i.stopping)
 	return i, nil

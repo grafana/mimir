@@ -799,6 +799,16 @@ lifecycler:
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
 
+# Additional custom trackers for active metrics. Active series matching a
+# provided matcher (map value) will be exposed in the custom trackers metric
+# labeled using the tracker name (map key).
+# CLI flag: -ingester.active-series-custom-trackers
+[active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
+
+# Period with which to update per-user max exemplars.
+# CLI flag: -ingester.exemplars-update-period
+[exemplars_update_period: <duration> | default = 15s]
+
 instance_limits:
   # Max ingestion rate (samples/sec) that ingester will accept. This limit is
   # per-ingester, not per-tenant. Additional push requests will be rejected.
@@ -837,14 +847,6 @@ instance_limits:
 The `querier_config` configures the querier.
 
 ```yaml
-# The maximum number of concurrent queries.
-# CLI flag: -querier.max-concurrent
-[max_concurrent: <int> | default = 20]
-
-# The timeout for a query.
-# CLI flag: -querier.timeout
-[timeout: <duration> | default = 2m]
-
 # Use iterators to execute query, as opposed to fully materialising the series
 # in memory.
 # CLI flag: -querier.iterators
@@ -859,10 +861,6 @@ The `querier_config` configures the querier.
 # CLI flag: -querier.ingester-streaming
 [ingester_streaming: <boolean> | default = true]
 
-# Maximum number of samples a single query can load into memory.
-# CLI flag: -querier.max-samples
-[max_samples: <int> | default = 50000000]
-
 # Maximum lookback beyond which queries are not sent to ingester. 0 means all
 # queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
@@ -872,10 +870,6 @@ The `querier_config` configures the querier.
 # only with blocks engine.
 # CLI flag: -querier.query-store-for-labels-enabled
 [query_store_for_labels_enabled: <boolean> | default = false]
-
-# Enable the @ modifier in PromQL.
-# CLI flag: -querier.at-modifier-enabled
-[at_modifier_enabled: <boolean> | default = false]
 
 # True to enable queriers to use an optimized implementation which passes down
 # to ingesters the label matchers when running the label names API. Can be
@@ -895,22 +889,6 @@ The `querier_config` configures the querier.
 # Maximum duration into the future you can query. 0 to disable.
 # CLI flag: -querier.max-query-into-future
 [max_query_into_future: <duration> | default = 10m]
-
-# The default evaluation interval or step size for subqueries.
-# CLI flag: -querier.default-evaluation-interval
-[default_evaluation_interval: <duration> | default = 1m]
-
-# Active query tracker monitors active queries, and writes them to the file in
-# given directory. If any queries are discovered in this file during startup, it
-# will log them to the log file. Setting to empty value disables active query
-# tracker, which also disables -querier.max-concurrent option.
-# CLI flag: -querier.active-query-tracker-dir
-[active_query_tracker_dir: <string> | default = "./active-query-tracker"]
-
-# Time since the last sample after which a time series is considered stale and
-# ignored by expression evaluations.
-# CLI flag: -querier.lookback-delta
-[lookback_delta: <duration> | default = 5m]
 
 # Comma separated list of store-gateway addresses in DNS Service Discovery
 # format. This option should be set when using the blocks storage and the
@@ -965,6 +943,45 @@ store_gateway_client:
 # is disabled).
 # CLI flag: -querier.shuffle-sharding-ingesters-lookback-period
 [shuffle_sharding_ingesters_lookback_period: <duration> | default = 0s]
+
+# The maximum number of concurrent queries. This config option should be set on
+# query-frontend too when query sharding is enabled.
+# CLI flag: -querier.max-concurrent
+[max_concurrent: <int> | default = 20]
+
+# The timeout for a query. This config option should be set on query-frontend
+# too when query sharding is enabled.
+# CLI flag: -querier.timeout
+[timeout: <duration> | default = 2m]
+
+# Maximum number of samples a single query can load into memory. This config
+# option should be set on query-frontend too when query sharding is enabled.
+# CLI flag: -querier.max-samples
+[max_samples: <int> | default = 50000000]
+
+# Enable the @ modifier in PromQL. This config option should be set on
+# query-frontend too when query sharding is enabled.
+# CLI flag: -querier.at-modifier-enabled
+[at_modifier_enabled: <boolean> | default = false]
+
+# The default evaluation interval or step size for subqueries. This config
+# option should be set on query-frontend too when query sharding is enabled.
+# CLI flag: -querier.default-evaluation-interval
+[default_evaluation_interval: <duration> | default = 1m]
+
+# Active query tracker monitors active queries, and writes them to the file in
+# given directory. If any queries are discovered in this file during startup, it
+# will log them to the log file. Setting to empty value disables active query
+# tracker, which also disables -querier.max-concurrent option. This config
+# option should be set on query-frontend too when query sharding is enabled.
+# CLI flag: -querier.active-query-tracker-dir
+[active_query_tracker_dir: <string> | default = "./active-query-tracker"]
+
+# Time since the last sample after which a time series is considered stale and
+# ignored by expression evaluations. This config option should be set on
+# query-frontend too when query sharding is enabled.
+# CLI flag: -querier.lookback-delta
+[lookback_delta: <duration> | default = 5m]
 ```
 
 ### `query_frontend_config`
@@ -4043,6 +4060,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-metadata-per-metric
 [max_global_metadata_per_metric: <int> | default = 0]
 
+# The maximum number of exemplars in memory, across the cluster. 0 to disable
+# exemplars ingestion.
+# CLI flag: -ingester.max-global-exemplars-per-user
+[max_global_exemplars_per_user: <int> | default = 0]
+
 # Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
 # respective YAML config option instead. Maximum number of chunks that can be
 # fetched in a single query. This limit is enforced when fetching chunks from
@@ -4987,11 +5009,6 @@ tsdb:
   # limit the number of concurrently opening TSDB's on startup
   # CLI flag: -blocks-storage.tsdb.max-tsdb-opening-concurrency-on-startup
   [max_tsdb_opening_concurrency_on_startup: <int> | default = 10]
-
-  # Enables support for exemplars in TSDB and sets the maximum number that will
-  # be stored. 0 or less means disabled.
-  # CLI flag: -blocks-storage.tsdb.max-exemplars
-  [max_exemplars: <int> | default = 0]
 ```
 
 ### `compactor_config`
