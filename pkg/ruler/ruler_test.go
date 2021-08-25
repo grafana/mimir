@@ -58,7 +58,7 @@ func defaultRulerConfig(t testing.TB, store rulestore.RuleStore) (Config, func()
 	rulesDir, _ := ioutil.TempDir("/tmp", "ruler-tests")
 
 	codec := ring.GetCodec()
-	consul, closer := consul.NewInMemoryClient(codec, testLogger{})
+	consul, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{}
@@ -649,7 +649,7 @@ func TestSharding(t *testing.T) {
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			setupRuler := func(id string, host string, port int, forceRing *ring.Ring) *Ruler {
@@ -956,11 +956,4 @@ func TestSendAlerts(t *testing.T) {
 			SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
 	}
-}
-
-type testLogger struct {
-}
-
-func (l testLogger) Log(...interface{}) error {
-	return nil
 }

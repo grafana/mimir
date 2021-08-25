@@ -1125,10 +1125,3 @@ func TestGetIgnoreSeriesLimitForMetricNamesMap(t *testing.T) {
 	cfg.IgnoreSeriesLimitForMetricNames = "foo, bar, ,"
 	require.Equal(t, map[string]struct{}{"foo": {}, "bar": {}}, cfg.getIgnoreSeriesLimitForMetricNamesMap())
 }
-
-type testLogger struct {
-}
-
-func (l testLogger) Log(...interface{}) error {
-	return nil
-}

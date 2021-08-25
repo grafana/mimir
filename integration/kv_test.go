@@ -186,7 +186,7 @@ func testKVScenario(t *testing.T, kvSetupFn func(t *testing.T, scenario *e2e.Sce
 	defer s.Close()
 
 	reg := prometheus.NewRegistry()
-	client := kvSetupFn(t, s, prometheus.WrapRegistererWithPrefix("cortex_", reg), testLogger{})
+	client := kvSetupFn(t, s, prometheus.WrapRegistererWithPrefix("cortex_", reg), log.NewNopLogger())
 	testFn(t, client, reg)
 }
 
@@ -236,11 +236,4 @@ func (w *watcher) watch(ctx context.Context, client kv.Client) {
 		w.values[key] = append(w.values[key], value)
 		return true
 	})
-}
-
-type testLogger struct {
-}
-
-func (l testLogger) Log(...interface{}) error {
-	return nil
 }

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
@@ -1951,7 +1952,7 @@ func TestRingUpdates(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			inmem, closer := consul.NewInMemoryClient(GetCodec(), testLogger{})
+			inmem, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			cfg := Config{
@@ -2047,7 +2048,7 @@ func TestShuffleShardWithCaching(t *testing.T) {
 	inmem, closer := consul.NewInMemoryClientWithConfig(GetCodec(), consul.Config{
 		MaxCasRetries: 20,
 		CasRetryDelay: 500 * time.Millisecond,
-	}, testLogger{})
+	}, log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{
@@ -2156,11 +2157,4 @@ func userToken(user, zone string, skip int) uint32 {
 		_ = r.Uint32()
 	}
 	return r.Uint32()
-}
-
-type testLogger struct {
-}
-
-func (l testLogger) Log(...interface{}) error {
-	return nil
 }

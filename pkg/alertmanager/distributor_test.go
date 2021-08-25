@@ -18,6 +18,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
@@ -341,7 +342,7 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 		amByAddr[a.myAddr] = ams[i]
 	}
 
-	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	err := kvStore.CAS(context.Background(), RingKey,

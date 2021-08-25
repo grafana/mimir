@@ -41,7 +41,7 @@ const userID = "1"
 func defaultIngesterTestConfig(t testing.TB) Config {
 	t.Helper()
 
-	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), testLogger{})
+	consul, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := Config{}
