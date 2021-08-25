@@ -50,6 +50,9 @@ fetch-build-image:
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
+# If push-multiarch-build-image fails, you may need to enable multiarch support for docker buildx by running:
+# $ docker run --privileged --rm tonistiigi/binfmt --install all
+# More information at https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
 push-multiarch-build-image:
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
