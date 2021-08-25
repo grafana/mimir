@@ -192,13 +192,11 @@ func TestActiveSeriesMatcher_MalformedMatcher(t *testing.T) {
 }
 
 func TestAmlabelMatchersToProm_HappyCase(t *testing.T) {
-	t.Run("happy case", func(t *testing.T) {
-		amMatcher, err := amlabels.NewMatcher(amlabels.MatchRegexp, "foo", "bar.*")
-		require.NoError(t, err)
+	amMatcher, err := amlabels.NewMatcher(amlabels.MatchRegexp, "foo", "bar.*")
+	require.NoError(t, err)
 
-		expected := labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*")
-		assert.Equal(t, expected, amlabelMatcherToProm(amMatcher))
-	})
+	expected := labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*")
+	assert.Equal(t, expected, amlabelMatcherToProm(amMatcher))
 }
 
 func TestAmlabelMatchersToProm_MatchTypeValues(t *testing.T) {
