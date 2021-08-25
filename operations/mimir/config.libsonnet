@@ -285,13 +285,12 @@
     alertmanager_gcs_bucket_name: error 'you must specify a GCS bucket name',
     alertmanager_azure_container_name: error 'you must specify an Azure container name',
 
-
     alertmanagerStorageClientConfig:
       {
         'alertmanager-storage.backend': $._config.alertmanager_client_type,
       } +
       {
-	azure: {
+        azure: {
           'alertmanager-storage.azure.account-key': $._config.alertmanager_azure_account_key,
           'alertmanager-storage.azure.account-name': $._config.alertmanager_azure_account_name,
           'alertmanager-storage.azure.container-name': $._config.alertmanager_azure_container_name,
