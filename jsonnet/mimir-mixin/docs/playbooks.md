@@ -636,6 +636,95 @@ This can be triggered if there are too many HA dedupe keys in etcd. We saw this 
   },
 ```
 
+### CortexAlertmanagerSyncConfigsFailing
+
+How it **works**:
+
+This alert is fired when the multi-tenant alertmanager cannot load alertmanager configs from the remote object store for at least 30 minutes.
+
+Loading the alertmanager configs can happen in the following situations:
+
+1. When the multi tenant alertmanager is started
+2. Each time it polls for config changes in the alertmanager
+3. When there is a ring change
+
+The metric for this alert is cortex_alertmanager_sync_configs_failed_total and is incremented each time one of the above fails.
+
+When there is a ring change or the interval has elapsed, a failure to load configs from the store is logged as a warning.
+
+How to **investigate**:
+
+Look at the error message that is logged and attempt to understand what is causing the failure. I.e. it could be a networking issue, incorrect configuration for the store, etc.
+
+### CortexAlertmanagerRingCheckFailing
+
+How it **works**:
+
+This alert is fired when the multi-tenant alertmanager has been unable to check if one or more tenants should be owned on this shard for at least 10 minutes.
+
+When the alertmanager loads its configuration on start up, when it polls for config changes or when there is a ring change it must check the ring to see if the tenant is still owned on this shard. To prevent one error from causing the loading of all configurations to fail we assume that on error the tenant is NOT owned for this shard. If checking the ring continues to fail then some tenants might not be assigned an alertmanager and might not be able to receive notifications for their alerts.
+
+The metric for this alert is cortex_alertmanager_ring_check_errors_total.
+
+How to **investigate**:
+
+Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
+
+### CortexAlertmanagerPartialStateMergeFailing
+
+How it **works**:
+
+This alert is fired when the multi-tenant alertmanager attempts to merge a partial state for something that it either does not know about or the partial state cannot be merged with the existing local state. State merges are gRPC messages that are gossiped between a shard and the corresponding alertmanager instance in other shards.
+
+The metric for this alert is cortex_alertmanager_partial_state_merges_failed_total.
+
+How to **investigate**:
+
+The error is not currently logged on the receiver side. If this alert is firing, it is likely that CortexAlertmanagerReplicationFailing is firing also, so instead follow the investigation steps for that alert, with the assumption that the issue is not RPC/communication related.
+
+### CortexAlertmanagerReplicationFailing
+
+How it **works**:
+
+This alert is fired when the multi-tenant alertmanager attempts to replicate a state update for a tenant (i.e. a silence or a notification) to another alertmanager instance but failed. This could be due to an RPC/communication error or the other alertmanager being unable to merge the state with its own local state.
+
+The metric for this alert is cortex_alertmanager_state_replication_failed_total.
+
+How to **investigate**:
+
+When state replication fails it gets logged as an error in the alertmanager that attempted the state replication. Check the error message in the log to understand the cause of the error (i.e. was it due to an RPC/communication error or was there an error in the receiving alertmanager).
+
+### CortexAlertmanagerPersistStateFailing
+
+How it **works**:
+
+This alert is fired when the multi-tenant alertmanager cannot persist its state to the remote object store. This operation is attempted periodically (every 15m by default).
+
+Each alertmanager writes its state (silences, notification log) to the remote object storage and the cortex_alertmanager_state_persist_failed_total metric is incremented each time this fails. The alert fires if this fails for an hour or more.
+
+How to **investigate**:
+
+Each failure to persist state to the remote object storage is logged. Find the reason in the Alertmanager container logs with the text “failed to persist state”. Possibles reasons:
+
+- The most probable cause is that remote write failed. Try to investigate why based on the message (network issue, storage issue). If the error indicates the issue might be transient, then you can wait until the next periodic attempt and see if it succeeds.
+- It is also possible that encoding the state failed. This does not depend on external factors as it is just pulling state from the Alertmanager internal state. It may indicate a bug in the encoding method.
+
+### CortexAlertmanagerInitialSyncFailed
+
+How it **works**:
+
+When a tenant replica becomes owned it is assigned to an alertmanager instance. The alertmanager instance attempts to read the state from other alertmanager instances. If no other alertmanager instances could replicate the full state then it attempts to read the full state from the remote object store. This alert fires when both of these operations fail.
+
+Note that the case where there is no state for this user in remote object storage, is not treated as a failure. This is expected when a new tenant becomes active for the first time.
+
+How to **investigate**:
+
+When an alertmanager cannot read the state for a tenant from storage it gets logged as the following error: "failed to read state from storage; continuing anyway". The possible causes of this error could be:
+
+- The state could not be merged because it might be invalid and could not be decoded. This could indicate data corruption and therefore a bug in the reading or writing of the state, and would need further investigation.
+- The state could not be read from storage. This could be due to a networking issue such as a timeout or an authentication and authorization issue with the remote object store.
+
+
 ## Cortex routes by path
 
 **Write path**:
