@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format
+.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format
 .DEFAULT_GOAL := all
 
 # Version number
@@ -383,6 +383,9 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
   	touch $@
 
 endif
+
+integration-tests: cmd/mimir/$(UPTODATE)
+	go test -tags=requires_docker ./integration/...
 
 # Build both arm64 and amd64 images, so that we can test deb/rpm packages for both architectures.
 packaging/rpm/centos-systemd/$(UPTODATE): packaging/rpm/centos-systemd/Dockerfile
