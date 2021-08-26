@@ -643,7 +643,7 @@ github.com/uber/jaeger-client-go/utils
 # github.com/uber/jaeger-lib v2.4.1+incompatible
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a => github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
+# github.com/weaveworks/common v0.0.0-20210901095257-284892f3c537
 ## explicit
 github.com/weaveworks/common/aws
 github.com/weaveworks/common/errors
@@ -1076,4 +1076,3 @@ sigs.k8s.io/yaml
 # go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
 # github.com/gogo/status => github.com/gogo/status v1.0.3
 # go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
-# github.com/weaveworks/common => github.com/weaveworks/common v0.0.0-20210419092856-009d1eebd624
