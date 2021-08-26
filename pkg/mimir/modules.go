@@ -733,18 +733,19 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initMemberlistKV() (services.Service, error) {
-	t.Cfg.MemberlistKV.MetricsRegisterer = prometheus.DefaultRegisterer
+	reg := prometheus.DefaultRegisterer
+	t.Cfg.MemberlistKV.MetricsRegisterer = reg
 	t.Cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
 	}
-	var mr prometheus.Registerer
-	if t.Cfg.MemberlistKV.MetricsRegisterer != nil {
-		mr = prometheus.WrapRegistererWith(
+	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
+		"cortex_",
+		prometheus.WrapRegistererWith(
 			prometheus.Labels{"name": "memberlist"},
-			t.Cfg.MemberlistKV.MetricsRegisterer,
-		)
-	}
-	dnsProvider := dns.NewProvider(util_log.Logger, mr, dns.GolangResolverType)
+			reg,
+		),
+	)
+	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
 	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider)
 	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
