@@ -26,11 +26,11 @@ If nothing obvious from the above, check for increased load:
 
 ### CortexIngesterReachingSeriesLimit
 
-This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in a ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
+This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
 
 In case of **emergency**:
-- If the actual number of series is very close or already hit the limit, then you can increase the limit via runtime config to gain some time
-- Increasing the limit will increase the ingesters memory utilization. Please monitor the ingesters memory utilization via the `Cortex / Writes Resources` dashboard
+- If the actual number of series is very close to or already hit the limit, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the ingesters' memory utilization. Please monitor the ingesters' memory utilization via the `Cortex / Writes Resources` dashboard
 
 How the limit is **configured**:
 - The limit can be configured either on CLI (`-ingester.instance-limits.max-series`) or in the runtime config:
@@ -51,10 +51,10 @@ How the limit is **configured**:
 
 How to **fix**:
 1. **Temporarily increase the limit**<br />
-   If the actual number of series is very close or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as effect of the scale up, you should also temporarily increase the limit.
-1. **Check if shuffle-sharding shard size is correct**<br />
-  - When shuffle-sharding is enabled, we target to 100K series / tenant / ingester assuming tenants on average uses 50% of their max series limit.
-  - Run the following **instant query** to find tenants that may cause an higher pressure on some ingesters:
+   If the actual number of series is very close to or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as an effect of the scale up, you should also temporarily increase the limit.
+2. **Check if shuffle-sharding shard size is correct**<br />
+  - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
+  - Run the following **instant query** to find tenants that may cause higher pressure on some ingesters:
     ```
     (
       sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
@@ -75,17 +75,17 @@ How to **fix**:
     # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
     ```
   - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
-  - The in-memory series in the ingesters will be effectively reduced at the TSDB Head compaction happening at least 1h after you increased the shard size for the affected tenants
-1. **Scale up ingesters**<br />
+  - The in-memory series in the ingesters will be effectively reduced at the TSDB head compaction happening at least 1h after you increased the shard size for the affected tenants
+3. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
 ### CortexIngesterReachingTenantsLimit
 
-This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in a ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
+This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
 In case of **emergency**:
-- If the actual number of tenants is very close or already hit the limit, then you can increase the limit via runtime config to gain some time
-- Increasing the limit will increase the ingesters memory utilization. Please monitor the ingesters memory utilization via the `Cortex / Writes Resources` dashboard
+- If the actual number of tenants is very close to or already hit the limit, then you can increase the limit via runtime config to gain some time
+- Increasing the limit will increase the ingesters' memory utilization. Please monitor the ingesters' memory utilization via the `Cortex / Writes Resources` dashboard
 
 How the limit is **configured**:
 - The limit can be configured either on CLI (`-ingester.instance-limits.max-tenants`) or in the runtime config:
@@ -577,7 +577,7 @@ How it **works**:
 - Having 2+ ingesters `OOMKilled` may cause a cluster outage
 - Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly go heap) and mmap-ed files (used by TSDB)
 - Ingester memory short spikes are primarily influenced by queries and TSDB head compaction into new blocks (occurring every 2h)
-- A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
+- A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters' memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
 
 How to **fix**:
 - Check if the issue occurs only for few ingesters. If so:
