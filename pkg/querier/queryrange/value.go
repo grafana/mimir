@@ -41,8 +41,11 @@ func FromResult(res *promql.Result) ([]SampleStream, error) {
 		res := make([]SampleStream, 0, len(v))
 		for _, sample := range v {
 			res = append(res, SampleStream{
-				Labels:  mapLabels(sample.Metric),
-				Samples: mapPoints(sample.Point),
+				Labels: mapLabels(sample.Metric),
+				Samples: []mimirpb.Sample{{
+					TimestampMs: sample.Point.T,
+					Value:       sample.Point.V,
+				}},
 			})
 		}
 		return res, nil
@@ -52,7 +55,7 @@ func FromResult(res *promql.Result) ([]SampleStream, error) {
 		for _, series := range v {
 			res = append(res, SampleStream{
 				Labels:  mapLabels(series.Metric),
-				Samples: mapPoints(series.Points...),
+				Samples: mimirpb.FromPointsToSamples(series.Points),
 			})
 		}
 		return res, nil
@@ -66,19 +69,6 @@ func mapLabels(ls labels.Labels) []mimirpb.LabelAdapter {
 	result := make([]mimirpb.LabelAdapter, 0, len(ls))
 	for _, l := range ls {
 		result = append(result, mimirpb.LabelAdapter(l))
-	}
-
-	return result
-}
-
-func mapPoints(pts ...promql.Point) []mimirpb.Sample {
-	result := make([]mimirpb.Sample, 0, len(pts))
-
-	for _, pt := range pts {
-		result = append(result, mimirpb.Sample{
-			Value:       pt.V,
-			TimestampMs: pt.T,
-		})
 	}
 
 	return result
