@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -144,6 +145,11 @@ func FromExemplarProtosToExemplars(es []Exemplar) []exemplar.Exemplar {
 		})
 	}
 	return result
+}
+
+// FromPointsToSamples casts []promql.Point to []Sample. It uses unsafe.
+func FromPointsToSamples(points []promql.Point) []Sample {
+	return *(*[]Sample)(unsafe.Pointer(&points))
 }
 
 type byLabel []LabelAdapter

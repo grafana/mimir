@@ -41,8 +41,9 @@ message LabelPair {
 }
 
 message Sample {
-  double value       = 1;
+  // Fields order MUST match promql.Point so that we can cast types between them.
   int64 timestamp_ms = 2;
+  double value       = 1;
 }
 
 message MetricMetadata {
