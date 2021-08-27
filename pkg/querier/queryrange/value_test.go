@@ -263,7 +263,7 @@ func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
 				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 		},
-		"should not add stale markers even if points have geps if hints is not passed": {
+		"should not add stale markers even if points have gaps if hints is not passed": {
 			input: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
 				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},
@@ -280,7 +280,7 @@ func TestNewSeriesSetFromEmbeddedQueriesResults(t *testing.T) {
 				Samples: []mimirpb.Sample{{TimestampMs: 20, Value: 2}, {TimestampMs: 30, Value: 3}},
 			}},
 		},
-		"should not add stale markers even if points have geps if step == 0": {
+		"should not add stale markers even if points have gaps if step == 0": {
 			input: []SampleStream{{
 				Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},
 				Samples: []mimirpb.Sample{{TimestampMs: 10, Value: 1}, {TimestampMs: 40, Value: 4}, {TimestampMs: 90, Value: 9}},

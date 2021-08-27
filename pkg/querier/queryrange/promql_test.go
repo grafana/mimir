@@ -347,7 +347,7 @@ func newSeries(metric labels.Labels, gen generator) *promql.StorageSeries {
 		v := gen(float64(t))
 
 		// If both the previous and current values are the stale marker, then we omit the
-		// point at all (we just keep the 1st one in a consecutive series of stale markers).
+		// point completely (we just keep the 1st one in a consecutive series of stale markers).
 		shouldSkip := prevValue != nil && value.IsStaleNaN(*prevValue) && value.IsStaleNaN(v)
 		prevValue = &v
 		if shouldSkip {
