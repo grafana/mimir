@@ -44,7 +44,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:goimports-00767679e
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -68,7 +68,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:goimports-00767679e
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}

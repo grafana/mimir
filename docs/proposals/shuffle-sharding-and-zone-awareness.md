@@ -45,9 +45,9 @@ To do it, we **treat each zone as a separate ring** and select N unique instance
 1. Generate a seed based on the tenant ID
 2. Initialise a pseudo random number generator with the tenant’s seed. The random generator must guarantee predictable numbers given the same input seed.
 3. Generate a sequence of N random numbers, where N is the number of instances to select from the zone. Each random number is used as a “token” to look up instances in the ring. For each random number:
-4. Lookup the instance holding that token in the ring
-5. If the instance has not been previously selected, then pick it
-6. If the instance was previously selected (we call this a “collision”), then continue walking the ring clockwise until we find an instance which has not been selected yet
+   - Lookup the instance holding that token in the ring
+   - If the instance has not been previously selected, then pick it
+   - If the instance was previously selected (we call this a “collision”), then continue walking the ring clockwise until we find an instance which has not been selected yet
 
 ### Guaranteed properties
 
