@@ -60,6 +60,7 @@
 * [ENHANCEMENT] Query-frontend: if query sharding is enabled and a query is not shardable, then the query is executed by querier instead of query-frontend. #150
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
+* [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
 
 ### Query-tee
 

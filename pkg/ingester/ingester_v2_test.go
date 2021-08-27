@@ -504,6 +504,43 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_tsdb_exemplar_out_of_order_exemplars_total 0
 			`,
 		},
+		"should succeed with a request containing only metadata": {
+			maxExemplars: 1,
+			reqs: []*mimirpb.WriteRequest{
+				{
+					Metadata: []*mimirpb.MetricMetadata{
+						{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+					},
+				},
+			},
+			expectedErr:      nil,
+			expectedIngested: nil,
+			expectedMetadataIngested: []*mimirpb.MetricMetadata{
+				{Type: mimirpb.COUNTER, MetricFamilyName: "test_metric", Help: "This is a test metric."},
+			},
+			additionalMetrics: []string{
+				"cortex_ingester_tsdb_head_active_appenders",
+			},
+			// NOTE cortex_ingester_memory_users is 0 here - the metric really counts tsdbs not users.
+			// we may want to change that one day but for now make the test match the code.
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total 0
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total 0
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 0
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+                cortex_ingester_memory_users 0
+				# HELP cortex_ingester_tsdb_head_active_appenders Number of currently active TSDB appender transactions.
+				# TYPE cortex_ingester_tsdb_head_active_appenders gauge
+				cortex_ingester_tsdb_head_active_appenders 0
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -1492,10 +1529,10 @@ func TestIngester_v2Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	// Mock request
 	userID := "test"
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := &mimirpb.WriteRequest{}
+	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, 0)
 
 	res, err := i.v2Push(ctx, req)
-	assert.Equal(t, wrapWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error(), err.Error())
+	assert.EqualError(t, err, wrapWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error())
 	assert.Nil(t, res)
 
 	// Check if the TSDB has been created
