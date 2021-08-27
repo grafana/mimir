@@ -24,7 +24,8 @@ emitted.
 
 With a `runtime.yaml` file given below
 
-[embedmd]: # "./overrides-exporter-runtime.yaml"
+<!-- prettier-ignore -->
+[embedmd]:# (./overrides-exporter-runtime.yaml)
 
 ```yaml
 # file: runtime.yaml
