@@ -14,9 +14,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/grafana/mimir/pkg/util/flagext"
-
 	"github.com/go-redis/redis/v8"
+	"github.com/grafana/dskit/flagext"
 )
 
 // RedisConfig defines how a RedisCache should be constructed.

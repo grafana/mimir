@@ -8,7 +8,7 @@ package azure
 import (
 	"flag"
 
-	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/dskit/flagext"
 )
 
 // Config holds the config options for an Azure backend
