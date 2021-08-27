@@ -338,7 +338,6 @@
         max_series_per_user: 0,  // Disabled in favour of the max global limit
         max_series_per_metric: 0,  // Disabled in favour of the max global limit
 
-        // Our limit should be 200k, but we need some room of about ~50% to take rollouts into account
         max_global_series_per_user: 300000,
         max_global_series_per_metric: 30000,
 
