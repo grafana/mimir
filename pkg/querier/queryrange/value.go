@@ -10,7 +10,6 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -134,11 +133,20 @@ func newSeriesSetFromEmbeddedQueriesResults(results []SampleStream, hints *stora
 			})
 		}
 
-		ls := make([]labels.Label, 0, len(stream.Labels))
-		for _, l := range stream.Labels {
-			ls = append(ls, labels.Label(l))
+		// In case the embedded query processed series which all ended before the end of the query time range,
+		// we don't want the outer query to apply the lookback at the end of the embedded query results. To keep it
+		// simple, it's safe always to add an extra stale marker at the end of the query results.
+		//
+		// This could result into an extra sample (stale marker) after the end of the query time range, but that's
+		// not a problem when running the outer query because it will just be discarded.
+		if len(samples) > 0 && step > 0 {
+			samples = append(samples, model.SamplePair{
+				Timestamp: samples[len(samples)-1].Timestamp + model.Time(step),
+				Value:     model.SampleValue(math.Float64frombits(value.StaleNaN)),
+			})
 		}
-		set = append(set, series.NewConcreteSeries(ls, samples))
+
+		set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples))
 	}
 	return series.NewConcreteSeriesSet(set)
 }

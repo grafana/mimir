@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math"
 	"runtime"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -251,44 +249,51 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		},
 	}
 
-	// Generate fixtures (series).
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
+	seriesID := 0
 
+	// Add counter series.
 	for i := 0; i < numSeries; i++ {
 		gen := factor(float64(i) * 0.1)
 		if i >= numSeries-numStaleSeries {
-			// Wrap the generator to inject the staleness marker at minute 10 and skip samples for 10 minutes.
-			gen = stale(int((10*time.Minute)/step), int((10*time.Minute)/step), gen)
+			// Wrap the generator to inject the staleness marker between minute 10 and 20.
+			gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 		}
 
-		series = append(series, newSeries(
-			labels.Labels{
-				{Name: "__name__", Value: "metric_counter"},    // Same metric name for all series.
-				{Name: "const", Value: "fixed"},                // A constant label.
-				{Name: "unique", Value: strconv.Itoa(i)},       // A unique label.
-				{Name: "group_1", Value: strconv.Itoa(i % 10)}, // A first grouping label.
-				{Name: "group_2", Value: strconv.Itoa(i % 5)},  // A second grouping label.
-			}, gen))
+		series = append(series, newSeries(newTestCounterLabels(seriesID), start.Add(-lookbackDelta), end, gen))
+		seriesID++
 	}
 
-	for i := numSeries; i < numSeries+numHistograms; i++ {
+	// Add a special series whose data points end earlier than the end of the queried time range
+	// and has NO stale marker.
+	series = append(series, newSeries(newTestCounterLabels(seriesID),
+		start.Add(-lookbackDelta), end.Add(-5*time.Minute), factor(2)))
+	seriesID++
+
+	// Add a special series whose data points end earlier than the end of the queried time range
+	// and HAS a stale marker at the end.
+	series = append(series, newSeries(newTestCounterLabels(seriesID),
+		start.Add(-lookbackDelta), end.Add(-5*time.Minute), stale(end.Add(-6*time.Minute), end.Add(-4*time.Minute), factor(2))))
+	seriesID++
+
+	// Add a special series whose data points start later than the start of the queried time range.
+	series = append(series, newSeries(newTestCounterLabels(seriesID),
+		start.Add(5*time.Minute), end, factor(2)))
+	seriesID++
+
+	// Add histogram series.
+	for i := 0; i < numHistograms; i++ {
 		for bucketIdx, bucketLe := range histogramBuckets {
 			// We expect each bucket to have a value higher than the previous one.
 			gen := factor(float64(i) * float64(bucketIdx) * 0.1)
-			if i >= numSeries+numHistograms-numStaleHistograms {
-				// Wrap the generator to inject the staleness marker at minute 10 and skip samples for 10 minutes.
-				gen = stale(int((10*time.Minute)/step), int((10*time.Minute)/step), gen)
+			if i >= numHistograms-numStaleHistograms {
+				// Wrap the generator to inject the staleness marker between minute 10 and 20.
+				gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 			}
 
-			series = append(series, newSeries(
-				labels.Labels{
-					{Name: "__name__", Value: "metric_histogram_bucket"}, // Same metric name for all series.
-					{Name: "le", Value: fmt.Sprintf("%f", bucketLe)},
-					{Name: "const", Value: "fixed"},                // A constant label.
-					{Name: "unique", Value: strconv.Itoa(i)},       // A unique label.
-					{Name: "group_1", Value: strconv.Itoa(i % 10)}, // A first grouping label.
-					{Name: "group_2", Value: strconv.Itoa(i % 5)},  // A second grouping label.
-				}, gen))
+			series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
+				start.Add(-lookbackDelta), end, gen))
+			seriesID++
 		}
 	}
 

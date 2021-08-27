@@ -7,8 +7,10 @@ package queryrange
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -258,12 +260,12 @@ func Test_FunctionParallelism(t *testing.T) {
 var shardAwareQueryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return &querierMock{
 		series: []*promql.StorageSeries{
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, factor(5)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, factor(7)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, factor(12)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, factor(11)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, factor(8)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, identity),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, factor(5)),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, factor(7)),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(12)),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, factor(11)),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(8)),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, identity),
 		},
 	}, nil
 })
@@ -336,15 +338,15 @@ func filterSeriesByShard(series []*promql.StorageSeries, shard *querysharding.Sh
 	return filtered
 }
 
-func newSeries(metric labels.Labels, gen generator) *promql.StorageSeries {
+func newSeries(metric labels.Labels, from, to time.Time, gen generator) *promql.StorageSeries {
 	var (
 		points    []promql.Point
 		prevValue *float64
 	)
 
-	for ts := start.Add(-lookbackDelta); ts.Unix() <= end.Unix(); ts = ts.Add(step) {
+	for ts := from; ts.Unix() <= to.Unix(); ts = ts.Add(step) {
 		t := ts.Unix() * 1e3
-		v := gen(float64(t))
+		v := gen(t)
 
 		// If both the previous and current values are the stale marker, then we omit the
 		// point completely (we just keep the 1st one in a consecutive series of stale markers).
@@ -369,35 +371,54 @@ func newSeries(metric labels.Labels, gen generator) *promql.StorageSeries {
 	})
 }
 
-// generator defined a function used to generate sample values in tests.
-type generator func(t float64) float64
+// newTestCounterLabels generates series labels for a counter metric used in tests.
+func newTestCounterLabels(id int) labels.Labels {
+	return labels.Labels{
+		{Name: "__name__", Value: "metric_counter"},
+		{Name: "const", Value: "fixed"},                 // A constant label.
+		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
+		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
+		{Name: "group_2", Value: strconv.Itoa(id % 5)},  // A second grouping label.
+	}
+}
 
-// identity is a generator function returning the input value.
-func identity(t float64) float64 {
-	return t
+// newTestCounterLabels generates series labels for an histogram metric used in tests.
+func newTestHistogramLabels(id int, bucketLe float64) labels.Labels {
+	return labels.Labels{
+		{Name: "__name__", Value: "metric_histogram_bucket"},
+		{Name: "le", Value: fmt.Sprintf("%f", bucketLe)},
+		{Name: "const", Value: "fixed"},                 // A constant label.
+		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
+		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
+		{Name: "group_2", Value: strconv.Itoa(id % 5)},  // A second grouping label.
+	}
+}
+
+// generator defined a function used to generate sample values in tests.
+type generator func(ts int64) float64
+
+// identity is a generator function returning the timestamp as value.
+func identity(t int64) float64 {
+	return float64(t)
 }
 
 func factor(f float64) generator {
 	i := 0.
-	return func(float64) float64 {
+	return func(int64) float64 {
 		i++
 		res := i * f
 		return res
 	}
 }
 
-// stale wraps the input generator and injects stale marker at the provided "after" position
-// for the given "length". The "after" and "length" unit is the number of values generated so far.
-func stale(after, length int, wrap generator) generator {
-	count := 0
-
-	return func(input float64) float64 {
+// stale wraps the input generator and injects stale marker between from and to.
+func stale(from, to time.Time, wrap generator) generator {
+	return func(ts int64) float64 {
 		// Always get the next value from the wrapped generator.
-		v := wrap(input)
+		v := wrap(ts)
 
 		// Inject the stale marker if we're at the right time.
-		count++
-		if count > after && count <= after+length {
+		if ts >= util.TimeToMillis(from) && ts <= util.TimeToMillis(to) {
 			return math.Float64frombits(value.StaleNaN)
 		}
 
