@@ -475,7 +475,7 @@ func TestPurger_retryFailedRequests(t *testing.T) {
 	indexMockStorage := chunk.NewMockStorage()
 	chunksMockStorage := chunk.NewMockStorage()
 
-	deleteStore := setupTestDeleteStore(t,nil)
+	deleteStore := setupTestDeleteStore(t, nil)
 	chunkStore, err := testutils.SetupTestChunkStoreWithClients(indexMockStorage, chunksMockStorage, indexMockStorage)
 	require.NoError(t, err)
 
