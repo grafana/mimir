@@ -283,7 +283,7 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
-	require.True(t, msg.Status == schedulerpb.SHUTTING_DOWN)
+	require.Equal(t, schedulerpb.SHUTTING_DOWN, msg.Status)
 }
 
 func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
@@ -333,7 +333,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 		msg, err := fl.Recv()
 		require.NoError(t, err)
-		require.True(t, msg.Status == schedulerpb.OK)
+		require.Equal(t, schedulerpb.OK, msg.Status)
 	}
 
 	// One more query from the same user will trigger an error.
@@ -347,7 +347,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	msg, err := fl.Recv()
 	require.NoError(t, err)
-	require.True(t, msg.Status == schedulerpb.TOO_MANY_REQUESTS_PER_TENANT)
+	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
 }
 
 func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
@@ -457,7 +457,7 @@ func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClien
 	// Scheduler acks INIT by sending OK back.
 	resp, err := loop.Recv()
 	require.NoError(t, err)
-	require.True(t, resp.Status == schedulerpb.OK)
+	require.Equal(t, schedulerpb.OK, resp.Status)
 
 	return loop
 }
@@ -466,7 +466,7 @@ func frontendToScheduler(t *testing.T, frontendLoop schedulerpb.SchedulerForFron
 	require.NoError(t, frontendLoop.Send(req))
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
-	require.True(t, msg.Status == schedulerpb.OK)
+	require.Equal(t, schedulerpb.OK, msg.Status)
 }
 
 // If this verification succeeds, there will be leaked goroutine left behind. It will be cleaned once grpc server is shut down.
