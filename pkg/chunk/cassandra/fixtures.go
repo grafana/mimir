@@ -10,10 +10,11 @@ import (
 	"io"
 	"os"
 
+	"github.com/grafana/dskit/flagext"
+
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 // GOCQL doesn't provide nice mocks, so we use a real Cassandra instance.

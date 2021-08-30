@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestRingConfig_DefaultConfigToLifecyclerConfig(t *testing.T) {
