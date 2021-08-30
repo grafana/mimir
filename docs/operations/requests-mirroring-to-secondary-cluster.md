@@ -19,7 +19,6 @@ The following Envoy configuration shows an example with two Cortex clusters. Env
 
 <!-- prettier-ignore -->
 [embedmd]:# (./requests-mirroring-envoy.yaml)
-
 ```yaml
 admin:
   # No access logs.
