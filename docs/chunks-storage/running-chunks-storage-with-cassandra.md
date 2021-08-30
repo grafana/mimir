@@ -37,13 +37,16 @@ A keyspace is an object that is used to hold column families, user defined types
 ```
 CREATE KEYSPACE cortex WITH replication = {'class':'SimpleStrategy', 'replication_factor' : 1};
 ```
+
 ## Configure Cortex to store chunks and index on Cassandra
 
 Now, we have to configure Cortex to store the chunks and index in Cassandra. Create a config file called `single-process-config.yaml`, then add the content below. Make sure to replace the following placeholders:
+
 - `LOCALHOST`: Addresses of your Cassandra instance. This can accept multiple addresses by passing them as comma separated values.
 - `KEYSPACE`: The name of the Cassandra keyspace used to store the metrics.
 
 `single-process-config.yaml`
+
 ```
 # Configuration for running Cortex in single-process mode.
 # This should not be used in production.  It is only for getting started
@@ -118,6 +121,7 @@ Run Cortex using the latest stable version:
 ```
 docker run -d --name=cortex -v $(pwd)/single-process-config.yaml:/etc/single-process-config.yaml -p 9009:9009  quay.io/cortexproject/cortex:v1.9.0 -config.file=/etc/single-process-config.yaml
 ```
+
 In case you prefer to run the master version, please follow this [documentation](./chunks-storage-getting-started.md) on how to build Cortex from source.
 
 ### Configure the index and chunk table options
@@ -169,6 +173,7 @@ Add the following section to your Prometheus configuration file. This will confi
 remote_write:
    - url: http://localhost:9009/api/v1/push
 ```
+
 ## Configure Grafana to visualise metrics
 
 Run grafana to visualise metrics from Cortex:

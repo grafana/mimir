@@ -97,6 +97,7 @@ $ tools/migrate-ingester-statefulsets.sh <namespace> <ingester-old> <ingester-ne
 ```
 
 Where parameters are:
+
 - `<namespace>`: Kubernetes namespace where the Cortex cluster is running
 - `<ingester-old>`: name of the ingesters StatefulSet to scale down (running chunks storage)
 - `<ingester-new>`: name of the ingesters StatefulSet to scale up (running blocks storage)
@@ -201,7 +202,6 @@ to the `_config` object in main.jsonnet.
 Let's generate blocks configuration now in `temp.jsonnet`.
 There are comments inside that should give you an idea about what's happening.
 Most important thing is generating resources with blocks configuration, and exposing some of them.
-
 
 ```jsonnet
 {

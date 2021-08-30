@@ -33,6 +33,7 @@ For each block copied/uploaded to the Cortex bucket, there are a few changes req
 ⚠ Warning ⚠ `thanosconvert` will modify files in the bucket you specify. It's recommended that you have backups or enable object versioning before running this tool.
 
 To run `thanosconvert`, you need to provide it with the bucket configuration in the same format as the [blocks storage bucket configuration](../configuration/config-file-reference.md#blocks_storage_config).
+
 ```yaml
 # bucket-config.yaml
 backend: s3
@@ -42,12 +43,14 @@ s3:
 ```
 
 You can run thanosconvert directly using Go:
+
 ```bash
 go install github.com/cortexproject/cortex/cmd/thanosconvert
 thanosconvert
 ```
 
 Or use the provided docker image:
+
 ```bash
 docker run quay.io/cortexproject/thanosconvert
 ```
@@ -59,12 +62,12 @@ thanosconvert -config ./bucket-config.yaml -dry-run
 ```
 
 Once you're happy with the results, you can run without dry run to migrate blocks:
+
 ```bash
 thanosconvert -config ./bucket-config.yaml
 ```
 
 You can cancel a conversion in progress (with Ctrl+C) and rerun `thanosconvert`. It won't change any blocks which have been written by Cortex or already converted from Thanos, so you can run `thanosconvert` multiple times.
-
 
 #### Migrate metadata manually
 
@@ -82,7 +85,6 @@ The `meta.json` should be manipulated in order to ensure:
 - The `thanos` > `labels` do not contain any Thanos-specific external label
 - The `thanos` > `labels` contain the Cortex-specific external label `"__org_id__": "<tenant-id>"`
 
-
 ##### When migrating from Thanos
 
 When migrating from Thanos, the easiest approach would be keep the existing `thanos` root-level entry as is, except:
@@ -94,15 +96,15 @@ For example, when migrating a block from Thanos for the tenant `user-1`, the `th
 
 ```json
 {
-	"thanos": {
-		"labels": {
-			"__org_id__": "user-1"
-		},
-		"downsample": {
-			"resolution": 0
-		},
-		"source": "compactor"
-	}
+  "thanos": {
+    "labels": {
+      "__org_id__": "user-1"
+    },
+    "downsample": {
+      "resolution": 0
+    },
+    "source": "compactor"
+  }
 }
 ```
 
@@ -117,14 +119,14 @@ For example, when migrating a block from Prometheus for the tenant `user-1`, the
 
 ```json
 {
-	"thanos": {
-		"labels": {
-			"__org_id__": "user-1"
-		},
-		"downsample": {
-			"resolution": 0
-		},
-		"source": "compactor"
-	}
+  "thanos": {
+    "labels": {
+      "__org_id__": "user-1"
+    },
+    "downsample": {
+      "resolution": 0
+    },
+    "source": "compactor"
+  }
 }
 ```

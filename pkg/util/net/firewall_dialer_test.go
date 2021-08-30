@@ -13,10 +13,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestFirewallDialer(t *testing.T) {

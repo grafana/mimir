@@ -44,6 +44,7 @@ Randomly picking two different tenants we have the:
 - Only a 0.0004% chance that their instances will fully overlap
 
 ![Shuffle sharding probability](/images/guides/shuffle-sharding-probability.png)
+
 <!-- Chart source at https://docs.google.com/spreadsheets/d/1FXbiWTXi6bdERtamH-IfmpgFq1fNL4GP_KX_yJvbRi4/edit -->
 
 ## Cortex shuffle sharding
@@ -110,6 +111,7 @@ The current shuffle-sharding implementation in Cortex has a limitation which pre
 The problem is that if a tenant’s subring decreases in size, there is currently no way for the queriers and rulers to know how big the tenant subring was previously, and hence they will potentially miss an ingester with data for that tenant. In other words, the lookback mechanism to select the ingesters which may have received series since 'now - lookback period' doesn't work correctly if the tenant shard size is decreased.
 
 This is deemed an infrequent operation that we considered banning, but a workaround still exists:
+
 1. **Disable** shuffle-sharding on the read path
 2. **Decrease** the configured tenant shard size
 3. **Wait** at least `-querier.shuffle-sharding-ingesters-lookback-period` time
@@ -157,6 +159,7 @@ Note that when using sharding strategy, each rule group is evaluated by single r
 ## FAQ
 
 ### Does shuffle sharding add additional overhead to the KV store?
+
 No, shuffle sharding subrings are computed client-side and are not stored in the ring. KV store sizing still depends primarily on the number of replicas (of any component that uses the ring, e.g. ingesters) and tokens per replica.
 
 However, each tenant's subring is cached in memory on the client-side which may slightly increase the memory footprint of certain components (mostly the distributor).

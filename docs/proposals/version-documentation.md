@@ -19,7 +19,6 @@ In this proposal, we want to solve this. In particular, we want to:
 2. Include links to change version (the version must be in the URL)
 3. Include the master version and last 3 minor releases. Documentation defaults to the last minor release.
 
-
 ## Proposed solution
 
 Currently, the documentation is residing under the docs/ folder of cortexproject/cortex. It is built by Hugo using the theme [`docsy`](https://www.docsy.dev). It will have a proper [`drop-down menu`](https://www.docsy.dev/docs/adding-content/versioning/#adding-a-version-drop-down-menu) which will enable proper versioning. It has a section [`params.version`](https://www.docsy.dev/docs/adding-content/versioning/#adding-a-version-drop-down-menu) in config.toml which will allow us to map URLs with proper versions. We will have to change all the occurrences of older doc links with new links. We will keep `master` version with 3 latest `release` versions. Each release is a minor version expressed as `1.x`. The document would default to latest minor version.
@@ -48,4 +47,3 @@ And for a minor version like `1.x`:
 ```
 
 we'll have versioned documentation only under the /docs/running-cortex/ prefix and, as a starting point, all versioned pages should go there.
-

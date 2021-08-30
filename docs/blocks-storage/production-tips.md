@@ -25,7 +25,7 @@ We typically configure ingesters to retain these blocks for longer, to allow tim
 
 If you configure ingesters with `-blocks-storage.tsdb.retention-period=24h`, a rule of thumb for disk space required is to take the number of timeseries after replication and multiply by 30KB.
 
-For example, if you have 20M active series replicated 3 ways, this gives approx 1.7TB.  Divide by the number of ingesters and allow some margin for growth, e.g. if you have 20 ingesters then 100GB each should work, or 150GB each to be more comfortable.
+For example, if you have 20M active series replicated 3 ways, this gives approx 1.7TB. Divide by the number of ingesters and allow some margin for growth, e.g. if you have 20 ingesters then 100GB each should work, or 150GB each to be more comfortable.
 
 ## Querier
 
@@ -65,6 +65,7 @@ The following diagram shows all the timings involved in the estimation. This dia
 Given these assumptions, in the worst case scenario it would take up to 6h and 45m since when a sample has been ingested until that sample has been appended to a block flushed to the storage and that block has been [vertically compacted](./compactor.md) with all other overlapping 2h blocks shipped from ingesters.
 
 ![Avoid querying non compacted blocks](/images/blocks-storage/avoid-querying-non-compacted-blocks.png)
+
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
 ## Store-gateway

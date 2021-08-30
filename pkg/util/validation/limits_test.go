@@ -12,14 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/time/rate"
 	"gopkg.in/yaml.v2"
-
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 // mockTenantLimits exposes per-tenant limits based on a provided map

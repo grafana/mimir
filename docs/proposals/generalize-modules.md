@@ -24,7 +24,6 @@ We would like to extend modules in cortex to a generic dependency management fra
   - Manage dependencies
 - Framework should allow for building an application from scratch using the `modules` package, with no dependencies on Cortex. For ex: Remove code from Loki that was copied from `pkg/cortex/cortex.go`.
 
-
 ## Proposed Design
 
 ### Modules package
@@ -32,6 +31,7 @@ We would like to extend modules in cortex to a generic dependency management fra
 To make the modules package extensible, we need to abstract away any Cortex specific details from the module manager. The proposed design is to:
 
 - Make a new component `Manager`, which is envisioned to be a central manager for all modules of the application. It stores modules & dependencies, and will be housed under a new package `pkg/util/modules`. `Manager` has the following methods for interaction:
+
 ```
    func (m *Manager) RegisterModule(name string, initFn func() (Service, error))
    func (m *Manager) AddDependency(name string, dependsOn... string) error
@@ -39,10 +39,12 @@ To make the modules package extensible, we need to abstract away any Cortex spec
 ```
 
 - Modules can be created by the application and registered with `modules.Manager` using `RegisterModule`. The parameters are:
+
   - `name`: Name of the module
   - `initFn`: A function that will be used to start the module. If it returns nil, and other modules depend on it, `InitModuleServices` will return an error.
 
 - Dependencies between modules can be added using `AddDependency`. The parameters to the function are:
+
   - `name`: Name of the module
   - `dependsOn`: A variadic list of modules that the module depends on.
 
@@ -50,13 +52,11 @@ To make the modules package extensible, we need to abstract away any Cortex spec
 
 - The application can be initialized by running `initFn`'s of all the modules in the right order of dependencies by invoking `InitModuleServices` with the target module name.
 
-
 ### Changes to `pkg/cortex`:
 
 - `WrappedService` present in the current `module` design will be deprecated. All `initFn`'s will be wrapped into `WrappedService` by default.
 
 - While the process of loading modules into `modules.Manager` should be remain as part of the `Cortex.New()` function, `InitModuleServices` should be part of `Cortex.Run()` and to enable this, `modules.Manager` would be made a member of the `Cortex` struct.
-
 
 ## Usage
 
@@ -69,7 +69,6 @@ Following these changes, the Modules package will be a generic dependency manage
 - Register each of these components as a module using `Manager.RegisterModule()` by passing name of the module and `initFn` for the module.
 - To add dependencies between modules, use `Manager.AddDependency()`
 - Once all modules are added into `modules.Manager`, initialize the application by calling `Manager.InitModuleServices()` which initializes modules in the right order of dependencies.
-
 
 ## Future work
 

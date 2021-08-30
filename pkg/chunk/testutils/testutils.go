@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 
@@ -18,7 +19,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/util/flagext"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

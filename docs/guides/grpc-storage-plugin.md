@@ -37,7 +37,6 @@ storage:
 
 ## Community plugins
 
-
 The following list shows Cortex storage plugins built and shared by the community:
 
 1. [gRPC based Cortex chunk store for Mongo](https://github.com/VineethReddy02/cortex-mongo-store)

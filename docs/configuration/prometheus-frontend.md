@@ -6,7 +6,7 @@ slug: prometheus-frontend
 ---
 
 You can use the Cortex query frontend with any Prometheus-API compatible
-service, including Prometheus and Thanos.  Use this config file to get
+service, including Prometheus and Thanos. Use this config file to get
 the benefits of query parallelisation and caching.
 
 ```yaml
@@ -30,7 +30,6 @@ query_range:
 
   results_cache:
     cache:
-
       # We're going to use the in-process "FIFO" cache, but you can enable
       # memcached below.
       enable_fifocache: true

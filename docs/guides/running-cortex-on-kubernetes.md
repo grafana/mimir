@@ -36,10 +36,10 @@ Ingesters hold hours of timeseries data in memory; you can configure
 Cortex to replicate the data but you should take steps to avoid losing
 all replicas at once:
 
- - Don't run multiple ingesters on the same node.
- - Don't run ingesters on preemptible/spot nodes.
- - Spread out ingesters across racks / availability zones / whatever
-   applies in your datacenters.
+- Don't run multiple ingesters on the same node.
+- Don't run ingesters on preemptible/spot nodes.
+- Spread out ingesters across racks / availability zones / whatever
+  applies in your datacenters.
 
 You can ask Kubernetes to avoid running on the same node like this:
 

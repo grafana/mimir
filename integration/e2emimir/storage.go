@@ -11,13 +11,13 @@ import (
 	"strings"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/integration/e2e"
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 type S3Client struct {

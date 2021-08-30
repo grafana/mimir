@@ -8,7 +8,7 @@ package gcs
 import (
 	"flag"
 
-	"github.com/grafana/mimir/pkg/util/flagext"
+	"github.com/grafana/dskit/flagext"
 )
 
 // Config holds the config options for GCS backend

@@ -16,7 +16,7 @@ Cortex currently supports sharding of tenants to a subset of the ingesters on th
 
 This feature is called “subring”, because it computes a subset of nodes registered to the hash ring. The aim of this feature is to improve isolation between tenants and reduce the number of tenants impacted by an outage.
 
-This approach is similar to the techniques described in [Amazon’s Shuffle Sharding article](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/), but currently suffers from a non random selection of nodes (*proposed solution below*).
+This approach is similar to the techniques described in [Amazon’s Shuffle Sharding article](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/), but currently suffers from a non random selection of nodes (_proposed solution below_).
 
 Cortex can be **configured** with a default subring size, and then it can be [customized on a per-tenant basis](https://cortexmetrics.io/docs/configuration/configuration-file/#limits_config). The per-tenant configuration is live reloaded during runtime and applied without restarting the Cortex process.
 
@@ -27,6 +27,7 @@ The subring sharding currently supports only the write-path. The read-path is no
 The Cortex **read path should support shuffle sharding to isolate** the impact of an outage in the cluster. The shard size must be dynamically configurable on a per-tenant basis during runtime.
 
 This deliverable involves introducing shuffle sharding in:
+
 - **Query-frontend → Querier** (for queries sharding) [PR #3113](https://github.com/cortexproject/cortex/pull/3113)
 - **Querier → Store-gateway** (for blocks sharding) [PR #3069](https://github.com/cortexproject/cortex/pull/3069)
 - **Querier→ Ingesters** (for queries on recent data)
@@ -37,18 +38,18 @@ This deliverable involves introducing shuffle sharding in:
 The solution is implemented in https://github.com/cortexproject/cortex/pull/3090.
 
 #### The problem
+
 The subring is a subset of nodes that should be used for a specific tenant.
 
 The current subring implementation doesn’t shuffle tenants across nodes. Given a tenant ID, it finds the first node owning the hash(tenant ID) token and then it picks N distinct consecutive nodes walking the ring clockwise.
 
 For example, in a cluster with 6 nodes (numbered 1-6) and a replication factor of 3, three tenants (A, B, C) could have the following shards:
 
-Tenant ID | Node 1 | Node 2 | Node 3 | Node 4 | Node 5 | Node 6
-----------|--------|--------|--------|--------|--------|-------
-A | x | x | x | | |
-B | | x | x | x | |
-C | | | x | x | x |
-
+| Tenant ID | Node 1 | Node 2 | Node 3 | Node 4 | Node 5 | Node 6 |
+| --------- | ------ | ------ | ------ | ------ | ------ | ------ |
+| A         | x      | x      | x      |        |        |
+| B         |        | x      | x      | x      |        |
+| C         |        |        | x      | x      | x      |
 
 #### Proposal
 
@@ -59,7 +60,7 @@ We propose to build the subring picking N distinct and random nodes registered i
 3. Look for the node owning the token range containing FNV-1a(SID)
 4. Loop to (2) until we’ve found N distinct nodes (where N is the shard size)
 
-*hash() function to be decided. The required property is to be strong enough to not generate loops across multiple subsequent hashing of the previous hash.*
+_hash() function to be decided. The required property is to be strong enough to not generate loops across multiple subsequent hashing of the previous hash._
 
 ### Query-frontend → Queriers shuffle sharding
 
@@ -69,7 +70,7 @@ Implemented in https://github.com/cortexproject/cortex/pull/3113.
 
 Today **each** querier connects to **each** query-frontend instance, and calls a single “Process” method via gRPC.
 
-“Process” is a bi-directional streaming gRPC method – using the server-to-client stream for sending requests from query-frontend to the querier, and client-to-server stream for returning results from querier to the query-frontend.  NB this is the opposite of what might be considered normal. Query-frontend scans all its queues with pending query requests, and picks a query to execute based on a fair schedule between tenants.
+“Process” is a bi-directional streaming gRPC method – using the server-to-client stream for sending requests from query-frontend to the querier, and client-to-server stream for returning results from querier to the query-frontend. NB this is the opposite of what might be considered normal. Query-frontend scans all its queues with pending query requests, and picks a query to execute based on a fair schedule between tenants.
 
 The query request is then sent to an idle querier worker over the stream opened in the Process method, and the query-frontend then waits for a response from querier. This loop repeats until querier disconnects.
 
@@ -83,10 +84,10 @@ To choose N Queriers for a tenant, we propose to use a simple algorithm:
 2. SID = tenant ID
 3. SID = hash(SID)
 4. Pick the querier from the list of sorted queries with:<br />
-index = FNV-1a(SID) % number of Queriers
+   index = FNV-1a(SID) % number of Queriers
 5. Loop to (3) until we’ve found N distinct queriers (where N is the shard size) and stop early if there aren’t enough queriers
 
-*hash() function to be decided. The required property is to be strong enough to not generate loops across multiple subsequent hashing of the previous hash.*
+_hash() function to be decided. The required property is to be strong enough to not generate loops across multiple subsequent hashing of the previous hash._
 
 ### Properties
 
@@ -97,7 +98,7 @@ index = FNV-1a(SID) % number of Queriers
 ### Implementation notes
 
 - **Caching:** once this list of queriers to use for a tenant is computed in the query-frontend, it is cached in memory until queriers are added or removed. Per-tenant cache entries will have a TTL to discard tenants not “seen” since a while.
-- **Querier ID:** Query-frontends currently don’t have any identity for queriers. We need to introduce sending of a unique  ID (eg. hostname) by querier to query-frontend when it calls “Process” method.
+- **Querier ID:** Query-frontends currently don’t have any identity for queriers. We need to introduce sending of a unique ID (eg. hostname) by querier to query-frontend when it calls “Process” method.
 - **Backward-compatibility:** when querier shuffle sharding is enabled, the system expects that both query-frontend and querier will run a compatible version. Cluster version upgrade will require to rollout new query-frontends and queriers first, and then enable shuffle sharding.
 - **UI:** we propose to expose the current state of the query-frontend through a new endpoint which should display:
   - Which querier are connected to the query-frontend
@@ -147,12 +148,12 @@ The proposed solution to add shuffle sharding support to the store-gateway is to
 When shuffle sharding is enabled:
 
 - The **store-gateway** `syncUsersBlocks()` will build a tenant’s subring for each tenant found scanning the bucket and will skip any tenant not belonging to its shard.<br />
-Likewise, ShardingMetadataFilter will first build a **tenant’s subring** and then will use the existing logic to filter out blocks not belonging to store-gateway instance itself. The tenant ID can be read from the block’s meta.json.
+  Likewise, ShardingMetadataFilter will first build a **tenant’s subring** and then will use the existing logic to filter out blocks not belonging to store-gateway instance itself. The tenant ID can be read from the block’s meta.json.
 - The **querier** `blocksStoreReplicationSet.GetClientsFor()` will first build a **tenant’s subring** and then will use the existing logic to find out to which store-gateway instance each requested block belongs to.
 
 ### Evaluated alternatives
 
-*Given the store-gateways already form a ring and building the shuffle sharding based on the ring (like in the write path) doesn’t introduce extra operational complexity, we haven’t discussed alternatives.*
+_Given the store-gateways already form a ring and building the shuffle sharding based on the ring (like in the write path) doesn’t introduce extra operational complexity, we haven’t discussed alternatives._
 
 ## Querier→ Ingesters shuffle sharding
 
@@ -162,17 +163,17 @@ We’re currently discussing/evaluating different options.
 
 Cortex must guarantee query correctness; transiently incorrect results may be cached and returned forever. The main problem to solve when introducing ingesters shuffle sharding on the read path is to make sure that a querier fetch data from all ingesters having at least 1 sample for a given tenant.
 
-The problem to solve is: how can a querier efficiently find which ingesters have data for a given tenant?  Each option must consider the changing of the set of ingesters and the changing of each tenant’s subring size.
+The problem to solve is: how can a querier efficiently find which ingesters have data for a given tenant? Each option must consider the changing of the set of ingesters and the changing of each tenant’s subring size.
 
 ### Proposal: use only the information contained in the ring.
 
-*This section describes an alternative approach.  Discussion is still on-going.*
+_This section describes an alternative approach. Discussion is still on-going._
 
-The idea is for the queries to be able to deduce what ingesters could possibly hold data for a given tenant by just consulting the ring (and the per-tenant sub ring sizes).  We posit that this is possible with only a single piece of extra information: a single timestamp per ingester saying when the ingester first joined the ring.
+The idea is for the queries to be able to deduce what ingesters could possibly hold data for a given tenant by just consulting the ring (and the per-tenant sub ring sizes). We posit that this is possible with only a single piece of extra information: a single timestamp per ingester saying when the ingester first joined the ring.
 
 #### Scenario: ingester scale up
 
-When a new ingester is added to the ring, there will be a set of user subrings that see a change: an ingester being removed, and a new one being added.  We need to guarantee that for some time period (the block flush interval), the ingester removed is also consulted for queries.
+When a new ingester is added to the ring, there will be a set of user subrings that see a change: an ingester being removed, and a new one being added. We need to guarantee that for some time period (the block flush interval), the ingester removed is also consulted for queries.
 
 To do this, during the subring selection if we encounters an ingester added within the time period, we will add this to the subring but continue node selection as before - in effect, selecting an extra ingester:
 
@@ -205,7 +206,7 @@ for len(selectedNodes) < subringSize {
 
 #### Scenario: ingester scale down
 
-When an ingester is permanently removed from the ring it will flush its data to the object store and the subrings containing the removed ingester will gain a “new” ingester.  Queries consult the store and merge the results with those from the ingesters, so no data will be missed.
+When an ingester is permanently removed from the ring it will flush its data to the object store and the subrings containing the removed ingester will gain a “new” ingester. Queries consult the store and merge the results with those from the ingesters, so no data will be missed.
 
 Queriers and store-gateways will discover newly flushed blocks on next sync (`-blocks-storage.bucket-store.sync-interval`, default 5 minutes).
 Multiple ingesters should not be scaled-down within this interval.
@@ -216,7 +217,7 @@ During scale-down this needs to be lowered in order to let queriers and rulers u
 
 #### Scenario: increase size of a tenant’s subring
 
-Node selection for subrings is stable - increasing the size of a subring is guaranteed to only add new nodes to it (and not remove any nodes).  Hence, if a tenant’s subring is increase in size the queriers will notice the config change and start consulting the new ingester.
+Node selection for subrings is stable - increasing the size of a subring is guaranteed to only add new nodes to it (and not remove any nodes). Hence, if a tenant’s subring is increase in size the queriers will notice the config change and start consulting the new ingester.
 
 #### Scenario: decreasing size of a tenant’s subring
 
@@ -224,7 +225,7 @@ If a tenant’s subring decreases in size, there is currently no way for the que
 
 This is deemed an infrequent operation that we considered banning, but have a proposal for how we might make it possible:
 
-The proposal is to have separate read subring and write subring size in the config.  The read subring will not be allowed to be smaller than the write subring.  When reducing the size of a tenant’s subring, operators must first reduce the write subring, and then two hours later when the blocks have been flushed, the read subring.  In the majority of cases the read subring will not need to be specified, as it will default to the write subring size.
+The proposal is to have separate read subring and write subring size in the config. The read subring will not be allowed to be smaller than the write subring. When reducing the size of a tenant’s subring, operators must first reduce the write subring, and then two hours later when the blocks have been flushed, the read subring. In the majority of cases the read subring will not need to be specified, as it will default to the write subring size.
 
 ### Considered alternative #1: Ingesters expose list of tenants
 
@@ -271,7 +272,7 @@ Consider the following scenario:
 
 ### Considered alternative #2: streaming updates from ingesters to queriers
 
-*This section describes an alternative approach.*
+_This section describes an alternative approach._
 
 #### Current state
 
@@ -344,4 +345,3 @@ The ruler re-syncs the rule groups from the bucket whenever one of the following
 ### Other notes
 
 - The “subring” implementation is unoptimized. We will optimize it as part of this work to make sure no performance degradation is introduced when using the subring vs the normal ring.
-

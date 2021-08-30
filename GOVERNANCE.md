@@ -1,6 +1,7 @@
 ---
 title: Governance
 ---
+
 # Governance
 
 This document describes the rules and governance of the project. It is meant to be followed by all the developers of the project and the Mimir community. Common terminology used in this governance document are listed below:
@@ -10,6 +11,7 @@ This document describes the rules and governance of the project. It is meant to 
 - **Maintainers**: Maintainers lead an individual project or parts thereof ([`MAINTAINERS.md`][maintainers]).
 
 - **Projects**: A single repository in the Grafana GitHub organization and listed below is referred to as a project:
+
   - Mimir
 
 - **The Mimir project**: The sum of all activities performed under this governance, concerning one or more repositories or the community.
@@ -46,12 +48,12 @@ In case a member leaves, the [offboarding](#offboarding) procedure is applied.
 
 The current team members are:
 
-* Bryan Boreham - [bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
-* Goutham Veeramachaneni - [gouthamve](https://github.com/gouthamve) ([Grafana Labs](https://grafana.com/))
-* Jacob Lisi - [jtlisi](https://github.com/jtlisi) ([Grafana Labs](https://grafana.com/))
-* Marco Pracucci - [pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
-* Peter Štibraný - [pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
-* Tom Wilkie - [tomwilkie](https://github.com/tomwilkie) ([Grafana Labs](https://grafana.com/))
+- Bryan Boreham - [bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
+- Goutham Veeramachaneni - [gouthamve](https://github.com/gouthamve) ([Grafana Labs](https://grafana.com/))
+- Jacob Lisi - [jtlisi](https://github.com/jtlisi) ([Grafana Labs](https://grafana.com/))
+- Marco Pracucci - [pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
+- Peter Štibraný - [pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
+- Tom Wilkie - [tomwilkie](https://github.com/tomwilkie) ([Grafana Labs](https://grafana.com/))
 
 ### Maintainers
 
@@ -135,7 +137,6 @@ The new member is
 - announced on the [developers mailing list][devs] by an existing team member. Ideally, the new member replies in this thread, acknowledging team membership.
 - added to the projects with commit rights.
 - added to the [team mailing list][team].
-
 
 ### Offboarding
 

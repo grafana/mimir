@@ -6,7 +6,7 @@ As with any complex system, it is certain that bugs will be found, some of them 
 
 The public disclosure date is agreed between the Cortex Team and the bug submitter. We prefer to fully disclose the bug as soon as possible, but only after a mitigation or fix is available. We will ask for delay if the bug or the fix is not yet fully understood or the solution is not tested to our standards yet. While there is no fixed timeframe for fix & disclosure, we will try our best to be quick and do not expect to need the usual 90 days most companies ask or. For a vulnerability with a straightforward mitigation, we expect report date to disclosure date to be on the order of 7 days.
 
----------------------------
+---
 
 ## Private Vendors List
 
@@ -20,7 +20,7 @@ must not be made public, shared, nor even hinted at anywhere
 beyond the need-to-know within your specific team except with the list's
 explicit approval. This holds true until the public disclosure date/time that was
 agreed upon by the list. Members of the list and others may not use the information
- for anything other than getting the issue fixed for your respective vendor’s users.
+for anything other than getting the issue fixed for your respective vendor’s users.
 
 Before any information from the list is shared with respective members of your
 team required to fix said issue, they must agree to the same terms and only
@@ -82,5 +82,6 @@ and also to the list below.
 ### Members of the list
 
 Members of the list are listed below:
+
 - Cortex Maintainers
 - AWS Security Announce (email private)

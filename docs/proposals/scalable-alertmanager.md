@@ -15,7 +15,6 @@ The Cortex Alertmanager at its current state supports high-availability by using
 
 By itself it is not horizontally scalable; it is recommended to run a maximum of 3 replicas (for high availability). Each alertmanager replica will contain an internal instance for every tenant. The Alertmanager uses roughly ~3.7MB of memory and ~0.001 CPU cores per tenant, with an average tenant having ~10 active alerts and ~1 silences. These stats were measured from a cluster with ~80 QPS (Alerts received Per Second), ~40 NPS (Notifications Per Second), and ~700 configurations over a single replica.
 
-
 ## Problem and Requirements
 
 Current numbers show a reasonably sized machine can handle 2000 tenants in the current service. We would like to be able to scale this up to 10x without increasing the machine size; i.e. we would like to make Cortex Alertmanager service horizontally scalable.
@@ -38,7 +37,7 @@ To achieve horizontal scalability, we need to distribute the workload among repl
 
 ### Persistence & State
 
-Alertmanager is a stateful service; it stores the notification state and configured silences. By default, Alertmanager persists its state to disk every 15mins.  In the horizontally scalable Alertmanager service, we need to move this state around as the number of replicas grows and shrinks.  We also need to persist this state across restarts and rolling upgrades.
+Alertmanager is a stateful service; it stores the notification state and configured silences. By default, Alertmanager persists its state to disk every 15mins. In the horizontally scalable Alertmanager service, we need to move this state around as the number of replicas grows and shrinks. We also need to persist this state across restarts and rolling upgrades.
 
 **We propose** making each Alertmanager replica flush the state to object storage, under its own key that’s a combination of tenant ID + replica periodically. This state on durable storage will only be used when cold-starting the cluster.
 
@@ -46,9 +45,9 @@ This mechanism covers multiple challenges (scaling up & down, rolling restarts, 
 
 ### Replication & Consistency
 
-Upstream Alertmanager replicates notification state between replicas to ensure notifications are not sent more than once. Cortex Alertmanager does the same.  When we move to a model where AM instances for a given tenant only live on a subset of replicas, we have to decide how we will keep these replicas in sync.
+Upstream Alertmanager replicates notification state between replicas to ensure notifications are not sent more than once. Cortex Alertmanager does the same. When we move to a model where AM instances for a given tenant only live on a subset of replicas, we have to decide how we will keep these replicas in sync.
 
-**We have an option of doing nothing** and use the existing gossip mechanism and gossip all tenants state to all replicas. The AM Router will then drop state updates for tenants which don’t shard to a given replica. I think this will be easy to implement as it requires  few changes but probably won’t scale.
+**We have an option of doing nothing** and use the existing gossip mechanism and gossip all tenants state to all replicas. The AM Router will then drop state updates for tenants which don’t shard to a given replica. I think this will be easy to implement as it requires few changes but probably won’t scale.
 
 **However, I propose we Synchronized state over gRPC.** The upstream Alertmanager notification dispatcher uses a timeout-based approach for its notifications. Using the “peer order”, it’ll wait a certain amount of time before letting other replicas know if this notification succeeded or not. If it didn’t, the next replica in line will try to send the notification. We propose to communicate this via gRPC calls.
 
@@ -63,7 +62,6 @@ The idea here is to have an “Alertmanager Distributor” as a first stop in th
 The individual pieces of this component (sharding, limits) cannot be optional - the optional part of it is where we decide to run it.
 
 We can either run it as a separate service or embed it. **I propose we simply embed it**. At its core it’ll be simpler to operate. With future work making it possible to run as a separate service so that operators can scale when/if needed.
-
 
 ## Conclusion
 

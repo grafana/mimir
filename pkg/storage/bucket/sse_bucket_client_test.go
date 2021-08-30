@@ -14,12 +14,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestSSEBucketClient_Upload_ShouldInjectCustomSSEConfig(t *testing.T) {

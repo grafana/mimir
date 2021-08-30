@@ -19,11 +19,13 @@ We will use prepared configuration files ([file 1](../../configuration/single-pr
 dependencies.
 
 Build Cortex first:
+
 ```sh
 $ go build ./cmd/mimir
 ```
 
 Run two instances of Cortex, each one with its own dedicated config file:
+
 ```
 $ ./mimir -config.file docs/configuration/single-process-config-blocks-gossip-1.yaml
 $ ./mimir -config.file docs/configuration/single-process-config-blocks-gossip-2.yaml
@@ -33,7 +35,7 @@ Download Prometheus and configure it to use our first Cortex instance for remote
 
 ```yaml
 remote_write:
-- url: http://localhost:9109/api/v1/push
+  - url: http://localhost:9109/api/v1/push
 ```
 
 After starting Prometheus, it will now start pushing data to Cortex. Distributor component in Cortex will
@@ -61,7 +63,7 @@ We also need to configure `node_name` and also ingester ID (`ingester.lifecycler
 but we are running both Cortex instances on the same host.
 
 To make sure that both ingesters generate unique tokens, we configure `join_after` and `observe_period` to 10 seconds.
-First option tells Cortex to wait 10 seconds before joining the ring.  This option is normally used to tell Cortex ingester
+First option tells Cortex to wait 10 seconds before joining the ring. This option is normally used to tell Cortex ingester
 how long to wait for a potential tokens and data transfer from leaving ingester, but we also use it here to increase
 the chance of finding other gossip peers. When Cortex joins the ring, it generates tokens and writes them to the ring.
 If multiple Cortex instances do this at the same time, they can generate conflicting tokens. This can be a problem

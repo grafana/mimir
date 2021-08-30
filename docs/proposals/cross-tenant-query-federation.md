@@ -63,10 +63,9 @@ The tenant ID is currently read from the `X-Scope-OrgID` HTTP header. The tenant
 
 #### Proposal
 
-For the query path a user should be able to specify a `X-Scope-OrgID` header with multiple tenant IDs.  Multiple tenant IDs should then be propagating throughout out the system until it reaches the querier. The `Queryable` instance returned by the querier component, is wrapped by a `mergeQueryable`, which will aggregate the results from a `Queryable` per tenant and hence treated by the downstream components as a single tenant query.
+For the query path a user should be able to specify a `X-Scope-OrgID` header with multiple tenant IDs. Multiple tenant IDs should then be propagating throughout out the system until it reaches the querier. The `Queryable` instance returned by the querier component, is wrapped by a `mergeQueryable`, which will aggregate the results from a `Queryable` per tenant and hence treated by the downstream components as a single tenant query.
 
 To allow such queries to be processed we suggest that an experimental configuration flag `-querier.tenant-federation.enabled` will be added, which is switched off by default. Once enabled the value of the `X-Scope-OrgID` header should be interpreted as `|` separated list of tenant ids. Components which are not expecting multiple tenant ids (e.g. the ingress path) must signal an error if multiple are used.
-
 
 ### Implementing Limits, Fairness and Observability for Cross-Tenant queries
 
@@ -92,11 +91,10 @@ While this feature is considered experimental, this provides some insights and a
 
 - Query limits applied to single tenants part of a multi tenant query are ignored.
 
-
 ## Conclusion
 
 | Challenge                                                                | Status                       |
-|--------------------------------------------------------------------------|------------------------------|
+| ------------------------------------------------------------------------ | ---------------------------- |
 | Aggregate data without overlap                                           | Implementation in PR [#3250] |
 | Exposure of feature to the user                                          | Implementation in PR [#3250] |
 | Implementing Limits, Fairness and Observability for Cross-Tenant queries | Implementation in PR [#3250] |

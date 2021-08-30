@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util/flagext"
 )
 
 func TestConfig_Validate(t *testing.T) {

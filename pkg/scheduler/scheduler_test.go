@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -27,7 +28,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util/flagext"
 	chunk "github.com/grafana/mimir/pkg/util/grpcutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -271,7 +271,7 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 	frontendLoop := initFrontendLoop(t, frontendClient, "frontend-12345")
 
 	// Stop the scheduler. This will disable receiving new requests from frontends.
-	scheduler.StopAsync()
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
 	// We can still send request to scheduler, but we get shutdown error back.
 	require.NoError(t, frontendLoop.Send(&schedulerpb.FrontendToScheduler{
@@ -283,7 +283,7 @@ func TestSchedulerShutdown_FrontendLoop(t *testing.T) {
 
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
-	require.True(t, msg.Status == schedulerpb.SHUTTING_DOWN)
+	require.Equal(t, schedulerpb.SHUTTING_DOWN, msg.Status)
 }
 
 func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
@@ -307,7 +307,7 @@ func TestSchedulerShutdown_QuerierLoop(t *testing.T) {
 	_, err = querierLoop.Recv()
 	require.NoError(t, err)
 
-	scheduler.StopAsync()
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), scheduler))
 
 	// Unblock scheduler loop, to find next request.
 	err = querierLoop.Send(&schedulerpb.QuerierToScheduler{})
@@ -333,7 +333,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 		msg, err := fl.Recv()
 		require.NoError(t, err)
-		require.True(t, msg.Status == schedulerpb.OK)
+		require.Equal(t, schedulerpb.OK, msg.Status)
 	}
 
 	// One more query from the same user will trigger an error.
@@ -347,7 +347,7 @@ func TestSchedulerMaxOutstandingRequests(t *testing.T) {
 
 	msg, err := fl.Recv()
 	require.NoError(t, err)
-	require.True(t, msg.Status == schedulerpb.TOO_MANY_REQUESTS_PER_TENANT)
+	require.Equal(t, schedulerpb.TOO_MANY_REQUESTS_PER_TENANT, msg.Status)
 }
 
 func TestSchedulerForwardsErrorToFrontend(t *testing.T) {
@@ -457,7 +457,7 @@ func initFrontendLoop(t *testing.T, client schedulerpb.SchedulerForFrontendClien
 	// Scheduler acks INIT by sending OK back.
 	resp, err := loop.Recv()
 	require.NoError(t, err)
-	require.True(t, resp.Status == schedulerpb.OK)
+	require.Equal(t, schedulerpb.OK, resp.Status)
 
 	return loop
 }
@@ -466,7 +466,7 @@ func frontendToScheduler(t *testing.T, frontendLoop schedulerpb.SchedulerForFron
 	require.NoError(t, frontendLoop.Send(req))
 	msg, err := frontendLoop.Recv()
 	require.NoError(t, err)
-	require.True(t, msg.Status == schedulerpb.OK)
+	require.Equal(t, schedulerpb.OK, msg.Status)
 }
 
 // If this verification succeeds, there will be leaked goroutine left behind. It will be cleaned once grpc server is shut down.
