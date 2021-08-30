@@ -29,6 +29,7 @@ The actual data is not deleted from storage until period configured for `-purger
 Cortex would keep eliminating series requested for deletion until the `purger` is done processing the delete request or the delete request gets cancelled.
 
 _Sample cURL command:_
+
 ```
 curl -X POST \
   '<purger_addr>/api/v1/admin/tsdb/delete_series?match%5B%5D=up&start=1591616227&end=1591619692' \
@@ -46,6 +47,7 @@ PUT /api/v1/admin/tsdb/cancel_delete_request?request_id=<request_id>
 ```
 
 _Sample cURL command:_
+
 ```
 curl -X POST \
   '<purger_addr>/api/v1/admin/tsdb/cancel_delete_request?request_id=<request_id>' \
@@ -63,6 +65,7 @@ GET /api/v1/admin/tsdb/delete_series
 ```
 
 _Sample cURL command:_
+
 ```
 curl -X GET \
   <purger_addr>/api/v1/admin/tsdb/delete_series \
@@ -70,4 +73,3 @@ curl -X GET \
 ```
 
 **NOTE:** List API returns both processed and un-processed requests except the cancelled ones since they are removed from the store.
-

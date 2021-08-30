@@ -44,7 +44,6 @@ Under this path prefix, Cortex will act as a Alertmanager web server. In this ca
 | `/api/prom/chunks`  | `/api/v1/chunks`  |
 | `/api/prom/rules/*` | `/api/v1/rules/*` |
 
-
 #### Service Endpoints
 
 A number of endpoints currently exist that are not under the `/api/prom` prefix that provide basic web interfaces and trigger operations for cortex services. These endpoints will all be placed under a url with their service name as a prefix if it is applicable.
@@ -79,4 +78,4 @@ This will be implemented by adding an API module to the Cortex service. This mod
 
 ### Style
 
-* All new paths will utilize `_` instead of `-` for their url to conform with Prometheus and its use of the underscore in the `query_range` endpoint. This applies to all operations endpoints. Component names in the path can still contain dashes. For example: `/store-gateway/ring`.
+- All new paths will utilize `_` instead of `-` for their url to conform with Prometheus and its use of the underscore in the `query_range` endpoint. This applies to all operations endpoints. Component names in the path can still contain dashes. For example: `/store-gateway/ring`.

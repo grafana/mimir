@@ -42,8 +42,8 @@ During the rollout, chunks and blocks ingesters share the ring and use the same 
 
 Other alternatives considered for flushing chunks / handling WAL:
 
-* Replay chunks-WAL into TSDB head on restart. In this scenario, chunks-ingester shuts down, and block ingester starts. It can detect existing chunks WAL, and replay it into TSDB head (and then delete old WAL). Issue here is that current chunks-WAL is quite specific to ingester code, and would require some refactoring to make this happen. Deployment is trivial: just reconfigure ingesters to start using blocks, and replay chunks WAL if found. Required change seems like a couple of days of coding work, but it is essentially only used once (for each cluster). Doesn't seem like good time investment.
-* Shutdown single chunks-ingester, run flusher in its place, and when done start new blocks ingester. This is similar to the procedure we did during the introduction of WAL. Flusher can be run via initContainer support in pods. This still requires two-step deployment: 1) enable flusher and reconfigure ingesters to use blocks, 2) remove flusher.
+- Replay chunks-WAL into TSDB head on restart. In this scenario, chunks-ingester shuts down, and block ingester starts. It can detect existing chunks WAL, and replay it into TSDB head (and then delete old WAL). Issue here is that current chunks-WAL is quite specific to ingester code, and would require some refactoring to make this happen. Deployment is trivial: just reconfigure ingesters to start using blocks, and replay chunks WAL if found. Required change seems like a couple of days of coding work, but it is essentially only used once (for each cluster). Doesn't seem like good time investment.
+- Shutdown single chunks-ingester, run flusher in its place, and when done start new blocks ingester. This is similar to the procedure we did during the introduction of WAL. Flusher can be run via initContainer support in pods. This still requires two-step deployment: 1) enable flusher and reconfigure ingesters to use blocks, 2) remove flusher.
 
 When not using WAL, ingesters using chunks cannot transfer those chunks to new ingesters that start with blocks support, so old ingesters need to be configured to disable transfers (using `-ingester.max-transfer-retries=0`), and to flush chunks on shutdown instead.
 As ingesters without WAL are typically deployed using Kubernetes deployment, while blocks ingesters need to use statefulset, and there is no chunks transfer happening, it is possible to configure and start blocks-ingesters and then stop old deployment.
@@ -54,7 +54,7 @@ For rollback from blocks to chunks, we need to be able to flush data from ingest
 Ingesters are currently not able to flush blocks to storage, but adding flush-on-shutdown option, support for `/shutdown` endpoint and support in flusher component similar to chunks is doable, and should be part of this work.
 
 With this ability, rollback would follow the same process, just in reverse: 1) redeploy with flush flag enabled, 2a) redeploy with config change from blocks to chunks (when using WAL) or 2b) scale down statefulset with blocks-ingesters, and start deployment with chunk-ingesters again.
-Note that this isn't a *full* rollback to chunks-only solution, as generated blocks still need to be queried after the rollback, otherwise samples pushed to blocks would be missing.
+Note that this isn't a _full_ rollback to chunks-only solution, as generated blocks still need to be queried after the rollback, otherwise samples pushed to blocks would be missing.
 This means running store-gateways and queriers that can query both chunks and blocks store.
 
 Alternative plan could be to use a separate Cortex cluster configured to use blocks, and redirect incoming traffic to both chunks and blocks cluster.

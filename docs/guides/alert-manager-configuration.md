@@ -7,7 +7,7 @@ slug: alertmanager-configuration
 
 ## Context
 
-Cortex Alertmanager notification setup follow mostly the syntax of Prometheus Alertmanager since it is based on the same codebase.  The following is a description on how to load the configuration setup so that Alertmanager can use for notification when an alert event happened.
+Cortex Alertmanager notification setup follow mostly the syntax of Prometheus Alertmanager since it is based on the same codebase. The following is a description on how to load the configuration setup so that Alertmanager can use for notification when an alert event happened.
 
 ### Configuring the Cortex Alertmanager storage backend
 
@@ -19,7 +19,7 @@ When using the new configuration pattern it is important that any of the old con
 
 ### Cortex Alertmanager configuration
 
-Cortex Alertmanager can be uploaded via Cortex [Set Alertmanager  configuration API](../api/_index.md#set-alertmanager-configuration) or using Grafana Labs [Cortex Tools](https://github.com/grafana/cortex-tools).
+Cortex Alertmanager can be uploaded via Cortex [Set Alertmanager configuration API](../api/_index.md#set-alertmanager-configuration) or using Grafana Labs [Cortex Tools](https://github.com/grafana/cortex-tools).
 
 Follow the instruction at the `cortextool` link above to download or update to the latest version of the tool.
 
@@ -54,7 +54,7 @@ receivers:
 
 #### 2. Upload the Alertmanager configuration
 
-In this example,  Cortex `Alertmanager` is set to be available via localhost on port 8095 with user/org = 100.
+In this example, Cortex `Alertmanager` is set to be available via localhost on port 8095 with user/org = 100.
 
 To upload the above configuration `.yml` file with `--key` to be your Basic Authentication or API key:
 
@@ -64,6 +64,7 @@ cortextool alertmanager load ./amconfig.yml \
 --id=100 \
 --key=<yourKey>
 ```
+
 If there is no error reported, the upload is successful.
 
 To upload the configuration for Cortex `Alertmanager` using Cortex API and curl - see Cortex [Set Alertmanager configuration API](https://cortexmetrics.io/docs/api/#set-alertmanager-configuration).

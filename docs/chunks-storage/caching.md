@@ -8,15 +8,15 @@ slug: caching
 **Warning: the chunks storage is deprecated. You're encouraged to use the [blocks storage](../blocks-storage/_index.md).**
 
 Correctly configured caching is important for a production-ready Cortex cluster.
-Cortex has many opportunities for using caching to accelerate queries and reduce cost.  Cortex can use a cache for:
+Cortex has many opportunities for using caching to accelerate queries and reduce cost. Cortex can use a cache for:
 
-* The results of a whole query
+- The results of a whole query
 
 And for the chunk storage:
 
-* Individual chunks
-* Index lookups for one label on one day
-* Reducing duplication of writes.
+- Individual chunks
+- Index lookups for one label on one day
+- Reducing duplication of writes.
 
 This doc aims to describe what each cache does, how to configure them and how to tune them.
 
@@ -91,7 +91,6 @@ To enable the FIFO cache, use the following flags:
 
 See [`fifo_cache_config` documentation](../configuration/config-file-reference.md#fifo-cache-config) if you use a config file with Cortex.
 
-
 ### Redis (Experimental)
 
 You can also use [Redis](https://redis.io/) for out-of-process caching; this is a relatively new addition to Cortex and is under active development.
@@ -134,7 +133,7 @@ See [`redis_config` documentation](../configuration/config-file-reference.md#red
 The chunk cache stores immutable compressed chunks.
 The cache is used by queries to reduce load on the chunk store.
 These are typically a few KB in size, and depend mostly on the duration and encoding of your chunks.
-The chunk cache is a write-through cache - chunks are written to the cache as they are flushed to the chunk store.  This ensures the cache always contains the most recent chunks.
+The chunk cache is a write-through cache - chunks are written to the cache as they are flushed to the chunk store. This ensures the cache always contains the most recent chunks.
 Items stay in the cache indefinitely.
 
 The chunk cache should be configured on the **ingester**, **querier** and **ruler** using the flags with the prefix `-store.chunks-cache`.
@@ -184,7 +183,6 @@ The query results cache should be configured on the **query-frontend** using fla
 - `-frontend.fifocache.*` and `-frontend.cache.enable-fifocache` flags to use the per-process in-memory cache (not shared across multiple query-frontend instances)
 
 Please keep in mind to also enable `-querier.cache-results=true` and configure `-querier.split-queries-by-interval=24h` (`24h` is a good starting point).
-
 
 ### Index Write Cache
 

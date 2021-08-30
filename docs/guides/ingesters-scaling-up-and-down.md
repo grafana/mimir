@@ -24,7 +24,7 @@ no special care is required to take when scaling up ingesters.
 
 ## Scaling down
 
-A running ingester holds several hours of time series data in memory, before they're flushed to the long-term storage.  When an ingester shuts down, because of a scale down operation, the in-memory data must not be discarded in order to avoid any data loss.
+A running ingester holds several hours of time series data in memory, before they're flushed to the long-term storage. When an ingester shuts down, because of a scale down operation, the in-memory data must not be discarded in order to avoid any data loss.
 
 The procedure to adopt when scaling down ingesters depends on your Cortex setup:
 
@@ -62,7 +62,7 @@ When Cortex is running the [chunks storage](../chunks-storage/_index.md) with WA
 The procedure to scale down ingesters -- one by one -- should be:
 
 1. Call `/shutdown` endpoint on the ingester to shutdown
-2.  Wait until the HTTP call returns successfully or "flushing of chunks complete" is logged
+2. Wait until the HTTP call returns successfully or "flushing of chunks complete" is logged
 3. Terminate the ingester process (the `/shutdown` will not do it)
 
 _For more information about the chunks storage WAL, please refer to [Ingesters with WAL](../chunks-storage/ingesters-with-wal.md)._

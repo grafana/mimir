@@ -10,82 +10,82 @@ no_section_index_title: true
 Cortex exposes an HTTP API for pushing and querying time series data, and operating the cluster itself.
 
 For the sake of clarity, in this document we have grouped API endpoints by service, but keep in mind that they're exposed both when running Cortex in microservices and singly-binary mode:
+
 - **Microservices**: each service exposes its own endpoints
 - **Single-binary**: the Cortex process exposes all API endpoints for the services running internally
 
 ## Endpoints
 
-| API | Service | Endpoint |
-| --- | ------- | -------- |
-| [Index page](#index-page) | _All services_ | `GET /` |
-| [Configuration](#configuration) | _All services_ | `GET /config` |
-| [Runtime Configuration](#runtime-configuration) | _All services_ | `GET /runtime_config` |
-| [Services status](#services-status) | _All services_ | `GET /services` |
-| [Readiness probe](#readiness-probe) | _All services_ | `GET /ready` |
-| [Metrics](#metrics) | _All services_ | `GET /metrics` |
-| [Pprof](#pprof) | _All services_ | `GET /debug/pprof` |
-| [Fgprof](#fgprof) | _All services_ | `GET /debug/fgprof` |
-| [Remote write](#remote-write) | Distributor | `POST /api/v1/push` |
-| [Tenants stats](#tenants-stats) | Distributor | `GET /distributor/all_user_stats` |
-| [HA tracker status](#ha-tracker-status) | Distributor | `GET /distributor/ha_tracker` |
-| [Flush chunks / blocks](#flush-chunks--blocks) | Ingester | `GET,POST /ingester/flush` |
-| [Shutdown](#shutdown) | Ingester | `GET,POST /ingester/shutdown` |
-| [Ingesters ring status](#ingesters-ring-status) | Ingester | `GET /ingester/ring` |
-| [Instant query](#instant-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query` |
-| [Range query](#range-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_range` |
-| [Exemplar query](#exemplar-query) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars` |
-| [Get series by label matchers](#get-series-by-label-matchers) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/series` |
-| [Get label names](#get-label-names) | Querier, Query-frontend | `GET,POST <prometheus-http-prefix>/api/v1/labels` |
-| [Get label values](#get-label-values) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/label/{name}/values` |
-| [Get metric metadata](#get-metric-metadata) | Querier, Query-frontend | `GET <prometheus-http-prefix>/api/v1/metadata` |
-| [Remote read](#remote-read) | Querier, Query-frontend | `POST <prometheus-http-prefix>/api/v1/read` |
-| [Get tenant ingestion stats](#get-tenant-ingestion-stats) | Querier | `GET /api/v1/user_stats` |
-| [Get tenant chunks](#get-tenant-chunks) | Querier | `GET /api/v1/chunks` |
-| [Ruler ring status](#ruler-ring-status) | Ruler | `GET /ruler/ring` |
-| [Ruler rules ](#ruler-rule-groups) | Ruler | `GET /ruler/rule_groups` |
-| [List rules](#list-rules) | Ruler | `GET <prometheus-http-prefix>/api/v1/rules` |
-| [List alerts](#list-alerts) | Ruler | `GET <prometheus-http-prefix>/api/v1/alerts` |
-| [List rule groups](#list-rule-groups) | Ruler | `GET /api/v1/rules` |
-| [Get rule groups by namespace](#get-rule-groups-by-namespace) | Ruler | `GET /api/v1/rules/{namespace}` |
-| [Get rule group](#get-rule-group) | Ruler | `GET /api/v1/rules/{namespace}/{groupName}` |
-| [Set rule group](#set-rule-group) | Ruler | `POST /api/v1/rules/{namespace}` |
-| [Delete rule group](#delete-rule-group) | Ruler | `DELETE /api/v1/rules/{namespace}/{groupName}` |
-| [Delete namespace](#delete-namespace) | Ruler | `DELETE /api/v1/rules/{namespace}` |
-| [Delete tenant configuration](#delete-tenant-configuration) | Ruler | `POST /ruler/delete_tenant_config` |
-| [Alertmanager status](#alertmanager-status) | Alertmanager | `GET /multitenant_alertmanager/status` |
-| [Alertmanager configs](#alertmanager-configs) | Alertmanager | `GET /multitenant_alertmanager/configs` |
-| [Alertmanager ring status](#alertmanager-ring-status) | Alertmanager | `GET /multitenant_alertmanager/ring` |
-| [Alertmanager UI](#alertmanager-ui) | Alertmanager | `GET /<alertmanager-http-prefix>` |
-| [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager | `POST /multitenant_alertmanager/delete_tenant_config` |
-| [Get Alertmanager configuration](#get-alertmanager-configuration) | Alertmanager | `GET /api/v1/alerts` |
-| [Set Alertmanager configuration](#set-alertmanager-configuration) | Alertmanager | `POST /api/v1/alerts` |
-| [Delete Alertmanager configuration](#delete-alertmanager-configuration) | Alertmanager | `DELETE /api/v1/alerts` |
-| [Delete series](#delete-series) | Purger | `PUT,POST <prometheus-http-prefix>/api/v1/admin/tsdb/delete_series` |
-| [List delete requests](#list-delete-requests) | Purger | `GET <prometheus-http-prefix>/api/v1/admin/tsdb/delete_series` |
-| [Cancel delete request](#cancel-delete-request) | Purger | `PUT,POST <prometheus-http-prefix>/api/v1/admin/tsdb/cancel_delete_request` |
-| [Tenant delete request](#tenant-delete-request) | Purger | `POST /purger/delete_tenant` |
-| [Tenant delete status](#tenant-delete-status) | Purger | `GET /purger/delete_tenant_status` |
-| [Store-gateway ring status](#store-gateway-ring-status) | Store-gateway | `GET /store-gateway/ring` |
-| [Compactor ring status](#compactor-ring-status) | Compactor | `GET /compactor/ring` |
-| [Get rule files](#get-rule-files) | Configs API (deprecated) | `GET /api/prom/configs/rules` |
-| [Set rule files](#set-rule-files) | Configs API (deprecated) | `POST /api/prom/configs/rules` |
-| [Get template files](#get-template-files) | Configs API (deprecated) | `GET /api/prom/configs/templates` |
-| [Set template files](#set-template-files) | Configs API (deprecated) | `POST /api/prom/configs/templates` |
-| [Get Alertmanager config file](#get-alertmanager-config-file) | Configs API (deprecated) | `GET /api/prom/configs/alertmanager` |
-| [Set Alertmanager config file](#set-alertmanager-config-file) | Configs API (deprecated) | `POST /api/prom/configs/alertmanager` |
-| [Validate Alertmanager config](#validate-alertmanager-config-file) | Configs API (deprecated) | `POST /api/prom/configs/alertmanager/validate` |
-| [Deactivate configs](#deactivate-configs) | Configs API (deprecated) | `DELETE /api/prom/configs/deactivate` |
-| [Restore configs](#restore-configs) | Configs API (deprecated) | `POST /api/prom/configs/restore` |
-
+| API                                                                                   | Service                  | Endpoint                                                                    |
+| ------------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------------- |
+| [Index page](#index-page)                                                             | _All services_           | `GET /`                                                                     |
+| [Configuration](#configuration)                                                       | _All services_           | `GET /config`                                                               |
+| [Runtime Configuration](#runtime-configuration)                                       | _All services_           | `GET /runtime_config`                                                       |
+| [Services status](#services-status)                                                   | _All services_           | `GET /services`                                                             |
+| [Readiness probe](#readiness-probe)                                                   | _All services_           | `GET /ready`                                                                |
+| [Metrics](#metrics)                                                                   | _All services_           | `GET /metrics`                                                              |
+| [Pprof](#pprof)                                                                       | _All services_           | `GET /debug/pprof`                                                          |
+| [Fgprof](#fgprof)                                                                     | _All services_           | `GET /debug/fgprof`                                                         |
+| [Remote write](#remote-write)                                                         | Distributor              | `POST /api/v1/push`                                                         |
+| [Tenants stats](#tenants-stats)                                                       | Distributor              | `GET /distributor/all_user_stats`                                           |
+| [HA tracker status](#ha-tracker-status)                                               | Distributor              | `GET /distributor/ha_tracker`                                               |
+| [Flush chunks / blocks](#flush-chunks--blocks)                                        | Ingester                 | `GET,POST /ingester/flush`                                                  |
+| [Shutdown](#shutdown)                                                                 | Ingester                 | `GET,POST /ingester/shutdown`                                               |
+| [Ingesters ring status](#ingesters-ring-status)                                       | Ingester                 | `GET /ingester/ring`                                                        |
+| [Instant query](#instant-query)                                                       | Querier, Query-frontend  | `GET,POST <prometheus-http-prefix>/api/v1/query`                            |
+| [Range query](#range-query)                                                           | Querier, Query-frontend  | `GET,POST <prometheus-http-prefix>/api/v1/query_range`                      |
+| [Exemplar query](#exemplar-query)                                                     | Querier, Query-frontend  | `GET,POST <prometheus-http-prefix>/api/v1/query_exemplars`                  |
+| [Get series by label matchers](#get-series-by-label-matchers)                         | Querier, Query-frontend  | `GET,POST <prometheus-http-prefix>/api/v1/series`                           |
+| [Get label names](#get-label-names)                                                   | Querier, Query-frontend  | `GET,POST <prometheus-http-prefix>/api/v1/labels`                           |
+| [Get label values](#get-label-values)                                                 | Querier, Query-frontend  | `GET <prometheus-http-prefix>/api/v1/label/{name}/values`                   |
+| [Get metric metadata](#get-metric-metadata)                                           | Querier, Query-frontend  | `GET <prometheus-http-prefix>/api/v1/metadata`                              |
+| [Remote read](#remote-read)                                                           | Querier, Query-frontend  | `POST <prometheus-http-prefix>/api/v1/read`                                 |
+| [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                  | `GET /api/v1/user_stats`                                                    |
+| [Get tenant chunks](#get-tenant-chunks)                                               | Querier                  | `GET /api/v1/chunks`                                                        |
+| [Ruler ring status](#ruler-ring-status)                                               | Ruler                    | `GET /ruler/ring`                                                           |
+| [Ruler rules ](#ruler-rule-groups)                                                    | Ruler                    | `GET /ruler/rule_groups`                                                    |
+| [List rules](#list-rules)                                                             | Ruler                    | `GET <prometheus-http-prefix>/api/v1/rules`                                 |
+| [List alerts](#list-alerts)                                                           | Ruler                    | `GET <prometheus-http-prefix>/api/v1/alerts`                                |
+| [List rule groups](#list-rule-groups)                                                 | Ruler                    | `GET /api/v1/rules`                                                         |
+| [Get rule groups by namespace](#get-rule-groups-by-namespace)                         | Ruler                    | `GET /api/v1/rules/{namespace}`                                             |
+| [Get rule group](#get-rule-group)                                                     | Ruler                    | `GET /api/v1/rules/{namespace}/{groupName}`                                 |
+| [Set rule group](#set-rule-group)                                                     | Ruler                    | `POST /api/v1/rules/{namespace}`                                            |
+| [Delete rule group](#delete-rule-group)                                               | Ruler                    | `DELETE /api/v1/rules/{namespace}/{groupName}`                              |
+| [Delete namespace](#delete-namespace)                                                 | Ruler                    | `DELETE /api/v1/rules/{namespace}`                                          |
+| [Delete tenant configuration](#delete-tenant-configuration)                           | Ruler                    | `POST /ruler/delete_tenant_config`                                          |
+| [Alertmanager status](#alertmanager-status)                                           | Alertmanager             | `GET /multitenant_alertmanager/status`                                      |
+| [Alertmanager configs](#alertmanager-configs)                                         | Alertmanager             | `GET /multitenant_alertmanager/configs`                                     |
+| [Alertmanager ring status](#alertmanager-ring-status)                                 | Alertmanager             | `GET /multitenant_alertmanager/ring`                                        |
+| [Alertmanager UI](#alertmanager-ui)                                                   | Alertmanager             | `GET /<alertmanager-http-prefix>`                                           |
+| [Alertmanager Delete Tenant Configuration](#alertmanager-delete-tenant-configuration) | Alertmanager             | `POST /multitenant_alertmanager/delete_tenant_config`                       |
+| [Get Alertmanager configuration](#get-alertmanager-configuration)                     | Alertmanager             | `GET /api/v1/alerts`                                                        |
+| [Set Alertmanager configuration](#set-alertmanager-configuration)                     | Alertmanager             | `POST /api/v1/alerts`                                                       |
+| [Delete Alertmanager configuration](#delete-alertmanager-configuration)               | Alertmanager             | `DELETE /api/v1/alerts`                                                     |
+| [Delete series](#delete-series)                                                       | Purger                   | `PUT,POST <prometheus-http-prefix>/api/v1/admin/tsdb/delete_series`         |
+| [List delete requests](#list-delete-requests)                                         | Purger                   | `GET <prometheus-http-prefix>/api/v1/admin/tsdb/delete_series`              |
+| [Cancel delete request](#cancel-delete-request)                                       | Purger                   | `PUT,POST <prometheus-http-prefix>/api/v1/admin/tsdb/cancel_delete_request` |
+| [Tenant delete request](#tenant-delete-request)                                       | Purger                   | `POST /purger/delete_tenant`                                                |
+| [Tenant delete status](#tenant-delete-status)                                         | Purger                   | `GET /purger/delete_tenant_status`                                          |
+| [Store-gateway ring status](#store-gateway-ring-status)                               | Store-gateway            | `GET /store-gateway/ring`                                                   |
+| [Compactor ring status](#compactor-ring-status)                                       | Compactor                | `GET /compactor/ring`                                                       |
+| [Get rule files](#get-rule-files)                                                     | Configs API (deprecated) | `GET /api/prom/configs/rules`                                               |
+| [Set rule files](#set-rule-files)                                                     | Configs API (deprecated) | `POST /api/prom/configs/rules`                                              |
+| [Get template files](#get-template-files)                                             | Configs API (deprecated) | `GET /api/prom/configs/templates`                                           |
+| [Set template files](#set-template-files)                                             | Configs API (deprecated) | `POST /api/prom/configs/templates`                                          |
+| [Get Alertmanager config file](#get-alertmanager-config-file)                         | Configs API (deprecated) | `GET /api/prom/configs/alertmanager`                                        |
+| [Set Alertmanager config file](#set-alertmanager-config-file)                         | Configs API (deprecated) | `POST /api/prom/configs/alertmanager`                                       |
+| [Validate Alertmanager config](#validate-alertmanager-config-file)                    | Configs API (deprecated) | `POST /api/prom/configs/alertmanager/validate`                              |
+| [Deactivate configs](#deactivate-configs)                                             | Configs API (deprecated) | `DELETE /api/prom/configs/deactivate`                                       |
+| [Restore configs](#restore-configs)                                                   | Configs API (deprecated) | `POST /api/prom/configs/restore`                                            |
 
 ### Path prefixes
 
 In this documentation you will find the usage of some placeholders for the path prefixes, whenever the prefix is configurable. The following table shows the supported prefixes.
 
-| Prefix                       | Default         | CLI Flag                         | YAML Config |
-| ---------------------------- | --------------- | -------------------------------- | ----------- |
-| `<legacy-http-prefix>`       | `/api/prom`     | `-http.prefix`                   | `http_prefix` |
-| `<prometheus-http-prefix>`   | `/prometheus`   | `-http.prometheus-http-prefix`   | `api > prometheus_http_prefix` |
+| Prefix                       | Default         | CLI Flag                         | YAML Config                      |
+| ---------------------------- | --------------- | -------------------------------- | -------------------------------- |
+| `<legacy-http-prefix>`       | `/api/prom`     | `-http.prefix`                   | `http_prefix`                    |
+| `<prometheus-http-prefix>`   | `/prometheus`   | `-http.prometheus-http-prefix`   | `api > prometheus_http_prefix`   |
 | `<alertmanager-http-prefix>` | `/alertmanager` | `-http.alertmanager-http-prefix` | `api > alertmanager_http_prefix` |
 
 ### Authentication
@@ -244,7 +244,6 @@ GET /ha-tracker
 
 Displays a web page with the current status of the HA tracker, including the elected replica for each Prometheus HA cluster.
 
-
 ## Ingester
 
 ### Flush chunks / blocks
@@ -285,7 +284,6 @@ GET /ring
 ```
 
 Displays a web page with the ingesters hash ring status, including the state, healthy and last heartbeat time of each ingester.
-
 
 ## Querier / Query-frontend
 
@@ -345,7 +343,7 @@ GET,POST <prometheus-http-prefix>/api/v1/series
 GET,POST <legacy-http-prefix>/api/v1/series
 ```
 
-Find series by label matchers. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the series from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the *blocks* storage engine when `-querier.query-store-for-labels-enabled` is set.
+Find series by label matchers. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the series from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the _blocks_ storage engine when `-querier.query-store-for-labels-enabled` is set.
 
 _For more information, please check out the Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers) documentation._
 
@@ -360,7 +358,7 @@ GET,POST <prometheus-http-prefix>/api/v1/labels
 GET,POST <legacy-http-prefix>/api/v1/labels
 ```
 
-Get label names of ingested series. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the label names from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the *blocks* storage engine when `-querier.query-store-for-labels-enabled` is set.
+Get label names of ingested series. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the label names from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the _blocks_ storage engine when `-querier.query-store-for-labels-enabled` is set.
 
 _For more information, please check out the Prometheus [get label names](https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names) documentation._
 
@@ -375,7 +373,7 @@ GET <prometheus-http-prefix>/api/v1/label/{name}/values
 GET <legacy-http-prefix>/api/v1/label/{name}/values
 ```
 
-Get label values for a given label name. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the label values from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the *blocks* storage engine when `-querier.query-store-for-labels-enabled` is set.
+Get label values for a given label name. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the label values from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the _blocks_ storage engine when `-querier.query-store-for-labels-enabled` is set.
 
 _For more information, please check out the Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values) documentation._
 
@@ -411,7 +409,6 @@ _For more information, please check out Prometheus [Remote storage integrations]
 
 _Requires [authentication](#authentication)._
 
-
 ## Querier
 
 ### Get tenant ingestion stats
@@ -438,11 +435,11 @@ GET <legacy-http-prefix>/chunks
 
 Fetch a compressed tar of all the chunks containing samples for the given time range and label matchers. This endpoint is supported only by the **chunks storage**, requires `-querier.ingester-streaming=true` and should **not be exposed to users** but just used for debugging purposes.
 
-| URL query parameter | Description |
-| ------------------- | ----------- |
-| `start` | Start timestamp, in RFC3339 format or unix epoch. |
-| `end` | End timestamp, in RFC3339 format or unix epoch. |
-| `matcher` | Label matcher that selects the series for which chunks should be fetched. |
+| URL query parameter | Description                                                               |
+| ------------------- | ------------------------------------------------------------------------- |
+| `start`             | Start timestamp, in RFC3339 format or unix epoch.                         |
+| `end`               | End timestamp, in RFC3339 format or unix epoch.                           |
+| `matcher`           | Label matcher that selects the series for which chunks should be fetched. |
 
 _Requires [authentication](#authentication)._
 
@@ -627,6 +624,7 @@ _Requires [authentication](#authentication)._
 #### Example request
 
 Request headers:
+
 - `Content-Type: application/yaml`
 
 Request body:
@@ -851,9 +849,9 @@ PUT,POST <legacy-http-prefix>/api/v1/admin/tsdb/cancel_delete_request
 
 Cancel a delete request while the request is still in the grace period (before the request is effectively processed by the purger and time series data is hard-deleted from the storage).
 
-| URL query parameter | Description |
-| ------------------- | ----------- |
-| `request_id` | Deletion request ID to cancel. Can be obtained by the [List delete requests](#list-delete-requests) endpoint. |
+| URL query parameter | Description                                                                                                   |
+| ------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `request_id`        | Deletion request ID to cancel. Can be obtained by the [List delete requests](#list-delete-requests) endpoint. |
 
 _Requires [authentication](#authentication)._
 
@@ -880,6 +878,7 @@ _Requires [authentication](#authentication)._
 ## Store-gateway
 
 ### Store-gateway ring status
+
 ```
 GET /store-gateway/ring
 ```
@@ -908,17 +907,17 @@ The following schema is used both when retrieving the current configs from the A
 
 ```json
 {
-    "id": 99,
-    "rule_format_version": "2",
-    "alertmanager_config": "<standard alertmanager.yaml config>",
-    "rules_files": {
-        "rules.yaml": "<standard rules.yaml config>",
-        "rules2.yaml": "<standard rules.yaml config>"
-     },
-    "template_files": {
-        "templates.tmpl": "<standard template file>",
-        "templates2.tmpl": "<standard template file>"
-    }
+  "id": 99,
+  "rule_format_version": "2",
+  "alertmanager_config": "<standard alertmanager.yaml config>",
+  "rules_files": {
+    "rules.yaml": "<standard rules.yaml config>",
+    "rules2.yaml": "<standard rules.yaml config>"
+  },
+  "template_files": {
+    "templates.tmpl": "<standard template file>",
+    "templates2.tmpl": "<standard template file>"
+  }
 }
 ```
 

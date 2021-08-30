@@ -7,7 +7,7 @@ This page describes the release process and the currently planned schedule for u
 Our goal is to provide a new minor release every 6 weeks. This is a new process and everything in this document is subject to change.
 
 | release series | date of first pre-release (year-month-day) | release shepherd                            |
-|----------------|--------------------------------------------|---------------------------------------------|
+| -------------- | ------------------------------------------ | ------------------------------------------- |
 | v0.1.0         | 2019-07-31                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
 | v0.2.0         | 2019-08-28                                 | Goutham Veeramachaneni (Github: @gouthamve) |
 | v0.3.0         | 2019-10-09                                 | Bryan Boreham (@bboreham)                   |
@@ -33,10 +33,10 @@ Our goal is to provide a new minor release every 6 weeks. This is a new process 
 
 The release shepherd is responsible for the entire release series of a minor release, meaning all pre- and patch releases of a minor release. The process formally starts with the initial pre-release, but some preparations should be done a few days in advance.
 
-* We aim to keep the master branch in a working state at all times. In principle, it should be possible to cut a release from master at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of master. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
-* On the date listed in the table above, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called  `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
-* With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any [end user](https://github.com/cortexproject/cortex/blob/master/ADOPTERS.md) production environment  for 3 days. This is typically done in Grafana Labs or Weaveworks but we are looking for more volunteers!
-* If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
+- We aim to keep the master branch in a working state at all times. In principle, it should be possible to cut a release from master at any time. In practice, things might not work out as nicely. A few days before the pre-release is scheduled, the shepherd should check the state of master. Following their best judgement, the shepherd should try to expedite bug fixes that are still in progress but should make it into the release. On the other hand, the shepherd may hold back merging last-minute invasive and risky changes that are better suited for the next minor release.
+- On the date listed in the table above, the release shepherd cuts the first pre-release (using the suffix `-rc.0`) and creates a new branch called `release-<major>.<minor>` starting at the commit tagged for the pre-release. In general, a pre-release is considered a release candidate (that's what `rc` stands for) and should therefore not contain any known bugs that are planned to be fixed in the final release.
+- With the pre-release, the release shepherd is responsible for coordinating or running the release candidate in any [end user](https://github.com/cortexproject/cortex/blob/master/ADOPTERS.md) production environment for 3 days. This is typically done in Grafana Labs or Weaveworks but we are looking for more volunteers!
+- If regressions or critical bugs are detected, they need to get fixed before cutting a new pre-release (called `-rc.1`, `-rc.2`, etc.).
 
 See the next section for details on cutting an individual release.
 
@@ -75,10 +75,10 @@ To prepare release branch, first create new release branch (release-X.Y) in Cort
 1. Update the version number in the `VERSION` file to say "X.Y-rc.0"
 2. Update `CHANGELOG.md`
    - Ensure changelog entries for the new release are in this order:
-     * `[CHANGE]`
-     * `[FEATURE]`
-     * `[ENHANCEMENT]`
-     * `[BUGFIX]`
+     - `[CHANGE]`
+     - `[FEATURE]`
+     - `[ENHANCEMENT]`
+     - `[BUGFIX]`
    - Run `./tools/release/check-changelog.sh LAST-RELEASE-TAG...master` and add any missing PR which includes user-facing changes
 
 Once your PR with release prepartion is approved, merge it to "release-X.Y" branch, and continue with publishing.

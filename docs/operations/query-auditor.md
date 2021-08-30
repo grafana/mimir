@@ -11,10 +11,10 @@ The query auditor is a tool bundled in the Cortex repository, but **not** includ
 
 The `query-audit` tool performs a set of queries against two backends that expose the Prometheus read API. This is generally the `query-frontend` component of two Cortex deployments. It will then compare the differences in the responses to determine the average difference for each query. It does this by:
 
- - Ensuring the resulting label sets match.
- - For each label set, ensuring they contain the same number of samples as their pair from the other backend.
- - For each sample, calculates their difference against it's pair from the other backend/label set.
- - Calculates the average diff per query from the above diffs.
+- Ensuring the resulting label sets match.
+- For each label set, ensuring they contain the same number of samples as their pair from the other backend.
+- For each sample, calculates their difference against it's pair from the other backend/label set.
+- Calculates the average diff per query from the above diffs.
 
 ### Limitations
 
@@ -39,29 +39,29 @@ test:
     "X-Scope-OrgID": 1234
 
 queries:
-  - query: 'sum(rate(container_cpu_usage_seconds_total[5m]))'
+  - query: "sum(rate(container_cpu_usage_seconds_total[5m]))"
     start: 2019-11-25T00:00:00Z
     end: 2019-11-28T00:00:00Z
     step_size: 15m
-  - query: 'sum(rate(container_cpu_usage_seconds_total[5m])) by (container_name)'
+  - query: "sum(rate(container_cpu_usage_seconds_total[5m])) by (container_name)"
     start: 2019-11-25T00:00:00Z
     end: 2019-11-28T00:00:00Z
     step_size: 15m
-  - query: 'sum(rate(container_cpu_usage_seconds_total[5m])) without (container_name)'
+  - query: "sum(rate(container_cpu_usage_seconds_total[5m])) without (container_name)"
     start: 2019-11-25T00:00:00Z
     end: 2019-11-26T00:00:00Z
     step_size: 15m
-  - query: 'histogram_quantile(0.9, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le, job))'
+  - query: "histogram_quantile(0.9, sum(rate(cortex_cache_value_size_bytes_bucket[5m])) by (le, job))"
     start: 2019-11-25T00:00:00Z
     end: 2019-11-25T06:00:00Z
     step_size: 15m
     # two shardable legs
-  - query: 'sum without (instance, job) (rate(cortex_query_frontend_queue_length[5m])) or sum by (job) (rate(cortex_query_frontend_queue_length[5m]))'
+  - query: "sum without (instance, job) (rate(cortex_query_frontend_queue_length[5m])) or sum by (job) (rate(cortex_query_frontend_queue_length[5m]))"
     start: 2019-11-25T00:00:00Z
     end: 2019-11-25T06:00:00Z
     step_size: 15m
     # one shardable leg
-  - query: 'sum without (instance, job) (rate(cortex_cache_request_duration_seconds_count[5m])) or rate(cortex_cache_request_duration_seconds_count[5m])'
+  - query: "sum without (instance, job) (rate(cortex_cache_request_duration_seconds_count[5m])) or rate(cortex_cache_request_duration_seconds_count[5m])"
     start: 2019-11-25T00:00:00Z
     end: 2019-11-25T06:00:00Z
     step_size: 15m

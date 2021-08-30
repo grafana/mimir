@@ -32,17 +32,17 @@ The chunks storage stores each single time series into a separate object called 
 
 For this reason, the chunks storage consists of:
 
-* An index for the Chunks. This index can be backed by:
-  * [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
-  * [Google Bigtable](https://cloud.google.com/bigtable)
-  * [Apache Cassandra](https://cassandra.apache.org)
-* An object store for the Chunk data itself, which can be:
-  * [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
-  * [Google Bigtable](https://cloud.google.com/bigtable)
-  * [Apache Cassandra](https://cassandra.apache.org)
-  * [Amazon S3](https://aws.amazon.com/s3)
-  * [Google Cloud Storage](https://cloud.google.com/storage/)
-  * [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
+- An index for the Chunks. This index can be backed by:
+  - [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
+  - [Google Bigtable](https://cloud.google.com/bigtable)
+  - [Apache Cassandra](https://cassandra.apache.org)
+- An object store for the Chunk data itself, which can be:
+  - [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
+  - [Google Bigtable](https://cloud.google.com/bigtable)
+  - [Apache Cassandra](https://cassandra.apache.org)
+  - [Amazon S3](https://aws.amazon.com/s3)
+  - [Google Cloud Storage](https://cloud.google.com/storage/)
+  - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
 
 For more information, please check out the [Chunks storage](./chunks-storage/_index.md) documentation.
 
@@ -54,11 +54,11 @@ The TSDB chunk files contain the samples for multiple series. The series inside 
 
 The blocks storage doesn't require a dedicated storage backend for the index. The only requirement is an object store for the Block files, which can be:
 
-* [Amazon S3](https://aws.amazon.com/s3)
-* [Google Cloud Storage](https://cloud.google.com/storage/)
-* [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
-* [OpenStack Swift](https://wiki.openstack.org/wiki/Swift) (experimental)
-* [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
+- [Amazon S3](https://aws.amazon.com/s3)
+- [Google Cloud Storage](https://cloud.google.com/storage/)
+- [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
+- [OpenStack Swift](https://wiki.openstack.org/wiki/Swift) (experimental)
+- [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
 For more information, please check out the [Blocks storage](./blocks-storage/_index.md) documentation.
 
@@ -101,8 +101,8 @@ The HA Tracker requires a key-value (KV) store to coordinate which replica is cu
 
 The supported KV stores for the HA tracker are:
 
-* [Consul](https://www.consul.io)
-* [Etcd](https://etcd.io)
+- [Consul](https://www.consul.io)
+- [Etcd](https://etcd.io)
 
 Note: Memberlist is not supported. Memberlist-based KV store propagates updates using gossip, which is very slow for HA purposes: result is that different distributors may see different Prometheus server as elected HA replica, which is definitely not desirable.
 
@@ -129,9 +129,9 @@ The effect of this hash set up is that each token that an ingester owns is respo
 
 The supported KV stores for the hash ring are:
 
-* [Consul](https://www.consul.io)
-* [Etcd](https://etcd.io)
-* Gossip [memberlist](https://github.com/hashicorp/memberlist)
+- [Consul](https://www.consul.io)
+- [Etcd](https://etcd.io)
+- Gossip [memberlist](https://github.com/hashicorp/memberlist)
 
 #### Quorum consistency
 
@@ -205,18 +205,18 @@ Query frontends are **stateless**. However, due to how the internal queue works,
 
 Flow of the query in the system when using query-frontend:
 
-1) Query is received by query frontend, which can optionally split it or serve from the cache.
-2) Query frontend stores the query into in-memory queue, where it waits for some querier to pick it up.
-3) Querier picks up the query, and executes it.
-4) Querier sends result back to query-frontend, which then forwards it to the client.
+1. Query is received by query frontend, which can optionally split it or serve from the cache.
+2. Query frontend stores the query into in-memory queue, where it waits for some querier to pick it up.
+3. Querier picks up the query, and executes it.
+4. Querier sends result back to query-frontend, which then forwards it to the client.
 
 #### Queueing
 
 The query frontend queuing mechanism is used to:
 
-* Ensure that large queries, that could cause an out-of-memory (OOM) error in the querier, will be retried on failure. This allows administrators to under-provision memory for queries, or optimistically run more small queries in parallel, which helps to reduce the TCO.
-* Prevent multiple large requests from being convoyed on a single querier by distributing them across all queriers using a first-in/first-out queue (FIFO).
-* Prevent a single tenant from denial-of-service-ing (DOSing) other tenants by fairly scheduling queries between tenants.
+- Ensure that large queries, that could cause an out-of-memory (OOM) error in the querier, will be retried on failure. This allows administrators to under-provision memory for queries, or optimistically run more small queries in parallel, which helps to reduce the TCO.
+- Prevent multiple large requests from being convoyed on a single querier by distributing them across all queriers using a first-in/first-out queue (FIFO).
+- Prevent a single tenant from denial-of-service-ing (DOSing) other tenants by fairly scheduling queries between tenants.
 
 #### Splitting
 
@@ -236,11 +236,11 @@ In order to use query scheduler, both query frontend and queriers must be config
 
 Flow of the query in the system changes when using query scheduler:
 
-1) Query is received by query frontend, which can optionally split it or serve from the cache.
-2) Query frontend forwards the query to random query scheduler process.
-3) Query scheduler stores the query into in-memory queue, where it waits for some querier to pick it up.
-3) Querier picks up the query, and executes it.
-4) Querier sends result back to query-frontend, which then forwards it to the client.
+1. Query is received by query frontend, which can optionally split it or serve from the cache.
+2. Query frontend forwards the query to random query scheduler process.
+3. Query scheduler stores the query into in-memory queue, where it waits for some querier to pick it up.
+4. Querier picks up the query, and executes it.
+5. Querier sends result back to query-frontend, which then forwards it to the client.
 
 Query schedulers are **stateless**. It is recommended to run two replicas to make sure queries can still be serviced while one replica is restarting.
 

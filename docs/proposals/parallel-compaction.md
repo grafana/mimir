@@ -8,17 +8,20 @@ slug: parallel-compaction
 - Author: [Roy Chiang](https://github.com/roystchiang)
 - Date: May 2021
 - Status: Proposed
+
 ---
 
 ## Introduction
+
 As a part of pushing Cortex’s scaling capability at AWS, we have done performance testing with Cortex and found the compactor to be one of the main limiting factors for higher active timeseries limit per tenant. The documentation [Compactor](https://cortexmetrics.io/docs/blocks-storage/compactor/#how-compaction-works) describes the responsibilities of a compactor, and this proposal focuses on the limitations of the current compactor architecture. In the current architecture, compactor has simple sharding, meaning that a single tenant is sharded to a single compactor. In addition, a compactor handles compaction groups of a single tenant iteratively, meaning that blocks belonging non-overlapping times are not compacted in parallel.
 
 ### Problem and Requirements
+
 Currently, a compactor is able to compact up to 20M timeseries within 2 hours for a level-2 compaction, including the time to download blocks, compact, and upload the newly compacted block. We would like to increase the timeseries limit per tenant, and compaction is one of the limiting factors. In addition, we would like to achieve the following:
 
-* Compact multiple non-overlapping time intervals concurrently, so we can achieve higher throughput for the compaction of a single tenant
-* We should be able to scale up, down compactor as needed, depending on how many compactions are pending
-* Insight into the compaction progress of a tenant, such as the number of compactions required in order to catch up to the newest blocks
+- Compact multiple non-overlapping time intervals concurrently, so we can achieve higher throughput for the compaction of a single tenant
+- We should be able to scale up, down compactor as needed, depending on how many compactions are pending
+- Insight into the compaction progress of a tenant, such as the number of compactions required in order to catch up to the newest blocks
 
 ## Design
 
@@ -47,6 +50,7 @@ A Cortex operator configures the compaction block range. Using 2h and 6h as exam
 ## Alternatives
 
 ### Shard compaction jobs amongst compactors with a scheduler
+
 ![Parallel Compaction Architecture](/images/proposals/parallel-compaction-design.png)
 
 We add a new component Compactor Scheduler, which is responsible for calculating the compaction plan, and distributing compaction groups to compactors. The planner is sharded by tenant id, so that we can horizontally scale the planner as needed in order to accept more tenants in the cortex cluster. A tenant will have two queues inside the planner, a compaction queue and a clean up queue, similar to how the query frontend currently holds queues of pending queries.
@@ -62,4 +66,5 @@ To achieve concurrency within a single tenant, compactor scheduler will push job
 On resharding of compactor schedulers, a tenant might move to a different scheduler. We can either drop the current compactor job in order to prevent duplicate compaction jobs, or continue compaction. I propose that the compactor drops the compaction job if the compaction group no longer belongs to the original compactor scheduler. This way, we do not have duplicate compactions happening, and we can minimize work wasted.
 
 ### Contribute to Thanos for a more scalable compactor
+
 Instead of introducing parallelism on the Cortex compactor level, we move the parallelism to the Thanos compactor itself. Thanos has a [proposal to make compactor more scalable](https://docs.google.com/document/d/1xi0V8DB0hE54XgkogJRnNL6yH7C5JThJywlLFoC6dCQ/), and a [PR](https://github.com/thanos-io/thanos/pull/3807). Cortex will enjoy higher throughput per tenant if Thanos is able to speed up the compaction, and we can keep the Cortex architecture the same. However, this approach means that a single tenant is still sharded to a single compactor. In order to compact more groups at once, we must scale up compactor vertically. Although vertical scaling can get us far, we should scale horizontally where we can.

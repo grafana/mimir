@@ -82,6 +82,7 @@ through the following config parameters:
 Client flags are component specific.
 
 For a GRPC client in the Querier:
+
 ```
     # Path to the TLS Cert for the GRPC Client
     -querier.frontend-client.tls-cert-path=/path/to/client.crt
@@ -94,6 +95,7 @@ For a GRPC client in the Querier:
 ```
 
 Similarly, for the GRPC Ingester Client:
+
 ```
     # Path to the TLS Cert for the GRPC Client
     -ingester.client.tls-cert-path=/path/to/client.crt

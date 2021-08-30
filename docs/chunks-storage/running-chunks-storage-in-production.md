@@ -18,9 +18,9 @@ Local chunk storage is experimental and shouldn’t be used in production.
 Cortex requires a scalable storage back-end for production systems.
 It is recommended you use chunk storage with one of the following back-ends:
 
-* DynamoDB/S3 (see [AWS tips](../chunks-storage/aws-tips.md))
-* BigTable/GCS
-* Cassandra (see [Running chunks storage on Cassandra](./running-chunks-storage-with-cassandra.md))
+- DynamoDB/S3 (see [AWS tips](../chunks-storage/aws-tips.md))
+- BigTable/GCS
+- Cassandra (see [Running chunks storage on Cassandra](./running-chunks-storage-with-cassandra.md))
 
 Commercial cloud options are DynamoDB/S3 and Bigtable/GCS: the advantage is you don't have to know how to manage them, but the downside is they have specific costs.
 

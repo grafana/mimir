@@ -24,6 +24,7 @@ emitted.
 
 With a `runtime.yaml` file given below
 
+<!-- prettier-ignore-start -->
 [embedmd]:# (./overrides-exporter-runtime.yaml)
 ```yaml
 # file: runtime.yaml
@@ -39,6 +40,7 @@ overrides:
     max_samples_per_query: 100000
     max_series_per_query: 100000
 ```
+<!-- prettier-ignore-end -->
 
 The `overrides-exporter` is configured to run as follows
 

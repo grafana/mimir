@@ -9,9 +9,11 @@
 **Which issue(s) this PR fixes**:
 
 <!-- Please make sure you don't reference cortex issues here, as the references can be publicly seen under certain conditions -->
+
 Fixes #<issue number>
 
 **Checklist**
+
 - [ ] Tests updated
 - [ ] Documentation added
 - [ ] `CHANGELOG.md` updated - the order of entries should be `[CHANGE]`, `[FEATURE]`, `[ENHANCEMENT]`, `[BUGFIX]`

@@ -18,6 +18,7 @@ When a tenant is deleted from the external system that controls access to Cortex
 ## Background
 
 When using blocks storage, Cortex stores tenant’s data in several places:
+
 - object store for long-term storage of blocks,
 - ingesters disks for short-term storage. Ingesters eventually upload data to long-term storage,
 - various caches: query-frontend, chunks, index and metadata,
@@ -63,6 +64,7 @@ This object will contain the timestamp when it was created, so that we can delet
 We could reuse a subset of the proposed Thanos tombstones format, or use custom format.
 
 “delete_tenant_status” endpoint will report success, if all of the following are true:
+
 - There are no blocks for the tenant in the blocks bucket
 - There is a “deletion finished” object in the bucket for the tenant in the ruler configuration bucket.
 - There is a “deletion finished” object in the bucket for the tenant in the alertmanager configuration bucket.
@@ -107,6 +109,7 @@ Ingesters don’t scan object store for tenants.
 To clean up the local state on ingesters, we will implement closing and deletion of local per-tenant data for idle TSDB. (See Cortex PR #3491).
 This requires additional configuration for ingesters, specifically how long to wait before closing and deleting TSDB.
 This feature needs to work properly in two different scenarios:
+
 - Ingester is no longer receiving data due to ring changes (eg. scale up of ingesters)
 - Data is received because user has been deleted.
 
@@ -121,6 +124,7 @@ Alternatively, ingester could check whether deletion marker exists on the block 
 
 This deletion marker is stored in the ruler configuration bucket.
 When rulers discover this marker during the periodic sync of the rule groups, they will
+
 - stop the evaluation of the rule groups for the user,
 - delete tenant rule groups (when multiple rulers do this at the same time, they will race for deletion, and need to be prepared to handle possible “object not found” errors)
 - delete local state.
@@ -138,6 +142,7 @@ This must be done in external authorization proxy.**
 #### Alertmanager deletion marker
 
 Deletion marker for alert manager is stored in the alertmanager configuration bucket. Cleanup procedure for alertmanager data is similar to rulers – when individual alertmanager instances discover the marker, they will:
+
 - Delete tenant configuration
 - Delete local notifications and silences state
 - Ask other alertmanagers if they have any tenant state yet, and if not, write “deletion finished” marker back to the bucket.
@@ -149,4 +154,3 @@ Access to Alertmanager API must be disabled for tenant that is going to be delet
 ## Alternatives Considered
 
 Another possibility how to deal with tenant data deletion is to make purger component actively communicate with ingester, compactor, ruler and alertmanagers to make data deletion faster. In this case purger would need to understand how to reach out to all those components (with multiple ring configurations, one for each component type), and internal API calls would need to have strict semantics around when the data deletion is complete. This alternative has been rejected due to additional complexity and only small benefit in terms of how fast data would be deleted.
-

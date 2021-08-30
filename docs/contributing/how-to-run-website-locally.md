@@ -7,7 +7,6 @@ slug: how-to-run-the-website-locally
 
 The Cortex documentation is compiled into a website published at [cortexmetrics.io](https://cortexmetrics.io/). These instructions explain how to run the website locally, in order to have a quick feedback loop while contributing to the documentation or website styling.
 
-
 ## Initial setup
 
 The following initial setup is required only once:
@@ -19,7 +18,6 @@ The following initial setup is required only once:
    cd website && npm install && cd -
    ```
 4. Run `make BUILD_IN_CONTAINER=false web-build`
-
 
 ## Run it
 

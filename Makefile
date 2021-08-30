@@ -50,6 +50,8 @@ fetch-build-image:
 	docker tag $(BUILD_IMAGE):$(LATEST_BUILD_IMAGE_TAG) $(BUILD_IMAGE):latest
 	touch mimir-build-image/.uptodate
 
+# push-multiarch-build-image requires the ability to build images for multiple platforms:
+# https://docs.docker.com/buildx/working-with-buildx/#build-multi-platform-images
 push-multiarch-build-image:
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
@@ -118,7 +120,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= goimports-00767679e
+LATEST_BUILD_IMAGE_TAG ?= add-prettier-08d2e2a61
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -161,6 +163,7 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 
 lint: lint-packaging-scripts
 	misspell -error docs
+	prettier --check "**/*.md"
 
 	# Configured via .golangci.yml.
 	golangci-lint run

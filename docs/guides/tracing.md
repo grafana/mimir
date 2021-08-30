@@ -13,19 +13,20 @@ Cortex in production.
 
 In order to send traces you will need to set up a Jaeger deployment. A
 deployment includes either the jaeger all-in-one binary, or else a distributed
-system of agents, collectors, and queriers.  If running on Kubernetes, [Jaeger
+system of agents, collectors, and queriers. If running on Kubernetes, [Jaeger
 Kubernetes](https://github.com/jaegertracing/jaeger-kubernetes) is an excellent
 resource.
 
 ## Configuration
 
 In order to configure Cortex to send traces you must do two things:
+
 1. Set the `JAEGER_AGENT_HOST` environment variable in all components to point
    to your Jaeger agent. This defaults to `localhost`.
 1. Enable sampling in the appropriate components:
-   * The Ingester and Ruler self-initiate traces and should have sampling
+   - The Ingester and Ruler self-initiate traces and should have sampling
      explicitly enabled.
-   * Sampling for the Distributor and Query Frontend can be enabled in Cortex
+   - Sampling for the Distributor and Query Frontend can be enabled in Cortex
      or in an upstream service such as your frontdoor.
 
 To enable sampling in Cortex components you can specify either

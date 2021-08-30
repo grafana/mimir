@@ -30,6 +30,7 @@ tenants:
 We have all the metrics to track how many series, samples and queries each tenant is sending but don't have dashboards that help with this. We plan to have dashboards and UIs that will help operators monitor and control each tenants usage out of the box.
 
 ## Downsampling
+
 Downsampling means storing fewer samples, e.g. one per minute instead of one every 15 seconds.
 This makes queries over long periods more efficient. It can reduce storage space slightly if the full-detail data is discarded.
 
@@ -38,6 +39,7 @@ This makes queries over long periods more efficient. It can reduce storage space
 Cortex blocks storage supports deleting all data for a tenant after a time period (e.g. 3 months, 1 year), but we would also like to have custom retention for subsets of metrics (e.g. delete server metrics but retain business metrics).
 
 ## Exemplar support
+
 [Exemplars](https://docs.google.com/document/d/1ymZlc9yuTj8GvZyKz1r3KDRrhaOjZ1W1qZVW_5Gj7gA/edit)
 let you link metric samples to other data, such as distributed tracing.
 As of early 2021 Prometheus will collect exemplars and send them via remote write, but Cortex needs to be extended to handle them.

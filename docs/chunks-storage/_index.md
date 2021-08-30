@@ -11,18 +11,18 @@ The chunks storage is a Cortex storage engine which stores each single time seri
 
 The supported backends for the **index store** are:
 
-* [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
-* [Google Bigtable](https://cloud.google.com/bigtable)
-* [Apache Cassandra](https://cassandra.apache.org)
+- [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
+- [Google Bigtable](https://cloud.google.com/bigtable)
+- [Apache Cassandra](https://cassandra.apache.org)
 
 The supported backends for the **chunks store** are:
 
-* [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
-* [Google Bigtable](https://cloud.google.com/bigtable)
-* [Apache Cassandra](https://cassandra.apache.org)
-* [Amazon S3](https://aws.amazon.com/s3)
-* [Google Cloud Storage](https://cloud.google.com/storage/)
-* [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
+- [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
+- [Google Bigtable](https://cloud.google.com/bigtable)
+- [Apache Cassandra](https://cassandra.apache.org)
+- [Amazon S3](https://aws.amazon.com/s3)
+- [Google Cloud Storage](https://cloud.google.com/storage/)
+- [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
 
 ## Storage versioning
 
