@@ -11,24 +11,26 @@ import (
 
 // OverridesExporter exposes per-tenant resource limit overrides as Prometheus metrics
 type OverridesExporter struct {
-	overrides           *Overrides
+	defaultLimits       *Limits
+	tenantLimits        TenantLimits
 	overrideDescription *prometheus.Desc
 	defaultsDescription *prometheus.Desc
 }
 
 // NewOverridesExporter creates an OverridesExporter that reads updates to per-tenant
 // limits using the provided function.
-func NewOverridesExporter(overrides *Overrides) *OverridesExporter {
+func NewOverridesExporter(defaultLimits *Limits, tenantLimits TenantLimits) *OverridesExporter {
 	return &OverridesExporter{
-		overrides: overrides,
+		defaultLimits: defaultLimits,
+		tenantLimits:  tenantLimits,
 		overrideDescription: prometheus.NewDesc(
-			"cortex_overrides",
+			"cortex_limits_overrides",
 			"Resource limit overrides applied to tenants",
 			[]string{"limit_name", "user"},
 			nil,
 		),
 		defaultsDescription: prometheus.NewDesc(
-			"cortex_overrides_defaults",
+			"cortex_limits_defaults",
 			"Resource limit defaults for tenants without overrides",
 			[]string{"limit_name"},
 			nil,
@@ -42,24 +44,25 @@ func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
-	allLimits := oe.overrides.tenantLimits.AllByUserID()
 	// Write path limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.overrides.defaultLimits.IngestionRate, "ingestion_rate")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.IngestionBurstSize), "ingestion_burst_size")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxLocalSeriesPerUser), "max_local_series_per_user")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxLocalSeriesPerMetric), "max_local_series_per_metric")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxGlobalSeriesPerUser), "max_global_series_per_user")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, oe.defaultLimits.IngestionRate, "ingestion_rate")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.IngestionBurstSize), "ingestion_burst_size")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxLocalSeriesPerUser), "max_local_series_per_user")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxLocalSeriesPerMetric), "max_local_series_per_metric")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalSeriesPerUser), "max_global_series_per_user")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxGlobalSeriesPerMetric), "max_global_series_per_metric")
 
 	// Read path limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxSeriesPerQuery), "max_series_per_query")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.MaxSamplesPerQuery), "max_samples_per_query")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxFetchedSeriesPerQuery), "max_fetched_series_per_query")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxFetchedChunkBytesPerQuery), "max_fetched_chunk_bytes_per_query")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxSeriesPerQuery), "max_series_per_query")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.MaxSamplesPerQuery), "max_samples_per_query")
 
 	// Ruler limits
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group")
-	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.overrides.defaultLimits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RulerMaxRulesPerRuleGroup), "ruler_max_rules_per_rule_group")
+	ch <- prometheus.MustNewConstMetric(oe.defaultsDescription, prometheus.GaugeValue, float64(oe.defaultLimits.RulerMaxRuleGroupsPerTenant), "ruler_max_rule_groups_per_tenant")
+
+	allLimits := oe.tenantLimits.AllByUserID()
 	for tenant, limits := range allLimits {
 		// Write path limits
 		ch <- prometheus.MustNewConstMetric(oe.overrideDescription, prometheus.GaugeValue, limits.IngestionRate, "ingestion_rate", tenant)

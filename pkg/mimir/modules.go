@@ -187,7 +187,7 @@ func (t *Mimir) initOverridesExporter() (services.Service, error) {
 		return nil, errors.New("overrides-exporter has been enabled, but no runtime configuration file was configured")
 	}
 
-	exporter := validation.NewOverridesExporter(t.Overrides)
+	exporter := validation.NewOverridesExporter(&t.Cfg.LimitsConfig, t.TenantLimits)
 	prometheus.MustRegister(exporter)
 
 	// the overrides exporter has no state and reads overrides for runtime configuration each time it
