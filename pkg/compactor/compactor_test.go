@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -39,7 +40,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/concurrency"
@@ -818,7 +818,7 @@ func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunni
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
 	bucketClient.MockUpload("user-2/bucket-index.json.gz", nil)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := prepareConfig()
@@ -897,7 +897,7 @@ func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndM
 	}
 
 	// Create a shared KV Store
-	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
@@ -1217,7 +1217,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	}
 
 	// Create a shared KV Store
-	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	kvstore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
@@ -1292,7 +1292,7 @@ func TestCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{}, nil)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	cfg := prepareConfig()

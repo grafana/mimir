@@ -13,8 +13,8 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 
-	"github.com/grafana/mimir/pkg/ring/kv/codec"
-	"github.com/grafana/mimir/pkg/ring/kv/memberlist"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
 )
 
 // ByAddr is a sortable list of InstanceDesc.

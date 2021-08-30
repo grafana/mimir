@@ -11,8 +11,9 @@ import (
 	"os"
 	"time"
 
+	"github.com/grafana/dskit/kv"
+
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv"
 	"github.com/grafana/mimir/pkg/util/flagext"
 )
 

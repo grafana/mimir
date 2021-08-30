@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	promcfg "github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -493,18 +494,24 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		return nil, errors.Wrap(err, "failed to create the bucket client")
 	}
 
-	i := &Ingester{
-		cfg:           cfg,
-		clientConfig:  clientConfig,
-		limits:        limits,
-		chunkStore:    nil,
-		usersMetadata: map[string]*userMetricsMetadata{},
-		wal:           &noopWAL{},
-		TSDBState:     newTSDBState(cfg, bucketClient, registerer),
-		logger:        logger,
-		ingestionRate: util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
+	if err != nil {
+		return nil, err
 	}
-	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+
+	i := &Ingester{
+		cfg:                 cfg,
+		clientConfig:        clientConfig,
+		limits:              limits,
+		chunkStore:          nil,
+		usersMetadata:       map[string]*userMetricsMetadata{},
+		wal:                 &noopWAL{},
+		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
+		logger:              logger,
+		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		activeSeriesMatcher: asm,
+	}
+	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -557,13 +564,14 @@ func NewV2ForFlusher(cfg Config, limits *validation.Overrides, registerer promet
 	}
 
 	i := &Ingester{
-		cfg:       cfg,
-		limits:    limits,
-		wal:       &noopWAL{},
-		TSDBState: newTSDBState(cfg, bucketClient, registerer),
-		logger:    logger,
+		cfg:                 cfg,
+		limits:              limits,
+		wal:                 &noopWAL{},
+		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
 	}
-	i.metrics = newIngesterMetrics(registerer, false, false, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.TSDBState.shipperIngesterID = "flusher"
 
@@ -669,6 +677,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	ingestionRateTicker := time.NewTicker(instanceIngestionRateTickInterval)
 	defer ingestionRateTicker.Stop()
 
+	exemplarUpdateTicker := time.NewTicker(i.cfg.ExemplarsUpdatePeriod)
+	defer exemplarUpdateTicker.Stop()
+
 	var activeSeriesTickerChan <-chan time.Time
 	if i.cfg.ActiveSeriesMetricsEnabled {
 		t := time.NewTicker(i.cfg.ActiveSeriesMetricsUpdatePeriod)
@@ -694,6 +705,9 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			}
 			i.userStatesMtx.RUnlock()
 
+		case <-exemplarUpdateTicker.C:
+			i.applyExemplarsSettings()
+
 		case <-activeSeriesTickerChan:
 			i.v2UpdateActiveSeries()
 
@@ -715,7 +729,38 @@ func (i *Ingester) v2UpdateActiveSeries() {
 		}
 
 		userDB.activeSeries.Purge(purgeTime)
-		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(userDB.activeSeries.Active()))
+		allActive, activeMatching := userDB.activeSeries.Active()
+		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
+			i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+		}
+	}
+}
+
+// Go through all tenants and apply the current max-exemplars setting.
+// If it changed, tsdb will resize the buffer; if it didn't change tsdb will return quickly.
+func (i *Ingester) applyExemplarsSettings() {
+	for _, userID := range i.getTSDBUsers() {
+		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
+		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
+		// We populate a Config struct with just one value, which is OK
+		// because Head.ApplyConfig only looks at one value.
+		// The other fields in Config are things like Rules, Scrape
+		// settings, which don't apply to Head.
+		cfg := promcfg.Config{
+			StorageConfig: promcfg.StorageConfig{
+				ExemplarsConfig: &promcfg.ExemplarsConfig{
+					MaxExemplars: int64(localValue),
+				},
+			},
+		}
+		tsdb := i.getTSDB(userID)
+		if tsdb == nil {
+			continue
+		}
+		if err := tsdb.Head().ApplyConfig(&cfg); err != nil {
+			level.Error(i.logger).Log("msg", "failed to apply config to TSDB", "user", userID, "err", err)
+		}
 	}
 }
 
@@ -738,18 +783,6 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		return nil, err
 	}
 
-	il := i.getInstanceLimits()
-	if il != nil && il.MaxIngestionRate > 0 {
-		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
-			return nil, errMaxSamplesPushRateLimitReached
-		}
-	}
-
-	db, err := i.getOrCreateTSDB(userID, false)
-	if err != nil {
-		return nil, wrapWithUser(err, userID)
-	}
-
 	// Ensure the ingester shutdown procedure hasn't started
 	i.userStatesMtx.RLock()
 	if i.stopped {
@@ -758,14 +791,34 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	}
 	i.userStatesMtx.RUnlock()
 
+	il := i.getInstanceLimits()
+	if il != nil && il.MaxIngestionRate > 0 {
+		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
+			return nil, errMaxSamplesPushRateLimitReached
+		}
+	}
+
+	// Given metadata is a best-effort approach, and we don't halt on errors
+	// process it before samples. Otherwise, we risk returning an error before ingestion.
+	if ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata()); ingestedMetadata > 0 {
+		// Distributor counts both samples and metadata, so for consistency ingester does the same.
+		i.ingestionRate.Add(int64(ingestedMetadata))
+	}
+
+	// Early exit if no timeseries in request - don't create a TSDB or an appender.
+	if len(req.Timeseries) == 0 {
+		return &mimirpb.WriteResponse{}, nil
+	}
+
+	db, err := i.getOrCreateTSDB(userID, false)
+	if err != nil {
+		return nil, wrapWithUser(err, userID)
+	}
+
 	if err := db.acquireAppendLock(); err != nil {
 		return &mimirpb.WriteResponse{}, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(err, userID).Error())
 	}
 	defer db.releaseAppendLock()
-
-	// Given metadata is a best-effort approach, and we don't halt on errors
-	// process it before samples. Otherwise, we risk returning an error before ingestion.
-	ingestedMetadata := i.pushMetadata(ctx, userID, req.GetMetadata())
 
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
@@ -871,10 +924,10 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 			})
 		}
 
-		if i.cfg.BlocksStorageConfig.TSDB.MaxExemplars > 0 {
+		if len(ts.Exemplars) > 0 && i.limits.MaxGlobalExemplarsPerUser(userID) > 0 {
 			// app.AppendExemplar currently doesn't create the series, it must
 			// already exist.  If it does not then drop.
-			if ref == 0 && len(ts.Exemplars) > 0 {
+			if ref == 0 {
 				updateFirstPartial(func() error {
 					return wrappedTSDBIngestExemplarErr(errExemplarRef,
 						model.Time(ts.Exemplars[0].TimestampMs), ts.Labels, ts.Exemplars[0].Labels)
@@ -942,8 +995,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		validation.DiscardedSamples.WithLabelValues(perMetricSeriesLimit, userID).Add(float64(perMetricSeriesLimitCount))
 	}
 
-	// Distributor counts both samples and metadata, so for consistency ingester does the same.
-	i.ingestionRate.Add(int64(succeededSamplesCount + ingestedMetadata))
+	i.ingestionRate.Add(int64(succeededSamplesCount))
 
 	switch req.Source {
 	case mimirpb.RULE:
@@ -1622,7 +1674,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 
 	userDB := &userTSDB{
 		userID:              userID,
-		activeSeries:        NewActiveSeries(),
+		activeSeries:        NewActiveSeries(i.activeSeriesMatcher),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
@@ -1631,10 +1683,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		instanceSeriesCount: &i.TSDBState.seriesCount,
 	}
 
-	enableExemplars := false
-	if i.cfg.BlocksStorageConfig.TSDB.MaxExemplars > 0 {
-		enableExemplars = true
-	}
+	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:         i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
@@ -1647,8 +1696,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		WALSegmentSize:            i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		SeriesLifecycleCallback:   userDB,
 		BlocksToDelete:            userDB.blocksToDelete,
-		EnableExemplarStorage:     enableExemplars,
-		MaxExemplars:              int64(i.cfg.BlocksStorageConfig.TSDB.MaxExemplars),
+		EnableExemplarStorage:     true, // enable for everyone so we can raise the limit later
+		MaxExemplars:              int64(maxExemplars),
 		SeriesHashCache:           i.TSDBState.seriesHashCache,
 	}, nil)
 	if err != nil {
@@ -1744,6 +1793,9 @@ func (i *Ingester) closeAllTSDB() {
 
 			i.metrics.memUsers.Dec()
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+			for _, name := range i.metrics.activeSeriesCustomTrackerNames {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
 		}(userDB)
 	}
 

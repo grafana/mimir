@@ -144,6 +144,52 @@ func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label)
 	return
 }
 
+func GenerateNSeries(nSeries, nExemplars int, name func() string, ts time.Time, additionalLabels func() []prompb.Label) (series []prompb.TimeSeries, vector model.Vector) {
+	tsMillis := TimeToMilliseconds(ts)
+
+	// Generate the series
+	for i := 0; i < nSeries; i++ {
+		lbls := []prompb.Label{
+			{Name: labels.MetricName, Value: name()},
+		}
+		if additionalLabels != nil {
+			lbls = append(lbls, additionalLabels()...)
+		}
+
+		value := rand.Float64()
+
+		exemplars := []prompb.Exemplar{}
+		if i < nExemplars {
+			exemplars = []prompb.Exemplar{
+				{Value: value, Timestamp: tsMillis, Labels: []prompb.Label{{Name: "trace_id", Value: "1234"}}},
+			}
+		}
+
+		series = append(series, prompb.TimeSeries{
+			Labels: lbls,
+			Samples: []prompb.Sample{
+				{Value: value, Timestamp: tsMillis},
+			},
+			Exemplars: exemplars,
+		})
+	}
+
+	// Generate the expected vector when querying it
+	for i := 0; i < nSeries; i++ {
+		metric := model.Metric{}
+		for _, lbl := range series[i].Labels {
+			metric[model.LabelName(lbl.Name)] = model.LabelValue(lbl.Value)
+		}
+
+		vector = append(vector, &model.Sample{
+			Metric:    metric,
+			Value:     model.SampleValue(series[i].Samples[0].Value),
+			Timestamp: model.Time(tsMillis),
+		})
+	}
+	return
+}
+
 // GetTempDirectory creates a temporary directory for shared integration
 // test files, either in the working directory or a directory referenced by
 // the E2E_TEMP_DIR environment variable

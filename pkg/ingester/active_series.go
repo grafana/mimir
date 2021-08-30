@@ -25,33 +25,42 @@ const (
 
 // ActiveSeries is keeping track of recently active series for a single tenant.
 type ActiveSeries struct {
+	asm     *ActiveSeriesMatchers
 	stripes [numActiveSeriesStripes]activeSeriesStripe
 }
 
 // activeSeriesStripe holds a subset of the series timestamps for a single tenant.
 type activeSeriesStripe struct {
+	asm *ActiveSeriesMatchers
+
 	// Unix nanoseconds. Only used by purge. Zero = unknown.
 	// Updated in purge and when old timestamp is used when updating series (in this case, oldestEntryTs is updated
 	// without holding the lock -- hence the atomic).
 	oldestEntryTs atomic.Int64
 
-	mu     sync.RWMutex
-	refs   map[uint64][]activeSeriesEntry
-	active int // Number of active entries in this stripe. Only decreased during purge or clear.
+	mu             sync.RWMutex
+	refs           map[uint64][]activeSeriesEntry
+	active         int   // Number of active entries in this stripe. Only decreased during purge or clear.
+	activeMatching []int // Number of active entries in this stripe matching each matcher of the configured ActiveSeriesMatchers.
 }
 
 // activeSeriesEntry holds a timestamp for single series.
 type activeSeriesEntry struct {
-	lbs   labels.Labels
-	nanos *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	lbs     labels.Labels
+	nanos   *atomic.Int64 // Unix timestamp in nanoseconds. Needs to be a pointer because we don't store pointers to entries in the stripe.
+	matches []bool        // Which matchers of ActiveSeriesMatchers does this series match
 }
 
-func NewActiveSeries() *ActiveSeries {
-	c := &ActiveSeries{}
+func NewActiveSeries(asm *ActiveSeriesMatchers) *ActiveSeries {
+	c := &ActiveSeries{asm: asm}
 
 	// Stripes are pre-allocated so that we only read on them and no lock is required.
 	for i := 0; i < numActiveSeriesStripes; i++ {
-		c.stripes[i].refs = map[uint64][]activeSeriesEntry{}
+		c.stripes[i] = activeSeriesStripe{
+			asm:            asm,
+			refs:           map[uint64][]activeSeriesEntry{},
+			activeMatching: makeIntSliceIfNotEmpty(len(asm.MatcherNames())),
+		}
 	}
 
 	return c
@@ -99,12 +108,27 @@ func (c *ActiveSeries) clear() {
 	}
 }
 
-func (c *ActiveSeries) Active() int {
+func (c *ActiveSeries) Active() (int, []int) {
 	total := 0
+	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()))
 	for s := 0; s < numActiveSeriesStripes; s++ {
-		total += c.stripes[s].getActive()
+		total += c.stripes[s].getTotalAndUpdateMatching(totalMatching)
 	}
-	return total
+	return total, totalMatching
+}
+
+// getTotalAndUpdateMatching will return the total active series in the stripe and also update the slice provided
+// with each matcher's total.
+func (s *activeSeriesStripe) getTotalAndUpdateMatching(matching []int) int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// len(matching) == len(s.activeMatching) by design, and it could be nil
+	for i, a := range s.activeMatching {
+		matching[i] += a
+	}
+
+	return s.active
 }
 
 func (s *activeSeriesStripe) updateSeriesTimestamp(now time.Time, series labels.Labels, fingerprint uint64, labelsCopy func(labels.Labels) labels.Labels) {
@@ -158,10 +182,19 @@ func (s *activeSeriesStripe) findOrCreateEntryForSeries(fingerprint uint64, seri
 		}
 	}
 
+	matches := s.asm.Matches(series)
+
 	s.active++
+	for i, ok := range matches {
+		if ok {
+			s.activeMatching[i]++
+		}
+	}
+
 	e := activeSeriesEntry{
-		lbs:   labelsCopy(series),
-		nanos: atomic.NewInt64(nowNanos),
+		lbs:     labelsCopy(series),
+		nanos:   atomic.NewInt64(nowNanos),
+		matches: matches,
 	}
 
 	s.refs[fingerprint] = append(s.refs[fingerprint], e)
@@ -177,6 +210,9 @@ func (s *activeSeriesStripe) clear() {
 	s.oldestEntryTs.Store(0)
 	s.refs = map[uint64][]activeSeriesEntry{}
 	s.active = 0
+	for i := range s.activeMatching {
+		s.activeMatching[i] = 0
+	}
 }
 
 func (s *activeSeriesStripe) purge(keepUntil time.Time) {
@@ -190,6 +226,7 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 	defer s.mu.Unlock()
 
 	active := 0
+	activeMatching := makeIntSliceIfNotEmpty(len(s.activeMatching))
 
 	oldest := int64(math.MaxInt64)
 	for fp, entries := range s.refs {
@@ -203,6 +240,11 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 			}
 
 			active++
+			for i, ok := range entries[0].matches {
+				if ok {
+					activeMatching[i]++
+				}
+			}
 			if ts < oldest {
 				oldest = ts
 			}
@@ -229,6 +271,14 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 			delete(s.refs, fp)
 		} else {
 			active += cnt
+			for i := range entries {
+				for i, ok := range entries[i].matches {
+					if ok {
+						activeMatching[i]++
+					}
+				}
+			}
+
 			s.refs[fp] = entries
 		}
 	}
@@ -239,11 +289,12 @@ func (s *activeSeriesStripe) purge(keepUntil time.Time) {
 		s.oldestEntryTs.Store(oldest)
 	}
 	s.active = active
+	s.activeMatching = activeMatching
 }
 
-func (s *activeSeriesStripe) getActive() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	return s.active
+func makeIntSliceIfNotEmpty(l int) []int {
+	if l == 0 {
+		return nil
+	}
+	return make([]int, l)
 }

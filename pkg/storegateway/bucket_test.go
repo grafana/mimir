@@ -1617,7 +1617,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 	// so that they will span across multiple chunks.
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(tmpDir, "block")
-	headOpts.ChunkRange = 10000000000
+	headOpts.ChunkRange = math.MaxInt64
 
 	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
 	assert.NoError(t, err)

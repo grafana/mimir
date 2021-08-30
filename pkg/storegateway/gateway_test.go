@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -43,7 +44,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -139,7 +139,7 @@ func TestStoreGateway_InitialSyncWithDefaultShardingEnabled(t *testing.T) {
 			gatewayCfg := mockGatewayConfig()
 			gatewayCfg.ShardingEnabled = true
 			storageCfg := mockStorageConfig(t)
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			bucketClient := &bucket.ClientMock{}
@@ -214,7 +214,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	gatewayCfg := mockGatewayConfig()
 	gatewayCfg.ShardingEnabled = true
 	storageCfg := mockStorageConfig(t)
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	bucketClient := &bucket.ClientMock{}
@@ -321,7 +321,7 @@ func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
 				ringStore, closer := consul.NewInMemoryClientWithConfig(ring.GetCodec(), consul.Config{
 					MaxCasRetries: 20,
 					CasRetryDelay: 500 * time.Millisecond,
-				})
+				}, log.NewNopLogger())
 				t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 				// Create the configured number of gateways.
@@ -423,7 +423,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	t.Log("random generator seed:", seed)
 
 	ctx := context.Background()
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create the configured number of gateways.
@@ -598,7 +598,7 @@ func TestStoreGateway_ShouldSupportLoadRingTokensFromFile(t *testing.T) {
 			gatewayCfg.ShardingRing.TokensFilePath = tokensFile.Name()
 
 			storageCfg := mockStorageConfig(t)
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			bucketClient := &bucket.ClientMock{}
@@ -727,7 +727,7 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 			storageCfg.BucketStore.SyncInterval = time.Hour // Do not trigger the periodic sync in this test.
 
 			reg := prometheus.NewPedanticRegistry()
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			bucketClient := &bucket.ClientMock{}
@@ -790,7 +790,7 @@ func TestStoreGateway_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testin
 
 	storageCfg := mockStorageConfig(t)
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	bucketClient := &bucket.ClientMock{}

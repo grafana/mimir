@@ -6,6 +6,7 @@ package storegateway
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -50,7 +51,7 @@ func createBlock(
 ) (id ulid.ULID, err error) {
 	headOpts := tsdb.DefaultHeadOptions()
 	headOpts.ChunkDirRoot = filepath.Join(dir, "chunks")
-	headOpts.ChunkRange = 10000000000
+	headOpts.ChunkRange = math.MaxInt64
 	h, err := tsdb.NewHead(nil, nil, nil, headOpts, nil)
 	if err != nil {
 		return id, errors.Wrap(err, "create head block")

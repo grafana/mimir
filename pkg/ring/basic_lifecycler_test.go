@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ring/kv"
-	"github.com/grafana/mimir/pkg/ring/kv/consul"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -415,7 +415,9 @@ func prepareBasicLifecycler(t testing.TB, cfg BasicLifecyclerConfig) (*BasicLife
 }
 
 func prepareBasicLifecyclerWithDelegate(t testing.TB, cfg BasicLifecyclerConfig, delegate BasicLifecyclerDelegate) (*BasicLifecycler, kv.Client, error) {
-	store, closer := consul.NewInMemoryClient(GetCodec())
+	t.Helper()
+
+	store, closer := consul.NewInMemoryClient(GetCodec(), log.NewNopLogger())
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	lifecycler, err := NewBasicLifecycler(cfg, testRingName, testRingKey, store, delegate, log.NewNopLogger(), nil)
