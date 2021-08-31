@@ -186,7 +186,11 @@ func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
 	if cfg.shuffleShardingEnabled {
 		require.Equal(t, float64(numQueries), diff)
 	} else {
-		require.InDelta(t, 0, diff, numQueries*0.20) // Both queriers should have roughly equal number of requests, with possible delta.
+		// Both queriers should have roughly equal number of requests, with possible delta. 50% delta is
+		// picked to be small enough so that load between queriers would not be wildly different (allow a
+		// max difference of 25 queries vs 75 queries) but tolerant of the variability of doing something
+		// probabilistic like this with such a small sample size (only 100 queries).
+		require.InDelta(t, 0, diff, numQueries*0.50)
 	}
 
 	// Ensure no service-specific metrics prefix is used by the wrong service.
