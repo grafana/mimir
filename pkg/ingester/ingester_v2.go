@@ -743,6 +743,9 @@ func (i *Ingester) applyExemplarsSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
+		if localValue == 0 {
+			localValue = 1 // work round bug in Prometheus that we cannot change from 0 to non-0 value FIXME
+		}
 		// We populate a Config struct with just one value, which is OK
 		// because Head.ApplyConfig only looks at one value.
 		// The other fields in Config are things like Rules, Scrape
@@ -1684,6 +1687,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
+	if maxExemplars == 0 {
+		maxExemplars = 1 // work round bug in Prometheus that we cannot change from 0 to non-0 value FIXME
+	}
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:         i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
