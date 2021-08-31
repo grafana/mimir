@@ -34,7 +34,7 @@ const (
 	modelTimeHour = model.Time(time.Hour / time.Millisecond)
 )
 
-func setupTestDeleteStore(t *testing.T, registry *prometheus.Registry) *DeleteStore {
+func setupTestDeleteStore(t *testing.T, registry prometheus.Registerer) *DeleteStore {
 	var (
 		deleteStoreConfig DeleteStoreConfig
 		tbmConfig         chunk.TableManagerConfig
@@ -49,13 +49,8 @@ func setupTestDeleteStore(t *testing.T, registry *prometheus.Registry) *DeleteSt
 
 	extraTables := []chunk.ExtraTables{{TableClient: mockStorage, Tables: deleteStoreConfig.GetTables()}}
 
-	// Weird go thing: If you have a pointer to an interface Go will think that it is a valid reference, even if you pass in nil.
-	// So, to fix this we have to make a nil check here and use nil for the registry. https://golang.org/doc/faq#nil_error
-	if registry == nil {
-		tableManager, err = chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, nil)
-	} else {
-		tableManager, err = chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, registry)
-	}
+	tableManager, err = chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, registry)
+
 	require.NoError(t, err)
 
 	require.NoError(t, tableManager.SyncTables(context.Background()))
@@ -81,7 +76,7 @@ func setupStoresAndPurger(t *testing.T) (*DeleteStore, chunk.Store, chunk.Object
 	return deleteStore, chunkStore, storageClient, purger, registry
 }
 
-func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient, registry *prometheus.Registry) *Purger {
+func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient, registry prometheus.Registerer) *Purger {
 	var (
 		purger *Purger
 		err    error
@@ -89,13 +84,8 @@ func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store,
 	)
 
 	flagext.DefaultValues(&cfg)
-	// Weird go thing: If you have a pointer to an interface Go will think that it is a valid reference, even if you pass in nil.
-	// So, to fix this we have to make a nil check here and use nil for the registry. https://golang.org/doc/faq#nil_error
-	if registry == nil {
-		purger, err = NewPurger(cfg, deleteStore, chunkStore, storageClient, nil)
-	} else {
-		purger, err = NewPurger(cfg, deleteStore, chunkStore, storageClient, registry)
-	}
+
+	purger, err = NewPurger(cfg, deleteStore, chunkStore, storageClient, registry)
 	require.NoError(t, err)
 	return purger
 }
@@ -438,7 +428,7 @@ func TestPurger_Metrics(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), purger))
 
 	// Create a new purger and registry.
-	// We used make a new registry in setupPurger but has been moved to setupStoresAndPurger, so to keep the same functionality and prevent double registering metrics we do so here.
+	// We used to make a new registry in setupPurger but that has been moved to setupStoresAndPurger, so to keep the same functionality and prevent double registering metrics we do so here.
 	reg2 := prometheus.NewRegistry()
 	purger = setupPurger(t, deleteStore, chunkStore, storageClient, reg2)
 
