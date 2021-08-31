@@ -14,13 +14,13 @@ import (
 )
 
 func TestOverridesExporter_noConfig(t *testing.T) {
-	exporter := NewOverridesExporter(&Limits{}, nil)
+	exporter := NewOverridesExporter(&Limits{}, newMockTenantLimits(nil))
 
 	// With no updated override configurations, there should be no override metrics
-	count := testutil.CollectAndCount(exporter, "cortex_overrides")
+	count := testutil.CollectAndCount(exporter, "cortex_limits_overrides")
 	assert.Equal(t, 0, count)
 	// The defaults should exist though
-	count = testutil.CollectAndCount(exporter, "cortex_overrides_defaults")
+	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
 	assert.Equal(t, 12, count)
 }
 
@@ -57,42 +57,42 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		RulerMaxRuleGroupsPerTenant:  33,
 	}, newMockTenantLimits(tenantLimits))
 	limitsMetrics := `
-# HELP cortex_overrides Resource limit overrides applied to tenants
-# TYPE cortex_overrides gauge
-cortex_overrides{limit_name="ingestion_rate",user="tenant-a"} 10
-cortex_overrides{limit_name="ingestion_burst_size",user="tenant-a"} 11
-cortex_overrides{limit_name="max_local_series_per_user",user="tenant-a"} 12
-cortex_overrides{limit_name="max_local_series_per_metric",user="tenant-a"} 13
-cortex_overrides{limit_name="max_global_series_per_user",user="tenant-a"} 14
-cortex_overrides{limit_name="max_global_series_per_metric",user="tenant-a"} 15
-cortex_overrides{limit_name="max_fetched_series_per_query",user="tenant-a"} 16
-cortex_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
-cortex_overrides{limit_name="max_series_per_query",user="tenant-a"} 18
-cortex_overrides{limit_name="max_samples_per_query",user="tenant-a"} 19
-cortex_overrides{limit_name="ruler_max_rules_per_rule_group",user="tenant-a"} 20
-cortex_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tenant-a"} 21
+# HELP cortex_limits_overrides Resource limit overrides applied to tenants
+# TYPE cortex_limits_overrides gauge
+cortex_limits_overrides{limit_name="ingestion_rate",user="tenant-a"} 10
+cortex_limits_overrides{limit_name="ingestion_burst_size",user="tenant-a"} 11
+cortex_limits_overrides{limit_name="max_local_series_per_user",user="tenant-a"} 12
+cortex_limits_overrides{limit_name="max_local_series_per_metric",user="tenant-a"} 13
+cortex_limits_overrides{limit_name="max_global_series_per_user",user="tenant-a"} 14
+cortex_limits_overrides{limit_name="max_global_series_per_metric",user="tenant-a"} 15
+cortex_limits_overrides{limit_name="max_fetched_series_per_query",user="tenant-a"} 16
+cortex_limits_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
+cortex_limits_overrides{limit_name="max_series_per_query",user="tenant-a"} 18
+cortex_limits_overrides{limit_name="max_samples_per_query",user="tenant-a"} 19
+cortex_limits_overrides{limit_name="ruler_max_rules_per_rule_group",user="tenant-a"} 20
+cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tenant-a"} 21
 `
 
 	// Make sure each override matches the values from the supplied `Limit`
-	err := testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_overrides")
+	err := testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_overrides")
 	assert.NoError(t, err)
 
 	limitsMetrics = `
-# HELP cortex_overrides_defaults Resource limit defaults for tenants without overrides
-# TYPE cortex_overrides_defaults gauge
-cortex_overrides_defaults{limit_name="ingestion_rate"} 22
-cortex_overrides_defaults{limit_name="ingestion_burst_size"} 23
-cortex_overrides_defaults{limit_name="max_local_series_per_user"} 24
-cortex_overrides_defaults{limit_name="max_local_series_per_metric"} 25
-cortex_overrides_defaults{limit_name="max_global_series_per_user"} 26
-cortex_overrides_defaults{limit_name="max_global_series_per_metric"} 27
-cortex_overrides_defaults{limit_name="max_fetched_series_per_query"} 28
-cortex_overrides_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
-cortex_overrides_defaults{limit_name="max_series_per_query"} 30
-cortex_overrides_defaults{limit_name="max_samples_per_query"} 31
-cortex_overrides_defaults{limit_name="ruler_max_rules_per_rule_group"} 32
-cortex_overrides_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 33
+# HELP cortex_limits_defaults Resource limit defaults for tenants without overrides
+# TYPE cortex_limits_defaults gauge
+cortex_limits_defaults{limit_name="ingestion_rate"} 22
+cortex_limits_defaults{limit_name="ingestion_burst_size"} 23
+cortex_limits_defaults{limit_name="max_local_series_per_user"} 24
+cortex_limits_defaults{limit_name="max_local_series_per_metric"} 25
+cortex_limits_defaults{limit_name="max_global_series_per_user"} 26
+cortex_limits_defaults{limit_name="max_global_series_per_metric"} 27
+cortex_limits_defaults{limit_name="max_fetched_series_per_query"} 28
+cortex_limits_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
+cortex_limits_defaults{limit_name="max_series_per_query"} 30
+cortex_limits_defaults{limit_name="max_samples_per_query"} 31
+cortex_limits_defaults{limit_name="ruler_max_rules_per_rule_group"} 32
+cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 33
 `
-	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_overrides_defaults")
+	err = testutil.CollectAndCompare(exporter, bytes.NewBufferString(limitsMetrics), "cortex_limits_defaults")
 	assert.NoError(t, err)
 }

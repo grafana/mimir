@@ -39,8 +39,8 @@ func NewOverridesExporter(defaultLimits *Limits, tenantLimits TenantLimits) *Ove
 }
 
 func (oe *OverridesExporter) Describe(ch chan<- *prometheus.Desc) {
-	ch <- oe.overrideDescription
 	ch <- oe.defaultsDescription
+	ch <- oe.overrideDescription
 }
 
 func (oe *OverridesExporter) Collect(ch chan<- prometheus.Metric) {
