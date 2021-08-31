@@ -25,7 +25,6 @@
   * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
   * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
 * [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
-* [CHANGE] Updated mimir with KV package from dskit to take a registry to register metrics; as a note with consul KV clients we will register a `cortex_consul_request_duration_seconds` and `cortex_kv_request_duration_seconds` metric #189
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172
   * New config options:
