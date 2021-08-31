@@ -68,7 +68,7 @@ type ShardedQuerier struct {
 
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
-func (q *ShardedQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *ShardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
@@ -94,12 +94,12 @@ func (q *ShardedQuerier) Select(_ bool, _ *storage.SelectHints, matchers ...*lab
 		return storage.ErrSeriesSet(err)
 	}
 
-	return q.handleEmbeddedQueries(queries)
+	return q.handleEmbeddedQueries(queries, hints)
 }
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
-func (q *ShardedQuerier) handleEmbeddedQueries(queries []string) storage.SeriesSet {
+func (q *ShardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.SelectHints) storage.SeriesSet {
 	var (
 		jobs      = concurrency.CreateJobsFromStrings(queries)
 		streamsMx sync.Mutex
@@ -131,7 +131,7 @@ func (q *ShardedQuerier) handleEmbeddedQueries(queries []string) storage.SeriesS
 		return storage.ErrSeriesSet(err)
 	}
 
-	return NewSeriesSet(streams)
+	return newSeriesSetFromEmbeddedQueriesResults(streams, hints)
 }
 
 // LabelValues implements storage.LabelQuerier.

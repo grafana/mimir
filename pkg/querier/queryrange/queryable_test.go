@@ -144,44 +144,45 @@ func TestShardedQuerier_Select(t *testing.T) {
 					labels.MustNewMatcher(labels.MatchEqual, astmapper.EmbeddedQueriesLabelName, encoded),
 				)
 				require.Nil(t, set.Err())
-				require.Equal(
-					t,
-					NewSeriesSet([]SampleStream{
-						{
-							Labels: []mimirpb.LabelAdapter{
-								{Name: "a", Value: "a1"},
-								{Name: "b", Value: "b1"},
+
+				expected := []SampleStream{
+					{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: "a", Value: "a1"},
+							{Name: "b", Value: "b1"},
+						},
+						Samples: []mimirpb.Sample{
+							{
+								Value:       1,
+								TimestampMs: 1,
 							},
-							Samples: []mimirpb.Sample{
-								{
-									Value:       1,
-									TimestampMs: 1,
-								},
-								{
-									Value:       2,
-									TimestampMs: 2,
-								},
+							{
+								Value:       2,
+								TimestampMs: 2,
 							},
 						},
-						{
-							Labels: []mimirpb.LabelAdapter{
-								{Name: "a", Value: "a1"},
-								{Name: "b", Value: "b1"},
+					},
+					{
+						Labels: []mimirpb.LabelAdapter{
+							{Name: "a", Value: "a1"},
+							{Name: "b", Value: "b1"},
+						},
+						Samples: []mimirpb.Sample{
+							{
+								Value:       8,
+								TimestampMs: 1,
 							},
-							Samples: []mimirpb.Sample{
-								{
-									Value:       8,
-									TimestampMs: 1,
-								},
-								{
-									Value:       9,
-									TimestampMs: 2,
-								},
+							{
+								Value:       9,
+								TimestampMs: 2,
 							},
 						},
-					}),
-					set,
-				)
+					},
+				}
+
+				actual, err := seriesSetToSampleStreams(set)
+				require.NoError(t, err)
+				assertEqualSampleStream(t, expected, actual)
 			},
 		},
 	}
