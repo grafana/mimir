@@ -76,7 +76,7 @@ func setupStoresAndPurger(t *testing.T) (*DeleteStore, chunk.Store, chunk.Object
 
 func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient, registerer prometheus.Registerer) *Purger {
 	var (
-		cfg    Config
+		cfg Config
 	)
 
 	flagext.DefaultValues(&cfg)
