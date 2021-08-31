@@ -202,7 +202,7 @@ func verifyClientMetricsHistogram(t *testing.T, reg *prometheus.Registry, metric
 		metricToVerify = metric
 		break
 	}
-	require.NotNil(t, metricToVerify, "Metric %s not found in registry", metricNameToVerify)
+	require.NotNilf(t, metricToVerify, "Metric %s not found in registry", metricNameToVerify)
 	require.Equal(t, dto.MetricType_HISTOGRAM, metricToVerify.GetType())
 
 	getMetricOperation := func(labels []*dto.LabelPair) (string, error) {

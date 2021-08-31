@@ -34,13 +34,11 @@ const (
 	modelTimeHour = model.Time(time.Hour / time.Millisecond)
 )
 
-func setupTestDeleteStore(t *testing.T, registry prometheus.Registerer) *DeleteStore {
+func setupTestDeleteStore(t *testing.T, registerer prometheus.Registerer) *DeleteStore {
 	var (
 		deleteStoreConfig DeleteStoreConfig
 		tbmConfig         chunk.TableManagerConfig
 		schemaCfg         = chunk.DefaultSchemaConfig("", "v10", 0)
-		tableManager      *chunk.TableManager
-		err               error
 	)
 	flagext.DefaultValues(&deleteStoreConfig)
 	flagext.DefaultValues(&tbmConfig)
@@ -49,7 +47,7 @@ func setupTestDeleteStore(t *testing.T, registry prometheus.Registerer) *DeleteS
 
 	extraTables := []chunk.ExtraTables{{TableClient: mockStorage, Tables: deleteStoreConfig.GetTables()}}
 
-	tableManager, err = chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, registry)
+	tableManager, err := chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, registerer)
 
 	require.NoError(t, err)
 
@@ -76,16 +74,14 @@ func setupStoresAndPurger(t *testing.T) (*DeleteStore, chunk.Store, chunk.Object
 	return deleteStore, chunkStore, storageClient, purger, registry
 }
 
-func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient, registry prometheus.Registerer) *Purger {
+func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient, registerer prometheus.Registerer) *Purger {
 	var (
-		purger *Purger
-		err    error
 		cfg    Config
 	)
 
 	flagext.DefaultValues(&cfg)
 
-	purger, err = NewPurger(cfg, deleteStore, chunkStore, storageClient, registry)
+	purger, err := NewPurger(cfg, deleteStore, chunkStore, storageClient, registerer)
 	require.NoError(t, err)
 	return purger
 }
