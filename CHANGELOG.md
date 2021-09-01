@@ -61,6 +61,7 @@
 * [ENHANCEMENT] Store-gateway: reduced CPU and memory utilization due to exported metrics aggregation for instances with a large number of tenants. #123 #142
 * [ENHANCEMENT] Query-frontend: if query sharding is enabled and a query is not shardable, then the query is executed by querier instead of query-frontend. #150
 * [ENHANCEMENT] Add a metrics `cortex_limits_defaults` to expose the default values of limits. #173
+* [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #180
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
 * [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
@@ -512,7 +513,6 @@ Note the blocks storage compactor runs a migration task at startup in this versi
 * [ENHANCEMENT] Added new experimental API endpoints: `POST /purger/delete_tenant` and `GET /purger/delete_tenant_status` for deleting all tenant data. Only works with blocks storage. Compactor removes blocks that belong to user marked for deletion. #3549 #3558
 * [ENHANCEMENT] Chunks storage: add option to use V2 signatures for S3 authentication. #3560
 * [ENHANCEMENT] HA Tracker: Added new limit `ha_max_clusters` to set the max number of clusters tracked for single user. This limit is disabled by default. #3668
-* [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #TODO
 * [BUGFIX] Query-Frontend: `cortex_query_seconds_total` now return seconds not nanoseconds. #3589
 * [BUGFIX] Blocks storage ingester: fixed some cases leading to a TSDB WAL corruption after a partial write to disk. #3423
 * [BUGFIX] Blocks storage: Fix the race between ingestion and `/flush` call resulting in overlapping blocks. #3422
