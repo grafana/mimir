@@ -267,7 +267,6 @@ func TestShardSummer(t *testing.T) {
 				) + `))`,
 			6,
 		},
-
 		{
 			`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series[7d]))`,
 			`sum by (user, cluster, namespace)(` +
@@ -281,6 +280,11 @@ func TestShardSummer(t *testing.T) {
 		{
 			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
 			concat(`quantile_over_time(0.99, cortex_ingester_active_series[1w])`),
+			0,
+		},
+		{
+			`predict_linear(foo[10m],3600)`,
+			concat(`predict_linear(foo[10m],3600)`),
 			0,
 		},
 	} {
