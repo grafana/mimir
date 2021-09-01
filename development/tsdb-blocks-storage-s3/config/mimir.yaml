@@ -40,7 +40,6 @@ blocks_storage:
     ship_interval: 1m
     block_ranges_period: [ 2h ]
     retention_period: 3h
-    max_exemplars: 5000
 
   bucket_store:
     sync_dir: /tmp/mimir-tsdb-querier
@@ -156,6 +155,7 @@ query_range:
 limits:
   # Limit max query time range to 31d
   max_query_length: 744h
+  max_global_exemplars_per_user: 5000
 
 runtime_config:
   file: ./config/runtime.yaml
