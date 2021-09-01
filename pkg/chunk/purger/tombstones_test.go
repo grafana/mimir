@@ -101,7 +101,7 @@ func TestTombstonesLoader(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			deleteStore := setupTestDeleteStore(t)
+			deleteStore := setupTestDeleteStore(t, nil)
 			tombstonesLoader := NewTombstonesLoader(deleteStore, nil)
 
 			// add delete requests

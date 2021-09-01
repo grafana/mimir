@@ -746,7 +746,7 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 		),
 	)
 	dnsProvider := dns.NewProvider(util_log.Logger, dnsProviderReg, dns.GolangResolverType)
-	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider)
+	t.MemberlistKV = memberlist.NewKVInitService(&t.Cfg.MemberlistKV, util_log.Logger, dnsProvider, reg)
 	t.API.RegisterMemberlistKV(t.MemberlistKV)
 
 	// Update the config.
