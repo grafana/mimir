@@ -116,7 +116,7 @@ func (summer *shardSummer) shardAndSquashSubquery(node *parser.Call, stats *Mapp
 					),
 		)
 
-		Subqueries wrapped by a aggregation operation are handled directly at that layer. see `shardAggregate`
+		Subqueries wrapped by an aggregation operation are handled directly at that layer. see `shardAggregate`
 	*/
 
 	children := make([]parser.Node, 0, summer.shards)
