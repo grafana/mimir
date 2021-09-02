@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	wordwrap "github.com/mitchellh/go-wordwrap"
 )
 
@@ -72,6 +74,8 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 			fieldDefault = cleanupDuration(fieldDefault)
 		}
 
+		w.writeExample(e.fieldExample, indent)
+
 		if e.required {
 			w.out.WriteString(pad(indent) + e.name + ": <" + e.fieldType + "> | default = " + fieldDefault + "\n")
 		} else {
@@ -93,9 +97,30 @@ func (w *specWriter) writeComment(comment string, indent int) {
 		return
 	}
 
-	wrapped := strings.TrimSpace(wordwrap.WrapString(comment, uint(maxLineWidth-indent-2)))
-	lines := strings.Split(wrapped, "\n")
+	wrapped := wordwrap.WrapString(comment, uint(maxLineWidth-indent-2))
+	w.writeWrappedString(wrapped, indent)
+}
 
+func (w *specWriter) writeExample(example *fieldExample, indent int) {
+	if example == nil {
+		return
+	}
+
+	w.out.WriteString(pad(indent) + "# Example:\n")
+	if example.comment != "" {
+		w.writeComment(example.comment, indent)
+	}
+
+	data, err := yaml.Marshal(example.yaml)
+	if err != nil {
+		panic(fmt.Errorf("can't render example: %w", err))
+	}
+
+	w.writeWrappedString(string(data), indent)
+}
+
+func (w *specWriter) writeWrappedString(s string, indent int) {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for _, line := range lines {
 		w.out.WriteString(pad(indent) + "# " + line + "\n")
 	}

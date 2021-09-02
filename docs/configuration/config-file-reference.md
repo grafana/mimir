@@ -811,6 +811,13 @@ lifecycler:
 # provided matcher (map value) will be exposed in the custom trackers metric
 # labeled using the tracker name (map key).
 # CLI flag: -ingester.active-series-custom-trackers
+# Example:
+# The following configuration will count the active series coming from dev and
+# prod namespaces for each tenant and label them as {name="dev"} and
+# {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+# active_series_custom_trackers:
+#     dev: '{namespace=~"dev-.*"}'
+#     prod: '{namespace=~"prod-.*"}'
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
 # Period with which to update per-user max exemplars.
