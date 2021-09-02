@@ -77,7 +77,9 @@ func CanParallelize(node parser.Node) bool {
 		return true
 
 	case *parser.SubqueryExpr:
-		return CanParallelize(n.Expr)
+		// Subqueries are parallelizable if they are parallelizable themselves
+		// and they don't contain aggregations over series in children nodes.
+		return !containsAggregateExpr(n) && CanParallelize(n.Expr)
 
 	case *parser.ParenExpr:
 		return CanParallelize(n.Expr)
@@ -96,6 +98,15 @@ func CanParallelize(node parser.Node) bool {
 		level.Error(util_log.Logger).Log("err", fmt.Sprintf("CanParallel: unhandled node type %T", node)) //lint:ignore faillint allow global logger for now
 		return false
 	}
+}
+
+// containsAggregateExpr returns true if the given node contains an aggregate expression within its children.
+func containsAggregateExpr(n parser.Node) bool {
+	containsAggregate, _ := EvalPredicate(n, func(node parser.Node) (bool, error) {
+		_, ok := node.(*parser.AggregateExpr)
+		return ok, nil
+	})
+	return containsAggregate
 }
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.

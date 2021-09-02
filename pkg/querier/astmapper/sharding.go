@@ -62,6 +62,9 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
+		if summer.currentShard != nil {
+			return n, false, nil
+		}
 		if CanParallelize(n) {
 			return summer.shardAggregate(n, stats)
 		}
@@ -80,10 +83,68 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 			return mapped, true, err
 		}
 		return n, true, nil
-
+	case *parser.Call:
+		// check whether the call is a subquery
+		if _, ok := n.Args[0].(*parser.SubqueryExpr); ok {
+			// only shard the most outer subquery.
+			if summer.currentShard == nil {
+				if CanParallelize(n) {
+					return summer.shardAndSquashSubquery(n, stats)
+				}
+				return n, true, nil
+			}
+			return n, false, nil
+		}
+		return n, false, nil
 	default:
 		return n, false, nil
 	}
+}
+
+// shardAndSquashSubquery shards the given subquery by cloning the subquery and adding the shard label to the most outer matrix selector.
+func (summer *shardSummer) shardAndSquashSubquery(node *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
+	/*
+		parallelizing a subquery is representable naively as
+		concat(
+			min_over_time(
+							rate(metric_counter{__query_shard__="0_of_2"}[1m])
+						[5m:1m]
+					),
+			min_over_time(
+							rate(metric_counter{__query_shard__="1_of_2"}[1m])
+						[5m:1m]
+					),
+		)
+
+		Subqueries wrapped by a aggregation operation are handled directly at that layer. see `shardAggregate`
+	*/
+
+	children := make([]parser.Node, 0, summer.shards)
+
+	// Create sub-query for each shard.
+	for i := 0; i < summer.shards; i++ {
+		cloned, err := CloneNode(node)
+		if err != nil {
+			return nil, true, err
+		}
+		cloneSubExpr := cloned.(*parser.Call).Args[0].(*parser.SubqueryExpr)
+		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
+		sharded, err := subSummer.Map(cloneSubExpr.Expr, stats)
+		if err != nil {
+			return nil, true, err
+		}
+
+		cloneSubExpr.Expr = sharded.(parser.Expr)
+		children = append(children, cloned)
+	}
+
+	// Update stats.
+	stats.AddShardedQueries(summer.shards)
+	squashed, err := summer.squash(children...)
+	if err != nil {
+		return nil, true, err
+	}
+	return squashed, true, nil
 }
 
 // shardAggregate attempts to shard the given aggregation expression.

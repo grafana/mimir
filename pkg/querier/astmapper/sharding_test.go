@@ -279,6 +279,69 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
+			`min_over_time(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:2m]
+			)`,
+			concat(
+				`min_over_time(
+					sum by(group_1) (
+						rate(metric_counter[5m])
+					)[10m:2m]
+				)`,
+			),
+			0,
+		},
+		{
+			`max_over_time(
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+			concat(
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="0_of_3"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="1_of_3"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="2_of_3"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+			),
+			3,
+		},
+		{
+			`rate(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:]
+			)`,
+			concat(
+				`rate(
+						sum by(group_1) (
+							rate(metric_counter[5m])
+						)[10m:]
+					)`,
+			),
+			0,
+		},
+		{
 			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
 			concat(`quantile_over_time(0.99, cortex_ingester_active_series[1w])`),
 			0,

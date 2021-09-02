@@ -223,10 +223,49 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				)`,
 			expectedShardedQueries: 1,
 		},
-
+		"subquery max": {
+			query: `max_over_time(
+							rate(metric_counter[1m])
+						[5m:1m]
+					)`,
+			expectedShardedQueries: 1,
+		},
+		"subquery min": {
+			query: `min_over_time(
+							rate(metric_counter[1m])
+						[5m:1m]
+					)`,
+			expectedShardedQueries: 1,
+		},
+		"sum of subquery min": {
+			query:                  `sum by(group_1) (min_over_time((changes(metric_counter[5m]))[10m:2m]))`,
+			expectedShardedQueries: 1,
+		},
+		"triple subquery": {
+			query: `max_over_time(
+						stddev_over_time(
+							deriv(
+								rate(metric_counter[10m])
+							[5m:1m])
+						[2m:])
+					[10m:])`,
+			expectedShardedQueries: 1,
+		},
+		"double subquery deriv": {
+			query:                  `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[10m:] )`,
+			expectedShardedQueries: 1,
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//
+		"subquery min_over_time with aggr": {
+			query: `min_over_time(
+						sum by(group_1) (
+							rate(metric_counter[5m])
+						)[10m:]
+					)`,
+			expectedShardedQueries: 0,
+		},
 		"stddev()": {
 			query:                  `stddev(metric_counter{const="fixed"})`,
 			expectedShardedQueries: 0,

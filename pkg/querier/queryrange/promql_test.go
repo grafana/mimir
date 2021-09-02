@@ -469,5 +469,8 @@ func newEngine() *promql.Engine {
 		ActiveQueryTracker: nil,
 		LookbackDelta:      lookbackDelta,
 		EnableAtModifier:   true,
+		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
+		},
 	})
 }

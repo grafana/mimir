@@ -124,6 +124,66 @@ func TestCanParallel_String(t *testing.T) {
 			)`,
 			false,
 		},
+		{
+			`min_over_time(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:2m]
+			)`,
+			false,
+		},
+		{
+			`sum_over_time(
+				rate(metric_counter[5m])
+				[10m:2m])`,
+			true,
+		},
+		{
+			`sum by(group_1) (
+				min_over_time(
+					rate(metric_counter[5m])
+				[10m:2m])
+			)`,
+			true,
+		},
+		{
+			`max_over_time(
+				deriv(
+					rate(metric_counter[10m])
+				[5m:1m])
+			[10m:])`,
+			true,
+		},
+		{
+			`max_over_time(
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+			true,
+		},
+		{
+			`max_over_time(
+				deriv(
+					sum by (foo) (
+						rate(metric_counter[10m])
+					)[5m:1m]
+				)
+			[10m:])`,
+			false,
+		},
+		{
+			`max_over_time(
+				stddev_over_time(
+					deriv(
+						count by (foo) (rate(metric_counter[10m]))
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+			false,
+		},
 	}
 
 	for i, c := range testExpr {
