@@ -332,6 +332,9 @@
         // 300 rules
         ruler_max_rules_per_rule_group: 15,
         ruler_max_rule_groups_per_tenant: 20,
+
+        // No retention for now.
+        compactor_blocks_retention_period: 0,
       },
 
       medium_small_user:: {

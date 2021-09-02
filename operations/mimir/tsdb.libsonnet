@@ -159,6 +159,10 @@
       'compactor.ring.store': 'consul',
       'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'compactor.ring.prefix': '',
+
+      // Limits config.
+      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'compactor.blocks-retention-period': $._config.limits.compactor_blocks_retention_period,
     },
 
   compactor_ports:: $.util.defaultPorts,
@@ -187,7 +191,8 @@
     // one by one. This does NOT affect rolling updates: they will continue to be
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
-    statefulSet.mixin.spec.withPodManagementPolicy('Parallel'),
+    statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
+    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),
