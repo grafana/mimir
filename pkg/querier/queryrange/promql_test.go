@@ -405,7 +405,7 @@ func factor(f float64) generator {
 	}
 }
 
-func sum(f float64) generator {
+func arithmeticSequence(f float64) generator {
 	i := 0.
 	return func(int64) float64 {
 		i++
