@@ -201,6 +201,9 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn: "year",
 		},
 		{
+			fn: "sgn",
+		},
+		{
 			fn:    "clamp",
 			fArgs: []string{"5", "10"},
 		},
