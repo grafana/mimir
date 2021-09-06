@@ -204,6 +204,7 @@ func TestIngesterChunksTransfer(t *testing.T) {
 
 	s = &stream{ctx: ctx}
 	err = ing2.QueryStream(request, s)
+	require.NoError(t, err)
 	res, err = chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
 	require.NoError(t, err)
 	assert.Equal(t, expectedResponseMatrix, res)
