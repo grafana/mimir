@@ -107,12 +107,7 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 	}
 }
 
-func isSubquery(n *parser.Call) bool {
-	_, ok := n.Args[0].(*parser.SubqueryExpr)
-	return ok
-}
-
-// shardAndSquashFuncCall shards the given function call by cloning ot and adding the shard label to the most outer matrix/vector selector.
+// shardAndSquashFuncCall shards the given function call by cloning it and adding the shard label to the most outer matrix/vector selector.
 func (summer *shardSummer) shardAndSquashFuncCall(node *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	/*
 		parallelizing a func call (and subqueries) is representable naively as
@@ -383,4 +378,10 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 	}
 
 	return nil, fmt.Errorf("invalid selector type: %T", selector.VectorSelector)
+}
+
+// isSubquery returns true if the given function call expression is a subquery.
+func isSubquery(n *parser.Call) bool {
+	_, ok := n.Args[0].(*parser.SubqueryExpr)
+	return ok
 }

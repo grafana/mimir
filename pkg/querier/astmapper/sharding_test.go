@@ -417,6 +417,38 @@ func TestShardSummer(t *testing.T) {
 			),
 			3,
 		},
+		{
+			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			concat(
+				`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			),
+			0,
+		},
+		{
+			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+			concat(
+				`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+			),
+			0,
+		},
+		{
+			`ln(
+				label_replace(
+					sum by (cluster) (up{job="api-server",service="a:c"})
+				, "foo", "$1", "service", "(.*):.*")
+			)`,
+			`ln(
+				label_replace(
+					sum by (cluster) ( ` +
+				concat(
+					`sum by (cluster) (up{__query_shard__="0_of_3",job="api-server",service="a:c"})`,
+					`sum by (cluster) (up{__query_shard__="1_of_3",job="api-server",service="a:c"})`,
+					`sum by (cluster) (up{__query_shard__="2_of_3",job="api-server",service="a:c"})`,
+				) + `)
+				, "foo", "$1", "service", "(.*):.*")
+			)`,
+			3,
+		},
 	} {
 		tt := tt
 
