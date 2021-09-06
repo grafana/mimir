@@ -64,10 +64,6 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
   This uses iterators to execute query, as opposed to fully materialising the series in memory, and fetches multiple results per loop.
 
-- `-querier.ingester-streaming`
-
-  Use streaming RPCs to query ingester, to reduce memory pressure in the ingester.
-
 - `-querier.iterators`
 
   This is similar to `-querier.batch-iterators` but less efficient.

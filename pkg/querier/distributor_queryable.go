@@ -31,7 +31,6 @@ import (
 // Distributor is the read interface to the distributor, made an interface here
 // to reduce package coupling.
 type Distributor interface {
-	Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error)
 	QueryStream(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (*client.QueryStreamResponse, error)
 	QueryExemplars(ctx context.Context, from, to model.Time, matchers ...[]*labels.Matcher) (*client.ExemplarQueryResponse, error)
 	LabelValuesForLabelName(ctx context.Context, from, to model.Time, label model.LabelName, matchers ...*labels.Matcher) ([]string, error)
@@ -40,10 +39,9 @@ type Distributor interface {
 	MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error)
 }
 
-func newDistributorQueryable(distributor Distributor, streaming bool, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, queryLabelNamesWithMatchers bool) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, queryLabelNamesWithMatchers bool) QueryableWithFilter {
 	return distributorQueryable{
 		distributor:                 distributor,
-		streaming:                   streaming,
 		iteratorFn:                  iteratorFn,
 		queryIngestersWithin:        queryIngestersWithin,
 		queryLabelNamesWithMatchers: queryLabelNamesWithMatchers,
@@ -52,7 +50,6 @@ func newDistributorQueryable(distributor Distributor, streaming bool, iteratorFn
 
 type distributorQueryable struct {
 	distributor          Distributor
-	streaming            bool
 	iteratorFn           chunkIteratorFunc
 	queryIngestersWithin time.Duration
 
@@ -65,7 +62,6 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 		ctx:                  ctx,
 		mint:                 mint,
 		maxt:                 maxt,
-		streaming:            d.streaming,
 		chunkIterFn:          d.iteratorFn,
 		queryIngestersWithin: d.queryIngestersWithin,
 
@@ -82,7 +78,6 @@ type distributorQuerier struct {
 	distributor          Distributor
 	ctx                  context.Context
 	mint, maxt           int64
-	streaming            bool
 	chunkIterFn          chunkIteratorFunc
 	queryIngestersWithin time.Duration
 
@@ -131,17 +126,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 		}
 	}
 
-	if q.streaming {
-		return q.streamingSelect(ctx, minT, maxT, matchers)
-	}
-
-	matrix, err := q.distributor.Query(ctx, model.Time(minT), model.Time(maxT), matchers...)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
-	// Using MatrixToSeriesSet (and in turn NewConcreteSeriesSet), sorts the series.
-	return series.MatrixToSeriesSet(matrix)
+	return q.streamingSelect(ctx, minT, maxT, matchers)
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
