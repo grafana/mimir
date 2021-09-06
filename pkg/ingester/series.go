@@ -7,7 +7,6 @@ package ingester
 
 import (
 	"fmt"
-	"sort"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -15,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 )
 
 const (
@@ -162,47 +160,6 @@ func (s *memorySeries) firstUnflushedChunkTime() model.Time {
 // series has no chunk descriptors.
 func (s *memorySeries) head() *desc {
 	return s.chunkDescs[len(s.chunkDescs)-1]
-}
-
-func (s *memorySeries) samplesForRange(from, through model.Time) ([]model.SamplePair, error) {
-	// Find first chunk with start time after "from".
-	fromIdx := sort.Search(len(s.chunkDescs), func(i int) bool {
-		return s.chunkDescs[i].FirstTime.After(from)
-	})
-	// Find first chunk with start time after "through".
-	throughIdx := sort.Search(len(s.chunkDescs), func(i int) bool {
-		return s.chunkDescs[i].FirstTime.After(through)
-	})
-	if fromIdx == len(s.chunkDescs) {
-		// Even the last chunk starts before "from". Find out if the
-		// series ends before "from" and we don't need to do anything.
-		lt := s.chunkDescs[len(s.chunkDescs)-1].LastTime
-		if lt.Before(from) {
-			return nil, nil
-		}
-	}
-	if fromIdx > 0 {
-		fromIdx--
-	}
-	if throughIdx == len(s.chunkDescs) {
-		throughIdx--
-	}
-	var values []model.SamplePair
-	in := metric.Interval{
-		OldestInclusive: from,
-		NewestInclusive: through,
-	}
-	var reuseIter encoding.Iterator
-	for idx := fromIdx; idx <= throughIdx; idx++ {
-		cd := s.chunkDescs[idx]
-		reuseIter = cd.C.NewIterator(reuseIter)
-		chValues, err := encoding.RangeValues(reuseIter, in)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, chValues...)
-	}
-	return values, nil
 }
 
 func (s *memorySeries) setChunks(descs []*desc) error {
