@@ -133,6 +133,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket[1m])))`,
 			expectedShardedQueries: 1,
 		},
+		"histogram_quantile with inner aggregation": {
+			query:                  `sum by (group_1) (histogram_quantile(0.9, rate(metric_histogram_bucket[1m])))`,
+			expectedShardedQueries: 1,
+		},
+		"histogram_quantile without aggregation": {
+			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket[1m]))`,
+			expectedShardedQueries: 1,
+		},
 		"min() no grouping": {
 			query:                  `min(metric_counter{group_1="0"})`,
 			expectedShardedQueries: 1,
@@ -284,6 +292,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		},
 		"vector()": {
 			query:                  `vector(1)`,
+			expectedShardedQueries: 0,
+		},
+		"scalar()": {
+			query:                  `scalar(metric_counter{})`,
 			expectedShardedQueries: 0,
 		},
 	}

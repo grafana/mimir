@@ -106,7 +106,7 @@ func TestCanParallel_String(t *testing.T) {
 		},
 		{
 			`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
-			false,
+			true,
 		},
 		{
 			`sum by (foo) (

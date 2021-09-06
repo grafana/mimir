@@ -84,14 +84,20 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 		}
 		return n, true, nil
 	case *parser.Call:
-		// check whether the call is a subquery
-		if _, ok := n.Args[0].(*parser.SubqueryExpr); ok {
-			// only shard the most outer subquery.
-			if summer.currentShard == nil {
-				if CanParallelize(n) {
-					return summer.shardAndSquashSubquery(n, stats)
-				}
+		// only shard the most outer function call.
+		if summer.currentShard == nil {
+			// Subqueries are parallelizable if they are parallelizable themselves
+			// and they don't contain aggregations over series in children nodes.
+			if isSubquery(n) && containsAggregateExpr(n) {
 				return n, true, nil
+			}
+			// Other functions with aggregates are not parallelizable at this level.
+			// but could be at the aggregate level.
+			if containsAggregateExpr(n) {
+				return n, false, nil
+			}
+			if CanParallelize(n) {
+				return summer.shardAndSquashFuncCall(n, stats)
 			}
 			return n, false, nil
 		}
@@ -101,10 +107,16 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 	}
 }
 
-// shardAndSquashSubquery shards the given subquery by cloning the subquery and adding the shard label to the most outer matrix selector.
-func (summer *shardSummer) shardAndSquashSubquery(node *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
+func isSubquery(n *parser.Call) bool {
+	_, ok := n.Args[0].(*parser.SubqueryExpr)
+	return ok
+}
+
+// shardAndSquashFuncCall shards the given function call by cloning ot and adding the shard label to the most outer matrix/vector selector.
+func (summer *shardSummer) shardAndSquashFuncCall(node *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	/*
-		parallelizing a subquery is representable naively as
+		parallelizing a func call (and subqueries) is representable naively as
+
 		concat(
 			min_over_time(
 							rate(metric_counter{__query_shard__="0_of_2"}[1m])
@@ -116,7 +128,7 @@ func (summer *shardSummer) shardAndSquashSubquery(node *parser.Call, stats *Mapp
 					),
 		)
 
-		Subqueries wrapped by an aggregation operation are handled directly at that layer. see `shardAggregate`
+		To find the most outer matrix/vector selector, we need to traverse the AST by using each function arguments.
 	*/
 
 	children := make([]parser.Node, 0, summer.shards)
@@ -127,15 +139,31 @@ func (summer *shardSummer) shardAndSquashSubquery(node *parser.Call, stats *Mapp
 		if err != nil {
 			return nil, true, err
 		}
-		cloneSubExpr := cloned.(*parser.Call).Args[0].(*parser.SubqueryExpr)
-		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloneSubExpr.Expr, stats)
-		if err != nil {
-			return nil, true, err
+		var (
+			mapped     parser.Node
+			clonedCall = cloned.(*parser.Call)
+			subSummer  = NewASTNodeMapper(summer.CopyWithCurShard(i))
+		)
+
+		for i, arg := range clonedCall.Args {
+			switch typedArg := arg.(type) {
+			case *parser.SubqueryExpr:
+				subExprMapped, err := subSummer.Map(typedArg.Expr, nil)
+				if err != nil {
+					return nil, true, err
+				}
+				typedArg.Expr = subExprMapped.(parser.Expr)
+				mapped = arg
+			default:
+				mapped, err = subSummer.Map(typedArg, stats)
+				if err != nil {
+					return nil, true, err
+				}
+			}
+			clonedCall.Args[i] = mapped.(parser.Expr)
 		}
 
-		cloneSubExpr.Expr = sharded.(parser.Expr)
-		children = append(children, cloned)
+		children = append(children, clonedCall)
 	}
 
 	// Update stats.

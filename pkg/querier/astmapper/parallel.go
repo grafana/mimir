@@ -23,8 +23,15 @@ var summableAggregates = map[parser.ItemType]struct{}{
 }
 
 var nonParallelFuncs = []string{
-	"histogram_quantile",
 	"absent",
+	"absent_over_time",
+	"vector",
+	"time",
+	"sort_desc",
+	"sort",
+	"scalar",
+	"label_join",
+	"label_replace",
 }
 
 // CanParallelize tests if a subtree is parallelizable.

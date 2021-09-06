@@ -35,14 +35,15 @@ var (
 )
 
 func Test_FunctionParallelism(t *testing.T) {
-	tpl := `sum(<fn>(bar1{}<fArgs>))`
-
-	mkQuery := func(tpl, fn string, testMatrix bool, fArgs []string) (result string) {
-		result = strings.Replace(tpl, "<fn>", fn, -1)
+	mkQueries := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
+		if tpl == "" {
+			tpl = `(<fn>(bar1{}<fArgs>))`
+		}
+		result := strings.Replace(tpl, "<fn>", fn, -1)
 
 		if testMatrix {
 			// turn selectors into ranges
-			result = strings.Replace(result, "}<fArgs>", "}[1m]<fArgs>", -1)
+			result = strings.Replace(result, "}", "}[1m]", -1)
 		}
 
 		if len(fArgs) > 0 {
@@ -52,7 +53,13 @@ func Test_FunctionParallelism(t *testing.T) {
 			result = strings.Replace(result, "<fArgs>", "", -1)
 		}
 
-		return result
+		return []string{
+			result,
+			"sum" + result,
+			"sum by (bar)" + result,
+			"count" + result,
+			"count by (bar)" + result,
+		}
 	}
 
 	for _, tc := range []struct {
@@ -60,6 +67,7 @@ func Test_FunctionParallelism(t *testing.T) {
 		fArgs        []string
 		isTestMatrix bool
 		approximate  bool
+		tpl          string
 	}{
 		{
 			fn: "abs",
@@ -184,10 +192,27 @@ func Test_FunctionParallelism(t *testing.T) {
 			isTestMatrix: true,
 		},
 		{
+			fn:           "last_over_time",
+			isTestMatrix: true,
+		},
+		{
+			fn:           "present_over_time",
+			isTestMatrix: true,
+		},
+		{
+			fn:           "quantile_over_time",
+			isTestMatrix: true,
+			tpl:          `(<fn>(0.5,bar1{}))`,
+		},
+		{
 			fn: "timestamp",
 		},
 		{
 			fn: "year",
+		},
+		{
+			fn:    "clamp",
+			fArgs: []string{"5", "10"},
 		},
 		{
 			fn:    "clamp_max",
@@ -215,45 +240,47 @@ func Test_FunctionParallelism(t *testing.T) {
 			approximate:  true,
 		},
 	} {
-		t.Run(tc.fn, func(t *testing.T) {
-			const numShards = 4
 
-			req := &PrometheusRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: mkQuery(tpl, tc.fn, tc.isTestMatrix, tc.fArgs),
-			}
+		const numShards = 4
+		for _, query := range mkQueries(tc.tpl, tc.fn, tc.isTestMatrix, tc.fArgs) {
+			t.Run(query, func(t *testing.T) {
+				req := &PrometheusRequest{
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+					Query: query,
+				}
 
-			reg := prometheus.NewPedanticRegistry()
-			engine := newEngine()
-			shardingware := NewQueryShardingMiddleware(
-				log.NewNopLogger(),
-				engine,
-				numShards,
-				reg,
-			)
-			downstream := &downstreamHandler{
-				engine:    engine,
-				queryable: shardAwareQueryable,
-			}
+				reg := prometheus.NewPedanticRegistry()
+				engine := newEngine()
+				shardingware := NewQueryShardingMiddleware(
+					log.NewNopLogger(),
+					engine,
+					numShards,
+					reg,
+				)
+				downstream := &downstreamHandler{
+					engine:    engine,
+					queryable: shardAwareQueryable,
+				}
 
-			// Run the query without sharding.
-			expectedRes, err := downstream.Do(context.Background(), req)
-			require.Nil(t, err)
+				// Run the query without sharding.
+				expectedRes, err := downstream.Do(context.Background(), req)
+				require.Nil(t, err)
 
-			// Ensure the query produces some results.
-			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+				// Ensure the query produces some results.
+				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
-			// Run the query with sharding.
-			shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
-			require.Nil(t, err)
+				// Run the query with sharding.
+				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+				require.Nil(t, err)
 
-			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-			// if you rerun the same query twice).
-			approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
-		})
+				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+				// if you rerun the same query twice).
+				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+			})
+		}
 	}
 }
 
