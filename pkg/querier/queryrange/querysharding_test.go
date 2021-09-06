@@ -67,7 +67,13 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 			} else if math.IsNaN(expected.Value) {
 				require.Truef(t, math.IsNaN(actual.Value), "sample value at position %d is expected to be NaN for series %s", j, a.Labels)
 			} else {
-				require.InDeltaf(t, expected.Value, actual.Value, 0.000001, "sample value at position %d with timestamp %d for series %s", j, expected.TimestampMs, a.Labels)
+				if expected.Value == 0 {
+					require.Zero(t, actual.Value, "sample value at position %d with timestamp %d for series %s", j, expected.TimestampMs, a.Labels)
+					continue
+				}
+				// InEpsilon means the relative error (see https://en.wikipedia.org/wiki/Relative_error#Example) must be less than epsilon (here 1e-12).
+				// The relative error is calculated using: abs(actual-expected) / abs(expected)
+				require.InEpsilonf(t, expected.Value, actual.Value, 1e-12, "sample value at position %d with timestamp %d for series %s", j, expected.TimestampMs, a.Labels)
 			}
 		}
 	}

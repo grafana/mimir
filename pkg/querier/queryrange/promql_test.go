@@ -205,6 +205,11 @@ func Test_FunctionParallelism(t *testing.T) {
 			tpl:          `(<fn>(0.5,bar1{}))`,
 		},
 		{
+			fn:           "quantile_over_time",
+			isTestMatrix: true,
+			tpl:          `(<fn>(0.99,bar1{}))`,
+		},
+		{
 			fn: "timestamp",
 		},
 		{
