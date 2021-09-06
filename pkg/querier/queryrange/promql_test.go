@@ -66,7 +66,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		fn           string
 		fArgs        []string
 		isTestMatrix bool
-		approximate  bool
 		tpl          string
 	}{
 		{
@@ -75,7 +74,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "avg_over_time",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn: "ceil",
@@ -100,16 +98,13 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "delta",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "deriv",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
-			fn:          "exp",
-			approximate: true,
+			fn: "exp",
 		},
 		{
 			fn: "floor",
@@ -120,29 +115,23 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "idelta",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "increase",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "irate",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
-			fn:          "ln",
-			approximate: true,
+			fn: "ln",
 		},
 		{
-			fn:          "log10",
-			approximate: true,
+			fn: "log10",
 		},
 		{
-			fn:          "log2",
-			approximate: true,
+			fn: "log2",
 		},
 		{
 			fn:           "max_over_time",
@@ -161,7 +150,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "rate",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "resets",
@@ -174,18 +162,15 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn: "sort_desc",
 		},
 		{
-			fn:          "sqrt",
-			approximate: true,
+			fn: "sqrt",
 		},
 		{
 			fn:           "stddev_over_time",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "stdvar_over_time",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "sum_over_time",
@@ -230,7 +215,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "predict_linear",
 			isTestMatrix: true,
-			approximate:  true,
 			fArgs:        []string{"1"},
 		},
 		{
@@ -241,7 +225,6 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn:           "holt_winters",
 			isTestMatrix: true,
 			fArgs:        []string{"0.5", "0.7"},
-			approximate:  true,
 		},
 	} {
 
