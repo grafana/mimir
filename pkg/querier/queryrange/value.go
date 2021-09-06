@@ -90,7 +90,7 @@ func ResponseToSamples(resp Response) ([]SampleStream, error) {
 }
 
 // newSeriesSetFromEmbeddedQueriesResults returns an in memory storage.SeriesSet from embedded queries results.
-// The passed hints (if any) is used to inject stale markers at the beginning of each gep in the embedded query
+// The passed hints (if any) is used to inject stale markers at the beginning of each gap in the embedded query
 // results.
 //
 // The returned storage.SeriesSet series is sorted.
