@@ -222,13 +222,12 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn:    "clamp_min",
 			fArgs: []string{"5"},
 		},
-		// TODO this test case is commented because flaky and we need to investigate it further.
-		//{
-		//	fn:           "predict_linear",
-		//	isTestMatrix: true,
-		//	approximate:  true,
-		//	fArgs:        []string{"1"},
-		//},
+		{
+			fn:           "predict_linear",
+			isTestMatrix: true,
+			approximate:  true,
+			fArgs:        []string{"1"},
+		},
 		{
 			fn:    "round",
 			fArgs: []string{"20"},
@@ -292,7 +291,7 @@ var shardAwareQueryable = storage.QueryableFunc(func(ctx context.Context, mint, 
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(12)),
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, factor(11)),
 			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(8)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, identity),
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, arithmeticSequence(10)),
 		},
 	}, nil
 })
@@ -424,16 +423,20 @@ func newTestHistogramLabels(id int, bucketLe float64) labels.Labels {
 // generator defined a function used to generate sample values in tests.
 type generator func(ts int64) float64
 
-// identity is a generator function returning the timestamp as value.
-func identity(t int64) float64 {
-	return float64(t)
-}
-
 func factor(f float64) generator {
 	i := 0.
 	return func(int64) float64 {
 		i++
 		res := i * f
+		return res
+	}
+}
+
+func arithmeticSequence(f float64) generator {
+	i := 0.
+	return func(int64) float64 {
+		i++
+		res := i + f
 		return res
 	}
 }

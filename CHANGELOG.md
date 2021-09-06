@@ -21,12 +21,17 @@
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
 * [CHANGE] Query-frontend: the `cortex_frontend_mapped_asts_total` metric has been renamed to `cortex_frontend_query_sharding_rewrites_attempted_total`. #150
+* [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173
 * [CHANGE] Allow experimental ingester max-exemplars setting to be changed dynamically #144
   * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
   * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
 * [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
+<<<<<<< HEAD
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #200
+=======
+* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196
+>>>>>>> origin/main
   * New config options:
     * `-querier.total-shards`: The amount of shards to use when doing parallelisation via query sharding.
     * `-blocks-storage.bucket-store.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the store-gateway.
@@ -48,7 +53,7 @@
     * `-querier.lookback-delta`
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42
-* [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_overrides` metric: #21
+* [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_limit_overrides` metric: #21
   * `max_fetched_series_per_query`
   * `max_fetched_chunk_bytes_per_query`
   * `ruler_max_rules_per_rule_group`
@@ -59,6 +64,9 @@
 * [ENHANCEMENT] Store-gateway: added `cortex_bucket_store_sent_chunk_size_bytes` metric, tracking the size of chunks sent from store-gateway to querier. #123
 * [ENHANCEMENT] Store-gateway: reduced CPU and memory utilization due to exported metrics aggregation for instances with a large number of tenants. #123 #142
 * [ENHANCEMENT] Query-frontend: if query sharding is enabled and a query is not shardable, then the query is executed by querier instead of query-frontend. #150
+* [ENHANCEMENT] Add a metrics `cortex_limits_defaults` to expose the default values of limits. #173
+* [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #180
+* [ENHANCEMENT] New options `-server.http-listen-network` and `-server.grpc-listen-network` allow binding as 'tcp4' or 'tcp6'. #180
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
 * [BUGFIX] Compactor: fixed panic while collecting Prometheus metrics. #28
 * [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162

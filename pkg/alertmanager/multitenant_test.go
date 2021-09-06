@@ -609,7 +609,7 @@ func TestMultitenantAlertmanager_deleteUnusedLocalUserState(t *testing.T) {
 func TestMultitenantAlertmanager_zoneAwareSharding(t *testing.T) {
 	ctx := context.Background()
 	alertStore := prepareInMemoryAlertStore()
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	const (
@@ -689,7 +689,7 @@ func TestMultitenantAlertmanager_deleteUnusedRemoteUserState(t *testing.T) {
 	)
 
 	alertStore := prepareInMemoryAlertStore()
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	createInstance := func(i int) *MultitenantAlertmanager {
@@ -1006,7 +1006,7 @@ func TestMultitenantAlertmanager_InitialSyncWithSharding(t *testing.T) {
 			ctx := context.Background()
 			amConfig := mockAlertmanagerConfig(t)
 			amConfig.ShardingEnabled = true
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			// Use an alert store with a mocked backend.
@@ -1111,7 +1111,7 @@ func TestMultitenantAlertmanager_PerTenantSharding(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			alertStore := prepareInMemoryAlertStore()
@@ -1300,7 +1300,7 @@ func TestMultitenantAlertmanager_SyncOnRingTopologyChanges(t *testing.T) {
 			amConfig.ShardingRing.RingCheckPeriod = 100 * time.Millisecond
 			amConfig.PollInterval = time.Hour // Don't trigger the periodic check.
 
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			alertStore := prepareInMemoryAlertStore()
@@ -1353,7 +1353,7 @@ func TestMultitenantAlertmanager_RingLifecyclerShouldAutoForgetUnhealthyInstance
 	amConfig.ShardingRing.HeartbeatPeriod = 100 * time.Millisecond
 	amConfig.ShardingRing.HeartbeatTimeout = heartbeatTimeout
 
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	alertStore := prepareInMemoryAlertStore()
@@ -1387,7 +1387,7 @@ func TestMultitenantAlertmanager_InitialSyncFailureWithSharding(t *testing.T) {
 	ctx := context.Background()
 	amConfig := mockAlertmanagerConfig(t)
 	amConfig.ShardingEnabled = true
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Mock the store to fail listing configs.
@@ -1410,7 +1410,7 @@ func TestMultitenantAlertmanager_InitialSyncFailureWithSharding(t *testing.T) {
 
 func TestAlertmanager_ReplicasPosition(t *testing.T) {
 	ctx := context.Background()
-	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mockStore := prepareInMemoryAlertStore()
@@ -1511,7 +1511,7 @@ func TestAlertmanager_StateReplicationWithSharding(t *testing.T) {
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			mockStore := prepareInMemoryAlertStore()
@@ -1706,7 +1706,7 @@ func TestAlertmanager_StateReplicationWithSharding_InitialSyncFromPeers(t *testi
 	for _, tt := range tc {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := context.Background()
-			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger())
+			ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			mockStore := prepareInMemoryAlertStore()

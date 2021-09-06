@@ -293,7 +293,6 @@ func TestShardSummer(t *testing.T) {
 				) + `))`,
 			6,
 		},
-
 		{
 			`min_over_time(metric_counter[5m])`,
 			concat(
@@ -408,6 +407,15 @@ func TestShardSummer(t *testing.T) {
 					`resets(foo{__query_shard__="2_of_3"}[1d])`,
 				),
 			6,
+		},
+		{
+			`predict_linear(foo[10m],3600)`,
+			concat(
+				`predict_linear(foo{__query_shard__="0_of_3"}[10m],3600)`,
+				`predict_linear(foo{__query_shard__="1_of_3"}[10m],3600)`,
+				`predict_linear(foo{__query_shard__="2_of_3"}[10m],3600)`,
+			),
+			3,
 		},
 	} {
 		tt := tt

@@ -34,7 +34,7 @@ const (
 	modelTimeHour = model.Time(time.Hour / time.Millisecond)
 )
 
-func setupTestDeleteStore(t *testing.T) *DeleteStore {
+func setupTestDeleteStore(t *testing.T, registerer prometheus.Registerer) *DeleteStore {
 	var (
 		deleteStoreConfig DeleteStoreConfig
 		tbmConfig         chunk.TableManagerConfig
@@ -46,7 +46,9 @@ func setupTestDeleteStore(t *testing.T) *DeleteStore {
 	mockStorage := chunk.NewMockStorage()
 
 	extraTables := []chunk.ExtraTables{{TableClient: mockStorage, Tables: deleteStoreConfig.GetTables()}}
-	tableManager, err := chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, nil)
+
+	tableManager, err := chunk.NewTableManager(tbmConfig, schemaCfg, 12*time.Hour, mockStorage, nil, extraTables, registerer)
+
 	require.NoError(t, err)
 
 	require.NoError(t, tableManager.SyncTables(context.Background()))
@@ -58,7 +60,8 @@ func setupTestDeleteStore(t *testing.T) *DeleteStore {
 }
 
 func setupStoresAndPurger(t *testing.T) (*DeleteStore, chunk.Store, chunk.ObjectClient, *Purger, *prometheus.Registry) {
-	deleteStore := setupTestDeleteStore(t)
+	registry := prometheus.NewRegistry()
+	deleteStore := setupTestDeleteStore(t, registry)
 
 	chunkStore, err := testutils.SetupTestChunkStore()
 	require.NoError(t, err)
@@ -66,21 +69,19 @@ func setupStoresAndPurger(t *testing.T) (*DeleteStore, chunk.Store, chunk.Object
 	storageClient, err := testutils.SetupTestObjectStore()
 	require.NoError(t, err)
 
-	purger, registry := setupPurger(t, deleteStore, chunkStore, storageClient)
+	purger := setupPurger(t, deleteStore, chunkStore, storageClient, registry)
 
 	return deleteStore, chunkStore, storageClient, purger, registry
 }
 
-func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient) (*Purger, *prometheus.Registry) {
-	registry := prometheus.NewRegistry()
-
+func setupPurger(t *testing.T, deleteStore *DeleteStore, chunkStore chunk.Store, storageClient chunk.ObjectClient, registerer prometheus.Registerer) *Purger {
 	var cfg Config
+
 	flagext.DefaultValues(&cfg)
 
-	purger, err := NewPurger(cfg, deleteStore, chunkStore, storageClient, registry)
+	purger, err := NewPurger(cfg, deleteStore, chunkStore, storageClient, registerer)
 	require.NoError(t, err)
-
-	return purger, registry
+	return purger
 }
 
 func buildChunks(from, through model.Time, batchSize int) ([]chunk.Chunk, error) {
@@ -358,8 +359,8 @@ func TestPurger_Restarts(t *testing.T) {
 	// stop the existing purger
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), purger))
 
-	// create a new purger to check whether it picks up in process delete requests
-	newPurger, _ := setupPurger(t, deleteStore, chunkStore, storageClient)
+	// Create a new purger to check whether it picks up in process delete requests.
+	newPurger := setupPurger(t, deleteStore, chunkStore, storageClient, nil)
 
 	// load in process delete requests by calling Run
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), newPurger))
@@ -388,7 +389,7 @@ func TestPurger_Restarts(t *testing.T) {
 }
 
 func TestPurger_Metrics(t *testing.T) {
-	deleteStore, chunkStore, storageClient, purger, registry := setupStoresAndPurger(t)
+	deleteStore, chunkStore, storageClient, purger, _ := setupStoresAndPurger(t)
 	defer func() {
 		purger.StopAsync()
 		chunkStore.Stop()
@@ -420,8 +421,10 @@ func TestPurger_Metrics(t *testing.T) {
 	// stop the existing purger
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), purger))
 
-	// create a new purger
-	purger, registry = setupPurger(t, deleteStore, chunkStore, storageClient)
+	// Create a new purger and registry.
+	// We used to make a new registry in setupPurger but that has been moved to setupStoresAndPurger, so to keep the same functionality and prevent double registering metrics we do so here.
+	reg2 := prometheus.NewRegistry()
+	purger = setupPurger(t, deleteStore, chunkStore, storageClient, reg2)
 
 	// load in process delete requests by starting the service
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), purger))
@@ -430,7 +433,7 @@ func TestPurger_Metrics(t *testing.T) {
 
 	// wait until purger_delete_requests_processed_total starts to show up.
 	test.Poll(t, 2*time.Second, 1, func() interface{} {
-		count, err := testutil.GatherAndCount(registry, "cortex_purger_delete_requests_processed_total")
+		count, err := testutil.GatherAndCount(reg2, "cortex_purger_delete_requests_processed_total")
 		require.NoError(t, err)
 		return count
 	})
@@ -456,13 +459,13 @@ func TestPurger_retryFailedRequests(t *testing.T) {
 	indexMockStorage := chunk.NewMockStorage()
 	chunksMockStorage := chunk.NewMockStorage()
 
-	deleteStore := setupTestDeleteStore(t)
+	deleteStore := setupTestDeleteStore(t, nil)
 	chunkStore, err := testutils.SetupTestChunkStoreWithClients(indexMockStorage, chunksMockStorage, indexMockStorage)
 	require.NoError(t, err)
 
 	// create a purger instance
 	purgerMockStorage := chunk.NewMockStorage()
-	purger, _ := setupPurger(t, deleteStore, chunkStore, purgerMockStorage)
+	purger := setupPurger(t, deleteStore, chunkStore, purgerMockStorage, nil)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), purger))
 
 	defer func() {

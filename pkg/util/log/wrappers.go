@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	kitlog "github.com/go-kit/kit/log"
-	"github.com/weaveworks/common/middleware"
+	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/tenant"
 )
@@ -43,7 +43,7 @@ func WithContext(ctx context.Context, l kitlog.Logger) kitlog.Logger {
 		l = WithUserID(userID, l)
 	}
 
-	traceID, ok := middleware.ExtractTraceID(ctx)
+	traceID, ok := tracing.ExtractSampledTraceID(ctx)
 	if !ok {
 		return l
 	}

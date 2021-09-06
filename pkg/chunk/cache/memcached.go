@@ -25,16 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-type observableVecCollector struct {
-	v prometheus.ObserverVec
-}
-
-func (observableVecCollector) Register()                             {}
-func (observableVecCollector) Before(method string, start time.Time) {}
-func (o observableVecCollector) After(method, statusCode string, start time.Time) {
-	o.v.WithLabelValues(method, statusCode).Observe(time.Since(start).Seconds())
-}
-
 // MemcachedConfig is config to make a Memcached
 type MemcachedConfig struct {
 	Expiration time.Duration `yaml:"expiration"`
@@ -56,7 +46,7 @@ type Memcached struct {
 	memcache MemcachedClient
 	name     string
 
-	requestDuration observableVecCollector
+	requestDuration *instr.HistogramCollector
 
 	wg      sync.WaitGroup
 	inputCh chan *work
@@ -71,16 +61,15 @@ func NewMemcached(cfg MemcachedConfig, client MemcachedClient, name string, reg 
 		memcache: client,
 		name:     name,
 		logger:   logger,
-		requestDuration: observableVecCollector{
-			v: promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
+		requestDuration: instr.NewHistogramCollector(
+			promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
 				Namespace: "cortex",
 				Name:      "memcache_request_duration_seconds",
 				Help:      "Total time spent in seconds doing memcache requests.",
 				// Memcached requests are very quick: smallest bucket is 16us, biggest is 1s
 				Buckets:     prometheus.ExponentialBuckets(0.000016, 4, 8),
 				ConstLabels: prometheus.Labels{"name": name},
-			}, []string{"method", "status_code"}),
-		},
+			}, []string{"method", "status_code"})),
 	}
 
 	if cfg.BatchSize == 0 || cfg.Parallelism == 0 {

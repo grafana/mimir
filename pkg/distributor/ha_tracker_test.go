@@ -124,7 +124,7 @@ func TestWatchPrefixAssignment(t *testing.T) {
 	replica := "r1"
 
 	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
@@ -311,7 +311,7 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 	user := "user"
 
 	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
@@ -360,7 +360,7 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	cluster := "c1"
 
 	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
@@ -440,7 +440,7 @@ func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			// Init HA tracker
 			codec := GetReplicaDescCodec()
-			kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
+			kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
 			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 			mock := kv.PrefixClient(kvStore, "prefix")
@@ -539,7 +539,7 @@ func TestHAClustersLimit(t *testing.T) {
 	const userID = "user"
 
 	codec := GetReplicaDescCodec()
-	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger())
+	kvStore, closer := consul.NewInMemoryClient(codec, log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
@@ -708,7 +708,7 @@ func TestCheckReplicaCleanup(t *testing.T) {
 
 	reg := prometheus.NewPedanticRegistry()
 
-	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger())
+	kvStore, closer := consul.NewInMemoryClient(GetReplicaDescCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	mock := kv.PrefixClient(kvStore, "prefix")
