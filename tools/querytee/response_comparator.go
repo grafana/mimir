@@ -18,7 +18,7 @@ import (
 )
 
 // SamplesComparatorFunc helps with comparing different types of samples coming from /api/v1/query and /api/v1/query_range routes.
-type SamplesComparatorFunc func(expected, actual json.RawMessage, tolerance float64) error
+type SamplesComparatorFunc func(expected, actual json.RawMessage, tolerance float64, useRelativeError bool) error
 
 type SamplesResponse struct {
 	Status string
@@ -28,9 +28,10 @@ type SamplesResponse struct {
 	}
 }
 
-func NewSamplesComparator(tolerance float64) *SamplesComparator {
+func NewSamplesComparator(tolerance float64, useRelativeError bool) *SamplesComparator {
 	return &SamplesComparator{
-		tolerance: tolerance,
+		tolerance:        tolerance,
+		useRelativeError: useRelativeError,
 		sampleTypesComparator: map[string]SamplesComparatorFunc{
 			"matrix": compareMatrix,
 			"vector": compareVector,
@@ -41,6 +42,7 @@ func NewSamplesComparator(tolerance float64) *SamplesComparator {
 
 type SamplesComparator struct {
 	tolerance             float64
+	useRelativeError      bool
 	sampleTypesComparator map[string]SamplesComparatorFunc
 }
 
@@ -75,10 +77,10 @@ func (s *SamplesComparator) Compare(expectedResponse, actualResponse []byte) err
 		return fmt.Errorf("resultType %s not registered for comparison", expected.Data.ResultType)
 	}
 
-	return comparator(expected.Data.Result, actual.Data.Result, s.tolerance)
+	return comparator(expected.Data.Result, actual.Data.Result, s.tolerance, s.useRelativeError)
 }
 
-func compareMatrix(expectedRaw, actualRaw json.RawMessage, tolerance float64) error {
+func compareMatrix(expectedRaw, actualRaw json.RawMessage, tolerance float64, useRelativeError bool) error {
 	var expected, actual model.Matrix
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -123,7 +125,7 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, tolerance float64) er
 
 		for i, expectedSamplePair := range expectedMetric.Values {
 			actualSamplePair := actualMetric.Values[i]
-			err := compareSamplePair(expectedSamplePair, actualSamplePair, tolerance)
+			err := compareSamplePair(expectedSamplePair, actualSamplePair, tolerance, useRelativeError)
 			if err != nil {
 				return errors.Wrapf(err, "sample pair not matching for metric %s", expectedMetric.Metric)
 			}
@@ -133,7 +135,7 @@ func compareMatrix(expectedRaw, actualRaw json.RawMessage, tolerance float64) er
 	return nil
 }
 
-func compareVector(expectedRaw, actualRaw json.RawMessage, tolerance float64) error {
+func compareVector(expectedRaw, actualRaw json.RawMessage, tolerance float64, useRelativeError bool) error {
 	var expected, actual model.Vector
 
 	err := json.Unmarshal(expectedRaw, &expected)
@@ -169,7 +171,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, tolerance float64) er
 		}, model.SamplePair{
 			Timestamp: actualMetric.Timestamp,
 			Value:     actualMetric.Value,
-		}, tolerance)
+		}, tolerance, useRelativeError)
 		if err != nil {
 			return errors.Wrapf(err, "sample pair not matching for metric %s", expectedMetric.Metric)
 		}
@@ -178,7 +180,7 @@ func compareVector(expectedRaw, actualRaw json.RawMessage, tolerance float64) er
 	return nil
 }
 
-func compareScalar(expectedRaw, actualRaw json.RawMessage, tolerance float64) error {
+func compareScalar(expectedRaw, actualRaw json.RawMessage, tolerance float64, useRelativeError bool) error {
 	var expected, actual model.Scalar
 	err := json.Unmarshal(expectedRaw, &expected)
 	if err != nil {
@@ -196,21 +198,21 @@ func compareScalar(expectedRaw, actualRaw json.RawMessage, tolerance float64) er
 	}, model.SamplePair{
 		Timestamp: actual.Timestamp,
 		Value:     actual.Value,
-	}, tolerance)
+	}, tolerance, useRelativeError)
 }
 
-func compareSamplePair(expected, actual model.SamplePair, tolerance float64) error {
+func compareSamplePair(expected, actual model.SamplePair, tolerance float64, useRelativeError bool) error {
 	if expected.Timestamp != actual.Timestamp {
 		return fmt.Errorf("expected timestamp %v but got %v", expected.Timestamp, actual.Timestamp)
 	}
-	if !compareSampleValue(expected.Value, actual.Value, tolerance) {
+	if !compareSampleValue(expected.Value, actual.Value, tolerance, useRelativeError) {
 		return fmt.Errorf("expected value %s for timestamp %v but got %s", expected.Value, expected.Timestamp, actual.Value)
 	}
 
 	return nil
 }
 
-func compareSampleValue(first, second model.SampleValue, tolerance float64) bool {
+func compareSampleValue(first, second model.SampleValue, tolerance float64, useRelativeError bool) bool {
 	f := float64(first)
 	s := float64(second)
 
@@ -219,6 +221,8 @@ func compareSampleValue(first, second model.SampleValue, tolerance float64) bool
 	} else if tolerance <= 0 {
 		return math.Float64bits(f) == math.Float64bits(s)
 	}
-
+	if useRelativeError {
+		return math.Abs(f-s)/math.Abs(s) <= tolerance
+	}
 	return math.Abs(f-s) <= tolerance
 }
