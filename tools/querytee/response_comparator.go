@@ -221,7 +221,7 @@ func compareSampleValue(first, second model.SampleValue, tolerance float64, useR
 	} else if tolerance <= 0 {
 		return math.Float64bits(f) == math.Float64bits(s)
 	}
-	if useRelativeError {
+	if useRelativeError && s != 0 {
 		return math.Abs(f-s)/math.Abs(s) <= tolerance
 	}
 	return math.Abs(f-s) <= tolerance
