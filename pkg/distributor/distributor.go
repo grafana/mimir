@@ -553,6 +553,10 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if err != nil {
 		return nil, err
 	}
+	span := opentracing.SpanFromContext(ctx)
+	if span != nil {
+		span.SetTag("organization", userID)
+	}
 
 	// We will report *this* request in the error too.
 	inflight := d.inflightPushRequests.Inc()
@@ -600,6 +604,10 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
 		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		if span != nil {
+			span.SetTag("cluster", cluster)
+			span.SetTag("replica", replica)
+		}
 		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
 			// Ensure the request slice is reused if the series get deduped.
