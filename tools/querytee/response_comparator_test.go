@@ -96,7 +96,7 @@ func TestCompareMatrix(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareMatrix(tc.expected, tc.actual, 0)
+			err := compareMatrix(tc.expected, tc.actual, 0, false)
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -179,7 +179,7 @@ func TestCompareVector(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareVector(tc.expected, tc.actual, 0)
+			err := compareVector(tc.expected, tc.actual, 0, false)
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -216,7 +216,7 @@ func TestCompareScalar(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareScalar(tc.expected, tc.actual, 0)
+			err := compareScalar(tc.expected, tc.actual, 0, false)
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -229,11 +229,12 @@ func TestCompareScalar(t *testing.T) {
 
 func TestCompareSamplesResponse(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
-		tolerance float64
-		expected  json.RawMessage
-		actual    json.RawMessage
-		err       error
+		name             string
+		tolerance        float64
+		expected         json.RawMessage
+		actual           json.RawMessage
+		err              error
+		useRelativeError bool
 	}{
 		{
 			name: "difference in response status",
@@ -330,9 +331,35 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			err: errors.New(`sample pair not matching for metric {foo="bar"}: expected value 773054.5916666666 for timestamp 1 but got 773054.789`),
 		},
+		{
+			name:      "should fail if large values are significantly different, over the tolerance without using relative error",
+			tolerance: 1e-14,
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"4.923488536785282e+41"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"4.923488536785281e+41"]}]}
+						}`),
+			err: errors.New(`sample pair not matching for metric {foo="bar"}: expected value 492348853678528200000000000000000000000000 for timestamp 1 but got 492348853678528100000000000000000000000000`),
+		},
+		{
+			name:      "should not fail if large values are significantly different, over the tolerance using relative error",
+			tolerance: 1e-14,
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"4.923488536785282e+41"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"4.923488536785281e+41"]}]}
+						}`),
+			useRelativeError: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			samplesComparator := NewSamplesComparator(tc.tolerance)
+			samplesComparator := NewSamplesComparator(tc.tolerance, tc.useRelativeError)
 			err := samplesComparator.Compare(tc.expected, tc.actual)
 			if tc.err == nil {
 				require.NoError(t, err)

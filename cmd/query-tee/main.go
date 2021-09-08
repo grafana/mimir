@@ -72,7 +72,7 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		prefix = prefix[:len(prefix)-1]
 	}
 
-	samplesComparator := querytee.NewSamplesComparator(cfg.ProxyConfig.ValueComparisonTolerance)
+	samplesComparator := querytee.NewSamplesComparator(cfg.ProxyConfig.ValueComparisonTolerance, cfg.ProxyConfig.UseRelativeError)
 	return []querytee.Route{
 		{Path: prefix + "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}, ResponseComparator: samplesComparator},
 		{Path: prefix + "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET"}, ResponseComparator: samplesComparator},
