@@ -62,6 +62,9 @@ func (summer *shardSummer) CopyWithCurShard(curshard int) *shardSummer {
 func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	switch n := node.(type) {
 	case *parser.AggregateExpr:
+		if summer.currentShard != nil {
+			return n, false, nil
+		}
 		if CanParallelize(n) {
 			return summer.shardAggregate(n, stats)
 		}
@@ -80,10 +83,91 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 			return mapped, true, err
 		}
 		return n, true, nil
-
+	case *parser.Call:
+		// only shard the most outer function call.
+		if summer.currentShard == nil {
+			// Subqueries are parallelizable if they are parallelizable themselves
+			// and they don't contain aggregations over series in children nodes.
+			if isSubquery(n) && containsAggregateExpr(n) {
+				return n, true, nil
+			}
+			// Other functions with aggregates are not parallelizable at this level.
+			// but could be at the aggregate level.
+			if containsAggregateExpr(n) {
+				return n, false, nil
+			}
+			if CanParallelize(n) {
+				return summer.shardAndSquashFuncCall(n, stats)
+			}
+			return n, false, nil
+		}
+		return n, false, nil
 	default:
 		return n, false, nil
 	}
+}
+
+// shardAndSquashFuncCall shards the given function call by cloning it and adding the shard label to the most outer matrix/vector selector.
+func (summer *shardSummer) shardAndSquashFuncCall(node *parser.Call, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
+	/*
+		parallelizing a func call (and subqueries) is representable naively as
+
+		concat(
+			min_over_time(
+							rate(metric_counter{__query_shard__="0_of_2"}[1m])
+						[5m:1m]
+					),
+			min_over_time(
+							rate(metric_counter{__query_shard__="1_of_2"}[1m])
+						[5m:1m]
+					),
+		)
+
+		To find the most outer matrix/vector selector, we need to traverse the AST by using each function arguments.
+	*/
+
+	children := make([]parser.Node, 0, summer.shards)
+
+	// Create sub-query for each shard.
+	for i := 0; i < summer.shards; i++ {
+		cloned, err := CloneNode(node)
+		if err != nil {
+			return nil, true, err
+		}
+		var (
+			mapped     parser.Node
+			clonedCall = cloned.(*parser.Call)
+			subSummer  = NewASTNodeMapper(summer.CopyWithCurShard(i))
+		)
+
+		for i, arg := range clonedCall.Args {
+			switch typedArg := arg.(type) {
+			case *parser.SubqueryExpr:
+				subExprMapped, err := subSummer.Map(typedArg.Expr, nil)
+				if err != nil {
+					return nil, true, err
+				}
+				typedArg.Expr = subExprMapped.(parser.Expr)
+				mapped = arg
+			default:
+				mapped, err = subSummer.Map(typedArg, stats)
+				if err != nil {
+					return nil, true, err
+				}
+			}
+			clonedCall.Args[i] = mapped.(parser.Expr)
+		}
+
+		children = append(children, clonedCall)
+	}
+
+	// Update stats.
+	stats.AddShardedQueries(summer.shards)
+	squashed, err := summer.squash(children...)
+	if err != nil {
+		return nil, true, err
+	}
+	return squashed, true, nil
 }
 
 // shardAggregate attempts to shard the given aggregation expression.
@@ -294,4 +378,10 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 	}
 
 	return nil, fmt.Errorf("invalid selector type: %T", selector.VectorSelector)
+}
+
+// isSubquery returns true if the given function call expression is a subquery.
+func isSubquery(n *parser.Call) bool {
+	_, ok := n.Args[0].(*parser.SubqueryExpr)
+	return ok
 }
