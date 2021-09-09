@@ -35,14 +35,15 @@ var (
 )
 
 func Test_FunctionParallelism(t *testing.T) {
-	tpl := `sum(<fn>(bar1{}<fArgs>))`
-
-	mkQuery := func(tpl, fn string, testMatrix bool, fArgs []string) (result string) {
-		result = strings.Replace(tpl, "<fn>", fn, -1)
+	mkQueries := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
+		if tpl == "" {
+			tpl = `(<fn>(bar1{}<fArgs>))`
+		}
+		result := strings.Replace(tpl, "<fn>", fn, -1)
 
 		if testMatrix {
 			// turn selectors into ranges
-			result = strings.Replace(result, "}<fArgs>", "}[1m]<fArgs>", -1)
+			result = strings.Replace(result, "}", "}[1m]", -1)
 		}
 
 		if len(fArgs) > 0 {
@@ -52,14 +53,20 @@ func Test_FunctionParallelism(t *testing.T) {
 			result = strings.Replace(result, "<fArgs>", "", -1)
 		}
 
-		return result
+		return []string{
+			result,
+			"sum" + result,
+			"sum by (bar)" + result,
+			"count" + result,
+			"count by (bar)" + result,
+		}
 	}
 
 	for _, tc := range []struct {
 		fn           string
 		fArgs        []string
 		isTestMatrix bool
-		approximate  bool
+		tpl          string
 	}{
 		{
 			fn: "abs",
@@ -67,7 +74,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "avg_over_time",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn: "ceil",
@@ -92,16 +98,13 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "delta",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "deriv",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
-			fn:          "exp",
-			approximate: true,
+			fn: "exp",
 		},
 		{
 			fn: "floor",
@@ -112,29 +115,23 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "idelta",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "increase",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "irate",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
-			fn:          "ln",
-			approximate: true,
+			fn: "ln",
 		},
 		{
-			fn:          "log10",
-			approximate: true,
+			fn: "log10",
 		},
 		{
-			fn:          "log2",
-			approximate: true,
+			fn: "log2",
 		},
 		{
 			fn:           "max_over_time",
@@ -153,7 +150,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "rate",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "resets",
@@ -166,28 +162,50 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn: "sort_desc",
 		},
 		{
-			fn:          "sqrt",
-			approximate: true,
+			fn: "sqrt",
 		},
 		{
 			fn:           "stddev_over_time",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "stdvar_over_time",
 			isTestMatrix: true,
-			approximate:  true,
 		},
 		{
 			fn:           "sum_over_time",
 			isTestMatrix: true,
 		},
 		{
+			fn:           "last_over_time",
+			isTestMatrix: true,
+		},
+		{
+			fn:           "present_over_time",
+			isTestMatrix: true,
+		},
+		{
+			fn:           "quantile_over_time",
+			isTestMatrix: true,
+			tpl:          `(<fn>(0.5,bar1{}))`,
+		},
+		{
+			fn:           "quantile_over_time",
+			isTestMatrix: true,
+			tpl:          `(<fn>(0.99,bar1{}))`,
+		},
+		{
 			fn: "timestamp",
 		},
 		{
 			fn: "year",
+		},
+		{
+			fn: "sgn",
+		},
+		{
+			fn:    "clamp",
+			fArgs: []string{"5", "10"},
 		},
 		{
 			fn:    "clamp_max",
@@ -200,7 +218,6 @@ func Test_FunctionParallelism(t *testing.T) {
 		{
 			fn:           "predict_linear",
 			isTestMatrix: true,
-			approximate:  true,
 			fArgs:        []string{"1"},
 		},
 		{
@@ -211,48 +228,49 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn:           "holt_winters",
 			isTestMatrix: true,
 			fArgs:        []string{"0.5", "0.7"},
-			approximate:  true,
 		},
 	} {
-		t.Run(tc.fn, func(t *testing.T) {
-			const numShards = 4
 
-			req := &PrometheusRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: mkQuery(tpl, tc.fn, tc.isTestMatrix, tc.fArgs),
-			}
+		const numShards = 4
+		for _, query := range mkQueries(tc.tpl, tc.fn, tc.isTestMatrix, tc.fArgs) {
+			t.Run(query, func(t *testing.T) {
+				req := &PrometheusRequest{
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+					Query: query,
+				}
 
-			reg := prometheus.NewPedanticRegistry()
-			engine := newEngine()
-			shardingware := NewQueryShardingMiddleware(
-				log.NewNopLogger(),
-				engine,
-				numShards,
-				reg,
-			)
-			downstream := &downstreamHandler{
-				engine:    engine,
-				queryable: shardAwareQueryable,
-			}
+				reg := prometheus.NewPedanticRegistry()
+				engine := newEngine()
+				shardingware := NewQueryShardingMiddleware(
+					log.NewNopLogger(),
+					engine,
+					numShards,
+					reg,
+				)
+				downstream := &downstreamHandler{
+					engine:    engine,
+					queryable: shardAwareQueryable,
+				}
 
-			// Run the query without sharding.
-			expectedRes, err := downstream.Do(context.Background(), req)
-			require.Nil(t, err)
+				// Run the query without sharding.
+				expectedRes, err := downstream.Do(context.Background(), req)
+				require.Nil(t, err)
 
-			// Ensure the query produces some results.
-			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+				// Ensure the query produces some results.
+				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
-			// Run the query with sharding.
-			shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
-			require.Nil(t, err)
+				// Run the query with sharding.
+				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+				require.Nil(t, err)
 
-			// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-			// if you rerun the same query twice).
-			approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
-		})
+				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+				// if you rerun the same query twice).
+				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+			})
+		}
 	}
 }
 
@@ -472,5 +490,8 @@ func newEngine() *promql.Engine {
 		ActiveQueryTracker: nil,
 		LookbackDelta:      lookbackDelta,
 		EnableAtModifier:   true,
+		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
+		},
 	})
 }

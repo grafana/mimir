@@ -26,10 +26,34 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
+			`absent(foo)`,
+			concat(`absent(foo)`),
+			0,
+		},
+		{
+			`absent_over_time(foo[1m])`,
+			concat(`absent_over_time(foo[1m])`),
+			0,
+		},
+		{
 
 			`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
-			concat(`histogram_quantile(0.5,rate(bar1{baz="blip"}[30s]))`),
-			0,
+			concat(
+				`histogram_quantile(0.5,rate(bar1{__query_shard__="0_of_3",baz="blip"}[30s]))`,
+				`histogram_quantile(0.5,rate(bar1{__query_shard__="1_of_3",baz="blip"}[30s]))`,
+				`histogram_quantile(0.5,rate(bar1{__query_shard__="2_of_3",baz="blip"}[30s]))`,
+			),
+			3,
+		},
+		{
+			`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
+			`sum by (foo) (
+				` + concat(
+				`sum by (foo) (histogram_quantile(0.9,rate(http_request_duration_seconds_bucket{__query_shard__="0_of_3"}[10m])))`,
+				`sum by (foo) (histogram_quantile(0.9,rate(http_request_duration_seconds_bucket{__query_shard__="1_of_3"}[10m])))`,
+				`sum by (foo) (histogram_quantile(0.9,rate(http_request_duration_seconds_bucket{__query_shard__="2_of_3"}[10m])))`,
+			) + `)`,
+			3,
 		},
 		{
 			`sum by (foo,bar) (min_over_time(bar1{baz="blip"}[1m]))`,
@@ -49,9 +73,11 @@ func TestShardSummer(t *testing.T) {
 					`sum(rate(bar1{__query_shard__="1_of_3"}[1m]))`,
 					`sum(rate(bar1{__query_shard__="2_of_3"}[1m]))`,
 				) + `) or ` + concat(
-				`rate(bar2[1m])`,
+				`rate(bar2{__query_shard__="0_of_3"}[1m])`,
+				`rate(bar2{__query_shard__="1_of_3"}[1m])`,
+				`rate(bar2{__query_shard__="2_of_3"}[1m])`,
 			),
-			3,
+			6,
 		},
 		{
 			"sum(rate(bar1[1m])) or sum(rate(bar2[1m]))",
@@ -268,6 +294,15 @@ func TestShardSummer(t *testing.T) {
 			6,
 		},
 		{
+			`min_over_time(metric_counter[5m])`,
+			concat(
+				`min_over_time(metric_counter{__query_shard__="0_of_3"}[5m])`,
+				`min_over_time(metric_counter{__query_shard__="1_of_3"}[5m])`,
+				`min_over_time(metric_counter{__query_shard__="2_of_3"}[5m])`,
+			),
+			3,
+		},
+		{
 			`sum by (user, cluster, namespace) (quantile_over_time(0.99, cortex_ingester_active_series[7d]))`,
 			`sum by (user, cluster, namespace)(` +
 				concat(
@@ -278,14 +313,141 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
-			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
-			concat(`quantile_over_time(0.99, cortex_ingester_active_series[1w])`),
+			`min_over_time(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:2m]
+			)`,
+			concat(
+				`min_over_time(
+					sum by(group_1) (
+						rate(metric_counter[5m])
+					)[10m:2m]
+				)`,
+			),
 			0,
 		},
 		{
-			`predict_linear(foo[10m],3600)`,
-			concat(`predict_linear(foo[10m],3600)`),
+			`max_over_time(
+				stddev_over_time(
+					deriv(
+						rate(metric_counter[10m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+			concat(
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="0_of_3"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="1_of_3"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							rate(metric_counter{__query_shard__="2_of_3"}[10m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+			),
+			3,
+		},
+		{
+			`rate(
+				sum by(group_1) (
+					rate(metric_counter[5m])
+				)[10m:]
+			)`,
+			concat(
+				`rate(
+						sum by(group_1) (
+							rate(metric_counter[5m])
+						)[10m:]
+					)`,
+			),
 			0,
+		},
+		{
+			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
+			concat(
+				`quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="0_of_3"}[1w])`,
+				`quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="1_of_3"}[1w])`,
+				`quantile_over_time(0.99, cortex_ingester_active_series{__query_shard__="2_of_3"}[1w])`,
+			),
+			3,
+		},
+		{
+			`ceil(sum by (foo) (rate(cortex_ingester_active_series[1w])))`,
+			`ceil(sum by (foo) (` +
+				concat(
+					`sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="0_of_3"}[1w]))`,
+					`sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="1_of_3"}[1w]))`,
+					`sum by (foo) (rate(cortex_ingester_active_series{__query_shard__="2_of_3"}[1w]))`,
+				) + `))`,
+			3,
+		},
+		{
+			`ln(bar) - resets(foo[1d])`,
+			concat(
+				`ln(bar{__query_shard__="0_of_3"})`,
+				`ln(bar{__query_shard__="1_of_3"})`,
+				`ln(bar{__query_shard__="2_of_3"})`,
+			) + ` - ` +
+				concat(
+					`resets(foo{__query_shard__="0_of_3"}[1d])`,
+					`resets(foo{__query_shard__="1_of_3"}[1d])`,
+					`resets(foo{__query_shard__="2_of_3"}[1d])`,
+				),
+			6,
+		},
+		{
+			`predict_linear(foo[10m],3600)`,
+			concat(
+				`predict_linear(foo{__query_shard__="0_of_3"}[10m],3600)`,
+				`predict_linear(foo{__query_shard__="1_of_3"}[10m],3600)`,
+				`predict_linear(foo{__query_shard__="2_of_3"}[10m],3600)`,
+			),
+			3,
+		},
+		{
+			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			concat(
+				`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			),
+			0,
+		},
+		{
+			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+			concat(
+				`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+			),
+			0,
+		},
+		{
+			`ln(
+				label_replace(
+					sum by (cluster) (up{job="api-server",service="a:c"})
+				, "foo", "$1", "service", "(.*):.*")
+			)`,
+			`ln(
+				label_replace(
+					sum by (cluster) ( ` +
+				concat(
+					`sum by (cluster) (up{__query_shard__="0_of_3",job="api-server",service="a:c"})`,
+					`sum by (cluster) (up{__query_shard__="1_of_3",job="api-server",service="a:c"})`,
+					`sum by (cluster) (up{__query_shard__="2_of_3",job="api-server",service="a:c"})`,
+				) + `)
+				, "foo", "$1", "service", "(.*):.*")
+			)`,
+			3,
 		},
 	} {
 		tt := tt
