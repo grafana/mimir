@@ -108,24 +108,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			route:              "/v2/alerts/groups",
 			responseBody:       []byte(`[]`),
 		}, {
-			name:                "Read /v1/alerts/groups not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/v1/alerts/groups",
-		}, {
-			name:                "Write /alerts/groups not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/alerts/groups",
-		}, {
 			name:               "Read /v1/silences is sent to 3 AMs",
 			numAM:              5,
 			numHappyAM:         5,
@@ -173,16 +155,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 3,
 			route:              "/v2/silence/id",
 			responseBody:       []byte(`{"id":"aaa","updatedAt":"2020-01-01T00:00:00Z"}`),
-		},
-		{
-			name:                "Write /silence/id not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/silence/id",
 		}, {
 			name:               "Delete /silence/id is sent to only 1 AM",
 			numAM:              5,
@@ -202,14 +174,14 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 1,
 			route:              "/status",
 		}, {
-			name:                "Write /status not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/status",
+			name:               "Read /some/place/arbitrary is sent to only 1 AM",
+			numAM:              5,
+			numHappyAM:         5,
+			replicationFactor:  3,
+			isRead:             true,
+			expStatusCode:      http.StatusOK,
+			expectedTotalCalls: 1,
+			route:              "/some/place/arbitrary",
 		}, {
 			name:               "Read /receivers is sent to only 1 AM",
 			numAM:              5,
@@ -220,14 +192,14 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 1,
 			route:              "/receivers",
 		}, {
-			name:                "Write /receivers not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/receivers",
+			name:               "Write /some/place/arbitrary is sent to only 1 AM",
+			numAM:              5,
+			numHappyAM:         5,
+			replicationFactor:  3,
+			isRead:             false,
+			expStatusCode:      http.StatusOK,
+			expectedTotalCalls: 1,
+			route:              "/some/place/arbitrary",
 		},
 	}
 
@@ -283,39 +255,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 		})
 	}
 
-}
-
-func TestDistributor_IsPathSupported(t *testing.T) {
-	supported := map[string]bool{
-		"/alertmanager/api/v1/alerts":           true,
-		"/alertmanager/api/v1/alerts/groups":    false,
-		"/alertmanager/api/v1/silences":         true,
-		"/alertmanager/api/v1/silence/id":       true,
-		"/alertmanager/api/v1/silence/anything": true,
-		"/alertmanager/api/v1/silence/really":   true,
-		"/alertmanager/api/v1/status":           true,
-		"/alertmanager/api/v1/receivers":        true,
-		"/alertmanager/api/v1/other":            false,
-		"/alertmanager/api/v2/alerts":           true,
-		"/alertmanager/api/v2/alerts/groups":    true,
-		"/alertmanager/api/v2/silences":         true,
-		"/alertmanager/api/v2/silence/id":       true,
-		"/alertmanager/api/v2/silence/anything": true,
-		"/alertmanager/api/v2/silence/really":   true,
-		"/alertmanager/api/v2/status":           true,
-		"/alertmanager/api/v2/receivers":        true,
-		"/alertmanager/api/v2/other":            false,
-		"/alertmanager/other":                   false,
-		"/other":                                false,
-	}
-
-	for path, isSupported := range supported {
-		t.Run(path, func(t *testing.T) {
-			d, _, cleanup := prepare(t, 1, 1, 1, []byte{})
-			t.Cleanup(cleanup)
-			require.Equal(t, isSupported, d.IsPathSupported(path))
-		})
-	}
 }
 
 func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBody []byte) (*Distributor, []*mockAlertmanager, func()) {
