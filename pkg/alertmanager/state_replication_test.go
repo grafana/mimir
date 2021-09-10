@@ -8,6 +8,7 @@ package alertmanager
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -211,11 +212,12 @@ alertmanager_state_replication_total{key="nflog"} 1
 func TestStateReplication_Settle(t *testing.T) {
 
 	tc := []struct {
-		name              string
-		replicationFactor int
-		read              readStateResult
-		storeStates       map[string]alertspb.FullStateDesc
-		results           map[string][][]byte
+		name                         string
+		replicationFactor            int
+		read                         readStateResult
+		storeStates                  map[string]alertspb.FullStateDesc
+		results                      map[string][][]byte
+		fetchReplicaStateFailedTotal int
 	}{
 		{
 			name:              "with a replication factor of <= 1, no state can be read from peers.",
@@ -225,6 +227,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": nil,
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 0,
 		},
 		{
 			name:              "with a replication factor of > 1, state is read from all peers.",
@@ -239,6 +242,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": {[]byte("Datum1"), []byte("Datum3")},
 				"key2": {[]byte("Datum2"), []byte("Datum4")},
 			},
+			fetchReplicaStateFailedTotal: 0,
 		},
 		{
 			name:              "with full state having no parts, nothing is merged.",
@@ -250,6 +254,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": nil,
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 0,
 		},
 		{
 			name:              "with an unknown key, parts in the same state are merged.",
@@ -264,6 +269,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": {[]byte("Datum1")},
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 0,
 		},
 		{
 			name:              "with an unknown key, parts in other states are merged.",
@@ -278,6 +284,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": {[]byte("Datum1")},
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 0,
 		},
 		{
 			name:              "when reading from replicas fails, state is read from storage.",
@@ -294,6 +301,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": {[]byte("Datum1")},
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 1,
 		},
 		{
 			name:              "when reading from replicas and from storage fails, still become ready.",
@@ -304,7 +312,20 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": nil,
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 1,
 		},
+		{
+			name:              "when user not found in all replicas and storage, read not counted as failure and still become ready.",
+			replicationFactor: 3,
+			read:              readStateResult{err: errAllReplicasUserNotFound},
+			storeStates:       map[string]alertspb.FullStateDesc{},
+			results: map[string][][]byte{
+				"key1": nil,
+				"key2": nil,
+			},
+			fetchReplicaStateFailedTotal: 0,
+		},
+
 		{
 			name:              "when reading the full state takes too long, hit timeout but become ready.",
 			replicationFactor: 3,
@@ -313,6 +334,7 @@ func TestStateReplication_Settle(t *testing.T) {
 				"key1": nil,
 				"key2": nil,
 			},
+			fetchReplicaStateFailedTotal: 1,
 		},
 	}
 
@@ -346,6 +368,14 @@ func TestStateReplication_Settle(t *testing.T) {
 			// Note: We don't actually test beyond Merge() here, just that all data is forwarded.
 			assert.Equal(t, tt.results["key1"], key1State.merges)
 			assert.Equal(t, tt.results["key2"], key2State.merges)
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP alertmanager_state_fetch_replica_state_failed_total Number of times we have failed to read and merge the full state from another replica.
+				# TYPE alertmanager_state_fetch_replica_state_failed_total counter
+				alertmanager_state_fetch_replica_state_failed_total %d
+				`, tt.fetchReplicaStateFailedTotal)),
+				"alertmanager_state_fetch_replica_state_failed_total",
+			))
 		})
 	}
 }

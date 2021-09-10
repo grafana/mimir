@@ -29,15 +29,21 @@ type RuleStore interface {
 	ListAllUsers(ctx context.Context) ([]string, error)
 
 	// ListAllRuleGroups returns all rule groups for all users.
+	// It *MUST* populate fields User, Namespace, Name of all rule groups.
+	// It *MAY* populate the actual rules.
 	ListAllRuleGroups(ctx context.Context) (map[string]rulespb.RuleGroupList, error)
 
 	// ListRuleGroupsForUserAndNamespace returns all the active rule groups for a user from given namespace.
+	// It *MUST* populate fields User, Namespace, Name of all rule groups.
+	// It *MAY* populate the actual rules.
 	// If namespace is empty, groups from all namespaces are returned.
 	ListRuleGroupsForUserAndNamespace(ctx context.Context, userID string, namespace string) (rulespb.RuleGroupList, error)
 
 	// LoadRuleGroups loads rules for each rule group in the map.
 	// Parameter with groups to load *MUST* be coming from one of the List methods.
-	// Reason is that some implementations don't do anything, since their List method already loads the rules.
+	// NOTE: The RuleGroupList map passed to this method *MAY* be filtered for
+	// sharding purposes. It *MUST* populate the rules if the List methods have
+	// not populated the rule groups with their actual rules.
 	LoadRuleGroups(ctx context.Context, groupsToLoad map[string]rulespb.RuleGroupList) error
 
 	GetRuleGroup(ctx context.Context, userID, namespace, group string) (*rulespb.RuleGroupDesc, error)

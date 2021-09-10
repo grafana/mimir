@@ -141,6 +141,11 @@ type State interface {
 	WaitReady(context.Context) error
 }
 
+var (
+	// Returned when a user is not known to all replicas.
+	errAllReplicasUserNotFound = errors.New("all replicas returned user not found")
+)
+
 // Replicator is used to exchange state with peers via the ring when sharding is enabled.
 type Replicator interface {
 	// ReplicateStateForUser writes the given partial state to the necessary replicas.
@@ -149,6 +154,8 @@ type Replicator interface {
 	// This position is then used to identify who should notify about the alert first.
 	GetPositionForUser(userID string) int
 	// ReadFullStateForUser obtains the full state from other replicas in the cluster.
+	// If all the replicas were successfully contacted, but the user was not found in
+	// all the replicas, then errAllReplicasUserNotFound is returned.
 	ReadFullStateForUser(context.Context, string) ([]*clusterpb.FullState, error)
 }
 
