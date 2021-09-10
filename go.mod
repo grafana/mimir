@@ -27,8 +27,10 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210827170225-918b9f1ef4bd
+	github.com/grafana/dskit v0.0.0-20210910100700-60e6d9b19675
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
+	github.com/hashicorp/go-hclog v0.12.2 // indirect
+	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.10

@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/grafana/dskit/middleware"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,8 +19,6 @@ import (
 	"google.golang.org/api/option"
 	google_http "google.golang.org/api/transport/http"
 	"google.golang.org/grpc"
-
-	"github.com/grafana/mimir/pkg/util/middleware"
 )
 
 var (
