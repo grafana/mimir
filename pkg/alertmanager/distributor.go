@@ -70,13 +70,6 @@ func (d *Distributor) running(ctx context.Context) error {
 	return nil
 }
 
-// IsPathSupported returns true if the given route is currently supported by the Distributor.
-func (d *Distributor) IsPathSupported(p string) bool {
-	// API can be found at https://petstore.swagger.io/?url=https://raw.githubusercontent.com/prometheus/alertmanager/master/api/v2/openapi.yaml.
-	isQuorumReadPath, _ := d.isQuorumReadPath(p)
-	return d.isQuorumWritePath(p) || d.isUnaryWritePath(p) || d.isUnaryDeletePath(p) || d.isUnaryReadPath(p) || isQuorumReadPath
-}
-
 func (d *Distributor) isQuorumWritePath(p string) bool {
 	return strings.HasSuffix(p, "/alerts")
 }
@@ -121,8 +114,6 @@ func (d *Distributor) isUnaryReadPath(p string) bool {
 
 // DistributeRequest shards the writes and returns as soon as the quorum is satisfied.
 // In case of reads, it proxies the request to one of the alertmanagers.
-// DistributeRequest assumes that the caller has verified IsPathSupported returns
-// true for the route.
 func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) {
 	d.requestsInFlight.Add(1)
 	defer d.requestsInFlight.Done()
@@ -162,7 +153,9 @@ func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	http.Error(w, "route not supported by distributor", http.StatusNotFound)
+	// All other paths are just passed to a random replica.
+	// This is primarily used for serving the web user interface.
+	d.doUnary(userID, w, r, logger)
 }
 
 func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Request, logger log.Logger, m merger.Merger) {
