@@ -525,6 +525,18 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+}
+
+// PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
+func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			cleanup()
+		}
+	}()
+
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -586,9 +598,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		}
 		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			// Ensure the request slice is reused if the series get deduped.
-			mimirpb.ReuseSlice(req.Timeseries)
-
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
@@ -699,17 +708,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
-		// Ensure the request slice is reused if there's no series or metadata passing the validation.
-		mimirpb.ReuseSlice(req.Timeseries)
-
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
 	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-		// Ensure the request slice is reused if the request is rate limited.
-		mimirpb.ReuseSlice(req.Timeseries)
-
 		validation.DiscardedSamples.WithLabelValues(validation.RateLimited, userID).Add(float64(validatedSamples))
 		validation.DiscardedExemplars.WithLabelValues(validation.RateLimited, userID).Add(float64(validatedExemplars))
 		validation.DiscardedMetadata.WithLabelValues(validation.RateLimited, userID).Add(float64(len(validatedMetadata)))
@@ -746,6 +749,10 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		op = ring.Write
 	}
 
+	// we must not re-use buffers now until all DoBatch goroutines have finished,
+	// so set this flag false and pass cleanup() to DoBatch.
+	cleanupInDefer = false
+
 	err = ring.DoBatch(ctx, op, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
 		var metadata []*mimirpb.MetricMetadata
@@ -759,7 +766,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		}
 
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
-	}, func() { mimirpb.ReuseSlice(req.Timeseries); cancel() })
+	}, func() { cleanup(); cancel() })
 	if err != nil {
 		return nil, err
 	}
