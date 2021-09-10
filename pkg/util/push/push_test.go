@@ -51,14 +51,15 @@ func TestHandler_ignoresSkipLabelNameValidationIfSet(t *testing.T) {
 	}
 }
 
-func verifyWriteRequestHandler(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) func(ctx context.Context, request *mimirpb.WriteRequest) (response *mimirpb.WriteResponse, err error) {
+func verifyWriteRequestHandler(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
 	t.Helper()
-	return func(ctx context.Context, request *mimirpb.WriteRequest) (response *mimirpb.WriteResponse, err error) {
+	return func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
 		assert.Len(t, request.Timeseries, 1)
 		assert.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
 		assert.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
 		assert.Equal(t, expectSource, request.Source)
 		assert.False(t, request.SkipLabelNameValidation)
+		cleanup()
 		return &mimirpb.WriteResponse{}, nil
 	}
 }
