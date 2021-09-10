@@ -35,6 +35,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
+	utillabels "github.com/grafana/mimir/pkg/util/labels"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -268,11 +269,8 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	defer log.Span.Finish()
 
 	if sp != nil {
-		mNames := make([]string, 0, len(matchers))
-		for _, m := range matchers {
-			mNames = append(mNames, m.Name)
-		}
-		level.Debug(log).Log("start", util.TimeFromMillis(sp.Start).UTC().String(), "end", util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", mNames)
+		level.Debug(log).Log("start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
+			util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", utillabels.WrapMatchers(matchers))
 	}
 
 	// Kludge: Prometheus passes nil SelectHints if it is doing a 'series' operation,
