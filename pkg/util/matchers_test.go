@@ -1,4 +1,6 @@
-package labels
+// SPDX-License-Identifier: AGPL-3.0-only
+
+package util
 
 import (
 	"testing"
@@ -8,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestWrapMatchers(t *testing.T) {
+func TestMatchersStringer(t *testing.T) {
 	t.Run("One matcher", func(t *testing.T) {
 		m, err := labels.NewMatcher(labels.MatchEqual, "name", "value")
 		require.NoError(t, err)
@@ -16,7 +18,7 @@ func TestWrapMatchers(t *testing.T) {
 			m,
 		}
 
-		got := WrapMatchers(matchers).String()
+		got := MatchersStringer(matchers).String()
 
 		assert.Equal(t, `name="value"`, got)
 	})
@@ -30,7 +32,7 @@ func TestWrapMatchers(t *testing.T) {
 			m1, m2,
 		}
 
-		got := WrapMatchers(matchers).String()
+		got := MatchersStringer(matchers).String()
 
 		assert.Equal(t, `name1="value1",name2="value2"`, got)
 	})

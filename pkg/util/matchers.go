@@ -6,6 +6,8 @@
 package util
 
 import (
+	"strings"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -25,4 +27,19 @@ func SplitFiltersAndMatchers(allMatchers []*labels.Matcher) (filters, matchers [
 		}
 	}
 	return
+}
+
+// MatchersStringer implements Stringer for a slice of Prometheus matchers. Useful for logging.
+type MatchersStringer []*labels.Matcher
+
+func (s MatchersStringer) String() string {
+	var b strings.Builder
+	for _, m := range s {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(m.String())
+	}
+
+	return b.String()
 }
