@@ -18,13 +18,12 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
-	perrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -418,14 +417,14 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 	// First, see if we exist in the cluster, update our state to match if we do,
 	// and add ourselves (without tokens) if we don't.
 	if err := i.initRing(context.Background()); err != nil {
-		return perrors.Wrapf(err, "failed to join the ring %s", i.RingName)
+		return errors.Wrapf(err, "failed to join the ring %s", i.RingName)
 	}
 
 	// We do various period tasks
 	autoJoinAfter := time.After(i.cfg.JoinAfter)
 	var observeChan <-chan time.Time = nil
 
-	heartbeatTickerStop, heartbeatTickerChan := util.NewDisableableTicker(i.cfg.HeartbeatPeriod)
+	heartbeatTickerStop, heartbeatTickerChan := dstime.NewDisableableTicker(i.cfg.HeartbeatPeriod)
 	defer heartbeatTickerStop()
 
 	for {
@@ -441,14 +440,14 @@ func (i *Lifecycler) loop(ctx context.Context) error {
 					// let's observe the ring. By using JOINING state, this ingester will be ignored by LEAVING
 					// ingesters, but we also signal that it is not fully functional yet.
 					if err := i.autoJoin(context.Background(), JOINING); err != nil {
-						return perrors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
+						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 
 					level.Info(log.Logger).Log("msg", "observing tokens before going ACTIVE", "ring", i.RingName)
 					observeChan = time.After(i.cfg.ObservePeriod)
 				} else {
 					if err := i.autoJoin(context.Background(), ACTIVE); err != nil {
-						return perrors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
+						return errors.Wrapf(err, "failed to pick tokens in the KV store, ring: %s", i.RingName)
 					}
 				}
 			}
@@ -502,7 +501,7 @@ func (i *Lifecycler) stopping(runningError error) error {
 		return nil
 	}
 
-	heartbeatTickerStop, heartbeatTickerChan := util.NewDisableableTicker(i.cfg.HeartbeatPeriod)
+	heartbeatTickerStop, heartbeatTickerChan := dstime.NewDisableableTicker(i.cfg.HeartbeatPeriod)
 	defer heartbeatTickerStop()
 
 	// Mark ourselved as Leaving so no more samples are send to us.
@@ -535,7 +534,7 @@ heartbeatLoop:
 
 	if i.ShouldUnregisterOnShutdown() {
 		if err := i.unregister(context.Background()); err != nil {
-			return perrors.Wrapf(err, "failed to unregister from the KV store, ring: %s", i.RingName)
+			return errors.Wrapf(err, "failed to unregister from the KV store, ring: %s", i.RingName)
 		}
 		level.Info(log.Logger).Log("msg", "instance removed from the KV store", "ring", i.RingName)
 	}

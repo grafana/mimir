@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -22,7 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -71,7 +71,7 @@ func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (st
 
 func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64) bool {
 	// Include ingester only if maxt is within QueryIngestersWithin w.r.t. current time.
-	return d.queryIngestersWithin == 0 || queryMaxT >= util.TimeToMillis(now.Add(-d.queryIngestersWithin))
+	return d.queryIngestersWithin == 0 || queryMaxT >= dstime.ToMillis(now.Add(-d.queryIngestersWithin))
 }
 
 type distributorQuerier struct {
@@ -114,7 +114,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	if q.queryIngestersWithin > 0 {
 		now := time.Now()
 		origMinT := minT
-		minT = math.Max64(minT, util.TimeToMillis(now.Add(-q.queryIngestersWithin)))
+		minT = math.Max64(minT, dstime.ToMillis(now.Add(-q.queryIngestersWithin)))
 
 		if origMinT != minT {
 			level.Debug(log).Log("msg", "the min time of the query to ingesters has been manipulated", "original", origMinT, "updated", minT)

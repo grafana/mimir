@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -458,7 +459,7 @@ func (r *Ruler) run(ctx context.Context) error {
 
 	if r.cfg.EnableSharding {
 		ringLastState, _ = r.ring.GetAllHealthy(RingOp)
-		ringTicker := time.NewTicker(util.DurationWithJitter(r.cfg.RingCheckPeriod, 0.2))
+		ringTicker := time.NewTicker(dstime.DurationWithJitter(r.cfg.RingCheckPeriod, 0.2))
 		defer ringTicker.Stop()
 		ringTickerChan = ringTicker.C
 	}

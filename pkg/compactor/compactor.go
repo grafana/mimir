@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -431,7 +432,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
 		DeletionDelay:      c.compactorCfg.DeletionDelay,
-		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupInterval:    dstime.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
 		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
 		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
@@ -459,7 +460,7 @@ func (c *MultitenantCompactor) running(ctx context.Context) error {
 	// Run an initial compaction before starting the interval.
 	c.compactUsers(ctx)
 
-	ticker := time.NewTicker(util.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
+	ticker := time.NewTicker(dstime.DurationWithJitter(c.compactorCfg.CompactionInterval, 0.05))
 	defer ticker.Stop()
 
 	for {

@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -266,8 +267,8 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	defer log.Span.Finish()
 
 	if sp != nil {
-		level.Debug(log).Log("start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
-			util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+		level.Debug(log).Log("start", dstime.FromMillis(sp.Start).UTC().String(), "end",
+			dstime.FromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
 	}
 
 	// Kludge: Prometheus passes nil SelectHints if it is doing a 'series' operation,
@@ -524,7 +525,7 @@ type storeQueryable struct {
 
 func (s storeQueryable) UseQueryable(now time.Time, queryMinT, queryMaxT int64) bool {
 	// Include this store only if mint is within QueryStoreAfter w.r.t current time.
-	if s.QueryStoreAfter != 0 && queryMinT > util.TimeToMillis(now.Add(-s.QueryStoreAfter)) {
+	if s.QueryStoreAfter != 0 && queryMinT > dstime.ToMillis(now.Add(-s.QueryStoreAfter)) {
 		return false
 	}
 	return s.QueryableWithFilter.UseQueryable(now, queryMinT, queryMaxT)
@@ -560,7 +561,7 @@ func (u useBeforeTimestampQueryable) UseQueryable(_ time.Time, queryMinT, _ int6
 func UseBeforeTimestampQueryable(queryable storage.Queryable, ts time.Time) QueryableWithFilter {
 	t := int64(0)
 	if !ts.IsZero() {
-		t = util.TimeToMillis(ts)
+		t = dstime.ToMillis(ts)
 	}
 	return useBeforeTimestampQueryable{
 		Queryable: queryable,
@@ -581,8 +582,8 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 		// Make sure to log it in traces to ease debugging.
 		level.Debug(spanlogger.FromContext(ctx)).Log(
 			"msg", "the end time of the query has been manipulated because of the 'max query into future' setting",
-			"original", util.FormatTimeModel(origEndTime),
-			"updated", util.FormatTimeModel(endTime))
+			"original", dstime.FormatTimeModel(origEndTime),
+			"updated", dstime.FormatTimeModel(endTime))
 
 		if endTime.Before(startTime) {
 			return 0, 0, errEmptyTimeRange
@@ -597,8 +598,8 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 		// Make sure to log it in traces to ease debugging.
 		level.Debug(spanlogger.FromContext(ctx)).Log(
 			"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
-			"original", util.FormatTimeModel(origStartTime),
-			"updated", util.FormatTimeModel(startTime))
+			"original", dstime.FormatTimeModel(origStartTime),
+			"updated", dstime.FormatTimeModel(startTime))
 
 		if endTime.Before(startTime) {
 			return 0, 0, errEmptyTimeRange

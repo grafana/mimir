@@ -10,12 +10,11 @@ import (
 	"testing"
 	"time"
 
+	dstime "github.com/grafana/dskit/time"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
@@ -72,8 +71,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+				Start: dstime.ToMillis(testData.reqStartTime),
+				End:   dstime.ToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
@@ -100,8 +99,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 				// Assert on the time range of the request passed to the inner handler (5s delta).
 				delta := float64(5000)
 				require.Len(t, inner.Calls, 1)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
+				assert.InDelta(t, dstime.ToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
+				assert.InDelta(t, dstime.ToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
 			}
 		})
 	}
@@ -157,8 +156,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+				Start: dstime.ToMillis(testData.reqStartTime),
+				End:   dstime.ToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
@@ -184,8 +183,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 
 				// The time range of the request passed to the inner handler should have not been manipulated.
 				require.Len(t, inner.Calls, 1)
-				assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart())
-				assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd())
+				assert.Equal(t, dstime.ToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart())
+				assert.Equal(t, dstime.ToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd())
 			}
 		})
 	}

@@ -20,6 +20,7 @@ import (
 	gokitlog "github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block"
@@ -29,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 type config struct {
@@ -237,10 +237,10 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 			continue
 		}
 
-		if !time.Time(cfg.minTime).IsZero() && util.TimeFromMillis(b.MinTime).Before(time.Time(cfg.minTime)) {
+		if !time.Time(cfg.minTime).IsZero() && dstime.FromMillis(b.MinTime).Before(time.Time(cfg.minTime)) {
 			continue
 		}
-		if !time.Time(cfg.maxTime).IsZero() && util.TimeFromMillis(b.MaxTime).After(time.Time(cfg.maxTime)) {
+		if !time.Time(cfg.maxTime).IsZero() && dstime.FromMillis(b.MaxTime).After(time.Time(cfg.maxTime)) {
 			continue
 		}
 
@@ -249,11 +249,11 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 			fmt.Fprintf(tabber, "%d\t", tsdb.HashBlockID(b.ULID)%uint32(cfg.splitCount))
 		}
 		if cfg.showCreationTime {
-			fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
+			fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
 		}
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
+		fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(b.MinTime).UTC().Format(time.RFC3339))
+		fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(b.MaxTime).UTC().Format(time.RFC3339))
+		fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(b.MaxTime).Sub(dstime.FromMillis(b.MinTime)))
 
 		if cfg.showDeleted {
 			if deletedTimes[b.ULID].IsZero() {

@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -36,7 +37,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -1140,29 +1140,29 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 	}{
 		"should not manipulate query time range if queryStoreAfter is disabled": {
 			queryStoreAfter: 0,
-			queryMinT:       util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:       util.TimeToMillis(now.Add(-30 * time.Minute)),
-			expectedMinT:    util.TimeToMillis(now.Add(-100 * time.Minute)),
-			expectedMaxT:    util.TimeToMillis(now.Add(-30 * time.Minute)),
+			queryMinT:       dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:       dstime.ToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:    dstime.ToMillis(now.Add(-100 * time.Minute)),
+			expectedMaxT:    dstime.ToMillis(now.Add(-30 * time.Minute)),
 		},
 		"should not manipulate query time range if queryStoreAfter is enabled but query max time is older": {
 			queryStoreAfter: time.Hour,
-			queryMinT:       util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:       util.TimeToMillis(now.Add(-70 * time.Minute)),
-			expectedMinT:    util.TimeToMillis(now.Add(-100 * time.Minute)),
-			expectedMaxT:    util.TimeToMillis(now.Add(-70 * time.Minute)),
+			queryMinT:       dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:       dstime.ToMillis(now.Add(-70 * time.Minute)),
+			expectedMinT:    dstime.ToMillis(now.Add(-100 * time.Minute)),
+			expectedMaxT:    dstime.ToMillis(now.Add(-70 * time.Minute)),
 		},
 		"should manipulate query time range if queryStoreAfter is enabled and query max time is recent": {
 			queryStoreAfter: time.Hour,
-			queryMinT:       util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:       util.TimeToMillis(now.Add(-30 * time.Minute)),
-			expectedMinT:    util.TimeToMillis(now.Add(-100 * time.Minute)),
-			expectedMaxT:    util.TimeToMillis(now.Add(-60 * time.Minute)),
+			queryMinT:       dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:       dstime.ToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:    dstime.ToMillis(now.Add(-100 * time.Minute)),
+			expectedMaxT:    dstime.ToMillis(now.Add(-60 * time.Minute)),
 		},
 		"should skip the query if the query min time is more recent than queryStoreAfter": {
 			queryStoreAfter: time.Hour,
-			queryMinT:       util.TimeToMillis(now.Add(-50 * time.Minute)),
-			queryMaxT:       util.TimeToMillis(now.Add(-20 * time.Minute)),
+			queryMinT:       dstime.ToMillis(now.Add(-50 * time.Minute)),
+			queryMaxT:       dstime.ToMillis(now.Add(-20 * time.Minute)),
 			expectedMinT:    0,
 			expectedMaxT:    0,
 		},

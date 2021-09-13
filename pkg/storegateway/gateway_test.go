@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
 	dstest "github.com/grafana/dskit/test"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -975,7 +976,7 @@ func TestBucketStore_Series_QuerySharding(t *testing.T) {
 			nextSeries := series[nextID]
 			nextID++
 
-			return true, nextSeries, util.TimeToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
+			return true, nextSeries, dstime.ToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
 		}
 	}())
 

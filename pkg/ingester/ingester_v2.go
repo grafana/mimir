@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -548,7 +549,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 	i.TSDBState.shipperIngesterID = i.lifecycler.ID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
-	i.TSDBState.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
+	i.TSDBState.compactionIdleTimeout = dstime.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
 	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.TSDBState.compactionIdleTimeout)
 
 	i.BasicService = services.NewBasicService(i.startingV2, i.updateLoop, i.stoppingV2)
@@ -1686,7 +1687,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	if db.Head().NumSeries() > 0 {
 		// If there are series in the head, use max time from head. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
-		userDB.setLastUpdate(util.TimeFromMillis(db.Head().MaxTime()))
+		userDB.setLastUpdate(dstime.FromMillis(db.Head().MaxTime()))
 	} else {
 		// If head is empty (eg. new TSDB), don't close it right after.
 		userDB.setLastUpdate(time.Now())
@@ -1905,7 +1906,7 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 	// We add a slight jitter to make sure that if the head compaction interval and ship interval are set to the same
 	// value they don't clash (if they both continuously run at the same exact time, the head compaction may not run
 	// because can't successfully change the state).
-	shipTicker := time.NewTicker(util.DurationWithJitter(i.cfg.BlocksStorageConfig.TSDB.ShipInterval, 0.01))
+	shipTicker := time.NewTicker(dstime.DurationWithJitter(i.cfg.BlocksStorageConfig.TSDB.ShipInterval, 0.01))
 	defer shipTicker.Stop()
 
 	for {
