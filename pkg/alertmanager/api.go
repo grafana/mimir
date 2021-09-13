@@ -15,10 +15,10 @@ import (
 	"path/filepath"
 	"reflect"
 
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/concurrency"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 
 	"github.com/go-kit/kit/log"
