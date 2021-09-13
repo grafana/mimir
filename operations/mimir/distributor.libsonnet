@@ -6,6 +6,7 @@
     $._config.grpcConfig +
     $._config.ringConfig +
     $._config.distributorConfig +
+    $._config.distributorLimitsConfig +
     {
       target: 'distributor',
 
@@ -30,8 +31,6 @@
       'server.grpc.keepalive.max-connection-idle': '1m',
 
       'distributor.ingestion-rate-limit-strategy': 'global',
-      'distributor.ingestion-rate-limit': $._config.limits.ingestion_rate,
-      'distributor.ingestion-burst-size': $._config.limits.ingestion_burst_size,
 
       // The ingestion rate global limit requires the distributors to form a ring.
       'distributor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,

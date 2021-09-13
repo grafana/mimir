@@ -312,6 +312,29 @@
     // These are the defaults.
     limits: $._config.overrides.extra_small_user,
 
+    // These are all the flags for the default limits.
+    distributorLimitsConfig: {
+      'distributor.ingestion-rate-limit': $._config.limits.ingestion_rate,
+      'distributor.ingestion-burst-size': $._config.limits.ingestion_burst_size,
+    },
+    ingesterLimitsConfig: {
+      'ingester.max-series-per-user': $._config.limits.max_series_per_user,
+      'ingester.max-series-per-metric': $._config.limits.max_series_per_metric,
+      'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
+      'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
+      'ingester.max-series-per-query': $._config.limits.max_series_per_query,
+      'ingester.max-samples-per-query': $._config.limits.max_samples_per_query,
+    },
+    rulerLimitsConfig: {
+      'ruler.max-rules-per-rule-group': $._config.limits.ruler_max_rules_per_rule_group,
+      'ruler.max-rule-groups-per-tenant': $._config.limits.ruler_max_rule_groups_per_tenant,
+    },
+    compactorLimitsConfig: {
+      'compactor.blocks-retention-period': $._config.limits.compactor_blocks_retention_period,
+    },
+
+    limitsConfig: self.distributorLimitsConfig + self.ingesterLimitsConfig + self.rulerLimitsConfig + self.compactorLimitsConfig,
+
     overrides_configmap: 'overrides',
 
     overrides: {

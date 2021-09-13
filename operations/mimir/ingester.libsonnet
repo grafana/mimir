@@ -6,6 +6,7 @@
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.distributorConfig +  // This adds the distributor ring flags to the ingester.
+    $._config.ingesterLimitsConfig +
     {
       target: 'ingester',
 
@@ -24,12 +25,6 @@
 
       // Limits config.
       'ingester.max-chunk-idle': $._config.max_chunk_idle,
-      'ingester.max-series-per-user': $._config.limits.max_series_per_user,
-      'ingester.max-series-per-metric': $._config.limits.max_series_per_metric,
-      'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
-      'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
-      'ingester.max-series-per-query': $._config.limits.max_series_per_query,
-      'ingester.max-samples-per-query': $._config.limits.max_samples_per_query,
       'runtime-config.file': '/etc/cortex/overrides.yaml',
       'server.grpc-max-concurrent-streams': 10000,
       'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
