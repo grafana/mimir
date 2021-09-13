@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -49,8 +49,8 @@ type userState struct {
 	fpToSeries          *seriesMap
 	mapper              *fpMapper
 	index               *index.InvertedIndex
-	ingestedAPISamples  *util_math.EwmaRate
-	ingestedRuleSamples *util_math.EwmaRate
+	ingestedAPISamples  *dsmath.EwmaRate
+	ingestedRuleSamples *dsmath.EwmaRate
 	activeSeries        *ActiveSeries
 	logger              log.Logger
 
@@ -159,8 +159,8 @@ func (us *userStates) getOrCreate(userID string) *userState {
 			fpToSeries:          newSeriesMap(),
 			fpLocker:            newFingerprintLocker(16 * 1024),
 			index:               index.New(),
-			ingestedAPISamples:  util_math.NewEWMARate(0.2, us.cfg.RateUpdatePeriod),
-			ingestedRuleSamples: util_math.NewEWMARate(0.2, us.cfg.RateUpdatePeriod),
+			ingestedAPISamples:  dsmath.NewEWMARate(0.2, us.cfg.RateUpdatePeriod),
+			ingestedRuleSamples: dsmath.NewEWMARate(0.2, us.cfg.RateUpdatePeriod),
 			seriesInMetric:      newMetricCounter(us.limiter, us.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
 			logger:              logger,
 

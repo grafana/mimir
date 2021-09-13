@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -48,7 +49,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/limiter"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -751,7 +751,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 					// shard by all labels are enabled.
 					var expectedIngesters int
 					if shuffleShardEnabled {
-						expectedIngesters = util_math.Min(shuffleShardSize, numIngesters)
+						expectedIngesters = dsmath.Min(shuffleShardSize, numIngesters)
 					} else if shardByAllLabels {
 						expectedIngesters = numIngesters
 					} else {

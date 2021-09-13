@@ -26,8 +26,8 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/grafana/dskit/services"
-	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -56,7 +56,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1927,7 +1926,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 
 	for ts := startTimestamp; ts < startTimestamp+(step*int64(numSamplesPerSeries)); ts += step {
 		for o := 0; o < numSeries; o += maxBatchSize {
-			batchSize := util_math.Min(maxBatchSize, numSeries-o)
+			batchSize := dsmath.Min(maxBatchSize, numSeries-o)
 
 			// Generate metrics and samples (1 for each series).
 			metrics := make([]labels.Labels, 0, batchSize)

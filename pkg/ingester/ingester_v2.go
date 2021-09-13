@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/dskit/concurrency"
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -50,7 +50,6 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
 	logutil "github.com/grafana/mimir/pkg/util/log"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -143,8 +142,8 @@ type userTSDB struct {
 	lastDeletionMarkCheck atomic.Int64
 
 	// for statistics
-	ingestedAPISamples  *util_math.EwmaRate
-	ingestedRuleSamples *util_math.EwmaRate
+	ingestedAPISamples  *dsmath.EwmaRate
+	ingestedRuleSamples *dsmath.EwmaRate
 
 	// Cached shipped blocks.
 	shippedBlocksMtx sync.Mutex
@@ -508,7 +507,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		wal:                 &noopWAL{},
 		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
 		logger:              logger,
-		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
+		ingestionRate:       dsmath.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 		activeSeriesMatcher: asm,
 	}
 	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
@@ -1639,8 +1638,8 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		userID:              userID,
 		activeSeries:        NewActiveSeries(i.activeSeriesMatcher),
 		seriesInMetric:      newMetricCounter(i.limiter, i.cfg.getIgnoreSeriesLimitForMetricNamesMap()),
-		ingestedAPISamples:  util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
-		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		ingestedAPISamples:  dsmath.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
+		ingestedRuleSamples: dsmath.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 
 		instanceLimitsFn:    i.getInstanceLimits,
 		instanceSeriesCount: &i.TSDBState.seriesCount,

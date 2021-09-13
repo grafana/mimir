@@ -9,10 +9,10 @@ import (
 	"fmt"
 	"math"
 
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -263,7 +263,7 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 	// be written to more ingesters than it.
 	if shardSize := l.getShardSize(userID); shardSize > 0 {
 		// We use Min() to protect from the case the expected shard size is > available ingesters.
-		numIngesters = util_math.Min(numIngesters, util.ShuffleShardExpectedInstances(shardSize, l.getNumZones()))
+		numIngesters = dsmath.Min(numIngesters, util.ShuffleShardExpectedInstances(shardSize, l.getNumZones()))
 	}
 
 	return int((float64(globalLimit) / float64(numIngesters)) * float64(l.replicationFactor))
@@ -279,7 +279,7 @@ func (l *Limiter) getShardSize(userID string) int {
 
 func (l *Limiter) getNumZones() int {
 	if l.zoneAwarenessEnabled {
-		return util_math.Max(l.ring.ZonesCount(), 1)
+		return dsmath.Max(l.ring.ZonesCount(), 1)
 	}
 	return 1
 }

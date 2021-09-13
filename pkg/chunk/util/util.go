@@ -9,14 +9,13 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 
-	"io"
-
+	"github.com/grafana/dskit/math"
 	ot "github.com/opentracing/opentracing-go"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/util/math"
 )
 
 // Callback from an IndexQuery.

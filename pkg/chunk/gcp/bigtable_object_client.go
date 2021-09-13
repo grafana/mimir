@@ -10,12 +10,12 @@ import (
 	"fmt"
 
 	"cloud.google.com/go/bigtable"
+	"github.com/grafana/dskit/math"
 	ot "github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/util/math"
 )
 
 type bigtableObjectClient struct {

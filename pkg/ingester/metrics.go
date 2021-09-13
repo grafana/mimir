@@ -6,12 +6,12 @@
 package ingester
 
 import (
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
 const (
@@ -81,7 +81,7 @@ func newIngesterMetrics(
 	activeSeriesEnabled bool,
 	activeSeriesCustomTrackerNames []string,
 	instanceLimitsFn func() *InstanceLimits,
-	ingestionRate *util_math.EwmaRate,
+	ingestionRate *dsmath.EwmaRate,
 	inflightRequests *atomic.Int64,
 ) *ingesterMetrics {
 	const (

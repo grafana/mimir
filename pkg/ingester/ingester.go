@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/status"
+	dsmath "github.com/grafana/dskit/math"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,7 +38,6 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	logutil "github.com/grafana/mimir/pkg/util/log"
-	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -218,7 +218,7 @@ type Ingester struct {
 	TSDBState TSDBState
 
 	// Rate of pushed samples. Only used by V2-ingester to limit global samples push rate.
-	ingestionRate        *util_math.EwmaRate
+	ingestionRate        *dsmath.EwmaRate
 	inflightPushRequests atomic.Int64
 }
 
