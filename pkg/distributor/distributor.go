@@ -754,6 +754,15 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		subRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 	}
 
+	// Use a background context to make sure all ingesters get samples even if we return early
+	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
+	localCtx = user.InjectOrgID(localCtx, userID)
+	// Get clientIP(s) from Context and add it to localCtx
+	localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
+	if sp := opentracing.SpanFromContext(ctx); sp != nil {
+		localCtx = opentracing.ContextWithSpan(localCtx, sp)
+	}
+
 	keys := append(seriesKeys, metadataKeys...)
 	initialMetadataIndex := len(seriesKeys)
 
@@ -774,19 +783,8 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 			}
 		}
 
-		// Use a background context to make sure all ingesters get samples even if we return early
-		localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
-		defer cancel()
-		localCtx = user.InjectOrgID(localCtx, userID)
-		if sp := opentracing.SpanFromContext(ctx); sp != nil {
-			localCtx = opentracing.ContextWithSpan(localCtx, sp)
-		}
-
-		// Get clientIP(s) from Context and add it to localCtx
-		localCtx = util.AddSourceIPsToOutgoingContext(localCtx, source)
-
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
-	}, func() { mimirpb.ReuseSlice(req.Timeseries) })
+	}, func() { mimirpb.ReuseSlice(req.Timeseries); cancel() })
 	if err != nil {
 		return nil, err
 	}
