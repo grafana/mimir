@@ -1022,7 +1022,7 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	}
 
 	if am.fallbackConfig != "" {
-		userAM, err = am.alertmanagerFromFallbackConfig(userID)
+		userAM, err = am.alertmanagerFromFallbackConfig(req.Context(), userID)
 		if err != nil {
 			level.Error(am.logger).Log("msg", "unable to initialize the Alertmanager with a fallback configuration", "user", userID, "err", err)
 			http.Error(w, "Failed to initialize the Alertmanager", http.StatusInternalServerError)
@@ -1037,10 +1037,32 @@ func (am *MultitenantAlertmanager) serveRequest(w http.ResponseWriter, req *http
 	http.Error(w, "the Alertmanager is not configured", http.StatusNotFound)
 }
 
-func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(userID string) (*Alertmanager, error) {
+func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Context, userID string) (*Alertmanager, error) {
+	// Make sure we never create fallback instances for a user not owned by this instance.
+	// This check is not strictly necessary as the configuration polling loop will deactivate
+	// any tenants which are not meant to be in an instance, but it is confusing and potentially
+	// wasteful to have them start-up when they are not needed.
+	if !am.isUserOwned(userID) {
+		return nil, errors.New("not uploading fallback configuration: user not owned by this instance")
+	}
+
+	// We should be careful never to replace an existing configuration with the fallback.
+	// There is a small window of time between the check and upload where a user could
+	// have uploaded a configuration, but this only applies to the first ever request made.
+	_, err := am.store.GetAlertConfig(ctx, userID)
+	if err == nil {
+		// If there is a configuration, then the polling cycle should pick it up.
+		return nil, errors.New("not uploading fallback configuration: user has a configuration")
+	}
+	if !errors.Is(err, alertspb.ErrNotFound) {
+		return nil, err
+	}
+
+	level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
+
 	// Upload an empty config so that the Alertmanager is no de-activated in the next poll
 	cfgDesc := alertspb.ToProto("", nil, userID)
-	err := am.store.SetAlertConfig(context.Background(), cfgDesc)
+	err = am.store.SetAlertConfig(ctx, cfgDesc)
 	if err != nil {
 		return nil, err
 	}
