@@ -529,6 +529,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 }
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
+// Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
 	cleanupInDefer := true
 	defer func() {
@@ -592,6 +593,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
 		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+		cluster, replica = copyString(cluster), copyString(replica)
 		if span != nil {
 			span.SetTag("cluster", cluster)
 			span.SetTag("replica", replica)
@@ -771,6 +774,10 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, firstPartialErr
+}
+
+func copyString(s string) string {
+	return string([]byte(s))
 }
 
 func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
