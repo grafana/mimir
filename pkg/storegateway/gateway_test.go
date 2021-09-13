@@ -25,6 +25,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	dstest "github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -519,7 +520,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	// store-gateways behaves with regards to blocks syncing while other replicas are JOINING.
 
 	// Wait until all the initial store-gateways sees all new store-gateways too.
-	test.Poll(t, 5*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
+	dstest.Poll(t, 5*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
 		metrics := initialRegistries.BuildMetricFamiliesPerUser()
 		return metrics.GetSumOfGauges("cortex_ring_members")
 	})
@@ -555,7 +556,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// At this point the new store-gateways are expected to be ACTIVE in the ring and all the initial
 	// store-gateways should unload blocks they don't own anymore.
-	test.Poll(t, 5*time.Second, float64(expectedBlocksLoaded), func() interface{} {
+	dstest.Poll(t, 5*time.Second, float64(expectedBlocksLoaded), func() interface{} {
 		metrics := allRegistries.BuildMetricFamiliesPerUser()
 		return metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded")
 	})
@@ -760,7 +761,7 @@ func TestStoreGateway_SyncOnRingTopologyChanged(t *testing.T) {
 
 			// Assert whether the sync triggered or not.
 			if testData.expectedSync {
-				test.Poll(t, time.Second, float64(2), func() interface{} {
+				dstest.Poll(t, time.Second, float64(2), func() interface{} {
 					metrics := regs.BuildMetricFamiliesPerUser()
 					return metrics.GetSumOfCounters("cortex_storegateway_bucket_sync_total")
 				})
@@ -812,7 +813,7 @@ func TestStoreGateway_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testin
 	}))
 
 	// Ensure the unhealthy instance is removed from the ring.
-	test.Poll(t, time.Second, false, func() interface{} {
+	dstest.Poll(t, time.Second, false, func() interface{} {
 		d, err := ringStore.Get(ctx, RingKey)
 		if err != nil {
 			return err

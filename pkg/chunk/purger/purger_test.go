@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -25,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (

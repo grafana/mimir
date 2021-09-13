@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -21,7 +22,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSyncRuleGroups(t *testing.T) {

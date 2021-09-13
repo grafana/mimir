@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/client_golang/prometheus"
@@ -20,8 +21,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDispatcherGroupLimits(t *testing.T) {

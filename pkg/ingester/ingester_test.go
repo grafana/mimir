@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -39,7 +40,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 

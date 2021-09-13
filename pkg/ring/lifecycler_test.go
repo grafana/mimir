@@ -18,11 +18,10 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func testLifecyclerConfig(ringConfig Config, id string) LifecyclerConfig {

@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/test/poll.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package test
 
 import (
@@ -11,7 +6,7 @@ import (
 	"time"
 )
 
-// Poll repeatedly evaluates condition until we either timeout, or it succeeds.
+// Poll repeatedly calls a function until the function returns the correct response or until poll timeout.
 func Poll(t testing.TB, d time.Duration, want interface{}, have func() interface{}) {
 	t.Helper()
 	deadline := time.Now().Add(d)
