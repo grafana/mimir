@@ -144,6 +144,7 @@
     $._config.grpcConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
+    $._config.compactorLimitsConfig +
     {
       target: 'compactor',
 
@@ -162,7 +163,6 @@
 
       // Limits config.
       'runtime-config.file': '/etc/cortex/overrides.yaml',
-      'compactor.blocks-retention-period': $._config.limits.compactor_blocks_retention_period,
     },
 
   compactor_ports:: $.util.defaultPorts,
