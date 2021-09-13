@@ -20,6 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
@@ -42,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/concurrency"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
