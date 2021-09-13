@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -133,8 +133,8 @@ func (m *Block) thanosMetaSegmentFiles() (files []string) {
 }
 
 func (m *Block) String() string {
-	minT := util.TimeFromMillis(m.MinTime).UTC()
-	maxT := util.TimeFromMillis(m.MaxTime).UTC()
+	minT := dstime.TimeFromMillis(m.MinTime).UTC()
+	maxT := dstime.TimeFromMillis(m.MaxTime).UTC()
 
 	return fmt.Sprintf("%s (min time: %s max time: %s)", m.ID, minT.String(), maxT.String())
 }

@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -22,8 +23,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestBlockQuerierSeries(t *testing.T) {
@@ -461,7 +460,7 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 
 		// Create chunks with 1 sample per second.
 		for minT := int64(0); minT < numChunksPerSeries*numSamplesPerChunk; minT += numSamplesPerChunk {
-			chunks = append(chunks, createAggrChunkWithSineSamples(util.TimeFromMillis(minT), util.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
+			chunks = append(chunks, createAggrChunkWithSineSamples(dstime.TimeFromMillis(minT), dstime.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
 		}
 
 		series = append(series, &storepb.Series{
@@ -499,7 +498,7 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 
 		// Create chunks with 1 sample per second.
 		for minT := int64(0); minT < numChunksPerSeries*numSamplesPerChunk; minT += numSamplesPerChunk {
-			chunks = append(chunks, createAggrChunkWithSineSamples(util.TimeFromMillis(minT), util.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
+			chunks = append(chunks, createAggrChunkWithSineSamples(dstime.TimeFromMillis(minT), dstime.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
 		}
 
 		series = append(series, &storepb.Series{

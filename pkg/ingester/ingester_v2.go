@@ -1729,7 +1729,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	if db.Head().NumSeries() > 0 {
 		// If there are series in the head, use max time from head. If this time is too old,
 		// TSDB will be eligible for flushing and closing sooner, unless more data is pushed to it quickly.
-		userDB.setLastUpdate(util.TimeFromMillis(db.Head().MaxTime()))
+		userDB.setLastUpdate(dstime.TimeFromMillis(db.Head().MaxTime()))
 	} else {
 		// If head is empty (eg. new TSDB), don't close it right after.
 		userDB.setLastUpdate(time.Now())
