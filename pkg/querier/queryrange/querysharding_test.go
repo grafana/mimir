@@ -600,8 +600,8 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 	qry, err := h.engine.NewRangeQuery(
 		h.queryable,
 		r.GetQuery(),
-		dstime.TimeFromMillis(r.GetStart()),
-		dstime.TimeFromMillis(r.GetEnd()),
+		dstime.FromMillis(r.GetStart()),
+		dstime.FromMillis(r.GetEnd()),
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
 	if err != nil {

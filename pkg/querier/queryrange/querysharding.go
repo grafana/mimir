@@ -109,8 +109,8 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	qry, err := s.engine.NewRangeQuery(
 		lazyquery.NewLazyQueryable(shardedQueryable),
 		r.GetQuery(),
-		dstime.TimeFromMillis(r.GetStart()),
-		dstime.TimeFromMillis(r.GetEnd()),
+		dstime.FromMillis(r.GetStart()),
+		dstime.FromMillis(r.GetEnd()),
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
 	if err != nil {

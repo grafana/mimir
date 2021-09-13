@@ -460,7 +460,7 @@ func Benchmark_blockQuerierSeriesSet_iteration(b *testing.B) {
 
 		// Create chunks with 1 sample per second.
 		for minT := int64(0); minT < numChunksPerSeries*numSamplesPerChunk; minT += numSamplesPerChunk {
-			chunks = append(chunks, createAggrChunkWithSineSamples(dstime.TimeFromMillis(minT), dstime.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
+			chunks = append(chunks, createAggrChunkWithSineSamples(dstime.FromMillis(minT), dstime.FromMillis(minT+numSamplesPerChunk), time.Millisecond))
 		}
 
 		series = append(series, &storepb.Series{
@@ -498,7 +498,7 @@ func Benchmark_blockQuerierSeriesSet_seek(b *testing.B) {
 
 		// Create chunks with 1 sample per second.
 		for minT := int64(0); minT < numChunksPerSeries*numSamplesPerChunk; minT += numSamplesPerChunk {
-			chunks = append(chunks, createAggrChunkWithSineSamples(dstime.TimeFromMillis(minT), dstime.TimeFromMillis(minT+numSamplesPerChunk), time.Millisecond))
+			chunks = append(chunks, createAggrChunkWithSineSamples(dstime.FromMillis(minT), dstime.FromMillis(minT+numSamplesPerChunk), time.Millisecond))
 		}
 
 		series = append(series, &storepb.Series{

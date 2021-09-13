@@ -133,8 +133,8 @@ func (m *Block) thanosMetaSegmentFiles() (files []string) {
 }
 
 func (m *Block) String() string {
-	minT := dstime.TimeFromMillis(m.MinTime).UTC()
-	maxT := dstime.TimeFromMillis(m.MaxTime).UTC()
+	minT := dstime.FromMillis(m.MinTime).UTC()
+	maxT := dstime.FromMillis(m.MaxTime).UTC()
 
 	return fmt.Sprintf("%s (min time: %s max time: %s)", m.ID, minT.String(), maxT.String())
 }
