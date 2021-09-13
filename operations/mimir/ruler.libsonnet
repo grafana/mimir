@@ -10,6 +10,7 @@
     $._config.queryConfig +
     $._config.distributorConfig +
     $._config.rulerClientConfig +
+    $._config.rulerLimitsConfig +
     {
       target: 'ruler',
       // Alertmanager configs
