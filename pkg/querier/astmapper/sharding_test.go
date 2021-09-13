@@ -38,21 +38,21 @@ func TestShardSummer(t *testing.T) {
 		{
 
 			`histogram_quantile(0.5, rate(bar1{baz="blip"}[30s]))`,
-			concat(
-				`histogram_quantile(0.5,rate(bar1{__query_shard__="0_of_3",baz="blip"}[30s]))`,
-				`histogram_quantile(0.5,rate(bar1{__query_shard__="1_of_3",baz="blip"}[30s]))`,
-				`histogram_quantile(0.5,rate(bar1{__query_shard__="2_of_3",baz="blip"}[30s]))`,
-			),
+			`histogram_quantile(0.5, ` + concat(
+				`rate(bar1{__query_shard__="0_of_3",baz="blip"}[30s])`,
+				`rate(bar1{__query_shard__="1_of_3",baz="blip"}[30s])`,
+				`rate(bar1{__query_shard__="2_of_3",baz="blip"}[30s])`,
+			) + `)`,
 			3,
 		},
 		{
 			`sum by (foo) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket[10m])))`,
-			`sum by (foo) (
+			`sum by (foo) (histogram_quantile(0.9,
 				` + concat(
-				`sum by (foo) (histogram_quantile(0.9,rate(http_request_duration_seconds_bucket{__query_shard__="0_of_3"}[10m])))`,
-				`sum by (foo) (histogram_quantile(0.9,rate(http_request_duration_seconds_bucket{__query_shard__="1_of_3"}[10m])))`,
-				`sum by (foo) (histogram_quantile(0.9,rate(http_request_duration_seconds_bucket{__query_shard__="2_of_3"}[10m])))`,
-			) + `)`,
+				`rate(http_request_duration_seconds_bucket{__query_shard__="0_of_3"}[10m])`,
+				`rate(http_request_duration_seconds_bucket{__query_shard__="1_of_3"}[10m])`,
+				`rate(http_request_duration_seconds_bucket{__query_shard__="2_of_3"}[10m])`,
+			) + `))`,
 			3,
 		},
 		{
