@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
@@ -72,8 +73,8 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 			// empty response.
 			level.Debug(log).Log(
 				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' setting",
-				"reqStart", util.FormatTimeMillis(r.GetStart()),
-				"redEnd", util.FormatTimeMillis(r.GetEnd()),
+				"reqStart", dstime.FormatTimeMillis(r.GetStart()),
+				"redEnd", dstime.FormatTimeMillis(r.GetEnd()),
 				"maxQueryLookback", maxQueryLookback)
 
 			return NewEmptyPrometheusResponse(), nil
@@ -83,8 +84,8 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 			// Replace the start time in the request.
 			level.Debug(log).Log(
 				"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
-				"original", util.FormatTimeMillis(r.GetStart()),
-				"updated", util.FormatTimeMillis(minStartTime))
+				"original", dstime.FormatTimeMillis(r.GetStart()),
+				"updated", dstime.FormatTimeMillis(minStartTime))
 
 			r = r.WithStartEnd(minStartTime, r.GetEnd())
 		}

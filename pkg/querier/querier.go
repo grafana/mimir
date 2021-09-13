@@ -17,6 +17,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -582,8 +583,8 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 		// Make sure to log it in traces to ease debugging.
 		level.Debug(spanlogger.FromContext(ctx)).Log(
 			"msg", "the end time of the query has been manipulated because of the 'max query into future' setting",
-			"original", util.FormatTimeModel(origEndTime),
-			"updated", util.FormatTimeModel(endTime))
+			"original", dstime.FormatTimeModel(origEndTime),
+			"updated", dstime.FormatTimeModel(endTime))
 
 		if endTime.Before(startTime) {
 			return 0, 0, errEmptyTimeRange
@@ -598,8 +599,8 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 		// Make sure to log it in traces to ease debugging.
 		level.Debug(spanlogger.FromContext(ctx)).Log(
 			"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
-			"original", util.FormatTimeModel(origStartTime),
-			"updated", util.FormatTimeModel(startTime))
+			"original", dstime.FormatTimeModel(origStartTime),
+			"updated", dstime.FormatTimeModel(startTime))
 
 		if endTime.Before(startTime) {
 			return 0, 0, errEmptyTimeRange
