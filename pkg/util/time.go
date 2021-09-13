@@ -6,14 +6,10 @@
 package util
 
 import (
-	"math"
 	"math/rand"
-	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/weaveworks/common/httpgrpc"
 )
 
 const (
@@ -37,20 +33,6 @@ func FormatTimeMillis(ms int64) string {
 // FormatTimeModel returns a human readable version of the input time.
 func FormatTimeModel(t model.Time) string {
 	return TimeFromMillis(int64(t)).String()
-}
-
-// ParseTime parses the string into an int64, milliseconds since epoch.
-func ParseTime(s string) (int64, error) {
-	if t, err := strconv.ParseFloat(s, 64); err == nil {
-		s, ns := math.Modf(t)
-		ns = math.Round(ns*1000) / 1000
-		tm := time.Unix(int64(s), int64(ns*float64(time.Second)))
-		return TimeToMillis(tm), nil
-	}
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return TimeToMillis(t), nil
-	}
-	return 0, httpgrpc.Errorf(http.StatusBadRequest, "cannot parse %q to a valid timestamp", s)
 }
 
 // DurationWithJitter returns random duration from "input - input*variance" to "input + input*variance" interval.
