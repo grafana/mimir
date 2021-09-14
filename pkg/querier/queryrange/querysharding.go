@@ -94,8 +94,11 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.TotalShards)
 
-	if totalShards == 0 {
+	if r.GetOptions().ShardingDisabled || totalShards <= 0 {
 		return s.next.Do(ctx, r)
+	}
+	if r.GetOptions().TotalShards > 0 {
+		totalShards = int(r.GetOptions().TotalShards)
 	}
 
 	s.shardingAttempts.Inc()
