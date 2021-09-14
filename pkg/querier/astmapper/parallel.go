@@ -25,6 +25,7 @@ var summableAggregates = map[parser.ItemType]struct{}{
 var nonParallelFuncs = []string{
 	"absent",
 	"absent_over_time",
+	"histogram_quantile",
 	"vector",
 	"time",
 	"sort_desc",
