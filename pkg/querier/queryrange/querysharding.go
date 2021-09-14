@@ -18,6 +18,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
+	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -93,11 +94,11 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	s.shardingAttempts.Inc()
-	shardedQuery, stats, err := s.shardQuery(r.GetQuery(), totalShards)
+	shardedQuery, shardingStats, err := s.shardQuery(r.GetQuery(), totalShards)
 
 	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
-	if err != nil || stats.GetShardedQueries() == 0 {
+	if err != nil || shardingStats.GetShardedQueries() == 0 {
 		if err != nil {
 			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
 		} else {
@@ -107,10 +108,16 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return s.next.Do(ctx, r)
 	}
 
-	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
+	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery, "sharded_queries", shardingStats.GetShardedQueries())
+
+	// Update metrics.
 	s.shardingSuccesses.Inc()
-	s.shardedQueries.Add(float64(stats.GetShardedQueries()))
-	s.shardedQueriesPerQuery.Observe(float64(stats.GetShardedQueries()))
+	s.shardedQueries.Add(float64(shardingStats.GetShardedQueries()))
+	s.shardedQueriesPerQuery.Observe(float64(shardingStats.GetShardedQueries()))
+
+	// Update query stats.
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
@@ -125,6 +132,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	res := qry.Exec(ctx)
 	extracted, err := FromResult(res)
 	if err != nil {

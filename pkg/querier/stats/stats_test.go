@@ -81,6 +81,23 @@ func TestStats_AddFetchedChunks(t *testing.T) {
 	})
 }
 
+func TestStats_AddShardedQueries(t *testing.T) {
+	t.Run("add and load sharded queries", func(t *testing.T) {
+		stats, _ := ContextWithEmptyStats(context.Background())
+		stats.AddShardedQueries(20)
+		stats.AddShardedQueries(22)
+
+		assert.Equal(t, uint32(42), stats.LoadShardedQueries())
+	})
+
+	t.Run("add and load sharded queries nil receiver", func(t *testing.T) {
+		var stats *Stats
+		stats.AddShardedQueries(3)
+
+		assert.Equal(t, uint32(0), stats.LoadShardedQueries())
+	})
+}
+
 func TestStats_Merge(t *testing.T) {
 	t.Run("merge two stats objects", func(t *testing.T) {
 		stats1 := &Stats{}
@@ -88,12 +105,14 @@ func TestStats_Merge(t *testing.T) {
 		stats1.AddFetchedSeries(50)
 		stats1.AddFetchedChunkBytes(42)
 		stats1.AddFetchedChunks(10)
+		stats1.AddShardedQueries(20)
 
 		stats2 := &Stats{}
 		stats2.AddWallTime(time.Second)
 		stats2.AddFetchedSeries(60)
 		stats2.AddFetchedChunkBytes(100)
 		stats2.AddFetchedChunks(11)
+		stats2.AddShardedQueries(21)
 
 		stats1.Merge(stats2)
 
@@ -101,6 +120,7 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint64(110), stats1.LoadFetchedSeries())
 		assert.Equal(t, uint64(142), stats1.LoadFetchedChunkBytes())
 		assert.Equal(t, uint64(21), stats1.LoadFetchedChunks())
+		assert.Equal(t, uint32(41), stats1.LoadShardedQueries())
 	})
 
 	t.Run("merge two nil stats objects", func(t *testing.T) {
@@ -113,5 +133,6 @@ func TestStats_Merge(t *testing.T) {
 		assert.Equal(t, uint64(0), stats1.LoadFetchedSeries())
 		assert.Equal(t, uint64(0), stats1.LoadFetchedChunkBytes())
 		assert.Equal(t, uint64(0), stats1.LoadFetchedChunks())
+		assert.Equal(t, uint32(0), stats1.LoadShardedQueries())
 	})
 }
