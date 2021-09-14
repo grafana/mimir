@@ -1014,7 +1014,7 @@ receivers:
 	w := httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
 	resp := w.Result()
-	assert.Equal(t, http.StatusInternalServerError, resp.StatusCode)
+	assert.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
 
 	// Check the configuration has not been replaced.
 	readConfigDesc, err := store.GetAlertConfig(ctx, "user1")
