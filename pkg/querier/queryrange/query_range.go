@@ -15,7 +15,6 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -84,8 +83,8 @@ type Request interface {
 	GetStep() int64
 	// GetQuery returns the query of the request.
 	GetQuery() string
-	// GetCachingOptions returns the caching options.
-	GetCachingOptions() CachingOptions
+	// GetOptions returns the options for the given request.
+	GetOptions() Options
 	// WithStartEnd clone the current request with different start and end timestamp.
 	WithStartEnd(startTime int64, endTime int64) Request
 	// WithQuery clone the current request with a different query.
@@ -226,14 +225,7 @@ func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Reques
 
 	result.Query = r.FormValue("query")
 	result.Path = r.URL.Path
-
-	for _, value := range r.Header.Values(cacheControlHeader) {
-		if strings.Contains(value, noStoreValue) {
-			result.CachingOptions.Disabled = true
-			break
-		}
-	}
-
+	DecodeOptions(r, &result.Options)
 	return &result, nil
 }
 
