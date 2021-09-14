@@ -11,7 +11,7 @@ var (
 	CacheControlHeader = "Cache-Control"
 	NoStoreValue       = "no-store"
 
-	TotalShardsControlHeader = "Total-Shard-Control"
+	TotalShardsControlHeader = "Sharding-Control"
 )
 
 func DecodeOptions(r *http.Request, opts *Options) {

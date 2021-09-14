@@ -88,7 +88,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	totalShards := s.totalShards
-	if r.GetOptions().TotalShards != 0 {
+	if r.GetOptions().TotalShards > 0 {
 		totalShards = int(r.GetOptions().TotalShards)
 	}
 
