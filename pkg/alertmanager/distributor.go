@@ -107,11 +107,6 @@ func (d *Distributor) isQuorumReadPath(p string) (bool, merger.Merger) {
 	return false, nil
 }
 
-func (d *Distributor) isUnaryReadPath(p string) bool {
-	return strings.HasSuffix(p, "/status") ||
-		strings.HasSuffix(p, "/receivers")
-}
-
 // DistributeRequest shards the writes and returns as soon as the quorum is satisfied.
 // In case of reads, it proxies the request to one of the alertmanagers.
 func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) {
@@ -147,15 +142,14 @@ func (d *Distributor) DistributeRequest(w http.ResponseWriter, r *http.Request) 
 			d.doQuorum(userID, w, r, logger, m)
 			return
 		}
-		if d.isUnaryReadPath(r.URL.Path) {
-			d.doUnary(userID, w, r, logger)
-			return
-		}
+
+		// All other paths are just passed to a random replica.
+		// This is primarily used for serving the web user interface.
+		d.doUnary(userID, w, r, logger)
+		return
 	}
 
-	// All other paths are just passed to a random replica.
-	// This is primarily used for serving the web user interface.
-	d.doUnary(userID, w, r, logger)
+	http.Error(w, "route not supported by distributor", http.StatusNotFound)
 }
 
 func (d *Distributor) doQuorum(userID string, w http.ResponseWriter, r *http.Request, logger log.Logger, m merger.Merger) {
