@@ -197,14 +197,6 @@ func Test_FunctionParallelism(t *testing.T) {
 			tpl:          `(<fn>(0.99,bar1{}))`,
 		},
 		{
-			fn:  "histogram_quantile",
-			tpl: `(<fn>(0.5, metric_histogram_bucket{}))`,
-		},
-		{
-			fn:  "histogram_quantile",
-			tpl: `(<fn>(0.99, metric_histogram_bucket{}))`,
-		},
-		{
 			fn: "timestamp",
 		},
 		{
@@ -248,19 +240,12 @@ func Test_FunctionParallelism(t *testing.T) {
 				queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 					return &querierMock{
 						series: []*promql.StorageSeries{
-							// Counters.
 							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, factor(5)),
 							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, factor(7)),
 							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(12)),
 							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, factor(11)),
 							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(8)),
 							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, arithmeticSequence(10)),
-
-							// Histogram.
-							newSeries(newTestHistogramLabels(1, 0.1), start.Add(-lookbackDelta), end, factor(1)),
-							newSeries(newTestHistogramLabels(2, 0.2), start.Add(-lookbackDelta), end, factor(2)),
-							newSeries(newTestHistogramLabels(3, 0.5), start.Add(-lookbackDelta), end, factor(3)),
-							newSeries(newTestHistogramLabels(3, 1), start.Add(-lookbackDelta), end, factor(4)),
 						},
 					}, nil
 				})
