@@ -7,6 +7,7 @@ package queryrange
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -15,15 +16,18 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
+	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type querySharding struct {
-	totalShards int
+	limit Limits
 
 	engine *promql.Engine
 	next   Handler
@@ -45,7 +49,7 @@ type querySharding struct {
 func NewQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
-	totalShards int,
+	limit Limits,
 	registerer prometheus.Registerer,
 ) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
@@ -72,9 +76,9 @@ func NewQueryShardingMiddleware(
 				Help:      "Number of sharded queries a single query has been rewritten to.",
 				Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
 			}),
-			engine:      engine,
-			totalShards: totalShards,
-			logger:      logger,
+			engine: engine,
+			logger: logger,
+			limit:  limit,
 		}
 	})
 }
@@ -83,8 +87,19 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
 	defer log.Span.Finish()
 
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+	}
+
+	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.TotalShards)
+
+	if totalShards == 0 {
+		return s.next.Do(ctx, r)
+	}
+
 	s.shardingAttempts.Inc()
-	shardedQuery, stats, err := s.shardQuery(r.GetQuery())
+	shardedQuery, stats, err := s.shardQuery(r.GetQuery(), totalShards)
 
 	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
@@ -134,8 +149,8 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharding) shardQuery(query string) (string, *astmapper.MapperStats, error) {
-	mapper, err := astmapper.NewSharding(s.totalShards)
+func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
+	mapper, err := astmapper.NewSharding(totalShards)
 	if err != nil {
 		return "", nil, err
 	}

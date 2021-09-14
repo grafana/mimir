@@ -71,9 +71,6 @@ func (cfg *Config) Validate() error {
 			return errors.Wrap(err, "invalid ResultsCache config")
 		}
 	}
-	if cfg.ShardedQueries && cfg.TotalShards <= 0 {
-		return errors.New("querier.total-shards must be > 0 when parallelisation of shardable queries is enabled")
-	}
 	return nil
 }
 
@@ -189,7 +186,7 @@ func NewTripperware(
 			NewQueryShardingMiddleware(
 				log,
 				promql.NewEngine(engineOpts),
-				cfg.TotalShards,
+				limits,
 				registerer,
 			),
 		)
