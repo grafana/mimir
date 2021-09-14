@@ -36,6 +36,7 @@ type ProxyConfig struct {
 	ValueComparisonTolerance       float64
 	UseRelativeError               bool
 	PassThroughNonRegisteredRoutes bool
+	SkipRecentSamples              time.Duration
 }
 
 func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
@@ -46,6 +47,7 @@ func (cfg *ProxyConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CompareResponses, "proxy.compare-responses", false, "Compare responses between preferred and secondary endpoints for supported routes.")
 	f.Float64Var(&cfg.ValueComparisonTolerance, "proxy.value-comparison-tolerance", 0.000001, "The tolerance to apply when comparing floating point values in the responses. 0 to disable tolerance and require exact match (not recommended).")
 	f.BoolVar(&cfg.UseRelativeError, "proxy.compare-use-relative-error", false, "Use relative error tolerance when comparing floating point values.")
+	f.DurationVar(&cfg.SkipRecentSamples, "proxy.compare-skip-recent-samples", 60*time.Second, "The window from now to skip comparing samples. 0 to disable.")
 	f.BoolVar(&cfg.PassThroughNonRegisteredRoutes, "proxy.passthrough-non-registered-routes", false, "Passthrough requests for non-registered routes to preferred backend.")
 }
 
