@@ -613,7 +613,7 @@ func TestAlertmanagerSharding(t *testing.T) {
 					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
 					_, err = c.GetAlertmanager(context.Background(), "/debug/pprof")
 					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
-					_, err = c.GetAlertmanager(context.Background(), "/-/reload")
+					err = c.PostAlertmanager(context.Background(), "/-/reload")
 					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
 				}
 			}
