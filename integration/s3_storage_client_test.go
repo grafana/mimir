@@ -98,6 +98,11 @@ func TestS3Client(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			switch tt.name {
+			case "config-with-deprecated-sse", "config-with-sse-s3":
+				t.Skip("TODO: Issue #231")
+			}
+
 			client, err := s3.NewS3ObjectClient(tt.cfg)
 
 			require.NoError(t, err)
