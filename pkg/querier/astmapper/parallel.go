@@ -22,7 +22,8 @@ var summableAggregates = map[parser.ItemType]struct{}{
 	parser.AVG:   {},
 }
 
-var nonParallelFuncs = []string{
+// NonParallelFuncs is the list of functions that are not supported for parallelization.
+var NonParallelFuncs = []string{
 	"absent",
 	"absent_over_time",
 	"histogram_quantile",
@@ -119,7 +120,7 @@ func containsAggregateExpr(n parser.Node) bool {
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.
 func ParallelizableFunc(f parser.Function) bool {
-	for _, v := range nonParallelFuncs {
+	for _, v := range NonParallelFuncs {
 		if v == f.Name {
 			return false
 		}
