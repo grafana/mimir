@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -468,6 +469,60 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 	require.NoError(t, err)
 	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+}
+
+func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+		Options: Options{
+			ShardingDisabled: true,
+		},
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+
+	downstream := &mockHandler{}
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
+
+	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	// Ensure we get the same request downstream. No sharding
+	downstream.AssertCalled(t, "Do", mock.Anything, req)
+	downstream.AssertNumberOfCalls(t, "Do", 1)
+}
+
+func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+		Options: Options{
+			TotalShards: 128,
+		},
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+
+	downstream := &mockHandler{}
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+		Status: StatusSuccess, Data: PrometheusData{
+			ResultType: string(parser.ValueTypeVector),
+		},
+	}, nil)
+
+	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+	// we expect 128 calls to the downstream handler and not the original 16.
+	downstream.AssertNumberOfCalls(t, "Do", 128)
 }
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
