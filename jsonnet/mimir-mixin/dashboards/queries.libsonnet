@@ -33,30 +33,55 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Query Frontend - Results Cache')
+      $.row('Query Frontend - Query Splitting and Results Cache')
       .addPanel(
-        $.panel('Cache Hit %') +
+        $.panel('Intervals per Query') +
+        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[1m])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval"}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'splitting rate') +
+        $.panelDescription(
+          'Intervals per Query',
+          |||
+            The average number of splitted queries (partitioned by time) executed a single input query.
+          |||
+        ),
+      )
+      .addPanel(
+        $.panel('Results Cache Hit %') +
         $.queryPanel('sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m])) / sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Hit Rate') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
-        $.panel('Cache misses') +
+        $.panel('Results Cache misses') +
         $.queryPanel('sum(rate(cortex_cache_fetched_keys{name=~"frontend.+", %s}[1m])) - sum(rate(cortex_cache_hits{name=~"frontend.+", %s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Miss Rate'),
       )
     )
     .addRow(
-      $.row('Query Frontend - Sharding/Splitting')
+      $.row('Query Frontend - Query sharding')
       .addPanel(
-        $.panel('Intervals per Query') +
-        $.queryPanel('sum(rate(cortex_frontend_split_queries_total{%s}[1m])) / sum(rate(cortex_frontend_query_range_duration_seconds_count{%s, method="split_by_interval"}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'partition rate'),
+        $.panel('Sharded Queries Ratio') +
+        $.queryPanel(|||
+          sum(rate(cortex_frontend_query_sharding_rewrites_succeeded_total{%s}[$__rate_interval])) /
+          sum(rate(cortex_frontend_query_sharding_rewrites_attempted_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'sharded queries ratio') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) } +
+        $.panelDescription(
+          'Sharded Queries Ratio',
+          |||
+            The % of queries that have been successfully rewritten and executed in a shardable way.
+            This panel takes in account only type of queries which are supported by query sharding (eg. range queries).
+          |||
+        ),
       )
       .addPanel(
-        $.panel('Sharded Queries %') +
-        $.queryPanel('sum(rate(cortex_frontend_mapped_asts_total{%s}[1m])) / sum(rate(cortex_frontend_split_queries_total{%s}[1m])) * 100' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'shard rate'),
-      )
-      .addPanel(
-        $.panel('Sharding factor') +
-        $.queryPanel('sum(rate(cortex_frontend_sharded_queries_total{%s}[1m])) / sum(rate(cortex_frontend_mapped_asts_total{%s}[1m]))' % [$.jobMatcher($._config.job_names.query_frontend), $.jobMatcher($._config.job_names.query_frontend)], 'Average'),
+        $.panel('Number of Sharded Queries per Query') +
+        $.latencyPanel('cortex_frontend_sharded_queries_per_query', '{%s}' % $.jobMatcher($._config.job_names.query_frontend), multiplier=1) +
+        { yaxes: $.yaxes('short') } +
+        $.panelDescription(
+          'Number of Sharded Queries per Query',
+          |||
+            How many sharded queries have been executed for a single input query. It tracks only queries which have
+            been successfully rewritten in a shardable way.
+          |||
+        ),
       )
     )
     .addRow(
@@ -247,6 +272,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.panel('Index-header lazy load duration') +
         $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
+      )
+      .addPanel(
+        $.panel('Series hash cache hit ratio') +
+        $.queryPanel(|||
+          sum(rate(cortex_bucket_store_series_hash_cache_hits_total{%s}[$__rate_interval]))
+          /
+          sum(rate(cortex_bucket_store_series_hash_cache_requests_total{%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     ),
 }
