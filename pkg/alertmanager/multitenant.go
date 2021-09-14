@@ -1061,7 +1061,7 @@ func (am *MultitenantAlertmanager) alertmanagerFromFallbackConfig(ctx context.Co
 		return nil, errors.Wrap(errNotUploadingFallback, "user has a configuration")
 	}
 	if !errors.Is(err, alertspb.ErrNotFound) {
-		return nil, err
+		return nil, errors.Wrap(err, "failed to check for existing configuration")
 	}
 
 	level.Warn(am.logger).Log("msg", "no configuration exists for user; uploading fallback configuration", "user", userID)
