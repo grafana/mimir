@@ -152,12 +152,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Sharding Initial State Sync')
       .addPanel(
-        $.panel('Tenant initial sync outcomes') +
+        $.panel('Initial syncs /sec') +
         $.queryPanel(
-          'sum by(outcome) (cortex_alertmanager_state_initial_sync_completed_total{%s})' % $.jobMatcher('alertmanager'),
+          'sum by(outcome) (rate(cortex_alertmanager_state_initial_sync_completed_total{%s}[$__rate_interval]))' % $.jobMatcher('alertmanager'),
           '{{outcome}}'
-        ) +
-        $.stack
+        ) + {
+          targets: [
+            target {
+              interval: '1m',
+            }
+            for target in super.targets
+          ],
+        }
       )
       .addPanel(
         $.panel('Initial sync duration') +
