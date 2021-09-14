@@ -197,14 +197,6 @@ func Test_FunctionParallelism(t *testing.T) {
 			tpl:          `(<fn>(0.99,bar1{}))`,
 		},
 		{
-			fn:  "histogram_quantile",
-			tpl: `(<fn>(0.5, metric_histogram_bucket{}))`,
-		},
-		{
-			fn:  "histogram_quantile",
-			tpl: `(<fn>(0.99, metric_histogram_bucket{}))`,
-		},
-		{
 			fn: "timestamp",
 		},
 		{
