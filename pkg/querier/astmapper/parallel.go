@@ -22,16 +22,38 @@ var summableAggregates = map[parser.ItemType]struct{}{
 	parser.AVG:   {},
 }
 
-var nonParallelFuncs = []string{
+// NonParallelFuncs is the list of functions that shouldn't be parallelized.
+var NonParallelFuncs = []string{
+	// The following functions are not safe to parallelize.
 	"absent",
 	"absent_over_time",
-	"vector",
-	"time",
+	"histogram_quantile",
 	"sort_desc",
 	"sort",
-	"scalar",
 	"label_join",
 	"label_replace",
+
+	// The following functions are not worth to parallelize.
+	"abs",
+	"ceil",
+	"clamp",
+	"clamp_max",
+	"clamp_min",
+	"days_in_month",
+	"day_of_month",
+	"day_of_week",
+	"exp",
+	"floor",
+	"hour",
+	"minute",
+	"month",
+	"round",
+	"scalar",
+	"sgn",
+	"time",
+	"timestamp",
+	"vector",
+	"year",
 }
 
 // CanParallelize tests if a subtree is parallelizable.
@@ -118,7 +140,7 @@ func containsAggregateExpr(n parser.Node) bool {
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.
 func ParallelizableFunc(f parser.Function) bool {
-	for _, v := range nonParallelFuncs {
+	for _, v := range NonParallelFuncs {
 		if v == f.Name {
 			return false
 		}

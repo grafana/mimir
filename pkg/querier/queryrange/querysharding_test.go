@@ -124,7 +124,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `sum by(unique) (rate(metric_counter[1m]))`,
 			expectedShardedQueries: 1,
 		},
-		"histogram_quantile() no grouping": {
+		"histogram_quantile() grouping only 'by' le": {
 			query:                  `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
 			expectedShardedQueries: 1,
 		},
@@ -302,7 +302,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 0,
 		},
 		"scalar()": {
-			query:                  `scalar(metric_counter{})`,
+			query:                  `scalar(metric_counter{unique="1"})`, // Select a single metric.
+			expectedShardedQueries: 0,
+		},
+		"histogram_quantile() no grouping": {
+			query:                  fmt.Sprintf(`histogram_quantile(0.99, metric_histogram_bucket{unique="%d"})`, numSeries+10), // Select a single histogram metric.
 			expectedShardedQueries: 0,
 		},
 	}
@@ -351,8 +355,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 			series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
 				start.Add(-lookbackDelta), end, gen))
-			seriesID++
 		}
+
+		// Increase the series ID after all per-bucket series have been created.
+		seriesID++
 	}
 
 	// Create a queryable on the fixtures.
@@ -392,6 +398,19 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 				// Ensure the query produces some results.
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+
+				// Ensure the query produces some results which are not NaN.
+				foundValidSamples := false
+			outer:
+				for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
+					for _, sample := range stream.Samples {
+						if !math.IsNaN(sample.Value) {
+							foundValidSamples = true
+							break outer
+						}
+					}
+				}
+				require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
 				// Run the query with sharding.
 				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
