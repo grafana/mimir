@@ -205,11 +205,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           [
             |||
-              sum(cluster_job:cortex_alertmanager_state_replication_total{%s}:rate5m)
+              sum(cluster_job:cortex_alertmanager_state_replication_total:rate5m{%s})
               -
-              sum(cluster_job:cortex_alertmanager_state_replication_failed_total{%s}:rate5m)
+              sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})
             ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job:cortex_alertmanager_state_replication_failed_total{%s}:rate5m)' % $.jobMatcher('alertmanager'),
+            'sum(cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m{%s})' % $.jobMatcher('alertmanager'),
           ],
           ['success', 'failed']
         )
@@ -219,11 +219,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           [
             |||
-              sum(cluster_job:cortex_alertmanager_partial_state_merges_total{%s}:rate5m)
+              sum(cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m{%s})
               -
-              sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total{%s}:rate5m)
+              sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})
             ||| % [$.jobMatcher('alertmanager'), $.jobMatcher('alertmanager')],
-            'sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total{%s}:rate5m)' % $.jobMatcher('alertmanager'),
+            'sum(cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m{%s})' % $.jobMatcher('alertmanager'),
           ],
           ['success', 'failed']
         )

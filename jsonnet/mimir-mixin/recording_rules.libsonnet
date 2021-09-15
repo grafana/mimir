@@ -414,15 +414,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
             |||,
           },
           {
-            record: 'cluster_job:cortex_alertmanager_state_persist_total:rate5m',
+            record: 'cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m',
             expr: |||
-              sum by (cluster, job) (rate(cortex_alertmanager_state_persist_total[5m]))
+              sum by (cluster, job) (rate(cortex_alertmanager_partial_state_merges_total[5m]))
             |||,
           },
           {
-            record: 'cluster_job:cortex_alertmanager_state_persist_failed_total:rate5m',
+            record: 'cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m',
             expr: |||
-              sum by (cluster, job) (rate(cortex_alertmanager_state_persist_failed_total[5m]))
+              sum by (cluster, job) (rate(cortex_alertmanager_partial_state_merges_failed_total[5m]))
             |||,
           },
         ],
