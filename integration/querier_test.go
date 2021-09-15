@@ -228,7 +228,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
-			expectedFetchedSeries += 1 // Storage only.
+			expectedFetchedSeries++ // Storage only.
 
 			result, err = c.Query("series_2", series2Timestamp)
 			require.NoError(t, err)
@@ -240,7 +240,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector3, result.(model.Vector))
-			expectedFetchedSeries += 1 // Ingester only.
+			expectedFetchedSeries++ // Ingester only.
 
 			// Check the in-memory index cache metrics (in the store-gateway).
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(7), "thanos_store_index_cache_requests_total"))
@@ -258,7 +258,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, model.ValVector, result.Type())
 			assert.Equal(t, expectedVector1, result.(model.Vector))
-			expectedFetchedSeries += 1 // Storage only.
+			expectedFetchedSeries++ // Storage only.
 
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(7+2), "thanos_store_index_cache_requests_total"))
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "thanos_store_index_cache_hits_total")) // this time has used the index cache
