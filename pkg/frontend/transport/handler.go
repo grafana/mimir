@@ -83,7 +83,7 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		h.querySeconds = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_seconds_total",
 			Help: "Total amount of wall clock time spend processing queries.",
-		}, []string{"user"})
+		}, []string{"user", "sharded"})
 
 		h.querySeries = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_fetched_series_total",
@@ -101,7 +101,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		}, []string{"user"})
 
 		h.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
-			h.querySeconds.DeleteLabelValues(user)
+			h.querySeconds.DeleteLabelValues(user, "true")
+			h.querySeconds.DeleteLabelValues(user, "false")
 			h.querySeries.DeleteLabelValues(user)
 			h.queryBytes.DeleteLabelValues(user)
 			h.queryChunks.DeleteLabelValues(user)
@@ -195,9 +196,10 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 	numSeries := stats.LoadFetchedSeries()
 	numBytes := stats.LoadFetchedChunkBytes()
 	numChunks := stats.LoadFetchedChunks()
+	sharded := strconv.FormatBool(stats.GetShardedQueries() > 0)
 
 	// Track stats.
-	f.querySeconds.WithLabelValues(userID).Add(wallTime.Seconds())
+	f.querySeconds.WithLabelValues(userID, sharded).Add(wallTime.Seconds())
 	f.querySeries.WithLabelValues(userID).Add(float64(numSeries))
 	f.queryBytes.WithLabelValues(userID).Add(float64(numBytes))
 	f.queryChunks.WithLabelValues(userID).Add(float64(numChunks))
@@ -214,6 +216,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"fetched_series_count", numSeries,
 		"fetched_chunks_bytes", numBytes,
 		"fetched_chunks_count", numChunks,
+		"sharded_queries", stats.LoadShardedQueries(),
 	}, formatQueryString(queryString)...)
 
 	level.Info(util_log.WithContext(r.Context(), f.log)).Log(logMessage...)
