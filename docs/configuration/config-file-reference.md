@@ -1186,11 +1186,6 @@ results_cache:
 # query ASTs. This feature is supported only by the blocks storage engine.
 # CLI flag: -querier.parallelise-shardable-queries
 [parallelise_shardable_queries: <boolean> | default = false]
-
-# The amount of shards to use when doing parallelisation via query sharding by
-# default.
-# CLI flag: -querier.total-shards
-[total_shards: <int> | default = 16]
 ```
 
 ### `ruler_config`
@@ -4138,6 +4133,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # when using downstream URL.
 # CLI flag: -frontend.max-queriers-per-tenant
 [max_queriers_per_tenant: <int> | default = 0]
+
+# The amount of shards to use when doing parallelisation via query sharding by
+# tenant. 0 to disable query sharding for tenant.
+# CLI flag: -frontend.query-sharding-total-shards
+[query_sharding_total_shards: <int> | default = 16]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

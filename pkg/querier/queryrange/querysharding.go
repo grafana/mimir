@@ -7,6 +7,7 @@ package queryrange
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -15,16 +16,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type querySharding struct {
-	totalShards int
+	limit Limits
 
 	engine *promql.Engine
 	next   Handler
@@ -46,7 +50,7 @@ type querySharding struct {
 func NewQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
-	totalShards int,
+	limit Limits,
 	registerer prometheus.Registerer,
 ) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
@@ -73,9 +77,9 @@ func NewQueryShardingMiddleware(
 				Help:      "Number of sharded queries a single query has been rewritten to.",
 				Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
 			}),
-			engine:      engine,
-			totalShards: totalShards,
-			logger:      logger,
+			engine: engine,
+			logger: logger,
+			limit:  limit,
 		}
 	})
 }
@@ -84,11 +88,16 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
 	defer log.Span.Finish()
 
-	if r.GetOptions().ShardingDisabled {
-		return s.next.Do(ctx, r)
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 	}
 
-	totalShards := s.totalShards
+	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
+
+	if r.GetOptions().ShardingDisabled || totalShards <= 0 {
+		return s.next.Do(ctx, r)
+	}
 	if r.GetOptions().TotalShards > 0 {
 		totalShards = int(r.GetOptions().TotalShards)
 	}

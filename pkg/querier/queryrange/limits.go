@@ -36,6 +36,9 @@ type Limits interface {
 	// MaxCacheFreshness returns the period after which results are cacheable,
 	// to prevent caching of very recent results.
 	MaxCacheFreshness(string) time.Duration
+
+	// QueryShardingTotalShards returns the number of shards to use for a given tenant.
+	QueryShardingTotalShards(string) int
 }
 
 type limitsMiddleware struct {

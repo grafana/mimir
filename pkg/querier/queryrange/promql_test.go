@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
@@ -263,7 +264,7 @@ func Test_FunctionParallelism(t *testing.T) {
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					numShards,
+					mockLimits{totalShards: numShards},
 					reg,
 				)
 				downstream := &downstreamHandler{
@@ -279,7 +280,7 @@ func Test_FunctionParallelism(t *testing.T) {
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
 				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 				require.Nil(t, err)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
