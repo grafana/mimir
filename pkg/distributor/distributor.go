@@ -499,9 +499,8 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	return true, nil
 }
 
-// Validates a single series from a write request. Will remove labels if
-// any are configured to be dropped for the user ID.
-// Returns the validated series with it's labels/samples, and any error.
+// Validates a single series from a write request.
+// Returns the validated series with its labels/samples, and any error.
 // The returned error may retain the series labels.
 func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) (mimirpb.PreallocTimeseries, validation.ValidationError) {
 	d.labelsHistogram.Observe(float64(len(ts.Labels)))
