@@ -353,9 +353,9 @@
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
 
-        // 300 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 20,
+        // 700 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 35,
 
         // No retention for now.
         compactor_blocks_retention_period: '0',
@@ -374,9 +374,9 @@
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
 
-        // 375 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 25,
+        // 1000 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 50,
       },
 
       small_user:: {
@@ -392,9 +392,9 @@
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
 
-        // 450 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 30,
+        // 1400 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 70,
       },
 
       medium_user:: {
@@ -410,9 +410,9 @@
         ingestion_rate: 350000,  // 350K
         ingestion_burst_size: 3500000,  // 3.5M
 
-        // 600 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 40,
+        // 1800 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 90,
       },
 
       big_user:: {
@@ -428,9 +428,9 @@
         ingestion_rate: 700000,  // 700K
         ingestion_burst_size: 7000000,  // 7M
 
-        // 750 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 50,
+        // 2200 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 110,
       },
 
       super_user:: {
@@ -446,9 +446,9 @@
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
 
-        // 900 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 60,
+        // 2600 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 130,
       },
 
       // This user class has limits increased by +50% compared to the previous one.
@@ -465,9 +465,9 @@
         ingestion_rate: 2250000,  // 2.25M
         ingestion_burst_size: 22500000,  // 22.5M
 
-        // 1050 rules
-        ruler_max_rules_per_rule_group: 15,
-        ruler_max_rule_groups_per_tenant: 70,
+        // 3000 rules
+        ruler_max_rules_per_rule_group: 20,
+        ruler_max_rule_groups_per_tenant: 150,
       },
     },
 
