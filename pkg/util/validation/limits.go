@@ -450,7 +450,7 @@ func (o *Overrides) MaxQueryParallelism(userID string) int {
 	return o.getOverridesForUser(userID).MaxQueryParallelism
 }
 
-// TotalShards returns the total amount of shards to use when splitting queries via querysharding
+// QueryShardingTotalShards returns the total amount of shards to use when splitting queries via querysharding
 // the frontend. When a query is shardable, each shards will be processed in parallel.
 func (o *Overrides) QueryShardingTotalShards(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingTotalShards
