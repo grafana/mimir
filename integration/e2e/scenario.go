@@ -90,6 +90,7 @@ func (s *Scenario) Start(services ...Service) error {
 		wg        = sync.WaitGroup{}
 		startedMx = sync.Mutex{}
 		started   = make([]Service, 0, len(services))
+		errsMx    = sync.Mutex{}
 		errs      = tsdb_errors.NewMulti()
 	)
 
@@ -109,9 +110,13 @@ func (s *Scenario) Start(services ...Service) error {
 
 			// Start the service.
 			if err := service.Start(s.networkName, s.SharedDir()); err != nil {
+				errsMx.Lock()
 				errs.Add(err)
+				errsMx.Unlock()
 				return
 			}
+
+			logger.Log("Started", service.Name())
 
 			startedMx.Lock()
 			started = append(started, service)
@@ -199,14 +204,14 @@ func (s *Scenario) shutdown() {
 	wg := sync.WaitGroup{}
 	wg.Add(len(s.services))
 
-	for i := 0; i < len(s.services); i++ {
+	for _, srv := range s.services {
 		go func(service Service) {
 			defer wg.Done()
 
 			if err := service.Kill(); err != nil {
 				logger.Log("Unable to kill service", service.Name(), ":", err.Error())
 			}
-		}(s.services[i])
+		}(srv)
 	}
 
 	// Wait until all services have been killed.
