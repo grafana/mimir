@@ -500,7 +500,6 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Validates a single series from a write request.
 // The returned error may retain the series labels.
 func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
-	d.labelsHistogram.Observe(float64(len(ts.Labels)))
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -677,6 +676,7 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
+		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 	}
 
 	for _, m := range req.Metadata {
