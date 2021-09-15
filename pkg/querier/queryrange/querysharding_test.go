@@ -270,6 +270,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[10m:] )`,
 			expectedShardedQueries: 1,
 		},
+
+		"label_replace": {
+			query:                  `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[10m:] )`,
+			expectedShardedQueries: 1,
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//

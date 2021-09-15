@@ -418,18 +418,36 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
-			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			`sum by (foo) (label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*"))`,
+			`sum by (foo) (` + concat(
+				`sum by (foo) (label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*"))`,
+				`sum by (foo) (label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*"))`,
+				`sum by (foo) (label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*"))`,
+			) + `)`,
+			3,
+		},
+		{
+			`label_join(up{job="api-server",service="a:c"}, "foo", ",", "service", "job")`,
 			concat(
-				`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_join(up{job="api-server",service="a:c"}, "foo", ",", "service", "job")`,
+			),
+			0,
+		},
+		{
+			`label_join(up{job="api-server",service="a:c"}, "foo", ",", "service", "job") > 20`,
+			concat(
+				`label_join(up{job="api-server",service="a:c"}, "foo", ",", "service", "job") > 20`,
 			),
 			0,
 		},
 		{
 			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
 			concat(
-				`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+				`ln(exp(label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+				`ln(exp(label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+				`ln(exp(label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
 			),
-			0,
+			3,
 		},
 		{
 			`ln(

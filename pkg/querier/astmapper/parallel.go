@@ -22,18 +22,21 @@ var summableAggregates = map[parser.ItemType]struct{}{
 	parser.AVG:   {},
 }
 
-// NonParallelFuncs is the list of functions that shouldn't be parallelized.
+// NonParallelFuncs is the list of functions that shouldn't be parallelized at any level.
+// They basically work across multiple time series.
 var NonParallelFuncs = []string{
-	// The following functions are not safe to parallelize.
 	"absent",
 	"absent_over_time",
 	"histogram_quantile",
 	"sort_desc",
 	"sort",
+}
+
+// NonRootParallelFuncs are functions not worth to parallelize at the root of the expression.
+// They are functions that work on a single time series at a time.
+var NonRootParallelFuncs = []string{
 	"label_join",
 	"label_replace",
-
-	// The following functions are not worth to parallelize.
 	"abs",
 	"ceil",
 	"clamp",
@@ -57,7 +60,7 @@ var NonParallelFuncs = []string{
 }
 
 // CanParallelize tests if a subtree is parallelizable.
-// A subtree is parallelizable if all of its components are parallelizable.
+// When it returns false, it means the subtree is not parallelizable at this level but could be at another lower level.
 func CanParallelize(node parser.Node) bool {
 	switch n := node.(type) {
 	case nil:
@@ -79,12 +82,11 @@ func CanParallelize(node parser.Node) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := EvalPredicate(n.Expr, func(node parser.Node) (bool, error) {
-			_, ok := node.(*parser.AggregateExpr)
-			return ok, nil
-		})
+		if containsAggregateExpr(n.Expr) {
+			return false
+		}
 
-		return err == nil && !nestedAggrs && CanParallelize(n.Expr)
+		return canParallelizeChildren(n.Expr)
 
 	case *parser.BinaryExpr:
 		// since binary exprs use each side for merging, they cannot be parallelized
@@ -94,22 +96,16 @@ func CanParallelize(node parser.Node) bool {
 		if n.Func == nil {
 			return false
 		}
-		if !ParallelizableFunc(*n.Func) {
+		if containsFunction(*n.Func, NonParallelFuncs) || containsFunction(*n.Func, NonRootParallelFuncs) {
 			return false
 		}
 
 		for _, e := range n.Args {
-			if !CanParallelize(e) {
+			if !canParallelizeChildren(e) {
 				return false
 			}
 		}
 		return true
-
-	case *parser.SubqueryExpr:
-		// Subqueries are parallelizable if they are parallelizable themselves
-		// and they don't contain aggregations over series in children nodes.
-		return !containsAggregateExpr(n) && CanParallelize(n.Expr)
-
 	case *parser.ParenExpr:
 		return CanParallelize(n.Expr)
 
@@ -138,12 +134,27 @@ func containsAggregateExpr(n parser.Node) bool {
 	return containsAggregate
 }
 
-// ParallelizableFunc ensures that a promql function can be part of a parallel query.
-func ParallelizableFunc(f parser.Function) bool {
-	for _, v := range NonParallelFuncs {
+// containsFunction tells if the given function is part of a set of functions.
+func containsFunction(f parser.Function, functionSet []string) bool {
+	for _, v := range functionSet {
 		if v == f.Name {
-			return false
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+// canParallelizeChildren tests if a subtree is parallelizable.
+func canParallelizeChildren(n parser.Expr) bool {
+	containsNonParallelizable, err := EvalPredicate(n, func(node parser.Node) (bool, error) {
+		switch n := node.(type) {
+		case *parser.Call:
+			return containsFunction(*n.Func, NonParallelFuncs), nil
+		case *parser.SubqueryExpr:
+			return containsAggregateExpr(n), nil
+		default:
+			return false, nil
+		}
+	})
+	return err == nil && !containsNonParallelizable
 }
