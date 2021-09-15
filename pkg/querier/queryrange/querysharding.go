@@ -92,7 +92,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
 	}
 
-	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.TotalShards)
+	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
 
 	if r.GetOptions().ShardingDisabled || totalShards <= 0 {
 		return s.next.Do(ctx, r)

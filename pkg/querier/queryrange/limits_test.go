@@ -214,7 +214,7 @@ func (m mockLimits) MaxCacheFreshness(string) time.Duration {
 	return m.maxCacheFreshness
 }
 
-func (m mockLimits) TotalShards(string) int {
+func (m mockLimits) QueryShardingTotalShards(string) int {
 	return m.totalShards
 }
 

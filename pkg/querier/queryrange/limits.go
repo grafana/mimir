@@ -37,8 +37,8 @@ type Limits interface {
 	// to prevent caching of very recent results.
 	MaxCacheFreshness(string) time.Duration
 
-	// TotalShards returns the number of shards to use for a given tenant.
-	TotalShards(string) int
+	// QueryShardingTotalShards returns the number of shards to use for a given tenant.
+	QueryShardingTotalShards(string) int
 }
 
 type limitsMiddleware struct {

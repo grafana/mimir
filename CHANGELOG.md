@@ -49,7 +49,7 @@
     * `-querier.active-query-tracker-dir`
     * `-querier.lookback-delta`
   * Sharding can be dynamically controlled per request using the `Sharding-Control: 64` header. (0 to disable)
-  * Sharding can be dynamically controlled per tenant using the limit `total_shards`. (0 to disable)
+  * Sharding can be dynamically controlled per tenant using the limit `query_sharding_total_shards`. (0 to disable)
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42
 * [ENHANCEMENT] Add a flag in the query-tee to compare floating point values using relative error. #208

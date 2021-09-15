@@ -4135,9 +4135,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disabled.
-# CLI flag: -querier.total-shards
-[total_shards: <int> | default = 16]
+# tenant. 0 to disable query sharding for tenant.
+# CLI flag: -frontend.query-sharding-total-shards
+[query_sharding_total_shards: <int> | default = 16]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
