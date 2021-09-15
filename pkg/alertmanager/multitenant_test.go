@@ -403,6 +403,26 @@ receivers:
 `, backendURL)
 			},
 		},
+		"sns": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: sns
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: sns
+    sns_configs:
+      - api_url: %s
+        topic_arn: arn:aws:sns:us-east-1:123456789012:MyTopic
+        sigv4:
+          region: us-east-1
+          access_key: xxx
+          secret_key: xxx
+`, backendURL)
+			},
+		},
 	}
 
 	for receiverName, testData := range tests {
