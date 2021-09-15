@@ -45,8 +45,6 @@ import (
 )
 
 var (
-	emptyPreallocSeries = mimirpb.PreallocTimeseries{}
-
 	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
 
 	// Validation errors.
@@ -500,50 +498,30 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 }
 
 // Validates a single series from a write request.
-// Returns the validated series with its labels/samples, and any error.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) (mimirpb.PreallocTimeseries, validation.ValidationError) {
+func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
 	d.labelsHistogram.Observe(float64(len(ts.Labels)))
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
-		return emptyPreallocSeries, err
+		return err
 	}
 
-	var samples []mimirpb.Sample
-	if len(ts.Samples) > 0 {
-		// Only alloc when data present
-		samples = make([]mimirpb.Sample, 0, len(ts.Samples))
-		for _, s := range ts.Samples {
-			if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
-				return emptyPreallocSeries, err
-			}
-			samples = append(samples, s)
+	for _, s := range ts.Samples {
+		if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
+			return err
 		}
 	}
 
-	var exemplars []mimirpb.Exemplar
-	if len(ts.Exemplars) > 0 {
-		// Only alloc when data present
-		exemplars = make([]mimirpb.Exemplar, 0, len(ts.Exemplars))
-		for _, e := range ts.Exemplars {
-			if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
-				// An exemplar validation error prevents ingesting samples
-				// in the same series object. However because the current Prometheus
-				// remote write implementation only populates one or the other,
-				// there never will be any.
-				return emptyPreallocSeries, err
-			}
-			exemplars = append(exemplars, e)
+	for _, e := range ts.Exemplars {
+		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
+			// An exemplar validation error prevents ingesting samples
+			// in the same series object. However because the current Prometheus
+			// remote write implementation only populates one or the other,
+			// there never will be any.
+			return err
 		}
 	}
 
-	return mimirpb.PreallocTimeseries{
-			TimeSeries: &mimirpb.TimeSeries{
-				Labels:    ts.Labels,
-				Samples:   samples,
-				Exemplars: exemplars,
-			},
-		},
-		nil
+	return nil
 }
 
 // Push implements client.IngesterServer
@@ -682,23 +660,21 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		}
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		validatedSeries, validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
+		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.
-		if validationErr != nil && firstPartialErr == nil {
-			// The series labels may be retained by validationErr but that's not a problem for this
-			// use case because we format it calling Error() and then we discard it.
-			firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
-		}
-
-		// validateSeries would have returned an emptyPreallocSeries if there were no valid samples.
-		if validatedSeries == emptyPreallocSeries {
+		if validationErr != nil {
+			if firstPartialErr == nil {
+				// The series labels may be retained by validationErr but that's not a problem for this
+				// use case because we format it calling Error() and then we discard it.
+				firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+			}
 			continue
 		}
 
 		seriesKeys = append(seriesKeys, key)
-		validatedTimeseries = append(validatedTimeseries, validatedSeries)
+		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
 	}
