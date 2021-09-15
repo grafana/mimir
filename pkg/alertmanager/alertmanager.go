@@ -207,7 +207,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 	am.nflog, err = nflog.New(
 		nflog.WithRetention(cfg.Retention),
 		nflog.WithSnapshot(filepath.Join(cfg.TenantDataDir, notificationLogSnapshot)),
-		nflog.WithMaintenance(maintenancePeriod, am.stop, am.wg.Done),
+		nflog.WithMaintenance(maintenancePeriod, am.stop, am.wg.Done, nil),
 		nflog.WithMetrics(am.registry),
 		nflog.WithLogger(log.With(am.logger, "component", "nflog")),
 	)
@@ -251,7 +251,7 @@ func New(cfg *Config, reg *prometheus.Registry) (*Alertmanager, error) {
 
 	am.wg.Add(1)
 	go func() {
-		am.silences.Maintenance(maintenancePeriod, silencesFile, am.stop)
+		am.silences.Maintenance(maintenancePeriod, silencesFile, am.stop, nil)
 		am.wg.Done()
 	}()
 
