@@ -358,7 +358,7 @@
         ruler_max_rule_groups_per_tenant: 20,
 
         // No retention for now.
-        compactor_blocks_retention_period: 0,
+        compactor_blocks_retention_period: '0',
       },
 
       medium_small_user:: {
