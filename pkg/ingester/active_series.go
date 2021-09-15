@@ -6,12 +6,11 @@
 package ingester
 
 import (
-	"hash"
 	"math"
 	"sync"
 	"time"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"go.uber.org/atomic"
@@ -76,11 +75,8 @@ func (c *ActiveSeries) UpdateSeries(series labels.Labels, now time.Time, labelsC
 
 var sep = []byte{model.SeparatorByte}
 
-var hashPool = sync.Pool{New: func() interface{} { return xxhash.New() }}
-
 func fingerprint(series labels.Labels) uint64 {
-	sum := hashPool.Get().(hash.Hash64)
-	defer hashPool.Put(sum)
+	sum := xxhash.New()
 
 	sum.Reset()
 	for _, label := range series {
