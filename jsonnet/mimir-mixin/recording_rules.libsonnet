@@ -364,6 +364,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
               )
             |||,
           },
+        ],
+      },
+      {
+        name: 'cortex_alertmanager_rules',
+        rules: [
           // Aggregations of per-user Alertmanager metrics used in dashboards.
           {
             record: 'cluster_job_%s:cortex_alertmanager_alerts:sum' % $._config.per_instance_label,
