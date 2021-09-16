@@ -276,8 +276,12 @@
 
     alertmanager: {
       replicas: 3,
+      sharding_enabled: false,
       gossip_port: 9094,
       fallback_config: {},
+      ring_store: 'consul',
+      ring_hostname: 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
+      ring_replication_factor: $._config.replication_factor,
     },
 
     alertmanager_client_type: error 'you must specify a storage backend type for the alertmanager (azure, gcs, s3, local)',
