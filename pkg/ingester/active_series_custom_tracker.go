@@ -52,6 +52,15 @@ func (c *ActiveSeriesCustomTrackersConfig) Set(s string) error {
 	return nil
 }
 
+func (c *ActiveSeriesCustomTrackersConfig) ExampleDoc() (comment string, yaml interface{}) {
+	return `The following configuration will count the active series coming from dev and prod namespaces for each tenant` +
+			` and label them as {name="dev"} and {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.`,
+		ActiveSeriesCustomTrackersConfig{
+			"dev":  `{namespace=~"dev-.*"}`,
+			"prod": `{namespace=~"prod-.*"}`,
+		}
+}
+
 func NewActiveSeriesMatchers(matchers ActiveSeriesCustomTrackersConfig) (*ActiveSeriesMatchers, error) {
 	asm := &ActiveSeriesMatchers{}
 	for name, matcher := range matchers {
