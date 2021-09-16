@@ -232,6 +232,14 @@ func Test_FunctionParallelism(t *testing.T) {
 			isTestMatrix: true,
 			fArgs:        []string{"0.5", "0.7"},
 		},
+		{
+			fn:    "label_replace",
+			fArgs: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`},
+		},
+		{
+			fn:    "label_join",
+			fArgs: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`},
+		},
 	}
 
 	for _, tc := range tests {
