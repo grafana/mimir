@@ -225,7 +225,6 @@ func compareSampleValue(first, second model.SampleValue, opts SampleComparisonOp
 	s := float64(second)
 
 	if (math.IsNaN(f) && math.IsNaN(s)) ||
-		(math.IsInf(f, 0) && math.IsInf(s, 0)) ||
 		(math.IsInf(f, 1) && math.IsInf(s, 1)) ||
 		(math.IsInf(f, -1) && math.IsInf(s, -1)) {
 		return true
