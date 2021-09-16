@@ -57,7 +57,7 @@ func TestQuerierNoShardingWithQueryScheduler(t *testing.T) {
 }
 
 func runQuerierShardingTest(t *testing.T, cfg querierShardingTestConfig) {
-	// Going to high starts hitting file descriptor limit, since we run all queriers concurrently.
+	// Going too high starts hitting file descriptor limit, since we run all queriers concurrently.
 	const numQueries = 100
 
 	s, err := e2e.NewScenario(networkName)

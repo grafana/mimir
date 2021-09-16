@@ -420,16 +420,20 @@ func TestShardSummer(t *testing.T) {
 		{
 			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			concat(
-				`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			),
-			0,
+			3,
 		},
 		{
 			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			concat(
-				`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			),
-			0,
+			`ln(exp(` + concat(
+				`label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			) + `))`,
+			3,
 		},
 		{
 			`ln(

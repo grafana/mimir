@@ -30,8 +30,6 @@ var NonParallelFuncs = []string{
 	"histogram_quantile",
 	"sort_desc",
 	"sort",
-	"label_join",
-	"label_replace",
 
 	// The following functions are not worth to parallelize.
 	"abs",

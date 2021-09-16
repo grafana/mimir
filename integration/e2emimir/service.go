@@ -24,13 +24,11 @@ func NewMimirService(
 	otherPorts ...int,
 ) *MimirService {
 	return &MimirService{
-		HTTPService: e2e.NewHTTPService(name, image, command, readiness, httpPort, append(otherPorts, grpcPort)...),
+		// We don't expose the gRPC port cause we don't need to access it from the host
+		// (exposing ports have a negative performance impact on starting/stopping containers).
+		HTTPService: e2e.NewHTTPService(name, image, command, readiness, httpPort, otherPorts...),
 		grpcPort:    grpcPort,
 	}
-}
-
-func (s *MimirService) GRPCEndpoint() string {
-	return s.Endpoint(s.grpcPort)
 }
 
 func (s *MimirService) NetworkGRPCEndpoint() string {
