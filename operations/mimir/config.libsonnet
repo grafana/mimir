@@ -328,7 +328,6 @@
       'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
       'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
       'ingester.max-series-per-query': $._config.limits.max_series_per_query,
-      'ingester.max-samples-per-query': $._config.limits.max_samples_per_query,
     },
     rulerLimitsConfig: {
       'ruler.max-rules-per-rule-group': $._config.limits.ruler_max_rules_per_rule_group,
@@ -352,7 +351,6 @@
         max_global_series_per_metric: 20000,
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         ingestion_rate: 10000,
         ingestion_burst_size: 200000,
@@ -373,7 +371,6 @@
         max_global_series_per_metric: 30000,
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         ingestion_rate: 30000,
         ingestion_burst_size: 300000,
@@ -391,7 +388,6 @@
         max_global_series_per_metric: 100000,
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         ingestion_rate: 100000,
         ingestion_burst_size: 1000000,
@@ -409,7 +405,6 @@
         max_global_series_per_metric: 300000,  // 300K
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         ingestion_rate: 350000,  // 350K
         ingestion_burst_size: 3500000,  // 3.5M
@@ -424,7 +419,6 @@
         max_series_per_user: 0,  // Disabled in favour of the max global limit
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         max_global_series_per_user: 6000000,  // 6M
         max_global_series_per_metric: 600000,  // 600K
@@ -445,7 +439,6 @@
         max_global_series_per_metric: 1200000,  // 1.2M
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         ingestion_rate: 1500000,  // 1.5M
         ingestion_burst_size: 15000000,  // 15M
@@ -464,7 +457,6 @@
         max_global_series_per_metric: 1600000,  // 1.6M
 
         max_series_per_query: 100000,
-        max_samples_per_query: 1000000,
 
         ingestion_rate: 2250000,  // 2.25M
         ingestion_burst_size: 22500000,  // 22.5M
