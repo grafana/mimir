@@ -992,13 +992,12 @@ func (am *MultitenantAlertmanager) ServeHTTP(w http.ResponseWriter, req *http.Re
 		return
 	}
 
-	if am.cfg.ShardingEnabled && am.distributor.IsPathSupported(req.URL.Path) {
+	if am.cfg.ShardingEnabled {
 		am.distributor.DistributeRequest(w, req)
 		return
 	}
 
-	// If sharding is not enabled or Distributor does not support this path,
-	// it is served by this instance.
+	// If sharding (thus distributor) is not enabled then it is served by this instance.
 	am.serveRequest(w, req)
 }
 
