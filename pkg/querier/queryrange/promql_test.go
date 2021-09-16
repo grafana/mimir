@@ -232,6 +232,14 @@ func Test_FunctionParallelism(t *testing.T) {
 			isTestMatrix: true,
 			fArgs:        []string{"0.5", "0.7"},
 		},
+		{
+			fn:  "label_join",
+			tpl: `(label_join(bar1,"new",",","bar","baz"))`,
+		},
+		{
+			fn:  "label_replace",
+			tpl: `(label_replace(bar1,"new","$1","bar","(.*)"))`,
+		},
 	}
 
 	for _, tc := range tests {
@@ -296,7 +304,16 @@ func Test_FunctionParallelism(t *testing.T) {
 		testedFns[tc.fn] = struct{}{}
 	}
 
+	fnToIgnore := map[string]struct{}{
+		"time":   {},
+		"scalar": {},
+		"vector": {},
+	}
+
 	for expectedFn := range promql.FunctionCalls {
+		if _, ok := fnToIgnore[expectedFn]; ok {
+			continue
+		}
 		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
 		_, ok := testedFns[expectedFn]
 		assert.Truef(t, ok || util.StringsContain(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
