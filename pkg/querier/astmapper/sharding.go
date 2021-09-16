@@ -344,12 +344,11 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 	if err != nil {
 		return nil, err
 	}
-
 	return &parser.VectorSelector{
 		Name:           selector.Name,
 		Offset:         selector.Offset,
 		OriginalOffset: selector.OriginalOffset,
-		Timestamp:      selector.Timestamp,
+		Timestamp:      copyTimestamp(selector.Timestamp),
 		StartOrEnd:     selector.StartOrEnd,
 		LabelMatchers: append(
 			[]*labels.Matcher{shardMatcher},
@@ -370,7 +369,7 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 				Name:           vs.Name,
 				OriginalOffset: vs.OriginalOffset,
 				Offset:         vs.Offset,
-				Timestamp:      vs.Timestamp,
+				Timestamp:      copyTimestamp(vs.Timestamp),
 				StartOrEnd:     vs.StartOrEnd,
 				LabelMatchers: append(
 					[]*labels.Matcher{shardMatcher},
@@ -388,4 +387,12 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 func isSubquery(n *parser.Call) bool {
 	_, ok := n.Args[0].(*parser.SubqueryExpr)
 	return ok
+}
+
+func copyTimestamp(original *int64) *int64 {
+	if original == nil {
+		return nil
+	}
+	ts := *original
+	return &ts
 }
