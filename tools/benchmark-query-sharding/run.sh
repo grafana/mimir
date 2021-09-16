@@ -3,6 +3,7 @@
 # Parse CLI flags.
 URL=""
 TENANT_ID=""
+TSV_HEADER="true"
 TEST_QUERY=""
 TEST_STEP=""
 TEST_SHARDS="4 8 16 32"
@@ -39,6 +40,10 @@ do
     --time-ranges)
         TEST_TIME_RANGES=$2
         shift
+        shift
+        ;;
+    --tsv-no-header)
+        TSV_HEADER="false"
         shift
         ;;
     *)  break
@@ -146,7 +151,9 @@ benchmark_query_with_multiple_runs() {
 }
 
 # Run the benchmark.
-write_tsv_header
+if [ "$TSV_HEADER" == "true" ]; then
+  write_tsv_header
+fi
 
 for TIME_RANGE in $TEST_TIME_RANGES; do
   # Sharding enabled.
