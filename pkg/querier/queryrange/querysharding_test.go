@@ -271,6 +271,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `max_over_time( deriv( rate(metric_counter[10m])[5m:1m] )[10m:] )`,
 			expectedShardedQueries: 1,
 		},
+		"@ modifier": {
+			query:                  `sum by (group_1)(rate(metric_counter[1h] @ end())) + sum by (group_1)(rate(metric_counter[1h] @ start()))`,
+			expectedShardedQueries: 2,
+		},
+		"@ modifier and offset": {
+			query:                  `sum by (group_1)(rate(metric_counter[1h] @ end() offset 1m))`,
+			expectedShardedQueries: 1,
+		},
 		"label_replace": {
 			query: `sum by (foo)(
 					 	label_replace(

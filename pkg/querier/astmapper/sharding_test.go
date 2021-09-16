@@ -453,6 +453,26 @@ func TestShardSummer(t *testing.T) {
 			)`,
 			3,
 		},
+		{
+			`sum by (job)(rate(http_requests_total[1h] @ end()))`,
+			`sum by (job)(
+				` + concat(
+				`sum by (job)(rate(http_requests_total{__query_shard__="0_of_3"}[1h] @ end()))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="1_of_3"}[1h] @ end()))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="2_of_3"}[1h] @ end()))`,
+			) + `)`,
+			3,
+		},
+		{
+			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10))`,
+			`sum by (job)(
+				` + concat(
+				`sum by (job)(rate(http_requests_total{__query_shard__="0_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="1_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="2_of_3"}[1h] offset 1w @ 10))`,
+			) + `)`,
+			3,
+		},
 	} {
 		tt := tt
 
