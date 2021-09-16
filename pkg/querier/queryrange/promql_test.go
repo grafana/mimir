@@ -21,8 +21,11 @@ import (
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
 
+	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -62,7 +65,7 @@ func Test_FunctionParallelism(t *testing.T) {
 		}
 	}
 
-	for _, tc := range []struct {
+	tests := []struct {
 		fn           string
 		fArgs        []string
 		isTestMatrix bool
@@ -229,11 +232,25 @@ func Test_FunctionParallelism(t *testing.T) {
 			isTestMatrix: true,
 			fArgs:        []string{"0.5", "0.7"},
 		},
-	} {
+	}
 
+	for _, tc := range tests {
 		const numShards = 4
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.isTestMatrix, tc.fArgs) {
 			t.Run(query, func(t *testing.T) {
+				queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+					return &querierMock{
+						series: []*promql.StorageSeries{
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, factor(5)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, factor(7)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(12)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, factor(11)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(8)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, arithmeticSequence(10)),
+						},
+					}, nil
+				})
+
 				req := &PrometheusRequest{
 					Path:  "/query_range",
 					Start: util.TimeToMillis(start),
@@ -247,12 +264,12 @@ func Test_FunctionParallelism(t *testing.T) {
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					numShards,
+					mockLimits{totalShards: numShards},
 					reg,
 				)
 				downstream := &downstreamHandler{
 					engine:    engine,
-					queryable: shardAwareQueryable,
+					queryable: queryable,
 				}
 
 				// Run the query without sharding.
@@ -263,7 +280,7 @@ func Test_FunctionParallelism(t *testing.T) {
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
 				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 				require.Nil(t, err)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -272,20 +289,19 @@ func Test_FunctionParallelism(t *testing.T) {
 			})
 		}
 	}
-}
 
-var shardAwareQueryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return &querierMock{
-		series: []*promql.StorageSeries{
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, factor(5)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, factor(7)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(12)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, factor(11)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(8)),
-			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, arithmeticSequence(10)),
-		},
-	}, nil
-})
+	// Ensure all PromQL functions have been tested.
+	testedFns := make(map[string]struct{}, len(tests))
+	for _, tc := range tests {
+		testedFns[tc.fn] = struct{}{}
+	}
+
+	for expectedFn := range promql.FunctionCalls {
+		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
+		_, ok := testedFns[expectedFn]
+		assert.Truef(t, ok || util.StringsContain(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
+	}
+}
 
 type querierMock struct {
 	series []*promql.StorageSeries

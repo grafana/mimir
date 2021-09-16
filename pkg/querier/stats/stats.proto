@@ -24,4 +24,6 @@ message Stats {
   uint64 fetched_chunk_bytes = 3;
   // The number of chunks fetched for the query
   uint64 fetched_chunks_count = 4;
+  // The number of sharded queries executed. 0 if sharding is disabled or the query can't be sharded.
+  uint32 sharded_queries = 5;
 }

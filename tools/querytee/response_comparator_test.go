@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
 
@@ -96,7 +98,7 @@ func TestCompareMatrix(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareMatrix(tc.expected, tc.actual, 0, false)
+			err := compareMatrix(tc.expected, tc.actual, SampleComparisonOptions{})
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -179,7 +181,7 @@ func TestCompareVector(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareVector(tc.expected, tc.actual, 0, false)
+			err := compareVector(tc.expected, tc.actual, SampleComparisonOptions{})
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -216,7 +218,7 @@ func TestCompareScalar(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			err := compareScalar(tc.expected, tc.actual, 0, false)
+			err := compareScalar(tc.expected, tc.actual, SampleComparisonOptions{})
 			if tc.err == nil {
 				require.NoError(t, err)
 				return
@@ -228,13 +230,15 @@ func TestCompareScalar(t *testing.T) {
 }
 
 func TestCompareSamplesResponse(t *testing.T) {
+	now := model.Now().String()
 	for _, tc := range []struct {
-		name             string
-		tolerance        float64
-		expected         json.RawMessage
-		actual           json.RawMessage
-		err              error
-		useRelativeError bool
+		name              string
+		tolerance         float64
+		expected          json.RawMessage
+		actual            json.RawMessage
+		err               error
+		useRelativeError  bool
+		skipRecentSamples time.Duration
 	}{
 		{
 			name: "difference in response status",
@@ -357,9 +361,25 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 			useRelativeError: true,
 		},
+		{
+			name: "should not fail when the sample is recent and configured to skip",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"10"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[` + now + `,"5"]}]}
+						}`),
+			skipRecentSamples: time.Hour,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			samplesComparator := NewSamplesComparator(tc.tolerance, tc.useRelativeError)
+			samplesComparator := NewSamplesComparator(SampleComparisonOptions{
+				Tolerance:         float64(tc.tolerance),
+				UseRelativeError:  bool(tc.useRelativeError),
+				SkipRecentSamples: tc.skipRecentSamples,
+			})
 			err := samplesComparator.Compare(tc.expected, tc.actual)
 			if tc.err == nil {
 				require.NoError(t, err)

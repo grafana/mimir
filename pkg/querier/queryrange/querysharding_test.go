@@ -20,10 +20,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -123,7 +125,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `sum by(unique) (rate(metric_counter[1m]))`,
 			expectedShardedQueries: 1,
 		},
-		"histogram_quantile() no grouping": {
+		"histogram_quantile() grouping only 'by' le": {
 			query:                  `histogram_quantile(0.5, sum by(le) (rate(metric_histogram_bucket[1m])))`,
 			expectedShardedQueries: 1,
 		},
@@ -301,7 +303,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 0,
 		},
 		"scalar()": {
-			query:                  `scalar(metric_counter{})`,
+			query:                  `scalar(metric_counter{unique="1"})`, // Select a single metric.
+			expectedShardedQueries: 0,
+		},
+		"histogram_quantile() no grouping": {
+			query:                  fmt.Sprintf(`histogram_quantile(0.99, metric_histogram_bucket{unique="%d"})`, numSeries+10), // Select a single histogram metric.
 			expectedShardedQueries: 0,
 		},
 	}
@@ -350,8 +356,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 			series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
 				start.Add(-lookbackDelta), end, gen))
-			seriesID++
 		}
+
+		// Increase the series ID after all per-bucket series have been created.
+		seriesID++
 	}
 
 	// Create a queryable on the fixtures.
@@ -377,7 +385,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					numShards,
+					mockLimits{totalShards: numShards},
 					reg,
 				)
 				downstream := &downstreamHandler{
@@ -392,8 +400,21 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				// Ensure the query produces some results.
 				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
+				// Ensure the query produces some results which are not NaN.
+				foundValidSamples := false
+			outer:
+				for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
+					for _, sample := range stream.Samples {
+						if !math.IsNaN(sample.Value) {
+							foundValidSamples = true
+							break outer
+						}
+					}
+				}
+				require.True(t, foundValidSamples, "the query returns some not NaN samples")
+
 				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 				require.Nil(t, err)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -436,7 +457,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 		Query: "aaa{", // Invalid query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	// Mock the downstream handler, always returning success (regardless the query is valid or not).
 	downstream := &mockHandler{}
@@ -445,10 +466,64 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 	// Run the query with sharding middleware wrapping the downstream one.
 	// We expect the query parsing done by the query sharding middleware to fail
 	// but to fallback on the downstream one which always returns success.
-	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+}
+
+func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+		Options: Options{
+			ShardingDisabled: true,
+		},
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+
+	downstream := &mockHandler{}
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
+
+	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	// Ensure we get the same request downstream. No sharding
+	downstream.AssertCalled(t, "Do", mock.Anything, req)
+	downstream.AssertNumberOfCalls(t, "Do", 1)
+}
+
+func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
+		Options: Options{
+			TotalShards: 128,
+		},
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+
+	downstream := &mockHandler{}
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+		Status: StatusSuccess, Data: PrometheusData{
+			ResultType: string(parser.ValueTypeVector),
+		},
+	}, nil)
+
+	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+	require.NoError(t, err)
+	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
+	// we expect 128 calls to the downstream handler and not the original 16.
+	downstream.AssertNumberOfCalls(t, "Do", 128)
 }
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
@@ -460,7 +535,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
@@ -468,7 +543,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 
 	// Run the query with sharding middleware wrapping the downstream one.
 	// We expect to get the downstream error.
-	_, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.Error(t, err)
 	assert.Equal(t, downstreamErr, err)
 }
@@ -557,7 +632,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					shardFactor,
+					mockLimits{totalShards: shardFactor},
 					nil,
 				).Wrap(downstream)
 
@@ -573,7 +648,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 					func(b *testing.B) {
 						for n := 0; n < b.N; n++ {
 							_, err := shardingware.Do(
-								context.Background(),
+								user.InjectOrgID(context.Background(), "test"),
 								req,
 							)
 							if err != nil {

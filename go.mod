@@ -10,7 +10,7 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
 	github.com/alicebob/miniredis/v2 v2.14.3
-	github.com/aws/aws-sdk-go v1.40.10
+	github.com/aws/aws-sdk-go v1.40.37
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash v1.1.0
 	github.com/dustin/go-humanize v1.0.0
@@ -18,7 +18,7 @@ require (
 	github.com/felixge/fgprof v0.9.1
 	github.com/fsouza/fake-gcs-server v1.7.0
 	github.com/go-kit/kit v0.11.0
-	github.com/go-openapi/strfmt v0.20.1
+	github.com/go-openapi/strfmt v0.20.2
 	github.com/go-openapi/swag v0.19.15
 	github.com/go-redis/redis/v8 v8.9.0
 	github.com/gocql/gocql v0.0.0-20200526081602-cd04bd7f22a7
@@ -27,8 +27,10 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210827170225-918b9f1ef4bd
+	github.com/grafana/dskit v0.0.0-20210910100700-60e6d9b19675
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
+	github.com/hashicorp/go-hclog v0.12.2 // indirect
+	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.10
@@ -39,7 +41,7 @@ require (
 	github.com/opentracing-contrib/go-stdlib v1.0.0
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.22.3-0.20210628111558-8491f816296b
+	github.com/prometheus/alertmanager v0.23.1-0.20210914172521-e35efbddb66a
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.30.0
@@ -54,11 +56,11 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.10
-	golang.org/x/net v0.0.0-20210726213435-c6fcb2dbf985
+	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
-	google.golang.org/api v0.51.0
-	google.golang.org/grpc v1.39.0
+	google.golang.org/api v0.56.0
+	google.golang.org/grpc v1.40.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	sigs.k8s.io/yaml v1.2.0
@@ -78,7 +80,7 @@ replace github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210825145645-7e31fb5bf908
+replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210914133700-ffdaf8e3468c
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0

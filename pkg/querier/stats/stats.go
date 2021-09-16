@@ -107,7 +107,23 @@ func (s *Stats) LoadFetchedChunks() uint64 {
 	return atomic.LoadUint64(&s.FetchedChunksCount)
 }
 
-// Merge the provide Stats into this one.
+func (s *Stats) AddShardedQueries(num uint32) {
+	if s == nil {
+		return
+	}
+
+	atomic.AddUint32(&s.ShardedQueries, num)
+}
+
+func (s *Stats) LoadShardedQueries() uint32 {
+	if s == nil {
+		return 0
+	}
+
+	return atomic.LoadUint32(&s.ShardedQueries)
+}
+
+// Merge the provided Stats into this one.
 func (s *Stats) Merge(other *Stats) {
 	if s == nil || other == nil {
 		return
@@ -117,6 +133,7 @@ func (s *Stats) Merge(other *Stats) {
 	s.AddFetchedSeries(other.LoadFetchedSeries())
 	s.AddFetchedChunkBytes(other.LoadFetchedChunkBytes())
 	s.AddFetchedChunks(other.LoadFetchedChunks())
+	s.AddShardedQueries(other.LoadShardedQueries())
 }
 
 func ShouldTrackHTTPGRPCResponse(r *httpgrpc.HTTPResponse) bool {

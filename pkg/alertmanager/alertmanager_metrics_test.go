@@ -25,6 +25,7 @@ var integrations = []string{
 	"opsgenie",
 	"webhook",
 	"victorops",
+	"sns",
 }
 
 func TestAlertmanagerMetricsStore(t *testing.T) {
@@ -99,14 +100,14 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_nflog_snapshot_size_bytes 111
 		# HELP cortex_alertmanager_notification_latency_seconds The latency of notifications in seconds.
 		# TYPE cortex_alertmanager_notification_latency_seconds histogram
-		cortex_alertmanager_notification_latency_seconds_bucket{le="1"} 14
-		cortex_alertmanager_notification_latency_seconds_bucket{le="5"} 19
-		cortex_alertmanager_notification_latency_seconds_bucket{le="10"} 21
-		cortex_alertmanager_notification_latency_seconds_bucket{le="15"} 23
-		cortex_alertmanager_notification_latency_seconds_bucket{le="20"} 24
-		cortex_alertmanager_notification_latency_seconds_bucket{le="+Inf"} 24
-		cortex_alertmanager_notification_latency_seconds_sum 77.7
-		cortex_alertmanager_notification_latency_seconds_count 24
+		cortex_alertmanager_notification_latency_seconds_bucket{le="1"} 15
+		cortex_alertmanager_notification_latency_seconds_bucket{le="5"} 21
+		cortex_alertmanager_notification_latency_seconds_bucket{le="10"} 23
+		cortex_alertmanager_notification_latency_seconds_bucket{le="15"} 25
+		cortex_alertmanager_notification_latency_seconds_bucket{le="20"} 27
+		cortex_alertmanager_notification_latency_seconds_bucket{le="+Inf"} 27
+		cortex_alertmanager_notification_latency_seconds_sum 99.9
+		cortex_alertmanager_notification_latency_seconds_count 27
 		# HELP cortex_alertmanager_notifications_failed_total The total number of failed notifications.
 		# TYPE cortex_alertmanager_notifications_failed_total counter
 		cortex_alertmanager_notifications_failed_total{integration="email",user="user1"} 0
@@ -133,6 +134,9 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notifications_failed_total{integration="wechat",user="user1"} 2
 		cortex_alertmanager_notifications_failed_total{integration="wechat",user="user2"} 20
 		cortex_alertmanager_notifications_failed_total{integration="wechat",user="user3"} 200
+		cortex_alertmanager_notifications_failed_total{integration="sns",user="user1"} 8
+		cortex_alertmanager_notifications_failed_total{integration="sns",user="user2"} 80
+		cortex_alertmanager_notifications_failed_total{integration="sns",user="user3"} 800
 		# HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
 		# TYPE cortex_alertmanager_notification_requests_total counter
 		cortex_alertmanager_notification_requests_total{integration="email",user="user1"} 0
@@ -159,6 +163,9 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notification_requests_total{integration="wechat",user="user1"} 2
 		cortex_alertmanager_notification_requests_total{integration="wechat",user="user2"} 20
 		cortex_alertmanager_notification_requests_total{integration="wechat",user="user3"} 200
+		cortex_alertmanager_notification_requests_total{integration="sns",user="user1"} 8
+		cortex_alertmanager_notification_requests_total{integration="sns",user="user2"} 80
+		cortex_alertmanager_notification_requests_total{integration="sns",user="user3"} 800
 		# HELP cortex_alertmanager_notification_requests_failed_total The total number of failed notification requests.
 		# TYPE cortex_alertmanager_notification_requests_failed_total counter
 		cortex_alertmanager_notification_requests_failed_total{integration="email",user="user1"} 0
@@ -185,6 +192,9 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user1"} 2
 		cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user2"} 20
 		cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user3"} 200
+		cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user1"} 8
+		cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user2"} 80
+		cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user3"} 800
 		# HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
 		# TYPE cortex_alertmanager_notifications_total counter
 		cortex_alertmanager_notifications_total{integration="email",user="user1"} 0
@@ -211,6 +221,9 @@ func TestAlertmanagerMetricsStore(t *testing.T) {
 		cortex_alertmanager_notifications_total{integration="wechat",user="user1"} 2
 		cortex_alertmanager_notifications_total{integration="wechat",user="user2"} 20
 		cortex_alertmanager_notifications_total{integration="wechat",user="user3"} 200
+		cortex_alertmanager_notifications_total{integration="sns",user="user1"} 8
+		cortex_alertmanager_notifications_total{integration="sns",user="user2"} 80
+		cortex_alertmanager_notifications_total{integration="sns",user="user3"} 800
 
 		# HELP cortex_alertmanager_silences How many silences by state.
 		# TYPE cortex_alertmanager_silences gauge
@@ -387,14 +400,14 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
 						# HELP cortex_alertmanager_notification_latency_seconds The latency of notifications in seconds.
         	           	# TYPE cortex_alertmanager_notification_latency_seconds histogram
-        	            cortex_alertmanager_notification_latency_seconds_bucket{le="1"} 14
-        	            cortex_alertmanager_notification_latency_seconds_bucket{le="5"} 19
-        	            cortex_alertmanager_notification_latency_seconds_bucket{le="10"} 21
-        	            cortex_alertmanager_notification_latency_seconds_bucket{le="15"} 23
-        	            cortex_alertmanager_notification_latency_seconds_bucket{le="20"} 24
-        	            cortex_alertmanager_notification_latency_seconds_bucket{le="+Inf"} 24
-        	            cortex_alertmanager_notification_latency_seconds_sum 77.7
-        	            cortex_alertmanager_notification_latency_seconds_count 24
+        	            cortex_alertmanager_notification_latency_seconds_bucket{le="1"} 15
+        	            cortex_alertmanager_notification_latency_seconds_bucket{le="5"} 21
+        	            cortex_alertmanager_notification_latency_seconds_bucket{le="10"} 23
+        	            cortex_alertmanager_notification_latency_seconds_bucket{le="15"} 25
+        	            cortex_alertmanager_notification_latency_seconds_bucket{le="20"} 27
+        	            cortex_alertmanager_notification_latency_seconds_bucket{le="+Inf"} 27
+        	            cortex_alertmanager_notification_latency_seconds_sum 99.9
+        	            cortex_alertmanager_notification_latency_seconds_count 27
 
         	            # HELP cortex_alertmanager_notification_requests_failed_total The total number of failed notification requests.
         	            # TYPE cortex_alertmanager_notification_requests_failed_total counter
@@ -422,6 +435,9 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user1"} 2
         	            cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user2"} 20
         	            cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user3"} 200
+        	            cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user1"} 8
+        	            cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user2"} 80
+        	            cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user3"} 800
 
         	            # HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
         	            # TYPE cortex_alertmanager_notification_requests_total counter
@@ -449,6 +465,9 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            cortex_alertmanager_notification_requests_total{integration="wechat",user="user1"} 2
         	            cortex_alertmanager_notification_requests_total{integration="wechat",user="user2"} 20
         	            cortex_alertmanager_notification_requests_total{integration="wechat",user="user3"} 200
+        	            cortex_alertmanager_notification_requests_total{integration="sns",user="user1"} 8
+        	            cortex_alertmanager_notification_requests_total{integration="sns",user="user2"} 80
+        	            cortex_alertmanager_notification_requests_total{integration="sns",user="user3"} 800
 
         	            # HELP cortex_alertmanager_notifications_failed_total The total number of failed notifications.
         	            # TYPE cortex_alertmanager_notifications_failed_total counter
@@ -476,6 +495,9 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            cortex_alertmanager_notifications_failed_total{integration="wechat",user="user1"} 2
         	            cortex_alertmanager_notifications_failed_total{integration="wechat",user="user2"} 20
         	            cortex_alertmanager_notifications_failed_total{integration="wechat",user="user3"} 200
+        	            cortex_alertmanager_notifications_failed_total{integration="sns",user="user1"} 8
+        	            cortex_alertmanager_notifications_failed_total{integration="sns",user="user2"} 80
+        	            cortex_alertmanager_notifications_failed_total{integration="sns",user="user3"} 800
 
         	            # HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
         	            # TYPE cortex_alertmanager_notifications_total counter
@@ -503,6 +525,9 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
         	            cortex_alertmanager_notifications_total{integration="wechat",user="user1"} 2
         	            cortex_alertmanager_notifications_total{integration="wechat",user="user2"} 20
         	            cortex_alertmanager_notifications_total{integration="wechat",user="user3"} 200
+        	            cortex_alertmanager_notifications_total{integration="sns",user="user1"} 8
+        	            cortex_alertmanager_notifications_total{integration="sns",user="user2"} 80
+        	            cortex_alertmanager_notifications_total{integration="sns",user="user3"} 800
 
         	            # HELP cortex_alertmanager_silences How many silences by state.
         	            # TYPE cortex_alertmanager_silences gauge
@@ -669,14 +694,14 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
 
     		# HELP cortex_alertmanager_notification_latency_seconds The latency of notifications in seconds.
     		# TYPE cortex_alertmanager_notification_latency_seconds histogram
-    		cortex_alertmanager_notification_latency_seconds_bucket{le="1"} 14
-    		cortex_alertmanager_notification_latency_seconds_bucket{le="5"} 19
-    		cortex_alertmanager_notification_latency_seconds_bucket{le="10"} 21
-    		cortex_alertmanager_notification_latency_seconds_bucket{le="15"} 23
-    		cortex_alertmanager_notification_latency_seconds_bucket{le="20"} 24
-    		cortex_alertmanager_notification_latency_seconds_bucket{le="+Inf"} 24
-    		cortex_alertmanager_notification_latency_seconds_sum 77.7
-    		cortex_alertmanager_notification_latency_seconds_count 24
+    		cortex_alertmanager_notification_latency_seconds_bucket{le="1"} 15
+    		cortex_alertmanager_notification_latency_seconds_bucket{le="5"} 21
+    		cortex_alertmanager_notification_latency_seconds_bucket{le="10"} 23
+    		cortex_alertmanager_notification_latency_seconds_bucket{le="15"} 25
+    		cortex_alertmanager_notification_latency_seconds_bucket{le="20"} 27
+    		cortex_alertmanager_notification_latency_seconds_bucket{le="+Inf"} 27
+    		cortex_alertmanager_notification_latency_seconds_sum 99.9
+    		cortex_alertmanager_notification_latency_seconds_count 27
 
     		# HELP cortex_alertmanager_notification_requests_failed_total The total number of failed notification requests.
     		# TYPE cortex_alertmanager_notification_requests_failed_total counter
@@ -696,6 +721,8 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		cortex_alertmanager_notification_requests_failed_total{integration="webhook",user="user2"} 60
     		cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user1"} 2
     		cortex_alertmanager_notification_requests_failed_total{integration="wechat",user="user2"} 20
+    		cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user1"} 8
+    		cortex_alertmanager_notification_requests_failed_total{integration="sns",user="user2"} 80
 
     		# HELP cortex_alertmanager_notification_requests_total The total number of attempted notification requests.
     		# TYPE cortex_alertmanager_notification_requests_total counter
@@ -715,6 +742,8 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		cortex_alertmanager_notification_requests_total{integration="webhook",user="user2"} 60
     		cortex_alertmanager_notification_requests_total{integration="wechat",user="user1"} 2
     		cortex_alertmanager_notification_requests_total{integration="wechat",user="user2"} 20
+    		cortex_alertmanager_notification_requests_total{integration="sns",user="user1"} 8
+    		cortex_alertmanager_notification_requests_total{integration="sns",user="user2"} 80
 
     		# HELP cortex_alertmanager_notifications_failed_total The total number of failed notifications.
     		# TYPE cortex_alertmanager_notifications_failed_total counter
@@ -734,6 +763,8 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		cortex_alertmanager_notifications_failed_total{integration="webhook",user="user2"} 60
     		cortex_alertmanager_notifications_failed_total{integration="wechat",user="user1"} 2
     		cortex_alertmanager_notifications_failed_total{integration="wechat",user="user2"} 20
+    		cortex_alertmanager_notifications_failed_total{integration="sns",user="user1"} 8
+    		cortex_alertmanager_notifications_failed_total{integration="sns",user="user2"} 80
 
     		# HELP cortex_alertmanager_notifications_total The total number of attempted notifications.
     		# TYPE cortex_alertmanager_notifications_total counter
@@ -753,6 +784,8 @@ func TestAlertmanagerMetricsRemoval(t *testing.T) {
     		cortex_alertmanager_notifications_total{integration="webhook",user="user2"} 60
     		cortex_alertmanager_notifications_total{integration="wechat",user="user1"} 2
     		cortex_alertmanager_notifications_total{integration="wechat",user="user2"} 20
+    		cortex_alertmanager_notifications_total{integration="sns",user="user1"} 8
+    		cortex_alertmanager_notifications_total{integration="sns",user="user2"} 80
 
     		# HELP cortex_alertmanager_silences How many silences by state.
     		# TYPE cortex_alertmanager_silences gauge

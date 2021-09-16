@@ -7,6 +7,7 @@ package queryrange
 
 import (
 	"context"
+	"net/http"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -15,15 +16,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/httpgrpc"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 type querySharding struct {
-	totalShards int
+	limit Limits
 
 	engine *promql.Engine
 	next   Handler
@@ -45,7 +50,7 @@ type querySharding struct {
 func NewQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
-	totalShards int,
+	limit Limits,
 	registerer prometheus.Registerer,
 ) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
@@ -72,9 +77,9 @@ func NewQueryShardingMiddleware(
 				Help:      "Number of sharded queries a single query has been rewritten to.",
 				Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
 			}),
-			engine:      engine,
-			totalShards: totalShards,
-			logger:      logger,
+			engine: engine,
+			logger: logger,
+			limit:  limit,
 		}
 	})
 }
@@ -83,12 +88,26 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
 	defer log.Span.Finish()
 
+	tenantIDs, err := tenant.TenantIDs(ctx)
+	if err != nil {
+		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+	}
+
+	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
+
+	if r.GetOptions().ShardingDisabled || totalShards <= 0 {
+		return s.next.Do(ctx, r)
+	}
+	if r.GetOptions().TotalShards > 0 {
+		totalShards = int(r.GetOptions().TotalShards)
+	}
+
 	s.shardingAttempts.Inc()
-	shardedQuery, stats, err := s.shardQuery(r.GetQuery())
+	shardedQuery, shardingStats, err := s.shardQuery(r.GetQuery(), totalShards)
 
 	// If an error occurred while trying to rewrite the query or the query has not been sharded,
 	// then we should fallback to execute it via queriers.
-	if err != nil || stats.GetShardedQueries() == 0 {
+	if err != nil || shardingStats.GetShardedQueries() == 0 {
 		if err != nil {
 			level.Warn(log).Log("msg", "failed to rewrite the input query into a shardable query, falling back to try executing without sharding", "query", r.GetQuery(), "err", err)
 		} else {
@@ -98,10 +117,16 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return s.next.Do(ctx, r)
 	}
 
-	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery)
+	level.Debug(log).Log("msg", "query has been rewritten into a shardable query", "original", r.GetQuery(), "rewritten", shardedQuery, "sharded_queries", shardingStats.GetShardedQueries())
+
+	// Update metrics.
 	s.shardingSuccesses.Inc()
-	s.shardedQueries.Add(float64(stats.GetShardedQueries()))
-	s.shardedQueriesPerQuery.Observe(float64(stats.GetShardedQueries()))
+	s.shardedQueries.Add(float64(shardingStats.GetShardedQueries()))
+	s.shardedQueriesPerQuery.Observe(float64(shardingStats.GetShardedQueries()))
+
+	// Update query stats.
+	queryStats := stats.FromContext(ctx)
+	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
@@ -116,6 +141,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	res := qry.Exec(ctx)
 	extracted, err := FromResult(res)
 	if err != nil {
@@ -134,8 +160,8 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
 // can't be sharded.
-func (s *querySharding) shardQuery(query string) (string, *astmapper.MapperStats, error) {
-	mapper, err := astmapper.NewSharding(s.totalShards)
+func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
+	mapper, err := astmapper.NewSharding(totalShards)
 	if err != nil {
 		return "", nil, err
 	}

@@ -38,12 +38,12 @@ var (
 		Query: "sum(container_memory_rss) by (namespace)",
 	}
 	noCacheRequest = &PrometheusRequest{
-		Path:           "/api/v1/query_range",
-		Start:          1536673680 * 1e3,
-		End:            1536716898 * 1e3,
-		Step:           120 * 1e3,
-		Query:          "sum(container_memory_rss) by (namespace)",
-		CachingOptions: CachingOptions{Disabled: true},
+		Path:    "/api/v1/query_range",
+		Start:   1536673680 * 1e3,
+		End:     1536716898 * 1e3,
+		Step:    120 * 1e3,
+		Query:   "sum(container_memory_rss) by (namespace)",
+		Options: Options{CacheDisabled: true},
 	}
 	respHeaders = []*PrometheusResponseHeader{
 		{
@@ -429,7 +429,8 @@ func TestPartition(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   100,
-				}},
+				},
+			},
 		},
 		{
 			name: "Test a partial hit.",
@@ -982,7 +983,7 @@ func TestResultsCacheShouldCacheFunc(t *testing.T) {
 		{
 			name: "check cache based on request",
 			shouldCache: func(r Request) bool {
-				return !r.GetCachingOptions().Disabled
+				return !r.GetOptions().CacheDisabled
 			},
 			requests:     []Request{noCacheRequest, noCacheRequest},
 			expectedCall: 2,
@@ -1027,8 +1028,7 @@ func toMs(t time.Duration) int64 {
 	return int64(t / time.Millisecond)
 }
 
-type mockCacheGenNumberLoader struct {
-}
+type mockCacheGenNumberLoader struct{}
 
 func newMockCacheGenNumberLoader() CacheGenNumberLoader {
 	return mockCacheGenNumberLoader{}

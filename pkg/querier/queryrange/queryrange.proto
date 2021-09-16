@@ -24,7 +24,7 @@ message PrometheusRequest {
   int64 step = 4;
   google.protobuf.Duration timeout = 5 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   string query = 6;
-  CachingOptions cachingOptions = 7 [(gogoproto.nullable) = false];
+  Options options = 7 [(gogoproto.nullable) = false];
 }
 
 message PrometheusResponseHeader {
@@ -66,6 +66,8 @@ message Extent  {
   google.protobuf.Any response = 5 [(gogoproto.jsontag) = "response"];
 }
 
-message CachingOptions {
-  bool disabled = 1;
+message Options {
+  bool CacheDisabled = 1;
+  bool ShardingDisabled = 2;
+  int32 TotalShards = 3;
 }
