@@ -25,6 +25,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -402,7 +403,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					numShards,
+					mockLimits{totalShards: numShards},
 					reg,
 				)
 				downstream := &downstreamHandler{
@@ -431,7 +432,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
 				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 				require.Nil(t, err)
 
 				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
@@ -474,7 +475,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 		Query: "aaa{", // Invalid query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	// Mock the downstream handler, always returning success (regardless the query is valid or not).
 	downstream := &mockHandler{}
@@ -483,7 +484,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 	// Run the query with sharding middleware wrapping the downstream one.
 	// We expect the query parsing done by the query sharding middleware to fail
 	// but to fallback on the downstream one which always returns success.
-	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
@@ -501,12 +502,12 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
 
-	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
 	// Ensure we get the same request downstream. No sharding
@@ -526,7 +527,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
@@ -535,7 +536,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		},
 	}, nil)
 
-	res, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
 	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
@@ -552,7 +553,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), 16, nil)
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
@@ -560,7 +561,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 
 	// Run the query with sharding middleware wrapping the downstream one.
 	// We expect to get the downstream error.
-	_, err := shardingware.Wrap(downstream).Do(context.Background(), req)
+	_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.Error(t, err)
 	assert.Equal(t, downstreamErr, err)
 }
@@ -649,7 +650,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 				shardingware := NewQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
-					shardFactor,
+					mockLimits{totalShards: shardFactor},
 					nil,
 				).Wrap(downstream)
 
@@ -665,7 +666,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 					func(b *testing.B) {
 						for n := 0; n < b.N; n++ {
 							_, err := shardingware.Do(
-								context.Background(),
+								user.InjectOrgID(context.Background(), "test"),
 								req,
 							)
 							if err != nil {
