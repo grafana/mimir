@@ -178,6 +178,7 @@ func (s *ConcreteService) Kill() error {
 
 	s.usedNetworkName = ""
 
+	logger.Log("Killed", s.name)
 	return nil
 }
 

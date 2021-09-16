@@ -31,7 +31,6 @@ import (
 )
 
 type queryFrontendTestConfig struct {
-	testMissingMetricName bool
 	querySchedulerEnabled bool
 	queryStatsEnabled     bool
 	setup                 func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string)
@@ -39,7 +38,6 @@ type queryFrontendTestConfig struct {
 
 func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		testMissingMetricName: false,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = BlocksStorageFlags()
 
@@ -53,8 +51,7 @@ func TestQueryFrontendWithBlocksStorageViaFlags(t *testing.T) {
 
 func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		testMissingMetricName: false,
-		queryStatsEnabled:     true,
+		queryStatsEnabled: true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = BlocksStorageFlags()
 
@@ -68,7 +65,6 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndQueryStatsEnabled(t *testing.T
 
 func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		testMissingMetricName: false,
 		querySchedulerEnabled: true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = BlocksStorageFlags()
@@ -83,7 +79,6 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQueryScheduler(t *testing.
 
 func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStatsEnabled(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		testMissingMetricName: false,
 		querySchedulerEnabled: true,
 		queryStatsEnabled:     true,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
@@ -99,7 +94,6 @@ func TestQueryFrontendWithBlocksStorageViaFlagsAndWithQuerySchedulerAndQueryStat
 
 func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		testMissingMetricName: false,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			require.NoError(t, writeFileToSharedDir(s, mimirConfigFile, []byte(BlocksStorageConfig)))
 
@@ -113,7 +107,6 @@ func TestQueryFrontendWithBlocksStorageViaConfigFile(t *testing.T) {
 
 func TestQueryFrontendTLSWithBlocksStorageViaFlags(t *testing.T) {
 	runQueryFrontendTest(t, queryFrontendTestConfig{
-		testMissingMetricName: false,
 		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
 			flags = mergeFlags(
 				BlocksStorageFlags(),
@@ -238,14 +231,6 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 		c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", fmt.Sprintf("user-%d", userID))
 		require.NoError(t, err)
 
-		// No need to repeat the test on missing metric name for each user.
-		if userID == 0 && cfg.testMissingMetricName {
-			res, body, err := c.QueryRaw("{instance=~\"hello.*\"}")
-			require.NoError(t, err)
-			require.Equal(t, 422, res.StatusCode)
-			require.Contains(t, string(body), "query must contain metric name")
-		}
-
 		// No need to repeat the test on start/end time rounding for each user.
 		if userID == 0 {
 			start := time.Unix(1595846748, 806*1e6)
@@ -296,10 +281,6 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	wg.Wait()
 
 	extra := float64(2)
-	if cfg.testMissingMetricName {
-		extra++
-	}
-
 	if cfg.queryStatsEnabled {
 		extra++
 	}
