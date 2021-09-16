@@ -64,6 +64,7 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 	if e.kind == "field" {
 		// Description
 		w.writeComment(e.fieldDesc, indent)
+		w.writeExample(e.fieldExample, indent)
 		w.writeFlag(e.fieldFlag, indent)
 
 		// Specification
@@ -73,8 +74,6 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 		} else if e.fieldType == "duration" {
 			fieldDefault = cleanupDuration(fieldDefault)
 		}
-
-		w.writeExample(e.fieldExample, indent)
 
 		if e.required {
 			w.out.WriteString(pad(indent) + e.name + ": <" + e.fieldType + "> | default = " + fieldDefault + "\n")
