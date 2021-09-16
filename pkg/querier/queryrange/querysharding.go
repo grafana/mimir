@@ -94,12 +94,13 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
-
-	if r.GetOptions().ShardingDisabled || totalShards <= 0 {
-		return s.next.Do(ctx, r)
-	}
 	if r.GetOptions().TotalShards > 0 {
 		totalShards = int(r.GetOptions().TotalShards)
+	}
+
+	if r.GetOptions().ShardingDisabled || totalShards <= 1 {
+		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
+		return s.next.Do(ctx, r)
 	}
 
 	s.shardingAttempts.Inc()
