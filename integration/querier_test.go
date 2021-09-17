@@ -269,7 +269,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			}
 
 			// Check query stats (supported only when gRPC streaming is enabled).
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(expectedFetchedSeries)), "cortex_query_fetched_series_total"))
+			require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(float64(expectedFetchedSeries)), "cortex_query_fetched_series_total"))
 
 			// Query metadata.
 			testMetadataQueriesWithBlocksStorage(t, c, series1[0], series2[0], series3[0], blockRangePeriod)
