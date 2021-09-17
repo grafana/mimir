@@ -1132,10 +1132,10 @@ func mockStorageConfig(t *testing.T) mimir_tsdb.BlocksStorageConfig {
 }
 
 // mockTSDB create 1+ TSDB blocks storing numSeries of series, each series
-// with 1 sample and its timestamp evenly distributed between minT and maxT.
+// with 1 sample and its timestamp evenly distributed between minT and maxT (ms).
 // If numBlocks > 0, then it uses numSeries only to find the distribution of
 // samples.
-func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int64) {
+func mockTSDB(t testing.TB, dir string, numSeries, numBlocks int, minT, maxT int64) {
 	// Create a new TSDB on a temporary directory. The blocks
 	// will be then snapshotted to the input dir.
 	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
@@ -1179,7 +1179,7 @@ func mockTSDB(t *testing.T, dir string, numSeries, numBlocks int, minT, maxT int
 	require.NoError(t, db.Close())
 }
 
-func mockTSDBWithGenerator(t *testing.T, dir string, next func() (bool, labels.Labels, int64, float64)) {
+func mockTSDBWithGenerator(t testing.TB, dir string, next func() (bool, labels.Labels, int64, float64)) {
 	// Create a new TSDB on a temporary directory. The blocks
 	// will be then snapshotted to the input dir.
 	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")

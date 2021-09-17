@@ -64,6 +64,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -2126,7 +2127,7 @@ func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*buck
 		TSDBDir:          filepath.Join(tmpDir, "head"),
 		SamplesPerSeries: 86400 / 15, // Simulate 1 day block with 15s scrape interval.
 		ScrapeInterval:   15 * time.Second,
-		Series:           1000,
+		Series:           10000,
 		PrependLabels:    nil,
 		Random:           rand.New(rand.NewSource(120)),
 		SkipChunks:       true,
@@ -2562,4 +2563,94 @@ func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 		// modify it (cache is empty).
 		filterPostingsByCachedShardHash(ps, shard, cache)
 	}
+}
+
+func BenchmarkBucketIndexReader_LoadSeries(b *testing.B) {
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(b)
+
+	// Generate 1 TSDB block with some series. For each series, add as many samples as we have
+	// in a 24h block with a scrape interval of 15s (assuming no churning).
+	numSeries := 10000
+	numSamples := 5760
+	mint := time.Now().Unix() * 1000
+	maxt := mint + time.Hour.Milliseconds()
+
+	seriesLabels := make([]labels.Labels, 0, numSeries)
+	for i := 1; i <= numSeries; i++ {
+		seriesLabels = append(seriesLabels, labels.New(labels.Label{Name: "series_id", Value: strconv.Itoa(i)}))
+	}
+
+	blockID, err := CreateBlock(ctx, storageDir, seriesLabels, numSamples, mint, maxt, labels.Labels{}, 0, metadata.NoneFunc)
+	require.NoError(b, err)
+
+	// Create a temp dir used by the bucket store.
+	bucketStoreDir, err := ioutil.TempDir(os.TempDir(), "bucket-store")
+	require.NoError(b, err)
+	b.Cleanup(func() {
+		require.NoError(b, os.RemoveAll(bucketStoreDir))
+	})
+
+	// Create the TSDB block index reader.
+	indexHeaderReader, err := indexheader.NewBinaryReader(ctx, logger, bucketClient, bucketStoreDir, blockID, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
+	require.NoError(b, err)
+
+	// Create the bucketBlock for the TSDB block.
+	bb, err := newBucketBlock(
+		ctx,
+		logger,
+		NewBucketStoreMetrics(nil),
+		&metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: blockID}},
+		bucketClient,
+		bucketStoreDir,
+		noopCache{},
+		pool.NoopBytes{},
+		indexHeaderReader,
+		naivePartitioner{},
+	)
+	require.NoError(b, err)
+
+	r := bucketIndexReader{
+		ctx:          ctx,
+		block:        bb,
+		stats:        &queryStats{},
+		loadedSeries: map[uint64][]byte{},
+	}
+
+	// Find the refs for all series.
+	refs, err := r.ExpandedPostings([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+")})
+	require.NoError(b, err)
+	require.Len(b, refs, numSeries)
+
+	// Preload all series we're going to load.
+	require.NoError(b, r.PreloadSeries(refs))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	b.Run("LoadSeriesForTime()", func(b *testing.B) {
+		var (
+			symbolizedLset []symbolizedLabel
+			chks           []chunks.Meta
+		)
+
+		for n := 0; n < b.N; n++ {
+			ok, err := r.LoadSeriesForTime(refs[n%numSeries], &symbolizedLset, &chks, false, mint, maxt)
+			if !ok || err != nil || len(chks) == 0 {
+				b.Fatal("unexpected output")
+			}
+		}
+	})
+
+	b.Run("LoadSeriesLabels()", func(b *testing.B) {
+		var symbolizedLset []symbolizedLabel
+
+		for n := 0; n < b.N; n++ {
+			err := r.LoadSeriesLabels(refs[n%numSeries], &symbolizedLset)
+			if err != nil {
+				b.Fatal("unexpected output")
+			}
+		}
+	})
 }

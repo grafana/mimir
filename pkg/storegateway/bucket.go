@@ -632,6 +632,15 @@ func blockSeries(
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
 
+	// TODO doc
+	if shard != nil {
+		// TODO stats
+		ps, err = filterPostingsByShard(ps, shard, seriesHashCache, indexr)
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "filter postings by shard")
+		}
+	}
+
 	// Transform all series into the response types and mark their relevant chunks
 	// for preloading.
 	var (
@@ -655,21 +664,21 @@ func blockSeries(
 		}
 
 		// Skip the series if it doesn't belong to the shard.
-		if shard != nil {
-			hash, ok := seriesHashCache.Fetch(id)
-			seriesCacheStats.seriesHashCacheRequests++
-
-			if !ok {
-				hash = lset.Hash()
-				seriesHashCache.Store(id, hash)
-			} else {
-				seriesCacheStats.seriesHashCacheHits++
-			}
-
-			if hash%shard.ShardCount != shard.ShardIndex {
-				continue
-			}
-		}
+		//if shard != nil {
+		//	hash, ok := seriesHashCache.Fetch(id)
+		//	seriesCacheStats.seriesHashCacheRequests++
+		//
+		//	if !ok {
+		//		hash = lset.Hash()
+		//		seriesHashCache.Store(id, hash)
+		//	} else {
+		//		seriesCacheStats.seriesHashCacheHits++
+		//	}
+		//
+		//	if hash%shard.ShardCount != shard.ShardIndex {
+		//		continue
+		//	}
+		//}
 
 		// Check series limit after filtering out series not belonging to the requested shard (if any).
 		if err := seriesLimiter.Reserve(1); err != nil {
@@ -731,7 +740,7 @@ func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSele
 		}
 
 		// Keep the posting if it's not in the cache, or it's in the cache and belongs to our shard.
-		if !ok || hash%uint64(shard.ShardCount) == uint64(shard.ShardIndex) {
+		if !ok || hash%shard.ShardCount == shard.ShardIndex {
 			ps[writeIdx] = seriesID
 			writeIdx++
 			continue
@@ -745,6 +754,46 @@ func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSele
 	ps = ps[:writeIdx]
 
 	return ps, stats
+}
+
+// TODO doc
+// TODO test me
+func filterPostingsByShard(ps []uint64, shard *querysharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache, indexr *bucketIndexReader) (filteredPostings []uint64, err error) {
+	var (
+		symbolizedLset []symbolizedLabel
+		lset           labels.Labels
+		writeIdx       = 0
+	)
+
+	for readIdx := 0; readIdx < len(ps); readIdx++ {
+		seriesID := ps[readIdx]
+
+		if err := indexr.LoadSeriesLabels(seriesID, &symbolizedLset); err != nil {
+			return nil, errors.Wrap(err, "read series")
+		}
+
+		if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
+			return nil, errors.Wrap(err, "lookup labels symbols")
+		}
+
+		// Check if the series belong to the requested shard.
+		hash := lset.Hash()
+		seriesHashCache.Store(seriesID, hash)
+
+		if hash%shard.ShardCount == shard.ShardIndex {
+			ps[writeIdx] = seriesID
+			writeIdx++
+			continue
+		}
+
+		// We can filter out the series because doesn't belong to the requested shard,
+		// so we're not going to increase the writeIdx.
+	}
+
+	// Shrink the size.
+	ps = ps[:writeIdx]
+
+	return ps, nil
 }
 
 func populateChunk(out *storepb.AggrChunk, in chunkenc.Chunk, aggrs []storepb.Aggr, save func([]byte) ([]byte, error)) error {
@@ -2152,6 +2201,16 @@ type symbolizedLabel struct {
 	name, value uint32
 }
 
+// LoadSeriesLabels populates the given symbolized labels for the series identified by the reference.
+func (r *bucketIndexReader) LoadSeriesLabels(ref uint64, lset *[]symbolizedLabel) error {
+	b, ok := r.loadedSeries[ref]
+	if !ok {
+		return errors.Errorf("series %d not found", ref)
+	}
+
+	return decodeSeriesLabels(b, lset)
+}
+
 // LoadSeriesForTime populates the given symbolized labels for the series identified by the reference if at least one chunk is within
 // time selection.
 // LoadSeriesForTime also populates chunk metas slices if skipChunks if set to false. Chunks are also limited by the given time selection.
@@ -2189,6 +2248,22 @@ func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, lb
 		}
 		*lbls = append(*lbls, labels.Label{Name: ln, Value: lv})
 	}
+	return nil
+}
+
+// decodeSeriesLabels decodes a series labels symbols.
+func decodeSeriesLabels(b []byte, lset *[]symbolizedLabel) error {
+	*lset = (*lset)[:0]
+	d := encoding.Decbuf{B: b}
+
+	// Read labels without looking up symbols.
+	k := d.Uvarint()
+	for i := 0; i < k; i++ {
+		lno := uint32(d.Uvarint())
+		lvo := uint32(d.Uvarint())
+		*lset = append(*lset, symbolizedLabel{name: lno, value: lvo})
+	}
+
 	return nil
 }
 
