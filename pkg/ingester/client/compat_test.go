@@ -107,14 +107,6 @@ func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matr
 	return m
 }
 
-func TestQueryResponse(t *testing.T) {
-	want := buildTestMatrix(10, 10, 10)
-	have := FromQueryResponse(ToQueryResponse(want))
-	if !reflect.DeepEqual(have, want) {
-		t.Fatalf("Bad FromQueryResponse(ToQueryResponse) round trip")
-	}
-}
-
 // This test shows label sets with same fingerprints, and also shows how to easily create new collisions
 // (by adding "_" or "A" label with specific values, see below).
 func TestFingerprintCollisions(t *testing.T) {
