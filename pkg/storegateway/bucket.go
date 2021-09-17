@@ -26,6 +26,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/oklog/ulid"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -596,6 +597,7 @@ func (s *bucketSeriesSet) Err() error {
 
 // blockSeries returns series matching given matchers, that have some data in given time range.
 func blockSeries(
+	ctx context.Context,
 	extLset labels.Labels, // External labels added to the returned series labels.
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr *bucketChunkReader, // Chunk reader for block.
@@ -608,7 +610,11 @@ func blockSeries(
 	minTime, maxTime int64, // Series must have data in this time range to be returned.
 	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 ) (storepb.SeriesSet, *queryStats, error) {
-	ps, err := indexr.ExpandedPostings(matchers)
+	span, ctx := tracing.StartSpan(ctx, "blockSeries()")
+	span.LogKV("block ID", indexr.block.meta.ULID.String())
+	defer span.Finish()
+
+	ps, err := indexr.ExpandedPostings(ctx, matchers)
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
@@ -628,81 +634,96 @@ func blockSeries(
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	if err := indexr.PreloadSeries(ps); err != nil {
+	if err := indexr.PreloadSeries(ctx, ps); err != nil {
 		return nil, nil, errors.Wrap(err, "preload series")
 	}
 
 	// Transform all series into the response types and mark their relevant chunks
 	// for preloading.
 	var (
-		res            []seriesEntry
-		symbolizedLset []symbolizedLabel
-		lset           labels.Labels
-		chks           []chunks.Meta
+		res       []seriesEntry
+		lookupErr error
 	)
-	for _, id := range ps {
-		ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "read series")
-		}
-		if !ok {
-			// No matching chunks for this time duration, skip series.
-			continue
-		}
 
-		if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
-			return nil, nil, errors.Wrap(err, "lookup labels symbols")
-		}
-
-		// Skip the series if it doesn't belong to the shard.
-		if shard != nil {
-			hash, ok := seriesHashCache.Fetch(id)
-			seriesCacheStats.seriesHashCacheRequests++
-
-			if !ok {
-				hash = lset.Hash()
-				seriesHashCache.Store(id, hash)
-			} else {
-				seriesCacheStats.seriesHashCacheHits++
+	tracing.DoWithSpan(ctx, "blockSeries() lookup series", func(ctx context.Context, span opentracing.Span) {
+		var (
+			symbolizedLset []symbolizedLabel
+			lset           labels.Labels
+			chks           []chunks.Meta
+		)
+		for _, id := range ps {
+			ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
+			if err != nil {
+				lookupErr = errors.Wrap(err, "read series")
+				return
 			}
-
-			if hash%shard.ShardCount != shard.ShardIndex {
+			if !ok {
+				// No matching chunks for this time duration, skip series.
 				continue
 			}
-		}
 
-		// Check series limit after filtering out series not belonging to the requested shard (if any).
-		if err := seriesLimiter.Reserve(1); err != nil {
-			return nil, nil, errors.Wrap(err, "exceeded series limit")
-		}
+			if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
+				lookupErr = errors.Wrap(err, "lookup labels symbols")
+				return
+			}
 
-		s := seriesEntry{}
-		s.lset = labelpb.ExtendSortedLabels(lset, extLset)
+			// Skip the series if it doesn't belong to the shard.
+			if shard != nil {
+				hash, ok := seriesHashCache.Fetch(id)
+				seriesCacheStats.seriesHashCacheRequests++
 
-		if !skipChunks {
-			// Schedule loading chunks.
-			s.refs = make([]uint64, 0, len(chks))
-			s.chks = make([]storepb.AggrChunk, 0, len(chks))
-			for j, meta := range chks {
-				// seriesEntry s is appended to res, but not at every outer loop iteration,
-				// therefore len(res) is the index we need here, not outer loop iteration number.
-				if err := chunkr.addLoad(meta.Ref, len(res), j); err != nil {
-					return nil, nil, errors.Wrap(err, "add chunk load")
+				if !ok {
+					hash = lset.Hash()
+					seriesHashCache.Store(id, hash)
+				} else {
+					seriesCacheStats.seriesHashCacheHits++
 				}
-				s.chks = append(s.chks, storepb.AggrChunk{
-					MinTime: meta.MinTime,
-					MaxTime: meta.MaxTime,
-				})
-				s.refs = append(s.refs, meta.Ref)
+
+				if hash%shard.ShardCount != shard.ShardIndex {
+					continue
+				}
 			}
 
-			// Ensure sample limit through chunksLimiter if we return chunks.
-			if err := chunksLimiter.Reserve(uint64(len(s.chks))); err != nil {
-				return nil, nil, errors.Wrap(err, "exceeded chunks limit")
+			// Check series limit after filtering out series not belonging to the requested shard (if any).
+			if err := seriesLimiter.Reserve(1); err != nil {
+				lookupErr = errors.Wrap(err, "exceeded series limit")
+				return
 			}
+
+			s := seriesEntry{}
+			s.lset = labelpb.ExtendSortedLabels(lset, extLset)
+
+			if !skipChunks {
+				// Schedule loading chunks.
+				s.refs = make([]uint64, 0, len(chks))
+				s.chks = make([]storepb.AggrChunk, 0, len(chks))
+				for j, meta := range chks {
+					// seriesEntry s is appended to res, but not at every outer loop iteration,
+					// therefore len(res) is the index we need here, not outer loop iteration number.
+					if err := chunkr.addLoad(meta.Ref, len(res), j); err != nil {
+						lookupErr = errors.Wrap(err, "add chunk load")
+						return
+					}
+					s.chks = append(s.chks, storepb.AggrChunk{
+						MinTime: meta.MinTime,
+						MaxTime: meta.MaxTime,
+					})
+					s.refs = append(s.refs, meta.Ref)
+				}
+
+				// Ensure sample limit through chunksLimiter if we return chunks.
+				if err := chunksLimiter.Reserve(uint64(len(s.chks))); err != nil {
+					lookupErr = errors.Wrap(err, "exceeded chunks limit")
+					return
+				}
+			}
+
+			res = append(res, s)
 		}
+	})
 
-		res = append(res, s)
+	if lookupErr != nil {
+		return nil, nil, lookupErr
 	}
 
 	if skipChunks {
@@ -946,6 +967,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 			g.Go(func() error {
 				part, pstats, err := blockSeries(
+					gctx,
 					b.extLset,
 					indexr,
 					chunkr,
@@ -1148,7 +1170,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 				result = strutil.MergeSlices(res, extRes)
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(gctx, b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
@@ -1273,7 +1295,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 				}
 				result = res
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(gctx, b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
@@ -1662,13 +1684,20 @@ func newBucketIndexReader(ctx context.Context, block *bucketBlock) *bucketIndexR
 // Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
-func (r *bucketIndexReader) ExpandedPostings(ms []*labels.Matcher) ([]uint64, error) {
+func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
 	var (
 		postingGroups []*postingGroup
 		allRequested  = false
 		hasAdds       = false
 		keys          []labels.Label
 	)
+
+	// Track the number of returned postings in a tracing span.
+	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
+	defer func() {
+		span.LogKV("returned postings", len(returnRefs))
+		span.Finish()
+	}()
 
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
@@ -2064,7 +2093,10 @@ func (it *bigEndianPostings) length() int {
 	return len(it.list) / 4
 }
 
-func (r *bucketIndexReader) PreloadSeries(ids []uint64) error {
+func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []uint64) error {
+	span, ctx := tracing.StartSpan(ctx, "PreloadSeries()")
+	defer span.Finish()
+
 	timer := prometheus.NewTimer(r.block.metrics.seriesFetchDuration)
 	defer timer.ObserveDuration()
 
