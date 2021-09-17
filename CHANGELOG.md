@@ -30,6 +30,8 @@
 * [CHANGE] Alertmanager: Use distributor for non-API routes when sharding is enabled. #213
 * [CHANGE] Query-frontend: added `sharded` label to `cortex_query_seconds_total` metric. #235
 * [CHANGE] Query-frontend: changed the flag name for controlling query sharding total shards from `-querier.total-shards` to `-frontend.query-sharding-total-shards`. #230
+* [CHANGE] Querier/ruler: Option `-querier.ingester-streaming` has been removed. Querier/ruler now always use streaming method to query ingesters. #204
+* [CHANGE] Limits: Option `-ingester.max-samples-per-query` is now deprecated. YAML field `max_samples_per_query` is no longer supported. It required `-querier.ingester-streaming` option to be set to false, but since `-querier.ingester-streaming` is removed (always defaulting to true), the limit using it was removed as well. #204
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage. You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-querier.parallelise-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246
   * New config options:

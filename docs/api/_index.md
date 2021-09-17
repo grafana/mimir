@@ -433,7 +433,7 @@ GET /api/v1/chunks
 GET <legacy-http-prefix>/chunks
 ```
 
-Fetch a compressed tar of all the chunks containing samples for the given time range and label matchers. This endpoint is supported only by the **chunks storage**, requires `-querier.ingester-streaming=true` and should **not be exposed to users** but just used for debugging purposes.
+Fetch a compressed tar of all the chunks containing samples for the given time range and label matchers. This endpoint is supported only by the **chunks storage** and should **not be exposed to users** but just used for debugging purposes.
 
 | URL query parameter | Description                                                               |
 | ------------------- | ------------------------------------------------------------------------- |

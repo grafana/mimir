@@ -872,10 +872,6 @@ The `querier_config` configures the querier.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
 
-# Use streaming RPCs to query ingester.
-# CLI flag: -querier.ingester-streaming
-[ingester_streaming: <boolean> | default = true]
-
 # Maximum lookback beyond which queries are not sent to ingester. 0 means all
 # queries are sent to ingester.
 # CLI flag: -querier.query-ingesters-within
@@ -4019,11 +4015,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # -querier.max-fetched-series-per-query limit instead.
 # CLI flag: -ingester.max-series-per-query
 [max_series_per_query: <int> | default = 100000]
-
-# The maximum number of samples that a query can return. This limit only applies
-# when using chunks storage with -querier.ingester-streaming=false.
-# CLI flag: -ingester.max-samples-per-query
-[max_samples_per_query: <int> | default = 1000000]
 
 # The maximum number of active series per user, per ingester. 0 to disable.
 # CLI flag: -ingester.max-series-per-user
