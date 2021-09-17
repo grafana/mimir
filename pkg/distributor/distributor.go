@@ -658,6 +658,8 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 			return nil, err
 		}
 
+		d.labelsHistogram.Observe(float64(len(ts.Labels)))
+
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
 
@@ -676,7 +678,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
-		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 	}
 
 	for _, m := range req.Metadata {
