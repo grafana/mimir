@@ -824,6 +824,11 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
     [close_idle_tsdb_timeout: <duration> | default = 0s]
 
+    # True to enable snapshotting of in-memory TSDB data on disk when shutting
+    # down.
+    # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
+    [memory_snapshot_on_shutdown: <boolean> | default = false]
+
     # Max size - in bytes - of the in-memory series hash cache. The cache is
     # shared across all tenants and it's used only when query sharding is
     # enabled.
