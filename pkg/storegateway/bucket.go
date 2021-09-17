@@ -54,6 +54,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/util/spanlogger"
+
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -594,8 +596,11 @@ func (s *bucketSeriesSet) Err() error {
 	return s.err
 }
 
+// TODO to improve the tracing, we could add a span for each blockSeries(), track all timings of inner operations
+// and log it to the span at the end (eg. in a defer).
 // blockSeries returns series matching given matchers, that have some data in given time range.
 func blockSeries(
+	ctx context.Context,
 	extLset labels.Labels, // External labels added to the returned series labels.
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr *bucketChunkReader, // Chunk reader for block.
@@ -608,7 +613,13 @@ func blockSeries(
 	minTime, maxTime int64, // Series must have data in this time range to be returned.
 	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 ) (storepb.SeriesSet, *queryStats, error) {
-	ps, err := indexr.ExpandedPostings(matchers)
+	var ps []uint64
+	var err error
+
+	// TODO DEBUG
+	tracing.DoInSpan(ctx, "blockSeries() ExpandedPostings", func(_ context.Context) {
+		ps, err = indexr.ExpandedPostings(matchers)
+	})
 	if err != nil {
 		return nil, nil, errors.Wrap(err, "expanded matching posting")
 	}
@@ -618,7 +629,10 @@ func blockSeries(
 	// not belonging to the shard.
 	var seriesCacheStats queryStats
 	if shard != nil {
-		ps, seriesCacheStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
+		// TODO DEBUG
+		tracing.DoInSpan(ctx, "blockSeries() filterPostingsByCachedShardHash()", func(_ context.Context) {
+			ps, seriesCacheStats = filterPostingsByCachedShardHash(ps, shard, seriesHashCache)
+		})
 	}
 
 	if len(ps) == 0 {
@@ -628,8 +642,14 @@ func blockSeries(
 	// Preload all series index data.
 	// TODO(bwplotka): Consider not keeping all series in memory all the time.
 	// TODO(bwplotka): Do lazy loading in one step as `ExpandingPostings` method.
-	if err := indexr.PreloadSeries(ps); err != nil {
-		return nil, nil, errors.Wrap(err, "preload series")
+	var preloadErr error
+	tracing.DoInSpan(ctx, "blockSeries() PreloadSeries()", func(_ context.Context) {
+		if err := indexr.PreloadSeries(ps); err != nil {
+			preloadErr = errors.Wrap(err, "preload series")
+		}
+	})
+	if preloadErr != nil {
+		return nil, nil, preloadErr
 	}
 
 	// Transform all series into the response types and mark their relevant chunks
@@ -640,69 +660,106 @@ func blockSeries(
 		lset           labels.Labels
 		chks           []chunks.Meta
 	)
-	for _, id := range ps {
-		ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
-		if err != nil {
-			return nil, nil, errors.Wrap(err, "read series")
-		}
-		if !ok {
-			// No matching chunks for this time duration, skip series.
-			continue
-		}
 
-		if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
-			return nil, nil, errors.Wrap(err, "lookup labels symbols")
-		}
+	// TODO DEBUG
+	var lookupErr error
+	tracing.DoInSpan(ctx, "blockSeries() lookup series", func(ctx context.Context) {
+		var (
+			loadSeriesDuration   time.Duration
+			lookupLabelsDuration time.Duration
+		)
 
-		// Skip the series if it doesn't belong to the shard.
-		if shard != nil {
-			hash, ok := seriesHashCache.Fetch(id)
-			seriesCacheStats.seriesHashCacheRequests++
+		// TODO is it worth to parallelise this?
+		for _, id := range ps {
+			// TODO when query sharding is enabled, we don't really need to "load series for time", but we just
+			// need to load symbolizedLset (regardless if we have series in that time range) to check if the series
+			// belong to our shard. If it does, then we can call the LoadSeriesForTime().
+			start := time.Now()
+			ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
+			loadSeriesDuration += time.Since(start)
+			if err != nil {
+				lookupErr = errors.Wrap(err, "read series")
+				return
+			}
 
 			if !ok {
-				hash = lset.Hash()
-				seriesHashCache.Store(id, hash)
-			} else {
-				seriesCacheStats.seriesHashCacheHits++
-			}
-
-			if hash%shard.ShardCount != shard.ShardIndex {
+				// No matching chunks for this time duration, skip series.
 				continue
 			}
-		}
 
-		// Check series limit after filtering out series not belonging to the requested shard (if any).
-		if err := seriesLimiter.Reserve(1); err != nil {
-			return nil, nil, errors.Wrap(err, "exceeded series limit")
-		}
+			start = time.Now()
+			if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
+				lookupErr = errors.Wrap(err, "lookup labels symbols")
+				return
+			}
+			lookupLabelsDuration += time.Since(start)
 
-		s := seriesEntry{}
-		s.lset = labelpb.ExtendSortedLabels(lset, extLset)
+			// Skip the series if it doesn't belong to the shard.
+			if shard != nil {
+				hash, ok := seriesHashCache.Fetch(id)
+				seriesCacheStats.seriesHashCacheRequests++
 
-		if !skipChunks {
-			// Schedule loading chunks.
-			s.refs = make([]uint64, 0, len(chks))
-			s.chks = make([]storepb.AggrChunk, 0, len(chks))
-			for j, meta := range chks {
-				// seriesEntry s is appended to res, but not at every outer loop iteration,
-				// therefore len(res) is the index we need here, not outer loop iteration number.
-				if err := chunkr.addLoad(meta.Ref, len(res), j); err != nil {
-					return nil, nil, errors.Wrap(err, "add chunk load")
+				if !ok {
+					hash = lset.Hash()
+					seriesHashCache.Store(id, hash)
+				} else {
+					seriesCacheStats.seriesHashCacheHits++
 				}
-				s.chks = append(s.chks, storepb.AggrChunk{
-					MinTime: meta.MinTime,
-					MaxTime: meta.MaxTime,
-				})
-				s.refs = append(s.refs, meta.Ref)
+
+				if hash%shard.ShardCount != shard.ShardIndex {
+					continue
+				}
 			}
 
-			// Ensure sample limit through chunksLimiter if we return chunks.
-			if err := chunksLimiter.Reserve(uint64(len(s.chks))); err != nil {
-				return nil, nil, errors.Wrap(err, "exceeded chunks limit")
+			// Check series limit after filtering out series not belonging to the requested shard (if any).
+			if err := seriesLimiter.Reserve(1); err != nil {
+				lookupErr = errors.Wrap(err, "exceeded series limit")
+				return
 			}
+
+			s := seriesEntry{}
+			s.lset = labelpb.ExtendSortedLabels(lset, extLset)
+
+			if !skipChunks {
+				// Schedule loading chunks.
+				s.refs = make([]uint64, 0, len(chks))
+				s.chks = make([]storepb.AggrChunk, 0, len(chks))
+				for j, meta := range chks {
+					// seriesEntry s is appended to res, but not at every outer loop iteration,
+					// therefore len(res) is the index we need here, not outer loop iteration number.
+					if err := chunkr.addLoad(meta.Ref, len(res), j); err != nil {
+						lookupErr = errors.Wrap(err, "add chunk load")
+						return
+					}
+					s.chks = append(s.chks, storepb.AggrChunk{
+						MinTime: meta.MinTime,
+						MaxTime: meta.MaxTime,
+					})
+					s.refs = append(s.refs, meta.Ref)
+				}
+
+				// Ensure sample limit through chunksLimiter if we return chunks.
+				if err := chunksLimiter.Reserve(uint64(len(s.chks))); err != nil {
+					lookupErr = errors.Wrap(err, "exceeded chunks limit")
+					return
+				}
+			}
+
+			res = append(res, s)
 		}
 
-		res = append(res, s)
+		// TODO DEBUG
+		spanLogger := spanlogger.FromContext(ctx)
+		level.Debug(spanLogger).Log(
+			"msg", "looked up series",
+			"load_series_duration", loadSeriesDuration,
+			"lookup_labels_symbols_duration", lookupLabelsDuration,
+			"num_postings", len(ps),
+			"num_series", len(res))
+	})
+
+	if lookupErr != nil {
+		return nil, nil, lookupErr
 	}
 
 	if skipChunks {
@@ -721,7 +778,7 @@ func blockSeries(
 // postings will be kept in the output.
 func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []uint64, stats queryStats) {
 	writeIdx := 0
-	stats.seriesHashCacheRequests = len(ps)
+	stats.seriesHashCacheRequests = len(ps) // TODO BUG: should be +=
 
 	for readIdx := 0; readIdx < len(ps); readIdx++ {
 		seriesID := ps[readIdx]
@@ -731,6 +788,7 @@ func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSele
 		}
 
 		// Keep the posting if it's not in the cache, or it's in the cache and belongs to our shard.
+		// TODO uint64() casting not needed
 		if !ok || hash%uint64(shard.ShardCount) == uint64(shard.ShardIndex) {
 			ps[writeIdx] = seriesID
 			writeIdx++
@@ -946,6 +1004,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 
 			g.Go(func() error {
 				part, pstats, err := blockSeries(
+					ctx,
 					b.extLset,
 					indexr,
 					chunkr,
@@ -1148,7 +1207,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 				result = strutil.MergeSlices(res, extRes)
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(ctx, b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
@@ -1273,7 +1332,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 				}
 				result = res
 			} else {
-				seriesSet, _, err := blockSeries(b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(ctx, b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
