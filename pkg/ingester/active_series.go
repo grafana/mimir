@@ -14,8 +14,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"go.uber.org/atomic"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -78,11 +76,10 @@ var sep = []byte{model.SeparatorByte}
 func fingerprint(series labels.Labels) uint64 {
 	sum := xxhash.New()
 
-	sum.Reset()
 	for _, label := range series {
-		_, _ = sum.Write(util.YoloBuf(label.Name))
+		_, _ = sum.WriteString(label.Name)
 		_, _ = sum.Write(sep)
-		_, _ = sum.Write(util.YoloBuf(label.Value))
+		_, _ = sum.WriteString(label.Value)
 		_, _ = sum.Write(sep)
 	}
 
