@@ -1042,6 +1042,7 @@ func benchmarkExpandedPostings(
 	r indexheader.Reader,
 	series int,
 ) {
+	ctx := context.Background()
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
@@ -1094,11 +1095,11 @@ func benchmarkExpandedPostings(
 				partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			}
 
-			indexr := newBucketIndexReader(context.Background(), b)
+			indexr := newBucketIndexReader(b)
 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				p, err := indexr.ExpandedPostings(c.matchers)
+				p, err := indexr.ExpandedPostings(ctx, c.matchers)
 				assert.NoError(t, err)
 				assert.Equal(t, c.expectedLen, len(p))
 			}
@@ -2231,10 +2232,10 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				// must be called only from the goroutine running the Benchmark function.
 				require.NoError(b, err)
 
-				indexReader := blk.indexReader(ctx)
+				indexReader := blk.indexReader()
 				chunkReader := blk.chunkReader(ctx)
 
-				seriesSet, _, err := blockSeries(nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
+				seriesSet, _, err := blockSeries(context.Background(), nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
