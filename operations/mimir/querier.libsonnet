@@ -47,12 +47,8 @@
     $.jaeger_mixin +
     $.util.readinessProbe +
     container.withEnvMap($.querier_env_map) +
-    if $._config.queryFrontend.sharded_queries_enabled then
-      $.util.resourcesRequests('3', '12Gi') +
-      $.util.resourcesLimits(null, '24Gi')
-    else
-      $.util.resourcesRequests('1', '12Gi') +
-      $.util.resourcesLimits(null, '24Gi'),
+    $.util.resourcesRequests('1', '12Gi') +
+    $.util.resourcesLimits(null, '24Gi'),
 
   local deployment = $.apps.v1.deployment,
 

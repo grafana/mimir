@@ -36,19 +36,7 @@
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
       'runtime-config.file': '/etc/cortex/overrides.yaml',
-    } + (
-      if $._config.queryFrontend.sharded_queries_enabled then
-        {
-          'querier.parallelise-shardable-queries': 'true',
-
-          // in process tenant queues on frontends. We divide by the number of frontends; 2 in this case in order to apply the global limit in aggregate.
-          // basically base * shard_factor * query_split_factor / num_frontends where
-          'querier.max-outstanding-requests-per-tenant': std.floor(200 * $._config.queryFrontend.shard_factor * $._config.queryFrontend.query_split_factor / $._config.queryFrontend.replicas),
-
-          'querier.query-ingesters-within': $._config.queryConfig['querier.query-ingesters-within'],
-        } + $._config.storageConfig
-      else {}
-    ),
+    },
 
   query_frontend_container::
     container.new('query-frontend', $._images.query_frontend) +
@@ -56,26 +44,15 @@
     container.withArgsMixin($.util.mapToFlags($.query_frontend_args)) +
     $.jaeger_mixin +
     $.util.readinessProbe +
-    if $._config.queryFrontend.sharded_queries_enabled then
-      $.util.resourcesRequests('2', '2Gi') +
-      $.util.resourcesLimits(null, '6Gi') +
-      container.withEnvMap({
-        JAEGER_REPORTER_MAX_QUEUE_SIZE: '5000',
-      })
-    else
-      $.util.resourcesRequests('2', '600Mi') +
-      $.util.resourcesLimits(null, '1200Mi'),
+    $.util.resourcesRequests('2', '600Mi') +
+    $.util.resourcesLimits(null, '1200Mi'),
 
   local deployment = $.apps.v1.deployment,
 
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
-    $.util.antiAffinity +
-    // inject storage schema in order to know what/how to shard
-    if $._config.queryFrontend.sharded_queries_enabled then
-      $.storage_config_mixin
-    else {},
+    $.util.antiAffinity,
 
   query_frontend_deployment: self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
 

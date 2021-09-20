@@ -35,28 +35,13 @@
     test_exporter_start_time: error 'must specify test exporter start time',
     test_exporter_user_id: error 'must specify test exporter used id',
 
-    // The expectation is that if sharding is enabled, we can force more (smaller)
-    // queries on the queriers. However this can't be extended too far because most queries
-    // concern recent (ingester) data, which isn't sharded. Therefore, we must strike a balance
-    // which allows us to process more sharded queries in parallel when requested, but not overload
-    // queriers during normal queries.
     querier: {
-      replicas: if $._config.queryFrontend.sharded_queries_enabled then 12 else 6,
-      concurrency: if $._config.queryFrontend.sharded_queries_enabled then 16 else 8,
+      replicas: 6,
+      concurrency: 8,
     },
 
     queryFrontend: {
       replicas: 2,
-      shard_factor: 16,  // v10 schema shard factor
-      sharded_queries_enabled: false,
-      // Queries can technically be sharded an arbitrary number of times. Thus query_split_factor is used
-      // as a coefficient to multiply the frontend tenant queues by. The idea is that this
-      // yields a bit of headroom so tenant queues aren't underprovisioned. Therefore the split factor
-      // should be represent the highest reasonable split factor for a query. If too low, a long query
-      // (i.e. 30d) with a high split factor (i.e. 5) would result in
-      // (day_splits * shard_factor * split_factor) or 30 * 16 * 5 = 2400 sharded queries, which may be
-      // more than the max queue size and thus would always error.
-      query_split_factor:: 3,
     },
 
     jaeger_agent_host: null,
