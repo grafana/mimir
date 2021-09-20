@@ -196,7 +196,7 @@
       ) else {}
     ),
 
-    // Shared between the Ruler and Querier
+    // Querier component config (shared between the ruler and querier).
     queryConfig: {
       'runtime-config.file': '/etc/cortex/overrides.yaml',
 
@@ -238,6 +238,11 @@
         }
       else {}
     ),
+
+    // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
+    queryEngineConfig: {
+      // Keep it even if empty, to allow downstream projects to easily configure it.
+    },
 
     ringConfig: {
       'consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,

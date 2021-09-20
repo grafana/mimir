@@ -8,6 +8,7 @@
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
+    $._config.queryEngineConfig +
     $._config.distributorConfig +
     $._config.rulerClientConfig +
     $._config.rulerLimitsConfig +
