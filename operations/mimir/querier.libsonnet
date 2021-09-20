@@ -8,6 +8,7 @@
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
+    $._config.queryEngineConfig +
     $._config.distributorConfig +
     {
       target: 'querier',
