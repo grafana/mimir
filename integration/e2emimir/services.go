@@ -376,7 +376,6 @@ func NewAlertmanager(name string, flags map[string]string, image string) *MimirS
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
-		GossipPort,
 	)
 }
 
@@ -397,7 +396,6 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) 
 		e2e.NewTCPReadinessProbe(httpPort),
 		httpPort,
 		grpcPort,
-		GossipPort,
 	)
 }
 

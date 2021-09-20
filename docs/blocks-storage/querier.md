@@ -106,10 +106,6 @@ querier:
   # CLI flag: -querier.batch-iterators
   [batch_iterators: <boolean> | default = true]
 
-  # Use streaming RPCs to query ingester.
-  # CLI flag: -querier.ingester-streaming
-  [ingester_streaming: <boolean> | default = true]
-
   # Maximum lookback beyond which queries are not sent to ingester. 0 means all
   # queries are sent to ingester.
   # CLI flag: -querier.query-ingesters-within

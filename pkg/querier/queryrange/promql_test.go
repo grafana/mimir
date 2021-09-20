@@ -233,12 +233,12 @@ func Test_FunctionParallelism(t *testing.T) {
 			fArgs:        []string{"0.5", "0.7"},
 		},
 		{
-			fn:  "label_join",
-			tpl: `(label_join(bar1,"new",",","bar","baz"))`,
+			fn:    "label_replace",
+			fArgs: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`},
 		},
 		{
-			fn:  "label_replace",
-			tpl: `(label_replace(bar1,"new","$1","bar","(.*)"))`,
+			fn:    "label_join",
+			fArgs: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`},
 		},
 	}
 

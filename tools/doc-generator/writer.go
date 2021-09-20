@@ -12,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	wordwrap "github.com/mitchellh/go-wordwrap"
 )
 
@@ -40,16 +42,16 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 		// so here we've just to write down the reference without re-iterating on it.
 		if e.root {
 			// Description
-			w.writeComment(e.blockDesc, indent)
+			w.writeComment(e.blockDesc, indent, 0)
 			if e.block.flagsPrefix != "" {
-				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block config is: %s", e.block.flagsPrefix), indent)
+				w.writeComment(fmt.Sprintf("The CLI flags prefix for this block config is: %s", e.block.flagsPrefix), indent, 0)
 			}
 
 			// Block reference without entries, because it's a root block
 			w.out.WriteString(pad(indent) + "[" + e.name + ": <" + e.block.name + ">]\n")
 		} else {
 			// Description
-			w.writeComment(e.blockDesc, indent)
+			w.writeComment(e.blockDesc, indent, 0)
 
 			// Name
 			w.out.WriteString(pad(indent) + e.name + ":\n")
@@ -61,7 +63,8 @@ func (w *specWriter) writeConfigEntry(e *configEntry, indent int) {
 
 	if e.kind == "field" {
 		// Description
-		w.writeComment(e.fieldDesc, indent)
+		w.writeComment(e.fieldDesc, indent, 0)
+		w.writeExample(e.fieldExample, indent)
 		w.writeFlag(e.fieldFlag, indent)
 
 		// Specification
@@ -88,16 +91,37 @@ func (w *specWriter) writeFlag(name string, indent int) {
 	w.out.WriteString(pad(indent) + "# CLI flag: -" + name + "\n")
 }
 
-func (w *specWriter) writeComment(comment string, indent int) {
+func (w *specWriter) writeComment(comment string, indent, innerIndent int) {
 	if comment == "" {
 		return
 	}
 
-	wrapped := strings.TrimSpace(wordwrap.WrapString(comment, uint(maxLineWidth-indent-2)))
-	lines := strings.Split(wrapped, "\n")
+	wrapped := wordwrap.WrapString(comment, uint(maxLineWidth-indent-innerIndent-2))
+	w.writeWrappedString(wrapped, indent, innerIndent)
+}
 
+func (w *specWriter) writeExample(example *fieldExample, indent int) {
+	if example == nil {
+		return
+	}
+
+	w.writeComment("Example:", indent, 0)
+	if example.comment != "" {
+		w.writeComment(example.comment, indent, 2)
+	}
+
+	data, err := yaml.Marshal(example.yaml)
+	if err != nil {
+		panic(fmt.Errorf("can't render example: %w", err))
+	}
+
+	w.writeWrappedString(string(data), indent, 2)
+}
+
+func (w *specWriter) writeWrappedString(s string, indent, innerIndent int) {
+	lines := strings.Split(strings.TrimSpace(s), "\n")
 	for _, line := range lines {
-		w.out.WriteString(pad(indent) + "# " + line + "\n")
+		w.out.WriteString(pad(indent) + "# " + pad(innerIndent) + line + "\n")
 	}
 }
 

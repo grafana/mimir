@@ -427,6 +427,40 @@ func (c *Client) getRawPage(ctx context.Context, url string) ([]byte, error) {
 	return content, nil
 }
 
+// GetAlertmanager performs a GET request on a per-tenant alertmanager endpoint.
+func (c *Client) GetAlertmanager(ctx context.Context, path string) (string, error) {
+	return c.doAlertmanagerRequest(ctx, http.MethodGet, path)
+}
+
+// PostAlertmanager performs a POST request on a per-tenant alertmanager endpoint.
+func (c *Client) PostAlertmanager(ctx context.Context, path string) error {
+	_, err := c.doAlertmanagerRequest(ctx, http.MethodPost, path)
+	return err
+}
+
+func (c *Client) doAlertmanagerRequest(ctx context.Context, method string, path string) (string, error) {
+	u := c.alertmanagerClient.URL(fmt.Sprintf("api/prom/%s", path), nil)
+
+	req, err := http.NewRequest(method, u.String(), nil)
+	if err != nil {
+		return "", fmt.Errorf("error creating request: %v", err)
+	}
+
+	resp, body, err := c.alertmanagerClient.Do(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode == http.StatusNotFound {
+		return "", ErrNotFound
+	}
+
+	if resp.StatusCode/100 != 2 {
+		return "", fmt.Errorf("getting %s failed with status %d and error %v", path, resp.StatusCode, string(body))
+	}
+	return string(body), nil
+}
+
 // GetAlertmanagerConfig gets the status of an alertmanager instance
 func (c *Client) GetAlertmanagerConfig(ctx context.Context) (*alertConfig.Config, error) {
 	u := c.alertmanagerClient.URL("/api/prom/api/v1/status", nil)

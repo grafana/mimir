@@ -398,16 +398,20 @@ func TestShardSummer(t *testing.T) {
 		{
 			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			concat(
-				`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			),
-			0,
+			3,
 		},
 		{
 			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			concat(
-				`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			),
-			0,
+			`ln(exp(` + concat(
+				`label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+			) + `))`,
+			3,
 		},
 		{
 			`ln(
@@ -425,6 +429,26 @@ func TestShardSummer(t *testing.T) {
 				) + `)
 				, "foo", "$1", "service", "(.*):.*")
 			)`,
+			3,
+		},
+		{
+			`sum by (job)(rate(http_requests_total[1h] @ end()))`,
+			`sum by (job)(
+				` + concat(
+				`sum by (job)(rate(http_requests_total{__query_shard__="0_of_3"}[1h] @ end()))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="1_of_3"}[1h] @ end()))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="2_of_3"}[1h] @ end()))`,
+			) + `)`,
+			3,
+		},
+		{
+			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10))`,
+			`sum by (job)(
+				` + concat(
+				`sum by (job)(rate(http_requests_total{__query_shard__="0_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="1_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="2_of_3"}[1h] offset 1w @ 10))`,
+			) + `)`,
 			3,
 		},
 	} {

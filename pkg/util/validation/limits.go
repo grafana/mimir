@@ -18,6 +18,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"golang.org/x/time/rate"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var errMaxGlobalSeriesPerUserValidation = errors.New("The ingester.max-global-series-per-user limit is unsupported if distributor.shard-by-all-labels is disabled")
@@ -62,7 +64,6 @@ type Limits struct {
 	// Ingester enforced limits.
 	// Series
 	MaxSeriesPerQuery        int `yaml:"max_series_per_query" json:"max_series_per_query"`
-	MaxSamplesPerQuery       int `yaml:"max_samples_per_query" json:"max_samples_per_query"`
 	MaxLocalSeriesPerUser    int `yaml:"max_series_per_user" json:"max_series_per_user"`
 	MaxLocalSeriesPerMetric  int `yaml:"max_series_per_metric" json:"max_series_per_metric"`
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -146,7 +147,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
 	f.IntVar(&l.MaxSeriesPerQuery, "ingester.max-series-per-query", 100000, "The maximum number of series for which a query can fetch samples from each ingester. This limit is enforced only in the ingesters (when querying samples not flushed to the storage yet) and it's a per-instance limit. This limit is ignored when using blocks storage. When running with blocks storage use -querier.max-fetched-series-per-query limit instead.")
-	f.IntVar(&l.MaxSamplesPerQuery, "ingester.max-samples-per-query", 1000000, "The maximum number of samples that a query can return. This limit only applies when using chunks storage with -querier.ingester-streaming=false.")
+	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
+	flagext.DeprecatedFlag(f, "ingester.max-samples-per-query", "This option is no longer used, and will be removed.", util_log.Logger)
 	f.IntVar(&l.MaxLocalSeriesPerUser, "ingester.max-series-per-user", 5000000, "The maximum number of active series per user, per ingester. 0 to disable.")
 	f.IntVar(&l.MaxLocalSeriesPerMetric, "ingester.max-series-per-metric", 50000, "The maximum number of active series per metric name, per ingester. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 0, "The maximum number of active series per user, across the cluster before replication. 0 to disable. Supported only if -distributor.shard-by-all-labels is true.")
@@ -368,11 +370,6 @@ func (o *Overrides) CreationGracePeriod(userID string) time.Duration {
 // MaxSeriesPerQuery returns the maximum number of series a query is allowed to hit.
 func (o *Overrides) MaxSeriesPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxSeriesPerQuery
-}
-
-// MaxSamplesPerQuery returns the maximum number of samples in a query (from the ingester).
-func (o *Overrides) MaxSamplesPerQuery(userID string) int {
-	return o.getOverridesForUser(userID).MaxSamplesPerQuery
 }
 
 // MaxLocalSeriesPerUser returns the maximum number of series a user is allowed to store in a single ingester.

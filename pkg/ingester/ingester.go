@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	tsdb_record "github.com/prometheus/prometheus/tsdb/record"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
@@ -789,73 +788,6 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 		// Remove all metadata that we no longer need to retain.
 		metadata.purge(deadline)
 	}
-}
-
-// Query implements service.IngesterServer
-func (i *Ingester) Query(ctx context.Context, req *client.QueryRequest) (*client.QueryResponse, error) {
-	if i.cfg.BlocksStorageEnabled {
-		return i.v2Query(ctx, req)
-	}
-
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	from, through, matchers, err := client.FromQueryRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	i.metrics.queries.Inc()
-
-	i.userStatesMtx.RLock()
-	state, ok, err := i.userStates.getViaContext(ctx)
-	i.userStatesMtx.RUnlock()
-	if err != nil {
-		return nil, err
-	} else if !ok {
-		return &client.QueryResponse{}, nil
-	}
-
-	result := &client.QueryResponse{}
-	numSeries, numSamples := 0, 0
-	maxSamplesPerQuery := i.limits.MaxSamplesPerQuery(userID)
-	err = state.forSeriesMatching(ctx, matchers, func(ctx context.Context, _ model.Fingerprint, series *memorySeries) error {
-		values, err := series.samplesForRange(from, through)
-		if err != nil {
-			return err
-		}
-		if len(values) == 0 {
-			return nil
-		}
-		numSeries++
-
-		numSamples += len(values)
-		if numSamples > maxSamplesPerQuery {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "exceeded maximum number of samples in a query (%d)", maxSamplesPerQuery)
-		}
-
-		ts := mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(series.metric),
-			Samples: make([]mimirpb.Sample, 0, len(values)),
-		}
-		for _, s := range values {
-			ts.Samples = append(ts.Samples, mimirpb.Sample{
-				Value:       float64(s.Value),
-				TimestampMs: int64(s.Timestamp),
-			})
-		}
-		result.Timeseries = append(result.Timeseries, ts)
-		return nil
-	}, nil, 0)
-	i.metrics.queriedSeries.Observe(float64(numSeries))
-	i.metrics.queriedSamples.Observe(float64(numSamples))
-	return result, err
 }
 
 // QueryStream implements service.IngesterServer

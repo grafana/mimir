@@ -810,6 +810,13 @@ lifecycler:
 # Additional custom trackers for active metrics. Active series matching a
 # provided matcher (map value) will be exposed in the custom trackers metric
 # labeled using the tracker name (map key).
+# Example:
+#   The following configuration will count the active series coming from dev and
+#   prod namespaces for each tenant and label them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
@@ -864,10 +871,6 @@ The `querier_config` configures the querier.
 # series in memory.  Takes precedent over the -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
-
-# Use streaming RPCs to query ingester.
-# CLI flag: -querier.ingester-streaming
-[ingester_streaming: <boolean> | default = true]
 
 # Maximum lookback beyond which queries are not sent to ingester. 0 means all
 # queries are sent to ingester.
@@ -4012,11 +4015,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # -querier.max-fetched-series-per-query limit instead.
 # CLI flag: -ingester.max-series-per-query
 [max_series_per_query: <int> | default = 100000]
-
-# The maximum number of samples that a query can return. This limit only applies
-# when using chunks storage with -querier.ingester-streaming=false.
-# CLI flag: -ingester.max-samples-per-query
-[max_samples_per_query: <int> | default = 1000000]
 
 # The maximum number of active series per user, per ingester. 0 to disable.
 # CLI flag: -ingester.max-series-per-user
