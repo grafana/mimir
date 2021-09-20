@@ -17,6 +17,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
+	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
@@ -310,10 +311,11 @@ func Test_evaluateAtModifier(t *testing.T) {
 	)
 	for _, tt := range []struct {
 		in, expected string
+		err          error
 	}{
-		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))"},
-		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))"},
-		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001"},
+		{"topk(5, rate(http_requests_total[1h] @ start()))", "topk(5, rate(http_requests_total[1h] @ 1546300.800))", nil},
+		{"topk(5, rate(http_requests_total[1h] @ 0))", "topk(5, rate(http_requests_total[1h] @ 0.000))", nil},
+		{"http_requests_total[1h] @ 10.001", "http_requests_total[1h] @ 10.001", nil},
 		{
 			`min_over_time(
 				sum by(cluster) (
@@ -340,8 +342,9 @@ func Test_evaluateAtModifier(t *testing.T) {
 						rate(http_requests_total[10m] @ 1546300.800)
 					[5m:1m])
 				[2m:])
-			[10m:])`,
+			[10m:])`, nil,
 		},
+		{"sum by (foo) (bar[buzz])", "foo{}", httpgrpc.Errorf(http.StatusBadRequest, `1:19: parse error: bad duration syntax: ""`)},
 	} {
 		tt := tt
 		t.Run(tt.in, func(t *testing.T) {
@@ -349,6 +352,10 @@ func Test_evaluateAtModifier(t *testing.T) {
 			expectedExpr, err := parser.ParseExpr(tt.expected)
 			require.NoError(t, err)
 			out, err := evaluateAtModifierFunction(tt.in, start, end)
+			if tt.err != nil {
+				require.Equal(t, tt.err, err)
+				return
+			}
 			require.NoError(t, err)
 			require.Equal(t, expectedExpr.String(), out)
 		})
