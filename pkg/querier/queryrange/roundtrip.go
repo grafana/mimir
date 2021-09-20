@@ -199,7 +199,7 @@ func NewTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		// Finally, if the user selected any query range middleware, stitch it in.
 		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewRoundTripper(next, codec, queryRangeMiddleware...)
+			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
 			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
 				op := "query"
@@ -227,7 +227,6 @@ func NewTripperware(
 }
 
 type roundTripper struct {
-	next    http.RoundTripper
 	handler Handler
 	codec   Codec
 }
@@ -235,12 +234,13 @@ type roundTripper struct {
 // NewRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
 // using the codec to translate requests and responses.
 func NewRoundTripper(next http.RoundTripper, codec Codec, middlewares ...Middleware) http.RoundTripper {
-	transport := roundTripper{
-		next:  next,
+	return roundTripper{
+		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
+			next:  next,
+			codec: codec,
+		}),
 		codec: codec,
 	}
-	transport.handler = MergeMiddlewares(middlewares...).Wrap(&transport)
-	return transport
 }
 
 func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -261,8 +261,15 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	return q.codec.EncodeResponse(r.Context(), response)
 }
 
+// roundTripperHandler is a handler that roundtrips requests to next roundtripper.
+// It basically encodes a Request from Handler.Do and decode response from next roundtripper.
+type roundTripperHandler struct {
+	next  http.RoundTripper
+	codec Codec
+}
+
 // Do implements Handler.
-func (q roundTripper) Do(ctx context.Context, r Request) (Response, error) {
+func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
 	request, err := q.codec.EncodeRequest(ctx, r)
 	if err != nil {
 		return nil, err
