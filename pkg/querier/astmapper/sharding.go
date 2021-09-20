@@ -92,6 +92,9 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 				if containsAggregateExpr(n) {
 					return n, true, nil
 				}
+				if !CanParallelize(n) {
+					return n, true, nil
+				}
 				return summer.shardAndSquashFuncCall(n, stats)
 			}
 			return n, false, nil

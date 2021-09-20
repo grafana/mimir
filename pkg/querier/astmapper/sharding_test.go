@@ -365,6 +365,51 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
+			`absent_over_time(rate(metric_counter[5m])[10m:])`,
+			concat(
+				`absent_over_time(rate(metric_counter[5m])[10m:])`,
+			),
+			0,
+		},
+		{
+			`max_over_time(
+				stddev_over_time(
+					deriv(
+						sort(metric_counter)
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+			concat(
+				`max_over_time(
+					stddev_over_time(
+						deriv(
+							sort(metric_counter)
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+			),
+			0,
+		},
+		{
+			`max_over_time(
+				absent_over_time(
+					deriv(
+						rate(metric_counter[1m])
+					[5m:1m])
+				[2m:])
+			[10m:])`,
+			concat(
+				`max_over_time(
+					absent_over_time(
+						deriv(
+							rate(metric_counter[1m])
+						[5m:1m])
+					[2m:])
+				[10m:])`,
+			),
+			0,
+		},
+		{
 			`quantile_over_time(0.99, cortex_ingester_active_series[1w])`,
 			concat(
 				`quantile_over_time(0.99, cortex_ingester_active_series{}[1w])`,
@@ -398,20 +443,16 @@ func TestShardSummer(t *testing.T) {
 		{
 			`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			concat(
-				`label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-				`label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-				`label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
+				`label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
 			),
-			3,
+			0,
 		},
 		{
 			`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
-			`ln(exp(` + concat(
-				`label_replace(up{__query_shard__="0_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-				`label_replace(up{__query_shard__="1_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-				`label_replace(up{__query_shard__="2_of_3",job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")`,
-			) + `))`,
-			3,
+			concat(
+				`ln(exp(label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")))`,
+			),
+			0,
 		},
 		{
 			`ln(

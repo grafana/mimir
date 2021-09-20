@@ -289,6 +289,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 							)`,
 			expectedShardedQueries: 1,
 		},
+		`test`: {
+			query: `max_over_time(
+				absent_over_time(
+					deriv(
+						rate(metric_counter[1m])
+					[5m:1m])
+				[2m:1m])
+			[10m:1m])`,
+			expectedShardedQueries: 0,
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//
