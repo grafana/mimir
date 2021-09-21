@@ -3,7 +3,6 @@
 package querysharding
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 
@@ -14,9 +13,6 @@ import (
 const (
 	// ShardLabel is a reserved label referencing a shard.
 	ShardLabel = "__query_shard__"
-
-	// ShardLabelFmt is the format of the ShardLabel value.
-	ShardLabelFmt = "%d_of_%d"
 )
 
 // ShardSelector holds information about the configured query shard.
@@ -27,7 +23,14 @@ type ShardSelector struct {
 
 // LabelValue returns the label value to use to select this shard.
 func (shard ShardSelector) LabelValue() string {
-	return fmt.Sprintf(ShardLabelFmt, shard.ShardIndex, shard.ShardCount)
+	sb := strings.Builder{}
+	sb.Grow(2 /* ShardIndex digits */ + 4 /* separator digits */ + 2 /* ShardCount digits */)
+
+	sb.WriteString(strconv.Itoa(int(shard.ShardIndex)))
+	sb.WriteString("_of_")
+	sb.WriteString(strconv.Itoa(int(shard.ShardCount)))
+
+	return sb.String()
 }
 
 // Label generates the ShardSelector as a label.
@@ -36,6 +39,10 @@ func (shard ShardSelector) Label() labels.Label {
 		Name:  ShardLabel,
 		Value: shard.LabelValue(),
 	}
+}
+
+func (shard ShardSelector) LabelMatcher() (*labels.Matcher, error) {
+	return labels.NewMatcher(labels.MatchEqual, ShardLabel, shard.LabelValue())
 }
 
 // parseShard parses the input label value and extracts the shard information.

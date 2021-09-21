@@ -170,3 +170,10 @@ func TestShardFromMatchers(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkShardSelector_LabelValue(b *testing.B) {
+	for i := 0; i <= b.N; i++ {
+		selector := ShardSelector{ShardIndex: uint64(i % 3), ShardCount: uint64(i % 7)}
+		_ = selector.LabelValue()
+	}
+}
