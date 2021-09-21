@@ -269,7 +269,7 @@ func (q roundTripper) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
 	}
 
 	response, err := q.next.RoundTrip(request)
