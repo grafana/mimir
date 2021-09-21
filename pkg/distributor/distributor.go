@@ -592,12 +592,12 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+				return nil, httpgrpc.Errorf(http.StatusAccepted, "%s", err)
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
 				validation.DiscardedSamples.WithLabelValues(validation.TooManyHAClusters, userID).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+				return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
 			}
 
 			return nil, err
@@ -682,7 +682,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 	for _, m := range req.Metadata {
 		err := validation.ValidateMetadata(d.limits, userID, m)
-
 		if err != nil {
 			if firstPartialErr == nil {
 				firstPartialErr = err
@@ -1072,7 +1071,7 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if d.distributorsRing != nil {
 		d.distributorsRing.ServeHTTP(w, req)
 	} else {
-		var ringNotEnabledPage = `
+		ringNotEnabledPage := `
 			<!DOCTYPE html>
 			<html>
 				<head>
