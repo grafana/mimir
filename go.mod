@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20210910100700-60e6d9b19675
+	github.com/grafana/dskit v0.0.0-20210920134249-30d62063c034
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
@@ -69,10 +69,6 @@ require (
 // Override since git.apache.org is down.  The docs say to fetch from github.
 replace git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 
-replace k8s.io/client-go => k8s.io/client-go v0.20.4
-
-replace k8s.io/api => k8s.io/api v0.20.4
-
 // Use fork of gocql that has gokit logs and Prometheus metrics.
 replace github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85
 
@@ -91,8 +87,6 @@ replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 replace google.golang.org/grpc => google.golang.org/grpc v1.38.0
 
 replace github.com/grpc-ecosystem/go-grpc-middleware => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
-
-replace go.etcd.io/etcd/server/v3 => go.etcd.io/etcd/server/v3 v3.5.0-alpha.0.0.20210225194612-fa82d11a958a
 
 replace go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
 
