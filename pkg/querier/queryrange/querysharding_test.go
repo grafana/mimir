@@ -289,16 +289,6 @@ func TestQueryShardingCorrectness(t *testing.T) {
 							)`,
 			expectedShardedQueries: 1,
 		},
-		`test`: {
-			query: `max_over_time(
-				absent_over_time(
-					deriv(
-						rate(metric_counter[1m])
-					[5m:1m])
-				[2m:1m])
-			[10m:1m])`,
-			expectedShardedQueries: 0,
-		},
 		//
 		// The following queries are not expected to be shardable.
 		//
@@ -344,6 +334,16 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		},
 		"histogram_quantile without aggregation": {
 			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket[1m]))`,
+			expectedShardedQueries: 0,
+		},
+		`subqueries with non parallelizable function in children`: {
+			query: `max_over_time(
+				absent_over_time(
+					deriv(
+						rate(metric_counter[1m])
+					[5m:1m])
+				[2m:1m])
+			[10m:1m])`,
 			expectedShardedQueries: 0,
 		},
 	}
