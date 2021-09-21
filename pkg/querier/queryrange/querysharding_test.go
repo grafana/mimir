@@ -141,14 +141,6 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket[1m])))`,
 			expectedShardedQueries: 1,
 		},
-		"histogram_quantile with inner aggregation": {
-			query:                  `sum by (group_1) (histogram_quantile(0.9, rate(metric_histogram_bucket[1m])))`,
-			expectedShardedQueries: 1,
-		},
-		"histogram_quantile without aggregation": {
-			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket[1m]))`,
-			expectedShardedQueries: 1,
-		},
 		"min() no grouping": {
 			query:                  `min(metric_counter{group_1="0"})`,
 			expectedShardedQueries: 1,
@@ -334,6 +326,24 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		},
 		"histogram_quantile() no grouping": {
 			query:                  fmt.Sprintf(`histogram_quantile(0.99, metric_histogram_bucket{unique="%d"})`, numSeries+10), // Select a single histogram metric.
+			expectedShardedQueries: 0,
+		},
+		"histogram_quantile with inner aggregation": {
+			query:                  `sum by (group_1) (histogram_quantile(0.9, rate(metric_histogram_bucket[1m])))`,
+			expectedShardedQueries: 0,
+		},
+		"histogram_quantile without aggregation": {
+			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket[1m]))`,
+			expectedShardedQueries: 0,
+		},
+		`subqueries with non parallelizable function in children`: {
+			query: `max_over_time(
+				absent_over_time(
+					deriv(
+						rate(metric_counter[1m])
+					[5m:1m])
+				[2m:1m])
+			[10m:1m])`,
 			expectedShardedQueries: 0,
 		},
 	}

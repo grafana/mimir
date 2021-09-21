@@ -86,17 +86,15 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 	case *parser.Call:
 		// only shard the most outer function call.
 		if summer.currentShard == nil {
-			// Subqueries are parallelizable if they are parallelizable themselves
+			// Only shards Subqueries, they are parallelizable if they are parallelizable themselves
 			// and they don't contain aggregations over series in children nodes.
-			if isSubquery(n) && containsAggregateExpr(n) {
-				return n, true, nil
-			}
-			// Other functions with aggregates are not parallelizable at this level.
-			// but could be at the aggregate level.
-			if containsAggregateExpr(n) {
-				return n, false, nil
-			}
-			if CanParallelize(n) {
+			if isSubquery(n) {
+				if containsAggregateExpr(n) {
+					return n, true, nil
+				}
+				if !CanParallelize(n) {
+					return n, true, nil
+				}
 				return summer.shardAndSquashFuncCall(n, stats)
 			}
 			return n, false, nil
@@ -385,6 +383,9 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 
 // isSubquery returns true if the given function call expression is a subquery.
 func isSubquery(n *parser.Call) bool {
+	if len(n.Args) == 0 {
+		return false
+	}
 	_, ok := n.Args[0].(*parser.SubqueryExpr)
 	return ok
 }

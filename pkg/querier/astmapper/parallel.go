@@ -30,28 +30,6 @@ var NonParallelFuncs = []string{
 	"histogram_quantile",
 	"sort_desc",
 	"sort",
-
-	// The following functions are not worth to parallelize.
-	"abs",
-	"ceil",
-	"clamp",
-	"clamp_max",
-	"clamp_min",
-	"days_in_month",
-	"day_of_month",
-	"day_of_week",
-	"exp",
-	"floor",
-	"hour",
-	"minute",
-	"month",
-	"round",
-	"scalar",
-	"sgn",
-	"time",
-	"timestamp",
-	"vector",
-	"year",
 }
 
 // CanParallelize tests if a subtree is parallelizable.
