@@ -592,7 +592,7 @@ instance_limits:
   # per-distributor, not per-tenant. Additional requests will be rejected. 0 =
   # unlimited.
   # CLI flag: -distributor.instance-limits.max-inflight-push-requests
-  [max_inflight_push_requests: <int> | default = 0]
+  [max_inflight_push_requests: <int> | default = 1000]
 ```
 
 ### `ingester_config`
