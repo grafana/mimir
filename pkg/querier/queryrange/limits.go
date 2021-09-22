@@ -190,9 +190,11 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 		}()
 	}
 
-	// We wrap middlewares with a last handler that will gets requests in parallel from upstream handlers.
-	// Each requests gets scheduled to a different worker via the `intermediate` channel.
-	// We the call do on the resulting handler.
+	// Wraps middlewares with a final handler, which will receive requests in
+	// parallel from upstream handlers. Then each requests gets scheduled to a
+	// different worker via the `intermediate` channel, so the maximum
+	// parallelism is limited. This worker will then call `Do` on the/ resulting
+	// handler.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
 			wg.Add(1)
