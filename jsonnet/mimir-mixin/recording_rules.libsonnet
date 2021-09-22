@@ -366,6 +366,72 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         ],
       },
+      {
+        name: 'cortex_alertmanager_rules',
+        rules: [
+          // Aggregations of per-user Alertmanager metrics used in dashboards.
+          {
+            record: 'cluster_job_%s:cortex_alertmanager_alerts:sum' % $._config.per_instance_label,
+            expr: |||
+              sum by (cluster, job, %s) (cortex_alertmanager_alerts)
+            ||| % $._config.per_instance_label,
+          },
+          {
+            record: 'cluster_job_%s:cortex_alertmanager_silences:sum' % $._config.per_instance_label,
+            expr: |||
+              sum by (cluster, job, %s) (cortex_alertmanager_silences)
+            ||| % $._config.per_instance_label,
+          },
+          {
+            record: 'cluster_job:cortex_alertmanager_alerts_received_total:rate5m',
+            expr: |||
+              sum by (cluster, job) (rate(cortex_alertmanager_alerts_received_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job:cortex_alertmanager_alerts_invalid_total:rate5m',
+            expr: |||
+              sum by (cluster, job) (rate(cortex_alertmanager_alerts_invalid_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job_integration:cortex_alertmanager_notifications_total:rate5m',
+            expr: |||
+              sum by (cluster, job, integration) (rate(cortex_alertmanager_notifications_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job_integration:cortex_alertmanager_notifications_failed_total:rate5m',
+            expr: |||
+              sum by (cluster, job, integration) (rate(cortex_alertmanager_notifications_failed_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job:cortex_alertmanager_state_replication_total:rate5m',
+            expr: |||
+              sum by (cluster, job) (rate(cortex_alertmanager_state_replication_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job:cortex_alertmanager_state_replication_failed_total:rate5m',
+            expr: |||
+              sum by (cluster, job) (rate(cortex_alertmanager_state_replication_failed_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job:cortex_alertmanager_partial_state_merges_total:rate5m',
+            expr: |||
+              sum by (cluster, job) (rate(cortex_alertmanager_partial_state_merges_total[5m]))
+            |||,
+          },
+          {
+            record: 'cluster_job:cortex_alertmanager_partial_state_merges_failed_total:rate5m',
+            expr: |||
+              sum by (cluster, job) (rate(cortex_alertmanager_partial_state_merges_failed_total[5m]))
+            |||,
+          },
+        ],
+      },
     ],
   },
 }
