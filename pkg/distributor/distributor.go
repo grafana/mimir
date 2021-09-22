@@ -523,8 +523,71 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 	return nil
 }
 
-// Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	mp := d.limits.MultitenantPolicy(userID)
+	if mp == nil {
+		return d.push(ctx, req)
+	}
+
+	// split request to subrequests
+	subrequests := map[string]*mimirpb.WriteRequest{}
+
+	getSubrequest := func(outTenant string) *mimirpb.WriteRequest {
+		r := subrequests[outTenant]
+		if r == nil {
+			r = &mimirpb.WriteRequest{
+				Source:                  req.Source,
+				SkipLabelNameValidation: req.SkipLabelNameValidation,
+			}
+			subrequests[outTenant] = r
+		}
+		return r
+	}
+
+	for _, ts := range req.Timeseries {
+		outTenant := MatchingTenant(mp, ts.Labels)
+		if outTenant == "" {
+			outTenant = userID
+		}
+
+		r := getSubrequest(outTenant)
+		r.Timeseries = append(r.Timeseries, ts)
+	}
+
+	// metadata goes to original tenant only
+	r := getSubrequest(userID)
+	r.Metadata = req.Metadata
+
+	// Now call push for all tenants
+	for t, r := range subrequests {
+		tenantCtx := user.InjectOrgID(ctx, t)
+		_, err := d.push(tenantCtx, r)
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &mimirpb.WriteResponse{}, nil
+}
+
+func MatchingTenant(mp []validation.MultitenantPolicy, labels []mimirpb.LabelAdapter) string {
+	for _, p := range mp {
+		if p.MatchesLabels(mimirpb.FromLabelAdaptersToLabels(labels)) {
+			return p.Tenant
+		}
+	}
+
+	return ""
+}
+
+// Push implements client.IngesterServer
+func (d *Distributor) push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err

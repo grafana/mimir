@@ -1,2 +1,6 @@
 # This file can be used to set overrides or other runtime config.
 ingester_stream_chunks_when_using_blocks: true
+overrides:
+  fake:
+    multitenant_policy: '{__name__="up"}:up_tenant, {__name__=~"thanos.*"}:thanos_tenant'
+

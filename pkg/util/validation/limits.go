@@ -10,13 +10,16 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"math"
 	"strings"
 	"time"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/time/rate"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -121,6 +124,8 @@ type Limits struct {
 	AlertmanagerMaxDispatcherAggregationGroups int `yaml:"alertmanager_max_dispatcher_aggregation_groups" json:"alertmanager_max_dispatcher_aggregation_groups"`
 	AlertmanagerMaxAlertsCount                 int `yaml:"alertmanager_max_alerts_count" json:"alertmanager_max_alerts_count"`
 	AlertmanagerMaxAlertsSizeBytes             int `yaml:"alertmanager_max_alerts_size_bytes" json:"alertmanager_max_alerts_size_bytes"`
+
+	MultitenantPolicy string `yaml:"multitenant_policy" json:"multitenant_policy"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -199,6 +204,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.AlertmanagerMaxDispatcherAggregationGroups, "alertmanager.max-dispatcher-aggregation-groups", 0, "Maximum number of aggregation groups in Alertmanager's dispatcher that a tenant can have. Each active aggregation group uses single goroutine. When the limit is reached, dispatcher will not dispatch alerts that belong to additional aggregation groups, but existing groups will keep working properly. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsCount, "alertmanager.max-alerts-count", 0, "Maximum number of alerts that a single user can have. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
 	f.IntVar(&l.AlertmanagerMaxAlertsSizeBytes, "alertmanager.max-alerts-size-bytes", 0, "Maximum total size of alerts that a single user can have, alert size is the sum of the bytes of its labels, annotations and generatorURL. Inserting more alerts will fail with a log message and metric increment. 0 = no limit.")
+
+	f.StringVar(&l.MultitenantPolicy, "multitenant-policy", "", "Policy consisting of map of series selectors to tenant, where given series is stored.")
 }
 
 // Validate the limits config and returns an error if the validation
@@ -715,4 +722,57 @@ func MaxDurationPerTenant(tenantIDs []string, f func(string) time.Duration) time
 		}
 	}
 	return result
+}
+
+type MultitenantPolicy struct {
+	Matchers []*labels.Matcher
+	Tenant   string
+}
+
+func (mp MultitenantPolicy) MatchesLabels(lbls labels.Labels) bool {
+	for _, l := range lbls {
+		for _, m := range mp.Matchers {
+			if m.Name == l.Name && !m.Matches(l.Value) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func (o *Overrides) MultitenantPolicy(userID string) []MultitenantPolicy {
+	p := o.getOverridesForUser(userID).MultitenantPolicy
+	if p == "" {
+		return nil
+	}
+
+	pol, err := parseMultitenantPolicy(p)
+	if err != nil {
+		return nil
+	}
+	return pol
+}
+
+//{a="123"}: tenant1, {b="..."}: tenant2
+func parseMultitenantPolicy(input string) ([]MultitenantPolicy, error) {
+	var res []MultitenantPolicy
+
+	for _, pol := range strings.Split(input, ",") {
+		s := strings.SplitN(pol, ":", 2)
+		if len(s) != 2 {
+			return nil, fmt.Errorf("failed to parse policy: %v", pol)
+		}
+
+		m, err := parser.ParseMetricSelector(s[0])
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse policy: %v: %w", pol, err)
+		}
+
+		res = append(res, MultitenantPolicy{
+			Matchers: m,
+			Tenant:   s[1],
+		})
+	}
+
+	return res, nil
 }

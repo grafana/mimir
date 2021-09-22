@@ -1,4 +1,4 @@
-auth_enabled: false
+auth_enabled: true
 
 distributor:
   shard_by_all_labels: true
@@ -159,3 +159,6 @@ limits:
 
 runtime_config:
   file: ./config/runtime.yaml
+
+tenant_federation:
+  enabled: true
