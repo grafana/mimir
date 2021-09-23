@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
-	"github.com/grafana/mimir/pkg/util/concurrency"
 )
 
 func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {

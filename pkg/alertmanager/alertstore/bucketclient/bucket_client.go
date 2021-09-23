@@ -14,13 +14,13 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util/concurrency"
 )
 
 const (

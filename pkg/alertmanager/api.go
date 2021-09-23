@@ -15,19 +15,19 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
-	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/concurrency"
-	util_log "github.com/grafana/mimir/pkg/util/log"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/template"
 	commoncfg "github.com/prometheus/common/config"
 	"gopkg.in/yaml.v2"
+
+	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
+	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/grafana/mimir/pkg/util"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
