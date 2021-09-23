@@ -13,11 +13,10 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
-
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestResetConcurrency(t *testing.T) {
