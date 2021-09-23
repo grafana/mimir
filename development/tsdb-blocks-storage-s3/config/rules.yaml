@@ -5,6 +5,11 @@ groups:
       - record: up:count
         expr: count(up)
 
+  - name: count_by_name
+    rules:
+      - record: total_count
+        exprt: count({__name__!=""})
+
   - name: example2
     rules:
       - alert: TooManyServices

@@ -29,21 +29,21 @@ services:
     ports:
       - 9090:9090
 
-  jaeger:
-    image: jaegertracing/all-in-one
-    ports:
-      - 16686:16686
-      - "14268"
+#  jaeger:
+#    image: jaegertracing/all-in-one
+#    ports:
+#      - 16686:16686
+#      - "14268"
 
   # Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
   # until metadata remote write is not supported by Prometheus).
-  grafana-agent:
-    image: grafana/agent:v0.2.0
-    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
-    volumes:
-      - ./config:/etc/agent-config
-    ports:
-      - 9091:9091
+#  grafana-agent:
+#    image: grafana/agent:v0.2.0
+#    command: ["-config.file=/etc/agent-config/grafana-agent.yaml", "-prometheus.wal-directory=/tmp"]
+#    volumes:
+#      - ./config:/etc/agent-config
+#    ports:
+#      - 9091:9091
 
   distributor:
     build:
@@ -152,47 +152,47 @@ services:
     volumes:
       - ./config:/mimir/config
 
-  store-gateway-2:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18009 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009"]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=store-gateway-2
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8009:8009
-      - 18009:18009
-    volumes:
-      - ./config:/mimir/config
+#  store-gateway-2:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18009 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009"]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=store-gateway-2
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8009:8009
+#      - 18009:18009
+#    volumes:
+#      - ./config:/mimir/config
 
-  compactor:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18006 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006"]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=compactor
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8006:8006
-      - 18006:18006
-    volumes:
-      - ./config:/mimir/config
+#  compactor:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18006 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006"]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=compactor
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8006:8006
+#      - 18006:18006
+#    volumes:
+#      - ./config:/mimir/config
 
   query-frontend:
     build:
@@ -215,50 +215,50 @@ services:
     volumes:
       - ./config:/mimir/config
 
-  alertmanager-1:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18031 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"]
-    depends_on:
-      - consul
-      - minio
-    ports:
-      - 8031:8031
-      - 18031:18031
-    volumes:
-      - ./config:/mimir/config
+#  alertmanager-1:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18031 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"]
+#    depends_on:
+#      - consul
+#      - minio
+#    ports:
+#      - 8031:8031
+#      - 18031:18031
+#    volumes:
+#      - ./config:/mimir/config
 
-  alertmanager-2:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18032 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"]
-    depends_on:
-      - consul
-      - minio
-    ports:
-      - 8032:8032
-      - 18032:18032
-    volumes:
-      - ./config:/mimir/config
+#  alertmanager-2:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18032 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"]
+#    depends_on:
+#      - consul
+#      - minio
+#    ports:
+#      - 8032:8032
+#      - 18032:18032
+#    volumes:
+#      - ./config:/mimir/config
 
-  alertmanager-3:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18033 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"]
-    depends_on:
-      - consul
-      - minio
-    ports:
-      - 8033:8033
-      - 18033:18033
-    volumes:
-      - ./config:/mimir/config
+#  alertmanager-3:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18033 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"]
+#    depends_on:
+#      - consul
+#      - minio
+#    ports:
+#      - 8033:8033
+#      - 18033:18033
+#    volumes:
+#      - ./config:/mimir/config
 
   ruler-1:
     build:
@@ -281,109 +281,109 @@ services:
     volumes:
       - ./config:/mimir/config
 
-  ruler-2:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18022 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022"]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=ruler-2
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8022:8022
-      - 18022:18022
-    volumes:
-      - ./config:/mimir/config
+#  ruler-2:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18022 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022"]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=ruler-2
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8022:8022
+#      - 18022:18022
+#    volumes:
+#      - ./config:/mimir/config
 
-  query-scheduler:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18011 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -store.max-query-length=8760h"]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=query-scheduler
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8011:8011
-      - 18011:18011
-    volumes:
-      - ./config:/mimir/config
+#  query-scheduler:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18011 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -store.max-query-length=8760h"]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=query-scheduler
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8011:8011
+#      - 18011:18011
+#    volumes:
+#      - ./config:/mimir/config
 
   # This frontend uses query-scheduler, activated by `-frontend.scheduler-address` option.
-  query-frontend-with-scheduler:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18012 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8012 -server.grpc-listen-port=9012 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=query-frontend2
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8012:8012
-      - 18012:18012
-    volumes:
-      - ./config:/mimir/config
+#  query-frontend-with-scheduler:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18012 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8012 -server.grpc-listen-port=9012 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=query-frontend2
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8012:8012
+#      - 18012:18012
+#    volumes:
+#      - ./config:/mimir/config
 
   # This querier is connecting to query-scheduler, instead of query-frontend. This is achieved by setting -querier.scheduler-address="..."
-  querier-with-scheduler:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18013 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8013 -server.grpc-listen-port=9013 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=querier-scheduler
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8013:8013
-      - 18013:18013
-    volumes:
-      - ./config:/mimir/config
+#  querier-with-scheduler:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18013 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8013 -server.grpc-listen-port=9013 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=querier-scheduler
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8013:8013
+#      - 18013:18013
+#    volumes:
+#      - ./config:/mimir/config
 
-  purger:
-    build:
-      context:    .
-      dockerfile: dev.dockerfile
-    image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18014 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014"]
-    depends_on:
-      - consul
-      - minio
-    environment:
-      - JAEGER_AGENT_HOST=jaeger
-      - JAEGER_AGENT_PORT=6831
-      - JAEGER_TAGS=app=querier-scheduler
-      - JAEGER_SAMPLER_TYPE=const
-      - JAEGER_SAMPLER_PARAM=1
-    ports:
-      - 8014:8014
-      - 18014:18014
-    volumes:
-      - ./config:/mimir/config
+#  purger:
+#    build:
+#      context:    .
+#      dockerfile: dev.dockerfile
+#    image: mimir
+#    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18014 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014"]
+#    depends_on:
+#      - consul
+#      - minio
+#    environment:
+#      - JAEGER_AGENT_HOST=jaeger
+#      - JAEGER_AGENT_PORT=6831
+#      - JAEGER_TAGS=app=querier-scheduler
+#      - JAEGER_SAMPLER_TYPE=const
+#      - JAEGER_SAMPLER_PARAM=1
+#    ports:
+#      - 8014:8014
+#      - 18014:18014
+#    volumes:
+#      - ./config:/mimir/config

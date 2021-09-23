@@ -227,6 +227,9 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	// Create a querier queryable and PromQL engine
 	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, querierRegisterer, util_log.Logger)
 
+	// Always support querying multiple tenants, if configured via overrides.
+	t.QuerierQueryable = querier.NewSampleAndChunkQueryable(querier.NewMultitenantQueryable(t.QuerierQueryable, t.Overrides))
+
 	// Register the default endpoints that are always enabled for the querier module
 	t.API.RegisterQueryable(t.QuerierQueryable, t.Distributor)
 

@@ -2,5 +2,4 @@
 ingester_stream_chunks_when_using_blocks: true
 overrides:
   fake:
-    multitenant_policy: '{__name__="up"}:up_tenant, {__name__=~"thanos.*"}:thanos_tenant'
-
+    multitenant_policy: '{__name__="up"}:up_tenant, {__name__=~"thanos.*"}:thanos_tenant, {__name__=~"cortex.*"}:cortex_tenant'
