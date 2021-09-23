@@ -168,6 +168,48 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn: "sqrt",
 		},
 		{
+			fn: "deg",
+		},
+		{
+			fn: "asinh",
+		},
+		{
+			fn: "rad",
+		},
+		{
+			fn: "cosh",
+		},
+		{
+			fn: "atan",
+		},
+		{
+			fn: "atanh",
+		},
+		{
+			fn: "asin",
+		},
+		{
+			fn: "sinh",
+		},
+		{
+			fn: "cos",
+		},
+		{
+			fn: "acosh",
+		},
+		{
+			fn: "sin",
+		},
+		{
+			fn: "tanh",
+		},
+		{
+			fn: "tan",
+		},
+		{
+			fn: "acos",
+		},
+		{
 			fn:           "stddev_over_time",
 			isTestMatrix: true,
 		},
@@ -308,6 +350,7 @@ func Test_FunctionParallelism(t *testing.T) {
 		"time":   {},
 		"scalar": {},
 		"vector": {},
+		"pi":     {},
 	}
 
 	for expectedFn := range promql.FunctionCalls {

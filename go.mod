@@ -8,7 +8,7 @@ require (
 	github.com/Azure/azure-pipeline-go v0.2.2
 	github.com/Azure/azure-storage-blob-go v0.8.0
 	github.com/NYTimes/gziphandler v1.1.1
-	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
+	github.com/alecthomas/units v0.0.0-20210912230133-d1bdfacee922
 	github.com/alicebob/miniredis/v2 v2.14.3
 	github.com/aws/aws-sdk-go v1.40.37
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
@@ -76,7 +76,7 @@ replace github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210914133700-ffdaf8e3468c
+replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210921130741-a9bc9c27baa6
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
