@@ -30,6 +30,20 @@ service Ingester {
 
   // TransferChunks allows leaving ingester (client) to stream chunks directly to joining ingesters (server).
   rpc TransferChunks(stream TimeSeriesChunk) returns (TransferChunksResponse) {};
+  rpc LabelNamesCardinality(LabelNamesCardinalityRequest) returns (stream LabelNamesCardinalityResponse) {};
+}
+
+message LabelNamesCardinalityRequest {
+  repeated LabelMatcher matchers = 1;
+}
+
+message LabelNamesCardinalityResponse {
+  repeated LabelNamesCardinality items = 1;
+}
+
+message LabelNamesCardinality {
+  string label_name = 1;
+  repeated string label_values = 2;
 }
 
 message ReadRequest {

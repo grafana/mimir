@@ -108,15 +108,26 @@ type Config struct {
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
 	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names"`
+	CardinalityAnalysisConfig       CardinalityAnalysisConfig
 
 	// For testing, you can override the address and ID of this ingester.
 	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
+}
+
+type CardinalityAnalysisConfig struct {
+	LabelNamesResponseBatchSize int `yaml:"label_names_response_batch_size"`
+}
+
+func (c *CardinalityAnalysisConfig) RegisterFlags(f *flag.FlagSet) {
+	f.IntVar(&c.LabelNamesResponseBatchSize, "ingester.cardinality-analysis.label-names-response-batch-size", 100000,
+		"Number of label values that are sent in one message while streaming label values for cardinality report.")
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.LifecyclerConfig.RegisterFlags(f)
 	cfg.WALConfig.RegisterFlags(f)
+	cfg.CardinalityAnalysisConfig.RegisterFlags(f)
 
 	f.IntVar(&cfg.MaxTransferRetries, "ingester.max-transfer-retries", 10, "Number of times to try and transfer chunks before falling back to flushing. Negative value or zero disables hand-over. This feature is supported only by the chunks storage.")
 
@@ -220,6 +231,7 @@ type Ingester struct {
 	// Rate of pushed samples. Only used by V2-ingester to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
+	cardinalityReporter  CardinalityReporter
 }
 
 // ChunkStore is the interface we need to store chunks
@@ -300,7 +312,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
-
+	i.cardinalityReporter = CardinalityReporter{}
 	i.BasicService = services.NewBasicService(i.starting, i.loop, i.stopping)
 	return i, nil
 }

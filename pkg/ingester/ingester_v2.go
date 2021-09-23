@@ -1286,6 +1286,33 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 	return response, nil
 }
 
+func (i *Ingester) LabelNamesCardinality(request *client.LabelNamesCardinalityRequest,
+	server client.Ingester_LabelNamesCardinalityServer) error {
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("not supported")
+	}
+	userID, err := tenant.TenantID(server.Context())
+	if err != nil {
+		return err
+	}
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
+	}
+	index, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return i.cardinalityReporter.labelNamesCardinality(index, matchers, i.cfg.CardinalityAnalysisConfig.LabelNamesResponseBatchSize, &server)
+}
+
 func createUserStats(db *userTSDB) *client.UserStatsResponse {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()

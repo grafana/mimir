@@ -7,7 +7,7 @@ package client
 
 import (
 	"context"
-
+	"errors"
 	"github.com/stretchr/testify/mock"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -70,4 +70,8 @@ func (m *IngesterServerMock) MetricsMetadata(ctx context.Context, r *MetricsMeta
 func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) error {
 	args := m.Called(s)
 	return args.Error(0)
+}
+
+func (m *IngesterServerMock) LabelNamesCardinality(_ *LabelNamesCardinalityRequest, _ Ingester_LabelNamesCardinalityServer) error {
+	return errors.New("not implemented ")
 }
