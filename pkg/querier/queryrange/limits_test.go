@@ -275,7 +275,7 @@ func Test_MaxQueryParallelism(t *testing.T) {
 					}()
 				}
 				wg.Wait()
-				return nil, nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
