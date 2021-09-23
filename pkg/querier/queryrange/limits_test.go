@@ -263,7 +263,7 @@ func Test_MaxQueryParallelism(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, _ = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
@@ -279,6 +279,7 @@ func Test_MaxQueryParallelism(t *testing.T) {
 			})
 		}),
 	).RoundTrip(r)
+	require.NoError(t, err)
 	maxFound := int(max.Load())
 	require.LessOrEqual(t, maxFound, maxQueryParallelism, "max query parallelism: ", maxFound, " went over the configured one:", maxQueryParallelism)
 }
@@ -305,7 +306,7 @@ func Test_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, _ = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				// fire up work and we don't wait.
@@ -314,8 +315,9 @@ func Test_MaxQueryParallelismLateScheduling(t *testing.T) {
 						_, _ = next.Do(c, &PrometheusRequest{})
 					}()
 				}
-				return nil, nil
+				return NewEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
+	require.NoError(t, err)
 }
