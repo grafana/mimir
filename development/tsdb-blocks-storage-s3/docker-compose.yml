@@ -50,7 +50,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18001 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001"]
     depends_on:
       - consul
       - minio
@@ -71,7 +71,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18002 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002"]
     depends_on:
       - consul
       - minio
@@ -93,7 +93,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18003 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003"]
     depends_on:
       - consul
       - minio
@@ -115,7 +115,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18004 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004"]
     depends_on:
       - consul
       - minio
@@ -136,7 +136,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18008 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008"]
+    command: ["sh", "-c", "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008"]
     depends_on:
       - consul
       - minio
@@ -199,7 +199,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18007 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -store.max-query-length=8760h"]
+    command: ["sh", "-c", "exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -store.max-query-length=8760h"]
     depends_on:
       - consul
       - minio
@@ -265,7 +265,7 @@ services:
       context:    .
       dockerfile: dev.dockerfile
     image: mimir
-    command: ["sh", "-c", "sleep 3 && exec ./dlv exec ./mimir --listen=:18021 --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021"]
+    command: ["sh", "-c", "exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021"]
     depends_on:
       - consul
       - minio

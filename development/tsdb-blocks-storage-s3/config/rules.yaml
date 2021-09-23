@@ -8,7 +8,7 @@ groups:
   - name: count_by_name
     rules:
       - record: total_count
-        exprt: count({__name__!=""})
+        expr: count({__name__!=""})
 
   - name: example2
     rules:

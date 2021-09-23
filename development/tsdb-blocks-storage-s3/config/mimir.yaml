@@ -1,4 +1,4 @@
-auth_enabled: false
+auth_enabled: true
 
 distributor:
   shard_by_all_labels: true
