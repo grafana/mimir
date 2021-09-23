@@ -925,6 +925,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 		}
 	}
 
+	gspan, gctx := tracing.StartSpan(gctx, "bucket_store_preload_all")
+
 	s.mtx.RLock()
 
 	for _, bs := range s.blockSets {
@@ -1028,9 +1030,8 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	// Concurrently get data from all blocks.
 	{
 		begin := time.Now()
-		tracing.DoInSpan(ctx, "bucket_store_preload_all", func(_ context.Context) {
-			err = g.Wait()
-		})
+		err = g.Wait()
+		gspan.Finish()
 		if err != nil {
 			code := codes.Aborted
 			if s, ok := status.FromError(errors.Cause(err)); ok {
