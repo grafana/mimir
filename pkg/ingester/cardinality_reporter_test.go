@@ -2,12 +2,14 @@ package ingester
 
 import (
 	"context"
+	"sort"
+	"testing"
+
 	"github.com/grafana/mimir/pkg/ingester/client"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
-	"sort"
-	"testing"
 )
 
 // expected 4 batches with 2 label value per batch except the last one. the last one must be a batch with 1 label value.

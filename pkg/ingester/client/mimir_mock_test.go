@@ -8,6 +8,7 @@ package client
 import (
 	"context"
 	"errors"
+
 	"github.com/stretchr/testify/mock"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
