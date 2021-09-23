@@ -1340,6 +1340,10 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "500"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "200"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "metric_1"}, {Name: "env", Value: "prod"}}, 2, 200000},
+		{labels.Labels{
+			{Name: labels.MetricName, Value: "metric_1"},
+			{Name: "env", Value: "prod"},
+			{Name: "status", Value: "300"}}, 3, 200000},
 	}
 
 	tests := []struct {
@@ -1350,7 +1354,7 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 		{testName: "expected all label with values",
 			matchers: []*client.LabelMatcher{},
 			expected: []*client.LabelNamesCardinality{
-				{LabelName: "status", LabelValues: []string{"200", "500"}},
+				{LabelName: "status", LabelValues: []string{"200", "300", "500"}},
 				{LabelName: "env", LabelValues: []string{"prod"}}},
 		},
 		{testName: "expected label values only from `metric_0`",
