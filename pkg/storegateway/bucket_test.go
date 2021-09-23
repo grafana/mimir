@@ -56,7 +56,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/thanos-io/thanos/pkg/pool"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
@@ -64,6 +63,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -1949,7 +1949,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 					{Id: block2.String()},
 				},
 			},
-		}, {
+		},
+		{
 			name: "querying a range containing multiple blocks but filtering a specific block should query only the requested block",
 
 			labelNamesReq: &storepb.LabelNamesRequest{

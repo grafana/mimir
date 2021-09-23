@@ -1,5 +1,7 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cache/cache.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
 package storecache
 
@@ -20,9 +22,7 @@ const (
 	sliceHeaderSize = 16
 )
 
-var (
-	ulidSize = uint64(len(ulid.ULID{}))
-)
+var ulidSize = uint64(len(ulid.ULID{}))
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
@@ -82,5 +82,7 @@ func (c cacheKey) string() string {
 	}
 }
 
-type cacheKeyPostings labels.Label
-type cacheKeySeries uint64
+type (
+	cacheKeyPostings labels.Label
+	cacheKeySeries   uint64
+)

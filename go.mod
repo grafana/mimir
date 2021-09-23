@@ -31,6 +31,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
+	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.11
 	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.10
@@ -56,6 +57,7 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.10
+	golang.org/x/crypto v0.0.0-20210616213533-5ff15b29337e
 	golang.org/x/net v0.0.0-20210903162142-ad29c8ab022f
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac

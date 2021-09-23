@@ -23,7 +23,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/cache"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
+
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 )
 
 const (

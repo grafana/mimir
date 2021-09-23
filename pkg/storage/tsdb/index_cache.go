@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/model"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
