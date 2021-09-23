@@ -154,9 +154,8 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 		ctx, cancel  = context.WithCancel(r.Context())
 	)
 	defer func() {
-		wg.Wait()
-		close(intermediate)
 		cancel()
+		wg.Wait()
 	}()
 
 	request, err := rt.codec.DecodeRequest(ctx, r)
@@ -177,15 +176,23 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	// The amount of workers is limited by the MaxQueryParallelism tenant setting.
 	parallelism := validation.SmallestPositiveIntPerTenant(tenantIDs, rt.limits.MaxQueryParallelism)
 	for i := 0; i < parallelism; i++ {
+		wg.Add(1)
 		go func() {
-			for w := range intermediate {
-				resp, err := rt.downstream.Do(w.ctx, w.req)
+			defer wg.Done()
+			for {
 				select {
-				case w.result <- result{response: resp, err: err}:
-				case <-w.ctx.Done():
-					w.result <- result{err: w.ctx.Err()}
+				case w := <-intermediate:
+					resp, err := rt.downstream.Do(w.ctx, w.req)
+					select {
+					case w.result <- result{response: resp, err: err}:
+					case <-w.ctx.Done():
+						continue
+					case <-ctx.Done():
+						return
+					}
+				case <-ctx.Done():
+					return
 				}
-
 			}
 		}()
 	}
@@ -197,14 +204,13 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	// handler.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
-			wg.Add(1)
-			defer wg.Done()
-
-			if ctx.Err() != nil {
+			s := newSubRequest(ctx, r)
+			select {
+			case intermediate <- s:
+			case <-ctx.Done():
 				return nil, ctx.Err()
 			}
-			s := newSubRequest(ctx, r)
-			intermediate <- s
+
 			select {
 			case response := <-s.result:
 				return response.response, response.err
