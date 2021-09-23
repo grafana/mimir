@@ -107,8 +107,8 @@ type Config struct {
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
-	IgnoreSeriesLimitForMetricNames string `yaml:"ignore_series_limit_for_metric_names"`
-	CardinalityAnalysisConfig       CardinalityAnalysisConfig
+	IgnoreSeriesLimitForMetricNames string                    `yaml:"ignore_series_limit_for_metric_names"`
+	CardinalityAnalysisConfig       CardinalityAnalysisConfig `yaml:"cardinality_analysis"`
 
 	// For testing, you can override the address and ID of this ingester.
 	ingesterClientFactory func(addr string, cfg client.Config) (client.HealthAndIngesterClient, error)
