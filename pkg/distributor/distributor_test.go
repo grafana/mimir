@@ -2717,7 +2717,7 @@ func TestSortLabels(t *testing.T) {
 	sortLabelsIfNeeded(unsorted)
 
 	sort.SliceIsSorted(unsorted, func(i, j int) bool {
-		return strings.Compare(unsorted[i].Name, unsorted[j].Name) < 0
+		return unsorted[i].Name < unsorted[j].Name
 	})
 }
 

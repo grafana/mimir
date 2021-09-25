@@ -11,7 +11,6 @@ import (
 	"math"
 	"sort"
 	"strconv"
-	"strings"
 	"time"
 	"unsafe"
 
@@ -155,7 +154,7 @@ func FromPointsToSamples(points []promql.Point) []Sample {
 type byLabel []LabelAdapter
 
 func (s byLabel) Len() int           { return len(s) }
-func (s byLabel) Less(i, j int) bool { return strings.Compare(s[i].Name, s[j].Name) < 0 }
+func (s byLabel) Less(i, j int) bool { return s[i].Name < s[j].Name }
 func (s byLabel) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
 
 // MetricMetadataMetricTypeToMetricType converts a metric type from our internal client
