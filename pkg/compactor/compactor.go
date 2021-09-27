@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
@@ -44,14 +43,18 @@ import (
 const (
 	blocksMarkedForDeletionName = "cortex_compactor_blocks_marked_for_deletion_total"
 	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
+
+	// PartialUploadThresholdAge is a time after partial block is assumed aborted and ready to be cleaned.
+	// Keep it long as it is based on block creation time not upload start time.
+	PartialUploadThresholdAge = 2 * 24 * time.Hour
 )
 
 var (
 	errInvalidBlockRanges = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
 	RingOp                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
-	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer, blocksMarkedForDeletion prometheus.Counter, garbageCollectedBlocks prometheus.Counter) compact.Grouper {
-		return compact.NewDefaultGrouper(
+	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer, blocksMarkedForDeletion prometheus.Counter, garbageCollectedBlocks prometheus.Counter) Grouper {
+		return NewDefaultGrouper(
 			logger,
 			bkt,
 			false, // Do not accept malformed indexes
@@ -63,13 +66,13 @@ var (
 			metadata.NoneFunc)
 	}
 
-	DefaultBlocksCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (compact.Compactor, compact.Planner, error) {
+	DefaultBlocksCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
 		compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, cfg.BlockRanges.ToMilliseconds(), downsample.NewPool(), nil)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		planner := compact.NewTSDBBasedPlanner(logger, cfg.BlockRanges.ToMilliseconds())
+		planner := NewTSDBBasedPlanner(logger, cfg.BlockRanges.ToMilliseconds())
 		return compactor, planner, nil
 	}
 )
@@ -83,7 +86,7 @@ type BlocksGrouperFactory func(
 	reg prometheus.Registerer,
 	blocksMarkedForDeletion prometheus.Counter,
 	garbageCollectedBlocks prometheus.Counter,
-) compact.Grouper
+) Grouper
 
 // BlocksCompactorFactory builds and returns the compactor and planner to use to compact a tenant's blocks.
 type BlocksCompactorFactory func(
@@ -91,7 +94,7 @@ type BlocksCompactorFactory func(
 	cfg Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (compact.Compactor, compact.Planner, error)
+) (Compactor, Planner, error)
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
@@ -135,7 +138,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.retryMaxBackoff = time.Minute
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
-	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", compact.PartialUploadThresholdAge))
+	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", PartialUploadThresholdAge))
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 20, "Number of Go routines to use when syncing block index and chunks files from the long term storage.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data", "Data directory in which to cache blocks and process compactions")
@@ -196,8 +199,8 @@ type MultitenantCompactor struct {
 	blocksCleaner *BlocksCleaner
 
 	// Underlying compactor and planner used to compact TSDB blocks.
-	blocksCompactor compact.Compactor
-	blocksPlanner   compact.Planner
+	blocksCompactor Compactor
+	blocksPlanner   Planner
 
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
@@ -633,7 +636,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return err
 	}
 
-	syncer, err := compact.NewMetaSyncer(
+	syncer, err := NewMetaSyncer(
 		ulogger,
 		reg,
 		bucket,
@@ -648,7 +651,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "failed to create syncer")
 	}
 
-	compactor, err := compact.NewBucketCompactor(
+	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, bucket, ulogger, reg, c.blocksMarkedForDeletion, c.garbageCollectedBlocks),

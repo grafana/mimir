@@ -583,7 +583,6 @@ github.com/thanos-io/thanos/pkg/block/indexheader
 github.com/thanos-io/thanos/pkg/block/metadata
 github.com/thanos-io/thanos/pkg/cache
 github.com/thanos-io/thanos/pkg/cacheutil
-github.com/thanos-io/thanos/pkg/compact
 github.com/thanos-io/thanos/pkg/compact/downsample
 github.com/thanos-io/thanos/pkg/component
 github.com/thanos-io/thanos/pkg/discovery/dns

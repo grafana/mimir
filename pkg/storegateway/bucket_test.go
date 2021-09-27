@@ -50,7 +50,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -62,6 +61,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -2092,7 +2092,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 }
 
 func BenchmarkBlockSeries(b *testing.B) {
-	blk, blockMeta := prepareBucket(b, compact.ResolutionLevelRaw)
+	blk, blockMeta := prepareBucket(b, compactor.ResolutionLevelRaw)
 
 	aggrs := []storepb.Aggr{storepb.Aggr_RAW}
 	for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
@@ -2104,7 +2104,7 @@ func BenchmarkBlockSeries(b *testing.B) {
 	}
 }
 
-func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*bucketBlock, *metadata.Meta) {
+func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bucketBlock, *metadata.Meta) {
 	var (
 		ctx    = context.Background()
 		logger = log.NewNopLogger()
@@ -2251,7 +2251,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 }
 
 func BenchmarkDownsampledBlockSeries(b *testing.B) {
-	blk, blockMeta := prepareBucket(b, compact.ResolutionLevel5m)
+	blk, blockMeta := prepareBucket(b, compactor.ResolutionLevel5m)
 	aggrs := []storepb.Aggr{}
 	for i := 1; i < int(storepb.Aggr_COUNTER); i++ {
 		aggrs = append(aggrs, storepb.Aggr(i))

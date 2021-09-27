@@ -38,7 +38,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"gopkg.in/yaml.v2"
 
@@ -1127,7 +1126,7 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 		return bucketClient, nil
 	}
 
-	blocksCompactorFactory := func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (compact.Compactor, compact.Planner, error) {
+	blocksCompactorFactory := func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
