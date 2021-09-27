@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -89,6 +90,8 @@ type MetadataCacheConfig struct {
 	BlockIndexAttributesTTL time.Duration `yaml:"block_index_attributes_ttl"`
 	BucketIndexContentTTL   time.Duration `yaml:"bucket_index_content_ttl"`
 	BucketIndexMaxSize      int           `yaml:"bucket_index_max_size_bytes"`
+	UseLRU                  bool          `yaml:"use_lru"`
+	LRUMaxItems             int           `yaml:"lru_max_items"`
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -107,10 +110,28 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 	f.DurationVar(&cfg.BlockIndexAttributesTTL, prefix+"block-index-attributes-ttl", 168*time.Hour, "How long to cache attributes of the block index.")
 	f.DurationVar(&cfg.BucketIndexContentTTL, prefix+"bucket-index-content-ttl", 5*time.Minute, "How long to cache content of the bucket index.")
 	f.IntVar(&cfg.BucketIndexMaxSize, prefix+"bucket-index-max-size-bytes", 1*1024*1024, "Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend).")
+	f.BoolVar(&cfg.UseLRU, prefix+"use-lru", false, "Use a first level in memory LRU cache for metadata cache. Metadata will be stored and fetched in memory before hiting the cache backend.")
+	f.IntVar(&cfg.LRUMaxItems, prefix+"lru-max-items", 10000, "Maximum number of items in the first level in memory LRU cache.")
 }
 
 func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.CacheBackend.Validate()
+}
+
+func (cfg *MetadataCacheConfig) MinTTL() time.Duration {
+	ttls := []int{
+		int(cfg.TenantsListTTL),
+		int(cfg.TenantBlocksListTTL),
+		int(cfg.ChunksListTTL),
+		int(cfg.MetafileExistsTTL),
+		int(cfg.MetafileDoesntExistTTL),
+		int(cfg.MetafileContentTTL),
+		int(cfg.MetafileAttributesTTL),
+		int(cfg.BlockIndexAttributesTTL),
+		int(cfg.BucketIndexContentTTL),
+	}
+	sort.Ints(ttls)
+	return time.Duration(ttls[0])
 }
 
 func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
@@ -129,6 +150,14 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	if metadataCache != nil {
 		cachingConfigured = true
 		metadataCache = cache.NewTracingCache(metadataCache)
+
+		if metadataConfig.UseLRU {
+			var err error
+			metadataCache, err = storecache.WrapWithLRUCache(metadataCache, reg, metadataConfig.LRUMaxItems, metadataConfig.MinTTL())
+			if err != nil {
+				return nil, errors.Wrapf(err, "lru-metadata-cache")
+			}
+		}
 
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
