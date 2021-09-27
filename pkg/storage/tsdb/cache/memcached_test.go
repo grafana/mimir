@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package storecache
+package cache
 
 import (
 	"context"
@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
@@ -87,7 +87,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
 			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			// Store the postings expected before running the test.
 			ctx := context.Background()
@@ -97,14 +97,14 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 
 			// Fetch postings from cached and assert on it.
 			hits, misses := c.FetchMultiPostings(ctx, testData.fetchBlockID, testData.fetchLabels)
-			testutil.Equals(t, testData.expectedHits, hits)
-			testutil.Equals(t, testData.expectedMisses, misses)
+			assert.Equal(t, testData.expectedHits, hits)
+			assert.Equal(t, testData.expectedMisses, misses)
 
 			// Assert on metrics.
-			testutil.Equals(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
-			testutil.Equals(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
+			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
 		})
 	}
 }
@@ -176,7 +176,7 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			memcached := newMockedMemcachedClient(testData.mockedErr)
 			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
-			testutil.Ok(t, err)
+			assert.NoError(t, err)
 
 			// Store the series expected before running the test.
 			ctx := context.Background()
@@ -186,14 +186,14 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 
 			// Fetch series from cached and assert on it.
 			hits, misses := c.FetchMultiSeries(ctx, testData.fetchBlockID, testData.fetchIds)
-			testutil.Equals(t, testData.expectedHits, hits)
-			testutil.Equals(t, testData.expectedMisses, misses)
+			assert.Equal(t, testData.expectedHits, hits)
+			assert.Equal(t, testData.expectedMisses, misses)
 
 			// Assert on metrics.
-			testutil.Equals(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
-			testutil.Equals(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
-			testutil.Equals(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
+			assert.Equal(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
 		})
 	}
 }

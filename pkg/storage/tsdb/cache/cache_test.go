@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package storecache
+package cache
 
 import (
 	"encoding/base64"
@@ -14,7 +14,7 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/thanos-io/thanos/pkg/testutil"
+	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 	"golang.org/x/crypto/blake2b"
 )
@@ -50,7 +50,7 @@ func TestCacheKey_string(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			actual := testData.key.string()
-			testutil.Equals(t, testData.expected, actual)
+			assert.Equal(t, testData.expected, actual)
 		})
 	}
 }
@@ -82,7 +82,7 @@ func TestCacheKey_string_ShouldGuaranteeReasonablyShortKeyLength(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			for _, key := range testData.keys {
-				testutil.Equals(t, testData.expectedLen, len(key.string()))
+				assert.Equal(t, testData.expectedLen, len(key.string()))
 			}
 		})
 	}

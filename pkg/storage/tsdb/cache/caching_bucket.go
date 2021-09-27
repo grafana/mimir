@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cache/cache_bucket.go
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cache/caching_bucket.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
 
-package storecache
+package cache
 
 import (
 	"bytes"
