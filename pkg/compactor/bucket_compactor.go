@@ -47,7 +47,6 @@ const (
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
 	logger                   log.Logger
-	reg                      prometheus.Registerer
 	bkt                      objstore.Bucket
 	fetcher                  block.MetadataFetcher
 	mtx                      sync.Mutex
@@ -98,7 +97,6 @@ func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 	}
 	return &Syncer{
 		logger:                   logger,
-		reg:                      reg,
 		bkt:                      bkt,
 		fetcher:                  fetcher,
 		blocks:                   map[ulid.ULID]*metadata.Meta{},
