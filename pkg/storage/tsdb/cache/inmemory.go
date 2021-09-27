@@ -1,7 +1,8 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
-
-package storecache
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cache/inmemory.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+package cache
 
 import (
 	"context"
@@ -21,12 +22,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-var (
-	DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
-		MaxSize:     250 * 1024 * 1024,
-		MaxItemSize: 125 * 1024 * 1024,
-	}
-)
+var DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
+	MaxSize:     250 * 1024 * 1024,
+	MaxItemSize: 125 * 1024 * 1024,
+}
 
 const maxInt = int(^uint(0) >> 1)
 
@@ -205,7 +204,7 @@ func (c *InMemoryIndexCache) get(typ string, key cacheKey) ([]byte, bool) {
 }
 
 func (c *InMemoryIndexCache) set(typ string, key cacheKey, val []byte) {
-	var size = sliceHeaderSize + uint64(len(val))
+	size := sliceHeaderSize + uint64(len(val))
 
 	c.mtx.Lock()
 	defer c.mtx.Unlock()

@@ -210,7 +210,8 @@ lint: lint-packaging-scripts
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\
-		github.com/thanos-io/thanos/pkg/testutil/..." \
+		github.com/thanos-io/thanos/pkg/testutil/..., \
+		github.com/thanos-io/thanos/pkg/store/cache" \
 		./pkg/... ./cmd/... ./tools/... ./integration/...
 
 format:

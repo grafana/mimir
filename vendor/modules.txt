@@ -327,6 +327,7 @@ github.com/hashicorp/go-rootcerts
 # github.com/hashicorp/go-sockaddr v1.0.2
 github.com/hashicorp/go-sockaddr
 # github.com/hashicorp/golang-lru v0.5.4
+## explicit
 github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
 # github.com/hashicorp/memberlist v0.2.4
@@ -603,7 +604,6 @@ github.com/thanos-io/thanos/pkg/objstore/swift
 github.com/thanos-io/thanos/pkg/pool
 github.com/thanos-io/thanos/pkg/runutil
 github.com/thanos-io/thanos/pkg/shipper
-github.com/thanos-io/thanos/pkg/store/cache
 github.com/thanos-io/thanos/pkg/store/hintspb
 github.com/thanos-io/thanos/pkg/store/labelpb
 github.com/thanos-io/thanos/pkg/store/storepb
@@ -741,6 +741,7 @@ go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
 # golang.org/x/crypto v0.0.0-20210616213533-5ff15b29337e
+## explicit
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
 golang.org/x/crypto/blake2b

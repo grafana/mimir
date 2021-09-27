@@ -45,7 +45,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
 	"github.com/thanos-io/thanos/pkg/runutil"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
@@ -57,6 +56,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 )
 
 const (
@@ -1134,7 +1134,7 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 
 	var mtx sync.Mutex
 	var sets [][]string
-	var seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	for _, b := range s.blocks {
 		b := b
@@ -1263,7 +1263,7 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 
 	var mtx sync.Mutex
 	var sets [][]string
-	var seriesLimiter = s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
+	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
 
 	for _, b := range s.blocks {
 		b := b

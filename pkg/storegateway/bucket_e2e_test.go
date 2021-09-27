@@ -29,12 +29,12 @@ import (
 	"google.golang.org/grpc/codes"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 )
