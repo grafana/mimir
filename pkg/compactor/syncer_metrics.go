@@ -16,7 +16,7 @@ import (
 
 // Copied from Thanos, pkg/compact/compact.go.
 // Here we aggregate metrics from all finished syncers.
-type syncerMetrics struct {
+type aggregatedSyncerMetrics struct {
 	metaSync                  prometheus.Counter
 	metaSyncFailures          prometheus.Counter
 	metaSyncDuration          *util.HistogramDataCollector // was prometheus.Histogram before
@@ -33,8 +33,8 @@ type syncerMetrics struct {
 
 // Copied (and modified with Mimir prefix) from Thanos, pkg/compact/compact.go
 // We also ignore "group" label, since we only use a single group.
-func newSyncerMetrics(reg prometheus.Registerer) *syncerMetrics {
-	var m syncerMetrics
+func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetrics {
+	var m aggregatedSyncerMetrics
 
 	m.metaSync = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_compactor_meta_syncs_total",
@@ -94,7 +94,7 @@ func newSyncerMetrics(reg prometheus.Registerer) *syncerMetrics {
 	return &m
 }
 
-func (m *syncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Registry) {
+func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Registry) {
 	if m == nil {
 		return
 	}

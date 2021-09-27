@@ -222,7 +222,7 @@ type MultitenantCompactor struct {
 	garbageCollectedBlocks         prometheus.Counter
 
 	// TSDB syncer metrics
-	syncerMetrics *syncerMetrics
+	syncerMetrics *aggregatedSyncerMetrics
 }
 
 // NewMultitenantCompactor makes a new MultitenantCompactor.
@@ -266,7 +266,7 @@ func newMultitenantCompactor(
 		parentLogger:           logger,
 		logger:                 log.With(logger, "component", "compactor"),
 		registerer:             registerer,
-		syncerMetrics:          newSyncerMetrics(registerer),
+		syncerMetrics:          newAggregatedSyncerMetrics(registerer),
 		bucketClientFactory:    bucketClientFactory,
 		blocksGrouperFactory:   blocksGrouperFactory,
 		blocksCompactorFactory: blocksCompactorFactory,
