@@ -254,11 +254,6 @@ func verifyGetRange(t *testing.T, cachingBucket *CachingBucket, name string, off
 	}
 }
 
-type cacheItem struct {
-	data []byte
-	exp  time.Time
-}
-
 type mockCache struct {
 	mu    sync.Mutex
 	cache map[string]cacheItem
@@ -276,7 +271,7 @@ func (m *mockCache) Store(_ context.Context, data map[string][]byte, ttl time.Du
 
 	exp := time.Now().Add(ttl)
 	for key, val := range data {
-		m.cache[key] = cacheItem{data: val, exp: exp}
+		m.cache[key] = cacheItem{data: val, expiresAt: exp}
 	}
 }
 
@@ -289,7 +284,7 @@ func (m *mockCache) Fetch(_ context.Context, keys []string) map[string][]byte {
 	now := time.Now()
 	for _, k := range keys {
 		v, ok := m.cache[k]
-		if ok && now.Before(v.exp) {
+		if ok && now.Before(v.expiresAt) {
 			found[k] = v.data
 		}
 	}
