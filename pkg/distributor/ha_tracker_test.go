@@ -34,7 +34,8 @@ import (
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
-	key := fmt.Sprintf("%s/%s", user, cluster)
+	t.Helper()
+	c.updateKVStoreAll(context.Background(), expected)
 
 	// Round the expected timestamp with milliseconds precision
 	// to match "received at" precision
@@ -42,7 +43,8 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 
 	test.Poll(t, duration, nil, func() interface{} {
 		c.electedLock.RLock()
-		r := c.elected[key]
+		info := c.clusters[user][cluster]
+		r := &info.elected
 		c.electedLock.RUnlock()
 
 		if r.GetReplica() != replica {
@@ -177,7 +179,14 @@ func TestCheckReplicaOverwriteTimeout(t *testing.T) {
 	// Wait more than the overwrite timeout.
 	now = now.Add(1100 * time.Millisecond)
 
-	// Accept from replica 2, this should overwrite the saved replica of replica 1.
+	// Another sample from replica2 to update its timestamp.
+	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
+	assert.Error(t, err)
+
+	// Update KVStore - this should elect replica 2.
+	c.updateKVStoreAll(context.Background(), now)
+
+	// Now we should accept from replica 2.
 	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
 	assert.NoError(t, err)
 
@@ -279,6 +288,11 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 
 	// Wait more than the failover timeout.
 	now = now.Add(1100 * time.Millisecond)
+
+	// Another sample from c1/replica2 to update its timestamp.
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	assert.Error(t, err)
+	c.updateKVStoreAll(context.Background(), now)
 
 	// Accept a sample from c1/replica2.
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
@@ -570,6 +584,12 @@ func TestHAClustersLimit(t *testing.T) {
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
 	now = now.Add(5 * time.Second) // higher than "update timeout"
 
+	// Another sample to update internal timestamp.
+	err = t1.checkReplica(context.Background(), userID, "b", "b2", now)
+	assert.Error(t, err)
+	// Update KVStore.
+	t1.updateKVStoreAll(context.Background(), now)
+
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b2", now))
 	waitForClustersUpdate(t, 2, t1, userID)
 
@@ -795,7 +815,7 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracke
 
 	test.Poll(t, duration, nil, func() interface{} {
 		c.electedLock.RLock()
-		_, exists := c.elected[key]
+		_, exists := c.clusters[user][cluster]
 		c.electedLock.RUnlock()
 
 		if exists != expectedExistsInMemory {

@@ -111,9 +111,8 @@ type haTracker struct {
 	updateTimeoutJitter time.Duration
 	limits              haTrackerLimits
 
-	electedLock sync.RWMutex
-	elected     map[string]ReplicaDesc         // Replicas we are accepting samples from. Key = "user/cluster".
-	clusters    map[string]map[string]struct{} // Known clusters with elected replicas per user. First key = user, second key = cluster name.
+	electedLock sync.RWMutex                         // protects clusters maps
+	clusters    map[string]map[string]*haClusterInfo // Known clusters with elected replicas per user. First key = user, second key = cluster name.
 
 	electedReplicaChanges         *prometheus.CounterVec
 	electedReplicaTimestamp       *prometheus.GaugeVec
@@ -124,6 +123,14 @@ type haTracker struct {
 	replicasMarkedForDeletion prometheus.Counter
 	deletedReplicas           prometheus.Counter
 	markingForDeletionsFailed prometheus.Counter
+}
+
+// For one cluster, the information we need to do ha-tracking.
+type haClusterInfo struct {
+	elected                     ReplicaDesc // latest info from KVStore
+	electedLastSeenTimestamp    int64
+	nonElectedLastSeenReplica   string
+	nonElectedLastSeenTimestamp int64
 }
 
 // NewClusterTracker returns a new HA cluster tracker using either Consul
@@ -139,8 +146,7 @@ func newHATracker(cfg HATrackerConfig, limits haTrackerLimits, reg prometheus.Re
 		cfg:                 cfg,
 		updateTimeoutJitter: jitter,
 		limits:              limits,
-		elected:             map[string]ReplicaDesc{},
-		clusters:            map[string]map[string]struct{}{},
+		clusters:            map[string]map[string]*haClusterInfo{},
 
 		electedReplicaChanges: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ha_tracker_elected_replica_changes_total",
@@ -208,9 +214,10 @@ func (c *haTracker) loop(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		c.cleanupOldReplicasLoop(ctx)
+		c.updateKVLoop(ctx)
 	}()
 
+	// Request callbacks from KVStore when data changes.
 	// The KVStore config we gave when creating c should have contained a prefix,
 	// which would have given us a prefixed KVStore client. So, we can pass empty string here.
 	c.client.WatchPrefix(ctx, "", func(key string, value interface{}) bool {
@@ -225,14 +232,12 @@ func (c *haTracker) loop(ctx context.Context) error {
 		user := segments[0]
 		cluster := segments[1]
 
-		c.electedLock.Lock()
-		defer c.electedLock.Unlock()
-
 		if replica.DeletedAt > 0 {
-			delete(c.elected, key)
 			c.electedReplicaChanges.DeleteLabelValues(user, cluster)
 			c.electedReplicaTimestamp.DeleteLabelValues(user, cluster)
 
+			c.electedLock.Lock()
+			defer c.electedLock.Unlock()
 			userClusters := c.clusters[user]
 			if userClusters != nil {
 				delete(userClusters, cluster)
@@ -243,18 +248,8 @@ func (c *haTracker) loop(ctx context.Context) error {
 			return true
 		}
 
-		elected, exists := c.elected[key]
-		if replica.Replica != elected.Replica {
-			c.electedReplicaChanges.WithLabelValues(user, cluster).Inc()
-		}
-		if !exists {
-			if c.clusters[user] == nil {
-				c.clusters[user] = map[string]struct{}{}
-			}
-			c.clusters[user][cluster] = struct{}{}
-		}
-		c.elected[key] = *replica
-		c.electedReplicaTimestamp.WithLabelValues(user, cluster).Set(float64(replica.ReceivedAt / 1000))
+		// Store the received information into our cache
+		c.updateCache(user, cluster, replica)
 		c.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
 		return true
 	})
@@ -272,8 +267,10 @@ const (
 	deletionTimeout = 30 * time.Minute
 )
 
-func (c *haTracker) cleanupOldReplicasLoop(ctx context.Context) {
-	tick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
+func (c *haTracker) updateKVLoop(ctx context.Context) {
+	cleanupTick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
+	defer cleanupTick.Stop()
+	tick := time.NewTicker(c.cfg.UpdateTimeout)
 	defer tick.Stop()
 
 	for {
@@ -281,10 +278,46 @@ func (c *haTracker) cleanupOldReplicasLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case t := <-tick.C:
+			c.updateKVStoreAll(ctx, t)
+		case t := <-cleanupTick.C:
 			c.cleanupRuns.Inc()
 			c.cleanupOldReplicas(ctx, t.Add(-deletionTimeout))
 		}
 	}
+}
+
+// Loop over all entries in our cache and update KVStore where it is out of date,
+// electing a new replica if necessary.
+func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
+	c.electedLock.RLock()
+	// Note the maps may change when we release the lock while talking to KVStore;
+	// the Go language allows this: https://golang.org/ref/spec#For_range note 3.
+	for userID, clusters := range c.clusters {
+		for cluster, entry := range clusters {
+			if c.withinUpdateTimeout(now, entry.elected.ReceivedAt) {
+				continue // Some other process updated it recently; nothing to do.
+			}
+			var replica string
+			if c.withinUpdateTimeout(now, entry.electedLastSeenTimestamp) {
+				// We have seen the elected replica recently; carry on with that choice.
+				replica = entry.elected.Replica
+			} else if c.withinUpdateTimeout(now, entry.nonElectedLastSeenTimestamp) {
+				// Not seen elected but have seen another: attempt to fail over.
+				replica = entry.nonElectedLastSeenReplica
+			} else {
+				continue // we don't have any recent timestamps
+			}
+			// Release lock while we talk to KVStore, which could take a while.
+			c.electedLock.RUnlock()
+			err := c.updateKVStore(ctx, userID, cluster, replica, now)
+			c.electedLock.RLock()
+			if err != nil {
+				// Failed to store - log it but carry on
+				level.Error(c.logger).Log("msg", "failed to update KVStore", "err", err)
+			}
+		}
+	}
+	c.electedLock.RUnlock()
 }
 
 // Replicas marked for deletion before deadline will be deleted.
@@ -360,76 +393,105 @@ func (c *haTracker) cleanupOldReplicas(ctx context.Context, deadline time.Time) 
 	}
 }
 
-// CheckReplica checks the cluster and replica against the backing KVStore and local cache in the
-// tracker c to see if we should accept the incomming sample. It will return an error if the sample
-// should not be accepted. Note that internally this function does checks against the stored values
-// and may modify the stored data, for example to failover between replicas after a certain period of time.
-// replicasNotMatchError is returned (from checkKVStore) if we shouldn't store this sample but are
-// accepting samples from another replica for the cluster, so that there isn't a bunch of error's returned
-// to customers clients.
+// checkReplica checks the cluster and replica against the local cache to see
+// if we should accept the incomming sample. It will return replicasNotMatchError
+// if we shouldn't store this sample but are accepting samples from another
+// replica for the cluster.
+// Updates to and from the KV store are handled in the background, except
+// if we have no cached data for this cluster in which case we create the
+// record and store it in-band.
 func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	// If HA tracking isn't enabled then accept the sample
 	if !c.cfg.EnableHATracker {
 		return nil
 	}
-	key := fmt.Sprintf("%s/%s", userID, cluster)
 
-	c.electedLock.RLock()
-	entry, ok := c.elected[key]
-	clusters := len(c.clusters[userID])
-	c.electedLock.RUnlock()
+	c.electedLock.Lock()
+	entry, ok := c.clusters[userID][cluster]
 
-	if ok && now.Sub(timestamp.Time(entry.ReceivedAt)) < c.cfg.UpdateTimeout+c.updateTimeoutJitter {
-		if entry.Replica != replica {
-			return replicasNotMatchError{replica: replica, elected: entry.Replica}
+	if ok {
+		var err error
+		if entry.elected.Replica == replica {
+			// Sample received is from elected replica: update timestamp and carry on.
+			entry.electedLastSeenTimestamp = timestamp.FromTime(now)
+		} else {
+			// Sample received is from non-elected replica: record details and reject.
+			entry.nonElectedLastSeenReplica = replica
+			entry.nonElectedLastSeenTimestamp = timestamp.FromTime(now)
+			err = replicasNotMatchError{replica: replica, elected: entry.elected.Replica}
 		}
-		return nil
+		c.electedLock.Unlock()
+		return err
 	}
 
-	if !ok {
-		// If we don't know about this cluster yet and we have reached the limit for number of clusters, we error out now.
-		if limit := c.limits.MaxHAClusters(userID); limit > 0 && clusters+1 > limit {
-			return tooManyClustersError{limit: limit}
-		}
+	// We don't know about this cluster yet.
+	nClusters := len(c.clusters[userID])
+	c.electedLock.Unlock()
+	// If we have reached the limit for number of clusters, error out now.
+	if limit := c.limits.MaxHAClusters(userID); limit > 0 && nClusters+1 > limit {
+		return tooManyClustersError{limit: limit}
 	}
 
-	err := c.checkKVStore(ctx, key, replica, now)
+	// Add this cluster to the KV store - this will also update the cache.
+	err := c.updateKVStore(ctx, userID, cluster, replica, now)
 	c.kvCASCalls.WithLabelValues(userID, cluster).Inc()
 	if err != nil {
-		// The callback within checkKVStore will return a replicasNotMatchError if the sample is being deduped,
-		// otherwise there may have been an actual error CAS'ing that we should log.
-		if !errors.Is(err, replicasNotMatchError{}) {
-			level.Error(c.logger).Log("msg", "rejecting sample", "err", err)
-		}
+		level.Error(c.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
+		return err
 	}
-	return err
+	// Cache will now have the value - recurse to check it again.
+	return c.checkReplica(ctx, userID, cluster, replica, now)
 }
 
-func (c *haTracker) checkKVStore(ctx context.Context, key, replica string, now time.Time) error {
-	return c.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
-		if desc, ok := in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
-			// We don't need to CAS and update the timestamp in the KV store if the timestamp we've received
-			// this sample at is less than updateTimeout amount of time since the timestamp in the KV store.
-			if desc.Replica == replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < c.cfg.UpdateTimeout+c.updateTimeoutJitter {
-				return nil, false, nil
-			}
+func (c *haTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
+	return now.Sub(timestamp.Time(receivedAt)) < c.cfg.UpdateTimeout+c.updateTimeoutJitter
+}
 
-			// We shouldn't failover to accepting a new replica if the timestamp we've received this sample at
-			// is less than failover timeout amount of time since the timestamp in the KV store.
-			if desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < c.cfg.FailoverTimeout {
-				return nil, false, replicasNotMatchError{replica: replica, elected: desc.Replica}
+func (c *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
+	c.electedLock.Lock()
+	defer c.electedLock.Unlock()
+	if c.clusters[userID] == nil {
+		c.clusters[userID] = map[string]*haClusterInfo{}
+	}
+	entry := c.clusters[userID][cluster]
+	if entry == nil {
+		entry = &haClusterInfo{}
+		c.clusters[userID][cluster] = entry
+	}
+	if desc.Replica != entry.elected.Replica {
+		c.electedReplicaChanges.WithLabelValues(userID, cluster).Inc()
+	}
+	entry.elected = *desc
+	c.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
+}
+
+func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+	key := fmt.Sprintf("%s/%s", userID, cluster)
+	var desc *ReplicaDesc
+	err := c.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
+		var ok bool
+		if desc, ok = in.(*ReplicaDesc); ok && desc.DeletedAt == 0 {
+			// If the entry in KVStore is up-to-date, just stop the loop.
+			if c.withinUpdateTimeout(now, desc.ReceivedAt) ||
+				// If our replica is different, wait until the failover time.
+				desc.Replica != replica && now.Sub(timestamp.Time(desc.ReceivedAt)) < c.cfg.FailoverTimeout {
+				return nil, false, nil
 			}
 		}
 
-		// There was either invalid or no data for the key, so we now accept samples
-		// from this replica. Invalid could mean that the timestamp in the KV store was
-		// out of date based on the update and failover timeouts when compared to now.
-		return &ReplicaDesc{
+		// Attempt to update KVStore to our timestamp and replica.
+		desc = &ReplicaDesc{
 			Replica:    replica,
 			ReceivedAt: timestamp.FromTime(now),
 			DeletedAt:  0,
-		}, true, nil
+		}
+		return desc, true, nil
 	})
+	if err == nil && desc != nil {
+		// Update our cache to match what was read or written.
+		c.updateCache(userID, cluster, desc)
+	}
+	return err
 }
 
 type replicasNotMatchError struct {
