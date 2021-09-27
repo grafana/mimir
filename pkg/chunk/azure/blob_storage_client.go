@@ -35,6 +35,7 @@ const (
 
 var (
 	supportedEnvironments = []string{azureGlobal, azureChinaCloud, azureGermanCloud, azureUSGovernment}
+	noClientKey           = azblob.ClientProvidedKeyOptions{}
 	endpoints             = map[string]struct{ blobURLFmt, containerURLFmt string }{
 		azureGlobal: {
 			"https://%s.blob.core.windows.net/%s/%s",
@@ -93,7 +94,7 @@ func (c *BlobStorageConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagS
 // BlobStorage is used to interact with azure blob storage for setting or getting time series chunks.
 // Implements ObjectStorage
 type BlobStorage struct {
-	//blobService storage.Serv
+	// blobService storage.Serv
 	cfg          *BlobStorageConfig
 	containerURL azblob.ContainerURL
 }
@@ -140,7 +141,7 @@ func (b *BlobStorage) getObject(ctx context.Context, objectKey string) (rc io.Re
 	}
 
 	// Request access to the blob
-	downloadResponse, err := blockBlobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false)
+	downloadResponse, err := blockBlobURL.Download(ctx, 0, azblob.CountToEnd, azblob.BlobAccessConditions{}, false, noClientKey)
 	if err != nil {
 		if isObjNotFoundErr(err) {
 			return nil, chunk.ErrStorageObjectNotFound
@@ -166,10 +167,9 @@ func (b *BlobStorage) PutObject(ctx context.Context, objectKey string, object io
 }
 
 func (b *BlobStorage) getBlobURL(blobID string) (azblob.BlockBlobURL, error) {
-
 	blobID = strings.Replace(blobID, ":", "-", -1)
 
-	//generate url for new chunk blob
+	// generate url for new chunk blob
 	u, err := url.Parse(fmt.Sprintf(b.selectBlobURLFmt(), b.cfg.AccountName, b.cfg.ContainerName, blobID))
 	if err != nil {
 		return azblob.BlockBlobURL{}, err
