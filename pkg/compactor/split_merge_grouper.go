@@ -312,7 +312,7 @@ func groupBlocksByShardID(blocks []*metadata.Meta) map[string][]*metadata.Meta {
 	for _, block := range blocks {
 		// If the label doesn't exist, we'll group together such blocks using an
 		// empty string as shard ID.
-		shardID, _ := block.Thanos.Labels[ShardIDLabelName]
+		shardID := block.Thanos.Labels[ShardIDLabelName]
 		groups[shardID] = append(groups[shardID], block)
 	}
 

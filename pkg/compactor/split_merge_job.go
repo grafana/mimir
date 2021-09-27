@@ -33,6 +33,8 @@ type job struct {
 	shardID string
 }
 
+// TODO remove the nolint directive once will be used.
+//nolint:unused
 func (j *job) hash(userID string) uint32 {
 	body := fmt.Sprintf("%s-%s-%d-%d-%s", userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
 
