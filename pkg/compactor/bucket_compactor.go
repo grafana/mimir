@@ -1,7 +1,9 @@
-// Copyright (c) The Thanos Authors.
-// Licensed under the Apache License 2.0.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/2be2db77/pkg/compact/compact.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
 
-package compact
+package compactor
 
 import (
 	"context"
@@ -41,17 +43,10 @@ const (
 	ResolutionLevel1h  = ResolutionLevel(downsample.ResLevel2)
 )
 
-const (
-	// DedupAlgorithmPenalty is the penalty based compactor series merge algorithm.
-	// This is the same as the online deduplication of querier except counter reset handling.
-	DedupAlgorithmPenalty = "penalty"
-)
-
 // Syncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
 	logger                   log.Logger
-	reg                      prometheus.Registerer
 	bkt                      objstore.Bucket
 	fetcher                  block.MetadataFetcher
 	mtx                      sync.Mutex
@@ -102,7 +97,6 @@ func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 	}
 	return &Syncer{
 		logger:                   logger,
-		reg:                      reg,
 		bkt:                      bkt,
 		fetcher:                  fetcher,
 		blocks:                   map[ulid.ULID]*metadata.Meta{},
@@ -111,22 +105,6 @@ func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 		ignoreDeletionMarkFilter: ignoreDeletionMarkFilter,
 		blockSyncConcurrency:     blockSyncConcurrency,
 	}, nil
-}
-
-// UntilNextDownsampling calculates how long it will take until the next downsampling operation.
-// Returns an error if there will be no downsampling.
-func UntilNextDownsampling(m *metadata.Meta) (time.Duration, error) {
-	timeRange := time.Duration((m.MaxTime - m.MinTime) * int64(time.Millisecond))
-	switch m.Thanos.Downsample.Resolution {
-	case downsample.ResLevel2:
-		return time.Duration(0), errors.New("no downsampling")
-	case downsample.ResLevel1:
-		return time.Duration(downsample.DownsampleRange1*time.Millisecond) - timeRange, nil
-	case downsample.ResLevel0:
-		return time.Duration(downsample.DownsampleRange0*time.Millisecond) - timeRange, nil
-	default:
-		panic(errors.Errorf("invalid resolution %v", m.Thanos.Downsample.Resolution))
-	}
 }
 
 // SyncMetas synchronizes local state of block metas with what we have in the bucket.

@@ -29,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
@@ -44,14 +43,18 @@ import (
 const (
 	blocksMarkedForDeletionName = "cortex_compactor_blocks_marked_for_deletion_total"
 	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
+
+	// PartialUploadThresholdAge is a time after partial block is assumed aborted and ready to be cleaned.
+	// Keep it long as it is based on block creation time not upload start time.
+	PartialUploadThresholdAge = 2 * 24 * time.Hour
 )
 
 var (
 	errInvalidBlockRanges = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
 	RingOp                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
-	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer, blocksMarkedForDeletion prometheus.Counter, garbageCollectedBlocks prometheus.Counter) compact.Grouper {
-		return compact.NewDefaultGrouper(
+	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer, blocksMarkedForDeletion prometheus.Counter, garbageCollectedBlocks prometheus.Counter) Grouper {
+		return NewDefaultGrouper(
 			logger,
 			bkt,
 			false, // Do not accept malformed indexes
@@ -63,13 +66,13 @@ var (
 			metadata.NoneFunc)
 	}
 
-	DefaultBlocksCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (compact.Compactor, compact.Planner, error) {
+	DefaultBlocksCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
 		compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, cfg.BlockRanges.ToMilliseconds(), downsample.NewPool(), nil)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		planner := compact.NewTSDBBasedPlanner(logger, cfg.BlockRanges.ToMilliseconds())
+		planner := NewTSDBBasedPlanner(logger, cfg.BlockRanges.ToMilliseconds())
 		return compactor, planner, nil
 	}
 )
@@ -83,7 +86,7 @@ type BlocksGrouperFactory func(
 	reg prometheus.Registerer,
 	blocksMarkedForDeletion prometheus.Counter,
 	garbageCollectedBlocks prometheus.Counter,
-) compact.Grouper
+) Grouper
 
 // BlocksCompactorFactory builds and returns the compactor and planner to use to compact a tenant's blocks.
 type BlocksCompactorFactory func(
@@ -91,9 +94,9 @@ type BlocksCompactorFactory func(
 	cfg Config,
 	logger log.Logger,
 	reg prometheus.Registerer,
-) (compact.Compactor, compact.Planner, error)
+) (Compactor, Planner, error)
 
-// Config holds the Compactor config.
+// Config holds the MultitenantCompactor config.
 type Config struct {
 	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges"`
 	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency"`
@@ -126,7 +129,7 @@ type Config struct {
 	BlocksCompactorFactory BlocksCompactorFactory `yaml:"-"`
 }
 
-// RegisterFlags registers the Compactor flags.
+// RegisterFlags registers the MultitenantCompactor flags.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ShardingRing.RegisterFlags(f)
 
@@ -135,7 +138,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.retryMaxBackoff = time.Minute
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
-	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", compact.PartialUploadThresholdAge))
+	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", PartialUploadThresholdAge))
 	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 20, "Number of Go routines to use when syncing block index and chunks files from the long term storage.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data", "Data directory in which to cache blocks and process compactions")
@@ -165,14 +168,14 @@ func (cfg *Config) Validate() error {
 	return nil
 }
 
-// ConfigProvider defines the per-tenant config provider for the Compactor.
+// ConfigProvider defines the per-tenant config provider for the MultitenantCompactor.
 type ConfigProvider interface {
 	bucket.TenantConfigProvider
 	CompactorBlocksRetentionPeriod(user string) time.Duration
 }
 
-// Compactor is a multi-tenant TSDB blocks compactor based on Thanos.
-type Compactor struct {
+// MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.
+type MultitenantCompactor struct {
 	services.Service
 
 	compactorCfg   Config
@@ -196,8 +199,8 @@ type Compactor struct {
 	blocksCleaner *BlocksCleaner
 
 	// Underlying compactor and planner used to compact TSDB blocks.
-	blocksCompactor compact.Compactor
-	blocksPlanner   compact.Planner
+	blocksCompactor Compactor
+	blocksPlanner   Planner
 
 	// Client used to run operations on the bucket storing blocks.
 	bucketClient objstore.Bucket
@@ -222,11 +225,11 @@ type Compactor struct {
 	garbageCollectedBlocks         prometheus.Counter
 
 	// TSDB syncer metrics
-	syncerMetrics *syncerMetrics
+	syncerMetrics *aggregatedSyncerMetrics
 }
 
-// NewCompactor makes a new Compactor.
-func NewCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*Compactor, error) {
+// NewMultitenantCompactor makes a new MultitenantCompactor.
+func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig, cfgProvider ConfigProvider, logger log.Logger, registerer prometheus.Registerer) (*MultitenantCompactor, error) {
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucket.NewClient(ctx, storageCfg.Bucket, "compactor", logger, registerer)
 	}
@@ -241,7 +244,7 @@ func NewCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig
 		blocksCompactorFactory = DefaultBlocksCompactorFactory
 	}
 
-	mimirCompactor, err := newCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
+	mimirCompactor, err := newMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, registerer, bucketClientFactory, blocksGrouperFactory, blocksCompactorFactory)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create blocks compactor")
 	}
@@ -249,7 +252,7 @@ func NewCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksStorageConfig
 	return mimirCompactor, nil
 }
 
-func newCompactor(
+func newMultitenantCompactor(
 	compactorCfg Config,
 	storageCfg mimir_tsdb.BlocksStorageConfig,
 	cfgProvider ConfigProvider,
@@ -258,15 +261,15 @@ func newCompactor(
 	bucketClientFactory func(ctx context.Context) (objstore.Bucket, error),
 	blocksGrouperFactory BlocksGrouperFactory,
 	blocksCompactorFactory BlocksCompactorFactory,
-) (*Compactor, error) {
-	c := &Compactor{
+) (*MultitenantCompactor, error) {
+	c := &MultitenantCompactor{
 		compactorCfg:           compactorCfg,
 		storageCfg:             storageCfg,
 		cfgProvider:            cfgProvider,
 		parentLogger:           logger,
 		logger:                 log.With(logger, "component", "compactor"),
 		registerer:             registerer,
-		syncerMetrics:          newSyncerMetrics(registerer),
+		syncerMetrics:          newAggregatedSyncerMetrics(registerer),
 		bucketClientFactory:    bucketClientFactory,
 		blocksGrouperFactory:   blocksGrouperFactory,
 		blocksCompactorFactory: blocksCompactorFactory,
@@ -335,7 +338,7 @@ func newCompactor(
 }
 
 // Start the compactor.
-func (c *Compactor) starting(ctx context.Context) error {
+func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	var err error
 
 	// Create bucket client.
@@ -430,7 +433,7 @@ func (c *Compactor) starting(ctx context.Context) error {
 	return nil
 }
 
-func (c *Compactor) stopping(_ error) error {
+func (c *MultitenantCompactor) stopping(_ error) error {
 	ctx := context.Background()
 
 	services.StopAndAwaitTerminated(ctx, c.blocksCleaner) //nolint:errcheck
@@ -440,7 +443,7 @@ func (c *Compactor) stopping(_ error) error {
 	return nil
 }
 
-func (c *Compactor) running(ctx context.Context) error {
+func (c *MultitenantCompactor) running(ctx context.Context) error {
 	// Run an initial compaction before starting the interval.
 	c.compactUsers(ctx)
 
@@ -459,7 +462,7 @@ func (c *Compactor) running(ctx context.Context) error {
 	}
 }
 
-func (c *Compactor) compactUsers(ctx context.Context) {
+func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 	succeeded := false
 	compactionErrorCount := 0
 
@@ -572,7 +575,7 @@ func (c *Compactor) compactUsers(ctx context.Context) {
 	succeeded = true
 }
 
-func (c *Compactor) compactUserWithRetries(ctx context.Context, userID string) error {
+func (c *MultitenantCompactor) compactUserWithRetries(ctx context.Context, userID string) error {
 	var lastErr error
 
 	retries := backoff.New(ctx, backoff.Config{
@@ -593,7 +596,7 @@ func (c *Compactor) compactUserWithRetries(ctx context.Context, userID string) e
 	return lastErr
 }
 
-func (c *Compactor) compactUser(ctx context.Context, userID string) error {
+func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) error {
 	bucket := bucket.NewUserBucketClient(userID, c.bucketClient, c.cfgProvider)
 	reg := prometheus.NewRegistry()
 	defer c.syncerMetrics.gatherThanosSyncerMetrics(reg)
@@ -633,7 +636,7 @@ func (c *Compactor) compactUser(ctx context.Context, userID string) error {
 		return err
 	}
 
-	syncer, err := compact.NewMetaSyncer(
+	syncer, err := NewMetaSyncer(
 		ulogger,
 		reg,
 		bucket,
@@ -648,7 +651,7 @@ func (c *Compactor) compactUser(ctx context.Context, userID string) error {
 		return errors.Wrap(err, "failed to create syncer")
 	}
 
-	compactor, err := compact.NewBucketCompactor(
+	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
 		c.blocksGrouperFactory(ctx, c.compactorCfg, bucket, ulogger, reg, c.blocksMarkedForDeletion, c.garbageCollectedBlocks),
@@ -670,7 +673,7 @@ func (c *Compactor) compactUser(ctx context.Context, userID string) error {
 	return nil
 }
 
-func (c *Compactor) discoverUsersWithRetries(ctx context.Context) ([]string, error) {
+func (c *MultitenantCompactor) discoverUsersWithRetries(ctx context.Context) ([]string, error) {
 	var lastErr error
 
 	retries := backoff.New(ctx, backoff.Config{
@@ -693,7 +696,7 @@ func (c *Compactor) discoverUsersWithRetries(ctx context.Context) ([]string, err
 	return nil, lastErr
 }
 
-func (c *Compactor) discoverUsers(ctx context.Context) ([]string, error) {
+func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, error) {
 	var users []string
 
 	err := c.bucketClient.Iter(ctx, "", func(entry string) error {
@@ -704,7 +707,7 @@ func (c *Compactor) discoverUsers(ctx context.Context) ([]string, error) {
 	return users, err
 }
 
-func (c *Compactor) ownUser(userID string) (bool, error) {
+func (c *MultitenantCompactor) ownUser(userID string) (bool, error) {
 	if !c.allowedTenants.IsAllowed(userID) {
 		return false, nil
 	}
@@ -738,12 +741,12 @@ const compactorMetaPrefix = "compactor-meta-"
 // The fetcher stores cached metas in the "meta-syncer/" sub directory,
 // but we prefix it with "compactor-meta-" in order to guarantee no clashing with
 // the directory used by the Thanos Syncer, whatever is the user ID.
-func (c *Compactor) metaSyncDirForUser(userID string) string {
+func (c *MultitenantCompactor) metaSyncDirForUser(userID string) string {
 	return filepath.Join(c.compactorCfg.DataDir, compactorMetaPrefix+userID)
 }
 
 // This function returns tenants with meta sync directories found on local disk. On error, it returns nil map.
-func (c *Compactor) listTenantsWithMetaSyncDirectories() map[string]struct{} {
+func (c *MultitenantCompactor) listTenantsWithMetaSyncDirectories() map[string]struct{} {
 	result := map[string]struct{}{}
 
 	files, err := ioutil.ReadDir(c.compactorCfg.DataDir)
