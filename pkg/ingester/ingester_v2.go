@@ -1292,7 +1292,7 @@ func (i *Ingester) LabelNamesCardinality(request *client.LabelNamesCardinalityRe
 		return err
 	}
 	if !i.cfg.BlocksStorageEnabled {
-		return errors.New("not supported")
+		return errors.New("Cardinality analysis feature supports only blocks storage type.")
 	}
 	userID, err := tenant.TenantID(server.Context())
 	if err != nil {

@@ -2831,6 +2831,7 @@ type IngesterClient interface {
 	MetricsMetadata(ctx context.Context, in *MetricsMetadataRequest, opts ...grpc.CallOption) (*MetricsMetadataResponse, error)
 	// TransferChunks allows leaving ingester (client) to stream chunks directly to joining ingesters (server).
 	TransferChunks(ctx context.Context, opts ...grpc.CallOption) (Ingester_TransferChunksClient, error)
+	// LabelNamesCardinality provides all values for each label that matches to list matchers, except `__name__` label
 	LabelNamesCardinality(ctx context.Context, in *LabelNamesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelNamesCardinalityClient, error)
 }
 
@@ -3025,6 +3026,7 @@ type IngesterServer interface {
 	MetricsMetadata(context.Context, *MetricsMetadataRequest) (*MetricsMetadataResponse, error)
 	// TransferChunks allows leaving ingester (client) to stream chunks directly to joining ingesters (server).
 	TransferChunks(Ingester_TransferChunksServer) error
+	// LabelNamesCardinality provides all values for each label that matches to list matchers, except `__name__` label
 	LabelNamesCardinality(*LabelNamesCardinalityRequest, Ingester_LabelNamesCardinalityServer) error
 }
 

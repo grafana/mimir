@@ -23,7 +23,8 @@ import (
 func TestLabelNamesCardinalityReportSentInBatches(t *testing.T) {
 
 	analyzer := CardinalityReporter{}
-	existingLabels := map[string][]string{"label-a": {"val-0", "val-1", "val-2"},
+	existingLabels := map[string][]string{
+		"label-a": {"val-0", "val-1", "val-2"},
 		"label-b": {"val-0", "val-1", "val-2", "val-3"},
 	}
 	mockServer := MockLabelNamesCardinalityServer{context: context.Background()}
@@ -53,15 +54,24 @@ func TestExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) {
 		existingLabels  map[string][]string
 		expectedMessage []*client.LabelNamesCardinality
 	}{
-		{"all values returned in a single message even if only one label",
+		{
+			"all values returned in a single message even if only one label",
 			map[string][]string{"label-a": {"val-0"}},
-			[]*client.LabelNamesCardinality{{LabelName: "label-a", LabelValues: []string{"val-0"}}}},
-		{"all values returned in a single message if label values count less then batch size",
-			map[string][]string{"label-a": {"val-0", "val-1", "val-2"},
-				"label-b": {"val-0", "val-1", "val-2", "val-3"}},
+			[]*client.LabelNamesCardinality{
+				{LabelName: "label-a", LabelValues: []string{"val-0"}},
+			},
+		},
+		{
+			"all values returned in a single message if label values count less then batch size",
+			map[string][]string{
+				"label-a": {"val-0", "val-1", "val-2"},
+				"label-b": {"val-0", "val-1", "val-2", "val-3"},
+			},
 			[]*client.LabelNamesCardinality{
 				{LabelName: "label-a", LabelValues: []string{"val-0", "val-1", "val-2"}},
-				{LabelName: "label-b", LabelValues: []string{"val-0", "val-1", "val-2", "val-3"}}}},
+				{LabelName: "label-b", LabelValues: []string{"val-0", "val-1", "val-2", "val-3"}},
+			},
+		},
 	} {
 		t.Run(tc.description, func(t *testing.T) {
 			analyzer := CardinalityReporter{}
