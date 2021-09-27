@@ -757,11 +757,11 @@ func TestDistributor_PushQuery(t *testing.T) {
 	// Run every test in both sharding modes.
 	for _, shardByAllLabels := range []bool{true, false} {
 
-		// Test with between 2 and 10 ingesters.
-		for numIngesters := 2; numIngesters < 10; numIngesters++ {
+		// Test with between 2 and 11 ingesters.
+		for numIngesters := 2; numIngesters <= 11; numIngesters = numIngesters + 3 {
 
 			// Test with between 0 and numIngesters "happy" ingesters.
-			for happyIngesters := 0; happyIngesters <= numIngesters; happyIngesters++ {
+			for happyIngesters := 0; happyIngesters <= numIngesters; happyIngesters = happyIngesters + 2 {
 
 				// Test either with shuffle-sharding enabled or disabled.
 				for _, shuffleShardEnabled := range []bool{false, true} {
@@ -2127,8 +2127,7 @@ func stopAll(ds []*Distributor, r *ring.Ring) {
 		services.StopAndAwaitTerminated(context.Background(), d) //nolint:errcheck
 	}
 
-	// Mock consul doesn't stop quickly, so don't wait.
-	r.StopAsync()
+	services.StopAndAwaitTerminated(context.Background(), r)
 }
 
 func makeWriteRequest(startTimestampMs int64, samples int, metadata int) *mimirpb.WriteRequest {

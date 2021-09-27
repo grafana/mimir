@@ -82,7 +82,7 @@ func (m *mockKV) loop() {
 		select {
 		case <-m.close:
 			return
-		case <-time.After(time.Second):
+		case <-time.After(time.Millisecond * 40):
 			m.mtx.Lock()
 			m.cond.Broadcast()
 			m.mtx.Unlock()
@@ -253,7 +253,7 @@ func (m *mockKV) ResetIndexForKey(key string) {
 // mockedMaxWaitTime returns the minimum duration between the input duration
 // and the max wait time allowed in this mock, in order to have faster tests.
 func mockedMaxWaitTime(queryWaitTime time.Duration) time.Duration {
-	const maxWaitTime = time.Second
+	const maxWaitTime = time.Millisecond * 40
 	if queryWaitTime > maxWaitTime {
 		return maxWaitTime
 	}
