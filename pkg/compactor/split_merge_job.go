@@ -1,0 +1,144 @@
+package compactor
+
+import (
+	"fmt"
+	"hash/fnv"
+	"strings"
+	"time"
+
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/thanos-io/thanos/pkg/block/metadata"
+)
+
+type compactionStage string
+
+const (
+	stageSplit compactionStage = "split"
+	stageMerge compactionStage = "merge"
+)
+
+// job holds a compaction job planned by the split merge compactor.
+type job struct {
+	// Source blocks that should be compacted together when running this job.
+	blocksGroup
+
+	// The compaction stage of this job.
+	stage compactionStage
+
+	// The shard blocks in this job belong to. Its exact value depends on the stage:
+	// - split: identifier of the group of blocks that are going to be merged together
+	//          when splitting their series into multiple output blocks.
+	// - merge: value of the ShardIDLabelName of all blocks in this job (all blocks in
+	//          the job share the same label value).
+	shardID string
+}
+
+func (j *job) hash(userID string) uint32 {
+	body := fmt.Sprintf("%s-%s-%d-%d-%s", userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
+
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(body))
+	return hasher.Sum32()
+}
+
+// conflicts returns false if the two jobs cannot be planned at the same time.
+func (j *job) conflicts(other *job) bool {
+	// Never conflict if time ranges don't overlap.
+	if !j.overlaps(other.blocksGroup) {
+		return false
+	}
+
+	// Blocks with different downsample resolution or external labels are never merged together,
+	// so they can't conflict. Since all blocks within the same job are expected to have the same
+	// downsample resolution and external labels, we just check the 1st block of each job.
+	if len(j.blocks) > 0 && len(other.blocks) > 0 {
+		if !labels.Equal(labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels), labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels)) {
+			return false
+		}
+		if j.blocksGroup.blocks[0].Thanos.Downsample != other.blocksGroup.blocks[0].Thanos.Downsample {
+			return false
+		}
+	}
+
+	// We should merge after all splitting has been done, so two overlapping jobs
+	// for different stages shouldn't coexist.
+	if j.stage != other.stage {
+		return true
+	}
+
+	// At this point we have two overlapping jobs for the same stage. They conflict if
+	// belonging to the same shard.
+	return j.shardID == other.shardID
+}
+
+func (j *job) String() string {
+	blocks := make([]string, 0, len(j.blocks))
+	for _, block := range j.blocks {
+		minT := time.Unix(0, block.MinTime*int64(time.Millisecond)).UTC()
+		maxT := time.Unix(0, block.MaxTime*int64(time.Millisecond)).UTC()
+		blocks = append(blocks, fmt.Sprintf("%s (min time: %s, max time: %s)", block.ULID.String(), minT.String(), maxT.String()))
+	}
+
+	return fmt.Sprintf("stage: %s, range start: %d, range end: %d, shard: %s, blocks: %s",
+		j.stage, j.rangeStart, j.rangeEnd, j.shardID, strings.Join(blocks, ","))
+}
+
+// blocksGroup holds a group of blocks within the same time range.
+type blocksGroup struct {
+	rangeStart int64            // Included.
+	rangeEnd   int64            // Excluded.
+	blocks     []*metadata.Meta // Sorted by MinTime.
+}
+
+// overlaps returns whether the group range overlaps with the input group.
+func (g blocksGroup) overlaps(other blocksGroup) bool {
+	if g.rangeStart >= other.rangeEnd || other.rangeStart >= g.rangeEnd {
+		return false
+	}
+
+	return true
+}
+
+func (g blocksGroup) rangeStartTime() time.Time {
+	return time.Unix(0, g.rangeStart*int64(time.Millisecond)).UTC()
+}
+
+func (g blocksGroup) rangeEndTime() time.Time {
+	return time.Unix(0, g.rangeEnd*int64(time.Millisecond)).UTC()
+}
+
+func (g blocksGroup) rangeLength() int64 {
+	return g.rangeEnd - g.rangeStart
+}
+
+// minTime returns the lowest MinTime across all blocks in the group.
+func (g blocksGroup) minTime() int64 {
+	// Blocks are expected to be sorted by MinTime.
+	return g.blocks[0].MinTime
+}
+
+// maxTime returns the highest MaxTime across all blocks in the group.
+func (g blocksGroup) maxTime() int64 {
+	max := g.blocks[0].MaxTime
+
+	for _, b := range g.blocks[1:] {
+		if b.MaxTime > max {
+			max = b.MaxTime
+		}
+	}
+
+	return max
+}
+
+// getNonShardedBlocks returns the list of non-sharded blocks.
+func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
+	var out []*metadata.Meta
+
+	for _, b := range g.blocks {
+		if _, ok := b.Thanos.Labels[ShardIDLabelName]; !ok {
+			out = append(out, b)
+		}
+	}
+
+	return out
+}
