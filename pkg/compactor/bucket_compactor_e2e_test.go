@@ -443,12 +443,12 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 	defer cancel()
 
 	for _, b := range blocks {
-		id, meta := createBlock(t, ctx, prepareDir, b)
+		id, meta := createBlock(ctx, t, prepareDir, b)
 		metas = append(metas, meta)
 		require.NoError(t, block.Upload(ctx, log.NewNopLogger(), bkt, filepath.Join(prepareDir, id.String()), metadata.NoneFunc))
 	}
 	for _, b := range blocksWithOutOfOrderChunks {
-		id, meta := createBlock(t, ctx, prepareDir, b)
+		id, meta := createBlock(ctx, t, prepareDir, b)
 
 		err := putOutOfOrderIndex(filepath.Join(prepareDir, id.String()), b.mint, b.maxt)
 		require.NoError(t, err)
@@ -460,7 +460,7 @@ func createAndUpload(t testing.TB, bkt objstore.Bucket, blocks []blockgenSpec, b
 	return metas
 }
 
-func createBlock(t testing.TB, ctx context.Context, prepareDir string, b blockgenSpec) (id ulid.ULID, meta *metadata.Meta) {
+func createBlock(ctx context.Context, t testing.TB, prepareDir string, b blockgenSpec) (id ulid.ULID, meta *metadata.Meta) {
 	var err error
 	if b.numSamples == 0 {
 		id, err = createEmptyBlock(prepareDir, b.mint, b.maxt, b.extLset, b.res)

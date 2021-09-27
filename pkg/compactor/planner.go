@@ -33,6 +33,7 @@ var _ Planner = &tsdbBasedPlanner{}
 // NewTSDBBasedPlanner is planner with the same functionality as Prometheus' TSDB.
 // TODO(bwplotka): Consider upstreaming this to Prometheus.
 // It's the same functionality just without accessing filesystem.
+// nolint:golint
 func NewTSDBBasedPlanner(logger log.Logger, ranges []int64) *tsdbBasedPlanner {
 	return &tsdbBasedPlanner{
 		logger: logger,
@@ -45,6 +46,7 @@ func NewTSDBBasedPlanner(logger log.Logger, ranges []int64) *tsdbBasedPlanner {
 
 // NewPlanner is a default Thanos planner with the same functionality as Prometheus' TSDB plus special handling of excluded blocks.
 // It's the same functionality just without accessing filesystem, and special handling of excluded blocks.
+// nolint:golint
 func NewPlanner(logger log.Logger, ranges []int64, noCompBlocks *GatherNoCompactionMarkFilter) *tsdbBasedPlanner {
 	return &tsdbBasedPlanner{logger: logger, ranges: ranges, noCompBlocksFunc: noCompBlocks.NoCompactMarkedBlocks}
 }
@@ -240,6 +242,7 @@ var _ Planner = &largeTotalIndexSizeFilter{}
 // NOTE: The estimation is very rough as it assumes extreme cases of indexes sharing no bytes, thus summing all source index sizes.
 // Adjust limit accordingly reducing to some % of actual limit you want to give.
 // TODO(bwplotka): This is short term fix for https://github.com/thanos-io/thanos/issues/1424, replace with vertical block sharding https://github.com/thanos-io/thanos/pull/3390.
+// nolint:golint
 func WithLargeTotalIndexSizeFilter(with *tsdbBasedPlanner, bkt objstore.Bucket, totalMaxIndexSizeBytes int64, markedForNoCompact prometheus.Counter) *largeTotalIndexSizeFilter {
 	return &largeTotalIndexSizeFilter{tsdbBasedPlanner: with, bkt: bkt, totalMaxIndexSizeBytes: totalMaxIndexSizeBytes, markedForNoCompact: markedForNoCompact}
 }
