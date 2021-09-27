@@ -18,8 +18,8 @@ type LRUCache struct {
 	mtx sync.Mutex
 	lru *lru.LRU
 
-	requests *prometheus.CounterVec
-	hits     *prometheus.CounterVec
+	requests prometheus.Counter
+	hits     prometheus.Counter
 }
 
 type cacheItem struct {
@@ -27,7 +27,7 @@ type cacheItem struct {
 	expiresAt time.Time
 }
 
-func WrapWithLRUCache(name string, c cache.Cache, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (cache.Cache, error) {
+func WrapWithLRUCache(c cache.Cache, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (*LRUCache, error) {
 	cache := &LRUCache{
 		c:          c,
 		defaultTTL: defaultTTL,
@@ -37,15 +37,17 @@ func WrapWithLRUCache(name string, c cache.Cache, reg prometheus.Registerer, lru
 		return nil, err
 	}
 	cache.lru = lru
-	cache.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_store_index_cache_requests_total",
-		Help: "Total number of requests to the cache.",
-	}, []string{"item_type"})
+	cache.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Namespace: "cortex",
+		Name:      "store_" + cache.Name() + "_cache_requests_total",
+		Help:      "Total number of requests to the cache.",
+	})
 
-	cache.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_store_index_cache_hits_total",
-		Help: "Total number of requests to the cache that were a hit.",
-	}, []string{"item_type"})
+	cache.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
+		Namespace: "cortex",
+		Name:      "store_" + cache.Name() + "_cache_hits_total",
+		Help:      "Total number of requests to the cache that were a hit.",
+	})
 	return cache, nil
 }
 
@@ -65,6 +67,7 @@ func (l *LRUCache) Store(ctx context.Context, data map[string][]byte, ttl time.D
 }
 
 func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string][]byte) {
+	l.requests.Add(float64(len(keys)))
 	l.mtx.Lock()
 	defer l.mtx.Unlock()
 	var (
@@ -88,6 +91,7 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 		miss = append(miss, k)
 
 	}
+	l.hits.Add(float64(len(found)))
 
 	if len(miss) > 0 {
 		result = l.c.Fetch(ctx, miss)
@@ -102,4 +106,8 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 	}
 
 	return found
+}
+
+func (l *LRUCache) Name() string {
+	return "lru_" + l.c.Name()
 }
