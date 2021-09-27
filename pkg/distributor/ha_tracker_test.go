@@ -44,7 +44,7 @@ func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, u
 	test.Poll(t, duration, nil, func() interface{} {
 		c.electedLock.RLock()
 		info := c.clusters[user][cluster]
-		r := &info.elected
+		r := info.elected
 		c.electedLock.RUnlock()
 
 		if r.GetReplica() != replica {
