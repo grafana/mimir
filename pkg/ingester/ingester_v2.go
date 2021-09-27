@@ -1286,8 +1286,7 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 	return response, nil
 }
 
-func (i *Ingester) LabelNamesCardinality(request *client.LabelNamesCardinalityRequest,
-	server client.Ingester_LabelNamesCardinalityServer) error {
+func (i *Ingester) LabelNamesCardinality(request *client.LabelNamesCardinalityRequest, server client.Ingester_LabelNamesCardinalityServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
