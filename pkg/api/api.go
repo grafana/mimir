@@ -351,8 +351,8 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 }
 
 // RegisterCompactor registers the ring UI page associated with the compactor.
-func (a *API) RegisterCompactor(c *compactor.Compactor) {
-	a.indexPage.AddLink(SectionAdminEndpoints, "/compactor/ring", "Compactor Ring Status")
+func (a *API) RegisterCompactor(c *compactor.MultitenantCompactor) {
+	a.indexPage.AddLink(SectionAdminEndpoints, "/compactor/ring", "MultitenantCompactor Ring Status")
 	a.RegisterRoute("/compactor/ring", http.HandlerFunc(c.RingHandler), false, "GET", "POST")
 }
 

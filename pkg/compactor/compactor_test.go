@@ -128,7 +128,7 @@ func TestConfig_Validate(t *testing.T) {
 	}
 }
 
-func TestCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
+func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	t.Parallel()
 
 	// No user blocks stored in the bucket.
@@ -273,7 +273,7 @@ func TestCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	))
 }
 
-func TestCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUsersFromBucket(t *testing.T) {
+func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUsersFromBucket(t *testing.T) {
 	t.Parallel()
 
 	// Fail to iterate over the bucket while discovering users.
@@ -419,7 +419,7 @@ func TestCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUsersFromBucket
 	))
 }
 
-func TestCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASingleTenant(t *testing.T) {
+func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASingleTenant(t *testing.T) {
 	t.Parallel()
 
 	userID := "test-user"
@@ -463,7 +463,7 @@ func TestCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASingleTenant(
 	))
 }
 
-func TestCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
+func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
 	t.Parallel()
 
 	// Mock the bucket to contain two users, each one with one block.
@@ -574,7 +574,7 @@ func TestCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
 	`), testedMetrics...))
 }
 
-func TestCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing.T) {
+func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing.T) {
 	t.Parallel()
 
 	cfg := prepareConfig()
@@ -692,7 +692,7 @@ func TestCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing.T) {
 	`), testedMetrics...))
 }
 
-func TestCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t *testing.T) {
+func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t *testing.T) {
 	t.Parallel()
 
 	cfg := prepareConfig()
@@ -797,7 +797,7 @@ func TestCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t *testing.T)
 	`), testedMetrics...))
 }
 
-func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunning(t *testing.T) {
+func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunning(t *testing.T) {
 	t.Parallel()
 
 	// Mock the bucket to contain two users, each one with one block.
@@ -872,7 +872,7 @@ func TestCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneInstanceRunni
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 }
 
-func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndMultipleInstancesRunning(t *testing.T) {
+func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndMultipleInstancesRunning(t *testing.T) {
 	t.Parallel()
 
 	numUsers := 100
@@ -901,7 +901,7 @@ func TestCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndM
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
-	var compactors []*Compactor
+	var compactors []*MultitenantCompactor
 	var logs []*concurrency.SyncBuffer
 
 	for i := 1; i <= 2; i++ {
@@ -1035,8 +1035,8 @@ func createDeletionMark(t *testing.T, bkt objstore.Bucket, userID string, blockI
 	require.NoError(t, bkt.Upload(context.Background(), markPath, strings.NewReader(content)))
 }
 
-func findCompactorByUserID(compactors []*Compactor, logs []*concurrency.SyncBuffer, userID string) (*Compactor, *concurrency.SyncBuffer, error) {
-	var compactor *Compactor
+func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurrency.SyncBuffer, userID string) (*MultitenantCompactor, *concurrency.SyncBuffer, error) {
+	var compactor *MultitenantCompactor
 	var log *concurrency.SyncBuffer
 
 	for i, c := range compactors {
@@ -1099,7 +1099,7 @@ func prepareConfig() Config {
 	return compactorCfg
 }
 
-func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*Compactor, *tsdbCompactorMock, *tsdbPlannerMock, *concurrency.SyncBuffer, prometheus.Gatherer) {
+func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*MultitenantCompactor, *tsdbCompactorMock, *tsdbPlannerMock, *concurrency.SyncBuffer, prometheus.Gatherer) {
 	storageCfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&storageCfg)
 
@@ -1131,7 +1131,7 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
-	c, err := newCompactor(compactorCfg, storageCfg, overrides, logger, registry, bucketClientFactory, DefaultBlocksGrouperFactory, blocksCompactorFactory)
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, overrides, logger, registry, bucketClientFactory, DefaultBlocksGrouperFactory, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry
@@ -1200,7 +1200,7 @@ func mockDeletionMarkJSON(id string, deletionTime time.Time) string {
 	return string(content)
 }
 
-func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
+func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	numUsers := 10
 
 	// Setup user IDs
@@ -1221,7 +1221,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
 	// Create two compactors
-	var compactors []*Compactor
+	var compactors []*MultitenantCompactor
 
 	for i := 1; i <= 2; i++ {
 		cfg := prepareConfig()
@@ -1285,7 +1285,7 @@ func TestCompactor_DeleteLocalSyncFiles(t *testing.T) {
 	require.Equal(t, numUsers, c1Users+c2Users)
 }
 
-func TestCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
+func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	t.Parallel()
 
 	// Mock the bucket
