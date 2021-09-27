@@ -43,12 +43,6 @@ const (
 	ResolutionLevel1h  = ResolutionLevel(downsample.ResLevel2)
 )
 
-const (
-	// DedupAlgorithmPenalty is the penalty based compactor series merge algorithm.
-	// This is the same as the online deduplication of querier except counter reset handling.
-	DedupAlgorithmPenalty = "penalty"
-)
-
 // Syncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
@@ -113,22 +107,6 @@ func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 		ignoreDeletionMarkFilter: ignoreDeletionMarkFilter,
 		blockSyncConcurrency:     blockSyncConcurrency,
 	}, nil
-}
-
-// UntilNextDownsampling calculates how long it will take until the next downsampling operation.
-// Returns an error if there will be no downsampling.
-func UntilNextDownsampling(m *metadata.Meta) (time.Duration, error) {
-	timeRange := time.Duration((m.MaxTime - m.MinTime) * int64(time.Millisecond))
-	switch m.Thanos.Downsample.Resolution {
-	case downsample.ResLevel2:
-		return time.Duration(0), errors.New("no downsampling")
-	case downsample.ResLevel1:
-		return time.Duration(downsample.DownsampleRange1*time.Millisecond) - timeRange, nil
-	case downsample.ResLevel0:
-		return time.Duration(downsample.DownsampleRange0*time.Millisecond) - timeRange, nil
-	default:
-		panic(errors.Errorf("invalid resolution %v", m.Thanos.Downsample.Resolution))
-	}
 }
 
 // SyncMetas synchronizes local state of block metas with what we have in the bucket.
