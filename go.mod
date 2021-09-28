@@ -13,7 +13,6 @@ require (
 	github.com/aws/aws-sdk-go v1.40.37
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash/v2 v2.1.2
-	github.com/cortexproject/cortex v1.10.1-0.20210820081236-70dddb6b70b8 // indirect
 	github.com/dustin/go-humanize v1.0.0
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/felixge/fgprof v0.9.1

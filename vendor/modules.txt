@@ -140,8 +140,6 @@ github.com/coreos/go-systemd/journal
 github.com/coreos/go-systemd/v22/journal
 # github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f
 github.com/coreos/pkg/capnslog
-# github.com/cortexproject/cortex v1.10.1-0.20210820081236-70dddb6b70b8
-## explicit
 # github.com/davecgh/go-spew v1.1.1
 github.com/davecgh/go-spew/spew
 # github.com/dennwc/varint v1.0.0
