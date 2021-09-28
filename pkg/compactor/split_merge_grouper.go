@@ -82,7 +82,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		}
 
 		// The group key is used by the compactor as a unique identifier of the compaction job.
-		// It's content is not important for the compactor, but uniqueness must be guaranteed.
+		// Its content is not important for the compactor, but uniqueness must be guaranteed.
 		groupKey := fmt.Sprintf("%s-%s-%s-%d-%d",
 			defaultGroupKeyWithoutShardID(job.blocks[0].Thanos),
 			job.stage,
@@ -136,11 +136,11 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		}
 
 		res = append(res, thanosGroup)
-		level.Debug(g.logger).Log("msg", "grouper found a compactable blocks group", "job", job.String())
+		level.Debug(g.logger).Log("msg", "grouper found a compactable blocks group", "groupKey", groupKey, "job", job.String())
 	}
 
 	// Ensure jobs are sorted by smallest range, oldest min time first. The rationale
-	// is that we wanna favor smaller ranges first (ie. to deduplicate samples sooner
+	// is that we want to favor smaller ranges first (ie. to deduplicate samples sooner
 	// than later) and older ones are more likely to be "complete" (no missing block still
 	// to be uploaded).
 	sort.SliceStable(res, func(i, j int) bool {

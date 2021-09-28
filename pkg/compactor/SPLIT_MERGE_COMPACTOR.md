@@ -1,7 +1,5 @@
 # Split and Merge Compactor
 
-- [Original design doc](https://docs.google.com/document/d/1WlYPfhOYosOPDVxsf6T4lVXsiQOf9vSr8RYB2NENOqo/edit)
-
 ## How the grouper works
 
 Given the list of all blocks in the storage:
@@ -11,9 +9,9 @@ Given the list of all blocks in the storage:
     - Given the time range, if the time range is the "smallest one" (eg. 2h) AND there are non-sharded blocks, then we should split the block
       - Example: TR=2h
         - Case 1: all the blocks for the 2h time range have the "shard ID" label in the meta.json.
-          In this case, we shouldn't run the split compactor anymore.
+          In this case, we shouldn't run the split stage anymore.
         - Case 2: there is at least 1 block for the 2h time range NOT having "shard ID" in the meta.json.
-          In this case, we should run the split compactor on 2h blocks without the "shard ID".
+          In this case, we should run the split stage on 2h blocks without the "shard ID".
       - Horizontal sharding
         - Each compactor will take decisions without a central coordination
         - Each compactor will run the planning for ALL blocks

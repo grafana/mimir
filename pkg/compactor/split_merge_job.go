@@ -28,10 +28,12 @@ type job struct {
 	stage compactionStage
 
 	// The shard blocks in this job belong to. Its exact value depends on the stage:
+	//
 	// - split: identifier of the group of blocks that are going to be merged together
-	//          when splitting their series into multiple output blocks.
+	// when splitting their series into multiple output blocks.
+	//
 	// - merge: value of the ShardIDLabelName of all blocks in this job (all blocks in
-	//          the job share the same label value).
+	// the job share the same label value).
 	shardID string
 }
 
@@ -139,7 +141,7 @@ func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
 	var out []*metadata.Meta
 
 	for _, b := range g.blocks {
-		if _, ok := b.Thanos.Labels[ShardIDLabelName]; !ok {
+		if value, ok := b.Thanos.Labels[ShardIDLabelName]; !ok || value == "" {
 			out = append(out, b)
 		}
 	}

@@ -206,6 +206,17 @@ func TestBlocksGroup_getNonShardedBlocks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{"key": "value"}}},
 			},
 		},
+		"should consider non-sharded a block with the shard ID label but empty value": {
+			input: blocksGroup{blocks: []*metadata.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: ""}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{"key": "value"}}},
+			}},
+			expected: []*metadata.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: ""}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{"key": "value"}}},
+			},
+		},
 	}
 
 	for _, tc := range tests {
