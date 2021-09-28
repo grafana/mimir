@@ -27,7 +27,7 @@ type ShardSelector struct {
 
 // LabelValue returns the label value to use to select this shard.
 func (shard ShardSelector) LabelValue() string {
-	return fmt.Sprintf(ShardLabelFmt, shard.ShardIndex, shard.ShardCount)
+	return fmt.Sprintf(ShardLabelFmt, shard.ShardIndex+1, shard.ShardCount)
 }
 
 // Label generates the ShardSelector as a label.
@@ -54,11 +54,14 @@ func parseShard(input string) (parsed ShardSelector, err error) {
 		return parsed, err
 	}
 
-	if index >= count {
-		return parsed, errors.Errorf("query shards out of bounds: %d >= %d", index, count)
+	if index > count {
+		return parsed, errors.Errorf("query shards out of bounds: %d > %d", index, count)
+	}
+	if index <= 0 {
+		return parsed, errors.Errorf("query shards out of bounds: %d <= 0", index)
 	}
 	return ShardSelector{
-		ShardIndex: index,
+		ShardIndex: index - 1,
 		ShardCount: count,
 	}, err
 }

@@ -338,7 +338,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 }
 
 func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard, shards))
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard+1, shards))
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 }
 
 func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard, shards))
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard+1, shards))
 	if err != nil {
 		return nil, err
 	}
