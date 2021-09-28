@@ -111,7 +111,6 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		blockMarkedForNoCompact := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, nil, 48*time.Hour, fetcherConcurrency)
 		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks, 1)
 		require.NoError(t, err)
@@ -148,7 +147,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		require.NoError(t, sy.GarbageCollect(ctx))
 
 		// Only the level 3 block, the last source block in both resolutions should be left.
-		grouper := NewDefaultGrouper(nil, bkt, false, false, nil, blocksMarkedForDeletion, garbageCollectedBlocks, blockMarkedForNoCompact, metadata.NoneFunc)
+		grouper := NewDefaultGrouper(nil, bkt, false, metadata.NoneFunc)
 		groups, err := grouper.Groups(sy.Metas())
 		require.NoError(t, err)
 
@@ -157,27 +156,6 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		assert.Equal(t, "1000@17241709254077376921", groups[1].Key())
 		assert.Equal(t, []ulid.ULID{m4.ULID}, groups[1].IDs())
 	})
-}
-
-func MetricCount(c prometheus.Collector) int {
-	var (
-		mCount int
-		mChan  = make(chan prometheus.Metric)
-		done   = make(chan struct{})
-	)
-
-	go func() {
-		for range mChan {
-			mCount++
-		}
-		close(done)
-	}()
-
-	c.Collect(mChan)
-	close(mChan)
-	<-done
-
-	return mCount
 }
 
 func TestGroupCompactE2E(t *testing.T) {
@@ -205,7 +183,6 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		blocksMaredForNoCompact := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks, 5)
 		require.NoError(t, err)
@@ -214,8 +191,9 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		planner := NewPlanner(logger, []int64{1000, 3000}, noCompactMarkerFilter)
-		grouper := NewDefaultGrouper(logger, bkt, false, false, reg, blocksMarkedForDeletion, garbageCollectedBlocks, blocksMaredForNoCompact, metadata.NoneFunc)
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true)
+		grouper := NewDefaultGrouper(logger, bkt, false, metadata.NoneFunc)
+		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks, prometheus.NewPedanticRegistry())
+		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, metrics)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -223,11 +201,11 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectedBlocks))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
-		assert.Equal(t, 0.0, promtest.ToFloat64(grouper.blocksMarkedForNoCompact))
-		assert.Equal(t, 0, MetricCount(grouper.compactions))
-		assert.Equal(t, 0, MetricCount(grouper.compactionRunsStarted))
-		assert.Equal(t, 0, MetricCount(grouper.compactionRunsCompleted))
-		assert.Equal(t, 0, MetricCount(grouper.compactionFailures))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactions))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
+		assert.Equal(t, 0.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)
@@ -322,30 +300,12 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, bComp.Compact(ctx))
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.garbageCollectedBlocks))
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
-		assert.Equal(t, 1.0, promtest.ToFloat64(grouper.blocksMarkedForNoCompact))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
-		assert.Equal(t, 4, MetricCount(grouper.compactions))
-		assert.Equal(t, 1.0, promtest.ToFloat64(grouper.compactions.WithLabelValues(DefaultGroupKey(metas[0].Thanos))))
-		assert.Equal(t, 1.0, promtest.ToFloat64(grouper.compactions.WithLabelValues(DefaultGroupKey(metas[7].Thanos))))
-		assert.Equal(t, 0.0, promtest.ToFloat64(grouper.compactions.WithLabelValues(DefaultGroupKey(metas[4].Thanos))))
-		assert.Equal(t, 0.0, promtest.ToFloat64(grouper.compactions.WithLabelValues(DefaultGroupKey(metas[5].Thanos))))
-		assert.Equal(t, 4, MetricCount(grouper.compactionRunsStarted))
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsStarted.WithLabelValues(DefaultGroupKey(metas[0].Thanos))))
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsStarted.WithLabelValues(DefaultGroupKey(metas[7].Thanos))))
-		// TODO(bwplotka): Looks like we do some unnecessary loops. Not a major problem but investigate.
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsStarted.WithLabelValues(DefaultGroupKey(metas[4].Thanos))))
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsStarted.WithLabelValues(DefaultGroupKey(metas[5].Thanos))))
-		assert.Equal(t, 4, MetricCount(grouper.compactionRunsCompleted))
-		assert.Equal(t, 2.0, promtest.ToFloat64(grouper.compactionRunsCompleted.WithLabelValues(DefaultGroupKey(metas[0].Thanos))))
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsCompleted.WithLabelValues(DefaultGroupKey(metas[7].Thanos))))
-		// TODO(bwplotka): Looks like we do some unnecessary loops. Not a major problem but investigate.
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsCompleted.WithLabelValues(DefaultGroupKey(metas[4].Thanos))))
-		assert.Equal(t, 3.0, promtest.ToFloat64(grouper.compactionRunsCompleted.WithLabelValues(DefaultGroupKey(metas[5].Thanos))))
-		assert.Equal(t, 4, MetricCount(grouper.compactionFailures))
-		assert.Equal(t, 1.0, promtest.ToFloat64(grouper.compactionFailures.WithLabelValues(DefaultGroupKey(metas[0].Thanos))))
-		assert.Equal(t, 0.0, promtest.ToFloat64(grouper.compactionFailures.WithLabelValues(DefaultGroupKey(metas[7].Thanos))))
-		assert.Equal(t, 0.0, promtest.ToFloat64(grouper.compactionFailures.WithLabelValues(DefaultGroupKey(metas[4].Thanos))))
-		assert.Equal(t, 0.0, promtest.ToFloat64(grouper.compactionFailures.WithLabelValues(DefaultGroupKey(metas[5].Thanos))))
+		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactions))
+		assert.Equal(t, 12.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
+		assert.Equal(t, 11.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
+		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
 
 		_, err = os.Stat(dir)
 		assert.True(t, os.IsNotExist(err), "dir %s should be remove after compaction.", dir)

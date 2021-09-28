@@ -24,11 +24,6 @@ type aggregatedSyncerMetrics struct {
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration *util.HistogramDataCollector // was prometheus.Histogram before
-	compactions               prometheus.Counter
-	compactionRunsStarted     prometheus.Counter
-	compactionRunsCompleted   prometheus.Counter
-	compactionFailures        prometheus.Counter
-	verticalCompactions       prometheus.Counter
 }
 
 // Copied (and modified with Mimir prefix) from Thanos, pkg/compact/compact.go
@@ -66,27 +61,6 @@ func newAggregatedSyncerMetrics(reg prometheus.Registerer) *aggregatedSyncerMetr
 		"Time it took to perform garbage collection iteration.",
 		nil, nil))
 
-	m.compactions = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_compactor_group_compactions_total",
-		Help: "Total number of group compaction attempts that resulted in a new block.",
-	})
-	m.compactionRunsStarted = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_compactor_group_compaction_runs_started_total",
-		Help: "Total number of group compaction attempts.",
-	})
-	m.compactionRunsCompleted = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_compactor_group_compaction_runs_completed_total",
-		Help: "Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.",
-	})
-	m.compactionFailures = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_compactor_group_compactions_failures_total",
-		Help: "Total number of failed group compactions.",
-	})
-	m.verticalCompactions = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Name: "cortex_compactor_group_vertical_compactions_total",
-		Help: "Total number of group compaction attempts that resulted in a new block based on overlapping blocks.",
-	})
-
 	if reg != nil {
 		reg.MustRegister(m.metaSyncDuration, m.garbageCollectionDuration)
 	}
@@ -119,11 +93,4 @@ func (m *aggregatedSyncerMetrics) gatherThanosSyncerMetrics(reg *prometheus.Regi
 	m.garbageCollections.Add(mfm.SumCounters("thanos_compact_garbage_collection_total"))
 	m.garbageCollectionFailures.Add(mfm.SumCounters("thanos_compact_garbage_collection_failures_total"))
 	m.garbageCollectionDuration.Add(mfm.SumHistograms("thanos_compact_garbage_collection_duration_seconds"))
-
-	// These metrics have "group" label, but we sum them all together.
-	m.compactions.Add(mfm.SumCounters("thanos_compact_group_compactions_total"))
-	m.compactionRunsStarted.Add(mfm.SumCounters("thanos_compact_group_compaction_runs_started_total"))
-	m.compactionRunsCompleted.Add(mfm.SumCounters("thanos_compact_group_compaction_runs_completed_total"))
-	m.compactionFailures.Add(mfm.SumCounters("thanos_compact_group_compactions_failures_total"))
-	m.verticalCompactions.Add(mfm.SumCounters("thanos_compact_group_vertical_compactions_total"))
 }

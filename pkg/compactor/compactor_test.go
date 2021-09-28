@@ -218,10 +218,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		# TYPE cortex_compactor_group_compactions_total counter
 		cortex_compactor_group_compactions_total 0
 
-		# HELP cortex_compactor_group_vertical_compactions_total Total number of group compaction attempts that resulted in a new block based on overlapping blocks.
-		# TYPE cortex_compactor_group_vertical_compactions_total counter
-		cortex_compactor_group_vertical_compactions_total 0
-
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
 		cortex_compactor_block_cleanup_failures_total 0
@@ -262,7 +258,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		"cortex_compactor_group_compaction_runs_started_total",
 		"cortex_compactor_group_compactions_failures_total",
 		"cortex_compactor_group_compactions_total",
-		"cortex_compactor_group_vertical_compactions_total",
 		"cortex_compactor_block_cleanup_failures_total",
 		"cortex_compactor_blocks_cleaned_total",
 		"cortex_compactor_blocks_marked_for_deletion_total",
@@ -364,10 +359,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		# TYPE cortex_compactor_group_compactions_total counter
 		cortex_compactor_group_compactions_total 0
 
-		# HELP cortex_compactor_group_vertical_compactions_total Total number of group compaction attempts that resulted in a new block based on overlapping blocks.
-		# TYPE cortex_compactor_group_vertical_compactions_total counter
-		cortex_compactor_group_vertical_compactions_total 0
-
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
 		cortex_compactor_block_cleanup_failures_total 0
@@ -408,7 +399,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		"cortex_compactor_group_compaction_runs_started_total",
 		"cortex_compactor_group_compactions_failures_total",
 		"cortex_compactor_group_compactions_total",
-		"cortex_compactor_group_vertical_compactions_total",
 		"cortex_compactor_block_cleanup_failures_total",
 		"cortex_compactor_blocks_cleaned_total",
 		"cortex_compactor_blocks_marked_for_deletion_total",
