@@ -33,18 +33,18 @@ func TestLabelNamesCardinalityReportSentInBatches(t *testing.T) {
 
 	require.Len(t, mockServer.SentResponses, 4)
 
-	require.Equal(t, []*client.LabelNamesCardinality{
-		{LabelName: "label-a", LabelValues: []string{"val-0", "val-1"}}},
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-a", Values: []string{"val-0", "val-1"}}},
 		mockServer.SentResponses[0].Items)
-	require.Equal(t, []*client.LabelNamesCardinality{
-		{LabelName: "label-a", LabelValues: []string{"val-2"}},
-		{LabelName: "label-b", LabelValues: []string{"val-0"}}},
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-a", Values: []string{"val-2"}},
+		{LabelName: "label-b", Values: []string{"val-0"}}},
 		mockServer.SentResponses[1].Items)
-	require.Equal(t, []*client.LabelNamesCardinality{
-		{LabelName: "label-b", LabelValues: []string{"val-1", "val-2"}}},
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-b", Values: []string{"val-1", "val-2"}}},
 		mockServer.SentResponses[2].Items)
-	require.Equal(t, []*client.LabelNamesCardinality{
-		{LabelName: "label-b", LabelValues: []string{"val-3"}}},
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-b", Values: []string{"val-3"}}},
 		mockServer.SentResponses[3].Items)
 }
 
@@ -52,13 +52,13 @@ func TestExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) {
 	for _, tc := range []struct {
 		description     string
 		existingLabels  map[string][]string
-		expectedMessage []*client.LabelNamesCardinality
+		expectedMessage []*client.LabelValues
 	}{
 		{
 			"all values returned in a single message even if only one label",
 			map[string][]string{"label-a": {"val-0"}},
-			[]*client.LabelNamesCardinality{
-				{LabelName: "label-a", LabelValues: []string{"val-0"}},
+			[]*client.LabelValues{
+				{LabelName: "label-a", Values: []string{"val-0"}},
 			},
 		},
 		{
@@ -67,9 +67,9 @@ func TestExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) {
 				"label-a": {"val-0", "val-1", "val-2"},
 				"label-b": {"val-0", "val-1", "val-2", "val-3"},
 			},
-			[]*client.LabelNamesCardinality{
-				{LabelName: "label-a", LabelValues: []string{"val-0", "val-1", "val-2"}},
-				{LabelName: "label-b", LabelValues: []string{"val-0", "val-1", "val-2", "val-3"}},
+			[]*client.LabelValues{
+				{LabelName: "label-a", Values: []string{"val-0", "val-1", "val-2"}},
+				{LabelName: "label-b", Values: []string{"val-0", "val-1", "val-2", "val-3"}},
 			},
 		},
 	} {
@@ -110,7 +110,9 @@ type MockLabelNamesCardinalityServer struct {
 }
 
 func (m *MockLabelNamesCardinalityServer) Send(response *client.LabelNamesCardinalityResponse) error {
-	m.SentResponses = append(m.SentResponses, *response)
+	items := make([]*client.LabelValues, len(response.Items))
+	copy(items, response.Items)
+	m.SentResponses = append(m.SentResponses, client.LabelNamesCardinalityResponse{Items: items})
 	return nil
 }
 

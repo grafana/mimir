@@ -74,5 +74,5 @@ func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) err
 }
 
 func (m *IngesterServerMock) LabelNamesCardinality(_ *LabelNamesCardinalityRequest, _ Ingester_LabelNamesCardinalityServer) error {
-	return errors.New("not implemented ")
+	return errors.New("not implemented")
 }

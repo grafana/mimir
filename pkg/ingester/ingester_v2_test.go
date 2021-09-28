@@ -1349,17 +1349,17 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 	tests := []struct {
 		testName string
 		matchers []*client.LabelMatcher
-		expected []*client.LabelNamesCardinality
+		expected []*client.LabelValues
 	}{
 		{testName: "expected all label with values",
 			matchers: []*client.LabelMatcher{},
-			expected: []*client.LabelNamesCardinality{
-				{LabelName: "status", LabelValues: []string{"200", "300", "500"}},
-				{LabelName: "env", LabelValues: []string{"prod"}}},
+			expected: []*client.LabelValues{
+				{LabelName: "status", Values: []string{"200", "300", "500"}},
+				{LabelName: "env", Values: []string{"prod"}}},
 		},
 		{testName: "expected label values only from `metric_0`",
 			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_0"}},
-			expected: []*client.LabelNamesCardinality{{LabelName: "status", LabelValues: []string{"200", "500"}}},
+			expected: []*client.LabelValues{{LabelName: "status", Values: []string{"200", "500"}}},
 		},
 	}
 
@@ -1397,13 +1397,13 @@ func pushSeriesToIngester(t *testing.T, series []struct {
 	return ctx
 }
 
-func extractItemsWithSortedValues(responses []client.LabelNamesCardinalityResponse) []*client.LabelNamesCardinality {
-	var items []*client.LabelNamesCardinality
+func extractItemsWithSortedValues(responses []client.LabelNamesCardinalityResponse) []*client.LabelValues {
+	var items []*client.LabelValues
 	for _, res := range responses {
 		items = append(items, res.Items...)
 	}
 	for _, it := range items {
-		sort.Strings(it.LabelValues)
+		sort.Strings(it.Values)
 	}
 	return items
 }
