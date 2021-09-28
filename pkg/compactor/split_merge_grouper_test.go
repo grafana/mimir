@@ -62,7 +62,7 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			grouper := NewSplitAndMergeGrouper("test", nil, ranges, 1, testCase.ownJob, log.NewNopLogger(), nil, nil)
+			grouper := NewSplitAndMergeGrouper("test", nil, ranges, 1, testCase.ownJob, log.NewNopLogger())
 			res, err := grouper.Groups(blocks)
 			require.NoError(t, err)
 			assert.Len(t, res, testCase.expectedGroups)

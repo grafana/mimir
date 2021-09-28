@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -38,10 +37,6 @@ type SplitAndMergeGrouper struct {
 
 	// Number of shards to split source blocks into.
 	shardCount uint32
-
-	// Metrics.
-	garbageCollectedBlocks  prometheus.Counter
-	blocksMarkedForDeletion prometheus.Counter
 }
 
 // NewSplitAndMergeGrouper makes a new SplitAndMergeGrouper. The provided ranges must be sorted.
@@ -52,18 +47,14 @@ func NewSplitAndMergeGrouper(
 	shardCount uint32,
 	ownJob ownJobFunc,
 	logger log.Logger,
-	garbageCollectedBlocks prometheus.Counter,
-	blocksMarkedForDeletion prometheus.Counter,
 ) *SplitAndMergeGrouper {
 	return &SplitAndMergeGrouper{
-		userID:                  userID,
-		bucket:                  bucket,
-		ranges:                  ranges,
-		ownJob:                  ownJob,
-		shardCount:              shardCount,
-		logger:                  logger,
-		garbageCollectedBlocks:  garbageCollectedBlocks,
-		blocksMarkedForDeletion: blocksMarkedForDeletion,
+		userID:     userID,
+		bucket:     bucket,
+		ranges:     ranges,
+		ownJob:     ownJob,
+		shardCount: shardCount,
+		logger:     logger,
 	}
 }
 
@@ -112,17 +103,8 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 			externalLabels,
 			resolution,
 			false, // No malformed index.
-			true,  // Enable vertical compaction.
 			// TODO job.splitEnabled,
 			// TODO g.splitNumShards,
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Ignored metrics: total number of group compactions.
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Ignored metrics: total number of group compactions started.
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Ignored metrics: total number of group compactions completed.
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Ignored metrics: total number of group compactions failed.
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Ignored metrics: total number of vertical compactions.
-			g.garbageCollectedBlocks,
-			g.blocksMarkedForDeletion,
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Do not track blocks marked for no-compact cause it's not supported by Mimir yet.
 			metadata.NoneFunc,
 		)
 		if err != nil {
