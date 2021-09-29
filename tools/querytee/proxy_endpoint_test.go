@@ -6,7 +6,11 @@
 package querytee
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -110,6 +114,50 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			assert.Equal(t, testData.expected, actual.backend)
 		})
 	}
+}
+
+func Test_ProxyEndpoint_Post(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			body, err := io.ReadAll(r.Body)
+			require.Equal(t, "this-is-some-payload", string(body))
+			require.NoError(t, err)
+		}
+		_, _ = w.Write([]byte("ok"))
+	})
+	backend1 := httptest.NewServer(handler)
+	defer backend1.Close()
+	backendURL1, err := url.Parse(backend1.URL)
+	require.NoError(t, err)
+
+	backend2 := httptest.NewServer(handler)
+	defer backend2.Close()
+	backendURL2, err := url.Parse(backend2.URL)
+	require.NoError(t, err)
+
+	var backends = []*ProxyBackend{
+		NewProxyBackend("backend-1", backendURL1, time.Second, true),
+		NewProxyBackend("backend-2", backendURL2, time.Second, false),
+	}
+	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
+
+	// test GET request
+	w := httptest.NewRecorder()
+	req, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+	require.NoError(t, err)
+	endpoint.ServeHTTP(w, req)
+	require.Equal(t, "ok", w.Body.String())
+	require.Equal(t, 200, w.Code)
+
+	// test POST request
+	strings := strings.NewReader("this-is-some-payload")
+	w = httptest.NewRecorder()
+	req, err = http.NewRequest("POST", "http://test/api/v1/test", strings)
+	require.NoError(t, err)
+	endpoint.ServeHTTP(w, req)
+	require.Equal(t, "ok", w.Body.String())
+	require.Equal(t, 200, w.Code)
+
 }
 
 func Test_backendResponse_succeeded(t *testing.T) {

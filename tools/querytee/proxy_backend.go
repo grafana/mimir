@@ -7,6 +7,7 @@ package querytee
 
 import (
 	"context"
+	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
@@ -56,8 +57,8 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	}
 }
 
-func (b *ProxyBackend) ForwardRequest(orig *http.Request) (int, []byte, error) {
-	req, err := b.createBackendRequest(orig)
+func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.Reader) (int, []byte, error) {
+	req, err := b.createBackendRequest(orig, body)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -65,8 +66,8 @@ func (b *ProxyBackend) ForwardRequest(orig *http.Request) (int, []byte, error) {
 	return b.doBackendRequest(req)
 }
 
-func (b *ProxyBackend) createBackendRequest(orig *http.Request) (*http.Request, error) {
-	req, err := http.NewRequest(orig.Method, orig.URL.String(), nil)
+func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequest(orig.Method, orig.URL.String(), body)
 	if err != nil {
 		return nil, err
 	}

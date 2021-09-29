@@ -6,7 +6,10 @@
 package querytee
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"sync"
@@ -80,19 +83,29 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 	var (
 		wg = sync.WaitGroup{}
 
-		responses    = make([]*backendResponse, 0, len(p.backends))
-		responsesMtx = sync.Mutex{}
+		requestBodyReaders = make([]io.Reader, len(p.backends))
+		responses          = make([]*backendResponse, 0, len(p.backends))
+		responsesMtx       = sync.Mutex{}
 	)
-	wg.Add(len(p.backends))
 
-	for _, b := range p.backends {
+	if r.Body != nil {
+		var requestBody bytes.Buffer
+		if _, err := requestBody.ReadFrom(r.Body); err == nil {
+			for pos := range requestBodyReaders {
+				requestBodyReaders[pos] = ioutil.NopCloser(bytes.NewReader(requestBody.Bytes()))
+			}
+		}
+	}
+
+	wg.Add(len(p.backends))
+	for pos, b := range p.backends {
 		b := b
 
-		go func() {
+		go func(pos int) {
 			defer wg.Done()
 
 			start := time.Now()
-			status, body, err := b.ForwardRequest(r)
+			status, body, err := b.ForwardRequest(r, requestBodyReaders[pos])
 			elapsed := time.Since(start)
 
 			res := &backendResponse{
@@ -119,7 +132,7 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 			}
 
 			resCh <- res
-		}()
+		}(pos)
 	}
 
 	// Wait until all backend requests completed.
