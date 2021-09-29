@@ -238,6 +238,7 @@
     * `-memberlist.tls-server-name`
     * `-memberlist.tls-insecure-skip-verify`
 * [FEATURE] Ruler: added `local` backend support to the ruler storage configuration under the `-ruler-storage.` flag prefix. #3932
+* [ENHANCEMENT] Store attributes in the metadata cache when configure (`blocks-storage.bucket-store.metadata-cache.backend`) instead of the chunk cache. #270
 * [ENHANCEMENT] Upgraded Docker base images to `alpine:3.13`. #4042
 * [ENHANCEMENT] Blocks storage: reduce ingester memory by eliminating series reference cache. #3951
 * [ENHANCEMENT] Ruler: optimized `<prefix>/api/v1/rules` and `<prefix>/api/v1/alerts` when ruler sharding is enabled. #3916
