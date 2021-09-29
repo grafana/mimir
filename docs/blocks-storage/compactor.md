@@ -227,4 +227,9 @@ compactor:
     # Timeout for waiting on compactor to become ACTIVE in the ring.
     # CLI flag: -compactor.ring.wait-active-instance-timeout
     [wait_active_instance_timeout: <duration> | default = 10m]
+
+  # The compaction strategy to use. Supported values are: default,
+  # split-and-merge.
+  # CLI flag: -compactor.compaction-strategy
+  [compaction_strategy: <string> | default = "default"]
 ```

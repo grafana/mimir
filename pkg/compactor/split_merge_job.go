@@ -21,6 +21,8 @@ const (
 
 // job holds a compaction job planned by the split merge compactor.
 type job struct {
+	userID string
+
 	// Source blocks that should be compacted together when running this job.
 	blocksGroup
 
@@ -37,20 +39,18 @@ type job struct {
 	shardID string
 }
 
-// TODO remove the nolint directive once will be used.
-//nolint:unused
-func (j *job) hash(userID string) uint32 {
-	body := fmt.Sprintf("%s-%s-%d-%d-%s", userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
+func (j *job) hash() uint32 {
+	body := fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
 
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(body))
 	return hasher.Sum32()
 }
 
-// conflicts returns false if the two jobs cannot be planned at the same time.
+// conflicts returns true if the two jobs cannot be planned at the same time.
 func (j *job) conflicts(other *job) bool {
-	// Never conflict if time ranges don't overlap.
-	if !j.overlaps(other.blocksGroup) {
+	// Never conflict if related to different users or if time ranges don't overlap.
+	if j.userID != other.userID || !j.overlaps(other.blocksGroup) {
 		return false
 	}
 

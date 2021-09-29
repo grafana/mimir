@@ -64,7 +64,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		flatBlocks = append(flatBlocks, b)
 	}
 
-	for _, job := range planCompaction(flatBlocks, g.ranges, g.shardCount) {
+	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.shardCount) {
 		// Skip any job which doesn't belong to this compactor instance.
 		if ok, err := g.ownJob(job); err != nil {
 			return nil, err
@@ -87,25 +87,15 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
 		thanosGroup, err := NewGroup(
-			log.With(g.logger,
-				"groupKey",
-				groupKey,
-				"rangeStart",
-				job.rangeStartTime().String(),
-				"rangeEnd",
-				job.rangeEndTime().String(),
-				"externalLabels",
-				externalLabels,
-				"downsampleResolution",
-				resolution),
+			log.With(g.logger, "groupKey", groupKey, "rangeStart", job.rangeStartTime().String(), "rangeEnd", job.rangeEndTime().String()),
 			g.bucket,
 			groupKey,
 			externalLabels,
 			resolution,
 			false, // No malformed index.
-			// TODO job.splitEnabled,
-			// TODO g.splitNumShards,
 			metadata.NoneFunc,
+			job.stage == stageSplit,
+			g.shardCount,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "create compaction group")
@@ -146,7 +136,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 // planCompaction analyzes the input blocks and returns a list of compaction jobs that can be
 // run concurrently. Each returned job may belong either to this compactor instance or another one
 // in the cluster, so the caller should check if they belong to their instance before running them.
-func planCompaction(blocks []*metadata.Meta, ranges []int64, shardCount uint32) (jobs []*job) {
+func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shardCount uint32) (jobs []*job) {
 	if len(blocks) == 0 || len(ranges) == 0 {
 		return nil
 	}
@@ -165,7 +155,7 @@ func planCompaction(blocks []*metadata.Meta, ranges []int64, shardCount uint32) 
 
 		for _, tr := range ranges {
 		nextJob:
-			for _, job := range planCompactionByRange(mainBlocks, tr, tr == ranges[0], shardCount) {
+			for _, job := range planCompactionByRange(userID, mainBlocks, tr, tr == ranges[0], shardCount) {
 				// We can plan a job only if it doesn't conflict with other jobs already planned.
 				// Since we run the planning for each compaction range in increasing order, we guarantee
 				// that a job for the current time range is planned only if there's no other job for the
@@ -211,14 +201,14 @@ func planCompaction(blocks []*metadata.Meta, ranges []int64, shardCount uint32) 
 
 // planCompactionByRange analyze the input blocks and returns a list of compaction jobs to
 // compact blocks for the given compaction time range. Input blocks MUST be sorted by MinTime.
-func planCompactionByRange(blocks []*metadata.Meta, tr int64, isSmallestRange bool, shardCount uint32) (jobs []*job) {
+func planCompactionByRange(userID string, blocks []*metadata.Meta, tr int64, isSmallestRange bool, shardCount uint32) (jobs []*job) {
 	groups := groupBlocksByRange(blocks, tr)
 
 	for _, group := range groups {
 		// If this is the smallest time range and there's any non-split block,
 		// then we should plan a job to split blocks.
 		if isSmallestRange {
-			if splitJobs := planSplitting(group, shardCount); len(splitJobs) > 0 {
+			if splitJobs := planSplitting(userID, group, shardCount); len(splitJobs) > 0 {
 				jobs = append(jobs, splitJobs...)
 				continue
 			}
@@ -234,6 +224,7 @@ func planCompactionByRange(blocks []*metadata.Meta, tr int64, isSmallestRange bo
 			}
 
 			jobs = append(jobs, &job{
+				userID:  userID,
 				stage:   stageMerge,
 				shardID: shardID,
 				blocksGroup: blocksGroup{
@@ -250,7 +241,7 @@ func planCompactionByRange(blocks []*metadata.Meta, tr int64, isSmallestRange bo
 
 // planSplitting returns a job to split the blocks in the input group or nil if there's nothing to do because
 // all blocks in the group have already been split.
-func planSplitting(group blocksGroup, shardCount uint32) []*job {
+func planSplitting(userID string, group blocksGroup, shardCount uint32) []*job {
 	blocks := group.getNonShardedBlocks()
 	if len(blocks) == 0 {
 		return nil
@@ -266,6 +257,7 @@ func planSplitting(group blocksGroup, shardCount uint32) []*job {
 
 		if jobs[shardID] == nil {
 			jobs[shardID] = &job{
+				userID:  userID,
 				stage:   stageSplit,
 				shardID: shardIDLabelValue(shardID, shardCount),
 				blocksGroup: blocksGroup{

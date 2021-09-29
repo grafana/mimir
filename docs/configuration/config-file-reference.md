@@ -4178,6 +4178,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -compactor.blocks-retention-period
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
+# The number of shards to use when splitting blocks. This config option is used
+# only when split-and-merge compaction strategy is in use.
+# CLI flag: -compactor.split-and-merge-shards
+[compactor_split_and_merge_shards: <int> | default = 4]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.
@@ -5176,6 +5181,11 @@ sharding_ring:
   # Timeout for waiting on compactor to become ACTIVE in the ring.
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
+
+# The compaction strategy to use. Supported values are: default,
+# split-and-merge.
+# CLI flag: -compactor.compaction-strategy
+[compaction_strategy: <string> | default = "default"]
 ```
 
 ### `store_gateway_config`

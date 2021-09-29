@@ -101,6 +101,7 @@ type Limits struct {
 
 	// Compactor.
 	CompactorBlocksRetentionPeriod model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
+	CompactorSplitAndMergeShards   int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -179,6 +180,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 0, "Maximum number of rule groups per-tenant. 0 to disable.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. 0 to disable.")
+	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 4, "The number of shards to use when splitting blocks. This config option is used only when split-and-merge compaction strategy is in use.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The default tenant's shard size when the shuffle-sharding strategy is used. Must be set when the store-gateway sharding is enabled with the shuffle-sharding strategy. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
@@ -511,6 +513,11 @@ func (o *Overrides) EvaluationDelay(userID string) time.Duration {
 // CompactorBlocksRetentionPeriod returns the retention period for a given user.
 func (o *Overrides) CompactorBlocksRetentionPeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CompactorBlocksRetentionPeriod)
+}
+
+// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
+func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
+	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.
