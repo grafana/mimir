@@ -62,11 +62,11 @@ type BlocksCleaner struct {
 	tenantBucketIndexLastUpdate *prometheus.GaugeVec
 }
 
-func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, usersScanner *mimir_tsdb.UsersScanner, cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
 		cfg:          cfg,
 		bucketClient: bucketClient,
-		usersScanner: usersScanner,
+		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
 		cfgProvider:  cfgProvider,
 		logger:       log.With(logger, "component", "cleaner"),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
