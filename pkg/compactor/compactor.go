@@ -53,16 +53,11 @@ var (
 	errInvalidBlockRanges = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
 	RingOp                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
-	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer, blocksMarkedForDeletion prometheus.Counter, garbageCollectedBlocks prometheus.Counter) Grouper {
+	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) Grouper {
 		return NewDefaultGrouper(
 			logger,
 			bkt,
 			false, // Do not accept malformed indexes
-			true,  // Enable vertical compaction
-			reg,
-			blocksMarkedForDeletion,
-			garbageCollectedBlocks,
-			prometheus.NewCounter(prometheus.CounterOpts{}), // Do not track blocks marked for no-compact cause it's not supported by Mimir yet.
 			metadata.NoneFunc)
 	}
 
@@ -84,8 +79,6 @@ type BlocksGrouperFactory func(
 	bkt objstore.Bucket,
 	logger log.Logger,
 	reg prometheus.Registerer,
-	blocksMarkedForDeletion prometheus.Counter,
-	garbageCollectedBlocks prometheus.Counter,
 ) Grouper
 
 // BlocksCompactorFactory builds and returns the compactor and planner to use to compact a tenant's blocks.
@@ -224,6 +217,9 @@ type MultitenantCompactor struct {
 	blocksMarkedForDeletion        prometheus.Counter
 	garbageCollectedBlocks         prometheus.Counter
 
+	// Metrics shared across all BucketCompactor instances.
+	bucketCompactorMetrics *BucketCompactorMetrics
+
 	// TSDB syncer metrics
 	syncerMetrics *aggregatedSyncerMetrics
 }
@@ -321,6 +317,8 @@ func newMultitenantCompactor(
 			Help: "Total number of blocks marked for deletion by compactor.",
 		}),
 	}
+
+	c.bucketCompactorMetrics = NewBucketCompactorMetrics(c.blocksMarkedForDeletion, c.garbageCollectedBlocks, registerer)
 
 	if len(compactorCfg.EnabledTenants) > 0 {
 		level.Info(c.logger).Log("msg", "compactor using enabled users", "enabled", strings.Join(compactorCfg.EnabledTenants, ", "))
@@ -654,13 +652,14 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
-		c.blocksGrouperFactory(ctx, c.compactorCfg, bucket, ulogger, reg, c.blocksMarkedForDeletion, c.garbageCollectedBlocks),
+		c.blocksGrouperFactory(ctx, c.compactorCfg, bucket, ulogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
+		c.bucketCompactorMetrics,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")
