@@ -231,7 +231,7 @@ type Ingester struct {
 	// Rate of pushed samples. Only used by V2-ingester to limit global samples push rate.
 	ingestionRate        *util_math.EwmaRate
 	inflightPushRequests atomic.Int64
-	cardinalityReporter  CardinalityReporter
+	cardinalityReporter  cardinalityReporter
 }
 
 // ChunkStore is the interface we need to store chunks
@@ -312,7 +312,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
-	i.cardinalityReporter = CardinalityReporter{}
+	i.cardinalityReporter = cardinalityReporter{}
 	i.BasicService = services.NewBasicService(i.starting, i.loop, i.stopping)
 	return i, nil
 }

@@ -22,7 +22,7 @@ import (
 // 3. label-b: [val-3]
 func TestLabelNamesCardinalityReportSentInBatches(t *testing.T) {
 
-	analyzer := CardinalityReporter{}
+	analyzer := cardinalityReporter{}
 	existingLabels := map[string][]string{
 		"label-a": {"val-0", "val-1", "val-2"},
 		"label-b": {"val-0", "val-1", "val-2", "val-3"},
@@ -74,7 +74,7 @@ func TestExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) {
 		},
 	} {
 		t.Run(tc.description, func(t *testing.T) {
-			analyzer := CardinalityReporter{}
+			analyzer := cardinalityReporter{}
 			mockServer := MockLabelNamesCardinalityServer{context: context.Background()}
 			var server client.Ingester_LabelNamesCardinalityServer = &mockServer
 

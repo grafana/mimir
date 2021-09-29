@@ -10,17 +10,21 @@ import (
 	"github.com/grafana/mimir/pkg/util/math"
 )
 
-type CardinalityReporter struct {
+type cardinalityReporter struct {
 }
 
-//labelNamesCardinality streams in batches the labels and values of these labels that match the matchers.
+// labelNamesCardinality streams in batches the labels and values of the labels matching the `matchers` param.
 // The count of label values per batch is defined in `batchSize` param. One label can be split into a few batches if the count of values is greater than `batchSize`.
 // For example: if `batchSize` is 100K and `label-a` has 250K values, these values will be sent in three batches:
 // batch-1. {LabelName:'label-a', LabelValues:[first 100K values]}
 // batch-2. {LabelName:'label-a', LabelValues:[second 100K values]}
-// batch-3. {LabelName:'label-a', LabelValues:[rest 50K values]} + any other labels with values but the total count of values in this batch must not be greater then 100K
-func (c CardinalityReporter) labelNamesCardinality(index tsdb.IndexReader, matchers []*labels.Matcher,
-	batchSize int, server *client.Ingester_LabelNamesCardinalityServer) error {
+// batch-3. {LabelName:'label-a', LabelValues:[rest 50K values]} + any other labels with values but the total count of values in this batch must not be greater than 100K
+func (c cardinalityReporter) labelNamesCardinality(
+	index tsdb.IndexReader,
+	matchers []*labels.Matcher,
+	batchSize int,
+	server *client.Ingester_LabelNamesCardinalityServer,
+) error {
 	labelNames, err := index.LabelNames(matchers...)
 	if err != nil {
 		return err
