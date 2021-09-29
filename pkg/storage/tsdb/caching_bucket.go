@@ -145,6 +145,9 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	if chunksCache != nil {
 		cachingConfigured = true
 		chunksCache = cache.NewTracingCache(chunksCache)
+		if metadataCache == nil {
+			metadataCache = chunksCache
+		}
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, metadataCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
