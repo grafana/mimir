@@ -90,7 +90,7 @@ type MetadataCacheConfig struct {
 	BlockIndexAttributesTTL time.Duration `yaml:"block_index_attributes_ttl"`
 	BucketIndexContentTTL   time.Duration `yaml:"bucket_index_content_ttl"`
 	BucketIndexMaxSize      int           `yaml:"bucket_index_max_size_bytes"`
-	UseLRU                  bool          `yaml:"use_lru"`
+	LRUEnabled                  bool          `yaml:"lru_enabled"`
 	LRUMaxItems             int           `yaml:"lru_max_items"`
 }
 
