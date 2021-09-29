@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/thanos-io/thanos/blob/2be2db775cbc9e1854aada8dfa7ba66307d90001/pkg/block/fetcher_test.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Thanos Authors.
+
 package compactor
 
 import (
