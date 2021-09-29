@@ -32,6 +32,7 @@ service Ingester {
   rpc TransferChunks(stream TimeSeriesChunk) returns (TransferChunksResponse) {};
   // LabelNamesCardinality provides all values for each label that matches the matchers, except `__name__` label
   rpc LabelNamesCardinality(LabelNamesCardinalityRequest) returns (stream LabelNamesCardinalityResponse) {};
+  rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValueCardinalityResponse) {};
 }
 
 message LabelNamesCardinalityRequest {
@@ -45,6 +46,22 @@ message LabelNamesCardinalityResponse {
 message LabelValues {
   string label_name = 1;
   repeated string values = 2;
+}
+
+message LabelValuesCardinalityRequest {
+  repeated string label_names = 1;
+  LabelMatchers matchers = 2;
+}
+
+message LabelValueCardinalityResponse {
+  int64 series_count_total = 1;
+  repeated LabelValueCardinality items = 2;
+}
+
+message LabelValueCardinality {
+  string label_name = 1;
+  string label_value = 2;
+  int64 series_count = 3;
 }
 
 message ReadRequest {
