@@ -71,6 +71,8 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 }
 
 func TestPlanCompaction(t *testing.T) {
+	const userID = "user-1"
+
 	block1 := ulid.MustNew(1, nil) // Hash: 283204220
 	block2 := ulid.MustNew(2, nil) // Hash: 444110359
 	block3 := ulid.MustNew(3, nil) // Hash: 3253786510
@@ -99,7 +101,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -115,7 +117,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -132,7 +134,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -154,7 +156,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
 					blocks: []*metadata.Meta{
@@ -162,7 +164,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -184,28 +186,28 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 					},
 				}},
-				{stage: stageSplit, shardID: "1_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_2", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
 					},
 				}},
-				{stage: stageSplit, shardID: "1_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -228,7 +230,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 30, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_2"}}},
 			},
 			expected: []*job{
-				{stage: stageMerge, shardID: "0_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -236,7 +238,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_2"}}},
 					},
 				}},
-				{stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -244,7 +246,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_2"}}},
 					},
 				}},
-				{stage: stageMerge, shardID: "0_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_2", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
 					blocks: []*metadata.Meta{
@@ -268,7 +270,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block6, MinTime: 20, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_2"}}},
 			},
 			expected: []*job{
-				{stage: stageMerge, shardID: "0_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -276,7 +278,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_2"}}},
 					},
 				}},
-				{stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "1_of_2", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -309,7 +311,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
 					blocks: []*metadata.Meta{
@@ -317,7 +319,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 					},
 				}},
-				{stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 70,
 					rangeEnd:   80,
 					blocks: []*metadata.Meta{
@@ -325,7 +327,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block9, MinTime: 75, MaxTime: 80}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
 					},
 				}},
-				{stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
 					blocks: []*metadata.Meta{
@@ -355,7 +357,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
 			},
 			expected: []*job{
-				{stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 80,
 					rangeEnd:   120,
 					blocks: []*metadata.Meta{
@@ -375,14 +377,14 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 30, MaxTime: 40}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   40,
 					blocks: []*metadata.Meta{
@@ -401,7 +403,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 20, MaxTime: 40}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
 			},
 			expected: []*job{
-				{stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   40,
 					blocks: []*metadata.Meta{
@@ -423,7 +425,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block5, MinTime: 80, MaxTime: 120}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
 			},
 			expected: []*job{
-				{stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageMerge, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 80,
 					rangeEnd:   120,
 					blocks: []*metadata.Meta{
@@ -443,7 +445,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{MinTime: 13, MaxTime: 15}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 0,
 					rangeEnd:   10,
 					blocks: []*metadata.Meta{
@@ -463,14 +465,14 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "b"}}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -478,7 +480,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{"another_group": "a"}}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -497,14 +499,14 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel2}}},
 			},
 			expected: []*job{
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
 						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 10, MaxTime: 20}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -512,7 +514,7 @@ func TestPlanCompaction(t *testing.T) {
 						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
 					},
 				}},
-				{stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
+				{userID: userID, stage: stageSplit, shardID: "0_of_1", blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
@@ -525,7 +527,7 @@ func TestPlanCompaction(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actual := planCompaction(testData.blocks, testData.ranges, testData.shardCount)
+			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.shardCount)
 
 			// Print the actual jobs (useful for debugging if tests fail).
 			t.Logf("got %d jobs:", len(actual))
@@ -539,6 +541,8 @@ func TestPlanCompaction(t *testing.T) {
 }
 
 func TestPlanSplitting(t *testing.T) {
+	const userID = "user-1"
+
 	block1 := ulid.MustNew(1, nil) // Hash: 283204220
 	block2 := ulid.MustNew(2, nil) // Hash: 444110359
 	block3 := ulid.MustNew(3, nil) // Hash: 3253786510
@@ -586,6 +590,7 @@ func TestPlanSplitting(t *testing.T) {
 							{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 						},
 					},
+					userID:  userID,
 					stage:   stageSplit,
 					shardID: "1_of_2",
 				},
@@ -613,6 +618,7 @@ func TestPlanSplitting(t *testing.T) {
 							{BlockMeta: tsdb.BlockMeta{ULID: block3}},
 						},
 					},
+					userID:  userID,
 					stage:   stageSplit,
 					shardID: "0_of_2",
 				}, {
@@ -624,6 +630,7 @@ func TestPlanSplitting(t *testing.T) {
 							{BlockMeta: tsdb.BlockMeta{ULID: block4}},
 						},
 					},
+					userID:  userID,
 					stage:   stageSplit,
 					shardID: "1_of_2",
 				},
@@ -633,7 +640,7 @@ func TestPlanSplitting(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.ElementsMatch(t, testData.expected, planSplitting(testData.blocks, testData.shardCount))
+			assert.ElementsMatch(t, testData.expected, planSplitting(userID, testData.blocks, testData.shardCount))
 		})
 	}
 }

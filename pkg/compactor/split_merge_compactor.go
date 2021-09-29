@@ -23,7 +23,7 @@ func ConfigureSplitAndMergeCompactor(cfg *Config) {
 			bkt,
 			cfg.BlockRanges.ToMilliseconds(),
 			uint32(cfgProvider.CompactorSplitAndMergeShards(userID)),
-			createOwnJobFunc(userID, ring, instanceAddr),
+			createOwnJobFunc(ring, instanceAddr),
 			logger)
 	}
 
@@ -39,7 +39,7 @@ func ConfigureSplitAndMergeCompactor(cfg *Config) {
 	}
 }
 
-func createOwnJobFunc(userID string, ring *ring.Ring, instanceAddr string) ownJobFunc {
+func createOwnJobFunc(ring *ring.Ring, instanceAddr string) ownJobFunc {
 	return func(job *job) (bool, error) {
 		// If sharding is disabled it means we're expected to run only 1 replica of the compactor
 		// and so this compactor instance should own all jobs.
@@ -48,7 +48,7 @@ func createOwnJobFunc(userID string, ring *ring.Ring, instanceAddr string) ownJo
 		}
 
 		// Check whether this compactor instance owns the job.
-		rs, err := ring.Get(job.hash(userID), RingOp, nil, nil, nil)
+		rs, err := ring.Get(job.hash(), RingOp, nil, nil, nil)
 		if err != nil {
 			return false, err
 		}
