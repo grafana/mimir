@@ -94,8 +94,6 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 				job.rangeStartTime().String(),
 				"rangeEnd",
 				job.rangeEndTime().String(),
-				"externalLabels",
-				externalLabels,
 				"downsampleResolution",
 				resolution),
 			g.bucket,
@@ -103,9 +101,9 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 			externalLabels,
 			resolution,
 			false, // No malformed index.
-			// TODO job.splitEnabled,
-			// TODO g.splitNumShards,
 			metadata.NoneFunc,
+			job.stage == stageSplit,
+			g.shardCount,
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "create compaction group")

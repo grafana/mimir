@@ -24,7 +24,7 @@ Given the list of all blocks in the storage:
             - Output: up to `numShards` jobs (each job contain the set of blocks to be merged together when running CompactWithSplitting())
           - How can we know if the compactor instance should process a job or not?
             - A job is owned if `hash(tenant + stage + time range + shard ID)` belongs to the compactor tokens
-      - If the previous check has not produced any job AT ALL it means all the blocks for the "smallest time range" are already splitted
+      - If the previous check has not produced any job AT ALL it means all the blocks for the "smallest time range" are already split
         (or there are no blocks at all), so we can proceed with the merging stage:
         - Group blocks by "shard ID" (taking in account the case a block doesn't have the shard ID)
         - Create a job for each group that contains 2+ blocks (because they need to be merged together)

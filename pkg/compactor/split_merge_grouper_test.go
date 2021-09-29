@@ -19,7 +19,7 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 	ranges := []int64{20, 40}
 
 	// Mock some blocks so that each block belongs to a different compactable time range
-	// and all of them needs to be splitted.
+	// and all of them needs to be split.
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	block3 := ulid.MustNew(3, nil)
@@ -214,7 +214,7 @@ func TestPlanCompaction(t *testing.T) {
 				}},
 			},
 		},
-		"should merge splitted blocks that can be compacted on the 2nd range only": {
+		"should merge split blocks that can be compacted on the 2nd range only": {
 			ranges:     []int64{10, 20},
 			shardCount: 2,
 			blocks: []*metadata.Meta{
@@ -254,7 +254,7 @@ func TestPlanCompaction(t *testing.T) {
 				}},
 			},
 		},
-		"should not split non-splitted blocks if they're > smallest compaction range (do not split historical blocks after enabling splitting)": {
+		"should not split non-split blocks if they're > smallest compaction range (do not split historical blocks after enabling splitting)": {
 			ranges:     []int64{10, 20},
 			shardCount: 2,
 			blocks: []*metadata.Meta{
@@ -290,11 +290,11 @@ func TestPlanCompaction(t *testing.T) {
 			ranges:     []int64{10, 20},
 			shardCount: 1,
 			blocks: []*metadata.Meta{
-				// To be splitted on 1st level range [0, 10]
+				// To be split on 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 				// Not compacted because on 2nd level because the range [0, 20]
-				// has other 1st level range groups to be splitted first
+				// has other 1st level range groups to be split first
 				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
 				// To be compacted on 2nd level range [20, 40]
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "0_of_1"}}},
