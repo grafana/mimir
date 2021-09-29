@@ -87,15 +87,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
 		thanosGroup, err := NewGroup(
-			log.With(g.logger,
-				"groupKey",
-				groupKey,
-				"rangeStart",
-				job.rangeStartTime().String(),
-				"rangeEnd",
-				job.rangeEndTime().String(),
-				"downsampleResolution",
-				resolution),
+			log.With(g.logger, "groupKey", groupKey, "rangeStart", job.rangeStartTime().String(), "rangeEnd", job.rangeEndTime().String()),
 			g.bucket,
 			groupKey,
 			externalLabels,
