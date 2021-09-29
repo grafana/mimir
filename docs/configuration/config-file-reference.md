@@ -4786,7 +4786,9 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.max-get-range-requests
     [max_get_range_requests: <int> | default = 3]
 
-    # TTL for caching object attributes for chunks.
+    # TTL for caching object attributes for chunks. If the metadata cache is
+    # configured, attributes will be stored under this cache backend, otherwise
+    # attributes are stored in the chunks cache backend.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
