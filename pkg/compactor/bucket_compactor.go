@@ -690,13 +690,7 @@ func (cg *Group) compact(ctx context.Context, dir string, planner Planner, comp 
 		return true, nil, nil
 	}
 
-	level.Info(cg.logger).Log(
-		"msg", "compacted blocks",
-		"new", fmt.Sprintf("%v", compIDs),
-		"blocks", fmt.Sprintf("%v", toCompactDirs),
-		"duration", time.Since(begin),
-		"duration_ms", time.Since(begin).Milliseconds(),
-	)
+	level.Info(cg.logger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
 
 	for shardID, compID := range compIDs {
 		// Skip if it's an empty block.
@@ -739,12 +733,7 @@ func (cg *Group) compact(ctx context.Context, dir string, planner Planner, comp 
 			return false, nil, retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
 
-		level.Info(cg.logger).Log(
-			"msg", "uploaded block",
-			"result_block", compID,
-			"duration", time.Since(begin),
-			"duration_ms", time.Since(begin).Milliseconds(),
-			"external_labels", labels.FromMap(newLabels))
+		level.Info(cg.logger).Log("msg", "uploaded block", "result_block", compID, "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds(), "external_labels", labels.FromMap(newLabels))
 	}
 
 	// Mark for deletion the blocks we just compacted from the group and bucket so they do not get included

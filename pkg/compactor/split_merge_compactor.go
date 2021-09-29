@@ -17,16 +17,7 @@ import (
 
 // ConfigureSplitAndMergeCompactor updates the provided configuration injecting the split-and-merge compactor.
 func ConfigureSplitAndMergeCompactor(cfg *Config) {
-	cfg.BlocksGrouperFactory = func(
-		ctx context.Context,
-		cfg Config,
-		cfgProvider ConfigProvider,
-		bkt objstore.Bucket,
-		userID string,
-		ring *ring.Ring,
-		instanceAddr string,
-		logger log.Logger,
-		reg prometheus.Registerer) Grouper {
+	cfg.BlocksGrouperFactory = func(ctx context.Context, cfg Config, cfgProvider ConfigProvider, bkt objstore.Bucket, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
 		return NewSplitAndMergeGrouper(
 			userID,
 			bkt,
@@ -36,17 +27,9 @@ func ConfigureSplitAndMergeCompactor(cfg *Config) {
 			logger)
 	}
 
-	cfg.BlocksCompactorFactory = func(ctx context.Context,
-		cfg Config,
-		logger log.Logger,
-		reg prometheus.Registerer) (Compactor, Planner, error) {
+	cfg.BlocksCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
 		// We don't need to customise the TSDB compactor so we're just using the Prometheus one.
-		compactor, err := tsdb.NewLeveledCompactor(ctx,
-			reg,
-			logger,
-			cfg.BlockRanges.ToMilliseconds(),
-			downsample.NewPool(),
-			nil)
+		compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, cfg.BlockRanges.ToMilliseconds(), downsample.NewPool(), nil)
 		if err != nil {
 			return nil, nil, err
 		}

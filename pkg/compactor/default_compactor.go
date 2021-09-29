@@ -16,16 +16,7 @@ import (
 )
 
 var (
-	DefaultBlocksGrouperFactory = func(
-		ctx context.Context,
-		cfg Config,
-		cfgProvider ConfigProvider,
-		bkt objstore.Bucket,
-		userID string,
-		ring *ring.Ring,
-		instanceAddr string,
-		logger log.Logger,
-		reg prometheus.Registerer) Grouper {
+	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, cfgProvider ConfigProvider, bkt objstore.Bucket, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
 		return NewDefaultGrouper(
 			logger,
 			bkt,
