@@ -416,8 +416,8 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	// Ensure an initial cleanup occurred before starting the compactor.
-	if err := services.StartAndAwaitRunning(ctx, c.blocksCleaner); err != nil {
+	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
+	if err := c.blocksCleaner.StartAsync(ctx); err != nil {
 		c.ringSubservices.StopAsync()
 		return errors.Wrap(err, "failed to start the blocks cleaner")
 	}
