@@ -47,7 +47,7 @@ func (j *job) hash() uint32 {
 	return hasher.Sum32()
 }
 
-// conflicts returns false if the two jobs cannot be planned at the same time.
+// conflicts returns true if the two jobs cannot be planned at the same time.
 func (j *job) conflicts(other *job) bool {
 	// Never conflict if related to different users or if time ranges don't overlap.
 	if j.userID != other.userID || !j.overlaps(other.blocksGroup) {
