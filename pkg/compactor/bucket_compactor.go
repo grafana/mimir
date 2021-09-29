@@ -895,7 +895,6 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 					if err == nil {
 						c.metrics.groupCompactionRunsCompleted.Inc()
 						if hasNonZeroULIDs(compactedBlockIDs) {
-							// TODO 1 per non-zero block?
 							c.metrics.groupCompactions.Inc()
 						}
 
