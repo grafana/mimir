@@ -345,7 +345,7 @@ func (s *BucketStore) SyncBlocks(ctx context.Context) error {
 		s.advLabelSets = append(s.advLabelSets, labelpb.ZLabelSet{Labels: labelpb.ZLabelsFromPromLabels(append(storeLabels, bs.labels...))})
 	}
 	sort.Slice(s.advLabelSets, func(i, j int) bool {
-		return strings.Compare(s.advLabelSets[i].String(), s.advLabelSets[j].String()) < 0
+		return s.advLabelSets[i].String() < s.advLabelSets[j].String()
 	})
 	s.mtx.Unlock()
 	return nil

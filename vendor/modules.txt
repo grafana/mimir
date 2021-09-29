@@ -16,10 +16,10 @@ cloud.google.com/go/bigtable/internal/option
 # cloud.google.com/go/storage v1.10.0
 ## explicit
 cloud.google.com/go/storage
-# github.com/Azure/azure-pipeline-go v0.2.2
+# github.com/Azure/azure-pipeline-go v0.2.3
 ## explicit
 github.com/Azure/azure-pipeline-go/pipeline
-# github.com/Azure/azure-storage-blob-go v0.8.0
+# github.com/Azure/azure-storage-blob-go v0.13.0
 ## explicit
 github.com/Azure/azure-storage-blob-go/azblob
 # github.com/Azure/go-autorest v14.2.0+incompatible
@@ -360,7 +360,7 @@ github.com/mailru/easyjson/jlexer
 github.com/mailru/easyjson/jwriter
 # github.com/mattn/go-colorable v0.1.8
 github.com/mattn/go-colorable
-# github.com/mattn/go-ieproxy v0.0.0-20191113090002-7c0f6868bffe
+# github.com/mattn/go-ieproxy v0.0.1
 github.com/mattn/go-ieproxy
 # github.com/mattn/go-isatty v0.0.12
 github.com/mattn/go-isatty
@@ -498,7 +498,7 @@ github.com/prometheus/node_exporter/https
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20210720123808-b1ed4a0a663d => github.com/grafana/prometheus-private v0.0.0-20210921130741-a9bc9c27baa6
+# github.com/prometheus/prometheus v1.8.2-0.20210914090109-37468d88dce8 => github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349
 ## explicit
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -577,14 +577,13 @@ github.com/stretchr/objx
 github.com/stretchr/testify/assert
 github.com/stretchr/testify/mock
 github.com/stretchr/testify/require
-# github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
+# github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20210923155558-c15594a03c45
 ## explicit
 github.com/thanos-io/thanos/pkg/block
 github.com/thanos-io/thanos/pkg/block/indexheader
 github.com/thanos-io/thanos/pkg/block/metadata
 github.com/thanos-io/thanos/pkg/cache
 github.com/thanos-io/thanos/pkg/cacheutil
-github.com/thanos-io/thanos/pkg/compact
 github.com/thanos-io/thanos/pkg/compact/downsample
 github.com/thanos-io/thanos/pkg/component
 github.com/thanos-io/thanos/pkg/discovery/dns
@@ -963,7 +962,7 @@ sigs.k8s.io/yaml
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
-# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210921130741-a9bc9c27baa6
+# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # google.golang.org/grpc => google.golang.org/grpc v1.38.0

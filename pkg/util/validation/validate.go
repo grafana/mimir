@@ -7,7 +7,6 @@ package validation
 
 import (
 	"net/http"
-	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -205,12 +204,10 @@ func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.Label
 		} else if len(l.Value) > maxLabelValueLength {
 			DiscardedSamples.WithLabelValues(labelValueTooLong, userID).Inc()
 			return newLabelValueTooLongError(ls, l.Value)
-		} else if cmp := strings.Compare(lastLabelName, l.Name); cmp >= 0 {
-			if cmp == 0 {
-				DiscardedSamples.WithLabelValues(duplicateLabelNames, userID).Inc()
-				return newDuplicatedLabelError(ls, l.Name)
-			}
-
+		} else if lastLabelName == l.Name {
+			DiscardedSamples.WithLabelValues(duplicateLabelNames, userID).Inc()
+			return newDuplicatedLabelError(ls, l.Name)
+		} else if lastLabelName > l.Name {
 			DiscardedSamples.WithLabelValues(labelsNotSorted, userID).Inc()
 			return newLabelsNotSortedError(ls, l.Name)
 		}

@@ -17,7 +17,7 @@ import (
 func TestSyncerMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 
-	sm := newSyncerMetrics(reg)
+	sm := newAggregatedSyncerMetrics(reg)
 	sm.gatherThanosSyncerMetrics(generateTestData(12345))
 	sm.gatherThanosSyncerMetrics(generateTestData(76543))
 	sm.gatherThanosSyncerMetrics(generateTestData(22222))

@@ -333,7 +333,7 @@ type Mimir struct {
 	Ruler        *ruler.Ruler
 	RulerStorage rulestore.RuleStore
 	Alertmanager *alertmanager.MultitenantAlertmanager
-	Compactor    *compactor.Compactor
+	Compactor    *compactor.MultitenantCompactor
 	StoreGateway *storegateway.StoreGateway
 	MemberlistKV *memberlist.KVInitService
 

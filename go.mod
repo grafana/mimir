@@ -5,8 +5,8 @@ go 1.16
 require (
 	cloud.google.com/go/bigtable v1.3.0
 	cloud.google.com/go/storage v1.10.0
-	github.com/Azure/azure-pipeline-go v0.2.2
-	github.com/Azure/azure-storage-blob-go v0.8.0
+	github.com/Azure/azure-pipeline-go v0.2.3
+	github.com/Azure/azure-storage-blob-go v0.13.0
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/alecthomas/units v0.0.0-20210912230133-d1bdfacee922
 	github.com/alicebob/miniredis/v2 v2.14.3
@@ -46,12 +46,12 @@ require (
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.30.0
-	github.com/prometheus/prometheus v1.8.2-0.20210720123808-b1ed4a0a663d
+	github.com/prometheus/prometheus v1.8.2-0.20210914090109-37468d88dce8
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 	github.com/sony/gobreaker v0.4.1
 	github.com/spf13/afero v1.3.4
 	github.com/stretchr/testify v1.7.0
-	github.com/thanos-io/thanos v0.19.1-0.20210816083900-2be2db775cbc
+	github.com/thanos-io/thanos v0.22.0
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
 	github.com/weaveworks/common v0.0.0-20210901124008-1fa3f9fa874c
 	go.etcd.io/bbolt v1.3.6
@@ -78,7 +78,7 @@ replace github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210921130741-a9bc9c27baa6
+replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
@@ -95,3 +95,5 @@ replace go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b6
 replace github.com/gogo/status => github.com/gogo/status v1.0.3
 
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
+
+replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20210923155558-c15594a03c45
