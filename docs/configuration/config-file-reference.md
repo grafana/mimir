@@ -1187,7 +1187,7 @@ results_cache:
 
 # Perform query parallelisations based on storage sharding configuration and
 # query ASTs. This feature is supported only by the blocks storage engine.
-# CLI flag: -querier.parallelise-shardable-queries
+# CLI flag: -query-frontend.parallelise-shardable-queries
 [parallelise_shardable_queries: <boolean> | default = false]
 ```
 
