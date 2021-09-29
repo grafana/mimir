@@ -607,7 +607,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatches the source blocks of the older blocks.
-	deduplicateBlocksFilter := block.NewDeduplicateFilter()
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 
 	// While fetching blocks, we filter out blocks that were marked for deletion by using IgnoreDeletionMarkFilter.
 	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
