@@ -13,7 +13,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/testutil"
 )
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
@@ -419,7 +418,7 @@ func BenchmarkDeduplicateFilter_Filter(b *testing.B) {
 				b.Run("", func(b *testing.B) {
 					for n := 0; n <= b.N; n++ {
 						_ = dedupFilter.Filter(context.Background(), tcase, synced)
-						testutil.Equals(b, 0, len(dedupFilter.DuplicateIDs()))
+						require.Equal(b, 0, len(dedupFilter.DuplicateIDs()))
 					}
 				})
 			}
