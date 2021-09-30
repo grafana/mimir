@@ -81,31 +81,39 @@ func (p *ProxyEndpoint) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *backendResponse) {
 	var (
-		wg = sync.WaitGroup{}
-
-		requestBodyReaders = make([]io.Reader, len(p.backends))
-		responses          = make([]*backendResponse, 0, len(p.backends))
-		responsesMtx       = sync.Mutex{}
+		wg           = sync.WaitGroup{}
+		err          error
+		body         []byte
+		responses    = make([]*backendResponse, 0, len(p.backends))
+		responsesMtx = sync.Mutex{}
 	)
 
 	if r.Body != nil {
-		var requestBody bytes.Buffer
-		if _, err := requestBody.ReadFrom(r.Body); err == nil {
-			for pos := range requestBodyReaders {
-				requestBodyReaders[pos] = ioutil.NopCloser(bytes.NewReader(requestBody.Bytes()))
-			}
+		body, err = ioutil.ReadAll(r.Body)
+		if err != nil {
+			level.Warn(p.logger).Log("msg", "Unable to read request body", "err", err)
+			return
+		}
+		if err := r.Body.Close(); err != nil {
+			level.Warn(p.logger).Log("msg", "Unable to close request body", "err", err)
 		}
 	}
 
 	wg.Add(len(p.backends))
-	for pos, b := range p.backends {
+	for _, b := range p.backends {
 		b := b
 
-		go func(pos int) {
+		go func() {
 			defer wg.Done()
+			var (
+				bodyReader io.ReadCloser
+				start      = time.Now()
+			)
+			if len(body) > 0 {
+				bodyReader = ioutil.NopCloser(bytes.NewReader(body))
+			}
 
-			start := time.Now()
-			status, body, err := b.ForwardRequest(r, requestBodyReaders[pos])
+			status, body, err := b.ForwardRequest(r, bodyReader)
 			elapsed := time.Since(start)
 
 			res := &backendResponse{
@@ -132,7 +140,7 @@ func (p *ProxyEndpoint) executeBackendRequests(r *http.Request, resCh chan *back
 			}
 
 			resCh <- res
-		}(pos)
+		}()
 	}
 
 	// Wait until all backend requests completed.
