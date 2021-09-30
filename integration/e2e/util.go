@@ -212,9 +212,9 @@ func GetTempDirectory() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Allow group use of the temporary directory to allow testing with non-root
+	// Allow use of the temporary directory for testing with non-root
 	// users.
-	if err := os.Chmod(tmpDir, 0770); err != nil {
+	if err := os.Chmod(tmpDir, 0777); err != nil {
 		return "", err
 	}
 	absDir, err := filepath.Abs(tmpDir)
