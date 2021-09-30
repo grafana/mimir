@@ -137,6 +137,9 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	c, _, _, logs, registry := prepare(t, cfg, bucketClient)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -274,6 +277,9 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 
 	c, _, _, logs, registry := prepare(t, prepareConfig(), bucketClient)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
 
 	// Wait until all retry attempts have completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
@@ -479,6 +485,9 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -614,6 +623,9 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -714,6 +726,9 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, nil)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
 
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
@@ -817,6 +832,9 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, nil)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
 
 	// Wait until a run has completed.
 	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
