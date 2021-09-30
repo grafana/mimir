@@ -216,7 +216,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 			},
 		},
 
-		"invalid shard IDs are ignored, but correct shards are not": {
+		"when invalid shard IDs present, no deduplication happens for source blocks": {
 			input: map[ulid.ULID]sourcesAndResolution{
 				ULID(1): {sources: []ulid.ULID{ULID(1)}},
 				ULID(2): {sources: []ulid.ULID{ULID(2)}},
