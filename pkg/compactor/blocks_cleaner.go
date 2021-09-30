@@ -126,8 +126,8 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
-	// Run a cleanup so that any other service depending on this service
-	// is guaranteed to start once the initial cleanup has been done.
+	// Run an initial cleanup in starting state. (Note that compactor no longer waits
+	// for blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx)
 
 	return nil
