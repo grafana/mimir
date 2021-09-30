@@ -214,13 +214,9 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		# TYPE cortex_compactor_group_compactions_failures_total counter
 		cortex_compactor_group_compactions_failures_total 0
 
-		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in a new block.
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
 		# TYPE cortex_compactor_group_compactions_total counter
 		cortex_compactor_group_compactions_total 0
-
-		# HELP cortex_compactor_group_vertical_compactions_total Total number of group compaction attempts that resulted in a new block based on overlapping blocks.
-		# TYPE cortex_compactor_group_vertical_compactions_total counter
-		cortex_compactor_group_vertical_compactions_total 0
 
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
@@ -262,7 +258,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 		"cortex_compactor_group_compaction_runs_started_total",
 		"cortex_compactor_group_compactions_failures_total",
 		"cortex_compactor_group_compactions_total",
-		"cortex_compactor_group_vertical_compactions_total",
 		"cortex_compactor_block_cleanup_failures_total",
 		"cortex_compactor_blocks_cleaned_total",
 		"cortex_compactor_blocks_marked_for_deletion_total",
@@ -360,13 +355,9 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		# TYPE cortex_compactor_group_compactions_failures_total counter
 		cortex_compactor_group_compactions_failures_total 0
 
-		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in a new block.
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
 		# TYPE cortex_compactor_group_compactions_total counter
 		cortex_compactor_group_compactions_total 0
-
-		# HELP cortex_compactor_group_vertical_compactions_total Total number of group compaction attempts that resulted in a new block based on overlapping blocks.
-		# TYPE cortex_compactor_group_vertical_compactions_total counter
-		cortex_compactor_group_vertical_compactions_total 0
 
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
@@ -408,7 +399,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 		"cortex_compactor_group_compaction_runs_started_total",
 		"cortex_compactor_group_compactions_failures_total",
 		"cortex_compactor_group_compactions_total",
-		"cortex_compactor_group_vertical_compactions_total",
 		"cortex_compactor_block_cleanup_failures_total",
 		"cortex_compactor_blocks_cleaned_total",
 		"cortex_compactor_blocks_marked_for_deletion_total",
@@ -532,7 +522,9 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		"cortex_compactor_runs_started_total", "cortex_compactor_runs_completed_total", "cortex_compactor_runs_failed_total",
 		"cortex_compactor_blocks_cleaned_total", "cortex_compactor_block_cleanup_failures_total", "cortex_compactor_blocks_marked_for_deletion_total",
 		"cortex_compactor_block_cleanup_started_total", "cortex_compactor_block_cleanup_completed_total", "cortex_compactor_block_cleanup_failed_total",
-	}
+		"cortex_compactor_group_compaction_runs_completed_total", "cortex_compactor_group_compaction_runs_started_total",
+		"cortex_compactor_group_compactions_failures_total", "cortex_compactor_group_compactions_total"}
+
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
 		# TYPE cortex_compactor_runs_started_total counter
 		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
@@ -545,6 +537,22 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		# TYPE cortex_compactor_runs_failed_total counter
 		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
 		cortex_compactor_runs_failed_total 0
+
+		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
+		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
+		cortex_compactor_group_compaction_runs_completed_total 2
+
+		# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
+		# TYPE cortex_compactor_group_compaction_runs_started_total counter
+		cortex_compactor_group_compaction_runs_started_total 2
+
+		# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
+		# TYPE cortex_compactor_group_compactions_failures_total counter
+		cortex_compactor_group_compactions_failures_total 0
+
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
+		# TYPE cortex_compactor_group_compactions_total counter
+		cortex_compactor_group_compactions_total 0
 
 		# TYPE cortex_compactor_block_cleanup_failures_total counter
 		# HELP cortex_compactor_block_cleanup_failures_total Total number of blocks failed to be deleted.
@@ -825,7 +833,7 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.KVStore.Mock = ringStore
-	c, _, tsdbPlanner, logs, _ := prepare(t, cfg, bucketClient)
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bucketClient)
 
 	// Mock the planner as if there's no compaction to do,
 	// in order to simplify tests (all in all, we just want to
@@ -869,6 +877,50 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor org_id=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 1
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total 0
+
+		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
+		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
+		cortex_compactor_group_compaction_runs_completed_total 2
+
+		# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
+		# TYPE cortex_compactor_group_compaction_runs_started_total counter
+		cortex_compactor_group_compaction_runs_started_total 2
+
+		# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
+		# TYPE cortex_compactor_group_compactions_failures_total counter
+		cortex_compactor_group_compactions_failures_total 0
+
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
+		# TYPE cortex_compactor_group_compactions_total counter
+		cortex_compactor_group_compactions_total 0
+
+		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+		"cortex_compactor_group_compaction_runs_completed_total",
+		"cortex_compactor_group_compaction_runs_started_total",
+		"cortex_compactor_group_compactions_failures_total",
+		"cortex_compactor_group_compactions_total",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
 }
 
 func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnShardingEnabledAndMultipleInstancesRunning(t *testing.T) {
@@ -945,7 +997,7 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 	}
 }
 
-func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, externalLabels map[string]string) ulid.ULID {
+func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) ulid.ULID {
 	// Create a temporary dir for TSDB.
 	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
 	require.NoError(t, err)
@@ -966,17 +1018,30 @@ func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, max
 
 	db.DisableCompactions()
 
-	// Append a sample at the beginning and one at the end of the time range.
-	for i, ts := range []int64{minT, maxT - 1} {
-		lbls := labels.Labels{labels.Label{Name: "series_id", Value: strconv.Itoa(i)}}
+	appendSample := func(seriesID int, ts int64, value float64) {
+		lbls := labels.Labels{labels.Label{Name: "series_id", Value: strconv.Itoa(seriesID)}}
 
 		app := db.Appender(context.Background())
-		_, err := app.Append(0, lbls, ts, float64(i))
+		_, err := app.Append(0, lbls, ts, value)
 		require.NoError(t, err)
 
 		err = app.Commit()
 		require.NoError(t, err)
 	}
+
+	seriesID := 0
+
+	// Append a sample for each series, spreading it between minT and maxT-1 (both included).
+	// Since we append one more series below, here we create N-1 series.
+	if numSeries > 1 {
+		for ts := minT; ts < maxT; ts += (maxT - minT) / int64(numSeries-1) {
+			appendSample(seriesID, ts, float64(seriesID))
+			seriesID++
+		}
+	}
+
+	// Guarantee a series with a sample at time maxT-1
+	appendSample(seriesID, maxT-1, float64(seriesID))
 
 	require.NoError(t, db.Compact())
 	require.NoError(t, db.Snapshot(snapshotDir, true))
@@ -1153,6 +1218,11 @@ func (m *tsdbCompactorMock) Write(dest string, b tsdb.BlockReader, mint, maxt in
 func (m *tsdbCompactorMock) Compact(dest string, dirs []string, open []*tsdb.Block) (ulid.ULID, error) {
 	args := m.Called(dest, dirs, open)
 	return args.Get(0).(ulid.ULID), args.Error(1)
+}
+
+func (m *tsdbCompactorMock) CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error) {
+	args := m.Called(dest, dirs, open, shardCount)
+	return args.Get(0).([]ulid.ULID), args.Error(1)
 }
 
 type tsdbPlannerMock struct {

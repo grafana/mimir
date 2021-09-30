@@ -772,7 +772,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	sorted := true
 	last := ""
 	for _, l := range labels {
-		if strings.Compare(last, l.Name) > 0 {
+		if last > l.Name {
 			sorted = false
 			break
 		}
@@ -784,7 +784,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	}
 
 	sort.Slice(labels, func(i, j int) bool {
-		return strings.Compare(labels[i].Name, labels[j].Name) < 0
+		return labels[i].Name < labels[j].Name
 	})
 }
 

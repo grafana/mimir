@@ -68,7 +68,7 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 
 	f.Int64Var(&cfg.SubrangeSize, prefix+"subrange-size", 16000, "Size of each subrange that bucket object is split into for better caching.")
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
-	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks.")
+	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
 }
 
@@ -90,7 +90,7 @@ type MetadataCacheConfig struct {
 	BlockIndexAttributesTTL time.Duration `yaml:"block_index_attributes_ttl"`
 	BucketIndexContentTTL   time.Duration `yaml:"bucket_index_content_ttl"`
 	BucketIndexMaxSize      int           `yaml:"bucket_index_max_size_bytes"`
-	LRUEnabled                  bool          `yaml:"lru_enabled"`
+	LRUEnabled              bool          `yaml:"lru_enabled"`
 	LRUMaxItems             int           `yaml:"lru_max_items"`
 }
 
@@ -151,7 +151,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cachingConfigured = true
 		metadataCache = cache.NewTracingCache(metadataCache)
 
-		if metadataConfig.UseLRU {
+		if metadataConfig.LRUEnabled {
 			var err error
 			metadataCache, err = storecache.WrapWithLRUCache(metadataCache, reg, metadataConfig.LRUMaxItems, metadataConfig.MinTTL())
 			if err != nil {
@@ -174,6 +174,9 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	if chunksCache != nil {
 		cachingConfigured = true
 		chunksCache = cache.NewTracingCache(chunksCache)
+		if metadataCache == nil {
+			metadataCache = chunksCache
+		}
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, metadataCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 

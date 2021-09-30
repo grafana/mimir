@@ -131,25 +131,15 @@ func (cfg *CachingBucketConfig) CacheExists(configName string, cache cache.Cache
 // MaxSubRequests specifies how many such subrequests may be issued. Values <= 0 mean there is no limit (requests
 // for adjacent missing subranges are still merged).
 func (cfg *CachingBucketConfig) CacheGetRange(configName string, cache cache.Cache, matcher func(string) bool, subrangeSize int64, attributesCache cache.Cache, attributesTTL, subrangeTTL time.Duration, maxSubRequests int) {
-	var (
-		getRangeCfg = newOperationConfig(cache, matcher)
-		attrCfg     = attributesConfig{
-			operationConfig: getRangeCfg,
-			ttl:             attributesTTL,
-		}
-	)
-	if attributesCache != nil {
-		attrCfg = attributesConfig{
-			operationConfig: newOperationConfig(attributesCache, func(_ string) bool { return true }),
-			ttl:             attributesTTL,
-		}
-	}
 	cfg.getRange[configName] = &getRangeConfig{
-		operationConfig: getRangeCfg,
+		operationConfig: newOperationConfig(cache, matcher),
 		subrangeSize:    subrangeSize,
 		subrangeTTL:     subrangeTTL,
 		maxSubRequests:  maxSubRequests,
-		attributes:      attrCfg,
+		attributes: attributesConfig{
+			operationConfig: newOperationConfig(attributesCache, func(_ string) bool { return true }),
+			ttl:             attributesTTL,
+		},
 	}
 }
 
