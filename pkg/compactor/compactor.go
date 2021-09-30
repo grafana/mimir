@@ -605,10 +605,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	ulogger := util_log.WithUserID(userID, c.logger)
 
-	// Filters out duplicate blocks that can be formed from two or more overlapping
-	// blocks that fully submatches the source blocks of the older blocks.
-	deduplicateBlocksFilter := block.NewDeduplicateFilter()
-
 	// While fetching blocks, we filter out blocks that were marked for deletion by using IgnoreDeletionMarkFilter.
 	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
 	ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(
@@ -626,11 +622,15 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		ignoreDeletionMarkFilter,
 	}
 
-	// TODO HACK: append the deduplicate filter only if the compaction strategy is not split-and-merge.
-	// We should have a sharding-aware deduplicate filter instead.
-	if c.compactorCfg.CompactionStrategy != CompactionStrategySplitMerge {
-		fetcherFilters = append(fetcherFilters, deduplicateBlocksFilter)
+	// Filters out duplicate blocks that can be formed from two or more overlapping
+	// blocks that fully submatches the source blocks of the older blocks.
+	var deduplicateBlocksFilter DeduplicateFilter
+	if c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
+		deduplicateBlocksFilter = NewShardAwareDeduplicateFilter()
+	} else {
+		deduplicateBlocksFilter = block.NewDeduplicateFilter()
 	}
+	fetcherFilters = append(fetcherFilters, deduplicateBlocksFilter)
 
 	fetcher, err := block.NewMetaFetcher(
 		ulogger,

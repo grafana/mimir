@@ -103,7 +103,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), metadata.MetaFilename), &buf))
 		}
 
-		duplicateBlocksFilter := block.NewDeduplicateFilter()
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
 		}, nil)
@@ -173,7 +173,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		reg := prometheus.NewRegistry()
 
 		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(logger, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
-		duplicateBlocksFilter := block.NewDeduplicateFilter()
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		noCompactMarkerFilter := NewGatherNoCompactionMarkFilter(logger, objstore.WithNoopInstr(bkt), 2)
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
@@ -472,7 +472,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
 
-		duplicateBlocksFilter := block.NewDeduplicateFilter()
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
