@@ -228,7 +228,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 				ULID(6): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "1_of_2"},
 				ULID(7): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "2_of_2"},
 			},
-			// Presense of invalid shards means that even valid shards are not
+			// Presence of invalid shards means that even valid shards are not
 			expected: []ulid.ULID{
 				ULID(1),
 				ULID(2),
