@@ -8,9 +8,6 @@ package compactor
 import (
 	"context"
 	"sort"
-	"strconv"
-	"strings"
-	"sync"
 
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -42,30 +39,17 @@ func (f *ShardAwareDeduplicateFilter) Filter(_ context.Context, metas map[ulid.U
 		metasByResolution[res] = append(metasByResolution[res], meta)
 	}
 
-	wg := sync.WaitGroup{}
-	mu := sync.Mutex{}
-
 	for res := range metasByResolution {
-		wg.Add(1)
-		go func(res int64) {
-			defer wg.Done()
+		duplicateULIDs := f.findDuplicates(metasByResolution[res])
 
-			duplicateULIDs := f.findDuplicates(metasByResolution[res])
-
-			mu.Lock()
-			defer mu.Unlock()
-
-			for id := range duplicateULIDs {
-				if metas[id] != nil {
-					f.duplicateIDs = append(f.duplicateIDs, id)
-				}
-				synced.WithLabelValues(duplicateMeta).Inc()
-				delete(metas, id)
+		for id := range duplicateULIDs {
+			if metas[id] != nil {
+				f.duplicateIDs = append(f.duplicateIDs, id)
 			}
-		}(res)
+			synced.WithLabelValues(duplicateMeta).Inc()
+			delete(metas, id)
+		}
 	}
-
-	wg.Wait()
 
 	return nil
 }
@@ -91,40 +75,39 @@ func (f *ShardAwareDeduplicateFilter) Filter(_ context.Context, metas map[ulid.U
 //
 // Resulting tree will look like this:
 //
-// Root
-// `--- ULID(1)
-// |    `--- ULID(5)
-// |    |    `--- ULID(9)
-// |    |    `--- ULID(10)
-// |    `--- ULID(6)
-// |         `--- ULID(9)
-// |         `--- ULID(10)
-// `--- ULID(2)
-// |    `--- ULID(5)
-// |    |    `--- ULID(9)
-// |    |    `--- ULID(10)
-// |    `--- ULID(6)
-// |         `--- ULID(9)
-// |         `--- ULID(10)
-// `--- ULID(3)
-// |    `--- ULID(7)
-// |    |    `--- ULID(9)
-// |    |    `--- ULID(10)
-// |    `--- ULID(8)
-// |         `--- ULID(9)
-// |         `--- ULID(10)
-// `--- ULID(4)
-//      `--- ULID(7)
-//      |    `--- ULID(9)
-//      |    `--- ULID(10)
-//      `--- ULID(8)
-//           `--- ULID(9)
-//           `--- ULID(10)
+//   Root
+//   `--- ULID(1)
+//   |    `--- ULID(5)
+//   |    |    `--- ULID(9)
+//   |    |    `--- ULID(10)
+//   |    `--- ULID(6)
+//   |         `--- ULID(9)
+//   |         `--- ULID(10)
+//   `--- ULID(2)
+//   |    `--- ULID(5)
+//   |    |    `--- ULID(9)
+//   |    |    `--- ULID(10)
+//   |    `--- ULID(6)
+//   |         `--- ULID(9)
+//   |         `--- ULID(10)
+//   `--- ULID(3)
+//   |    `--- ULID(7)
+//   |    |    `--- ULID(9)
+//   |    |    `--- ULID(10)
+//   |    `--- ULID(8)
+//   |         `--- ULID(9)
+//   |         `--- ULID(10)
+//   `--- ULID(4)
+//        `--- ULID(7)
+//        |    `--- ULID(9)
+//        |    `--- ULID(10)
+//        `--- ULID(8)
+//             `--- ULID(9)
+//             `--- ULID(10)
 //
 // There is a lot of repetition in this tree, but individual block nodes are shared (it would be difficult to draw that though).
 // So for example there is only one ULID(9) node, referenced from nodes 5, 6, 7, 8 (each of them also exists only once). See
 // blockWithSuccessors structure -- it uses maps to pointers to handle all this cross-referencing correctly.
-
 func (f *ShardAwareDeduplicateFilter) findDuplicates(input []*metadata.Meta) map[ulid.ULID]struct{} {
 	// Sort blocks with fewer sources first.
 	sort.Slice(input, func(i, j int) bool {
@@ -167,8 +150,8 @@ func (f *ShardAwareDeduplicateFilter) DuplicateIDs() []ulid.ULID {
 // Then B is a successor of A (A sources are subset of B sources, but not vice versa), and D is successor of both A, B and C.
 type blockWithSuccessors struct {
 	meta    *metadata.Meta         // If meta is nil, then this is root node of the tree.
-	shardID string                 // Shard ID label value extracted from meta.
-	sources map[ulid.ULID]struct{} // Sources extracted from meta.
+	shardID string                 // Shard ID label value extracted from meta. If not empty, that all successors must have same shardID.
+	sources map[ulid.ULID]struct{} // Sources extracted from meta for easier comparison.
 
 	successors map[ulid.ULID]*blockWithSuccessors
 }
@@ -178,7 +161,6 @@ func newBlockWithSuccessors(m *metadata.Meta) *blockWithSuccessors {
 	if m != nil {
 		b.shardID = m.Thanos.Labels[ShardIDLabelName]
 		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
-
 		for _, bid := range m.Compaction.Sources {
 			b.sources[bid] = struct{}{}
 		}
@@ -250,6 +232,12 @@ func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 	// If there are any successors with same shard ID (all successors must have same shard ID),
 	// then this block must be included in them, since we don't do splitting into more shards at later levels anymore.
 	if b.shardID != "" {
+		// Double check that our invariant holds.
+		for _, s := range b.successors {
+			if s.shardID != b.shardID {
+				panic("successor has different shardID!")
+			}
+		}
 		return true
 	}
 
@@ -261,22 +249,9 @@ func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 			return true
 		}
 
+		index, count, err := parseShardIDLabelValue(s.shardID)
 		// If we fail to parse shardID, we better not consider this block fully included in successors.
-		matches := strings.Split(s.shardID, "_")
-		if len(matches) != 3 || matches[1] != "of" {
-			return false
-		}
-
-		index, err := strconv.ParseUint(matches[0], 10, 64)
 		if err != nil {
-			return false
-		}
-		count, err := strconv.ParseUint(matches[2], 10, 64)
-		if err != nil {
-			return false
-		}
-
-		if index == 0 || count == 0 || index > count {
 			return false
 		}
 

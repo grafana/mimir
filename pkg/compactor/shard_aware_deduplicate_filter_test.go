@@ -28,7 +28,7 @@ type sourcesAndResolution struct {
 	shardID    string
 }
 
-func TestDeduplicateFilter_Filter(t *testing.T) {
+func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 	testcases := map[string]struct {
 		input    map[ulid.ULID]sourcesAndResolution
 		expected []ulid.ULID // blocks in the output after duplicates are removed.
@@ -45,7 +45,7 @@ func TestDeduplicateFilter_Filter(t *testing.T) {
 				ULID(3),
 			},
 		},
-		"compacted block with sources in bucket": {
+		"compacted block without sources in bucket": {
 			input: map[ulid.ULID]sourcesAndResolution{
 				ULID(6): {sources: []ulid.ULID{ULID(6)}},
 				ULID(4): {sources: []ulid.ULID{ULID(1), ULID(3), ULID(2)}},
@@ -65,7 +65,7 @@ func TestDeduplicateFilter_Filter(t *testing.T) {
 				ULID(6): {sources: []ulid.ULID{ULID(6)}},
 			},
 			expected: []ulid.ULID{
-				// ULID(3) is removed as duplicate, because ULID(4) is added after it, and it has same source blocks,
+				// ULID(4) is added after ULID(3), so ULID(4) becomes a "successor" of ULID(3),
 				// which makes ULID(3) to be considered a duplicate.
 				ULID(4),
 				ULID(5),
@@ -83,7 +83,7 @@ func TestDeduplicateFilter_Filter(t *testing.T) {
 				ULID(6),
 			},
 		},
-		"3 non compacted blocks and compacted block of level 2 in bucket": {
+		"4 non compacted blocks and compacted block of level 2 in bucket": {
 			input: map[ulid.ULID]sourcesAndResolution{
 				ULID(6): {sources: []ulid.ULID{ULID(6)}},
 				ULID(1): {sources: []ulid.ULID{ULID(1)}},
@@ -213,6 +213,30 @@ func TestDeduplicateFilter_Filter(t *testing.T) {
 				ULID(3),
 				ULID(4),
 				ULID(5),
+			},
+		},
+
+		"invalid shard IDs are ignored, but correct shards are not": {
+			input: map[ulid.ULID]sourcesAndResolution{
+				ULID(1): {sources: []ulid.ULID{ULID(1)}},
+				ULID(2): {sources: []ulid.ULID{ULID(2)}},
+				// invalid
+				ULID(3): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "invalid"},
+				ULID(4): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "0_of_5"},
+				ULID(5): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "3_of_2"},
+				// good shards
+				ULID(6): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "1_of_2"},
+				ULID(7): {sources: []ulid.ULID{ULID(1), ULID(2)}, shardID: "2_of_2"},
+			},
+			// Presense of invalid shards means that even valid shards are not
+			expected: []ulid.ULID{
+				ULID(1),
+				ULID(2),
+				ULID(3),
+				ULID(4),
+				ULID(5),
+				ULID(6),
+				ULID(7),
 			},
 		},
 

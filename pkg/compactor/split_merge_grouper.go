@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -259,7 +261,7 @@ func planSplitting(userID string, group blocksGroup, shardCount uint32) []*job {
 			jobs[shardID] = &job{
 				userID:  userID,
 				stage:   stageSplit,
-				shardID: shardIDLabelValue(shardID, shardCount),
+				shardID: formatShardIDLabelValue(shardID, shardCount),
 				blocksGroup: blocksGroup{
 					rangeStart: group.rangeStart,
 					rangeEnd:   group.rangeEnd,
@@ -372,8 +374,31 @@ func getMaxTime(blocks []*metadata.Meta) int64 {
 	return maxTime
 }
 
-func shardIDLabelValue(shardID, shardCount uint32) string {
+func formatShardIDLabelValue(shardID, shardCount uint32) string {
 	return fmt.Sprintf("%d_of_%d", shardID, shardCount)
+}
+
+func parseShardIDLabelValue(val string) (index, shardCount uint64, _ error) {
+	// If we fail to parse shardID, we better not consider this block fully included in successors.
+	matches := strings.Split(val, "_")
+	if len(matches) != 3 || matches[1] != "of" {
+		return 0, 0, errors.Errorf("invalid shard ID: %q", val)
+	}
+
+	index, err := strconv.ParseUint(matches[0], 10, 64)
+	if err != nil {
+		return 0, 0, errors.Errorf("invalid shard ID: %q: %v", val, err)
+	}
+	count, err := strconv.ParseUint(matches[2], 10, 64)
+	if err != nil {
+		return 0, 0, errors.Errorf("invalid shard ID: %q: %v", val, err)
+	}
+
+	if index == 0 || count == 0 || index > count {
+		return 0, 0, errors.Errorf("invalid shard ID: %q", val)
+	}
+
+	return index, count, nil
 }
 
 // defaultGroupKeyWithoutShardID returns the default group key excluding ShardIDLabelName
