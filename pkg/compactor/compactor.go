@@ -187,9 +187,6 @@ type MultitenantCompactor struct {
 	blocksGrouperFactory   BlocksGrouperFactory
 	blocksCompactorFactory BlocksCompactorFactory
 
-	// Users scanner, used to discover users from the bucket.
-	usersScanner *mimir_tsdb.UsersScanner
-
 	// Blocks cleaner is responsible to hard delete blocks marked for deletion.
 	blocksCleaner *BlocksCleaner
 
@@ -358,16 +355,13 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
 
-	// Create the users scanner.
-	c.usersScanner = mimir_tsdb.NewUsersScanner(c.bucketClient, c.ownUser, c.parentLogger)
-
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
 		DeletionDelay:      c.compactorCfg.DeletionDelay,
 		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
 		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
 		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
-	}, c.bucketClient, c.usersScanner, c.cfgProvider, c.parentLogger, c.registerer)
+	}, c.bucketClient, c.ownUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Initialize the compactors ring if sharding is enabled.
 	if c.compactorCfg.ShardingEnabled {
@@ -426,8 +420,8 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		}
 	}
 
-	// Ensure an initial cleanup occurred before starting the compactor.
-	if err := services.StartAndAwaitRunning(ctx, c.blocksCleaner); err != nil {
+	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
+	if err := c.blocksCleaner.StartAsync(ctx); err != nil {
 		c.ringSubservices.StopAsync()
 		return errors.Wrap(err, "failed to start the blocks cleaner")
 	}

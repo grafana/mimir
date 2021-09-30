@@ -137,6 +137,9 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	c, _, _, logs, registry := prepare(t, cfg, bucketClient)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -147,8 +150,6 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	assert.Equal(t, prom_testutil.ToFloat64(c.compactionRunInterval), cfg.CompactionInterval.Seconds())
 
 	assert.Equal(t, []string{
-		`level=info component=cleaner msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner msg="successfully completed blocks cleanup and maintenance"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=0`,
 	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
@@ -277,6 +278,9 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	c, _, _, logs, registry := prepare(t, prepareConfig(), bucketClient)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until all retry attempts have completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsFailed)
@@ -288,8 +292,6 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	bucketClient.AssertNumberOfCalls(t, "Iter", 1+3)
 
 	assert.Equal(t, []string{
-		`level=info component=cleaner msg="started blocks cleanup and maintenance"`,
-		`level=error component=cleaner msg="failed to run blocks cleanup and maintenance" err="failed to discover users from bucket: failed to iterate the bucket"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=error component=compactor msg="failed to discover users from bucket" err="failed to iterate the bucket"`,
 	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
@@ -483,6 +485,9 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -494,12 +499,6 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 2)
 
 	assert.ElementsMatch(t, []string{
-		`level=info component=cleaner msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-1 msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-1 msg="completed blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-2 msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-2 msg="completed blocks cleanup and maintenance"`,
-		`level=info component=cleaner msg="successfully completed blocks cleanup and maintenance"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=2`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -624,6 +623,9 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -635,13 +637,6 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
-		`level=info component=cleaner msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-1 msg="started blocks cleanup and maintenance"`,
-		`level=debug component=cleaner org_id=user-1 msg="deleted file" file=01DTW0ZCPDDNV4BV83Q2SV4QAZ/meta.json bucket=mock`,
-		`level=debug component=cleaner org_id=user-1 msg="deleted file" file=01DTW0ZCPDDNV4BV83Q2SV4QAZ/deletion-mark.json bucket=mock`,
-		`level=info component=cleaner org_id=user-1 msg="deleted block marked for deletion" block=01DTW0ZCPDDNV4BV83Q2SV4QAZ`,
-		`level=info component=cleaner org_id=user-1 msg="completed blocks cleanup and maintenance"`,
-		`level=info component=cleaner msg="successfully completed blocks cleanup and maintenance"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -732,6 +727,9 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -743,14 +741,6 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
-		`level=info component=cleaner msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-1 msg="deleting blocks for tenant marked for deletion"`,
-		`level=debug component=cleaner org_id=user-1 msg="deleted file" file=01DTVP434PA9VFXSW2JKB3392D/meta.json bucket=mock`,
-		`level=debug component=cleaner org_id=user-1 msg="deleted file" file=01DTVP434PA9VFXSW2JKB3392D/index bucket=mock`,
-		`level=info component=cleaner org_id=user-1 msg="deleted block" block=01DTVP434PA9VFXSW2JKB3392D`,
-		`level=info component=cleaner org_id=user-1 msg="deleted blocks for tenant marked for deletion" deletedBlocks=1`,
-		`level=info component=cleaner org_id=user-1 msg="updating finished time in tenant deletion mark"`,
-		`level=info component=cleaner msg="successfully completed blocks cleanup and maintenance"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=debug component=compactor msg="skipping user because it is marked for deletion" user=user-1`,
@@ -843,6 +833,9 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
 	// Wait until a run has completed.
 	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
@@ -856,12 +849,6 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 	assert.ElementsMatch(t, []string{
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
 		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
-		`level=info component=cleaner msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-1 msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-1 msg="completed blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-2 msg="started blocks cleanup and maintenance"`,
-		`level=info component=cleaner org_id=user-2 msg="completed blocks cleanup and maintenance"`,
-		`level=info component=cleaner msg="successfully completed blocks cleanup and maintenance"`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=2`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -1179,7 +1166,7 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 	tsdbCompactor := &tsdbCompactorMock{}
 	tsdbPlanner := &tsdbPlannerMock{}
 	logs := &concurrency.SyncBuffer{}
-	logger := log.NewLogfmtLogger(logs)
+	logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
 	registry := prometheus.NewRegistry()
 
 	var limits validation.Limits
@@ -1199,6 +1186,31 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry
+}
+
+type componentLogger struct {
+	component string
+	log       log.Logger
+}
+
+func (c *componentLogger) Log(keyvals ...interface{}) error {
+	for ix := 0; ix+1 < len(keyvals); ix += 2 {
+		k := keyvals[ix]
+		v := keyvals[ix+1]
+
+		ks, ok := k.(string)
+		if !ok {
+			continue
+		}
+		vs, ok := v.(string)
+		if !ok {
+			continue
+		}
+		if ks == "component" && vs == c.component {
+			return c.log.Log(keyvals...)
+		}
+	}
+	return nil
 }
 
 type tsdbCompactorMock struct {
