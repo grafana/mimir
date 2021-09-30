@@ -18,8 +18,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-const orgIDHeader = "X-Scope-OrgId"
-
 // ProxyBackend holds the information of a single backend.
 type ProxyBackend struct {
 	name     string
