@@ -57,7 +57,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 	}
 }
 
-func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.Reader) (int, []byte, error) {
+func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.ReadCloser) (int, []byte, error) {
 	req, err := b.createBackendRequest(orig, body)
 	if err != nil {
 		return 0, nil, err
@@ -66,12 +66,11 @@ func (b *ProxyBackend) ForwardRequest(orig *http.Request, body io.Reader) (int, 
 	return b.doBackendRequest(req)
 }
 
-func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.Reader) (*http.Request, error) {
-	req, err := http.NewRequest(orig.Method, orig.URL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
+func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadCloser) (*http.Request, error) {
+	req := orig.Clone(context.Background())
+	req.Body = body
+	// RequestURI can't be set on a cloned request. It's only for handlers.
+	req.RequestURI = ""
 	// Replace the endpoint with the backend one.
 	req.URL.Scheme = b.endpoint.Scheme
 	req.URL.Host = b.endpoint.Host
@@ -93,11 +92,6 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.Reader) 
 		req.SetBasicAuth(endpointUser, clientPass)
 	} else if clientAuth {
 		req.SetBasicAuth(clientUser, clientPass)
-	}
-
-	// If there is X-Scope-OrgId header in the request, forward it. This is done even if there was username/password.
-	if orgID := orig.Header.Get(orgIDHeader); orgID != "" {
-		req.Header.Set(orgIDHeader, orgID)
 	}
 
 	return req, nil

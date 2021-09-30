@@ -132,6 +132,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 			require.Equal(t, "this-is-some-payload", string(body))
 			require.NoError(t, err)
 		}
+		require.Equal(t, "test-X-value", r.Header.Get("test-X"))
 		_, _ = w.Write([]byte("ok"))
 	})
 	backend1 := httptest.NewServer(handler)
@@ -144,7 +145,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 	backendURL2, err := url.Parse(backend2.URL)
 	require.NoError(t, err)
 
-	var backends = []*ProxyBackend{
+	backends := []*ProxyBackend{
 		NewProxyBackend("backend-1", backendURL1, time.Second, true),
 		NewProxyBackend("backend-2", backendURL2, time.Second, false),
 	}
@@ -158,6 +159,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 			name: "GET-request",
 			request: func(t *testing.T) *http.Request {
 				r, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+				r.Header["test-X"] = []string{"test-X-value"}
 				require.NoError(t, err)
 				return r
 			},
@@ -168,6 +170,7 @@ func Test_ProxyEndpoint_Requests(t *testing.T) {
 				strings := strings.NewReader("this-is-some-payload")
 				r, err := http.NewRequest("POST", "http://test/api/v1/test", strings)
 				require.NoError(t, err)
+				r.Header["test-X"] = []string{"test-X-value"}
 				return r
 			},
 		},
