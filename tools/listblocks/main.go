@@ -8,12 +8,13 @@ import (
 	"os"
 	"os/signal"
 	"path"
+	"sort"
 	"sync"
 	"syscall"
 	"text/tabwriter"
 	"time"
 
-	gokitlog "github.com/go-kit/log"
+	gokitlog "github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -40,6 +41,10 @@ func main() {
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
 	flag.BoolVar(&cfg.showCreationTime, "show-creation-time", false, "Show when block was created (from ULID)")
 	flag.Parse()
+
+	if cfg.userID == "" {
+		log.Fatalln("no user specified")
+	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT)
 	defer cancel()
@@ -110,6 +115,7 @@ func main() {
 	}
 	fmt.Fprintf(tabber, "Min Time\t")
 	fmt.Fprintf(tabber, "Max Time\t")
+	fmt.Fprintf(tabber, "Duration\t")
 	if cfg.showDeleted {
 		fmt.Fprintf(tabber, "Deletion Time\t")
 	}
@@ -117,6 +123,10 @@ func main() {
 		fmt.Fprintf(tabber, "Labels (excl. "+tsdb.TenantIDExternalLabel+")\t")
 	}
 	fmt.Fprintln(tabber)
+
+	sort.Slice(bi.Blocks, func(i, j int) bool {
+		return bi.Blocks[i].MinTime < bi.Blocks[j].MinTime
+	})
 
 	for _, b := range bi.Blocks {
 		if !cfg.showDeleted && !deletedTimes[b.ID].IsZero() {
@@ -129,6 +139,7 @@ func main() {
 		}
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
+		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
 
 		if cfg.showDeleted {
 			if deletedTimes[b.ID].IsZero() {
