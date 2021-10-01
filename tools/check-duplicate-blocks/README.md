@@ -20,4 +20,3 @@ And then run:
 ```
 check-duplicate-blocks -backend=filesystem -filesystem.dir=/tmp/test-bucket -user=tenant
 ```
-
