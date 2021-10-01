@@ -41,10 +41,7 @@ func main() {
 	}
 	flag.Parse()
 
-	logger, err := log.NewPrometheusLogger(loglvl, logfmt)
-	if err != nil {
-		fatal("failed to create logger: %v", err)
-	}
+	logger := log.NewDefaultLogger(loglvl, logfmt)
 
 	if configFilename != "" {
 		buf, err := ioutil.ReadFile(configFilename)
