@@ -106,6 +106,9 @@ func loadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.Bucket, u
 	var deletionTimes map[ulid.ULID]time.Time
 	if showDeleted {
 		deletionTimes, err = fetchDeletionTimes(ctx, bkt, deletionMarkerFiles)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
 	metas, err := fetchMetas(ctx, bkt, metaPaths)
