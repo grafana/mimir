@@ -36,6 +36,8 @@ func main() {
 		showDeleted      bool
 		showLabels       bool
 		showCreationTime bool
+		showSources      bool
+		showParents      bool
 		splitCount       int
 	}{}
 
@@ -44,6 +46,8 @@ func main() {
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
 	flag.BoolVar(&cfg.showCreationTime, "show-creation-time", false, "Show when block was created (from ULID)")
+	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
+	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
 	flag.IntVar(&cfg.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
 	flag.Parse()
 
@@ -65,7 +69,7 @@ func main() {
 		log.Fatalln("failed to read block metadata:", err)
 	}
 
-	printMetas(metas, deletedTimes, cfg.showCreationTime, cfg.showDeleted, cfg.showLabels, cfg.splitCount)
+	printMetas(metas, deletedTimes, cfg.showCreationTime, cfg.showDeleted, cfg.showLabels, cfg.showSources, cfg.showParents, cfg.splitCount)
 }
 
 func loadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.Bucket, user string, showDeleted bool) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
@@ -170,7 +174,7 @@ func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (m
 
 // nolint:errcheck
 //goland:noinspection GoUnhandledErrorResult
-func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, showCreationTime, showDeleted, showLabels bool, splitCount int) {
+func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]time.Time, showCreationTime, showDeleted, showLabels bool, showSources, showParents bool, splitCount int) {
 	var blocks []*metadata.Meta
 
 	for _, b := range metas {
@@ -178,7 +182,15 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	}
 
 	sort.Slice(blocks, func(i, j int) bool {
-		return blocks[i].MinTime < blocks[j].MinTime
+		if blocks[i].MinTime != blocks[j].MinTime {
+			return blocks[i].MinTime < blocks[j].MinTime
+		}
+		if blocks[i].MaxTime != blocks[j].MaxTime {
+			return blocks[i].MaxTime < blocks[j].MaxTime
+		}
+
+		// check block creation time instead
+		return blocks[i].ULID.Time() < blocks[j].ULID.Time()
 	})
 
 	tabber := tabwriter.NewWriter(os.Stdout, 1, 4, 3, ' ', 0)
@@ -200,6 +212,12 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	}
 	if showLabels {
 		fmt.Fprintf(tabber, "Labels (excl. "+tsdb.TenantIDExternalLabel+")\t")
+	}
+	if showSources {
+		fmt.Fprintf(tabber, "Sources\t")
+	}
+	if showParents {
+		fmt.Fprintf(tabber, "Parents\t")
 	}
 	fmt.Fprintln(tabber)
 
@@ -233,6 +251,20 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 			} else {
 				fmt.Fprintf(tabber, "\t")
 			}
+		}
+
+		if showSources {
+			// No tab at the end.
+			fmt.Fprintf(tabber, "%v", b.Compaction.Sources)
+		}
+
+		if showParents {
+			var p []ulid.ULID
+			for _, pb := range b.Compaction.Parents {
+				p = append(p, pb.ULID)
+			}
+			// No tab at the end.
+			fmt.Fprintf(tabber, "%v", p)
 		}
 
 		fmt.Fprintln(tabber)
