@@ -5,6 +5,7 @@ package ingester
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -16,28 +17,37 @@ import (
 
 // Scenario: each label name or label value is 8 bytes value. Except `label-c` label, its label name is 7 bytes in length.
 //
-// expected 4 messages:
+// expected 7 messages:
 // 0. {Items:[&LabelValues{LabelName:label-aa,Values:[a0000000 a1111111 a2222222],}]}
-// This message size is 42 bytes. it must be sent because its size reached the threshold of 32 bytes.
+// This message size is 32 bytes. it must be sent because its size reached the threshold of 32 bytes.
 // 1. {Items:[&LabelValues{LabelName:label-bb,Values:[b0000000 b1111111 b2222222],}]}
-// This message size is 42 bytes. it must be sent because its size reached the threshold of 32 bytes.
+// This message size is 32 bytes. it must be sent because its size reached the threshold of 32 bytes.
 // 2. {Items:[&LabelValues{LabelName:label-bb,Values:[b3333333],} &LabelValues{LabelName:label-c,Values:[c0000000],}]}
-// This message size is 43 bytes. it must be sent because its size reached the threshold of 32 bytes.
+// This message size is 32 bytes. it must be sent because its size reached the threshold of 32 bytes.
 // 3. {Items:[&LabelValues{LabelName:label-dd,Values:[d0000000],}]}
-// This message size is 22 bytes. it must be sent even if it's not reached the threshold of 32 bytes, but it's the last message.
+// This message size is 16 bytes. it must be sent even if it's not reached the threshold of 32 bytes, but adding the next label-name leads to passing threshold.
+// 4. {Items:[&LabelValues{LabelName:strings.Repeat("label-ee", 10),Values:[e0000000],}]}
+// This message size is 88 bytes, but anyway it must be sent.
+// 5. {Items:[&LabelValues{LabelName:"label-ff",Values:[f0000000 f1111111 f2222222],}]}
+// This message size is 32 bytes. it must be sent because its size reached the threshold of 32 bytes.
+// 6. {Items:[&LabelValues{LabelName:"label-gg",Values:[g0000000],}]}
+// This message size is 16 bytes. it must be sent even if it's not reached the threshold of 32 bytes, but it's the last message.
 func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 
 	existingLabels := map[string][]string{
-		"label-aa": {"a0000000", "a1111111", "a2222222"},
-		"label-bb": {"b0000000", "b1111111", "b2222222", "b3333333"},
-		"label-c":  {"c0000000"},
-		"label-dd": {"d0000000"},
+		"label-aa":                     {"a0000000", "a1111111", "a2222222"},
+		"label-bb":                     {"b0000000", "b1111111", "b2222222", "b3333333"},
+		"label-c":                      {"c0000000"},
+		"label-dd":                     {"d0000000"},
+		strings.Repeat("label-ee", 10): {"e0000000"},
+		"label-ff":                     {"f0000000", "f1111111", "f2222222"},
+		"label-gg":                     {"g0000000"},
 	}
 	mockServer := MockLabelNamesAndValuesServer{context: context.Background()}
 	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
 	require.NoError(t, labelNamesAndValues(MockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, server))
 
-	require.Len(t, mockServer.SentResponses, 4)
+	require.Len(t, mockServer.SentResponses, 7)
 
 	require.Equal(t, []*client.LabelValues{
 		{LabelName: "label-aa", Values: []string{"a0000000", "a1111111", "a2222222"}}},
@@ -51,6 +61,15 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	require.Equal(t, []*client.LabelValues{
 		{LabelName: "label-dd", Values: []string{"d0000000"}}},
 		mockServer.SentResponses[3].Items)
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: strings.Repeat("label-ee", 10), Values: []string{"e0000000"}}},
+		mockServer.SentResponses[4].Items)
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-ff", Values: []string{"f0000000", "f1111111", "f2222222"}}},
+		mockServer.SentResponses[5].Items)
+	require.Equal(t, []*client.LabelValues{
+		{LabelName: "label-gg", Values: []string{"g0000000"}}},
+		mockServer.SentResponses[6].Items)
 }
 
 func TestExpectedAllLabelNamesAndValuesToBeReturnedInSingleMessage(t *testing.T) {
