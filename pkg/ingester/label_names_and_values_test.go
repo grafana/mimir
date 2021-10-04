@@ -7,22 +7,22 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/ingester/client"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
-// Scenario: each label name or label value is 8 bytes value.
+// Scenario: each label name or label value is 8 bytes value. Except `label-c` label, its label name is 7 bytes in length.
 //
 // expected 4 messages:
 // 0. {Items:[&LabelValues{LabelName:label-aa,Values:[a0000000 a1111111 a2222222],}]}
 // This message size is 42 bytes. it must be sent because its size reached the threshold of 32 bytes.
 // 1. {Items:[&LabelValues{LabelName:label-bb,Values:[b0000000 b1111111 b2222222],}]}
 // This message size is 42 bytes. it must be sent because its size reached the threshold of 32 bytes.
-// 2. {Items:[&LabelValues{LabelName:label-bb,Values:[b3333333],} &LabelValues{LabelName:label-cc,Values:[c0000000],}]}
-// This message size is 42 bytes. it must be sent because its size reached the threshold of 32 bytes.
+// 2. {Items:[&LabelValues{LabelName:label-bb,Values:[b3333333],} &LabelValues{LabelName:label-c,Values:[c0000000],}]}
+// This message size is 43 bytes. it must be sent because its size reached the threshold of 32 bytes.
 // 3. {Items:[&LabelValues{LabelName:label-dd,Values:[d0000000],}]}
 // This message size is 22 bytes. it must be sent even if it's not reached the threshold of 32 bytes, but it's the last message.
 func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
@@ -30,7 +30,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 	existingLabels := map[string][]string{
 		"label-aa": {"a0000000", "a1111111", "a2222222"},
 		"label-bb": {"b0000000", "b1111111", "b2222222", "b3333333"},
-		"label-cc": {"c0000000"},
+		"label-c":  {"c0000000"},
 		"label-dd": {"d0000000"},
 	}
 	mockServer := MockLabelNamesAndValuesServer{context: context.Background()}
@@ -46,7 +46,7 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 		{LabelName: "label-bb", Values: []string{"b0000000", "b1111111", "b2222222"}}},
 		mockServer.SentResponses[1].Items)
 	require.Equal(t, []*client.LabelValues{
-		{LabelName: "label-bb", Values: []string{"b3333333"}}, {LabelName: "label-cc", Values: []string{"c0000000"}}},
+		{LabelName: "label-bb", Values: []string{"b3333333"}}, {LabelName: "label-c", Values: []string{"c0000000"}}},
 		mockServer.SentResponses[2].Items)
 	require.Equal(t, []*client.LabelValues{
 		{LabelName: "label-dd", Values: []string{"d0000000"}}},
