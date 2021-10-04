@@ -30,7 +30,6 @@ func main() {
 	}
 }
 
-// nolint:errcheck
 func analyseSymbols(blockDir string, shards int) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
@@ -58,7 +57,7 @@ func analyseSymbols(blockDir string, shards int) {
 		return
 	}
 
-	fmt.Println("Symbols table has", totalSymbolsCount, "symbols, total length", totalSymbolsLength, "bytes")
+	fmt.Println("Symbols table has", totalSymbolsCount, "symbols, total length of symbols:", totalSymbolsLength, "bytes, symbols table size:", block.GetSymbolTableSize(), "bytes")
 
 	k, v := index.AllPostingsKey()
 	p, err := idx.Postings(k, v)

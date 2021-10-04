@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 var logger = log.NewLogfmtLogger(os.Stdout)
@@ -47,7 +48,7 @@ func printChunksFile(filename string, printSamples bool) error {
 		return fmt.Errorf("failed to read header: %d bytes read only", n)
 	}
 
-	if !bytes.HasPrefix(header, []byte{0x85, 0xBD, 0x40, 0xDD}) { // 0x01 at the end is version
+	if binary.BigEndian.Uint32(header) != chunks.MagicChunks {
 		return fmt.Errorf("file doesn't start with magic prefix")
 	}
 	if header[4] != 0x01 {

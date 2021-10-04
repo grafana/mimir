@@ -22,8 +22,8 @@ func main() {
 		segmentSizeMB int64
 	)
 
-	flag.StringVar(&outputDir, "dir", ".", "Output directory for new block(s)")
-	flag.StringVar(&cpuProf, "cpuprof", "", "Where to store CPU profile (it not empty)")
+	flag.StringVar(&outputDir, "output-dir", ".", "Output directory for new block(s)")
+	flag.StringVar(&cpuProf, "cpuprofile", "", "Where to store CPU profile (it not empty)")
 	flag.IntVar(&shardCount, "shard-count", 1, "Number of shards for splitting")
 	flag.Int64Var(&segmentSizeMB, "segment-file-size", 512, "Size of segment file")
 

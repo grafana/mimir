@@ -18,7 +18,7 @@ var logger = log.NewLogfmtLogger(os.Stderr)
 
 func main() {
 	metricSelector := flag.String("select", "", "PromQL metric selector")
-	printChunks := flag.Bool("chunks", false, "Print chunk details")
+	printChunks := flag.Bool("show-chunks", false, "Print chunk details")
 	flag.Parse()
 
 	if flag.NArg() == 0 {
