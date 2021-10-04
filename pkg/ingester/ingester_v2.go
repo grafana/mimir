@@ -1286,7 +1286,9 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 	return response, nil
 }
 
-const labelNamesAndValuesMessageSize = 1 * 1024 * 1024
+// we defined to use the limit of 1 MB because we have default limit for the GRPC message that is 4 MB.
+// So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
+const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
 	if err := i.checkRunning(); err != nil {
@@ -1312,7 +1314,7 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err != nil {
 		return err
 	}
-	return labelNamesAndValues(index, matchers, labelNamesAndValuesMessageSize, server)
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
 }
 
 func createUserStats(db *userTSDB) *client.UserStatsResponse {
