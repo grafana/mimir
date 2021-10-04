@@ -18,5 +18,5 @@ gsutil -m cp -r -n gs://bucket/tenant/debug .
 And then run:
 
 ```
-check-duplicate-blocks -backend=filesystem -filesystem.dir=/tmp/test-bucket -user=tenant
+list-deduplicated-blocks -backend=filesystem -filesystem.dir=/tmp/test-bucket -user=tenant
 ```

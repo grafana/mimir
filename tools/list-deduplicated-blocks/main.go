@@ -64,7 +64,7 @@ func main() {
 		log.Fatalln("failed to list debug metas:", err)
 	}
 
-	fmt.Println("Fetching", len(metas), "metas")
+	log.Println("Fetching", len(metas), "metas")
 	metasMap, err := fetchMetas(ctx, bkt, metas)
 	if err != nil {
 		log.Fatalln("failed to list fetch metas:", err)
