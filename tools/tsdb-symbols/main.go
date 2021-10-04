@@ -170,7 +170,7 @@ func readSymbolsTableSizeAndSymbolsCount(indexFile string) (symbolTableSize, sym
 		return 0, 0, fmt.Errorf("file doesn't start with magic prefix")
 	}
 
-	// Check version. We support V1 and V2, both have symbol table at the beggining, and it uses the same format.
+	// Check version. We support V1 and V2, both have symbol table at the beginning, and it uses the same format.
 	if header[4] != 0x01 && header[4] != 0x02 {
 		return 0, 0, fmt.Errorf("invalid index version: 0x%02x", header[4])
 	}
