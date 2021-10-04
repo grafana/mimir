@@ -73,6 +73,6 @@ func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) err
 	return args.Error(0)
 }
 
-func (m *IngesterServerMock) LabelNamesCardinality(_ *LabelNamesCardinalityRequest, _ Ingester_LabelNamesCardinalityServer) error {
+func (m *IngesterServerMock) LabelNamesAndValues(_ *LabelNamesAndValuesRequest, _ Ingester_LabelNamesAndValuesServer) error {
 	return errors.New("not implemented")
 }

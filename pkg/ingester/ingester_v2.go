@@ -1286,7 +1286,9 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 	return response, nil
 }
 
-func (i *Ingester) LabelNamesCardinality(request *client.LabelNamesCardinalityRequest, server client.Ingester_LabelNamesCardinalityServer) error {
+const labelNamesAndValuesMessageSize = 1 * 1024 * 1024
+
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
@@ -1305,11 +1307,12 @@ func (i *Ingester) LabelNamesCardinality(request *client.LabelNamesCardinalityRe
 	if err != nil {
 		return err
 	}
+	defer index.Close()
 	matchers, err := client.FromLabelMatchers(request.GetMatchers())
 	if err != nil {
 		return err
 	}
-	return i.cardinalityReporter.labelNamesCardinality(index, matchers, i.cfg.CardinalityAnalysisConfig.LabelNamesResponseBatchSize, &server)
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesMessageSize, server)
 }
 
 func createUserStats(db *userTSDB) *client.UserStatsResponse {

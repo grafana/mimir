@@ -855,12 +855,6 @@ instance_limits:
 # max-global-series-per-metric limits.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
-
-cardinality_analysis:
-  # Number of label values that are sent in one message while streaming label
-  # values for cardinality report.
-  # CLI flag: -ingester.cardinality-analysis.label-names-response-batch-size
-  [label_names_response_batch_size: <int> | default = 100000]
 ```
 
 ### `querier_config`

@@ -1220,11 +1220,7 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 }
 
 func Test_Ingester_v2Query(t *testing.T) {
-	series := []struct {
-		lbls      labels.Labels
-		value     float64
-		timestamp int64
-	}{
+	series := []series{
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}, {Name: "route", Value: "get_user"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "route", Value: "get_user"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
@@ -1332,11 +1328,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 }
 
 func TestIngester_LabelNamesCardinality(t *testing.T) {
-	series := []struct {
-		lbls      labels.Labels
-		value     float64
-		timestamp int64
-	}{
+	series := []series{
 		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "500"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "200"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "metric_1"}, {Name: "env", Value: "prod"}}, 2, 200000},
@@ -1354,12 +1346,16 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 		{testName: "expected all label with values",
 			matchers: []*client.LabelMatcher{},
 			expected: []*client.LabelValues{
+				{LabelName: labels.MetricName, Values: []string{"metric_0", "metric_1"}},
 				{LabelName: "status", Values: []string{"200", "300", "500"}},
 				{LabelName: "env", Values: []string{"prod"}}},
 		},
 		{testName: "expected label values only from `metric_0`",
 			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_0"}},
-			expected: []*client.LabelValues{{LabelName: "status", Values: []string{"200", "500"}}},
+			expected: []*client.LabelValues{
+				{LabelName: labels.MetricName, Values: []string{"metric_0"}},
+				{LabelName: "status", Values: []string{"200", "500"}},
+			},
 		},
 	}
 
@@ -1371,23 +1367,25 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 	// Run tests
 	for _, tc := range tests {
 		t.Run(tc.testName, func(t *testing.T) {
-			req := &client.LabelNamesCardinalityRequest{
+			req := &client.LabelNamesAndValuesRequest{
 				Matchers: tc.matchers,
 			}
 
-			s := MockLabelNamesCardinalityServer{context: ctx}
-			require.NoError(t, i.LabelNamesCardinality(req, &s))
+			s := MockLabelNamesAndValuesServer{context: ctx}
+			require.NoError(t, i.LabelNamesAndValues(req, &s))
 
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
 		})
 	}
 }
 
-func pushSeriesToIngester(t *testing.T, series []struct {
+type series struct {
 	lbls      labels.Labels
 	value     float64
 	timestamp int64
-}, i *Ingester) context.Context {
+}
+
+func pushSeriesToIngester(t *testing.T, series []series, i *Ingester) context.Context {
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
@@ -1397,7 +1395,7 @@ func pushSeriesToIngester(t *testing.T, series []struct {
 	return ctx
 }
 
-func extractItemsWithSortedValues(responses []client.LabelNamesCardinalityResponse) []*client.LabelValues {
+func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse) []*client.LabelValues {
 	var items []*client.LabelValues
 	for _, res := range responses {
 		items = append(items, res.Items...)

@@ -25,11 +25,11 @@ func SendTimeSeriesChunk(s Ingester_TransferChunksClient, m *TimeSeriesChunk) er
 	})
 }
 
-// SendLabelNamesCardinalityResponse wraps the stream's Send() checking if the context is done
+// SendLabelNamesAndValuesResponse wraps the stream's Send() checking if the context is done
 // before calling Send().
-func SendLabelNamesCardinalityResponse(s *Ingester_LabelNamesCardinalityServer, response *LabelNamesCardinalityResponse) error {
-	return sendWithContextErrChecking((*s).Context(), func() error {
-		return (*s).Send(response)
+func SendLabelNamesAndValuesResponse(s Ingester_LabelNamesAndValuesServer, response *LabelNamesAndValuesResponse) error {
+	return sendWithContextErrChecking(s.Context(), func() error {
+		return s.Send(response)
 	})
 }
 
