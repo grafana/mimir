@@ -11,10 +11,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
   prometheusRules+:: {
     groups+: [
       {
-        name: 'cortex_api',
+        name: 'cortex_api_1',
         rules:
-          utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'job']) +
-          utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'job', 'route']) +
+          utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'job']),
+      },
+      {
+        name: 'cortex_api_2',
+        rules:
+          utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'job', 'route']),
+      },
+      {
+        name: 'cortex_api_3',
+        rules:
           utils.histogramRules('cortex_request_duration_seconds', ['cluster', 'namespace', 'job', 'route']),
       },
       {
