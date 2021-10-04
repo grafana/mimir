@@ -6,7 +6,12 @@
 package querytee
 
 import (
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -14,6 +19,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 )
 
 func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
@@ -108,6 +114,79 @@ func Test_ProxyEndpoint_waitBackendResponseForDownstream(t *testing.T) {
 			// Wait for the selected backend response.
 			actual := endpoint.waitBackendResponseForDownstream(resCh)
 			assert.Equal(t, testData.expected, actual.backend)
+		})
+	}
+}
+
+func Test_ProxyEndpoint_Requests(t *testing.T) {
+	var (
+		requestCount atomic.Uint64
+		wg           sync.WaitGroup
+	)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer wg.Done()
+		defer requestCount.Add(1)
+		// if method POST ensure we receive the body
+		if r.Method == "POST" {
+			body, err := io.ReadAll(r.Body)
+			require.Equal(t, "this-is-some-payload", string(body))
+			require.NoError(t, err)
+		}
+		require.Equal(t, "test-X-value", r.Header.Get("test-X"))
+		_, _ = w.Write([]byte("ok"))
+	})
+	backend1 := httptest.NewServer(handler)
+	defer backend1.Close()
+	backendURL1, err := url.Parse(backend1.URL)
+	require.NoError(t, err)
+
+	backend2 := httptest.NewServer(handler)
+	defer backend2.Close()
+	backendURL2, err := url.Parse(backend2.URL)
+	require.NoError(t, err)
+
+	backends := []*ProxyBackend{
+		NewProxyBackend("backend-1", backendURL1, time.Second, true),
+		NewProxyBackend("backend-2", backendURL2, time.Second, false),
+	}
+	endpoint := NewProxyEndpoint(backends, "test", NewProxyMetrics(nil), log.NewNopLogger(), nil)
+
+	for _, tc := range []struct {
+		name    string
+		request func(*testing.T) *http.Request
+	}{
+		{
+			name: "GET-request",
+			request: func(t *testing.T) *http.Request {
+				r, err := http.NewRequest("GET", "http://test/api/v1/test", nil)
+				r.Header["test-X"] = []string{"test-X-value"}
+				require.NoError(t, err)
+				return r
+			},
+		},
+		{
+			name: "POST-request-with-body",
+			request: func(t *testing.T) *http.Request {
+				strings := strings.NewReader("this-is-some-payload")
+				r, err := http.NewRequest("POST", "http://test/api/v1/test", strings)
+				require.NoError(t, err)
+				r.Header["test-X"] = []string{"test-X-value"}
+				return r
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// reset request count
+			requestCount.Store(0)
+			wg.Add(2)
+
+			w := httptest.NewRecorder()
+			endpoint.ServeHTTP(w, tc.request(t))
+			require.Equal(t, "ok", w.Body.String())
+			require.Equal(t, 200, w.Code)
+
+			wg.Wait()
+			require.Equal(t, uint64(2), requestCount.Load())
 		})
 	}
 }

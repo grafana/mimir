@@ -78,14 +78,14 @@ func mimirReadRoutes(cfg Config) []querytee.Route {
 		SkipRecentSamples: cfg.ProxyConfig.SkipRecentSamples,
 	})
 	return []querytee.Route{
-		{Path: prefix + "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET"}, ResponseComparator: samplesComparator},
-		{Path: prefix + "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET"}, ResponseComparator: samplesComparator},
-		{Path: prefix + "/api/v1/query_exemplars", RouteName: "api_v1_query_exemplars", Methods: []string{"GET"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/labels", RouteName: "api_v1_labels", Methods: []string{"GET"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/label/{name}/values", RouteName: "api_v1_label_name_values", Methods: []string{"GET"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/series", RouteName: "api_v1_series", Methods: []string{"GET"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/metadata", RouteName: "api_v1_metadata", Methods: []string{"GET"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/rules", RouteName: "api_v1_rules", Methods: []string{"GET"}, ResponseComparator: nil},
-		{Path: prefix + "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/query", RouteName: "api_v1_query", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator},
+		{Path: prefix + "/api/v1/query_range", RouteName: "api_v1_query_range", Methods: []string{"GET", "POST"}, ResponseComparator: samplesComparator},
+		{Path: prefix + "/api/v1/query_exemplars", RouteName: "api_v1_query_exemplars", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/labels", RouteName: "api_v1_labels", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/label/{name}/values", RouteName: "api_v1_label_name_values", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/series", RouteName: "api_v1_series", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/metadata", RouteName: "api_v1_metadata", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/rules", RouteName: "api_v1_rules", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
+		{Path: prefix + "/api/v1/alerts", RouteName: "api_v1_alerts", Methods: []string{"GET", "POST"}, ResponseComparator: nil},
 	}
 }
