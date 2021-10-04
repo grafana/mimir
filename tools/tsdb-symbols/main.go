@@ -30,6 +30,7 @@ func main() {
 	}
 }
 
+// nolint:errcheck
 func analyseSymbols(blockDir string, shards int) {
 	block, err := tsdb.OpenBlock(logger, blockDir, nil)
 	if err != nil {
