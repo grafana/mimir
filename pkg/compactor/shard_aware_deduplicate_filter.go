@@ -30,7 +30,7 @@ func NewShardAwareDeduplicateFilter() *ShardAwareDeduplicateFilter {
 
 // Filter filters out duplicate blocks that can be formed
 // from two or more overlapping blocks that fully submatches the source blocks of the older blocks.
-func (f *ShardAwareDeduplicateFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+func (f *ShardAwareDeduplicateFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
 	f.duplicateIDs = f.duplicateIDs[:0]
 
 	metasByResolution := make(map[int64][]*metadata.Meta)
@@ -40,7 +40,10 @@ func (f *ShardAwareDeduplicateFilter) Filter(_ context.Context, metas map[ulid.U
 	}
 
 	for res := range metasByResolution {
-		duplicateULIDs := f.findDuplicates(metasByResolution[res])
+		duplicateULIDs, err := f.findDuplicates(ctx, metasByResolution[res])
+		if err != nil {
+			return err
+		}
 
 		for id := range duplicateULIDs {
 			if metas[id] != nil {
@@ -108,7 +111,7 @@ func (f *ShardAwareDeduplicateFilter) Filter(_ context.Context, metas map[ulid.U
 // There is a lot of repetition in this tree, but individual block nodes are shared (it would be difficult to draw that though).
 // So for example there is only one ULID(9) node, referenced from nodes 5, 6, 7, 8 (each of them also exists only once). See
 // blockWithSuccessors structure -- it uses maps to pointers to handle all this cross-referencing correctly.
-func (f *ShardAwareDeduplicateFilter) findDuplicates(input []*metadata.Meta) map[ulid.ULID]struct{} {
+func (f *ShardAwareDeduplicateFilter) findDuplicates(ctx context.Context, input []*metadata.Meta) (map[ulid.ULID]struct{}, error) {
 	// Sort blocks with fewer sources first.
 	sort.Slice(input, func(i, j int) bool {
 		ilen := len(input[i].Compaction.Sources)
@@ -123,12 +126,16 @@ func (f *ShardAwareDeduplicateFilter) findDuplicates(input []*metadata.Meta) map
 
 	root := newBlockWithSuccessors(nil)
 	for _, meta := range input {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+
 		root.addSuccessorIfPossible(newBlockWithSuccessors(meta))
 	}
 
 	duplicateULIDs := make(map[ulid.ULID]struct{})
 	root.getDuplicateBlocks(duplicateULIDs)
-	return duplicateULIDs
+	return duplicateULIDs, nil
 }
 
 // DuplicateIDs returns slice of block ids that are filtered out by ShardAwareDeduplicateFilter.
