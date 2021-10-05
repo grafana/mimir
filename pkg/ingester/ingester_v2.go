@@ -1286,6 +1286,37 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 	return response, nil
 }
 
+// we defined to use the limit of 1 MB because we have default limit for the GRPC message that is 4 MB.
+// So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
+const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
+
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("labelNamesAndValues endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	userID, err := tenant.TenantID(server.Context())
+	if err != nil {
+		return err
+	}
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
+	}
+	index, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	defer index.Close()
+	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
+}
+
 func createUserStats(db *userTSDB) *client.UserStatsResponse {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()

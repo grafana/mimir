@@ -1255,11 +1255,7 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 }
 
 func Test_Ingester_v2Query(t *testing.T) {
-	series := []struct {
-		lbls      labels.Labels
-		value     float64
-		timestamp int64
-	}{
+	series := []series{
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}, {Name: "route", Value: "get_user"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "route", Value: "get_user"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
@@ -1382,6 +1378,85 @@ func Test_Ingester_v2Query(t *testing.T) {
 			assert.ElementsMatch(t, testData.expected, res)
 		})
 	}
+}
+
+func TestIngester_LabelNamesCardinality(t *testing.T) {
+	series := []series{
+		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "500"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "200"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "metric_1"}, {Name: "env", Value: "prod"}}, 2, 200000},
+		{labels.Labels{
+			{Name: labels.MetricName, Value: "metric_1"},
+			{Name: "env", Value: "prod"},
+			{Name: "status", Value: "300"}}, 3, 200000},
+	}
+
+	tests := []struct {
+		testName string
+		matchers []*client.LabelMatcher
+		expected []*client.LabelValues
+	}{
+		{testName: "expected all label with values",
+			matchers: []*client.LabelMatcher{},
+			expected: []*client.LabelValues{
+				{LabelName: labels.MetricName, Values: []string{"metric_0", "metric_1"}},
+				{LabelName: "status", Values: []string{"200", "300", "500"}},
+				{LabelName: "env", Values: []string{"prod"}}},
+		},
+		{testName: "expected label values only from `metric_0`",
+			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_0"}},
+			expected: []*client.LabelValues{
+				{LabelName: labels.MetricName, Values: []string{"metric_0"}},
+				{LabelName: "status", Values: []string{"200", "500"}},
+			},
+		},
+	}
+
+	// Create ingester
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+
+	ctx := pushSeriesToIngester(t, series, i)
+
+	// Run tests
+	for _, tc := range tests {
+		t.Run(tc.testName, func(t *testing.T) {
+			req := &client.LabelNamesAndValuesRequest{
+				Matchers: tc.matchers,
+			}
+
+			s := MockLabelNamesAndValuesServer{context: ctx}
+			require.NoError(t, i.LabelNamesAndValues(req, &s))
+
+			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
+		})
+	}
+}
+
+type series struct {
+	lbls      labels.Labels
+	value     float64
+	timestamp int64
+}
+
+func pushSeriesToIngester(t *testing.T, series []series, i *Ingester) context.Context {
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, series := range series {
+		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		_, err := i.v2Push(ctx, req)
+		require.NoError(t, err)
+	}
+	return ctx
+}
+
+func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse) []*client.LabelValues {
+	var items []*client.LabelValues
+	for _, res := range responses {
+		items = append(items, res.Items...)
+	}
+	for _, it := range items {
+		sort.Strings(it.Values)
+	}
+	return items
 }
 
 func TestIngester_v2Query_QuerySharding(t *testing.T) {
@@ -2396,6 +2471,26 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 			})
 		}
 	})
+}
+
+func requireActiveIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
+	ingester := getStartedIngesterWithBlocksStorage(t, ingesterCfg, registerer)
+	// Wait until the ingester is ACTIVE
+	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
+		return ingester.lifecycler.GetState()
+	})
+	return ingester
+}
+
+func getStartedIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
+	ingester, err := prepareIngesterWithBlocksStorage(t, ingesterCfg, registerer)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+	return ingester
 }
 
 func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, queryShardingEnabled bool, numShards int) {
