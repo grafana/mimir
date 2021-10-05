@@ -21,6 +21,7 @@ func labelNamesAndValues(
 	if err != nil {
 		return err
 	}
+
 	response := client.LabelNamesAndValuesResponse{}
 	responseSizeBytes := 0
 	for _, labelName := range labelNames {
@@ -39,14 +40,14 @@ func labelNamesAndValues(
 		if err != nil {
 			return err
 		}
+
 		lastAddedValueIndex := -1
 		for i, val := range values {
 			// sum up label values length until response size reached the threshold and after that add all values to the response
 			// starting from last sent value or from the first element and up to the current element (including).
 			responseSizeBytes += len(val)
-			nextElementIndex := i + 1
 			if responseSizeBytes >= messageSizeThreshold {
-				labelItem.Values = values[lastAddedValueIndex+1 : nextElementIndex]
+				labelItem.Values = values[lastAddedValueIndex+1 : i+1]
 				lastAddedValueIndex = i
 				response.Items = append(response.Items, labelItem)
 				err = client.SendLabelNamesAndValuesResponse(server, &response)
@@ -56,17 +57,17 @@ func labelNamesAndValues(
 				// reset label values to reuse labelItem for the next values of current label.
 				labelItem.Values = labelItem.Values[:0]
 				response.Items = response.Items[:0]
-				if nextElementIndex == len(values) {
+				if i+1 == len(values) {
 					// if it's the last value for this label then response size must be set to `0`
 					responseSizeBytes = 0
 				} else {
 					// if it is not the last value for this label then response size must be set to length of current label name.
 					responseSizeBytes = len(labelName)
 				}
-			} else if nextElementIndex == len(values) {
+			} else if i+1 == len(values) {
 				// if response size does not reach the threshold, but it's the last label value then it must be added to labelItem
 				// and label item must be added to response.
-				labelItem.Values = values[lastAddedValueIndex+1 : nextElementIndex]
+				labelItem.Values = values[lastAddedValueIndex+1 : i+1]
 				response.Items = append(response.Items, labelItem)
 			}
 		}

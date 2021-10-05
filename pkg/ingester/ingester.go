@@ -300,6 +300,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, c
 
 	i.subservicesWatcher = services.NewFailureWatcher()
 	i.subservicesWatcher.WatchService(i.lifecycler)
+
 	i.BasicService = services.NewBasicService(i.starting, i.loop, i.stopping)
 	return i, nil
 }

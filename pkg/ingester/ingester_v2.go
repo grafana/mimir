@@ -1291,11 +1291,11 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
-	if err := i.checkRunning(); err != nil {
-		return err
-	}
 	if !i.cfg.BlocksStorageEnabled {
 		return errors.New("labelNamesAndValues endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
 	}
 	userID, err := tenant.TenantID(server.Context())
 	if err != nil {

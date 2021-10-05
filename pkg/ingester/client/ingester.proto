@@ -30,7 +30,7 @@ service Ingester {
 
   // TransferChunks allows leaving ingester (client) to stream chunks directly to joining ingesters (server).
   rpc TransferChunks(stream TimeSeriesChunk) returns (TransferChunksResponse) {};
-  // LabelNamesAndValues provides all values for each label that matches the matchers
+  // LabelNamesAndValues provides all values for each label that matches the matchers. The order of the labels and values is not guaranteed.
   rpc LabelNamesAndValues(LabelNamesAndValuesRequest) returns (stream LabelNamesAndValuesResponse) {};
 }
 
