@@ -7,7 +7,6 @@ package client
 
 import (
 	"context"
-	"errors"
 
 	"github.com/stretchr/testify/mock"
 
@@ -73,6 +72,12 @@ func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) err
 	return args.Error(0)
 }
 
-func (m *IngesterServerMock) LabelNamesAndValues(_ *LabelNamesAndValuesRequest, _ Ingester_LabelNamesAndValuesServer) error {
-	return errors.New("not implemented")
+func (m *IngesterServerMock) LabelNamesAndValues(req *LabelNamesAndValuesRequest, srv Ingester_LabelNamesAndValuesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}
+
+func (m *IngesterServerMock) LabelValuesCardinality(req *LabelValuesCardinalityRequest, srv Ingester_LabelValuesCardinalityServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
 }

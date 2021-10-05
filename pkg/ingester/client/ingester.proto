@@ -30,8 +30,15 @@ service Ingester {
 
   // TransferChunks allows leaving ingester (client) to stream chunks directly to joining ingesters (server).
   rpc TransferChunks(stream TimeSeriesChunk) returns (TransferChunksResponse) {};
-  // LabelNamesAndValues provides all values for each label that matches the matchers. The order of the labels and values is not guaranteed.
+
+  // LabelNamesAndValues provides all values for each label that matches the matchers.
+  // The order of the labels and values is not guaranteed.
   rpc LabelNamesAndValues(LabelNamesAndValuesRequest) returns (stream LabelNamesAndValuesResponse) {};
+
+  // LabelValuesCardinality returns all values and series total count for label_names labels.
+  // Additionally it allows the inclusion of extra matchers to be applied.
+  // The listing order of the labels is not guaranteed.
+  rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
 }
 
 message LabelNamesAndValuesRequest {
@@ -45,6 +52,22 @@ message LabelNamesAndValuesResponse {
 message LabelValues {
   string label_name = 1;
   repeated string values = 2;
+}
+
+message LabelValuesCardinalityRequest {
+  repeated string label_names = 1;
+  repeated LabelMatcher matchers = 2;
+}
+
+message LabelValuesCardinalityResponse {
+  uint64 series_count_total = 1;
+  repeated LabelValueCardinality items = 2;
+}
+
+message LabelValueCardinality {
+  string label_name = 1;
+  string label_value = 2;
+  uint64 series_count = 3;
 }
 
 message ReadRequest {

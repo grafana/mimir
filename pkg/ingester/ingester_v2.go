@@ -1291,18 +1291,14 @@ const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
 	if !i.cfg.BlocksStorageEnabled {
-		return errors.New("labelNamesAndValues endpoint supports only blocks storage type")
+		return errors.New("LabelNamesAndValues endpoint supports only blocks storage type")
 	}
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
-	userID, err := tenant.TenantID(server.Context())
+	db, err := i.getTSDBFromContext(server.Context())
 	if err != nil {
 		return err
-	}
-	db := i.getTSDB(userID)
-	if db == nil {
-		return nil
 	}
 	index, err := db.Head().Index()
 	if err != nil {
@@ -1314,6 +1310,36 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
+}
+
+func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) error {
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("LabelValuesCardinality endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	db, err := i.getTSDBFromContext(srv.Context())
+	if err != nil {
+		return err
+	}
+	idx, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = idx.Close() }()
+
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return labelValuesCardinality(
+		db.Head().NumSeries(),
+		idx,
+		req.GetLabelNames(),
+		matchers,
+		srv,
+	)
 }
 
 func createUserStats(db *userTSDB) *client.UserStatsResponse {
@@ -1557,6 +1583,14 @@ func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, 
 	}
 
 	return numSeries, numSamples, nil
+}
+
+func (i *Ingester) getTSDBFromContext(ctx context.Context) (*userTSDB, error) {
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return i.getTSDB(userID), nil
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {
