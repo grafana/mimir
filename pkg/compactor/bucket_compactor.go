@@ -278,6 +278,7 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Gro
 
 // Group captures a set of blocks that have the same origin labels and downsampling resolution.
 // Those blocks generally contain the same series and can thus efficiently be compacted.
+// Not goroutine safe.
 type Group struct {
 	userID               string
 	logger               log.Logger
@@ -285,7 +286,6 @@ type Group struct {
 	key                  string
 	labels               labels.Labels
 	resolution           int64
-	mtx                  sync.Mutex
 	metasByMinTime       []*metadata.Meta
 	acceptMalformedIndex bool
 	hashFunc             metadata.HashFunc
@@ -339,9 +339,6 @@ func (cg *Group) Key() string {
 
 // AppendMeta the block with the given meta to the group.
 func (cg *Group) AppendMeta(meta *metadata.Meta) error {
-	cg.mtx.Lock()
-	defer cg.mtx.Unlock()
-
 	if !labels.Equal(cg.labels, labels.FromMap(meta.Thanos.Labels)) {
 		return errors.New("block and group labels do not match")
 	}
@@ -358,9 +355,6 @@ func (cg *Group) AppendMeta(meta *metadata.Meta) error {
 
 // IDs returns all sorted IDs of blocks in the group.
 func (cg *Group) IDs() (ids []ulid.ULID) {
-	cg.mtx.Lock()
-	defer cg.mtx.Unlock()
-
 	for _, m := range cg.metasByMinTime {
 		ids = append(ids, m.ULID)
 	}
@@ -372,9 +366,6 @@ func (cg *Group) IDs() (ids []ulid.ULID) {
 
 // MinTime returns the min time across all group's blocks.
 func (cg *Group) MinTime() int64 {
-	cg.mtx.Lock()
-	defer cg.mtx.Unlock()
-
 	if len(cg.metasByMinTime) > 0 {
 		return cg.metasByMinTime[0].MinTime
 	}
@@ -383,9 +374,6 @@ func (cg *Group) MinTime() int64 {
 
 // MaxTime returns the max time across all group's blocks.
 func (cg *Group) MaxTime() int64 {
-	cg.mtx.Lock()
-	defer cg.mtx.Unlock()
-
 	max := int64(math.MinInt64)
 	for _, m := range cg.metasByMinTime {
 		if m.MaxTime > max {
@@ -460,9 +448,6 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 	if err := os.MkdirAll(subDir, 0750); err != nil {
 		return false, nil, errors.Wrap(err, "create compaction group dir")
 	}
-
-	cg.mtx.Lock()
-	defer cg.mtx.Unlock()
 
 	toCompact, err := planner.Plan(ctx, cg.metasByMinTime)
 	if err != nil {
