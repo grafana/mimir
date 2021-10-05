@@ -15,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -32,7 +31,6 @@ type ownJobFunc func(job *job) (bool, error)
 
 type SplitAndMergeGrouper struct {
 	userID string
-	bucket objstore.Bucket
 	ranges []int64
 	ownJob ownJobFunc
 	logger log.Logger
@@ -44,7 +42,6 @@ type SplitAndMergeGrouper struct {
 // NewSplitAndMergeGrouper makes a new SplitAndMergeGrouper. The provided ranges must be sorted.
 func NewSplitAndMergeGrouper(
 	userID string,
-	bucket objstore.Bucket,
 	ranges []int64,
 	shardCount uint32,
 	ownJob ownJobFunc,
@@ -52,7 +49,6 @@ func NewSplitAndMergeGrouper(
 ) *SplitAndMergeGrouper {
 	return &SplitAndMergeGrouper{
 		userID:     userID,
-		bucket:     bucket,
 		ranges:     ranges,
 		ownJob:     ownJob,
 		shardCount: shardCount,
@@ -90,12 +86,9 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 
 		thanosGroup, err := NewGroup(
 			g.userID,
-			log.With(g.logger, "groupKey", groupKey, "rangeStart", job.rangeStartTime().String(), "rangeEnd", job.rangeEndTime().String()),
-			g.bucket,
 			groupKey,
 			externalLabels,
 			resolution,
-			false, // No malformed index.
 			metadata.NoneFunc,
 			job.stage == stageSplit,
 			g.shardCount,

@@ -214,27 +214,15 @@ func defaultGroupKey(res int64, lbls labels.Labels) string {
 // DefaultGrouper is the Thanos built-in grouper. It groups blocks based on downsample
 // resolution and block's labels.
 type DefaultGrouper struct {
-	userID               string
-	bkt                  objstore.Bucket
-	logger               log.Logger
-	acceptMalformedIndex bool
-	hashFunc             metadata.HashFunc
+	userID   string
+	hashFunc metadata.HashFunc
 }
 
 // NewDefaultGrouper makes a new DefaultGrouper.
-func NewDefaultGrouper(
-	userID string,
-	logger log.Logger,
-	bkt objstore.Bucket,
-	acceptMalformedIndex bool,
-	hashFunc metadata.HashFunc,
-) *DefaultGrouper {
+func NewDefaultGrouper(userID string, hashFunc metadata.HashFunc) *DefaultGrouper {
 	return &DefaultGrouper{
-		userID:               userID,
-		bkt:                  bkt,
-		logger:               logger,
-		acceptMalformedIndex: acceptMalformedIndex,
-		hashFunc:             hashFunc,
+		userID:   userID,
+		hashFunc: hashFunc,
 	}
 }
 
@@ -249,12 +237,9 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Gro
 			lbls := labels.FromMap(m.Thanos.Labels)
 			group, err = NewGroup(
 				g.userID,
-				log.With(g.logger, "group", fmt.Sprintf("%d@%v", m.Thanos.Downsample.Resolution, lbls.String()), "groupKey", groupKey),
-				g.bkt,
 				groupKey,
 				lbls,
 				m.Thanos.Downsample.Resolution,
-				g.acceptMalformedIndex,
 				g.hashFunc,
 				false, // No splitting.
 				0,     // No splitting shards.
@@ -280,49 +265,37 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Gro
 // Those blocks generally contain the same series and can thus efficiently be compacted.
 // Not goroutine safe.
 type Group struct {
-	userID               string
-	logger               log.Logger
-	bkt                  objstore.Bucket
-	key                  string
-	labels               labels.Labels
-	resolution           int64
-	metasByMinTime       []*metadata.Meta
-	acceptMalformedIndex bool
-	hashFunc             metadata.HashFunc
-	useSplitting         bool
-	splitNumShards       uint32
-	shardingKey          string
+	userID         string
+	key            string
+	labels         labels.Labels
+	resolution     int64
+	metasByMinTime []*metadata.Meta
+	hashFunc       metadata.HashFunc
+	useSplitting   bool
+	splitNumShards uint32
+	shardingKey    string
 }
 
 // NewGroup returns a new compaction group.
 func NewGroup(
 	userID string,
-	logger log.Logger,
-	bkt objstore.Bucket,
 	key string,
 	lset labels.Labels,
 	resolution int64,
-	acceptMalformedIndex bool,
 	hashFunc metadata.HashFunc,
 	useSplitting bool,
 	splitNumShards uint32,
 	shardingKey string,
 ) (*Group, error) {
-	if logger == nil {
-		logger = log.NewNopLogger()
-	}
 	g := &Group{
-		userID:               userID,
-		logger:               logger,
-		bkt:                  bkt,
-		key:                  key,
-		labels:               lset,
-		resolution:           resolution,
-		acceptMalformedIndex: acceptMalformedIndex,
-		hashFunc:             hashFunc,
-		useSplitting:         useSplitting,
-		splitNumShards:       splitNumShards,
-		shardingKey:          shardingKey,
+		userID:         userID,
+		key:            key,
+		labels:         lset,
+		resolution:     resolution,
+		hashFunc:       hashFunc,
+		useSplitting:   useSplitting,
+		splitNumShards: splitNumShards,
+		shardingKey:    shardingKey,
 	}
 	return g, nil
 }
@@ -398,6 +371,36 @@ func (cg *Group) ShardingKey() string {
 	return cg.shardingKey
 }
 
+func minTime(metas []*metadata.Meta) time.Time {
+	if len(metas) == 0 {
+		return time.Time{}
+	}
+
+	minT := metas[0].MinTime
+	for _, meta := range metas {
+		if meta.MinTime < minT {
+			minT = meta.MinTime
+		}
+	}
+
+	return time.Unix(0, minT*int64(time.Millisecond)).UTC()
+}
+
+func maxTime(metas []*metadata.Meta) time.Time {
+	if len(metas) == 0 {
+		return time.Time{}
+	}
+
+	maxT := metas[0].MaxTime
+	for _, meta := range metas {
+		if meta.MaxTime > maxT {
+			maxT = meta.MaxTime
+		}
+	}
+
+	return time.Unix(0, maxT*int64(time.Millisecond)).UTC()
+}
+
 // Planner returns blocks to compact.
 type Planner interface {
 	// Plan returns a list of blocks that should be compacted into single one.
@@ -429,9 +432,10 @@ type Compactor interface {
 	CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error)
 }
 
-// Compact plans and runs a single compaction against the group. The compacted result
+// CompactGroup plans and runs a single compaction against the provided group. The compacted result
 // is uploaded into the bucket the blocks were retrieved from.
-func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp Compactor, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
+func (c *BucketCompactor) CompactGroup(ctx context.Context, cg *Group, dir string, planner Planner, comp Compactor, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
+	groupLogger := log.With(c.logger, "groupKey", cg.Key())
 	subDir := filepath.Join(dir, cg.Key())
 
 	defer func() {
@@ -441,7 +445,7 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 			return
 		}
 		if err := os.RemoveAll(subDir); err != nil {
-			level.Error(cg.logger).Log("msg", "failed to remove compaction group work directory", "path", subDir, "err", err)
+			level.Error(groupLogger).Log("msg", "failed to remove compaction group work directory", "path", subDir, "err", err)
 		}
 	}()
 
@@ -458,7 +462,11 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 		return false, nil, nil
 	}
 
-	level.Info(cg.logger).Log("msg", "compaction available and planned; downloading blocks", "plan", fmt.Sprintf("%v", toCompact))
+	// The planner returned some blocks to compact, so we can enrich the logger
+	// with the min/max time between all blocks to compact.
+	groupLogger = log.With(groupLogger, "minTime", minTime(toCompact).String(), "maxTime", maxTime(toCompact).String())
+
+	level.Info(groupLogger).Log("msg", "compaction available and planned; downloading blocks", "plan", fmt.Sprintf("%v", toCompact))
 
 	// Due to #183 we verify that none of the blocks in the plan have overlapping sources.
 	// This is one potential source of how we could end up with duplicated chunks.
@@ -477,12 +485,12 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 			uniqueSources[s] = struct{}{}
 		}
 
-		if err := block.Download(ctx, cg.logger, cg.bkt, meta.ULID, bdir); err != nil {
+		if err := block.Download(ctx, groupLogger, c.bkt, meta.ULID, bdir); err != nil {
 			return false, nil, retry(errors.Wrapf(err, "download block %s", meta.ULID))
 		}
 
 		// Ensure all input blocks are valid.
-		stats, err := block.GatherIndexHealthStats(cg.logger, filepath.Join(bdir, block.IndexFilename), meta.MinTime, meta.MaxTime)
+		stats, err := block.GatherIndexHealthStats(groupLogger, filepath.Join(bdir, block.IndexFilename), meta.MinTime, meta.MaxTime)
 		if err != nil {
 			return false, nil, errors.Wrapf(err, "gather index issues for block %s", bdir)
 		}
@@ -499,13 +507,12 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 			return false, nil, issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
 		}
 
-		if err := stats.PrometheusIssue5372Err(); !cg.acceptMalformedIndex && err != nil {
-			return false, nil, errors.Wrapf(err,
-				"block id %s, try running with --debug.accept-malformed-index", meta.ULID)
+		if err := stats.PrometheusIssue5372Err(); err != nil {
+			return false, nil, errors.Wrapf(err, "block id %s", meta.ULID)
 		}
 		toCompactDirs = append(toCompactDirs, bdir)
 	}
-	level.Info(cg.logger).Log("msg", "downloaded and verified blocks; compacting blocks", "plan", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
+	level.Info(groupLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "plan", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
 
 	begin = time.Now()
 
@@ -522,11 +529,11 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 
 	if !hasNonZeroULIDs(compIDs) {
 		// Prometheus compactor found that the compacted block would have no samples.
-		level.Info(cg.logger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", toCompactDirs))
+		level.Info(groupLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", toCompactDirs))
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
-				if err := cg.deleteBlock(meta.ULID, filepath.Join(dir, meta.ULID.String()), blocksMarkedForDeletion); err != nil {
-					level.Warn(cg.logger).Log("msg", "failed to mark for deletion an empty block found during compaction", "block", meta.ULID)
+				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(dir, meta.ULID.String()), groupLogger, blocksMarkedForDeletion); err != nil {
+					level.Warn(groupLogger).Log("msg", "failed to mark for deletion an empty block found during compaction", "block", meta.ULID, "err", err)
 				}
 			}
 		}
@@ -534,12 +541,12 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 		return true, nil, nil
 	}
 
-	level.Info(cg.logger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
+	level.Info(groupLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
 
 	for shardID, compID := range compIDs {
 		// Skip if it's an empty block.
 		if compID == (ulid.ULID{}) {
-			level.Info(cg.logger).Log("msg", "compaction produced an empty block", "shard_id", formatShardIDLabelValue(uint32(shardID), cg.splitNumShards))
+			level.Info(groupLogger).Log("msg", "compaction produced an empty block", "shard_id", formatShardIDLabelValue(uint32(shardID), cg.splitNumShards))
 			continue
 		}
 
@@ -552,7 +559,7 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 			newLabels[ShardIDLabelName] = formatShardIDLabelValue(uint32(shardID), cg.splitNumShards)
 		}
 
-		newMeta, err := metadata.InjectThanos(cg.logger, bdir, metadata.Thanos{
+		newMeta, err := metadata.InjectThanos(groupLogger, bdir, metadata.Thanos{
 			Labels:       newLabels,
 			Downsample:   metadata.ThanosDownsample{Resolution: cg.resolution},
 			Source:       metadata.CompactorSource,
@@ -567,24 +574,24 @@ func (cg *Group) Compact(ctx context.Context, dir string, planner Planner, comp 
 		}
 
 		// Ensure the output block is valid.
-		if err := block.VerifyIndex(cg.logger, index, newMeta.MinTime, newMeta.MaxTime); !cg.acceptMalformedIndex && err != nil {
+		if err := block.VerifyIndex(groupLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
 			return false, nil, halt(errors.Wrapf(err, "invalid result block %s", bdir))
 		}
 
 		begin = time.Now()
 
-		if err := block.Upload(ctx, cg.logger, cg.bkt, bdir, cg.hashFunc); err != nil {
+		if err := block.Upload(ctx, groupLogger, c.bkt, bdir, cg.hashFunc); err != nil {
 			return false, nil, retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
 
-		level.Info(cg.logger).Log("msg", "uploaded block", "result_block", compID, "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		level.Info(groupLogger).Log("msg", "uploaded block", "result_block", compID, "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds(), "external_labels", labels.FromMap(newLabels))
 	}
 
 	// Mark for deletion the blocks we just compacted from the group and bucket so they do not get included
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the group again (including sync-delay).
 	for _, meta := range toCompact {
-		if err := cg.deleteBlock(meta.ULID, filepath.Join(dir, meta.ULID.String()), blocksMarkedForDeletion); err != nil {
+		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(dir, meta.ULID.String()), groupLogger, blocksMarkedForDeletion); err != nil {
 			return false, nil, retry(errors.Wrapf(err, "mark old block for deletion from bucket"))
 		}
 		garbageCollectedBlocks.Inc()
@@ -754,7 +761,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 	return nil
 }
 
-func (cg *Group) deleteBlock(id ulid.ULID, bdir string, blocksMarkedForDeletion prometheus.Counter) error {
+func deleteBlock(bkt objstore.Bucket, id ulid.ULID, bdir string, logger log.Logger, blocksMarkedForDeletion prometheus.Counter) error {
 	if err := os.RemoveAll(bdir); err != nil {
 		return errors.Wrapf(err, "remove old block dir %s", id)
 	}
@@ -762,8 +769,8 @@ func (cg *Group) deleteBlock(id ulid.ULID, bdir string, blocksMarkedForDeletion 
 	// Spawn a new context so we always mark a block for deletion in full on shutdown.
 	delCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	level.Info(cg.logger).Log("msg", "marking compacted block for deletion", "old_block", id)
-	if err := block.MarkForDeletion(delCtx, cg.logger, cg.bkt, id, "source of compacted block", blocksMarkedForDeletion); err != nil {
+	level.Info(logger).Log("msg", "marking compacted block for deletion", "old_block", id)
+	if err := block.MarkForDeletion(delCtx, logger, bkt, id, "source of compacted block", blocksMarkedForDeletion); err != nil {
 		return errors.Wrapf(err, "mark block %s for deletion from bucket", id)
 	}
 	return nil
@@ -906,7 +913,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 
 					c.metrics.groupCompactionRunsStarted.Inc()
 
-					shouldRerunGroup, compactedBlockIDs, err := g.Compact(workCtx, c.compactDir, c.planner, c.comp, c.metrics.blocksMarkedForDeletion, c.metrics.garbageCollectedBlocks)
+					shouldRerunGroup, compactedBlockIDs, err := c.CompactGroup(workCtx, g, c.compactDir, c.planner, c.comp, c.metrics.blocksMarkedForDeletion, c.metrics.garbageCollectedBlocks)
 					if err == nil {
 						c.metrics.groupCompactionRunsCompleted.Inc()
 						if hasNonZeroULIDs(compactedBlockIDs) {

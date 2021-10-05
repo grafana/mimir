@@ -61,7 +61,6 @@ type BlocksGrouperFactory func(
 	ctx context.Context,
 	cfg Config,
 	cfgProvider ConfigProvider,
-	bkt objstore.Bucket,
 	userID string,
 	ring *ring.Ring,
 	instanceAddr string,
@@ -663,7 +662,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
-		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, bucket, userID, c.ring, instanceAddr, ulogger, reg),
+		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, c.ring, instanceAddr, ulogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
 		path.Join(c.compactorCfg.DataDir, "compact"),

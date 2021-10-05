@@ -107,14 +107,6 @@ func (g blocksGroup) overlaps(other blocksGroup) bool {
 	return true
 }
 
-func (g blocksGroup) rangeStartTime() time.Time {
-	return time.Unix(0, g.rangeStart*int64(time.Millisecond)).UTC()
-}
-
-func (g blocksGroup) rangeEndTime() time.Time {
-	return time.Unix(0, g.rangeEnd*int64(time.Millisecond)).UTC()
-}
-
 func (g blocksGroup) rangeLength() int64 {
 	return g.rangeEnd - g.rangeStart
 }
