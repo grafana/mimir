@@ -1282,8 +1282,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[0].labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[1].labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -1293,7 +1293,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[2].labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -1303,8 +1303,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[0].labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[1].labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -1314,7 +1314,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[2].labels), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -1325,7 +1325,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[1].labels), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -1335,7 +1335,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
 			expected: model.Matrix{
-				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[0].labels), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
@@ -1355,7 +1355,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		req, _, _, _ := mockWriteRequest(t, series.labels, series.value, series.timestamp)
 		_, err := i.v2Push(ctx, req)
 		require.NoError(t, err)
 	}
@@ -1432,8 +1432,127 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 	}
 }
 
+func TestIngester_LabelValuesCardinality(t *testing.T) {
+	series := []series{
+		{
+			labels: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_0"},
+				{Name: "status", Value: "500"},
+			},
+			value:     1.5,
+			timestamp: 100000,
+		},
+		{
+			labels: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_0"},
+				{Name: "status", Value: "200"},
+			},
+			value:     1.5,
+			timestamp: 110030,
+		},
+		{
+			labels: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_1"},
+				{Name: "env", Value: "prod"},
+			},
+			value:     1.5,
+			timestamp: 100060,
+		},
+		{
+			labels: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_1"},
+				{Name: "env", Value: "prod"},
+				{Name: "status", Value: "300"},
+			},
+			value:     1.5,
+			timestamp: 100090,
+		},
+	}
+	tests := []struct {
+		testName                 string
+		labelNames               []string
+		matchers                 []*client.LabelMatcher
+		expectedSeriesCountTotal uint64
+		expectedItems            []*client.LabelValueCardinality
+		expectsEmptyResponse     bool
+	}{
+		{
+			testName:             "no label matches",
+			labelNames:           []string{"pod"},
+			matchers:             []*client.LabelMatcher{},
+			expectsEmptyResponse: true,
+		},
+		{
+			testName:                 "expected all label values cardinality",
+			labelNames:               []string{labels.MetricName, "env", "status"},
+			matchers:                 []*client.LabelMatcher{},
+			expectedSeriesCountTotal: 4,
+			expectedItems: []*client.LabelValueCardinality{
+				{LabelName: "status", LabelValue: "200", SeriesCount: 1},
+				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
+				{LabelName: "status", LabelValue: "500", SeriesCount: 1},
+				{LabelName: labels.MetricName, LabelValue: "metric_0", SeriesCount: 2},
+				{LabelName: labels.MetricName, LabelValue: "metric_1", SeriesCount: 2},
+				{LabelName: "env", LabelValue: "prod", SeriesCount: 2},
+			},
+		},
+		{
+			testName:   "expected status values cardinality applying matchers",
+			labelNames: []string{"status"},
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
+			},
+			expectedSeriesCountTotal: 4,
+			expectedItems: []*client.LabelValueCardinality{
+				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
+			},
+		},
+	}
+
+	// Create ingester
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+
+	ctx := pushSeriesToIngester(t, series, i)
+	// Run tests
+	for _, tc := range tests {
+		t.Run(tc.testName, func(t *testing.T) {
+			req := &client.LabelValuesCardinalityRequest{
+				LabelNames: tc.labelNames,
+				Matchers:   tc.matchers,
+			}
+
+			s := &mockLabelValuesCardinalityServer{context: ctx}
+			require.NoError(t, i.LabelValuesCardinality(req, s))
+
+			// sort response items
+			for _, item := range s.SentResponses {
+				sort.Slice(item.Items, func(i, j int) bool {
+					if item.Items[i].LabelName < item.Items[j].LabelName {
+						return true
+					}
+					if item.Items[i].LabelValue < item.Items[j].LabelValue {
+						return true
+					}
+					if item.Items[i].SeriesCount < item.Items[j].SeriesCount {
+						return true
+					}
+					return false
+				})
+			}
+			if tc.expectsEmptyResponse {
+				require.Len(t, s.SentResponses, 0)
+				return
+			}
+			require.Len(t, s.SentResponses, 1)
+
+			require.Equal(t, s.SentResponses[0].SeriesCountTotal, tc.expectedSeriesCountTotal)
+			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
+		})
+	}
+}
+
 type series struct {
-	lbls      labels.Labels
+	labels    labels.Labels
 	value     float64
 	timestamp int64
 }
@@ -1441,7 +1560,7 @@ type series struct {
 func pushSeriesToIngester(t *testing.T, series []series, i *Ingester) context.Context {
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, series := range series {
-		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		req, _, _, _ := mockWriteRequest(t, series.labels, series.value, series.timestamp)
 		_, err := i.v2Push(ctx, req)
 		require.NoError(t, err)
 	}
