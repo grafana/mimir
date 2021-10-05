@@ -670,6 +670,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
+		c.ownGroup,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {
@@ -717,23 +718,42 @@ func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, err
 	return users, err
 }
 
+func (c *MultitenantCompactor) ownGroup(group *Group) (bool, error) {
+	// Check if the user is owned.
+	if owned, err := c.ownUser(group.UserID()); !owned || err != nil {
+		return owned, err
+	}
+
+	// Only the split-and-merge compactor supports horizontal scalability. All other compaction strategies
+	// run compaction on a single instance only (for a given tenant), so they're always owned.
+	if c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
+		return c.ownKey(group.ShardingKey())
+	}
+
+	return true, nil
+}
+
 func (c *MultitenantCompactor) ownUser(userID string) (bool, error) {
 	if !c.allowedTenants.IsAllowed(userID) {
 		return false, nil
 	}
 
+	return c.ownKey(userID)
+}
+
+func (c *MultitenantCompactor) ownKey(key string) (bool, error) {
 	// Always owned if sharding is disabled.
 	if !c.compactorCfg.ShardingEnabled {
 		return true, nil
 	}
 
-	// Hash the user ID.
+	// Hash the key.
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(userID))
-	userHash := hasher.Sum32()
+	_, _ = hasher.Write([]byte(key))
+	hash := hasher.Sum32()
 
-	// Check whether this compactor instance owns the user.
-	rs, err := c.ring.Get(userHash, RingOp, nil, nil, nil)
+	// Check whether this compactor instance owns the token.
+	rs, err := c.ring.Get(hash, RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}

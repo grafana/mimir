@@ -15,9 +15,8 @@ import (
 	"github.com/grafana/mimir/pkg/ring"
 )
 
-// ConfigureSplitAndMergeCompactor updates the provided configuration injecting the split-and-merge compactor.
-func ConfigureSplitAndMergeCompactor(cfg *Config) {
-	cfg.BlocksGrouperFactory = func(ctx context.Context, cfg Config, cfgProvider ConfigProvider, bkt objstore.Bucket, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
+var (
+	SplitAndMergeGrouperFactory = func(ctx context.Context, cfg Config, cfgProvider ConfigProvider, bkt objstore.Bucket, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
 		return NewSplitAndMergeGrouper(
 			userID,
 			bkt,
@@ -27,7 +26,7 @@ func ConfigureSplitAndMergeCompactor(cfg *Config) {
 			logger)
 	}
 
-	cfg.BlocksCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
+	SplitAndMergeCompactorFactory = func(ctx context.Context, cfg Config, logger log.Logger, reg prometheus.Registerer) (Compactor, Planner, error) {
 		// We don't need to customise the TSDB compactor so we're just using the Prometheus one.
 		compactor, err := tsdb.NewLeveledCompactor(ctx, reg, logger, cfg.BlockRanges.ToMilliseconds(), downsample.NewPool(), nil)
 		if err != nil {
@@ -37,6 +36,12 @@ func ConfigureSplitAndMergeCompactor(cfg *Config) {
 		planner := NewSplitAndMergePlanner(cfg.BlockRanges.ToMilliseconds())
 		return compactor, planner, nil
 	}
+)
+
+// ConfigureSplitAndMergeCompactor updates the provided configuration injecting the split-and-merge compactor.
+func ConfigureSplitAndMergeCompactor(cfg *Config) {
+	cfg.BlocksGrouperFactory = SplitAndMergeGrouperFactory
+	cfg.BlocksCompactorFactory = SplitAndMergeCompactorFactory
 }
 
 func createOwnJobFunc(ring *ring.Ring, instanceAddr string) ownJobFunc {

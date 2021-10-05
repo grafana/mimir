@@ -214,6 +214,7 @@ func defaultGroupKey(res int64, lbls labels.Labels) string {
 // DefaultGrouper is the Thanos built-in grouper. It groups blocks based on downsample
 // resolution and block's labels.
 type DefaultGrouper struct {
+	userID               string
 	bkt                  objstore.Bucket
 	logger               log.Logger
 	acceptMalformedIndex bool
@@ -222,12 +223,14 @@ type DefaultGrouper struct {
 
 // NewDefaultGrouper makes a new DefaultGrouper.
 func NewDefaultGrouper(
+	userID string,
 	logger log.Logger,
 	bkt objstore.Bucket,
 	acceptMalformedIndex bool,
 	hashFunc metadata.HashFunc,
 ) *DefaultGrouper {
 	return &DefaultGrouper{
+		userID:               userID,
 		bkt:                  bkt,
 		logger:               logger,
 		acceptMalformedIndex: acceptMalformedIndex,
@@ -245,6 +248,7 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Gro
 		if !ok {
 			lbls := labels.FromMap(m.Thanos.Labels)
 			group, err = NewGroup(
+				g.userID,
 				log.With(g.logger, "group", fmt.Sprintf("%d@%v", m.Thanos.Downsample.Resolution, lbls.String()), "groupKey", groupKey),
 				g.bkt,
 				groupKey,
@@ -254,6 +258,7 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Gro
 				g.hashFunc,
 				false, // No splitting.
 				0,     // No splitting shards.
+				"",    // No sharding.
 			)
 			if err != nil {
 				return nil, errors.Wrap(err, "create compaction group")
@@ -274,6 +279,7 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Gro
 // Group captures a set of blocks that have the same origin labels and downsampling resolution.
 // Those blocks generally contain the same series and can thus efficiently be compacted.
 type Group struct {
+	userID               string
 	logger               log.Logger
 	bkt                  objstore.Bucket
 	key                  string
@@ -285,10 +291,12 @@ type Group struct {
 	hashFunc             metadata.HashFunc
 	useSplitting         bool
 	splitNumShards       uint32
+	shardingKey          string
 }
 
 // NewGroup returns a new compaction group.
 func NewGroup(
+	userID string,
 	logger log.Logger,
 	bkt objstore.Bucket,
 	key string,
@@ -298,11 +306,13 @@ func NewGroup(
 	hashFunc metadata.HashFunc,
 	useSplitting bool,
 	splitNumShards uint32,
+	shardingKey string,
 ) (*Group, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	g := &Group{
+		userID:               userID,
 		logger:               logger,
 		bkt:                  bkt,
 		key:                  key,
@@ -312,8 +322,14 @@ func NewGroup(
 		hashFunc:             hashFunc,
 		useSplitting:         useSplitting,
 		splitNumShards:       splitNumShards,
+		shardingKey:          shardingKey,
 	}
 	return g, nil
+}
+
+// UserID returns the user/tenant to which this group belongs to.
+func (cg *Group) UserID() string {
+	return cg.userID
 }
 
 // Key returns an identifier for the group.
@@ -387,6 +403,11 @@ func (cg *Group) Labels() labels.Labels {
 // Resolution returns the common downsampling resolution of blocks in the group.
 func (cg *Group) Resolution() int64 {
 	return cg.resolution
+}
+
+// ShardingKey returns the key used to shard this group across multiple instances.
+func (cg *Group) ShardingKey() string {
+	return cg.shardingKey
 }
 
 // Planner returns blocks to compact.
@@ -808,6 +829,13 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks p
 	}
 }
 
+type ownGroupFunc func(group *Group) (bool, error)
+
+// ownAllGroups is a ownGroupFunc that always return true.
+var ownAllGroups = func(group *Group) (bool, error) {
+	return true, nil
+}
+
 // BucketCompactor compacts blocks in a bucket.
 type BucketCompactor struct {
 	logger                         log.Logger
@@ -819,6 +847,7 @@ type BucketCompactor struct {
 	bkt                            objstore.Bucket
 	concurrency                    int
 	skipBlocksWithOutOfOrderChunks bool
+	ownGroup                       func(group *Group) (bool, error)
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -833,6 +862,7 @@ func NewBucketCompactor(
 	bkt objstore.Bucket,
 	concurrency int,
 	skipBlocksWithOutOfOrderChunks bool,
+	ownGroup ownGroupFunc,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
@@ -848,6 +878,7 @@ func NewBucketCompactor(
 		bkt:                            bkt,
 		concurrency:                    concurrency,
 		skipBlocksWithOutOfOrderChunks: skipBlocksWithOutOfOrderChunks,
+		ownGroup:                       ownGroup,
 		metrics:                        metrics,
 	}, nil
 }
@@ -885,6 +916,17 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			go func() {
 				defer wg.Done()
 				for g := range groupChan {
+					// Ensure the group is still owned by the current compactor instance.
+					// If not, we shouldn't run it because another compactor instance may already
+					// process it (or will do it soon).
+					if ok, err := c.ownGroup(g); err != nil {
+						level.Info(c.logger).Log("msg", "skipped compaction because unable to check whether the group is owned by the compactor instance", "group", g.Key(), "err", err)
+						continue
+					} else if !ok {
+						level.Info(c.logger).Log("msg", "skipped compaction because group is not owned anymore by the compactor instance", "group", g.Key())
+						continue
+					}
+
 					c.metrics.groupCompactionRunsStarted.Inc()
 
 					shouldRerunGroup, compactedBlockIDs, err := g.Compact(workCtx, c.compactDir, c.planner, c.comp, c.metrics.blocksMarkedForDeletion, c.metrics.garbageCollectedBlocks)

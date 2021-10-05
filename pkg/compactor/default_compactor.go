@@ -18,6 +18,7 @@ import (
 var (
 	DefaultBlocksGrouperFactory = func(ctx context.Context, cfg Config, cfgProvider ConfigProvider, bkt objstore.Bucket, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
 		return NewDefaultGrouper(
+			userID,
 			logger,
 			bkt,
 			false, // Do not accept malformed indexes
