@@ -56,7 +56,7 @@ func main() {
 	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
 	flag.IntVar(&cfg.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
 	flag.Var(&cfg.minTime, "min-time", "If set, only blocks with MinTime >= this value are printed")
-	flag.Var(&cfg.minTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
+	flag.Var(&cfg.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
 	flag.Parse()
 
 	if cfg.userID == "" {
