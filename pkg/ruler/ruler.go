@@ -35,7 +35,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
-	ring_client "github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -151,6 +150,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.Notifier.RegisterFlags(f)
 
 	// Deprecated Flags that will be maintained to avoid user disruption
+
 	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
 	flagext.DeprecatedFlag(f, "ruler.client-timeout", "This flag has been renamed to ruler.configs.client-timeout", util_log.Logger)
 	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
@@ -241,7 +241,7 @@ type Ruler struct {
 	subservicesWatcher *services.FailureWatcher
 
 	// Pool of clients used to connect to other ruler replicas.
-	clientsPool *ring_client.Pool
+	clientsPool ClientsPool
 
 	ringCheckErrors prometheus.Counter
 	rulerSync       *prometheus.CounterVec
@@ -254,6 +254,10 @@ type Ruler struct {
 
 // NewRuler creates a new ruler from a distributor and chunk store.
 func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
+	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
+}
+
+func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:            cfg,
 		store:          ruleStore,
@@ -261,7 +265,7 @@ func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		registry:       reg,
 		logger:         logger,
 		limits:         limits,
-		clientsPool:    newRulerClientPool(cfg.ClientTLSConfig, logger, reg),
+		clientsPool:    clientPool,
 		allowedTenants: util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
 
 		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -773,12 +777,12 @@ func (r *Ruler) getShardedRules(ctx context.Context, userID string) ([]*GroupSta
 	err = concurrency.ForEach(ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
 		addr := job.(string)
 
-		grpcClient, err := r.clientsPool.GetClientFor(addr)
+		rulerClient, err := r.clientsPool.GetClientFor(addr)
 		if err != nil {
 			return errors.Wrapf(err, "unable to get client for ruler %s", addr)
 		}
 
-		newGrps, err := grpcClient.(RulerClient).Rules(ctx, &RulesRequest{})
+		newGrps, err := rulerClient.Rules(ctx, &RulesRequest{})
 		if err != nil {
 			return errors.Wrapf(err, "unable to retrieve rules from ruler %s", addr)
 		}
