@@ -41,7 +41,7 @@ func main() {
 	for _, blockDir := range flag.Args() {
 		err := analyseSymbols(blockDir, uniqueSymbols, uniqueSymbolsPerShard)
 		if err != nil {
-			log.Fatalln("failed to analyse symbols for", blockDir, "due to error:", err)
+			log.Println("failed to analyse symbols for", blockDir, "due to error:", err)
 		}
 		fmt.Println()
 	}
