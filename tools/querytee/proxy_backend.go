@@ -50,6 +50,7 @@ func NewProxyBackend(name string, endpoint *url.URL, timeout time.Duration, pref
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 100, // see https://github.com/golang/go/issues/13801
 				IdleConnTimeout:     90 * time.Second,
+				DisableCompression:  true,
 			},
 		},
 	}
@@ -95,6 +96,9 @@ func (b *ProxyBackend) createBackendRequest(orig *http.Request, body io.ReadClos
 	} else if clientAuth {
 		req.SetBasicAuth(clientUser, clientPass)
 	}
+
+	// Remove Accept-Encoding header to avoid sending compressed responses
+	req.Header.Del("Accept-Encoding")
 
 	return req, nil
 }
