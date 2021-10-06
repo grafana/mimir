@@ -480,7 +480,7 @@ github.com/prometheus/client_golang/prometheus/testutil/promlint
 # github.com/prometheus/client_model v0.2.0
 ## explicit
 github.com/prometheus/client_model/go
-# github.com/prometheus/common v0.30.0
+# github.com/prometheus/common v0.31.1
 ## explicit
 github.com/prometheus/common/config
 github.com/prometheus/common/expfmt
@@ -498,7 +498,7 @@ github.com/prometheus/node_exporter/https
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20210914090109-37468d88dce8 => github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349
+# github.com/prometheus/prometheus v1.8.2-0.20210914090109-37468d88dce8 => github.com/grafana/prometheus-private v0.0.0-20211006104159-9d4aa2604cfb
 ## explicit
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -962,7 +962,7 @@ sigs.k8s.io/yaml
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
-# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349
+# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20211006104159-9d4aa2604cfb
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # google.golang.org/grpc => google.golang.org/grpc v1.38.0
