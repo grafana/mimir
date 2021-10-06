@@ -1474,13 +1474,13 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		matchers                 []*client.LabelMatcher
 		expectedSeriesCountTotal uint64
 		expectedItems            []*client.LabelValueCardinality
-		expectsEmptyResponse     bool
 	}{
 		{
-			testName:             "no label matches",
-			labelNames:           []string{"pod"},
-			matchers:             []*client.LabelMatcher{},
-			expectsEmptyResponse: true,
+			testName:                 "no label matches",
+			labelNames:               []string{"pod"},
+			matchers:                 []*client.LabelMatcher{},
+			expectedSeriesCountTotal: 4,
+			expectedItems:            nil,
 		},
 		{
 			testName:                 "expected all label values cardinality",
@@ -1538,10 +1538,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 					}
 					return false
 				})
-			}
-			if tc.expectsEmptyResponse {
-				require.Len(t, s.SentResponses, 0)
-				return
 			}
 			require.Len(t, s.SentResponses, 1)
 

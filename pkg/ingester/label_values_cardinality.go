@@ -26,6 +26,7 @@ func labelValuesCardinality(
 	}
 	baseSize := resp.Size()
 	respSize := baseSize
+	sentResp := false
 
 	for _, lbName := range lbNames {
 		// Obtain all values for current label name.
@@ -57,11 +58,12 @@ func labelValuesCardinality(
 				}
 				resp.Items = resp.Items[:0]
 				respSize = baseSize
+				sentResp = true
 			}
 		}
 	}
-	// Send remaining items.
-	if len(resp.Items) > 0 {
+	// Send response in case nothing has been previously sent or there are pending items.
+	if !sentResp || len(resp.Items) > 0 {
 		return client.SendLabelValuesCardinalityResponse(server, &resp)
 	}
 	return nil
