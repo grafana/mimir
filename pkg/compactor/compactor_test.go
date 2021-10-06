@@ -1528,3 +1528,115 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 		`level=error component=compactor msg="compactor failed to become ACTIVE in the ring" err="context deadline exceeded"`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 }
+
+func TestOwnUser(t *testing.T) {
+	type testCase struct {
+		compactors         int
+		compactionStrategy string
+		sharding           bool
+		enabledUsers       []string
+		disabledUsers      []string
+
+		check func(t *testing.T, comps []*MultitenantCompactor)
+	}
+
+	testCases := map[string]testCase{
+		"5 compactors, no sharding": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategyDefault,
+			sharding:           false,
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
+				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+
+				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
+				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+			},
+		},
+
+		"5 compactors, sharding enabled, default strategy": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategyDefault,
+			sharding:           true,
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+
+				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+			},
+		},
+
+		"5 compactors, sharding enabled, split-merge strategy": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategySplitMerge,
+			sharding:           true,
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+
+				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			inmem := objstore.NewInMemBucket()
+
+			compactors := []*MultitenantCompactor(nil)
+
+			for i := 0; i < tc.compactors; i++ {
+				cfg := prepareConfig()
+				cfg.CompactionInterval = 10 * time.Minute // We will only call compaction manually.
+
+				cfg.CompactionStrategy = tc.compactionStrategy
+				cfg.EnabledTenants = tc.enabledUsers
+				cfg.DisabledTenants = tc.disabledUsers
+
+				cfg.ShardingEnabled = tc.sharding
+				cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
+				cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+				// No need to wait. All compactors are started before we do any tests.
+				cfg.ShardingRing.WaitStabilityMinDuration = 0
+				cfg.ShardingRing.WaitStabilityMaxDuration = 0
+				cfg.ShardingRing.KVStore.Mock = kvStore
+
+				c, _, _, _, _ := prepare(t, cfg, inmem)
+				require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+				t.Cleanup(stopServiceFn(t, c))
+
+				compactors = append(compactors, c)
+			}
+
+			tc.check(t, compactors)
+		})
+	}
+}
+
+func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, reason ownUserReason) int {
+	result := 0
+	for _, c := range comps {
+		ok, err := c.ownUserWithReason(user, reason)
+		require.NoError(t, err)
+		if ok {
+			result++
+		}
+	}
+	return result
+}
+
+func stopServiceFn(t *testing.T, serv services.Service) func() {
+	return func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), serv))
+	}
+}
