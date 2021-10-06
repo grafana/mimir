@@ -9,9 +9,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -865,6 +867,87 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	sort.Strings(values)
 
 	return values, nil
+}
+
+// LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
+func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
+	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := ingester_client.ToLabelNamesCardinalityRequest(matchers)
+	if err != nil {
+		return nil, err
+	}
+	var globalLabelValuesMapLock sync.Mutex
+	globalLabelsWithValues := map[string]map[string]struct{}{}
+	_, err = d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+		stream, err := client.LabelNamesAndValues(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		defer stream.CloseSend() //nolint:errcheck
+		err = collectResponses(stream, &globalLabelsWithValues, &globalLabelValuesMapLock)
+		if err != nil {
+			return nil, err
+		}
+		return nil, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return toLabelNamesAndValuesResponses(globalLabelsWithValues), nil
+}
+
+// toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
+func toLabelNamesAndValuesResponses(globalLabelsWithValues map[string]map[string]struct{}) *ingester_client.LabelNamesAndValuesResponse {
+	responses := make([]*ingester_client.LabelValues, len(globalLabelsWithValues))
+	i := 0
+	for name, values := range globalLabelsWithValues {
+		labelValues := make([]string, len(values))
+		j := 0
+		for val := range values {
+			labelValues[j] = val
+			j++
+		}
+		responses[i] = &ingester_client.LabelValues{
+			LabelName: name,
+			Values:    labelValues,
+		}
+		i++
+	}
+	return &ingester_client.LabelNamesAndValuesResponse{Items: responses}
+
+}
+
+// collectResponses listens for the stream and once the message is received, puts labels and values to the map with distinct label values.
+func collectResponses(
+	stream ingester_client.Ingester_LabelNamesAndValuesClient,
+	globalLabelsWithValues *map[string]map[string]struct{},
+	globalLabelValuesMapLock *sync.Mutex,
+) error {
+	for {
+		batch, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+		for _, item := range batch.Items {
+			globalLabelValuesMapLock.Lock()
+			values, exists := (*globalLabelsWithValues)[item.LabelName]
+			if !exists {
+				values = make(map[string]struct{}, len(item.Values))
+			}
+			for _, val := range item.Values {
+				values[val] = struct{}{}
+			}
+			(*globalLabelsWithValues)[item.LabelName] = values
+			globalLabelValuesMapLock.Unlock()
+		}
+	}
+	return nil
 }
 
 // LabelNames returns all of the label names.

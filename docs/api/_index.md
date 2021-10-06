@@ -40,6 +40,7 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Get label values](#get-label-values)                                                 | Querier, Query-frontend  | `GET <prometheus-http-prefix>/api/v1/label/{name}/values`                   |
 | [Get metric metadata](#get-metric-metadata)                                           | Querier, Query-frontend  | `GET <prometheus-http-prefix>/api/v1/metadata`                              |
 | [Remote read](#remote-read)                                                           | Querier, Query-frontend  | `POST <prometheus-http-prefix>/api/v1/read`                                 |
+| [Label names cardinality](#label-names-cardinality)                                   | Querier, Query-frontend  | `POST <prometheus-http-prefix>/api/v1/cardinality/label_names`              |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                  | `GET /api/v1/user_stats`                                                    |
 | [Get tenant chunks](#get-tenant-chunks)                                               | Querier                  | `GET /api/v1/chunks`                                                        |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                    | `GET /ruler/ring`                                                           |
@@ -408,6 +409,41 @@ Prometheus-compatible [remote read](https://prometheus.io/docs/prometheus/latest
 _For more information, please check out Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
 
 _Requires [authentication](#authentication)._
+
+### Label names cardinality
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
+
+# Legacy
+GET,POST <legacy-http-prefix>/api/v1/cardinality/label_names
+```
+
+Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
+
+The items in the field `cardinality` are sorted by `values_count` in DESC order and by `label_name` in ASC order.
+
+_Requires [authentication](#authentication)._
+
+#### Request params
+
+- **match[]** - _optional_ - specifies PromQL filters that will be used to filter series that must be analyzed.
+- **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
+
+#### Response schema
+
+```json
+{
+  "values_count_total": <number>,
+  "label_names_count": <number>,
+  "cardinality": [
+    {
+      "label_name": <string>,
+      "values_count": <number>
+    }
+  ]
+}
+```
 
 ## Querier
 
