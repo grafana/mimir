@@ -10,15 +10,13 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/ring"
 )
 
-func splitAndMergeGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, bkt objstore.Bucket, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
+func splitAndMergeGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
 	return NewSplitAndMergeGrouper(
 		userID,
-		bkt,
 		cfg.BlockRanges.ToMilliseconds(),
 		uint32(cfgProvider.CompactorSplitAndMergeShards(userID)),
 		createOwnJobFunc(ring, instanceAddr),
