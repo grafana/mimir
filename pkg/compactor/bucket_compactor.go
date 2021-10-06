@@ -274,7 +274,7 @@ type Group struct {
 	useSplitting   bool
 	shardingKey    string
 
-	// The number of shards to split compacted block into. Not valued if splitting is disabled.
+	// The number of shards to split compacted block into. Not used if splitting is disabled.
 	splitNumShards uint32
 }
 
