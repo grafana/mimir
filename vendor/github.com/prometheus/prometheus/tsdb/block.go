@@ -75,6 +75,8 @@ type IndexReader interface {
 	// during background garbage collections. Input values must be sorted.
 	Postings(name string, values ...string) (index.Postings, error)
 
+	PostingsForMatchersProvider
+
 	// SortedPostings returns a postings list that is reordered to be sorted
 	// by the label set of the underlying series.
 	SortedPostings(index.Postings) index.Postings
@@ -309,10 +311,12 @@ func OpenBlockWithCache(logger log.Logger, dir string, pool chunkenc.Pool, cache
 	}
 	closers = append(closers, cr)
 
-	ir, err := index.NewFileReaderWithCache(filepath.Join(dir, indexFilename), cache)
+	indexReader, err := index.NewFileReaderWithCache(filepath.Join(dir, indexFilename), cache)
 	if err != nil {
 		return nil, err
 	}
+	pfmp := NewPostingsForMatchersProvider(defaultPostingsForMatchersCacheTTL).WithIndex(indexReader)
+	ir := indexReaderWithPostingsForMatchers{indexReader, pfmp}
 	closers = append(closers, ir)
 
 	tr, sizeTomb, err := tombstones.ReadTombstones(dir)
@@ -476,6 +480,10 @@ func (r blockIndexReader) Postings(name string, values ...string) (index.Posting
 	return p, nil
 }
 
+func (r blockIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return r.ir.PostingsForMatchers(concurrent, ms...)
+}
+
 func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
@@ -536,7 +544,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, err := PostingsForMatchers(pb.indexr, ms...)
+	p, err := pb.indexr.PostingsForMatchers(false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}

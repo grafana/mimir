@@ -797,3 +797,129 @@ func (it *bigEndianPostings) Seek(x uint64) bool {
 func (it *bigEndianPostings) Err() error {
 	return nil
 }
+
+// PostingsCloner takes an existing Postings and allows indepedently clone them
+type PostingsCloner struct {
+	mtx     sync.RWMutex
+	v       []uint64
+	wrapped Postings
+}
+
+// NewPostingsCloner takes an existing Postings and allows indepedently clone them
+func NewPostingsCloner(p Postings) *PostingsCloner {
+	return &PostingsCloner{
+		wrapped: p,
+	}
+}
+
+// Clone returns another indepedent Postings interface
+func (c *PostingsCloner) Clone() Postings {
+	return &clonedPostings{c: c, pos: posUninitialized}
+}
+
+func (c *PostingsCloner) readUntil(pos int) bool {
+	c.mtx.RLock()
+	if pos < len(c.v) {
+		c.mtx.RUnlock()
+		return true
+	}
+	c.mtx.RUnlock()
+
+	// next needs to be called
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	length := len(c.v)
+	for i := length; i <= pos; i++ {
+		if !c.wrapped.Next() {
+			return false
+		}
+		c.v = append(c.v, c.wrapped.At())
+	}
+
+	return true
+}
+
+func (c *PostingsCloner) seek(pos int, value uint64) int {
+	// if there's a start index and its value satisfies, then return it.
+	if pos >= 0 && c.v[pos] >= value {
+		return pos
+	}
+
+	// do binary search between start and the full length of the slice
+	c.mtx.RLock()
+	length := len(c.v)
+	c.mtx.RUnlock()
+
+	// offset for the position of the clonedPostings
+	offset := pos + 1
+
+	idx := sort.Search(length-offset, func(i int) bool {
+		return c.v[offset+i] >= value
+	}) + offset
+
+	if idx < length {
+		return idx
+	}
+
+	// go to the last element
+	pos = length - 1
+
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	// check if we have more elements in case someone called Next() while we were doing binary search
+	// don't check the last element, next loop expects `pos < len(c.v)`
+	for ; pos < len(c.v)-1; pos++ {
+		if c.v[pos] >= value {
+			return pos
+		}
+	}
+	// no luck, check if we have more elements to bring
+	for ; len(c.v) == 0 || c.v[pos] < value; pos++ {
+		if !c.wrapped.Next() {
+			return posFinished
+		}
+		c.v = append(c.v, c.wrapped.At())
+	}
+
+	return pos
+}
+
+const (
+	posUninitialized = -1
+	posFinished      = -2
+)
+
+type clonedPostings struct {
+	c   *PostingsCloner
+	pos int // stores the position how far the clonedPostings has advanced or posUninitialized=-1, posFinished=-3
+}
+
+func (p *clonedPostings) Next() bool {
+	if p.pos == posFinished {
+		return false
+	}
+	p.pos++
+	if p.c.readUntil(p.pos) {
+		return true
+	}
+
+	p.pos = posFinished
+	return false
+}
+
+func (p *clonedPostings) Seek(value uint64) bool {
+	p.pos = p.c.seek(p.pos, value)
+	return p.pos != posFinished
+}
+
+func (p *clonedPostings) At() uint64 {
+	if p.pos < 0 {
+		return 0
+	}
+	return p.c.v[p.pos]
+}
+
+func (p *clonedPostings) Err() error {
+	return p.c.wrapped.Err()
+}

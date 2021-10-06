@@ -47,6 +47,8 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 type headIndexReader struct {
 	head       *Head
 	mint, maxt int64
+
+	PostingsForMatchersProvider
 }
 
 func (h *headIndexReader) Close() error {
@@ -108,6 +110,10 @@ func (h *headIndexReader) Postings(name string, values ...string) (index.Posting
 		res = append(res, h.head.postings.Get(name, value))
 	}
 	return index.Merge(res...), nil
+}
+
+func (h *headIndexReader) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	return h.head.pfmp.WithIndex(h).PostingsForMatchers(concurrent, ms...)
 }
 
 func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {

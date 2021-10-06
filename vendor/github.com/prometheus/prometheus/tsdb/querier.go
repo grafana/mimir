@@ -123,7 +123,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
-	p, err := PostingsForMatchers(q.index, ms...)
+	p, err := q.index.PostingsForMatchers(hints != nil && hints.ShardCount > 0, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -167,7 +167,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 		mint = hints.Start
 		maxt = hints.End
 	}
-	p, err := PostingsForMatchers(q.index, ms...)
+	p, err := q.index.PostingsForMatchers(hints != nil && hints.ShardCount > 0, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
 	}
@@ -224,7 +224,7 @@ func findSetMatches(pattern string) []string {
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
-func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
+func PostingsForMatchers(ix IndexForPostings, ms ...*labels.Matcher) (index.Postings, error) {
 	var its, notIts []index.Postings
 	// See which label must be non-empty.
 	// Optimization for case like {l=~".", l!="1"}.
@@ -306,7 +306,7 @@ func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings,
 	return it, nil
 }
 
-func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func postingsForMatcher(ix IndexForPostings, m *labels.Matcher) (index.Postings, error) {
 	// This method will not return postings for missing labels.
 
 	// Fast-path for equal matching.
@@ -351,7 +351,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 }
 
 // inversePostingsForMatcher returns the postings for the series with the label name set but not matching the matcher.
-func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, error) {
+func inversePostingsForMatcher(ix IndexForPostings, m *labels.Matcher) (index.Postings, error) {
 	vals, err := ix.LabelValues(m.Name)
 	if err != nil {
 		return nil, err
@@ -383,7 +383,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	}
 
 	var p index.Postings
-	p, err = PostingsForMatchers(r, append(matchers, requireLabel)...)
+	p, err = r.PostingsForMatchers(false, append(matchers, requireLabel)...)
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +414,7 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 }
 
 func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
-	p, err := PostingsForMatchers(r, matchers...)
+	p, err := r.PostingsForMatchers(false, matchers...)
 	if err != nil {
 		return nil, err
 	}

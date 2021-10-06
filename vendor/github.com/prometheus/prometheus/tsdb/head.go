@@ -83,6 +83,7 @@ type Head struct {
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // Postings lists for terms.
+	pfmp     *PostingsForMatchersProviderBuilder
 
 	tombstones *tombstones.MemTombstones
 
@@ -187,6 +188,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		},
 		stats: stats,
 		reg:   r,
+
+		pfmp: NewPostingsForMatchersProvider(defaultPostingsForMatchersCacheTTL),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -1052,7 +1055,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := PostingsForMatchers(ir, ms...)
+	p, err := ir.PostingsForMatchers(false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
@@ -1180,6 +1183,7 @@ func (h *Head) Close() error {
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
 	}
+	errs.Add(h.pfmp.Close())
 	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
 		errs.Add(h.performChunkSnapshot())
 	}
