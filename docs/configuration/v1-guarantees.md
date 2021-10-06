@@ -100,3 +100,5 @@ Currently experimental features are:
 - `LabelNames` calls using matchers
   - `-querier.query-label-names-with-matchers-enabled`
 - Exclude ingesters running in specific zones (`-distributor.excluded-zones`)
+- Compactor
+  - `split-and-merge` compaction strategy (`-compactor.compaction-strategy=split-and-merge`)
