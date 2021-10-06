@@ -272,8 +272,10 @@ type Group struct {
 	metasByMinTime []*metadata.Meta
 	hashFunc       metadata.HashFunc
 	useSplitting   bool
-	splitNumShards uint32
 	shardingKey    string
+
+	// The number of shards to split compacted block into. Not used if splitting is disabled.
+	splitNumShards uint32
 }
 
 // NewGroup returns a new compaction group.
@@ -546,7 +548,12 @@ func (c *BucketCompactor) CompactGroup(ctx context.Context, cg *Group, dir strin
 	for shardID, compID := range compIDs {
 		// Skip if it's an empty block.
 		if compID == (ulid.ULID{}) {
-			level.Info(groupLogger).Log("msg", "compaction produced an empty block", "shard_id", formatShardIDLabelValue(uint32(shardID), cg.splitNumShards))
+			if cg.useSplitting {
+				level.Info(groupLogger).Log("msg", "compaction produced an empty block", "shard_id", formatShardIDLabelValue(uint32(shardID), cg.splitNumShards))
+			} else {
+				level.Info(groupLogger).Log("msg", "compaction produced an empty block")
+			}
+
 			continue
 		}
 
