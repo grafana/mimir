@@ -360,7 +360,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
 		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
 		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
-	}, c.bucketClient, c.ownUser, c.cfgProvider, c.parentLogger, c.registerer)
+	}, c.bucketClient, c.ownUserForBlocksCleaner, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Initialize the compactors ring if sharding is enabled.
 	if c.compactorCfg.ShardingEnabled {
@@ -505,7 +505,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 		}
 
 		// Ensure the user ID belongs to our shard.
-		if owned, err := c.ownUser(userID); err != nil {
+		if owned, err := c.ownUserForCompactor(userID); err != nil {
 			c.compactionRunSkippedTenants.Inc()
 			level.Warn(c.logger).Log("msg", "unable to check if user is owned by this shard", "user", userID, "err", err)
 			continue
@@ -717,9 +717,39 @@ func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, err
 	return users, err
 }
 
+type ownUserReason int
+
+const (
+	ownUserReasonBlocksCleaner ownUserReason = iota
+	ownUserReasonCompactor
+)
+
+func (c *MultitenantCompactor) ownUserForBlocksCleaner(userID string) (bool, error) {
+	return c.ownUserWithReason(userID, ownUserReasonBlocksCleaner)
+}
+
+func (c *MultitenantCompactor) ownUserForCompactor(userID string) (bool, error) {
+	return c.ownUserWithReason(userID, ownUserReasonCompactor)
+}
+
+func (c *MultitenantCompactor) ownUserWithReason(userID string, reason ownUserReason) (bool, error) {
+	if !c.allowedTenants.IsAllowed(userID) {
+		return false, nil
+	}
+
+	// When using split-merge compaction strategy, ALL compactors should plan jobs for all users. Individual
+	// jobs are then sharded between compactors based on job hash.
+	// TODO: add support for shuffle sharding, so that we can use only subset of compactors for given user.
+	if reason == ownUserReasonCompactor && c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
+		return true, nil
+	}
+
+	return c.ownKey(userID)
+}
+
 func (c *MultitenantCompactor) ownGroup(group *Group) (bool, error) {
 	// Check if the user is owned.
-	if owned, err := c.ownUser(group.UserID()); !owned || err != nil {
+	if owned, err := c.ownUserForCompactor(group.UserID()); !owned || err != nil {
 		return owned, err
 	}
 
@@ -730,14 +760,6 @@ func (c *MultitenantCompactor) ownGroup(group *Group) (bool, error) {
 	}
 
 	return true, nil
-}
-
-func (c *MultitenantCompactor) ownUser(userID string) (bool, error) {
-	if !c.allowedTenants.IsAllowed(userID) {
-		return false, nil
-	}
-
-	return c.ownKey(userID)
 }
 
 func (c *MultitenantCompactor) ownKey(key string) (bool, error) {
