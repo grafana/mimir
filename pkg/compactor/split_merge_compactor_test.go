@@ -100,23 +100,11 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
-				block2 := createTSDBBlock(t,
-					bkt,
-					userID,
-					time.Minute.Milliseconds(),
-					(7 * time.Minute).Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block2 := createTSDBBlock(t, bkt, userID, time.Minute.Milliseconds(), (7 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 
 				// Add another block as "most recent one" otherwise the previous blocks are not compacted
 				// because the most recent blocks must cover the full range to be compacted.
-				block3 := createTSDBBlock(t,
-					bkt,
-					userID,
-					blockRangeMillis,
-					blockRangeMillis+time.Minute.Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block3 := createTSDBBlock(t, bkt, userID, blockRangeMillis, blockRangeMillis+time.Minute.Milliseconds(), numSeries, externalLabels(""))
 
 				return []metadata.Meta{
 					{
@@ -169,23 +157,11 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
-				block2 := createTSDBBlock(t,
-					bkt,
-					userID,
-					(5 * time.Minute).Milliseconds(),
-					(10 * time.Minute).Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block2 := createTSDBBlock(t, bkt, userID, (5 * time.Minute).Milliseconds(), (10 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 
 				// Add another block as "most recent one" otherwise the previous blocks are not compacted
 				// because the most recent blocks must cover the full range to be compacted.
-				block3 := createTSDBBlock(t,
-					bkt,
-					userID,
-					blockRangeMillis,
-					blockRangeMillis+time.Minute.Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block3 := createTSDBBlock(t, bkt, userID, blockRangeMillis, blockRangeMillis+time.Minute.Milliseconds(), numSeries, externalLabels(""))
 
 				return []metadata.Meta{
 					{
@@ -238,23 +214,11 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
-				block2 := createTSDBBlock(t,
-					bkt,
-					userID,
-					(7 * time.Minute).Milliseconds(),
-					(10 * time.Minute).Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block2 := createTSDBBlock(t, bkt, userID, (7 * time.Minute).Milliseconds(), (10 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 
 				// Add another block as "most recent one" otherwise the previous blocks are not compacted
 				// because the most recent blocks must cover the full range to be compacted.
-				block3 := createTSDBBlock(t,
-					bkt,
-					userID,
-					blockRangeMillis,
-					blockRangeMillis+time.Minute.Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block3 := createTSDBBlock(t, bkt, userID, blockRangeMillis, blockRangeMillis+time.Minute.Milliseconds(), numSeries, externalLabels(""))
 
 				return []metadata.Meta{
 					{
@@ -396,22 +360,10 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				// Overlapping.
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
-				block2 := createTSDBBlock(t,
-					bkt,
-					userID,
-					time.Minute.Milliseconds(),
-					(7 * time.Minute).Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block2 := createTSDBBlock(t, bkt, userID, time.Minute.Milliseconds(), (7 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 
 				// Not overlapping.
-				block3 := createTSDBBlock(t,
-					bkt,
-					userID,
-					time.Hour.Milliseconds(),
-					(2 * time.Hour).Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block3 := createTSDBBlock(t, bkt, userID, time.Hour.Milliseconds(), (2 * time.Hour).Milliseconds(), numSeries, externalLabels(""))
 
 				return []metadata.Meta{
 					{
@@ -476,23 +428,11 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			numShards: 0,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
-				block2 := createTSDBBlock(t,
-					bkt,
-					userID,
-					(5 * time.Minute).Milliseconds(),
-					(10 * time.Minute).Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block2 := createTSDBBlock(t, bkt, userID, (5 * time.Minute).Milliseconds(), (10 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 
 				// Add another block as "most recent one" otherwise the previous blocks are not compacted
 				// because the most recent blocks must cover the full range to be compacted.
-				block3 := createTSDBBlock(t,
-					bkt,
-					userID,
-					blockRangeMillis,
-					blockRangeMillis+time.Minute.Milliseconds(),
-					numSeries,
-					externalLabels(""))
+				block3 := createTSDBBlock(t, bkt, userID, blockRangeMillis, blockRangeMillis+time.Minute.Milliseconds(), numSeries, externalLabels(""))
 
 				return []metadata.Meta{
 					// Compacted but not split.
