@@ -39,11 +39,13 @@ type job struct {
 	shardID string
 }
 
-func (j *job) hash() uint32 {
-	body := fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
+func (j *job) shardingKey() string {
+	return fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
+}
 
+func (j *job) hash() uint32 {
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(body))
+	_, _ = hasher.Write([]byte(j.shardingKey()))
 	return hasher.Sum32()
 }
 
@@ -103,14 +105,6 @@ func (g blocksGroup) overlaps(other blocksGroup) bool {
 	}
 
 	return true
-}
-
-func (g blocksGroup) rangeStartTime() time.Time {
-	return time.Unix(0, g.rangeStart*int64(time.Millisecond)).UTC()
-}
-
-func (g blocksGroup) rangeEndTime() time.Time {
-	return time.Unix(0, g.rangeEnd*int64(time.Millisecond)).UTC()
 }
 
 func (g blocksGroup) rangeLength() int64 {

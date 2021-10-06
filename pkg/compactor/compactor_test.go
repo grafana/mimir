@@ -984,6 +984,127 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 	}
 }
 
+func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlanning(t *testing.T) {
+	t.Parallel()
+
+	// Mock the bucket to contain one user with two non-overlapping blocks (we expect two compaction jobs to be scheduled
+	// for the splitting stage).
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("", []string{"user-1"}, nil)
+	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
+	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JK000001", "user-1/01DTVP434PA9VFXSW2JK000002"}, nil)
+	bucketClient.MockIter("user-1/markers/", nil, nil)
+	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JK000001/meta.json", mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000001", 1574776800000, 1574784000000), nil)
+	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JK000001/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JK000002/meta.json", mockBlockMetaJSONWithTimeRange("01DTVP434PA9VFXSW2JK000002", 1574863200000, 1574870400000), nil)
+	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JK000002/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
+	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
+
+	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+	cfg := prepareConfig()
+	cfg.CompactionConcurrency = 1
+	cfg.CompactionStrategy = CompactionStrategySplitMerge
+	cfg.ShardingEnabled = true
+	cfg.ShardingRing.InstanceID = "compactor-1"
+	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
+	cfg.ShardingRing.KVStore.Mock = ringStore
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bucketClient)
+
+	// Mock the planner as if there's no compaction to do, in order to simplify tests.
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, nil).Run(func(args mock.Arguments) {
+		// As soon as the first Plan() is called by the compactor, we do switch
+		// the instance to LEAVING state. This way,  after this call, we expect the compactor
+		// to skip next compaction job because not owned anymore by this instance.
+		require.NoError(t, c.ringLifecycler.ChangeState(context.Background(), ring.LEAVING))
+
+		// Wait until the compactor ring client has updated.
+		test.Poll(t, time.Second, 0, func() interface{} {
+			set, _ := c.ring.GetAllHealthy(RingOp)
+			return len(set.Instances)
+		})
+	})
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
+	// Wait until a run has completed.
+	test.Poll(t, 5*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// We expect only 1 compaction job has been expected, while the 2nd has been skipped.
+	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
+
+	assert.ElementsMatch(t, []string{
+		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="compactor is ACTIVE in the ring"`,
+		`level=info component=compactor msg="discovering users from bucket"`,
+		`level=info component=compactor msg="discovered users from bucket" users=1`,
+		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
+		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
+		`level=info component=compactor org_id=user-1 msg="start of GC"`,
+		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
+		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-split-4_of_4-1574776800000-1574784000000 job="stage: split, range start: 1574776800000, range end: 1574784000000, shard: 4_of_4, blocks: 01DTVP434PA9VFXSW2JK000001 (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
+		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 job="stage: split, range start: 1574863200000, range end: 1574870400000, shard: 1_of_4, blocks: 01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-27 14:00:00 +0000 UTC, max time: 2019-11-27 16:00:00 +0000 UTC)"`,
+		// The ownership check is failing because, to keep this test simple, we've just switched
+		// the instance state to LEAVING and there are no other instances in the ring.
+		`level=info component=compactor org_id=user-1 msg="skipped compaction because unable to check whether the group is owned by the compactor instance" group=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 err="at least 1 live replicas required, could only find 0"`,
+		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
+		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
+	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# TYPE cortex_compactor_runs_started_total counter
+		# HELP cortex_compactor_runs_started_total Total number of compaction runs started.
+		cortex_compactor_runs_started_total 1
+
+		# TYPE cortex_compactor_runs_completed_total counter
+		# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+		cortex_compactor_runs_completed_total 1
+
+		# TYPE cortex_compactor_runs_failed_total counter
+		# HELP cortex_compactor_runs_failed_total Total number of compaction runs failed.
+		cortex_compactor_runs_failed_total 0
+
+		# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
+		# TYPE cortex_compactor_group_compaction_runs_completed_total counter
+		cortex_compactor_group_compaction_runs_completed_total 1
+
+		# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
+		# TYPE cortex_compactor_group_compaction_runs_started_total counter
+		cortex_compactor_group_compaction_runs_started_total 1
+
+		# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
+		# TYPE cortex_compactor_group_compactions_failures_total counter
+		cortex_compactor_group_compactions_failures_total 0
+
+		# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in new block(s).
+		# TYPE cortex_compactor_group_compactions_total counter
+		cortex_compactor_group_compactions_total 0
+
+		# HELP cortex_compactor_blocks_marked_for_deletion_total Total number of blocks marked for deletion in compactor.
+		# TYPE cortex_compactor_blocks_marked_for_deletion_total counter
+		cortex_compactor_blocks_marked_for_deletion_total{reason="compaction"} 0
+		cortex_compactor_blocks_marked_for_deletion_total{reason="retention"} 0
+	`),
+		"cortex_compactor_runs_started_total",
+		"cortex_compactor_runs_completed_total",
+		"cortex_compactor_runs_failed_total",
+		"cortex_compactor_group_compaction_runs_completed_total",
+		"cortex_compactor_group_compaction_runs_started_total",
+		"cortex_compactor_group_compactions_failures_total",
+		"cortex_compactor_group_compactions_total",
+		"cortex_compactor_blocks_marked_for_deletion_total",
+	))
+}
+
 func createTSDBBlock(t *testing.T, bkt objstore.Bucket, userID string, minT, maxT int64, numSeries int, externalLabels map[string]string) ulid.ULID {
 	// Create a temporary dir for TSDB.
 	tempDir, err := ioutil.TempDir(os.TempDir(), "tsdb")
@@ -1091,7 +1212,7 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 	var log *concurrency.SyncBuffer
 
 	for i, c := range compactors {
-		owned, err := c.ownUser(userID)
+		owned, err := c.ownUserForCompactor(userID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1182,7 +1303,12 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
-	c, err := newMultitenantCompactor(compactorCfg, storageCfg, overrides, logger, registry, bucketClientFactory, DefaultBlocksGrouperFactory, blocksCompactorFactory)
+	grouper := defaultBlocksGrouperFactory
+	if compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
+		grouper = splitAndMergeGrouperFactory
+	}
+
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, overrides, logger, registry, bucketClientFactory, grouper, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry
@@ -1247,11 +1373,15 @@ func (m *tsdbPlannerMock) Plan(ctx context.Context, metasByMinTime []*metadata.M
 }
 
 func mockBlockMetaJSON(id string) string {
+	return mockBlockMetaJSONWithTimeRange(id, 1574776800000, 1574784000000)
+}
+
+func mockBlockMetaJSONWithTimeRange(id string, mint, maxt int64) string {
 	meta := tsdb.BlockMeta{
 		Version: 1,
 		ULID:    ulid.MustParse(id),
-		MinTime: 1574776800000,
-		MaxTime: 1574784000000,
+		MinTime: mint,
+		MaxTime: maxt,
 		Compaction: tsdb.BlockMetaCompaction{
 			Level:   1,
 			Sources: []ulid.ULID{ulid.MustParse(id)},
@@ -1397,4 +1527,116 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
 		`level=error component=compactor msg="compactor failed to become ACTIVE in the ring" err="context deadline exceeded"`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+}
+
+func TestOwnUser(t *testing.T) {
+	type testCase struct {
+		compactors         int
+		compactionStrategy string
+		sharding           bool
+		enabledUsers       []string
+		disabledUsers      []string
+
+		check func(t *testing.T, comps []*MultitenantCompactor)
+	}
+
+	testCases := map[string]testCase{
+		"5 compactors, no sharding": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategyDefault,
+			sharding:           false,
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
+				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+
+				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
+				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+			},
+		},
+
+		"5 compactors, sharding enabled, default strategy": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategyDefault,
+			sharding:           true,
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+
+				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+			},
+		},
+
+		"5 compactors, sharding enabled, split-merge strategy": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategySplitMerge,
+			sharding:           true,
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+
+				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
+				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+			},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
+			t.Cleanup(func() { assert.NoError(t, closer.Close()) })
+
+			inmem := objstore.NewInMemBucket()
+
+			compactors := []*MultitenantCompactor(nil)
+
+			for i := 0; i < tc.compactors; i++ {
+				cfg := prepareConfig()
+				cfg.CompactionInterval = 10 * time.Minute // We will only call compaction manually.
+
+				cfg.CompactionStrategy = tc.compactionStrategy
+				cfg.EnabledTenants = tc.enabledUsers
+				cfg.DisabledTenants = tc.disabledUsers
+
+				cfg.ShardingEnabled = tc.sharding
+				cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
+				cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
+				// No need to wait. All compactors are started before we do any tests.
+				cfg.ShardingRing.WaitStabilityMinDuration = 0
+				cfg.ShardingRing.WaitStabilityMaxDuration = 0
+				cfg.ShardingRing.KVStore.Mock = kvStore
+
+				c, _, _, _, _ := prepare(t, cfg, inmem)
+				require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+				t.Cleanup(stopServiceFn(t, c))
+
+				compactors = append(compactors, c)
+			}
+
+			tc.check(t, compactors)
+		})
+	}
+}
+
+func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, reason ownUserReason) int {
+	result := 0
+	for _, c := range comps {
+		ok, err := c.ownUserWithReason(user, reason)
+		require.NoError(t, err)
+		if ok {
+			result++
+		}
+	}
+	return result
+}
+
+func stopServiceFn(t *testing.T, serv services.Service) func() {
+	return func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), serv))
+	}
 }

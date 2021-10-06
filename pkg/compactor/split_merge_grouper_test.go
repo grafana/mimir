@@ -63,7 +63,7 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			grouper := NewSplitAndMergeGrouper("test", nil, ranges, 1, testCase.ownJob, log.NewNopLogger())
+			grouper := NewSplitAndMergeGrouper("test", ranges, 1, testCase.ownJob, log.NewNopLogger())
 			res, err := grouper.Groups(blocks)
 			require.NoError(t, err)
 			assert.Len(t, res, testCase.expectedGroups)
@@ -126,6 +126,14 @@ func TestPlanCompaction(t *testing.T) {
 					},
 				}},
 			},
+		},
+		"should NOT split a single block if == smallest compaction range but configured shards = 0": {
+			ranges:     []int64{20, 40},
+			shardCount: 0,
+			blocks: []*metadata.Meta{
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
+			},
+			expected: []*job{},
 		},
 		"should merge and split multiple 1st level blocks within the same time range": {
 			ranges:     []int64{10, 20},
@@ -212,6 +220,36 @@ func TestPlanCompaction(t *testing.T) {
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
+					},
+				}},
+			},
+		},
+		"should merge but NOT split multiple 1st level blocks in different time ranges if configured shards = 0": {
+			ranges:     []int64{10, 20},
+			shardCount: 0,
+			blocks: []*metadata.Meta{
+				// 1st level range [0, 10]
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
+				// 1st level range [10, 20]
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageMerge, blocksGroup: blocksGroup{
+					rangeStart: 0,
+					rangeEnd:   10,
+					blocks: []*metadata.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
+					},
+				}},
+				{userID: userID, stage: stageMerge, blocksGroup: blocksGroup{
+					rangeStart: 10,
+					rangeEnd:   20,
+					blocks: []*metadata.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
 						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
 					},
 				}},

@@ -147,7 +147,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		require.NoError(t, sy.GarbageCollect(ctx))
 
 		// Only the level 3 block, the last source block in both resolutions should be left.
-		grouper := NewDefaultGrouper(nil, bkt, false, metadata.NoneFunc)
+		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
 		groups, err := grouper.Groups(sy.Metas())
 		require.NoError(t, err)
 
@@ -191,9 +191,9 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		planner := NewPlanner(logger, []int64{1000, 3000}, noCompactMarkerFilter)
-		grouper := NewDefaultGrouper(logger, bkt, false, metadata.NoneFunc)
+		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, metrics)
+		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllGroups, metrics)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.

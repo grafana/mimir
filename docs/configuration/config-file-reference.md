@@ -4179,7 +4179,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
 # The number of shards to use when splitting blocks. This config option is used
-# only when split-and-merge compaction strategy is in use.
+# only when split-and-merge compaction strategy is in use. 0 to disable
+# splitting but keep using the split-and-merge compaction strategy.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 4]
 

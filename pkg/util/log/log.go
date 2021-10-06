@@ -26,12 +26,8 @@ var (
 // InitLogger initialises the global gokit logger (util_log.Logger) and overrides the
 // default logger for the server.
 func InitLogger(cfg *server.Config) {
-	l, err := NewPrometheusLogger(cfg.LogLevel, cfg.LogFormat)
-	if err != nil {
-		panic(err)
-	}
-
-	// when use util_log.Logger, skip 3 stack frames.
+	l := NewDefaultLogger(cfg.LogLevel, cfg.LogFormat)
+	// when using util_log.Logger, skip 3 stack frames.
 	Logger = log.With(l, "caller", log.Caller(3))
 
 	// cfg.Log wraps log function, skip 4 stack frames to get caller information.
@@ -41,32 +37,17 @@ func InitLogger(cfg *server.Config) {
 	cfg.Log = logging.GoKit(log.With(l, "caller", log.Caller(4)))
 }
 
-// PrometheusLogger exposes Prometheus counters for each of go-kit's log levels.
-type PrometheusLogger struct {
-	logger log.Logger
-}
-
-// NewPrometheusLogger creates a new instance of PrometheusLogger which exposes
-// Prometheus counters for various log levels.
-func NewPrometheusLogger(l logging.Level, format logging.Format) (log.Logger, error) {
-	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
+// NewDefaultLogger creates a new gokit logger with the configured level and format
+func NewDefaultLogger(l logging.Level, format logging.Format) log.Logger {
+	var logger log.Logger
 	if format.String() == "json" {
 		logger = log.NewJSONLogger(log.NewSyncWriter(os.Stderr))
-	}
-	logger = level.NewFilter(logger, l.Gokit)
-
-	logger = &PrometheusLogger{
-		logger: logger,
+	} else {
+		logger = log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	}
 
 	// return a Logger without caller information, shouldn't use directly
-	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
-	return logger, nil
-}
-
-// Log increments the appropriate Prometheus counter depending on the log level.
-func (pl *PrometheusLogger) Log(kv ...interface{}) error {
-	return pl.logger.Log(kv...)
+	return log.With(level.NewFilter(logger, l.Gokit), "ts", log.DefaultTimestampUTC)
 }
 
 // CheckFatal prints an error and exits with error code 1 if err is non-nil

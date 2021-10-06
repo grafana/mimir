@@ -61,7 +61,6 @@ type BlocksGrouperFactory func(
 	ctx context.Context,
 	cfg Config,
 	cfgProvider ConfigProvider,
-	bkt objstore.Bucket,
 	userID string,
 	ring *ring.Ring,
 	instanceAddr string,
@@ -233,9 +232,9 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 	if compactorCfg.BlocksGrouperFactory != nil && compactorCfg.BlocksCompactorFactory != nil {
 		// Nothing to do because it was already set by a downstream project.
 	} else if compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		ConfigureSplitAndMergeCompactor(&compactorCfg)
+		configureSplitAndMergeCompactor(&compactorCfg)
 	} else {
-		ConfigureDefaultCompactor(&compactorCfg)
+		configureDefaultCompactor(&compactorCfg)
 	}
 
 	blocksGrouperFactory := compactorCfg.BlocksGrouperFactory
@@ -361,7 +360,7 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
 		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
 		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
-	}, c.bucketClient, c.ownUser, c.cfgProvider, c.parentLogger, c.registerer)
+	}, c.bucketClient, c.ownUserForBlocksCleaner, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Initialize the compactors ring if sharding is enabled.
 	if c.compactorCfg.ShardingEnabled {
@@ -506,7 +505,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 		}
 
 		// Ensure the user ID belongs to our shard.
-		if owned, err := c.ownUser(userID); err != nil {
+		if owned, err := c.ownUserForCompactor(userID); err != nil {
 			c.compactionRunSkippedTenants.Inc()
 			level.Warn(c.logger).Log("msg", "unable to check if user is owned by this shard", "user", userID, "err", err)
 			continue
@@ -663,13 +662,14 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
-		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, bucket, userID, c.ring, instanceAddr, ulogger, reg),
+		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, c.ring, instanceAddr, ulogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
+		c.ownGroup,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {
@@ -717,23 +717,64 @@ func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, err
 	return users, err
 }
 
-func (c *MultitenantCompactor) ownUser(userID string) (bool, error) {
+type ownUserReason int
+
+const (
+	ownUserReasonBlocksCleaner ownUserReason = iota
+	ownUserReasonCompactor
+)
+
+func (c *MultitenantCompactor) ownUserForBlocksCleaner(userID string) (bool, error) {
+	return c.ownUserWithReason(userID, ownUserReasonBlocksCleaner)
+}
+
+func (c *MultitenantCompactor) ownUserForCompactor(userID string) (bool, error) {
+	return c.ownUserWithReason(userID, ownUserReasonCompactor)
+}
+
+func (c *MultitenantCompactor) ownUserWithReason(userID string, reason ownUserReason) (bool, error) {
 	if !c.allowedTenants.IsAllowed(userID) {
 		return false, nil
 	}
 
+	// When using split-merge compaction strategy, ALL compactors should plan jobs for all users. Individual
+	// jobs are then sharded between compactors based on job hash.
+	// TODO: add support for shuffle sharding, so that we can use only subset of compactors for given user.
+	if reason == ownUserReasonCompactor && c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
+		return true, nil
+	}
+
+	return c.ownKey(userID)
+}
+
+func (c *MultitenantCompactor) ownGroup(group *Group) (bool, error) {
+	// Check if the user is owned.
+	if owned, err := c.ownUserForCompactor(group.UserID()); !owned || err != nil {
+		return owned, err
+	}
+
+	// Only the split-and-merge compactor supports horizontal scalability. All other compaction strategies
+	// run compaction on a single instance only (for a given tenant), so they're always owned.
+	if c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
+		return c.ownKey(group.ShardingKey())
+	}
+
+	return true, nil
+}
+
+func (c *MultitenantCompactor) ownKey(key string) (bool, error) {
 	// Always owned if sharding is disabled.
 	if !c.compactorCfg.ShardingEnabled {
 		return true, nil
 	}
 
-	// Hash the user ID.
+	// Hash the key.
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(userID))
-	userHash := hasher.Sum32()
+	_, _ = hasher.Write([]byte(key))
+	hash := hasher.Sum32()
 
-	// Check whether this compactor instance owns the user.
-	rs, err := c.ring.Get(userHash, RingOp, nil, nil, nil)
+	// Check whether this compactor instance owns the token.
+	rs, err := c.ring.Get(hash, RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}

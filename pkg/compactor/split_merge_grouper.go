@@ -15,7 +15,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/objstore"
 
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
@@ -32,7 +31,6 @@ type ownJobFunc func(job *job) (bool, error)
 
 type SplitAndMergeGrouper struct {
 	userID string
-	bucket objstore.Bucket
 	ranges []int64
 	ownJob ownJobFunc
 	logger log.Logger
@@ -42,9 +40,9 @@ type SplitAndMergeGrouper struct {
 }
 
 // NewSplitAndMergeGrouper makes a new SplitAndMergeGrouper. The provided ranges must be sorted.
+// If shardCount is 0, the splitting stage is disabled.
 func NewSplitAndMergeGrouper(
 	userID string,
-	bucket objstore.Bucket,
 	ranges []int64,
 	shardCount uint32,
 	ownJob ownJobFunc,
@@ -52,7 +50,6 @@ func NewSplitAndMergeGrouper(
 ) *SplitAndMergeGrouper {
 	return &SplitAndMergeGrouper{
 		userID:     userID,
-		bucket:     bucket,
 		ranges:     ranges,
 		ownJob:     ownJob,
 		shardCount: shardCount,
@@ -67,6 +64,11 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 	}
 
 	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.shardCount) {
+		// Sanity check: if splitting is disabled, we don't expect any job for the split stage.
+		if g.shardCount <= 0 && job.stage == stageSplit {
+			return nil, errors.Errorf("unexpected split stage job because splitting is disabled: %s", job.String())
+		}
+
 		// Skip any job which doesn't belong to this compactor instance.
 		if ok, err := g.ownJob(job); err != nil {
 			return nil, err
@@ -89,15 +91,14 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
 		thanosGroup, err := NewGroup(
-			log.With(g.logger, "groupKey", groupKey, "rangeStart", job.rangeStartTime().String(), "rangeEnd", job.rangeEndTime().String()),
-			g.bucket,
+			g.userID,
 			groupKey,
 			externalLabels,
 			resolution,
-			false, // No malformed index.
 			metadata.NoneFunc,
 			job.stage == stageSplit,
 			g.shardCount,
+			job.shardingKey(),
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "create compaction group")
@@ -209,7 +210,7 @@ func planCompactionByRange(userID string, blocks []*metadata.Meta, tr int64, isS
 	for _, group := range groups {
 		// If this is the smallest time range and there's any non-split block,
 		// then we should plan a job to split blocks.
-		if isSmallestRange {
+		if shardCount > 0 && isSmallestRange {
 			if splitJobs := planSplitting(userID, group, shardCount); len(splitJobs) > 0 {
 				jobs = append(jobs, splitJobs...)
 				continue
@@ -217,8 +218,8 @@ func planCompactionByRange(userID string, blocks []*metadata.Meta, tr int64, isS
 		}
 
 		// If we reach this point, all blocks for this time range have already been split
-		// (or we're not processing the smallest time range). Then, we can check if there's any
-		// group of blocks to be merged together for each shard.
+		// (or we're not processing the smallest time range, or splitting is disabled).
+		// Then, we can check if there's any group of blocks to be merged together for each shard.
 		for shardID, shardBlocks := range groupBlocksByShardID(group.blocks) {
 			// No merging to do if there are less than 2 blocks.
 			if len(shardBlocks) < 2 {

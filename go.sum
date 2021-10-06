@@ -908,8 +908,8 @@ github.com/grafana/dskit v0.0.0-20210920134249-30d62063c034 h1:Vf6EZHFB4B3r57EO7
 github.com/grafana/dskit v0.0.0-20210920134249-30d62063c034/go.mod h1:+XIvamx+EGCrjHGKm8An33cgmgKi7AnbymAMqJd763c=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85 h1:xLuzPoOzdfNb/RF/IENCw+oLVdZB4G21VPhkHBgwSHY=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85/go.mod h1:crI9WX6p0IhrqB+DqIUHulRW853PaNFf7o4UprV//3I=
-github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349 h1:MGH/h6+LDw9tKvpcpAFmGtzjPAEX/mNne5ePz+vu/28=
-github.com/grafana/prometheus-private v0.0.0-20210928085320-04e7926b0349/go.mod h1:0v1f6Vty3U+SeDOM3eKhtS6W294Rpt2WMoXLhhaDlTU=
+github.com/grafana/prometheus-private v0.0.0-20211006123645-b3ae917f9698 h1:2o2QvAonAJr+G4CK6L26pKvmRolkq5ZBmvzgFj2R+PQ=
+github.com/grafana/prometheus-private v0.0.0-20211006123645-b3ae917f9698/go.mod h1:wP6L5BiOZ1JZYadRh17u5RujSS19zNSGZfGUi/MZUpM=
 github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7/go.mod h1:FecbI9+v66THATjSRHfNgh1IVFe/9kFxbXtjV0ctIMA=
 github.com/grpc-ecosystem/go-grpc-middleware v1.2.2 h1:FlFbCRLd5Jr4iYXZufAvgWN6Ao0JrI5chLINnUXDDr0=
 github.com/grpc-ecosystem/go-grpc-middleware v1.2.2/go.mod h1:EaizFBKfUKtMIF5iaDEhniwNedqGo9FuLFzppDr3uwI=
@@ -1429,8 +1429,9 @@ github.com/prometheus/common v0.21.0/go.mod h1:U+gB1OBLb1lF3O42bTCL+FK18tX9Oar16
 github.com/prometheus/common v0.23.0/go.mod h1:H6QK/N6XVT42whUeIdI3dp36w49c+/iMDk7UAI2qm7Q=
 github.com/prometheus/common v0.26.0/go.mod h1:M7rCNAaPfAosfx8veZJCuw84e35h3Cfd9VFqTh1DIvc=
 github.com/prometheus/common v0.29.0/go.mod h1:vu+V0TpY+O6vW9J44gczi3Ap/oXXR10b+M/gUGO4Hls=
-github.com/prometheus/common v0.30.0 h1:JEkYlQnpzrzQFxi6gnukFPdQ+ac82oRhzMcIduJu/Ug=
 github.com/prometheus/common v0.30.0/go.mod h1:vu+V0TpY+O6vW9J44gczi3Ap/oXXR10b+M/gUGO4Hls=
+github.com/prometheus/common v0.31.1 h1:d18hG4PkHnNAKNMOmFuXFaiY8Us0nird/2m60uS1AMs=
+github.com/prometheus/common v0.31.1/go.mod h1:vu+V0TpY+O6vW9J44gczi3Ap/oXXR10b+M/gUGO4Hls=
 github.com/prometheus/common/sigv4 v0.1.0 h1:qoVebwtwwEhS85Czm2dSROY5fTo2PAPEVdDeppTwGX4=
 github.com/prometheus/common/sigv4 v0.1.0/go.mod h1:2Jkxxk9yYvCkE5G1sQT7GuEXm57JrvHu9k5YwTjsNtI=
 github.com/prometheus/exporter-toolkit v0.5.0/go.mod h1:OCkM4805mmisBhLmVFw858QYi3v0wKdY6/UxrT0pZVg=
