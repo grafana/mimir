@@ -923,7 +923,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 						level.Info(c.logger).Log("msg", "skipped compaction because unable to check whether the group is owned by the compactor instance", "group", g.Key(), "err", err)
 						continue
 					} else if !ok {
-						level.Info(c.logger).Log("msg", "skipped compaction because group is not owned anymore by the compactor instance", "group", g.Key())
+						level.Info(c.logger).Log("msg", "skipped compaction because group is not owned by the compactor instance anymore", "group", g.Key())
 						continue
 					}
 

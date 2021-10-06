@@ -1303,9 +1303,9 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
-	grouper := DefaultBlocksGrouperFactory
+	grouper := defaultBlocksGrouperFactory
 	if compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		grouper = SplitAndMergeGrouperFactory
+		grouper = splitAndMergeGrouperFactory
 	}
 
 	c, err := newMultitenantCompactor(compactorCfg, storageCfg, overrides, logger, registry, bucketClientFactory, grouper, blocksCompactorFactory)

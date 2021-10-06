@@ -233,9 +233,9 @@ func NewMultitenantCompactor(compactorCfg Config, storageCfg mimir_tsdb.BlocksSt
 	if compactorCfg.BlocksGrouperFactory != nil && compactorCfg.BlocksCompactorFactory != nil {
 		// Nothing to do because it was already set by a downstream project.
 	} else if compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		ConfigureSplitAndMergeCompactor(&compactorCfg)
+		configureSplitAndMergeCompactor(&compactorCfg)
 	} else {
-		ConfigureDefaultCompactor(&compactorCfg)
+		configureDefaultCompactor(&compactorCfg)
 	}
 
 	blocksGrouperFactory := compactorCfg.BlocksGrouperFactory

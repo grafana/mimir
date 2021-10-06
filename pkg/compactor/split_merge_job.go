@@ -44,7 +44,6 @@ func (j *job) shardingKey() string {
 }
 
 func (j *job) hash() uint32 {
-
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(j.shardingKey()))
 	return hasher.Sum32()
