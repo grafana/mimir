@@ -798,21 +798,23 @@ func (it *bigEndianPostings) Err() error {
 	return nil
 }
 
-// PostingsCloner takes an existing Postings and allows indepedently clone them
+// PostingsCloner takes an existing Postings and allows independently clone them.
 type PostingsCloner struct {
 	mtx     sync.RWMutex
 	v       []uint64
 	wrapped Postings
 }
 
-// NewPostingsCloner takes an existing Postings and allows indepedently clone them
+// NewPostingsCloner takes an existing Postings and allows independently clone them.
+// The instance provided shouldn't have been used before (no Next() calls should have been done)
+// and it shouldn't be used once provided to the PostingsCloner.
 func NewPostingsCloner(p Postings) *PostingsCloner {
 	return &PostingsCloner{
 		wrapped: p,
 	}
 }
 
-// Clone returns another indepedent Postings interface
+// Clone returns another independent Postings instance.
 func (c *PostingsCloner) Clone() Postings {
 	return &clonedPostings{c: c, pos: posUninitialized}
 }
@@ -892,7 +894,7 @@ const (
 
 type clonedPostings struct {
 	c   *PostingsCloner
-	pos int // stores the position how far the clonedPostings has advanced or posUninitialized=-1, posFinished=-3
+	pos int // stores the position how far the clonedPostings has advanced or posUninitialized=-1, posFinished=-2
 }
 
 func (p *clonedPostings) Next() bool {

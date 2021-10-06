@@ -47,6 +47,8 @@ func NewPostingsForMatchersProvider(ttl time.Duration) *PostingsForMatchersProvi
 
 		close:  make(chan struct{}),
 		closed: sync.WaitGroup{},
+
+		timeNow: time.Now,
 	}
 	if ttl > 0 {
 		b.closed.Add(1)
@@ -82,6 +84,9 @@ type PostingsForMatchersProviderBuilder struct {
 	once   sync.Once
 	close  chan struct{}
 	closed sync.WaitGroup
+
+	// timeNow is the time.Now that can be replaced for testing purposes
+	timeNow func() time.Time
 }
 
 // WithIndex creates a PostingsForMatchersProvider for a provided index.
@@ -91,7 +96,9 @@ func (b *PostingsForMatchersProviderBuilder) WithIndex(ifp IndexForPostings) Pos
 	return PostingsForMatchersProviderImpl{
 		PostingsForMatchersProviderBuilder: b,
 		indexForPostings:                   ifp,
-		postingsForMatchers:                PostingsForMatchers,
+
+		// postingsForMatchers can be replaced for testing purposes
+		postingsForMatchers: PostingsForMatchers,
 	}
 }
 
@@ -134,7 +141,7 @@ func (p PostingsForMatchersProviderImpl) PostingsForMatchers(concurrent bool, ms
 	if loaded {
 		promise = wi.(*postingsForMatchersPromise)
 	} else {
-		p.created(key)
+		defer p.created(key, p.timeNow())
 	}
 
 	promise.Do(func() {
@@ -185,11 +192,18 @@ func (b *PostingsForMatchersProviderBuilder) expire() {
 
 func (b *PostingsForMatchersProviderBuilder) headExpired() bool {
 	h := b.cached.Front()
-	return h != nil && time.Since(h.Value.(*postingsForMatchersCachedCall).ts) >= b.ttl
+	if h == nil {
+		return false
+	}
+	ts := h.Value.(*postingsForMatchersCachedCall).ts
+	return b.timeNow().Sub(ts) >= b.ttl
 }
 
-func (b *PostingsForMatchersProviderBuilder) created(key string) {
+// created has to be called when returning from the PostingsForMatchers call that creates the promise.
+// the ts provided should be the call time.
+func (b *PostingsForMatchersProviderBuilder) created(key string, ts time.Time) {
 	if b.ttl <= 0 {
+		b.calls.Delete(key)
 		return
 	}
 
@@ -198,7 +212,7 @@ func (b *PostingsForMatchersProviderBuilder) created(key string) {
 
 	b.cached.PushBack(&postingsForMatchersCachedCall{
 		key: key,
-		ts:  time.Now(),
+		ts:  ts,
 	})
 }
 

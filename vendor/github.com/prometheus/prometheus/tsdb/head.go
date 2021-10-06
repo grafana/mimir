@@ -189,7 +189,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		stats: stats,
 		reg:   r,
 
-		pfmp: NewPostingsForMatchersProvider(defaultPostingsForMatchersCacheTTL),
+		pfmp: NewPostingsForMatchersProvider(0),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
