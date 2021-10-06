@@ -31,11 +31,8 @@ import (
 )
 
 func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) {
-	t.Parallel()
-
 	const (
 		userID     = "user-1"
-		numShards  = 2
 		numSeries  = 100
 		blockRange = 2 * time.Hour
 	)
@@ -57,9 +54,11 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 	}
 
 	tests := map[string]struct {
-		setup func(t *testing.T, bkt objstore.Bucket) []metadata.Meta
+		numShards int
+		setup     func(t *testing.T, bkt objstore.Bucket) []metadata.Meta
 	}{
 		"overlapping blocks matching the 1st compaction range should be merged and split": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, externalLabels(""))
 				block2 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, externalLabels(""))
@@ -98,6 +97,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			},
 		},
 		"overlapping blocks matching the beginning of the 1st compaction range should be merged and split": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 				block2 := createTSDBBlock(t,
@@ -166,6 +166,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			},
 		},
 		"non-overlapping blocks matching the beginning of the 1st compaction range (without gaps) should be merged and split": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 				block2 := createTSDBBlock(t,
@@ -234,6 +235,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			},
 		},
 		"non-overlapping blocks matching the beginning of the 1st compaction range (with gaps) should be merged and split": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
 				block2 := createTSDBBlock(t,
@@ -301,8 +303,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				}
 			},
 		},
-		"smaller compaction ranges should take precedence over larger ones, and then re-iterate in subsequent " +
-			"compactions of increasing ranges": {
+		"smaller compaction ranges should take precedence over larger ones, and then re-iterate in subsequent compactions of increasing ranges": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				// Two split blocks in the 1st compaction range.
 				block1a := createTSDBBlock(t, bkt, userID, 1, blockRangeMillis, numSeries, externalLabels("1_of_2"))
@@ -390,6 +392,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			},
 		},
 		"overlapping and non-overlapping blocks within the same range should be split and compacted together": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				// Overlapping.
 				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
@@ -444,6 +447,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			},
 		},
 		"should correctly handle empty blocks generated in the splitting stage": {
+			numShards: 2,
 			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
 				// Generate a block with only 1 series. This block will be split into 1 split block only,
 				// because the source block only has 1 series.
@@ -462,6 +466,146 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 							Labels: map[string]string{
 								mimir_tsdb.TenantIDExternalLabel: userID,
 								ShardIDLabelName:                 "1_of_2",
+							},
+						},
+					},
+				}
+			},
+		},
+		"splitting should be disabled if configured shards = 0": {
+			numShards: 0,
+			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
+				block1 := createTSDBBlock(t, bkt, userID, 0, (5 * time.Minute).Milliseconds(), numSeries, externalLabels(""))
+				block2 := createTSDBBlock(t,
+					bkt,
+					userID,
+					(5 * time.Minute).Milliseconds(),
+					(10 * time.Minute).Milliseconds(),
+					numSeries,
+					externalLabels(""))
+
+				// Add another block as "most recent one" otherwise the previous blocks are not compacted
+				// because the most recent blocks must cover the full range to be compacted.
+				block3 := createTSDBBlock(t,
+					bkt,
+					userID,
+					blockRangeMillis,
+					blockRangeMillis+time.Minute.Milliseconds(),
+					numSeries,
+					externalLabels(""))
+
+				return []metadata.Meta{
+					// Compacted but not split.
+					{
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: 0,
+							MaxTime: (10 * time.Minute).Milliseconds(),
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block1, block2},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.TenantIDExternalLabel: userID,
+							},
+						},
+					}, {
+						// Not compacted.
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: blockRangeMillis,
+							MaxTime: blockRangeMillis + time.Minute.Milliseconds(),
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block3},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.TenantIDExternalLabel: userID,
+							},
+						},
+					},
+				}
+			},
+		},
+		"splitting should be disabled but already split blocks should be merged correctly (respecting the shard) if configured shards = 0": {
+			numShards: 0,
+			setup: func(t *testing.T, bkt objstore.Bucket) []metadata.Meta {
+				// Two split blocks in the 1st compaction range.
+				block1a := createTSDBBlock(t, bkt, userID, 1, blockRangeMillis, numSeries, externalLabels("1_of_2"))
+				block1b := createTSDBBlock(t, bkt, userID, 1, blockRangeMillis, numSeries, externalLabels("2_of_2"))
+
+				// Two non-split overlapping blocks in the 1st compaction range.
+				block2 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, externalLabels(""))
+				block3 := createTSDBBlock(t, bkt, userID, blockRangeMillis, 2*blockRangeMillis, numSeries, externalLabels(""))
+
+				// Two split adjacent blocks in the 2nd compaction range.
+				block4a := createTSDBBlock(t, bkt, userID, 2*blockRangeMillis, 3*blockRangeMillis, numSeries, externalLabels("1_of_2"))
+				block4b := createTSDBBlock(t, bkt, userID, 2*blockRangeMillis, 3*blockRangeMillis, numSeries, externalLabels("2_of_2"))
+				block5a := createTSDBBlock(t, bkt, userID, 3*blockRangeMillis, 4*blockRangeMillis, numSeries, externalLabels("1_of_2"))
+				block5b := createTSDBBlock(t, bkt, userID, 3*blockRangeMillis, 4*blockRangeMillis, numSeries, externalLabels("2_of_2"))
+
+				// Two non-adjacent non-split blocks in the 1st compaction range.
+				block6 := createTSDBBlock(t, bkt, userID, 4*blockRangeMillis, 5*blockRangeMillis, numSeries, externalLabels(""))
+				block7 := createTSDBBlock(t, bkt, userID, 7*blockRangeMillis, 8*blockRangeMillis, numSeries, externalLabels(""))
+
+				return []metadata.Meta{
+					// Block1 have been compacted with block4 and block5 in the 3rd range compaction.
+					{
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: 1,
+							MaxTime: 4 * blockRangeMillis,
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block1a, block4a, block5a},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.TenantIDExternalLabel: userID,
+								ShardIDLabelName:                 "1_of_2",
+							},
+						},
+					}, {
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: 1,
+							MaxTime: 4 * blockRangeMillis,
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block1b, block4b, block5b},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.TenantIDExternalLabel: userID,
+								ShardIDLabelName:                 "2_of_2",
+							},
+						},
+					},
+					// The two overlapping blocks (block2, block3) have been merged in the 1st range.
+					{
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: blockRangeMillis,
+							MaxTime: 2 * blockRangeMillis,
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block2, block3},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.TenantIDExternalLabel: userID,
+							},
+						},
+					},
+					// The two non-adjacent blocks block6 and block7 are merged together in the 3rd range.
+					{
+						BlockMeta: tsdb.BlockMeta{
+							MinTime: 4 * blockRangeMillis,
+							MaxTime: 8 * blockRangeMillis,
+							Compaction: tsdb.BlockMetaCompaction{
+								Sources: []ulid.ULID{block6, block7},
+							},
+						},
+						Thanos: metadata.Thanos{
+							Labels: map[string]string{
+								mimir_tsdb.TenantIDExternalLabel: userID,
 							},
 						},
 					},
@@ -504,7 +648,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			compactorCfg.CompactionStrategy = CompactionStrategySplitMerge
 
 			cfgProvider := newMockConfigProvider()
-			cfgProvider.splitAndMergeShards[userID] = numShards
+			cfgProvider.splitAndMergeShards[userID] = testData.numShards
 
 			logger := log.NewLogfmtLogger(os.Stdout)
 			reg := prometheus.NewPedanticRegistry()
