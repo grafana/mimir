@@ -84,6 +84,7 @@
 * [ENHANCEMENT] Add tags to tracing span for distributor push with user, cluster and replica. #210
 * [ENHANCEMENT] Some optimisations to distributor. #212 #242
 * [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
+* [ENHANCEMENT] Compactor: when sharding is enabled, skip already planned compaction jobs if the tenant doesn't belong to the compactor instance anymore. #303
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16

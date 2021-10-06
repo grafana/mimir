@@ -89,6 +89,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
 		thanosGroup, err := NewGroup(
+			g.userID,
 			log.With(g.logger, "groupKey", groupKey, "rangeStart", job.rangeStartTime().String(), "rangeEnd", job.rangeEndTime().String()),
 			g.bucket,
 			groupKey,
@@ -98,6 +99,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 			metadata.NoneFunc,
 			job.stage == stageSplit,
 			g.shardCount,
+			job.shardingKey(),
 		)
 		if err != nil {
 			return nil, errors.Wrap(err, "create compaction group")

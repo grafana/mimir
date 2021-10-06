@@ -523,7 +523,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			})
 
 			// Wait until the first compaction run completed.
-			test.Poll(t, 10*time.Second, nil, func() interface{} {
+			test.Poll(t, 15*time.Second, nil, func() interface{} {
 				return testutil.GatherAndCompare(reg, strings.NewReader(`
 					# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
 					# TYPE cortex_compactor_runs_completed_total counter

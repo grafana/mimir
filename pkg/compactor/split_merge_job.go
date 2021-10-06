@@ -39,11 +39,13 @@ type job struct {
 	shardID string
 }
 
-func (j *job) hash() uint32 {
-	body := fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
+func (j *job) shardingKey() string {
+	return fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
+}
 
+func (j *job) hash() uint32 {
 	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(body))
+	_, _ = hasher.Write([]byte(j.shardingKey()))
 	return hasher.Sum32()
 }
 
