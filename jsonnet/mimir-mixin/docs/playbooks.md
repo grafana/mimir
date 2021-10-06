@@ -904,13 +904,12 @@ After this preparation, one can use `kubectl exec -t -i clone-ingester-7-dataacc
    tar -zxvf gsutil.tar.gz
    ./gsutil/gsutil --help
    ```
-3. Create `/etc/boto.cfg` with the following content:
+3. Configure credentials
    ```
-   [GoogleCompute]
-   service_account = default
+   gsutil config -e
 
-   [Plugin]
-   plugin_directory = /usr/lib/python3.8/site-packages/google_compute_engine/boto
+   # Private key path: /var/secrets/google/credentials.json
+   # Project ID: your google project ID
    ```
 
 ### Deleting a StatefulSet with persistent volumes
