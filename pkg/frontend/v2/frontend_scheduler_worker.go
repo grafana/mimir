@@ -82,12 +82,13 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	f.mu.Lock()
 	ws := f.workers
 	w := f.workers[address]
-	f.mu.Unlock()
 
 	// Already stopped or we already have worker for this address.
 	if ws == nil || w != nil {
+		f.mu.Unlock()
 		return
 	}
+	f.mu.Unlock()
 
 	level.Info(f.log).Log("msg", "adding connection to scheduler", "addr", address)
 	conn, err := f.connectToScheduler(context.Background(), address)
@@ -103,10 +104,16 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	defer f.mu.Unlock()
 
 	// Can be nil if stopping has been called already.
-	if f.workers != nil {
-		f.workers[address] = w
-		w.start()
+	if f.workers == nil {
+		return
 	}
+	// We have to recheck for presence in case we got called again while we were
+	// connecting and that one finished first.
+	if f.workers[address] != nil {
+		return
+	}
+	f.workers[address] = w
+	w.start()
 }
 
 func (f *frontendSchedulerWorkers) AddressRemoved(address string) {
