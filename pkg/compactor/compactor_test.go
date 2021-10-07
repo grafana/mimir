@@ -1212,7 +1212,7 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 	var log *concurrency.SyncBuffer
 
 	for i, c := range compactors {
-		owned, err := c.ownUserForCompactor(userID)
+		owned, err := c.shardingStrategy.compactorOwnUser(userID)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1272,6 +1272,15 @@ func prepareConfig() Config {
 }
 
 func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*MultitenantCompactor, *tsdbCompactorMock, *tsdbPlannerMock, *concurrency.SyncBuffer, prometheus.Gatherer) {
+	var limits validation.Limits
+	flagext.DefaultValues(&limits)
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	return prepareWithConfigProvider(t, compactorCfg, bucketClient, overrides)
+}
+
+func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket, limits ConfigProvider) (*MultitenantCompactor, *tsdbCompactorMock, *tsdbPlannerMock, *concurrency.SyncBuffer, prometheus.Gatherer) {
 	storageCfg := mimir_tsdb.BlocksStorageConfig{}
 	flagext.DefaultValues(&storageCfg)
 
@@ -1290,11 +1299,6 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 	logger := &componentLogger{component: "compactor", log: log.NewLogfmtLogger(logs)}
 	registry := prometheus.NewRegistry()
 
-	var limits validation.Limits
-	flagext.DefaultValues(&limits)
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
 	bucketClientFactory := func(ctx context.Context) (objstore.Bucket, error) {
 		return bucketClient, nil
 	}
@@ -1308,7 +1312,7 @@ func prepare(t *testing.T, compactorCfg Config, bucketClient objstore.Bucket) (*
 		grouper = splitAndMergeGrouperFactory
 	}
 
-	c, err := newMultitenantCompactor(compactorCfg, storageCfg, overrides, logger, registry, bucketClientFactory, grouper, blocksCompactorFactory)
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, grouper, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry
@@ -1529,6 +1533,13 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 }
 
+type ownUserReason int
+
+const (
+	ownUserReasonBlocksCleaner ownUserReason = iota
+	ownUserReasonCompactor
+)
+
 func TestOwnUser(t *testing.T) {
 	type testCase struct {
 		compactors         int
@@ -1536,22 +1547,27 @@ func TestOwnUser(t *testing.T) {
 		sharding           bool
 		enabledUsers       []string
 		disabledUsers      []string
+		compactorShards    map[string]int
 
 		check func(t *testing.T, comps []*MultitenantCompactor)
 	}
+
+	const user1 = "user1"
+	const user2 = "another-user"
 
 	testCases := map[string]testCase{
 		"5 compactors, no sharding": {
 			compactors:         5,
 			compactionStrategy: CompactionStrategyDefault,
 			sharding:           false,
+			compactorShards:    map[string]int{user1: 2}, // Not used when sharding is disabled.
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
-				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
-				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 5)
 
-				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
-				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 5)
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 5)
 			},
 		},
 
@@ -1559,27 +1575,48 @@ func TestOwnUser(t *testing.T) {
 			compactors:         5,
 			compactionStrategy: CompactionStrategyDefault,
 			sharding:           true,
+			compactorShards:    map[string]int{user1: 2}, // Not used for CompactionStrategyDefault.
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
-				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
-				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 1)
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 1)
 
-				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
-				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 1)
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 1)
 			},
 		},
 
-		"5 compactors, sharding enabled, split-merge strategy": {
+		"5 compactors, sharding enabled, split-merge strategy, no compactor shard size": {
 			compactors:         5,
 			compactionStrategy: CompactionStrategySplitMerge,
 			sharding:           true,
+			compactorShards:    nil, // no limits
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
-				require.Equal(t, 5, owningCompactors(t, comps, "user1", ownUserReasonCompactor))
-				require.Equal(t, 1, owningCompactors(t, comps, "user1", ownUserReasonBlocksCleaner))
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 1)
 
-				require.Equal(t, 5, owningCompactors(t, comps, "another-user", ownUserReasonCompactor))
-				require.Equal(t, 1, owningCompactors(t, comps, "another-user", ownUserReasonBlocksCleaner))
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 5)
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 1)
+			},
+		},
+
+		"10 compactors, sharding enabled, split-merge strategy, with non-zero shard sizes": {
+			compactors:         10,
+			compactionStrategy: CompactionStrategySplitMerge,
+			sharding:           true,
+			compactorShards:    map[string]int{user1: 2, user2: 3},
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 2)
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 1)
+				// Blocks cleanup is done by one of the compactors that "own" the user.
+				require.Subset(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner))
+
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 3)
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 1)
+				// Blocks cleanup is done by one of the compactors that "own" the user.
+				require.Subset(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner))
 			},
 		},
 	}
@@ -1611,7 +1648,10 @@ func TestOwnUser(t *testing.T) {
 				cfg.ShardingRing.WaitStabilityMaxDuration = 0
 				cfg.ShardingRing.KVStore.Mock = kvStore
 
-				c, _, _, _, _ := prepare(t, cfg, inmem)
+				limits := newMockConfigProvider()
+				limits.instancesShardSize = tc.compactorShards
+
+				c, _, _, _, _ := prepareWithConfigProvider(t, cfg, inmem, limits)
 				require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 				t.Cleanup(stopServiceFn(t, c))
 
@@ -1623,13 +1663,19 @@ func TestOwnUser(t *testing.T) {
 	}
 }
 
-func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, reason ownUserReason) int {
-	result := 0
+func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, reason ownUserReason) []*MultitenantCompactor {
+	result := []*MultitenantCompactor(nil)
 	for _, c := range comps {
-		ok, err := c.ownUserWithReason(user, reason)
+		var f func(string) (bool, error)
+		if reason == ownUserReasonCompactor {
+			f = c.shardingStrategy.compactorOwnUser
+		} else {
+			f = c.shardingStrategy.blocksCleanerOwnUser
+		}
+		ok, err := f(user)
 		require.NoError(t, err)
 		if ok {
-			result++
+			result = append(result, c)
 		}
 	}
 	return result

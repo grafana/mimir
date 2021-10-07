@@ -166,19 +166,22 @@ type ConfigProvider interface {
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// (used only when split-and-merge compaction strategy is enabled).
 	CompactorSplitAndMergeShards(userID string) int
+
+	// CompactorInstancesTenantShardSize returns number of compactors that this user can use. Only used
+	// for split-and-merge compaction strategy. 0 = all compactors.
+	CompactorInstancesTenantShardSize(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.
 type MultitenantCompactor struct {
 	services.Service
 
-	compactorCfg   Config
-	storageCfg     mimir_tsdb.BlocksStorageConfig
-	cfgProvider    ConfigProvider
-	logger         log.Logger
-	parentLogger   log.Logger
-	registerer     prometheus.Registerer
-	allowedTenants *util.AllowedTenants
+	compactorCfg Config
+	storageCfg   mimir_tsdb.BlocksStorageConfig
+	cfgProvider  ConfigProvider
+	logger       log.Logger
+	parentLogger log.Logger
+	registerer   prometheus.Registerer
 
 	// Functions that creates bucket client, grouper, planner and compactor using the context.
 	// Useful for injecting mock objects from tests.
@@ -201,6 +204,8 @@ type MultitenantCompactor struct {
 	ring                   *ring.Ring
 	ringSubservices        *services.Manager
 	ringSubservicesWatcher *services.FailureWatcher
+
+	shardingStrategy shardingStrategy
 
 	// Metrics.
 	compactionRunsStarted          prometheus.Counter
@@ -269,7 +274,6 @@ func newMultitenantCompactor(
 		bucketClientFactory:    bucketClientFactory,
 		blocksGrouperFactory:   blocksGrouperFactory,
 		blocksCompactorFactory: blocksCompactorFactory,
-		allowedTenants:         util.NewAllowedTenants(compactorCfg.EnabledTenants, compactorCfg.DisabledTenants),
 
 		compactionRunsStarted: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
 			Name: "cortex_compactor_runs_started_total",
@@ -354,14 +358,6 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Wrap the bucket client to write block deletion marks in the global location too.
 	c.bucketClient = bucketindex.BucketWithGlobalMarkers(c.bucketClient)
 
-	// Create the blocks cleaner (service).
-	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:      c.compactorCfg.DeletionDelay,
-		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
-	}, c.bucketClient, c.ownUserForBlocksCleaner, c.cfgProvider, c.parentLogger, c.registerer)
-
 	// Initialize the compactors ring if sharding is enabled.
 	if c.compactorCfg.ShardingEnabled {
 		lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
@@ -418,6 +414,24 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 			}
 		}
 	}
+
+	allowedTenants := util.NewAllowedTenants(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
+	switch {
+	case !c.compactorCfg.ShardingEnabled:
+		c.shardingStrategy = newNoShardingStrategy(allowedTenants)
+	case c.compactorCfg.CompactionStrategy == CompactionStrategyDefault:
+		c.shardingStrategy = newDefaultShardingStrategy(allowedTenants, c.ring, c.ringLifecycler)
+	case c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge:
+		c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
+	}
+
+	// Create the blocks cleaner (service).
+	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
+		DeletionDelay:      c.compactorCfg.DeletionDelay,
+		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
+		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
+	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.
 	if err := c.blocksCleaner.StartAsync(ctx); err != nil {
@@ -505,7 +519,7 @@ func (c *MultitenantCompactor) compactUsers(ctx context.Context) {
 		}
 
 		// Ensure the user ID belongs to our shard.
-		if owned, err := c.ownUserForCompactor(userID); err != nil {
+		if owned, err := c.shardingStrategy.compactorOwnUser(userID); err != nil {
 			c.compactionRunSkippedTenants.Inc()
 			level.Warn(c.logger).Log("msg", "unable to check if user is owned by this shard", "user", userID, "err", err)
 			continue
@@ -669,7 +683,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
-		c.ownGroup,
+		c.shardingStrategy.ownGroup,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {
@@ -717,64 +731,135 @@ func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, err
 	return users, err
 }
 
-type ownUserReason int
-
-const (
-	ownUserReasonBlocksCleaner ownUserReason = iota
-	ownUserReasonCompactor
-)
-
-func (c *MultitenantCompactor) ownUserForBlocksCleaner(userID string) (bool, error) {
-	return c.ownUserWithReason(userID, ownUserReasonBlocksCleaner)
+// shardingStrategy describes whether compactor "owns" given user or group.
+type shardingStrategy interface {
+	compactorOwnUser(userID string) (bool, error)
+	blocksCleanerOwnUser(userID string) (bool, error)
+	ownGroup(group *Group) (bool, error)
 }
 
-func (c *MultitenantCompactor) ownUserForCompactor(userID string) (bool, error) {
-	return c.ownUserWithReason(userID, ownUserReasonCompactor)
+// No sharding of users. Each compactor will process any user.
+type noShardingStrategy struct {
+	allowedTenants *util.AllowedTenants
 }
 
-func (c *MultitenantCompactor) ownUserWithReason(userID string, reason ownUserReason) (bool, error) {
-	if !c.allowedTenants.IsAllowed(userID) {
+func newNoShardingStrategy(allowedTenants *util.AllowedTenants) *noShardingStrategy {
+	return &noShardingStrategy{allowedTenants: allowedTenants}
+}
+
+func (n *noShardingStrategy) ownUser(userID string) bool {
+	return n.allowedTenants.IsAllowed(userID)
+}
+
+func (n *noShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
+	return n.ownUser(userID), nil
+}
+
+func (n *noShardingStrategy) compactorOwnUser(userID string) (bool, error) {
+	return n.ownUser(userID), nil
+}
+
+func (n *noShardingStrategy) ownGroup(group *Group) (bool, error) {
+	return n.ownUser(group.UserID()), nil
+}
+
+// defaultShardingStrategy is used with default compaction strategy. Only one compactor
+// can own the user. There is no shuffle sharding.
+type defaultShardingStrategy struct {
+	allowedTenants *util.AllowedTenants
+	ring           *ring.Ring
+	ringLifecycler *ring.Lifecycler
+}
+
+func newDefaultShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.Lifecycler) *defaultShardingStrategy {
+	return &defaultShardingStrategy{
+		allowedTenants: allowedTenants,
+		ring:           ring,
+		ringLifecycler: ringLifecycler,
+	}
+}
+
+func (d *defaultShardingStrategy) ownUser(userID string) (bool, error) {
+	if !d.allowedTenants.IsAllowed(userID) {
 		return false, nil
 	}
 
-	// When using split-merge compaction strategy, ALL compactors should plan jobs for all users. Individual
-	// jobs are then sharded between compactors based on job hash.
-	// TODO: add support for shuffle sharding, so that we can use only subset of compactors for given user.
-	if reason == ownUserReasonCompactor && c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		return true, nil
-	}
-
-	return c.ownKey(userID)
+	return instanceOwnsTokenInRing(d.ring, d.ringLifecycler.Addr, userID)
 }
 
-func (c *MultitenantCompactor) ownGroup(group *Group) (bool, error) {
-	// Check if the user is owned.
-	if owned, err := c.ownUserForCompactor(group.UserID()); !owned || err != nil {
-		return owned, err
-	}
-
-	// Only the split-and-merge compactor supports horizontal scalability. All other compaction strategies
-	// run compaction on a single instance only (for a given tenant), so they're always owned.
-	if c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		return c.ownKey(group.ShardingKey())
-	}
-
-	return true, nil
+func (d *defaultShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
+	return d.ownUser(userID)
 }
 
-func (c *MultitenantCompactor) ownKey(key string) (bool, error) {
-	// Always owned if sharding is disabled.
-	if !c.compactorCfg.ShardingEnabled {
-		return true, nil
+func (d *defaultShardingStrategy) compactorOwnUser(userID string) (bool, error) {
+	return d.ownUser(userID)
+}
+
+func (d *defaultShardingStrategy) ownGroup(group *Group) (bool, error) {
+	return d.ownUser(group.UserID())
+}
+
+// splintAndMergeShardingStrategy is used with split-and-merge compaction strategy.
+// All compactors from user's shard own the user for compaction purposes, and plan jobs.
+// Each job (group) is only owned and executed by single compactor.
+// Only one of compactors from user's shard will do cleanup.
+type splintAndMergeShardingStrategy struct {
+	allowedTenants *util.AllowedTenants
+	ring           *ring.Ring
+	ringLifecycler *ring.Lifecycler
+	configProvider ConfigProvider
+}
+
+func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.Lifecycler, configProvider ConfigProvider) *splintAndMergeShardingStrategy {
+	return &splintAndMergeShardingStrategy{
+		allowedTenants: allowedTenants,
+		ring:           ring,
+		ringLifecycler: ringLifecycler,
+		configProvider: configProvider,
+	}
+}
+
+// Only single instance in the subring can run blocks cleaner for given user.
+func (s *splintAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
+	if !s.allowedTenants.IsAllowed(userID) {
+		return false, nil
 	}
 
+	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorInstancesTenantShardSize(userID))
+
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, userID)
+}
+
+// When using split-merge compaction strategy, ALL compactors should plan jobs for all users.
+func (s *splintAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, error) {
+	if !s.allowedTenants.IsAllowed(userID) {
+		return false, nil
+	}
+
+	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorInstancesTenantShardSize(userID))
+
+	return r.HasInstance(s.ringLifecycler.ID), nil
+}
+
+// Only single compactor should execute the job (group).
+func (s *splintAndMergeShardingStrategy) ownGroup(group *Group) (bool, error) {
+	if !s.allowedTenants.IsAllowed(group.UserID()) {
+		return false, nil
+	}
+
+	r := s.ring.ShuffleShard(group.UserID(), s.configProvider.CompactorInstancesTenantShardSize(group.UserID()))
+
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, group.ShardingKey())
+}
+
+func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
 	// Hash the key.
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(key))
 	hash := hasher.Sum32()
 
 	// Check whether this compactor instance owns the token.
-	rs, err := c.ring.Get(hash, RingOp, nil, nil, nil)
+	rs, err := r.Get(hash, RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}
@@ -783,7 +868,7 @@ func (c *MultitenantCompactor) ownKey(key string) (bool, error) {
 		return false, fmt.Errorf("unexpected number of compactors in the shard (expected 1, got %d)", len(rs.Instances))
 	}
 
-	return rs.Instances[0].Addr == c.ringLifecycler.Addr, nil
+	return rs.Instances[0].Addr == instanceAddr, nil
 }
 
 const compactorMetaPrefix = "compactor-meta-"
