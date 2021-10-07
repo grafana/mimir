@@ -934,20 +934,28 @@ func collectResponses(
 		} else if err != nil {
 			return err
 		}
-		for _, item := range batch.Items {
-			globalLabelValuesMapLock.Lock()
-			values, exists := (*globalLabelsWithValues)[item.LabelName]
-			if !exists {
-				values = make(map[string]struct{}, len(item.Values))
-			}
-			for _, val := range item.Values {
-				values[val] = struct{}{}
-			}
-			(*globalLabelsWithValues)[item.LabelName] = values
-			globalLabelValuesMapLock.Unlock()
-		}
+		putItemsToMap(batch, globalLabelsWithValues, globalLabelValuesMapLock)
 	}
 	return nil
+}
+
+func putItemsToMap(
+	batch *ingester_client.LabelNamesAndValuesResponse,
+	globalLabelsWithValues *map[string]map[string]struct{},
+	globalLabelValuesMapLock *sync.Mutex,
+) {
+	globalLabelValuesMapLock.Lock()
+	defer globalLabelValuesMapLock.Unlock()
+	for _, item := range batch.Items {
+		values, exists := (*globalLabelsWithValues)[item.LabelName]
+		if !exists {
+			values = make(map[string]struct{}, len(item.Values))
+		}
+		for _, val := range item.Values {
+			values[val] = struct{}{}
+		}
+		(*globalLabelsWithValues)[item.LabelName] = values
+	}
 }
 
 // LabelNames returns all of the label names.

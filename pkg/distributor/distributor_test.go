@@ -2529,6 +2529,8 @@ func (i *mockIngester) MetricsMetadata(ctx context.Context, req *client.MetricsM
 }
 
 func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+	i.Lock()
+	defer i.Unlock()
 	results := map[string]map[string]struct{}{}
 	for _, ts := range i.timeseries {
 		for _, lbl := range ts.Labels {
