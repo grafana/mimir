@@ -35,8 +35,8 @@ service Ingester {
   // The order of the labels and values is not guaranteed.
   rpc LabelNamesAndValues(LabelNamesAndValuesRequest) returns (stream LabelNamesAndValuesResponse) {};
 
-  // LabelValuesCardinality returns all values and series total count for label_names labels.
-  // Additionally it allows the inclusion of extra matchers to be applied.
+  // LabelValuesCardinality returns all values and series total count for label_names labels
+  // that match the matchers
   // The listing order of the labels is not guaranteed.
   rpc LabelValuesCardinality(LabelValuesCardinalityRequest) returns (stream LabelValuesCardinalityResponse) {};
 }
