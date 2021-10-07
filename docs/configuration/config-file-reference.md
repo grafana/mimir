@@ -1185,10 +1185,10 @@ results_cache:
 # CLI flag: -querier.max-retries-per-request
 [max_retries: <int> | default = 5]
 
-# Perform query parallelisations based on storage sharding configuration and
+# Perform query parallelizations based on storage sharding configuration and
 # query ASTs. This feature is supported only by the blocks storage engine.
-# CLI flag: -query-frontend.parallelise-shardable-queries
-[parallelise_shardable_queries: <boolean> | default = false]
+# CLI flag: -query-frontend.parallelize-shardable-queries
+[parallelize_shardable_queries: <boolean> | default = false]
 ```
 
 ### `ruler_config`
@@ -2804,7 +2804,7 @@ aws:
       # CLI flag: -metrics.read-error-query
       [read_error_query: <string> | default = "sum(increase(cortex_dynamo_failures_total{operation=\"DynamoDB.QueryPages\",error=\"ProvisionedThroughputExceededException\"}[1m])) by (table) > 0"]
 
-    # Number of chunks to group together to parallelise fetches (zero to
+    # Number of chunks to group together to parallelize fetches (zero to
     # disable)
     # CLI flag: -dynamodb.chunk-gang-size
     [chunk_gang_size: <int> | default = 10]
