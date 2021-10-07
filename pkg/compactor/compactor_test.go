@@ -1571,6 +1571,21 @@ func TestOwnUser(t *testing.T) {
 			},
 		},
 
+		"5 compactors, no sharding, split-and-merge": {
+			compactors:         5,
+			compactionStrategy: CompactionStrategySplitMerge,
+			sharding:           false,
+			compactorShards:    map[string]int{user1: 2}, // Not used when sharding is disabled.
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
+				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 5)
+
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 5)
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 5)
+			},
+		},
+
 		"5 compactors, sharding enabled, default strategy": {
 			compactors:         5,
 			compactionStrategy: CompactionStrategyDefault,

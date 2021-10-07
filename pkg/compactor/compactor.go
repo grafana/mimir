@@ -423,6 +423,9 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 		c.shardingStrategy = newDefaultShardingStrategy(allowedTenants, c.ring, c.ringLifecycler)
 	case c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge:
 		c.shardingStrategy = newSplitAndMergeShardingStrategy(allowedTenants, c.ring, c.ringLifecycler, c.cfgProvider)
+	default:
+		// Should not happen, but just in case.
+		return errors.Errorf("invalid configuration: sharding is enabled, but using unknown compaction strategy: %s", c.compactorCfg.CompactionStrategy)
 	}
 
 	// Create the blocks cleaner (service).
