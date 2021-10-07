@@ -34,22 +34,22 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		ownJob         ownJobFunc
-		expectedGroups int
+		ownJob       ownJobFunc
+		expectedJobs int
 	}{
-		"should return all planned groups if the compactor instance owns all of them": {
+		"should return all planned jobs if the compactor instance owns all of them": {
 			ownJob: func(job *job) (bool, error) {
 				return true, nil
 			},
-			expectedGroups: 4,
+			expectedJobs: 4,
 		},
-		"should return no groups if the compactor instance owns none of them": {
+		"should return no jobs if the compactor instance owns none of them": {
 			ownJob: func(job *job) (bool, error) {
 				return false, nil
 			},
-			expectedGroups: 0,
+			expectedJobs: 0,
 		},
-		"should return some groups if the compactor instance owns some of them": {
+		"should return some jobs if the compactor instance owns some of them": {
 			ownJob: func() ownJobFunc {
 				count := 0
 				return func(job *job) (bool, error) {
@@ -57,7 +57,7 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 					return count%2 == 0, nil
 				}
 			}(),
-			expectedGroups: 2,
+			expectedJobs: 2,
 		},
 	}
 
@@ -66,7 +66,7 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 			grouper := NewSplitAndMergeGrouper("test", ranges, 1, testCase.ownJob, log.NewNopLogger())
 			res, err := grouper.Groups(blocks)
 			require.NoError(t, err)
-			assert.Len(t, res, testCase.expectedGroups)
+			assert.Len(t, res, testCase.expectedJobs)
 		})
 	}
 }

@@ -116,7 +116,7 @@ func TestGroupKey(t *testing.T) {
 }
 
 func TestGroupMaxMinTime(t *testing.T) {
-	g := &Group{
+	g := &Job{
 		metasByMinTime: []*metadata.Meta{
 			{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 10}},
 			{BlockMeta: tsdb.BlockMeta{MinTime: 1, MaxTime: 20}},

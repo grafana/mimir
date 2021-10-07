@@ -57,7 +57,7 @@ func NewSplitAndMergeGrouper(
 	}
 }
 
-func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Group, err error) {
+func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Job, err error) {
 	flatBlocks := make([]*metadata.Meta, 0, len(blocks))
 	for _, b := range blocks {
 		flatBlocks = append(flatBlocks, b)
@@ -90,7 +90,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		resolution := job.blocks[0].Thanos.Downsample.Resolution
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
-		thanosGroup, err := NewGroup(
+		compactionJob := NewJob(
 			g.userID,
 			groupKey,
 			externalLabels,
@@ -100,17 +100,14 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 			g.shardCount,
 			job.shardingKey(),
 		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create compaction group")
-		}
 
 		for _, m := range job.blocks {
-			if err := thanosGroup.AppendMeta(m); err != nil {
+			if err := compactionJob.AppendMeta(m); err != nil {
 				return nil, errors.Wrap(err, "add block to compaction group")
 			}
 		}
 
-		res = append(res, thanosGroup)
+		res = append(res, compactionJob)
 		level.Debug(g.logger).Log("msg", "grouper found a compactable blocks group", "groupKey", groupKey, "job", job.String())
 	}
 

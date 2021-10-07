@@ -686,7 +686,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
-		c.shardingStrategy.ownGroup,
+		c.shardingStrategy.ownJob,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {
@@ -734,11 +734,11 @@ func (c *MultitenantCompactor) discoverUsers(ctx context.Context) ([]string, err
 	return users, err
 }
 
-// shardingStrategy describes whether compactor "owns" given user or group.
+// shardingStrategy describes whether compactor "owns" given user or job.
 type shardingStrategy interface {
 	compactorOwnUser(userID string) (bool, error)
 	blocksCleanerOwnUser(userID string) (bool, error)
-	ownGroup(group *Group) (bool, error)
+	ownJob(job *Job) (bool, error)
 }
 
 // No sharding of users. Each compactor will process any user.
@@ -762,8 +762,8 @@ func (n *noShardingStrategy) compactorOwnUser(userID string) (bool, error) {
 	return n.ownUser(userID), nil
 }
 
-func (n *noShardingStrategy) ownGroup(group *Group) (bool, error) {
-	return n.ownUser(group.UserID()), nil
+func (n *noShardingStrategy) ownJob(job *Job) (bool, error) {
+	return n.ownUser(job.UserID()), nil
 }
 
 // defaultShardingStrategy is used with default compaction strategy. Only one compactor
@@ -798,13 +798,13 @@ func (d *defaultShardingStrategy) compactorOwnUser(userID string) (bool, error) 
 	return d.ownUser(userID)
 }
 
-func (d *defaultShardingStrategy) ownGroup(group *Group) (bool, error) {
-	return d.ownUser(group.UserID())
+func (d *defaultShardingStrategy) ownJob(job *Job) (bool, error) {
+	return d.ownUser(job.UserID())
 }
 
 // splitAndMergeShardingStrategy is used with split-and-merge compaction strategy.
 // All compactors from user's shard own the user for compaction purposes, and plan jobs.
-// Each job (group) is only owned and executed by single compactor.
+// Each job is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
 type splitAndMergeShardingStrategy struct {
 	allowedTenants *util.AllowedTenants
@@ -844,16 +844,16 @@ func (s *splitAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, e
 	return r.HasInstance(s.ringLifecycler.ID), nil
 }
 
-// Only single compactor should execute the job (group).
-func (s *splitAndMergeShardingStrategy) ownGroup(group *Group) (bool, error) {
-	ok, err := s.compactorOwnUser(group.UserID())
+// Only single compactor should execute the job.
+func (s *splitAndMergeShardingStrategy) ownJob(job *Job) (bool, error) {
+	ok, err := s.compactorOwnUser(job.UserID())
 	if err != nil || !ok {
 		return ok, err
 	}
 
-	r := s.ring.ShuffleShard(group.UserID(), s.configProvider.CompactorTenantShardSize(group.UserID()))
+	r := s.ring.ShuffleShard(job.UserID(), s.configProvider.CompactorTenantShardSize(job.UserID()))
 
-	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, group.ShardingKey())
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, job.ShardingKey())
 }
 
 func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
