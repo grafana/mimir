@@ -167,9 +167,9 @@ type ConfigProvider interface {
 	// (used only when split-and-merge compaction strategy is enabled).
 	CompactorSplitAndMergeShards(userID string) int
 
-	// CompactorInstancesTenantShardSize returns number of compactors that this user can use. Only used
+	// CompactorTenantShardSize returns number of compactors that this user can use. Only used
 	// for split-and-merge compaction strategy. 0 = all compactors.
-	CompactorInstancesTenantShardSize(userID string) int
+	CompactorTenantShardSize(userID string) int
 }
 
 // MultitenantCompactor is a multi-tenant TSDB blocks compactor based on Thanos.
@@ -802,19 +802,19 @@ func (d *defaultShardingStrategy) ownGroup(group *Group) (bool, error) {
 	return d.ownUser(group.UserID())
 }
 
-// splintAndMergeShardingStrategy is used with split-and-merge compaction strategy.
+// splitAndMergeShardingStrategy is used with split-and-merge compaction strategy.
 // All compactors from user's shard own the user for compaction purposes, and plan jobs.
 // Each job (group) is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
-type splintAndMergeShardingStrategy struct {
+type splitAndMergeShardingStrategy struct {
 	allowedTenants *util.AllowedTenants
 	ring           *ring.Ring
 	ringLifecycler *ring.Lifecycler
 	configProvider ConfigProvider
 }
 
-func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.Lifecycler, configProvider ConfigProvider) *splintAndMergeShardingStrategy {
-	return &splintAndMergeShardingStrategy{
+func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring *ring.Ring, ringLifecycler *ring.Lifecycler, configProvider ConfigProvider) *splitAndMergeShardingStrategy {
+	return &splitAndMergeShardingStrategy{
 		allowedTenants: allowedTenants,
 		ring:           ring,
 		ringLifecycler: ringLifecycler,
@@ -823,34 +823,35 @@ func newSplitAndMergeShardingStrategy(allowedTenants *util.AllowedTenants, ring 
 }
 
 // Only single instance in the subring can run blocks cleaner for given user.
-func (s *splintAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
+func (s *splitAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (bool, error) {
 	if !s.allowedTenants.IsAllowed(userID) {
 		return false, nil
 	}
 
-	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorInstancesTenantShardSize(userID))
+	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
 
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, userID)
 }
 
-// When using split-merge compaction strategy, ALL compactors should plan jobs for all users.
-func (s *splintAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, error) {
+// When using split-and-merge compaction strategy, ALL compactors should plan jobs for all users.
+func (s *splitAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, error) {
 	if !s.allowedTenants.IsAllowed(userID) {
 		return false, nil
 	}
 
-	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorInstancesTenantShardSize(userID))
+	r := s.ring.ShuffleShard(userID, s.configProvider.CompactorTenantShardSize(userID))
 
 	return r.HasInstance(s.ringLifecycler.ID), nil
 }
 
 // Only single compactor should execute the job (group).
-func (s *splintAndMergeShardingStrategy) ownGroup(group *Group) (bool, error) {
-	if !s.allowedTenants.IsAllowed(group.UserID()) {
-		return false, nil
+func (s *splitAndMergeShardingStrategy) ownGroup(group *Group) (bool, error) {
+	ok, err := s.compactorOwnUser(group.UserID())
+	if err != nil || !ok {
+		return ok, err
 	}
 
-	r := s.ring.ShuffleShard(group.UserID(), s.configProvider.CompactorInstancesTenantShardSize(group.UserID()))
+	r := s.ring.ShuffleShard(group.UserID(), s.configProvider.CompactorTenantShardSize(group.UserID()))
 
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, group.ShardingKey())
 }

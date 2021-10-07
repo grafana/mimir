@@ -665,7 +665,7 @@ func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
 	return 0
 }
 
-func (m *mockConfigProvider) CompactorInstancesTenantShardSize(user string) int {
+func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
 	if result, ok := m.instancesShardSize[user]; ok {
 		return result
 	}

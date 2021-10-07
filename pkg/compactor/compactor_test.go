@@ -1634,6 +1634,18 @@ func TestOwnUser(t *testing.T) {
 				require.Subset(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner))
 			},
 		},
+
+		"10 compactors, sharding enabled, split-merge strategy, with zero shard size": {
+			compactors:         10,
+			compactionStrategy: CompactionStrategySplitMerge,
+			sharding:           true,
+			compactorShards:    map[string]int{user2: 0},
+
+			check: func(t *testing.T, comps []*MultitenantCompactor) {
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 10)
+				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 1)
+			},
+		},
 	}
 
 	for name, tc := range testCases {
@@ -1658,7 +1670,8 @@ func TestOwnUser(t *testing.T) {
 				cfg.ShardingEnabled = tc.sharding
 				cfg.ShardingRing.InstanceID = fmt.Sprintf("compactor-%d", i)
 				cfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
-				// No need to wait. All compactors are started before we do any tests.
+				// No need to wait. All compactors are started before we do any tests, and we wait for all of them
+				// to appear in all rings.
 				cfg.ShardingRing.WaitStabilityMinDuration = 0
 				cfg.ShardingRing.WaitStabilityMaxDuration = 0
 				cfg.ShardingRing.KVStore.Mock = kvStore
@@ -1673,13 +1686,31 @@ func TestOwnUser(t *testing.T) {
 				compactors = append(compactors, c)
 			}
 
+			// Make sure all compactors see all other compactors in the ring before running tests.
+			test.Poll(t, 2*time.Second, true, func() interface{} {
+				if !tc.sharding {
+					return true
+				}
+
+				for _, c := range compactors {
+					rs, err := c.ring.GetAllHealthy(RingOp)
+					if err != nil {
+						return false
+					}
+					if len(rs.Instances) != len(compactors) {
+						return false
+					}
+				}
+				return true
+			})
+
 			tc.check(t, compactors)
 		})
 	}
 }
 
-func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, reason ownUserReason) []*MultitenantCompactor {
-	result := []*MultitenantCompactor(nil)
+func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, reason ownUserReason) []string {
+	result := []string(nil)
 	for _, c := range comps {
 		var f func(string) (bool, error)
 		if reason == ownUserReasonCompactor {
@@ -1690,7 +1721,9 @@ func owningCompactors(t *testing.T, comps []*MultitenantCompactor, user string, 
 		ok, err := f(user)
 		require.NoError(t, err)
 		if ok {
-			result = append(result, c)
+			// We set instance ID even when not using sharding. It makes output nicer, since
+			// calling method only wants to see some identifier.
+			result = append(result, c.compactorCfg.ShardingRing.InstanceID)
 		}
 	}
 	return result
