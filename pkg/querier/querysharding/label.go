@@ -15,8 +15,8 @@ const (
 	// ShardLabel is a reserved label referencing a shard.
 	ShardLabel = "__query_shard__"
 
-	// ShardLabelFmt is the format of the ShardLabel value.
-	ShardLabelFmt = "%d_of_%d"
+	// shardLabelFmt is the format of the ShardLabel value.
+	shardLabelFmt = "%d_of_%d"
 )
 
 // ShardSelector holds information about the configured query shard.
@@ -27,7 +27,7 @@ type ShardSelector struct {
 
 // LabelValue returns the label value to use to select this shard.
 func (shard ShardSelector) LabelValue() string {
-	return fmt.Sprintf(ShardLabelFmt, shard.ShardIndex+1, shard.ShardCount)
+	return fmt.Sprintf(shardLabelFmt, shard.ShardIndex+1, shard.ShardCount)
 }
 
 // Label generates the ShardSelector as a label.
