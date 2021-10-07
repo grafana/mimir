@@ -3142,8 +3142,8 @@ type IngesterClient interface {
 	// LabelNamesAndValues provides all values for each label that matches the matchers.
 	// The order of the labels and values is not guaranteed.
 	LabelNamesAndValues(ctx context.Context, in *LabelNamesAndValuesRequest, opts ...grpc.CallOption) (Ingester_LabelNamesAndValuesClient, error)
-	// LabelValuesCardinality returns all values and series total count for label_names labels.
-	// Additionally it allows the inclusion of extra matchers to be applied.
+	// LabelValuesCardinality returns all values and series total count for label_names labels
+	// that match the matchers
 	// The listing order of the labels is not guaranteed.
 	LabelValuesCardinality(ctx context.Context, in *LabelValuesCardinalityRequest, opts ...grpc.CallOption) (Ingester_LabelValuesCardinalityClient, error)
 }
@@ -3374,8 +3374,8 @@ type IngesterServer interface {
 	// LabelNamesAndValues provides all values for each label that matches the matchers.
 	// The order of the labels and values is not guaranteed.
 	LabelNamesAndValues(*LabelNamesAndValuesRequest, Ingester_LabelNamesAndValuesServer) error
-	// LabelValuesCardinality returns all values and series total count for label_names labels.
-	// Additionally it allows the inclusion of extra matchers to be applied.
+	// LabelValuesCardinality returns all values and series total count for label_names labels
+	// that match the matchers
 	// The listing order of the labels is not guaranteed.
 	LabelValuesCardinality(*LabelValuesCardinalityRequest, Ingester_LabelValuesCardinalityServer) error
 }

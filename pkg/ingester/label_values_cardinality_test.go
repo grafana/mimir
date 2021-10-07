@@ -30,13 +30,16 @@ func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 	mockServer := &mockLabelValuesCardinalityServer{context: context.Background()}
 	var server client.Ingester_LabelValuesCardinalityServer = mockServer
 
-	// postings iterator
-	postingForMatchersFn = func(_ tsdb.IndexReader, _ ...*labels.Matcher) (index.Postings, error) {
-		return &mockPostings{n: 100}, nil
+	// index reader
+	idxReader := labelValuesCardinalityIndexReader{
+		IndexReader: &mockIndex{existingLabels: existingLabels},
+		PostingsForMatchers: func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+			return &mockPostings{n: 100}, nil
+		},
 	}
 	err := labelValuesCardinality(
 		1500,
-		&mockIndex{existingLabels: existingLabels},
+		idxReader,
 		[]string{"label-a", "label-b"},
 		[]*labels.Matcher{},
 		server,
@@ -104,13 +107,16 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 			mockServer := &mockLabelValuesCardinalityServer{context: context.Background()}
 			var server client.Ingester_LabelValuesCardinalityServer = mockServer
 
-			// postings iterator
-			postingForMatchersFn = func(_ tsdb.IndexReader, _ ...*labels.Matcher) (index.Postings, error) {
-				return &mockPostings{n: 50}, nil
+			// index reader
+			idxReader := labelValuesCardinalityIndexReader{
+				IndexReader: &mockIndex{existingLabels: tc.existingLabels},
+				PostingsForMatchers: func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+					return &mockPostings{n: 50}, nil
+				},
 			}
 			err := labelValuesCardinality(
 				500,
-				mockIndex{existingLabels: tc.existingLabels},
+				idxReader,
 				[]string{"label-a", "label-b"},
 				[]*labels.Matcher{},
 				server,
