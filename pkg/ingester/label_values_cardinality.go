@@ -8,15 +8,21 @@ package ingester
 import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
 var labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
+type labelValuesCardinalityIndexReader struct {
+	tsdb.IndexReader
+	PostingsForMatchers func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
+}
+
 func labelValuesCardinality(
 	seriesCountTotal uint64,
-	index tsdb.IndexReader,
+	idxReader labelValuesCardinalityIndexReader,
 	lbNames []string,
 	matchers []*labels.Matcher,
 	server client.Ingester_LabelValuesCardinalityServer,
@@ -30,7 +36,7 @@ func labelValuesCardinality(
 
 	for _, lbName := range lbNames {
 		// Obtain all values for current label name.
-		lbValues, err := index.LabelValues(lbName, matchers...)
+		lbValues, err := idxReader.LabelValues(lbName, matchers...)
 		if err != nil {
 			return err
 		}
@@ -39,7 +45,7 @@ func labelValuesCardinality(
 			lbValueMatchers := append(matchers, labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue))
 
 			// Get total series count applying label matchers.
-			seriesCount, err := countLabelValueSeries(index, lbValueMatchers)
+			seriesCount, err := countLabelValueSeries(idxReader, lbValueMatchers)
 			if err != nil {
 				return err
 			}
@@ -69,15 +75,13 @@ func labelValuesCardinality(
 	return nil
 }
 
-var postingForMatchersFn = tsdb.PostingsForMatchers
-
 func countLabelValueSeries(
-	index tsdb.IndexReader,
+	idxReader labelValuesCardinalityIndexReader,
 	labelValueMatchers []*labels.Matcher,
 ) (uint64, error) {
 	var count uint64
 
-	p, err := postingForMatchersFn(index, labelValueMatchers...)
+	p, err := idxReader.PostingsForMatchers(idxReader.IndexReader, labelValueMatchers...)
 	if err != nil {
 		return 0, err
 	}
