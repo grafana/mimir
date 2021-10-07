@@ -641,6 +641,7 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 type mockConfigProvider struct {
 	userRetentionPeriods map[string]time.Duration
 	splitAndMergeShards  map[string]int
+	instancesShardSize   map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -659,6 +660,13 @@ func (m *mockConfigProvider) CompactorBlocksRetentionPeriod(user string) time.Du
 
 func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
 	if result, ok := m.splitAndMergeShards[user]; ok {
+		return result
+	}
+	return 0
+}
+
+func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
+	if result, ok := m.instancesShardSize[user]; ok {
 		return result
 	}
 	return 0
