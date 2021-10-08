@@ -3,11 +3,13 @@
 package compactor
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 )
@@ -18,12 +20,24 @@ func TestJob_conflicts(t *testing.T) {
 	block3 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil)}}
 	block4 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil)}}
 
+	copyMeta := func(meta *metadata.Meta) *metadata.Meta {
+		encoded, err := json.Marshal(meta)
+		require.NoError(t, err)
+
+		decoded := metadata.Meta{}
+		require.NoError(t, json.Unmarshal(encoded, &decoded))
+
+		return &decoded
+	}
+
 	withShardIDLabel := func(meta *metadata.Meta, shardID string) *metadata.Meta {
+		meta = copyMeta(meta)
 		meta.Thanos.Labels = map[string]string{ShardIDLabelName: shardID}
 		return meta
 	}
 
 	withResolution := func(meta *metadata.Meta, res int64) *metadata.Meta {
+		meta = copyMeta(meta)
 		meta.Thanos.Downsample.Resolution = res
 		return meta
 	}
