@@ -1338,7 +1338,6 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		PostingsForMatchers: tsdb.PostingsForMatchers,
 	}
 	return labelValuesCardinality(
-		db.Head().NumSeries(),
 		idxReader,
 		req.GetLabelNames(),
 		matchers,
