@@ -1547,13 +1547,68 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
+func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
+	series := []series{
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_0"},
+				{Name: "status", Value: "500"},
+			},
+			value:     1.5,
+			timestamp: 100000,
+		},
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_0"},
+				{Name: "status", Value: "200"},
+			},
+			value:     1.5,
+			timestamp: 110030,
+		},
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_1"},
+				{Name: "env", Value: "prod"},
+			},
+			value:     1.5,
+			timestamp: 100060,
+		},
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_1"},
+				{Name: "env", Value: "prod"},
+				{Name: "status", Value: "300"},
+			},
+			value:     1.5,
+			timestamp: 100090,
+		},
+	}
+	// Create ingester
+	ing := requireActiveIngesterWithBlocksStorage(b, defaultIngesterTestConfig(b), nil)
+
+	ctx := pushSeriesToIngester(b, series, ing)
+	s := &mockLabelValuesCardinalityServer{context: ctx}
+
+	req := &client.LabelValuesCardinalityRequest{
+		LabelNames: []string{"status"},
+		Matchers: []*client.LabelMatcher{
+			{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
+		},
+	}
+	// Run benchmarks
+	for i := 0; i < b.N; i++ {
+		err := ing.LabelValuesCardinality(req, s)
+		require.NoError(b, err)
+	}
+}
+
 type series struct {
 	lbls      labels.Labels
 	value     float64
 	timestamp int64
 }
 
-func pushSeriesToIngester(t *testing.T, series []series, i *Ingester) context.Context {
+func pushSeriesToIngester(t testing.TB, series []series, i *Ingester) context.Context {
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
@@ -2647,7 +2702,7 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 	}
 }
 
-func mockWriteRequest(t *testing.T, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
+func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
 	samples := []mimirpb.Sample{
 		{
 			TimestampMs: timestampMs,
