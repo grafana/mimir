@@ -184,6 +184,7 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 	return concurrency.ForEachUser(ctx, allUsers, c.cfg.CleanupConcurrency, func(ctx context.Context, userID string) error {
 		own, err := c.ownUser(userID)
 		if err != nil || !own {
+			// This returns error only if err != nil. ForEachUser keeps working for other users.
 			return errors.Wrap(err, "check own user")
 		}
 
