@@ -74,15 +74,16 @@ func TestSplitAndMergeGrouper_Groups(t *testing.T) {
 func TestPlanCompaction(t *testing.T) {
 	const userID = "user-1"
 
-	block1 := ulid.MustNew(1, nil) // Hash: 283204220
-	block2 := ulid.MustNew(2, nil) // Hash: 444110359
-	block3 := ulid.MustNew(3, nil) // Hash: 3253786510
-	block4 := ulid.MustNew(4, nil) // Hash: 122298081
-	block5 := ulid.MustNew(5, nil) // Hash: 2931974232
-	block6 := ulid.MustNew(6, nil) // Hash: 3092880371
-	block7 := ulid.MustNew(7, nil) // Hash: 1607589226
-	block8 := ulid.MustNew(8, nil) // Hash: 2771068093
-	block9 := ulid.MustNew(9, nil) // Hash: 1285776948
+	block1 := ulid.MustNew(1, nil)   // Hash: 283204220
+	block2 := ulid.MustNew(2, nil)   // Hash: 444110359
+	block3 := ulid.MustNew(3, nil)   // Hash: 3253786510
+	block4 := ulid.MustNew(4, nil)   // Hash: 122298081
+	block5 := ulid.MustNew(5, nil)   // Hash: 2931974232
+	block6 := ulid.MustNew(6, nil)   // Hash: 3092880371
+	block7 := ulid.MustNew(7, nil)   // Hash: 1607589226
+	block8 := ulid.MustNew(8, nil)   // Hash: 2771068093
+	block9 := ulid.MustNew(9, nil)   // Hash: 1285776948
+	block10 := ulid.MustNew(10, nil) // Hash: 1446683087
 
 	tests := map[string]struct {
 		ranges     []int64
@@ -336,6 +337,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 				// Not compacted because on 2nd level because the range [0, 20]
 				// has other 1st level range groups to be split first
+				{BlockMeta: tsdb.BlockMeta{ULID: block10, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_1"}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_1"}}},
 				// To be compacted on 2nd level range [20, 40]
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_1"}}},
