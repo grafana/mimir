@@ -23,15 +23,12 @@ type labelValuesCardinalityIndexReader struct {
 }
 
 func labelValuesCardinality(
-	seriesCountTotal uint64,
 	idxReader labelValuesCardinalityIndexReader,
 	lbNames []string,
 	matchers []*labels.Matcher,
 	server client.Ingester_LabelValuesCardinalityServer,
 ) error {
-	resp := client.LabelValuesCardinalityResponse{
-		SeriesCountTotal: seriesCountTotal,
-	}
+	resp := client.LabelValuesCardinalityResponse{}
 	baseSize := resp.Size()
 	respSize := baseSize
 	sentResp := false

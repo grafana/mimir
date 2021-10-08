@@ -38,7 +38,6 @@ func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 		},
 	}
 	err := labelValuesCardinality(
-		1500,
 		idxReader,
 		[]string{"label-a", "label-b"},
 		[]*labels.Matcher{},
@@ -47,8 +46,6 @@ func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Len(t, mockServer.SentResponses, 4)
-
-	require.Equal(t, uint64(1500), mockServer.SentResponses[0].SeriesCountTotal)
 
 	require.Equal(t, []*client.LabelValueCardinality{
 		{LabelName: "label-a", LabelValue: "a-0", SeriesCount: 100},
@@ -115,7 +112,6 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 				},
 			}
 			err := labelValuesCardinality(
-				500,
 				idxReader,
 				[]string{"label-a", "label-b"},
 				[]*labels.Matcher{},
@@ -125,7 +121,6 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 
 			require.Len(t, mockServer.SentResponses, 1)
 
-			require.Equal(t, uint64(500), mockServer.SentResponses[0].SeriesCountTotal)
 			require.Equal(t, tc.expectedMessage, mockServer.SentResponses[0].Items)
 		})
 	}
@@ -175,8 +170,7 @@ func (m *mockLabelValuesCardinalityServer) Send(response *client.LabelValuesCard
 	items := make([]*client.LabelValueCardinality, len(response.Items))
 	copy(items, response.Items)
 	m.SentResponses = append(m.SentResponses, client.LabelValuesCardinalityResponse{
-		SeriesCountTotal: response.SeriesCountTotal,
-		Items:            items,
+		Items: items,
 	})
 	return nil
 }

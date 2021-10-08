@@ -60,7 +60,6 @@ message LabelValuesCardinalityRequest {
 }
 
 message LabelValuesCardinalityResponse {
-  uint64 series_count_total = 1;
   repeated LabelValueCardinality items = 2;
 }
 

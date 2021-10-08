@@ -1469,24 +1469,21 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		},
 	}
 	tests := []struct {
-		testName                 string
-		labelNames               []string
-		matchers                 []*client.LabelMatcher
-		expectedSeriesCountTotal uint64
-		expectedItems            []*client.LabelValueCardinality
+		testName      string
+		labelNames    []string
+		matchers      []*client.LabelMatcher
+		expectedItems []*client.LabelValueCardinality
 	}{
 		{
-			testName:                 "no label matches",
-			labelNames:               []string{"pod"},
-			matchers:                 []*client.LabelMatcher{},
-			expectedSeriesCountTotal: 4,
-			expectedItems:            nil,
+			testName:      "no label matches",
+			labelNames:    []string{"pod"},
+			matchers:      []*client.LabelMatcher{},
+			expectedItems: nil,
 		},
 		{
-			testName:                 "expected all label values cardinality",
-			labelNames:               []string{labels.MetricName, "env", "status"},
-			matchers:                 []*client.LabelMatcher{},
-			expectedSeriesCountTotal: 4,
+			testName:   "expected all label values cardinality",
+			labelNames: []string{labels.MetricName, "env", "status"},
+			matchers:   []*client.LabelMatcher{},
 			expectedItems: []*client.LabelValueCardinality{
 				{LabelName: "status", LabelValue: "200", SeriesCount: 1},
 				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
@@ -1502,7 +1499,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
 			},
-			expectedSeriesCountTotal: 4,
 			expectedItems: []*client.LabelValueCardinality{
 				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
 			},
@@ -1541,7 +1537,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			}
 			require.Len(t, s.SentResponses, 1)
 
-			require.Equal(t, s.SentResponses[0].SeriesCountTotal, tc.expectedSeriesCountTotal)
 			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
 		})
 	}
