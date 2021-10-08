@@ -13,6 +13,8 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
+// labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
+// We arbitrarily set it to 1mb to avoid reaching the actual gRPC default limit (4mb).
 var labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 
 type labelValuesCardinalityIndexReader struct {
