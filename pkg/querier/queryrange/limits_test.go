@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -80,7 +81,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
-			middleware := NewLimitsMiddleware(limits)
+			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
@@ -165,7 +166,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 			}
 
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
-			middleware := NewLimitsMiddleware(limits)
+			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -45,21 +46,23 @@ type Limits interface {
 
 type limitsMiddleware struct {
 	Limits
-	next Handler
+	next   Handler
+	logger log.Logger
 }
 
 // NewLimitsMiddleware creates a new Middleware that enforces query limits.
-func NewLimitsMiddleware(l Limits) Middleware {
+func NewLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
 		return limitsMiddleware{
 			next:   next,
 			Limits: l,
+			logger: logger,
 		}
 	})
 }
 
 func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.New(ctx, "limits")
+	log, ctx := spanlogger.New(ctx, l.logger, "limits")
 	defer log.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)

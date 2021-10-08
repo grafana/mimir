@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/weaveworks/common/user"
 
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -184,7 +185,7 @@ func (r *Runner) runRandomTest() {
 	r.mtx.Unlock()
 
 	ctx := context.Background()
-	log, ctx := spanlogger.New(ctx, "runRandomTest")
+	log, ctx := spanlogger.New(ctx, util_log.Logger, "runRandomTest")
 	span, trace := opentracing.SpanFromContext(ctx), "<none>"
 	if span != nil {
 		trace = fmt.Sprintf("%s", span.Context())

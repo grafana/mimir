@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -89,7 +90,7 @@ func TestCanParallel(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			res := CanParallelize(c.input)
+			res := CanParallelize(c.input, log.NewNopLogger())
 			require.Equal(t, c.expected, res)
 		})
 	}
@@ -190,7 +191,7 @@ func TestCanParallel_String(t *testing.T) {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
-			res := CanParallelize(expr)
+			res := CanParallelize(expr, log.NewNopLogger())
 			require.Equal(t, c.expected, res)
 		})
 	}

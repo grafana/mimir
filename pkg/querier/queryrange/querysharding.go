@@ -91,7 +91,7 @@ func NewQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
+	log, ctx := spanlogger.New(ctx, s.logger, "querySharding.Do")
 	defer log.Span.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -168,7 +168,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 // to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
-	mapper, err := astmapper.NewSharding(totalShards)
+	mapper, err := astmapper.NewSharding(totalShards, s.logger)
 	if err != nil {
 		return "", nil, err
 	}

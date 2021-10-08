@@ -128,7 +128,7 @@ func (d *DeleteSeriesTest) sendDeleteRequestLoop() {
 }
 
 func (d *DeleteSeriesTest) Test(ctx context.Context, client v1.API, selectors string, start time.Time, duration time.Duration) (bool, error) {
-	log := spanlogger.FromContext(ctx)
+	log := spanlogger.FromContext(ctx, util_log.Logger)
 	queryInterval := interval{start: start.Add(-duration), end: start}
 
 	d.lastDeleteRequestIntervalMutex.RLock()
@@ -175,7 +175,7 @@ func (d *DeleteSeriesTest) Test(ctx context.Context, client v1.API, selectors st
 			}
 		}
 
-		passed := verifySamples(spanlogger.FromContext(ctx), d, pairs[verifyPairsFrom:verifyPairsTo], nonDeletedInterval.end.Sub(nonDeletedInterval.start), d.commonTestConfig)
+		passed := verifySamples(spanlogger.FromContext(ctx, util_log.Logger), d, pairs[verifyPairsFrom:verifyPairsTo], nonDeletedInterval.end.Sub(nonDeletedInterval.start), d.commonTestConfig)
 		if !passed {
 			verifyingPairs := pairs[verifyPairsFrom:verifyPairsTo]
 			if len(verifyingPairs) == 0 {
