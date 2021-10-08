@@ -44,6 +44,7 @@ type BlocksCleaner struct {
 	logger       log.Logger
 	bucketClient objstore.Bucket
 	usersScanner *mimir_tsdb.UsersScanner
+	ownUser      func(userID string) (bool, error)
 
 	// Keep track of the last owned users.
 	lastOwnedUsers []string
@@ -67,6 +68,7 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, own
 		cfg:          cfg,
 		bucketClient: bucketClient,
 		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
+		ownUser:      ownUser,
 		cfgProvider:  cfgProvider,
 		logger:       log.With(logger, "component", "cleaner"),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -180,6 +182,12 @@ func (c *BlocksCleaner) cleanUsers(ctx context.Context) error {
 	c.lastOwnedUsers = allUsers
 
 	return concurrency.ForEachUser(ctx, allUsers, c.cfg.CleanupConcurrency, func(ctx context.Context, userID string) error {
+		own, err := c.ownUser(userID)
+		if err != nil || !own {
+			// This returns error only if err != nil. ForEachUser keeps working for other users.
+			return errors.Wrap(err, "check own user")
+		}
+
 		if isDeleted[userID] {
 			return errors.Wrapf(c.deleteUserMarkedForDeletion(ctx, userID), "failed to delete user marked for deletion: %s", userID)
 		}
