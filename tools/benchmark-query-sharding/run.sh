@@ -103,6 +103,9 @@ benchmark_query() {
   # in order to have 1000 points in output.
   if [ -z "$STEP" ]; then
     STEP="$(((END_TIME-$START_TIME)/1000))s"
+    if [ "$STEP" == "0s" ]; then
+      STEP="1s"
+    fi
   fi
 
   # Cleanup any headers file left from a previous run.
@@ -125,6 +128,7 @@ benchmark_query() {
     --data-urlencode "query=${QUERY}" \
     --data-urlencode "step=${STEP}" \
     -H "X-Scope-OrgID: ${TENANT_ID}" \
+    -H "Cache-Control: no-store" \
     -H "${SHARDING_CONTROL_HEADER}" \
     --dump-header "${HEADERS_FILE}" \
     "${URL}/api/v1/query_range" > /dev/null
