@@ -23,7 +23,7 @@ $ git push origin "${tag}"
     $ git tag -s "${tag}" -m "${tag}"  
     $ git push origin "${tag}"  
 
-3. Create the binaries with build cross, they are in dist/
+3. Create the binaries with `make cross`, they are in dist/
 4. Create the GitHub release, copy the release notes from the previous ones, and adjust as necessary. Upload the binaries created and click publish on the release.
 5. The last step is creating and uploading the docker images. Use make image to create them and then tag them. Keep in mind that there is only 1 image for cortextool in Dockerhub at the moment.
 6. Make sure to update the latest tag to the most recent version.
