@@ -40,6 +40,41 @@ builds:
     goarch:
       - amd64
       - 386
+  - id: benchtool-darwin
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: benchtool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/benchtool/
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: benchtool-linux
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: benchtool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/benchtool/
+    goos:
+      - linux
+    goarch:
+      - amd64
+  - id: benchtool-windows
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: benchtool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/benchtool/
+    goos:
+      - windows
+    goarch:
+      - amd64
+      - 386
 archives:
   - replacements:
       darwin: mac-os
@@ -84,6 +119,22 @@ dockers:
     - "--label=org.opencontainers.image.revision={{.FullCommit}}"
     - "--label=org.opencontainers.image.version={{.Version}}"
     - "--label=repository=https://github.com/grafana/cortex-tools"
+    - "--label=homepage=https://grafana.com"
+  - goos: linux
+    goarch: amd64
+    ids:
+      - benchtool-linux
+    dockerfile: cmd/benchtool/GR.Dockerfile
+    image_templates:
+      - "grafana/benchtool:latest"
+      - "grafana/benchtool:{{ .Tag }}"
+    build_flag_templates:
+    - "--pull"
+    - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--label=org.opencontainers.image.name=benchtool"
+    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+    - "--label=org.opencontainers.image.version={{.Version}}"
+    - "--label=repository=https://github.com/grafana/cortex-tools/tree/main/cmd/benchtool"
     - "--label=homepage=https://grafana.com"
 brews:
   -
