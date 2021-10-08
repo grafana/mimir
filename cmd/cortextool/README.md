@@ -81,7 +81,7 @@ This command will retrieve the specified rule group from Cortex and print it to 
 
 ##### Rules Delete
 
-This command will retrieve the specified rule group from Cortex and print it to the terminal.
+This command will delete the specified rule group from the specified namespace.
 
     cortextool rules delete example_namespace example_rule_group
 
