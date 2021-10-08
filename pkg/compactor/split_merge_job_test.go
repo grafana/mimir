@@ -18,6 +18,16 @@ func TestJob_conflicts(t *testing.T) {
 	block3 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil)}}
 	block4 := &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil)}}
 
+	withShardIDLabel := func(meta *metadata.Meta, shardID string) *metadata.Meta {
+		meta.Thanos.Labels = map[string]string{ShardIDLabelName: shardID}
+		return meta
+	}
+
+	withResolution := func(meta *metadata.Meta, res int64) *metadata.Meta {
+		meta.Thanos.Downsample.Resolution = res
+		return meta
+	}
+
 	tests := map[string]struct {
 		first    *job
 		second   *job
@@ -26,20 +36,20 @@ func TestJob_conflicts(t *testing.T) {
 		"should conflict if jobs compact different blocks but with overlapping time ranges and same shard": {
 			first: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks:     []*metadata.Meta{block1, block2},
+					blocks:     []*metadata.Meta{withShardIDLabel(block1, "1_of_2"), withShardIDLabel(block2, "1_of_2")},
 				},
 			},
 			second: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 15,
 					rangeEnd:   25,
-					blocks:     []*metadata.Meta{block3, block4},
+					blocks:     []*metadata.Meta{withShardIDLabel(block3, "1_of_2"), withShardIDLabel(block4, "1_of_2")},
 				},
 			},
 			expected: true,
@@ -47,20 +57,20 @@ func TestJob_conflicts(t *testing.T) {
 		"should NOT conflict if jobs compact different blocks with non-overlapping time ranges and same shard": {
 			first: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks:     []*metadata.Meta{block1, block2},
+					blocks:     []*metadata.Meta{withShardIDLabel(block1, "1_of_2"), withShardIDLabel(block2, "1_of_2")},
 				},
 			},
 			second: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 20,
 					rangeEnd:   30,
-					blocks:     []*metadata.Meta{block3, block4},
+					blocks:     []*metadata.Meta{withShardIDLabel(block3, "1_of_2"), withShardIDLabel(block4, "1_of_2")},
 				},
 			},
 			expected: false,
@@ -68,20 +78,20 @@ func TestJob_conflicts(t *testing.T) {
 		"should NOT conflict if jobs compact same blocks with overlapping time ranges but different shard": {
 			first: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks:     []*metadata.Meta{block1, block2},
+					blocks:     []*metadata.Meta{withShardIDLabel(block1, "1_of_2"), withShardIDLabel(block2, "1_of_2")},
 				},
 			},
 			second: &job{
 				stage:   stageMerge,
-				shardID: "2",
+				shardID: "2_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks:     []*metadata.Meta{block1, block2},
+					blocks:     []*metadata.Meta{withShardIDLabel(block1, "2_of_2"), withShardIDLabel(block2, "2_of_2")},
 				},
 			},
 			expected: false,
@@ -89,20 +99,20 @@ func TestJob_conflicts(t *testing.T) {
 		"should conflict if jobs compact same blocks with overlapping time ranges and different shard but at a different stage": {
 			first: &job{
 				stage:   stageSplit,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks:     []*metadata.Meta{block1, block2},
+					blocks:     []*metadata.Meta{withShardIDLabel(block1, "1_of_2"), withShardIDLabel(block2, "1_of_2")},
 				},
 			},
 			second: &job{
 				stage:   stageMerge,
-				shardID: "2",
+				shardID: "2_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
-					blocks:     []*metadata.Meta{block1, block2},
+					blocks:     []*metadata.Meta{withShardIDLabel(block1, "2_of_2"), withShardIDLabel(block2, "2_of_2")},
 				},
 			},
 			expected: true,
@@ -110,26 +120,68 @@ func TestJob_conflicts(t *testing.T) {
 		"should NOT conflict if jobs compact different blocks with overlapping time ranges but different resolution": {
 			first: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(1, nil)}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel0}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(2, nil)}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel0}}},
+						withShardIDLabel(withResolution(block1, downsample.ResLevel0), "1_of_2"),
+						withShardIDLabel(withResolution(block2, downsample.ResLevel0), "1_of_2"),
 					},
 				},
 			},
 			second: &job{
 				stage:   stageMerge,
-				shardID: "1",
+				shardID: "1_of_2",
 				blocksGroup: blocksGroup{
 					rangeStart: 10,
 					rangeEnd:   20,
 					blocks: []*metadata.Meta{
-						{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(3, nil)}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
-						{BlockMeta: tsdb.BlockMeta{ULID: ulid.MustNew(4, nil)}, Thanos: metadata.Thanos{Downsample: metadata.ThanosDownsample{Resolution: downsample.ResLevel1}}},
+						withShardIDLabel(withResolution(block3, downsample.ResLevel1), "1_of_2"),
+						withShardIDLabel(withResolution(block4, downsample.ResLevel1), "1_of_2"),
 					},
+				},
+			},
+			expected: false,
+		},
+		"should conflict between split and merge jobs with overlapping time ranges": {
+			first: &job{
+				stage:   stageSplit,
+				shardID: "",
+				blocksGroup: blocksGroup{
+					rangeStart: 10,
+					rangeEnd:   20,
+					blocks:     []*metadata.Meta{block1, block2},
+				},
+			},
+			second: &job{
+				stage:   stageMerge,
+				shardID: "1_of_2",
+				blocksGroup: blocksGroup{
+					rangeStart: 0,
+					rangeEnd:   40,
+					blocks:     []*metadata.Meta{withShardIDLabel(block3, "1_of_2"), withShardIDLabel(block4, "1_of_2")},
+				},
+			},
+			expected: true,
+		},
+		"should NOT conflict between split and merge jobs with non-overlapping time ranges": {
+			first: &job{
+				stage:   stageSplit,
+				shardID: "",
+				blocksGroup: blocksGroup{
+					rangeStart: 10,
+					rangeEnd:   20,
+					blocks:     []*metadata.Meta{block1, block2},
+				},
+			},
+			second: &job{
+				stage:   stageMerge,
+				shardID: "1_of_2",
+				blocksGroup: blocksGroup{
+					rangeStart: 20,
+					rangeEnd:   40,
+					blocks:     []*metadata.Meta{withShardIDLabel(block3, "1_of_2"), withShardIDLabel(block4, "1_of_2")},
 				},
 			},
 			expected: false,
