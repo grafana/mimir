@@ -62,8 +62,7 @@ type BlocksGrouperFactory func(
 	cfg Config,
 	cfgProvider ConfigProvider,
 	userID string,
-	ring *ring.Ring,
-	instanceAddr string,
+	ownJob ownJobFunc,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) Grouper
@@ -670,16 +669,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "failed to create syncer")
 	}
 
-	// The sharding could be disabled.
-	instanceAddr := ""
-	if c.ringLifecycler != nil {
-		instanceAddr = c.ringLifecycler.Addr
-	}
-
 	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
-		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, c.ring, instanceAddr, ulogger, reg),
+		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, c.shardingStrategy.ownJob, ulogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
 		path.Join(c.compactorCfg.DataDir, "compact"),
@@ -739,6 +732,7 @@ type shardingStrategy interface {
 	compactorOwnUser(userID string) (bool, error)
 	blocksCleanerOwnUser(userID string) (bool, error)
 	ownGroup(group *Group) (bool, error)
+	ownJob(job *job) (bool, error)
 }
 
 // No sharding of users. Each compactor will process any user.
@@ -764,6 +758,10 @@ func (n *noShardingStrategy) compactorOwnUser(userID string) (bool, error) {
 
 func (n *noShardingStrategy) ownGroup(group *Group) (bool, error) {
 	return n.ownUser(group.UserID()), nil
+}
+
+func (n *noShardingStrategy) ownJob(job *job) (bool, error) {
+	return n.ownUser(job.userID), nil
 }
 
 // defaultShardingStrategy is used with default compaction strategy. Only one compactor
@@ -800,6 +798,10 @@ func (d *defaultShardingStrategy) compactorOwnUser(userID string) (bool, error) 
 
 func (d *defaultShardingStrategy) ownGroup(group *Group) (bool, error) {
 	return d.ownUser(group.UserID())
+}
+
+func (d *defaultShardingStrategy) ownJob(job *job) (bool, error) {
+	return d.ownUser(job.userID)
 }
 
 // splitAndMergeShardingStrategy is used with split-and-merge compaction strategy.
@@ -854,6 +856,17 @@ func (s *splitAndMergeShardingStrategy) ownGroup(group *Group) (bool, error) {
 	r := s.ring.ShuffleShard(group.UserID(), s.configProvider.CompactorTenantShardSize(group.UserID()))
 
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, group.ShardingKey())
+}
+
+func (s *splitAndMergeShardingStrategy) ownJob(job *job) (bool, error) {
+	ok, err := s.compactorOwnUser(job.userID)
+	if err != nil || !ok {
+		return ok, err
+	}
+
+	r := s.ring.ShuffleShard(job.userID, s.configProvider.CompactorTenantShardSize(job.userID))
+
+	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, job.shardingKey())
 }
 
 func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
