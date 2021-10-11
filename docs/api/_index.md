@@ -420,8 +420,15 @@ GET,POST <legacy-http-prefix>/api/v1/cardinality/label_names
 ```
 
 Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
+It counts distinct label values per label name.
+Works only with blocks storage.
+
+As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
+cutting between the calls.
 
 The items in the field `cardinality` are sorted by `values_count` in DESC order and by `label_name` in ASC order.
+
+The count of items is limited by `limit` request param.
 
 _Requires [authentication](#authentication)._
 

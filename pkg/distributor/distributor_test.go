@@ -1939,6 +1939,64 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	}
 }
 
+func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
+	// distinct values are "__name__", "label_00", "label_01" that is 24 bytes in total
+	fixtures := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.Labels{{Name: labels.MetricName, Value: "label_00"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "label_11"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "label_11"}}, 2, 200000},
+	}
+	tests := map[string]struct {
+		sizeLimitBytes int
+		expectedError  string
+	}{
+		"expected error if sizeLimit is reached": {
+			sizeLimitBytes: 20,
+			expectedError: "size of distinct label names and values is greater than 20 bytes. " +
+				"Change `label_names_and_values_results_max_size_bytes` limit to process the request",
+		},
+		"expected no error if sizeLimit is not reached": {
+			sizeLimitBytes: 25,
+		},
+	}
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+
+			// Create distributor
+			limits := validation.Limits{}
+			flagext.DefaultValues(&limits)
+			limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:     3,
+				happyIngesters:   3,
+				numDistributors:  1,
+				shardByAllLabels: true,
+				limits:           &limits})
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
+
+			// Push fixtures
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+			if len(testData.expectedError) == 0 {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testData.expectedError)
+			}
+		})
+	}
+}
 func TestDistributor_LabelNamesAndValues(t *testing.T) {
 	fixtures := []struct {
 		lbls      labels.Labels

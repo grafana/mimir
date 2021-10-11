@@ -9,9 +9,11 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
@@ -25,7 +27,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-a", Values: []string{"0a", "1a"}},
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
-	distributor := MockDistributor{items: items}
+	distributor := newMockDistributor(items...)
 	handler := LabelNamesCardinalityHandler(distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
@@ -53,6 +55,51 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		"items must be sorted by ValuesCount in DESC order and by LabelName in ASC order")
 	require.Equal(t, responseBody.Cardinality[3], &LabelNamesCardinalityItem{LabelName: "label-c", ValuesCount: 1},
 		"items must be sorted by ValuesCount in DESC order and by LabelName in ASC order")
+}
+
+func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
+	td := []struct {
+		name             string
+		matcherParams    []string
+		expectedMatchers []*labels.Matcher
+	}{
+		{
+			name:             "expected single matcher to be parsed",
+			matcherParams:    []string{"match[]=__name__='metric'"},
+			expectedMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric")},
+		},
+		{
+			name:             "expected no matchers to be parsed",
+			matcherParams:    []string{},
+			expectedMatchers: []*labels.Matcher{},
+		},
+		{
+			name:          "expected two matchers to be parsed",
+			matcherParams: []string{"match[]=__name__='metric'", "match[]=env!='prod'"},
+			expectedMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"),
+				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
+			},
+		},
+	}
+	for _, data := range td {
+		t.Run(data.name, func(t *testing.T) {
+			distributor := newMockDistributor()
+			handler := LabelNamesCardinalityHandler(distributor)
+			ctx := user.InjectOrgID(context.Background(), "team-a")
+			recorder := httptest.NewRecorder()
+			path := "/ignored-url"
+			if len(data.matcherParams) > 0 {
+				path += "?" + strings.Join(data.matcherParams, "&")
+			}
+			request, err := http.NewRequestWithContext(ctx, "GET", path, http.NoBody)
+			require.NoError(t, err)
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers)
+		})
+	}
 }
 
 func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
@@ -86,7 +133,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 		t.Run(data.name, func(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
-			distributor := MockDistributor{items: items}
+			distributor := newMockDistributor(items...)
 			handler := LabelNamesCardinalityHandler(distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
@@ -124,22 +171,27 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 		{
 			name:                 "expected error if `limit` param is negative",
 			request:              createRequest("/ignored-url?limit=-1", "team-a"),
-			expectedErrorMessage: "limit param can not be negative",
+			expectedErrorMessage: "limit param can not be less 0",
 		},
 		{
 			name:                 "expected error if `limit` param is negative",
 			request:              createRequest("/ignored-url?limit=5000", "team-a"),
-			expectedErrorMessage: "limit param can not greater than 500",
+			expectedErrorMessage: "limit param can not be greater than 500",
 		},
 		{
 			name:                 "expected error if tenantId is not defined",
 			request:              createRequest("/ignored-url", ""),
 			expectedErrorMessage: "no org id",
 		},
+		{
+			name:                 "expected error if multiple limits are sent",
+			request:              createRequest("/ignored-url?limit=10&limit=20", "team-a"),
+			expectedErrorMessage: "multiple `limit` params are not allowed",
+		},
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			handler := LabelNamesCardinalityHandler(MockDistributor{})
+			handler := LabelNamesCardinalityHandler(newMockDistributor())
 
 			recorder := httptest.NewRecorder()
 
@@ -178,13 +230,8 @@ func generateLabelValues(count int) ([]*client.LabelValues, int) {
 	return items, valuesCount
 }
 
-type MockDistributor struct {
-	Distributor
-	items            []*client.LabelValues
-	receivedMatchers []*labels.Matcher
-}
-
-func (d MockDistributor) LabelNamesAndValues(_ context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
-	d.receivedMatchers = matchers
-	return &client.LabelNamesAndValuesResponse{Items: d.items}, nil
+func newMockDistributor(items ...*client.LabelValues) *mockDistributor {
+	d := &mockDistributor{}
+	d.On("LabelNamesAndValues", mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, nil)
+	return d
 }

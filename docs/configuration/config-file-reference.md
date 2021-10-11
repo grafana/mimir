@@ -4018,6 +4018,13 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # e.g. remote_write.write_relabel_configs.
 [metric_relabel_configs: <relabel_config...> | default = ]
 
+# Maximum size in bytes of distinct label names and values. When distributor
+# receives response from ingester, it merges the response with responses from
+# other ingesters. This maximum size limit is applied to the merged(distinct)
+# results. If the limit is reached, an error is thrown.
+# CLI flag: -distributor.label-names-and-values-results-max-size-bytes
+[label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
+
 # The maximum number of series for which a query can fetch samples from each
 # ingester. This limit is enforced only in the ingesters (when querying samples
 # not flushed to the storage yet) and it's a per-instance limit. This limit is

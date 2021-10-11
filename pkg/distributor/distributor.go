@@ -880,82 +880,88 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	if err != nil {
 		return nil, err
 	}
-	var globalLabelValuesMapLock sync.Mutex
-	globalLabelsWithValues := map[string]map[string]struct{}{}
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
+	merger := &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
 	_, err = d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		stream, err := client.LabelNamesAndValues(ctx, req)
 		if err != nil {
 			return nil, err
 		}
 		defer stream.CloseSend() //nolint:errcheck
-		err = collectResponses(stream, &globalLabelsWithValues, &globalLabelValuesMapLock)
-		if err != nil {
-			return nil, err
-		}
-		return nil, nil
+		return nil, merger.collectResponses(stream)
 	})
 	if err != nil {
 		return nil, err
 	}
-	return toLabelNamesAndValuesResponses(globalLabelsWithValues), nil
+	return toLabelNamesAndValuesResponses(merger.result), nil
 }
 
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
-func toLabelNamesAndValuesResponses(globalLabelsWithValues map[string]map[string]struct{}) *ingester_client.LabelNamesAndValuesResponse {
-	responses := make([]*ingester_client.LabelValues, len(globalLabelsWithValues))
-	i := 0
-	for name, values := range globalLabelsWithValues {
-		labelValues := make([]string, len(values))
-		j := 0
+func toLabelNamesAndValuesResponses(result map[string]map[string]struct{}) *ingester_client.LabelNamesAndValuesResponse {
+	responses := make([]*ingester_client.LabelValues, 0, len(result))
+	for name, values := range result {
+		labelValues := make([]string, 0, len(values))
 		for val := range values {
-			labelValues[j] = val
-			j++
+			labelValues = append(labelValues, val)
 		}
-		responses[i] = &ingester_client.LabelValues{
+		responses = append(responses, &ingester_client.LabelValues{
 			LabelName: name,
 			Values:    labelValues,
-		}
-		i++
+		})
 	}
 	return &ingester_client.LabelNamesAndValuesResponse{Items: responses}
+}
 
+type labelNamesAndValuesResponseMerger struct {
+	lock             sync.Mutex
+	result           map[string]map[string]struct{}
+	sizeLimitBytes   int
+	currentSizeBytes int
 }
 
 // collectResponses listens for the stream and once the message is received, puts labels and values to the map with distinct label values.
-func collectResponses(
-	stream ingester_client.Ingester_LabelNamesAndValuesClient,
-	globalLabelsWithValues *map[string]map[string]struct{},
-	globalLabelValuesMapLock *sync.Mutex,
-) error {
+func (m *labelNamesAndValuesResponseMerger) collectResponses(stream ingester_client.Ingester_LabelNamesAndValuesClient) error {
 	for {
-		batch, err := stream.Recv()
+		message, err := stream.Recv()
 		if err == io.EOF {
 			break
 		} else if err != nil {
 			return err
 		}
-		putItemsToMap(batch, globalLabelsWithValues, globalLabelValuesMapLock)
+		err = m.putItemsToMap(message)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-func putItemsToMap(
-	batch *ingester_client.LabelNamesAndValuesResponse,
-	globalLabelsWithValues *map[string]map[string]struct{},
-	globalLabelValuesMapLock *sync.Mutex,
-) {
-	globalLabelValuesMapLock.Lock()
-	defer globalLabelValuesMapLock.Unlock()
-	for _, item := range batch.Items {
-		values, exists := (*globalLabelsWithValues)[item.LabelName]
+func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_client.LabelNamesAndValuesResponse) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	for _, item := range message.Items {
+		values, exists := m.result[item.LabelName]
 		if !exists {
+			m.currentSizeBytes += len(item.LabelName)
 			values = make(map[string]struct{}, len(item.Values))
+			m.result[item.LabelName] = values
 		}
 		for _, val := range item.Values {
-			values[val] = struct{}{}
+			if _, valueExists := values[val]; !valueExists {
+				m.currentSizeBytes += len(val)
+				if m.currentSizeBytes > m.sizeLimitBytes {
+					return fmt.Errorf("size of distinct label names and values is greater than %v bytes."+
+						" Change `label_names_and_values_results_max_size_bytes` limit to process the request", m.sizeLimitBytes)
+				}
+				values[val] = struct{}{}
+			}
 		}
-		(*globalLabelsWithValues)[item.LabelName] = values
 	}
+	return nil
 }
 
 // LabelNames returns all of the label names.

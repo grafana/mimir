@@ -3,7 +3,6 @@
 package querier
 
 import (
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -18,6 +17,12 @@ import (
 	util_math "github.com/grafana/mimir/pkg/util/math"
 )
 
+const (
+	minLimit     = 0
+	maxLimit     = 500
+	defaultLimit = 20
+)
+
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
 func LabelNamesCardinalityHandler(d Distributor) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -27,7 +32,12 @@ func LabelNamesCardinalityHandler(d Distributor) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		matchersParams := r.URL.Query()["match[]"]
+		err = r.ParseForm()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		matchersParams := r.Form["match[]"]
 		matchers, err := parser.ParseMetricSelector(fmt.Sprintf("{%v}", strings.Join(matchersParams, ", ")))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
@@ -50,20 +60,22 @@ func LabelNamesCardinalityHandler(d Distributor) http.Handler {
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.
 func extractLimit(r *http.Request) (limit int, err error) {
-	limitParam := r.URL.Query().Get("limit")
-	if len(limitParam) == 0 {
-		return 20, nil
+	limitParams := r.Form["limit"]
+	if len(limitParams) == 0 {
+		return defaultLimit, nil
 	}
-	limit, err = strconv.Atoi(limitParam)
+	if len(limitParams) > 1 {
+		return 0, fmt.Errorf("multiple `limit` params are not allowed")
+	}
+	limit, err = strconv.Atoi(limitParams[0])
 	if err != nil {
 		return 0, err
 	}
-	if limit < 0 {
-		return 0, errors.New("limit param can not be negative")
+	if limit < minLimit {
+		return 0, fmt.Errorf("limit param can not be less %v", minLimit)
 	}
-	maxLimit := 500
 	if limit > maxLimit {
-		return 0, fmt.Errorf("limit param can not greater than %v", maxLimit)
+		return 0, fmt.Errorf("limit param can not be greater than %v", maxLimit)
 	}
 	return limit, nil
 }
