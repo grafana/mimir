@@ -721,7 +721,7 @@ type BucketCompactor struct {
 	bkt                            objstore.Bucket
 	concurrency                    int
 	skipBlocksWithOutOfOrderChunks bool
-	ownJob                         func(job *Job) (bool, error)
+	ownJob                         ownCompactionJobFunc
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -869,6 +869,13 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			return errors.Wrap(err, "build compaction jobs")
 		}
 
+		// There is another check just before we start processing the job, but we can avoid sending it
+		// to the goroutine in the first place.
+		jobs, err = c.filterOwnJobs(jobs)
+		if err != nil {
+			return err
+		}
+
 		ignoreDirs := []string{}
 		for _, gr := range jobs {
 			for _, grID := range gr.IDs() {
@@ -914,6 +921,20 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 	}
 	level.Info(c.logger).Log("msg", "compaction iterations done")
 	return nil
+}
+
+func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
+	for ix := 0; ix < len(jobs); {
+		// Skip any job which doesn't belong to this compactor instance.
+		if ok, err := c.ownJob(jobs[ix]); err != nil {
+			return nil, errors.Wrap(err, "ownJob")
+		} else if !ok {
+			jobs = append(jobs[:ix], jobs[ix+1:]...)
+		} else {
+			ix++
+		}
+	}
+	return jobs, nil
 }
 
 var _ block.MetadataFilter = &GatherNoCompactionMarkFilter{}

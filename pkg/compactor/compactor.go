@@ -62,8 +62,6 @@ type BlocksGrouperFactory func(
 	cfg Config,
 	cfgProvider ConfigProvider,
 	userID string,
-	ring *ring.Ring,
-	instanceAddr string,
 	logger log.Logger,
 	reg prometheus.Registerer,
 ) Grouper
@@ -670,16 +668,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "failed to create syncer")
 	}
 
-	// The sharding could be disabled.
-	instanceAddr := ""
-	if c.ringLifecycler != nil {
-		instanceAddr = c.ringLifecycler.Addr
-	}
-
 	compactor, err := NewBucketCompactor(
 		ulogger,
 		syncer,
-		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, c.ring, instanceAddr, ulogger, reg),
+		c.blocksGrouperFactory(ctx, c.compactorCfg, c.cfgProvider, userID, ulogger, reg),
 		c.blocksPlanner,
 		c.blocksCompactor,
 		path.Join(c.compactorCfg.DataDir, "compact"),
