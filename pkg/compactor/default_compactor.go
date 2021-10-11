@@ -10,11 +10,9 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
-
-	"github.com/grafana/mimir/pkg/ring"
 )
 
-func defaultBlocksGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
+func defaultBlocksGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, logger log.Logger, reg prometheus.Registerer) Grouper {
 	return NewDefaultGrouper(userID, metadata.NoneFunc)
 }
 
