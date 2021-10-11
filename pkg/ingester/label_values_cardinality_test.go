@@ -71,9 +71,9 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 	labelValuesCardinalityTargetSizeBytes = 1000
 
 	for _, tc := range []struct {
-		description     string
-		existingLabels  map[string][]string
-		expectedMessage []*client.LabelValueCardinality
+		description    string
+		existingLabels map[string][]string
+		expectedItems  []*client.LabelValueCardinality
 	}{
 		{
 			"all values returned in a single message even if only one label",
@@ -118,10 +118,12 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 				server,
 			)
 			require.NoError(t, err)
-
+			if tc.expectedItems == nil {
+				require.Empty(t, mockServer.SentResponses)
+				return
+			}
 			require.Len(t, mockServer.SentResponses, 1)
-
-			require.Equal(t, tc.expectedMessage, mockServer.SentResponses[0].Items)
+			require.Equal(t, tc.expectedItems, mockServer.SentResponses[0].Items)
 		})
 	}
 }
