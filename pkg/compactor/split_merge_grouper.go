@@ -26,13 +26,9 @@ const (
 	ShardIDLabelName = "__compactor_shard_id__"
 )
 
-// ownJobFunc check whether the current instance owns the input job.
-type ownJobFunc func(job *job) (bool, error)
-
 type SplitAndMergeGrouper struct {
 	userID string
 	ranges []int64
-	ownJob ownJobFunc
 	logger log.Logger
 
 	// Number of shards to split source blocks into.
@@ -45,19 +41,17 @@ func NewSplitAndMergeGrouper(
 	userID string,
 	ranges []int64,
 	shardCount uint32,
-	ownJob ownJobFunc,
 	logger log.Logger,
 ) *SplitAndMergeGrouper {
 	return &SplitAndMergeGrouper{
 		userID:     userID,
 		ranges:     ranges,
-		ownJob:     ownJob,
 		shardCount: shardCount,
 		logger:     logger,
 	}
 }
 
-func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Group, err error) {
+func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Job, err error) {
 	flatBlocks := make([]*metadata.Meta, 0, len(blocks))
 	for _, b := range blocks {
 		flatBlocks = append(flatBlocks, b)
@@ -67,13 +61,6 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		// Sanity check: if splitting is disabled, we don't expect any job for the split stage.
 		if g.shardCount <= 0 && job.stage == stageSplit {
 			return nil, errors.Errorf("unexpected split stage job because splitting is disabled: %s", job.String())
-		}
-
-		// Skip any job which doesn't belong to this compactor instance.
-		if ok, err := g.ownJob(job); err != nil {
-			return nil, err
-		} else if !ok {
-			continue
 		}
 
 		// The group key is used by the compactor as a unique identifier of the compaction job.
@@ -90,7 +77,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		resolution := job.blocks[0].Thanos.Downsample.Resolution
 		externalLabels := labels.FromMap(job.blocks[0].Thanos.Labels)
 
-		thanosGroup, err := NewGroup(
+		compactionJob := NewJob(
 			g.userID,
 			groupKey,
 			externalLabels,
@@ -100,17 +87,14 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 			g.shardCount,
 			job.shardingKey(),
 		)
-		if err != nil {
-			return nil, errors.Wrap(err, "create compaction group")
-		}
 
 		for _, m := range job.blocks {
-			if err := thanosGroup.AppendMeta(m); err != nil {
+			if err := compactionJob.AppendMeta(m); err != nil {
 				return nil, errors.Wrap(err, "add block to compaction group")
 			}
 		}
 
-		res = append(res, thanosGroup)
+		res = append(res, compactionJob)
 		level.Debug(g.logger).Log("msg", "grouper found a compactable blocks group", "groupKey", groupKey, "job", job.String())
 	}
 

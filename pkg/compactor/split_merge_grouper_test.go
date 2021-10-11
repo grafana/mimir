@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -15,74 +14,19 @@ import (
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 )
 
-// This is a basic test of Groups(). Planning logic should be tested in TestPlanCompaction.
-func TestSplitAndMergeGrouper_Groups(t *testing.T) {
-	ranges := []int64{20, 40}
-
-	// Mock some blocks so that each block belongs to a different compactable time range
-	// and all of them needs to be split.
-	block1 := ulid.MustNew(1, nil)
-	block2 := ulid.MustNew(2, nil)
-	block3 := ulid.MustNew(3, nil)
-	block4 := ulid.MustNew(4, nil)
-
-	blocks := map[ulid.ULID]*metadata.Meta{
-		block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
-		block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 20, MaxTime: 40}},
-		block3: {BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 40, MaxTime: 60}},
-		block4: {BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 60, MaxTime: 80}},
-	}
-
-	tests := map[string]struct {
-		ownJob         ownJobFunc
-		expectedGroups int
-	}{
-		"should return all planned groups if the compactor instance owns all of them": {
-			ownJob: func(job *job) (bool, error) {
-				return true, nil
-			},
-			expectedGroups: 4,
-		},
-		"should return no groups if the compactor instance owns none of them": {
-			ownJob: func(job *job) (bool, error) {
-				return false, nil
-			},
-			expectedGroups: 0,
-		},
-		"should return some groups if the compactor instance owns some of them": {
-			ownJob: func() ownJobFunc {
-				count := 0
-				return func(job *job) (bool, error) {
-					count++
-					return count%2 == 0, nil
-				}
-			}(),
-			expectedGroups: 2,
-		},
-	}
-
-	for testName, testCase := range tests {
-		t.Run(testName, func(t *testing.T) {
-			grouper := NewSplitAndMergeGrouper("test", ranges, 1, testCase.ownJob, log.NewNopLogger())
-			res, err := grouper.Groups(blocks)
-			require.NoError(t, err)
-			assert.Len(t, res, testCase.expectedGroups)
-		})
-	}
-}
-
 func TestPlanCompaction(t *testing.T) {
 	const userID = "user-1"
 
-	block1 := ulid.MustNew(1, nil) // Hash: 283204220
-	block2 := ulid.MustNew(2, nil) // Hash: 444110359
-	block3 := ulid.MustNew(3, nil) // Hash: 3253786510
-	block4 := ulid.MustNew(4, nil) // Hash: 122298081
-	block5 := ulid.MustNew(5, nil) // Hash: 2931974232
-	block6 := ulid.MustNew(6, nil) // Hash: 3092880371
-	block7 := ulid.MustNew(7, nil) // Hash: 1607589226
-	block8 := ulid.MustNew(8, nil) // Hash: 2771068093
-	block9 := ulid.MustNew(9, nil) // Hash: 1285776948
+	block1 := ulid.MustNew(1, nil)   // Hash: 283204220
+	block2 := ulid.MustNew(2, nil)   // Hash: 444110359
+	block3 := ulid.MustNew(3, nil)   // Hash: 3253786510
+	block4 := ulid.MustNew(4, nil)   // Hash: 122298081
+	block5 := ulid.MustNew(5, nil)   // Hash: 2931974232
+	block6 := ulid.MustNew(6, nil)   // Hash: 3092880371
+	block7 := ulid.MustNew(7, nil)   // Hash: 1607589226
+	block8 := ulid.MustNew(8, nil)   // Hash: 2771068093
+	block9 := ulid.MustNew(9, nil)   // Hash: 1285776948
+	block10 := ulid.MustNew(10, nil) // Hash: 1446683087
 
 	tests := map[string]struct {
 		ranges     []int64
@@ -336,6 +280,7 @@ func TestPlanCompaction(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 7, MaxTime: 10}},
 				// Not compacted because on 2nd level because the range [0, 20]
 				// has other 1st level range groups to be split first
+				{BlockMeta: tsdb.BlockMeta{ULID: block10, MinTime: 0, MaxTime: 10}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_1"}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_1"}}},
 				// To be compacted on 2nd level range [20, 40]
 				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 20, MaxTime: 30}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1_of_1"}}},

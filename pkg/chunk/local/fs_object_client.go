@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log/level"
-	"github.com/thanos-io/thanos/pkg/runutil"
+	"github.com/grafana/dskit/runutil"
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/util"
