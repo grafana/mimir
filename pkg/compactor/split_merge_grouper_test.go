@@ -6,7 +6,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/go-kit/kit/log"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
@@ -14,62 +13,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 )
-
-// This is a basic test of Groups(). Planning logic should be tested in TestPlanCompaction.
-func TestSplitAndMergeGrouper_Groups(t *testing.T) {
-	ranges := []int64{20, 40}
-
-	// Mock some blocks so that each block belongs to a different compactable time range
-	// and all of them needs to be split.
-	block1 := ulid.MustNew(1, nil)
-	block2 := ulid.MustNew(2, nil)
-	block3 := ulid.MustNew(3, nil)
-	block4 := ulid.MustNew(4, nil)
-
-	blocks := map[ulid.ULID]*metadata.Meta{
-		block1: {BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 20}},
-		block2: {BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 20, MaxTime: 40}},
-		block3: {BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 40, MaxTime: 60}},
-		block4: {BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 60, MaxTime: 80}},
-	}
-
-	tests := map[string]struct {
-		ownJob         ownJobFunc
-		expectedGroups int
-	}{
-		"should return all planned groups if the compactor instance owns all of them": {
-			ownJob: func(job *job) (bool, error) {
-				return true, nil
-			},
-			expectedGroups: 4,
-		},
-		"should return no groups if the compactor instance owns none of them": {
-			ownJob: func(job *job) (bool, error) {
-				return false, nil
-			},
-			expectedGroups: 0,
-		},
-		"should return some groups if the compactor instance owns some of them": {
-			ownJob: func() ownJobFunc {
-				count := 0
-				return func(job *job) (bool, error) {
-					count++
-					return count%2 == 0, nil
-				}
-			}(),
-			expectedGroups: 2,
-		},
-	}
-
-	for testName, testCase := range tests {
-		t.Run(testName, func(t *testing.T) {
-			grouper := NewSplitAndMergeGrouper("test", ranges, 1, testCase.ownJob, log.NewNopLogger())
-			res, err := grouper.Groups(blocks)
-			require.NoError(t, err)
-			assert.Len(t, res, testCase.expectedGroups)
-		})
-	}
-}
 
 func TestPlanCompaction(t *testing.T) {
 	const userID = "user-1"
