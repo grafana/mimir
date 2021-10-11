@@ -18,12 +18,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
-
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"github.com/thanos-io/thanos/pkg/runutil"
 )
 
 const testFilename = "/random_object"
@@ -606,7 +606,7 @@ func verifyGet(t *testing.T, cb *CachingBucket, file string, expectedData []byte
 		}
 	} else {
 		assert.NoError(t, err)
-		defer runutil.CloseWithLogOnErr(nil, r, "verifyGet")
+		defer runutil.CloseWithLogOnErr(log.NewNopLogger(), r, "verifyGet")
 		data, err := ioutil.ReadAll(r)
 		assert.NoError(t, err)
 		assert.Equal(t, expectedData, data)
