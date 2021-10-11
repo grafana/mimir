@@ -178,6 +178,9 @@ func NewTripperware(
 			return nil, nil, errInvalidShardingStorage
 		}
 
+		// Disable concurrency limits for sharded queries.
+		engineOpts.ActiveQueryTracker = nil
+
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics),
