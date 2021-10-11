@@ -982,8 +982,6 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
 			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 		}
-		indexr := b.indexReader()
-		defer indexr.Close()
 
 		// we're building a scenario where:
 		// - first three calls (0, 1, 2) will be called concurrently with same matchers
@@ -1008,6 +1006,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		// first call will create the promise
 		go func() {
 			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
 			ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers)
 		}()
 		// wait for this call to actually create a promise and call LabelValues
@@ -1017,6 +1018,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
 		go func() {
 			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
 			ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers)
 		}()
 		// wait until this is waiting on the promise
@@ -1027,6 +1031,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
 		go func() {
 			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
 			ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers)
 		}()
 		// wait until this is waiting on the promise
@@ -1037,6 +1044,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		// fourth call will create its own promise
 		go func() {
 			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
 			ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers)
 		}()
 		// wait for this call to actually create a promise and call LabelValues
@@ -1045,6 +1055,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		// fifth call will create its own promise which will fail
 		go func() {
 			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
 			ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers)
 		}()
 		// wait for this call to actually create a promise and call LabelValues
@@ -1054,6 +1067,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
 		go func() {
 			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
 			ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers)
 		}()
 		// wait until this is waiting on the promise
