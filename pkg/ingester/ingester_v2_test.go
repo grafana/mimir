@@ -1535,66 +1535,44 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 					return false
 				})
 			}
+			if len(tc.expectedItems) == 0 {
+				require.Len(t, s.SentResponses, 0)
+				return
+			}
 			require.Len(t, s.SentResponses, 1)
-
 			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
 		})
 	}
 }
 
 func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
-	series := []series{
-		{
-			lbls: labels.Labels{
-				{Name: labels.MetricName, Value: "metric_0"},
-				{Name: "status", Value: "500"},
-			},
-			value:     1.5,
-			timestamp: 100000,
-		},
-		{
-			lbls: labels.Labels{
-				{Name: labels.MetricName, Value: "metric_0"},
-				{Name: "status", Value: "200"},
-			},
-			value:     1.5,
-			timestamp: 110030,
-		},
-		{
-			lbls: labels.Labels{
-				{Name: labels.MetricName, Value: "metric_1"},
-				{Name: "env", Value: "prod"},
-			},
-			value:     1.5,
-			timestamp: 100060,
-		},
-		{
-			lbls: labels.Labels{
-				{Name: labels.MetricName, Value: "metric_1"},
-				{Name: "env", Value: "prod"},
-				{Name: "status", Value: "300"},
-			},
-			value:     1.5,
-			timestamp: 100090,
-		},
-	}
-	// Create ingester
-	ing := requireActiveIngesterWithBlocksStorage(b, defaultIngesterTestConfig(b), nil)
+	var (
+		userID              = "test"
+		numSeries           = 10000
+		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
+		startTimestamp      = util.TimeToMillis(time.Now())
+		step                = int64(60000) // 1 sample per minute
+	)
 
-	ctx := pushSeriesToIngester(b, series, ing)
+	// Create ingester
+	ing := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
 	s := &mockLabelValuesCardinalityServer{context: ctx}
 
 	req := &client.LabelValuesCardinalityRequest{
-		LabelNames: []string{"status"},
+		LabelNames: []string{labels.MetricName},
 		Matchers: []*client.LabelMatcher{
-			{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
+			{Type: client.EQUAL, Name: "label_8", Value: "8"},
 		},
 	}
-	// Run benchmarks
-	for i := 0; i < b.N; i++ {
-		err := ing.LabelValuesCardinality(req, s)
-		require.NoError(b, err)
-	}
+	b.Run("label values cardinality", func(b *testing.B) {
+		// Run benchmarks
+		for i := 0; i < b.N; i++ {
+			err := ing.LabelValuesCardinality(req, s)
+			require.NoError(b, err)
+		}
+	})
 }
 
 type series struct {
