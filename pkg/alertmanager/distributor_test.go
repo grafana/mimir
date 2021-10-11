@@ -32,8 +32,8 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	"github.com/grafana/mimir/pkg/ring"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -327,7 +327,7 @@ func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBod
 		},
 		HeartbeatTimeout:  60 * time.Minute,
 		ReplicationFactor: replicationFactor,
-	}, RingNameForServer, RingKey, nil)
+	}, RingNameForServer, RingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), amRing))
 	test.Poll(t, time.Second, numAM, func() interface{} {

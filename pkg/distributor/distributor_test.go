@@ -38,12 +38,12 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/dskit/ring"
+	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
-	"github.com/grafana/mimir/pkg/ring"
-	ring_client "github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -1576,7 +1576,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				KVStore:           kv.Config{Mock: kvStore},
 				HeartbeatTimeout:  60 * time.Minute,
 				ReplicationFactor: 1,
-			}, ring.IngesterRingKey, ring.IngesterRingKey, nil)
+			}, ring.IngesterRingKey, ring.IngesterRingKey, log.NewNopLogger(), nil)
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
 			b.Cleanup(func() {
@@ -2028,7 +2028,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		},
 		HeartbeatTimeout:  60 * time.Minute,
 		ReplicationFactor: rf,
-	}, ring.IngesterRingKey, ring.IngesterRingKey, nil)
+	}, ring.IngesterRingKey, ring.IngesterRingKey, ring.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
 

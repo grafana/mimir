@@ -13,12 +13,12 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/testutils"
 )
 

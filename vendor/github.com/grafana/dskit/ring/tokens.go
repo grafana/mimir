@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/tokens.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package ring
 
 import (
@@ -84,7 +79,7 @@ func LoadTokensFromFile(tokenFilePath string) (Tokens, error) {
 	var t Tokens
 	err = t.Unmarshal(b)
 
-	// Tokens may have been written to file by an older version of Mimir which
+	// Tokens may have been written to file by an older version which
 	// doesn't guarantee sorted tokens, so we enforce sorting here.
 	if !sort.IsSorted(t) {
 		sort.Sort(t)

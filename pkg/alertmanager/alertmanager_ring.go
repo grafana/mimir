@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -100,7 +100,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 // ToLifecyclerConfig returns a LifecyclerConfig based on the alertmanager
 // ring config.
 func (cfg *RingConfig) ToLifecyclerConfig() (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames)
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, util_log.Logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}

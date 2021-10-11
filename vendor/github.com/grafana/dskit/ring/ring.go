@@ -1,12 +1,6 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/stathat/consistent/blob/master/consistent.go
-// Provenance-includes-license: MIT
-// Provenance-includes-copyright: Numerotron Inc.
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/ring.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package ring
+
+// Based on https://raw.githubusercontent.com/stathat/consistent/master/consistent.go
 
 import (
 	"context"
@@ -17,16 +11,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/services"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
-	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/log"
-	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/dskit/kv"
+	shardUtil "github.com/grafana/dskit/ring/shard"
+	"github.com/grafana/dskit/ring/util"
+	"github.com/grafana/dskit/services"
+
+	"github.com/grafana/dskit/flagext"
+	dsmath "github.com/grafana/dskit/math"
 )
 
 const (
@@ -51,7 +48,6 @@ const (
 
 // ReadRing represents the read interface to the ring.
 type ReadRing interface {
-	prometheus.Collector
 
 	// Get returns n (or more) instances which form the replicas for the given key.
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
@@ -106,6 +102,7 @@ var (
 	// WriteNoExtend is like Write, but with no replicaset extension.
 	WriteNoExtend = NewOp([]InstanceState{ACTIVE}, nil)
 
+	// Read operation that extends the replica set if an instance is not ACTIVE or LEAVING
 	Read = NewOp([]InstanceState{ACTIVE, PENDING, LEAVING}, func(s InstanceState) bool {
 		// To match Write with extended replica set we have to also increase the
 		// size of the replica set for Read, but we can read from LEAVING ingesters.
@@ -196,11 +193,14 @@ type Ring struct {
 	// If set to nil, no caching is done (used by tests, and subrings).
 	shuffledSubringCache map[subringCacheKey]*Ring
 
-	memberOwnershipDesc *prometheus.Desc
-	numMembersDesc      *prometheus.Desc
-	totalTokensDesc     *prometheus.Desc
-	numTokensDesc       *prometheus.Desc
-	oldestTimestampDesc *prometheus.Desc
+	memberOwnershipGaugeVec *prometheus.GaugeVec
+	numMembersGaugeVec      *prometheus.GaugeVec
+	totalTokensGauge        prometheus.Gauge
+	numTokensGaugeVec       *prometheus.GaugeVec
+	oldestTimestampGaugeVec *prometheus.GaugeVec
+	metricsUpdateTicker     *time.Ticker
+
+	logger log.Logger
 }
 
 type subringCacheKey struct {
@@ -209,23 +209,23 @@ type subringCacheKey struct {
 }
 
 // New creates a new Ring. Being a service, Ring needs to be started to do anything.
-func New(cfg Config, name, key string, reg prometheus.Registerer) (*Ring, error) {
+func New(cfg Config, name, key string, logger log.Logger, reg prometheus.Registerer) (*Ring, error) {
 	codec := GetCodec()
 	// Suffix all client names with "-ring" to denote this kv client is used by the ring
 	store, err := kv.NewClient(
 		cfg.KVStore,
 		codec,
-		kv.RegistererWithKVName(prometheus.WrapRegistererWithPrefix("cortex_", reg), name+"-ring"),
-		log.Logger,
+		kv.RegistererWithKVName(reg, name+"-ring"),
+		logger,
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewWithStoreClientAndStrategy(cfg, name, key, store, NewDefaultReplicationStrategy())
+	return NewWithStoreClientAndStrategy(cfg, name, key, store, NewDefaultReplicationStrategy(), reg, logger)
 }
 
-func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client, strategy ReplicationStrategy) (*Ring, error) {
+func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client, strategy ReplicationStrategy, reg prometheus.Registerer, logger log.Logger) (*Ring, error) {
 	if cfg.ReplicationFactor <= 0 {
 		return nil, fmt.Errorf("ReplicationFactor must be greater than zero: %d", cfg.ReplicationFactor)
 	}
@@ -237,39 +237,34 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		strategy:             strategy,
 		ringDesc:             &Desc{},
 		shuffledSubringCache: map[subringCacheKey]*Ring{},
-		memberOwnershipDesc: prometheus.NewDesc(
-			"cortex_ring_member_ownership_percent",
-			"The percent ownership of the ring by member",
-			[]string{"member"},
-			map[string]string{"name": name},
-		),
-		numMembersDesc: prometheus.NewDesc(
-			"cortex_ring_members",
-			"Number of members in the ring",
-			[]string{"state"},
-			map[string]string{"name": name},
-		),
-		totalTokensDesc: prometheus.NewDesc(
-			"cortex_ring_tokens_total",
-			"Number of tokens in the ring",
-			nil,
-			map[string]string{"name": name},
-		),
-		numTokensDesc: prometheus.NewDesc(
-			"cortex_ring_tokens_owned",
-			"The number of tokens in the ring owned by the member",
-			[]string{"member"},
-			map[string]string{"name": name},
-		),
-		oldestTimestampDesc: prometheus.NewDesc(
-			"cortex_ring_oldest_member_timestamp",
-			"Timestamp of the oldest member in the ring.",
-			[]string{"state"},
-			map[string]string{"name": name},
-		),
+		memberOwnershipGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "ring_member_ownership_percent",
+			Help:        "The percent ownership of the ring by member",
+			ConstLabels: map[string]string{"name": name}},
+			[]string{"member"}),
+		numMembersGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "ring_members",
+			Help:        "Number of members in the ring",
+			ConstLabels: map[string]string{"name": name}},
+			[]string{"state"}),
+		totalTokensGauge: promauto.With(reg).NewGauge(prometheus.GaugeOpts{
+			Name:        "ring_tokens_total",
+			Help:        "Number of tokens in the ring",
+			ConstLabels: map[string]string{"name": name}}),
+		numTokensGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "ring_tokens_owned",
+			Help:        "The number of tokens in the ring owned by the member",
+			ConstLabels: map[string]string{"name": name}},
+			[]string{"member"}),
+		oldestTimestampGaugeVec: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name:        "ring_oldest_member_timestamp",
+			Help:        "Timestamp of the oldest member in the ring.",
+			ConstLabels: map[string]string{"name": name}},
+			[]string{"state"}),
+		logger: logger,
 	}
 
-	r.Service = services.NewBasicService(r.starting, r.loop, nil).WithName(fmt.Sprintf("%s ring client", name))
+	r.Service = services.NewBasicService(r.starting, r.loop, r.stopping).WithName(fmt.Sprintf("%s ring client", name))
 	return r, nil
 }
 
@@ -282,24 +277,40 @@ func (r *Ring) starting(ctx context.Context) error {
 		return errors.Wrap(err, "unable to initialise ring state")
 	}
 	if value == nil {
-		level.Info(log.Logger).Log("msg", "ring doesn't exist in KV store yet")
+		level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 		return nil
 	}
 
 	r.updateRingState(value.(*Desc))
+
+	// Start metrics update ticker, and give it a function to update the ring metrics.
+	r.metricsUpdateTicker = time.NewTicker(10 * time.Second)
+	go func() {
+		for range r.metricsUpdateTicker.C {
+			r.updateRingMetrics()
+		}
+	}()
 	return nil
 }
 
 func (r *Ring) loop(ctx context.Context) error {
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
 		if value == nil {
-			level.Info(log.Logger).Log("msg", "ring doesn't exist in KV store yet")
+			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 			return true
 		}
 
 		r.updateRingState(value.(*Desc))
 		return true
 	})
+	return nil
+}
+
+func (r *Ring) stopping(_ error) error {
+	// Stop Metrics ticker.
+	if r.metricsUpdateTicker != nil {
+		r.metricsUpdateTicker.Stop()
+	}
 	return nil
 }
 
@@ -472,7 +483,7 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 		// Given data is replicated to RF different zones, we can tolerate a number of
 		// RF/2 failing zones. However, we need to protect from the case the ring currently
 		// contains instances in a number of zones < RF.
-		numReplicatedZones := util_math.Min(len(r.ringZones), r.cfg.ReplicationFactor)
+		numReplicatedZones := dsmath.Min(len(r.ringZones), r.cfg.ReplicationFactor)
 		minSuccessZones := (numReplicatedZones / 2) + 1
 		maxUnavailableZones = minSuccessZones - 1
 
@@ -523,15 +534,6 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}, nil
 }
 
-// Describe implements prometheus.Collector.
-func (r *Ring) Describe(ch chan<- *prometheus.Desc) {
-	ch <- r.memberOwnershipDesc
-	ch <- r.numMembersDesc
-	ch <- r.totalTokensDesc
-	ch <- r.oldestTimestampDesc
-	ch <- r.numTokensDesc
-}
-
 // countTokens returns the number of tokens and tokens within the range for each instance.
 // The ring read lock must be already taken when calling this function.
 func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
@@ -563,25 +565,15 @@ func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
 	return numTokens, owned
 }
 
-// Collect implements prometheus.Collector.
-func (r *Ring) Collect(ch chan<- prometheus.Metric) {
+// updateRingMetrics updates ring metrics.
+func (r *Ring) updateRingMetrics() {
 	r.mtx.RLock()
 	defer r.mtx.RUnlock()
 
 	numTokens, ownedRange := r.countTokens()
 	for id, totalOwned := range ownedRange {
-		ch <- prometheus.MustNewConstMetric(
-			r.memberOwnershipDesc,
-			prometheus.GaugeValue,
-			float64(totalOwned)/float64(math.MaxUint32),
-			id,
-		)
-		ch <- prometheus.MustNewConstMetric(
-			r.numTokensDesc,
-			prometheus.GaugeValue,
-			float64(numTokens[id]),
-			id,
-		)
+		r.memberOwnershipGaugeVec.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
+		r.numTokensGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
 	}
 
 	numByState := map[string]int{}
@@ -605,27 +597,12 @@ func (r *Ring) Collect(ch chan<- prometheus.Metric) {
 	}
 
 	for state, count := range numByState {
-		ch <- prometheus.MustNewConstMetric(
-			r.numMembersDesc,
-			prometheus.GaugeValue,
-			float64(count),
-			state,
-		)
+		r.numMembersGaugeVec.WithLabelValues(state).Set(float64(count))
 	}
 	for state, timestamp := range oldestTimestampByState {
-		ch <- prometheus.MustNewConstMetric(
-			r.oldestTimestampDesc,
-			prometheus.GaugeValue,
-			float64(timestamp),
-			state,
-		)
+		r.oldestTimestampGaugeVec.WithLabelValues(state).Set(float64(timestamp))
 	}
-
-	ch <- prometheus.MustNewConstMetric(
-		r.totalTokensDesc,
-		prometheus.GaugeValue,
-		float64(len(r.ringTokens)),
-	)
+	r.totalTokensGauge.Set(float64(len(r.ringTokens)))
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)
@@ -689,7 +666,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 	var actualZones []string
 
 	if r.cfg.ZoneAwarenessEnabled {
-		numInstancesPerZone = util.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
+		numInstancesPerZone = shardUtil.ShuffleShardExpectedInstancesPerZone(size, len(r.ringZones))
 		actualZones = r.ringZones
 	} else {
 		numInstancesPerZone = size
@@ -714,7 +691,7 @@ func (r *Ring) shuffleShard(identifier string, size int, lookbackPeriod time.Dur
 		// Since we consider each zone like an independent ring, we have to use dedicated
 		// pseudo-random generator for each zone, in order to guarantee the "consistency"
 		// property when the shard size changes or a new zone is added.
-		random := rand.New(rand.NewSource(util.ShuffleShardSeed(identifier, zone)))
+		random := rand.New(rand.NewSource(shardUtil.ShuffleShardSeed(identifier, zone)))
 
 		// To select one more instance while guaranteeing the "consistency" property,
 		// we do pick a random value from the generator and resolve uniqueness collisions
@@ -884,7 +861,7 @@ func NewOp(healthyStates []InstanceState, shouldExtendReplicaSet func(s Instance
 	}
 
 	if shouldExtendReplicaSet != nil {
-		for _, s := range []InstanceState{ACTIVE, LEAVING, PENDING, JOINING, LEFT} {
+		for _, s := range []InstanceState{ACTIVE, LEAVING, PENDING, JOINING, LEAVING, LEFT} {
 			if shouldExtendReplicaSet(s) {
 				op |= (0x10000 << s)
 			}
