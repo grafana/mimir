@@ -1,4 +1,4 @@
-package kvtls
+package tls
 
 import (
 	"crypto/tls"
