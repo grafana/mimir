@@ -1688,12 +1688,22 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
+	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
+	defer func() {
+		span.LogKV("returned postings", len(returnRefs))
+		if returnErr != nil {
+			span.LogFields(otlog.Error(returnErr))
+		}
+		span.Finish()
+	}()
 	return r.expandedPostingsPromise(ctx, ms)(ctx)
 }
 
 // expandedPostingsPromise provides a promise for the execution of expandedPostings method.
 // First call to this method will be blocking until the expandedPostings are calculated.
 // While first call is blocking, concurrent calls with same matchers will return a promise for the same results, without recalculating them.
+// TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
+// TODO: https://github.com/grafana/mimir/issues/331
 func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) func(ctx context.Context) ([]uint64, error) {
 	var (
 		refs []uint64
@@ -1702,23 +1712,13 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	)
 
 	promise := func(ctx context.Context) ([]uint64, error) {
-		span, ctx := tracing.StartSpan(ctx, "ExpandedPostings() promise wait")
-		defer span.Finish()
-
 		select {
 		case <-ctx.Done():
-			span.LogFields(otlog.Error(ctx.Err()))
 			return nil, ctx.Err()
 		case <-done:
 		}
 
-		if err != nil {
-			span.LogFields(otlog.Error(err))
-			return nil, err
-		}
-
-		span.LogKV("returned postings", len(refs))
-		return refs, nil
+		return refs, err
 	}
 
 	key := matchersKey(ms)
@@ -1743,13 +1743,6 @@ func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.M
 		hasAdds       = false
 		keys          []labels.Label
 	)
-
-	// Track the number of returned postings in a tracing span.
-	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
-	defer func() {
-		span.LogKV("returned postings", len(returnRefs))
-		span.Finish()
-	}()
 
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
