@@ -183,13 +183,7 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 				select {
 				case w := <-intermediate:
 					resp, err := rt.downstream.Do(w.ctx, w.req)
-					select {
-					case w.result <- result{response: resp, err: err}:
-					case <-w.ctx.Done():
-						continue
-					case <-ctx.Done():
-						return
-					}
+					w.result <- result{response: resp, err: err}
 				case <-ctx.Done():
 					return
 				}
@@ -200,7 +194,7 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	// Wraps middlewares with a final handler, which will receive requests in
 	// parallel from upstream handlers. Then each requests gets scheduled to a
 	// different worker via the `intermediate` channel, so the maximum
-	// parallelism is limited. This worker will then call `Do` on the/ resulting
+	// parallelism is limited. This worker will then call `Do` on the resulting
 	// handler.
 	response, err := rt.middleware.Wrap(
 		HandlerFunc(func(ctx context.Context, r Request) (Response, error) {
