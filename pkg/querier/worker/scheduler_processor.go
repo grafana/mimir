@@ -28,7 +28,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/ring/client"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/grpcutil"

@@ -43,8 +43,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/dskit/ring"
+
 	"github.com/grafana/mimir/pkg/querier/querysharding"
-	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -452,7 +453,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		overrides, err := validation.NewOverrides(limits, nil)
 		require.NoError(t, err)
 
-		reg := prometheus.NewPedanticRegistry()
+		reg := prometheus.NewRegistry()
 		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, mockLoggingLevel(), log.NewNopLogger(), reg)
 		require.NoError(t, err)
 
@@ -520,7 +521,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	// store-gateways behaves with regards to blocks syncing while other replicas are JOINING.
 
 	// Wait until all the initial store-gateways sees all new store-gateways too.
-	dstest.Poll(t, 5*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
+	dstest.Poll(t, 30*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
 		metrics := initialRegistries.BuildMetricFamiliesPerUser()
 		return metrics.GetSumOfGauges("cortex_ring_members")
 	})

@@ -51,7 +51,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/queryrange"
 	"github.com/grafana/mimir/pkg/querier/tenantfederation"
 	querier_worker "github.com/grafana/mimir/pkg/querier/worker"
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler"

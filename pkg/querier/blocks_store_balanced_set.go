@@ -21,7 +21,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/discovery/dns"
 	"github.com/thanos-io/thanos/pkg/extprom"
 
-	"github.com/grafana/mimir/pkg/ring/client"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/mimir/pkg/util"
 )
 

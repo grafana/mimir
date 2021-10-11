@@ -41,7 +41,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
+
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -863,6 +864,16 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor org_id=user-2 msg="start of compactions"`,
 		`level=info component=compactor org_id=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
+		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected.
+		`component=compactor level=info msg="ring doesn't exist in KV store yet"`,
+		`component=compactor level=info msg="not loading tokens from file, tokens file path is empty"`,
+		`component=compactor level=info msg="instance not found in ring, adding with no tokens" ring=compactor`,
+		`component=compactor level=debug msg="JoinAfter expired" ring=compactor`,
+		`component=compactor level=info msg="auto-joining cluster after timeout" ring=compactor`,
+		`component=compactor level=info msg="lifecycler loop() exited gracefully" ring=compactor`,
+		`component=compactor level=info msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`,
+		`component=compactor level=debug msg="unregistering instance from ring" ring=compactor`,
+		`component=compactor level=info msg="instance removed from the KV store" ring=compactor`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
@@ -1058,6 +1069,17 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 		`level=info component=compactor org_id=user-1 msg="skipped compaction because unable to check whether the group is owned by the compactor instance" group=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 err="at least 1 live replicas required, could only find 0"`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
+		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected.
+		`component=compactor level=info msg="ring doesn't exist in KV store yet"`,
+		`component=compactor level=info msg="not loading tokens from file, tokens file path is empty"`,
+		`component=compactor level=info msg="instance not found in ring, adding with no tokens" ring=compactor`,
+		`component=compactor level=debug msg="JoinAfter expired" ring=compactor`,
+		`component=compactor level=info msg="auto-joining cluster after timeout" ring=compactor`,
+		`component=compactor level=info msg="lifecycler loop() exited gracefully" ring=compactor`,
+		`component=compactor level=info msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`,
+		`component=compactor level=error msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`,
+		`component=compactor level=debug msg="unregistering instance from ring" ring=compactor`,
+		`component=compactor level=info msg="instance removed from the KV store" ring=compactor`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
@@ -1530,6 +1552,13 @@ func TestMultitenantCompactor_ShouldFailCompactionOnTimeout(t *testing.T) {
 	assert.ElementsMatch(t, []string{
 		`level=info component=compactor msg="waiting until compactor is ACTIVE in the ring"`,
 		`level=error component=compactor msg="compactor failed to become ACTIVE in the ring" err="context deadline exceeded"`,
+		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected.
+		`component=compactor level=info msg="ring doesn't exist in KV store yet"`,
+		`component=compactor level=info msg="not loading tokens from file, tokens file path is empty"`,
+		`component=compactor level=info msg="instance not found in ring, adding with no tokens" ring=compactor`,
+		`component=compactor level=debug msg="JoinAfter expired" ring=compactor`,
+		`component=compactor level=info msg="auto-joining cluster after timeout" ring=compactor`,
+		`component=compactor level=info msg="observing tokens before going ACTIVE" ring=compactor`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
 }
 

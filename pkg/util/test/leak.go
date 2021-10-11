@@ -17,6 +17,10 @@ func VerifyNoLeak(t testing.TB) {
 		// it gets closed when we close the BucketStore. However, we currently don't close BucketStore
 		// on store-gateway termination so it never gets terminated.
 		goleak.IgnoreTopFunction("github.com/thanos-io/thanos/pkg/block/indexheader.NewReaderPool.func1"),
+
+		// In getting rid of the global prometheus.Desc metrics in ring, we had to add a ticker to collect metrics.
+		// That metrics collection ticker is causing us to think it's a leak as it's a floating go routine.
+		goleak.IgnoreTopFunction("github.com/grafana/dskit/ring.(*Ring).starting.func1"),
 	}
 
 	// Run it as a cleanup function so that "last added, first called" ordering execution is guaranteed.

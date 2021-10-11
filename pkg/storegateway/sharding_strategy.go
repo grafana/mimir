@@ -16,7 +16,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
+
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 

@@ -36,11 +36,12 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/ring/client"
+
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -415,18 +416,14 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 		delegate = ring.NewLeaveOnStoppingDelegate(delegate, am.logger)
 		delegate = ring.NewAutoForgetDelegate(am.cfg.ShardingRing.HeartbeatTimeout*ringAutoForgetUnhealthyPeriods, delegate, am.logger)
 
-		am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, am.registry)
+		am.ringLifecycler, err = ring.NewBasicLifecycler(lifecyclerCfg, RingNameForServer, RingKey, ringStore, delegate, am.logger, prometheus.WrapRegistererWithPrefix("cortex_", am.registry))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler")
 		}
 
-		am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy())
+		am.ring, err = ring.NewWithStoreClientAndStrategy(am.cfg.ShardingRing.ToRingConfig(), RingNameForServer, RingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", am.registry), am.logger)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to initialize Alertmanager's ring")
-		}
-
-		if am.registry != nil {
-			am.registry.MustRegister(am.ring)
 		}
 
 		am.grpcServer = server.NewServer(&handlerForGRPCServer{am: am})

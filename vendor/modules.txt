@@ -277,25 +277,30 @@ github.com/googleapis/gax-go/v2/apierror/internal/proto
 # github.com/gorilla/mux v1.8.0
 ## explicit
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20210920134249-30d62063c034
+# github.com/grafana/dskit v0.0.0-20211007183133-4c566019f311
 ## explicit
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/closer
 github.com/grafana/dskit/concurrency
+github.com/grafana/dskit/crypto/tls
 github.com/grafana/dskit/flagext
 github.com/grafana/dskit/kv
 github.com/grafana/dskit/kv/codec
 github.com/grafana/dskit/kv/consul
 github.com/grafana/dskit/kv/etcd
-github.com/grafana/dskit/kv/kvtls
 github.com/grafana/dskit/kv/memberlist
 github.com/grafana/dskit/math
 github.com/grafana/dskit/middleware
 github.com/grafana/dskit/modules
 github.com/grafana/dskit/multierror
+github.com/grafana/dskit/ring
+github.com/grafana/dskit/ring/client
+github.com/grafana/dskit/ring/shard
+github.com/grafana/dskit/ring/util
 github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/services
 github.com/grafana/dskit/test
+github.com/grafana/dskit/time
 # github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 ## explicit
 github.com/grpc-ecosystem/go-grpc-middleware
@@ -634,7 +639,7 @@ github.com/uber/jaeger-client-go/utils
 # github.com/uber/jaeger-lib v2.4.1+incompatible
 github.com/uber/jaeger-lib/metrics
 github.com/uber/jaeger-lib/metrics/prometheus
-# github.com/weaveworks/common v0.0.0-20210901124008-1fa3f9fa874c
+# github.com/weaveworks/common v0.0.0-20210913144402-035033b78a78
 ## explicit
 github.com/weaveworks/common/aws
 github.com/weaveworks/common/errors

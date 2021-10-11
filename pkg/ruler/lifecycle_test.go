@@ -12,14 +12,16 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/testutils"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // TestRulerShutdown tests shutting down ruler unregisters correctly
@@ -44,7 +46,7 @@ func TestRulerShutdown(t *testing.T) {
 
 	// Wait until the tokens are registered in the ring
 	test.Poll(t, 100*time.Millisecond, config.Ring.NumTokens, func() interface{} {
-		return testutils.NumTokens(ringStore, "localhost", ring.RulerRingKey)
+		return numTokens(ringStore, "localhost", ring.RulerRingKey)
 	})
 
 	require.Equal(t, ring.ACTIVE, r.lifecycler.GetState())
@@ -53,7 +55,7 @@ func TestRulerShutdown(t *testing.T) {
 
 	// Wait until the tokens are unregistered from the ring
 	test.Poll(t, 100*time.Millisecond, 0, func() interface{} {
-		return testutils.NumTokens(ringStore, "localhost", ring.RulerRingKey)
+		return numTokens(ringStore, "localhost", ring.RulerRingKey)
 	})
 }
 
@@ -111,4 +113,19 @@ func generateSortedTokens(numTokens int) ring.Tokens {
 	})
 
 	return ring.Tokens(tokens)
+}
+
+// numTokens determines the number of tokens owned by the specified
+// address
+func numTokens(c kv.Client, name, ringKey string) int {
+	ringDesc, err := c.Get(context.Background(), ringKey)
+
+	// The ringDesc may be null if the lifecycler hasn't stored the ring
+	// to the KVStore yet.
+	if ringDesc == nil || err != nil {
+		level.Error(util_log.Logger).Log("msg", "error reading consul", "err", err)
+		return 0
+	}
+	rd := ringDesc.(*ring.Desc)
+	return len(rd.Ingesters[name].Tokens)
 }

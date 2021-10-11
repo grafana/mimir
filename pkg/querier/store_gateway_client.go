@@ -16,7 +16,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 
-	"github.com/grafana/mimir/pkg/ring/client"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/tls"

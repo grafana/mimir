@@ -16,8 +16,11 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/common/model"
@@ -31,9 +34,8 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/testutils"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -89,7 +91,7 @@ func TestIngesterRestart(t *testing.T) {
 	}
 
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return testutils.NumTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
+		return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
 	})
 
 	{
@@ -102,7 +104,7 @@ func TestIngesterRestart(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-		return testutils.NumTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
+		return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
 	})
 }
 
@@ -117,7 +119,7 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 
 			// Make sure the ingester has been added to the ring.
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return testutils.NumTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
+				return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
 			})
 
 			recorder := httptest.NewRecorder()
@@ -126,7 +128,7 @@ func TestIngester_ShutdownHandler(t *testing.T) {
 
 			// Make sure the ingester has been removed from the ring even when UnregisterFromRing is false.
 			test.Poll(t, 100*time.Millisecond, 0, func() interface{} {
-				return testutils.NumTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
+				return numTokens(config.LifecyclerConfig.RingConfig.KVStore.Mock, "localhost", ring.IngesterRingKey)
 			})
 		})
 	}
@@ -377,4 +379,19 @@ func TestIngesterFlush(t *testing.T) {
 			},
 		},
 	}, res)
+}
+
+// numTokens determines the number of tokens owned by the specified
+// address
+func numTokens(c kv.Client, name, ringKey string) int {
+	ringDesc, err := c.Get(context.Background(), ringKey)
+
+	// The ringDesc may be null if the lifecycler hasn't stored the ring
+	// to the KVStore yet.
+	if ringDesc == nil || err != nil {
+		level.Error(util_log.Logger).Log("msg", "error reading consul", "err", err)
+		return 0
+	}
+	rd := ringDesc.(*ring.Desc)
+	return len(rd.Ingesters[name].Tokens)
 }

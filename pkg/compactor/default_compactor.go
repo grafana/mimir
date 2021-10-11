@@ -11,7 +11,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
 )
 
 func defaultBlocksGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {

@@ -33,8 +33,9 @@ import (
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/dskit/ring"
+
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -300,10 +301,6 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		if err = enableSharding(ruler, ringStore); err != nil {
 			return nil, errors.Wrap(err, "setup ruler sharding ring")
 		}
-
-		if reg != nil {
-			reg.MustRegister(ruler.ring)
-		}
 	}
 
 	ruler.Service = services.NewBasicService(ruler.starting, ruler.run, ruler.stopping)
@@ -328,7 +325,7 @@ func enableSharding(r *Ruler, ringStore kv.Client) error {
 		return errors.Wrap(err, "failed to initialize ruler's lifecycler")
 	}
 
-	r.ring, err = ring.NewWithStoreClientAndStrategy(r.cfg.Ring.ToRingConfig(), rulerRingName, ring.RulerRingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy())
+	r.ring, err = ring.NewWithStoreClientAndStrategy(r.cfg.Ring.ToRingConfig(), rulerRingName, ring.RulerRingKey, ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), prometheus.WrapRegistererWithPrefix("cortex_", r.registry), r.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize ruler's ring")
 	}

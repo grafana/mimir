@@ -14,7 +14,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 

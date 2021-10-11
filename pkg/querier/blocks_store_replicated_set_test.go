@@ -23,7 +23,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
+
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -346,7 +347,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor(t *testing.T) {
 			flagext.DefaultValues(&ringCfg)
 			ringCfg.ReplicationFactor = testData.replicationFactor
 
-			r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy())
+			r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			limits := &blocksStoreLimitsMock{
@@ -409,7 +410,7 @@ func TestBlocksStoreReplicationSet_GetClientsFor_ShouldSupportRandomLoadBalancin
 	flagext.DefaultValues(&ringCfg)
 	ringCfg.ReplicationFactor = numInstances
 
-	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy())
+	r, err := ring.NewWithStoreClientAndStrategy(ringCfg, "test", "test", ringStore, ring.NewIgnoreUnhealthyInstancesReplicationStrategy(), nil, log.NewNopLogger())
 	require.NoError(t, err)
 
 	limits := &blocksStoreLimitsMock{}
