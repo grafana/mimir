@@ -9,9 +9,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -865,6 +867,113 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	sort.Strings(values)
 
 	return values, nil
+}
+
+// LabelValuesCardinality queries ingesters for label values cardinality for a set of labelNames
+func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, map[string]map[string]uint64, error) {
+	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	globalLabelValuesCardinality := &labelValuesCardinalityData{
+		cardinalityMap: map[string]map[string]uint64{},
+		lock:           sync.Mutex{},
+	}
+
+	labelValuesReq, err := ingester_client.ToLabelValuesCardinalityRequest(labelNames, matchers)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	userStatsRequest := &ingester_client.UserStatsRequest{}
+
+	userStats, err := d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+		stream, err := client.LabelValuesCardinality(ctx, labelValuesReq)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = stream.CloseSend() }()
+		err = globalLabelValuesCardinality.processLabelValuesCardinalityMessages(stream)
+		if err != nil {
+			return nil, err
+		}
+
+		return client.UserStats(ctx, userStatsRequest)
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	// Accumulate series count from all ingesters and divide by ingester's replication factor
+	var seriesCountTotal uint64 = 0
+	for _, resp := range userStats {
+		r := resp.(*ingester_client.UserStatsResponse)
+		seriesCountTotal += r.NumSeries
+	}
+	seriesCountTotal /= uint64(d.ingestersRing.ReplicationFactor())
+
+	// Adjust label values' series count based on the ingester's replication factor
+	for labelName, labelValueSeriesCountMap := range globalLabelValuesCardinality.cardinalityMap {
+		for labelValue, seriesCount := range labelValueSeriesCountMap {
+			globalLabelValuesCardinality.cardinalityMap[labelName][labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
+		}
+	}
+
+	return seriesCountTotal, globalLabelValuesCardinality.cardinalityMap, nil
+}
+
+type labelValuesCardinalityData struct {
+	cardinalityMap map[string]map[string]uint64
+	lock           sync.Mutex
+}
+
+func (globalLabelValuesCardinality *labelValuesCardinalityData) processLabelValuesCardinalityMessages(
+	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
+	for {
+		message, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+		globalLabelValuesCardinality.processLabelValuesCardinalityMessage(message)
+	}
+	return nil
+}
+
+/*
+ * Build a global map from all the responses received from all the ingesters.
+ * Each label name will represent a key on the globalLabelValuesMap which will have as value a second map, containing
+ * as key the label_value and value the respective series_count. This series_count will represent the cumulative result
+ * of all (label_name, label_value) tuples from all ingesters.
+ *
+ * Map: (label_name -> (label_value -> series_count))
+ *
+ * This method is called per each LabelValuesCardinalityResponse consumed from each available ingester
+ */
+func (globalLabelValuesCardinality *labelValuesCardinalityData) processLabelValuesCardinalityMessage(
+	message *ingester_client.LabelValuesCardinalityResponse) {
+
+	globalLabelValuesCardinality.lock.Lock()
+	defer func() { globalLabelValuesCardinality.lock.Unlock() }()
+
+	for _, item := range message.Items {
+		if _, exists := globalLabelValuesCardinality.cardinalityMap[item.LabelName]; !exists {
+			// Label name nonexistent
+			globalLabelValuesCardinality.cardinalityMap[item.LabelName] = map[string]uint64{item.LabelValue: item.SeriesCount}
+		} else {
+			// Label name existent
+			seriesCount, exists := globalLabelValuesCardinality.cardinalityMap[item.LabelName][item.LabelValue]
+			if !exists {
+				// Label value nonexistent
+				globalLabelValuesCardinality.cardinalityMap[item.LabelName][item.LabelValue] = item.SeriesCount
+			} else {
+				// Label value existent - accumulate series_count
+				globalLabelValuesCardinality.cardinalityMap[item.LabelName][item.LabelValue] = seriesCount + item.SeriesCount
+			}
+		}
+	}
 }
 
 // LabelNames returns all of the label names.
