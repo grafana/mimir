@@ -329,7 +329,7 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.New(q.ctx, "blocksStoreQuerier.LabelNames")
+	spanLog, spanCtx := spanlogger.New(q.ctx, q.logger, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -364,7 +364,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.New(q.ctx, "blocksStoreQuerier.LabelValues")
+	spanLog, spanCtx := spanlogger.New(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -403,7 +403,7 @@ func (q *blocksStoreQuerier) Close() error {
 }
 
 func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, spanCtx := spanlogger.New(q.ctx, "blocksStoreQuerier.selectSorted")
+	spanLog, spanCtx := spanlogger.New(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -576,7 +576,7 @@ func (q *blocksStoreQuerier) fetchSeriesFromStores(
 		warnings      = storage.Warnings(nil)
 		queriedBlocks = []ulid.ULID(nil)
 		numChunks     = atomic.NewInt32(0)
-		spanLog       = spanlogger.FromContext(ctx)
+		spanLog       = spanlogger.FromContext(ctx, q.logger)
 		queryLimiter  = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats      = stats.FromContext(ctx)
 	)
@@ -717,7 +717,7 @@ func (q *blocksStoreQuerier) fetchLabelNamesFromStore(
 		nameSets      = [][]string{}
 		warnings      = storage.Warnings(nil)
 		queriedBlocks = []ulid.ULID(nil)
-		spanLog       = spanlogger.FromContext(ctx)
+		spanLog       = spanlogger.FromContext(ctx, q.logger)
 	)
 
 	// Concurrently fetch series from all clients.
@@ -794,7 +794,7 @@ func (q *blocksStoreQuerier) fetchLabelValuesFromStore(
 		valueSets     = [][]string{}
 		warnings      = storage.Warnings(nil)
 		queriedBlocks = []ulid.ULID(nil)
-		spanLog       = spanlogger.FromContext(ctx)
+		spanLog       = spanlogger.FromContext(ctx, q.logger)
 	)
 
 	// Concurrently fetch series from all clients.

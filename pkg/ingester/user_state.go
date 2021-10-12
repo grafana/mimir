@@ -319,7 +319,7 @@ func (u *userState) forSeriesMatching(ctx context.Context, allMatchers []*labels
 	add func(context.Context, model.Fingerprint, *memorySeries) error,
 	send func(context.Context) error, batchSize int,
 ) error {
-	log, ctx := spanlogger.New(ctx, "forSeriesMatching")
+	log, ctx := spanlogger.New(ctx, u.logger, "forSeriesMatching")
 	defer log.Finish()
 
 	filters, matchers := util.SplitFiltersAndMatchers(allMatchers)

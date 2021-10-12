@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/queue"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/grpcutil"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -159,7 +159,7 @@ func (f *Frontend) RoundTripGRPC(ctx context.Context, req *httpgrpc.HTTPRequest)
 	// Propagate trace context in gRPC too - this will be ignored if using HTTP.
 	tracer, span := opentracing.GlobalTracer(), opentracing.SpanFromContext(ctx)
 	if tracer != nil && span != nil {
-		carrier := (*grpcutil.HttpgrpcHeadersCarrier)(req)
+		carrier := (*httpgrpcutil.HttpgrpcHeadersCarrier)(req)
 		err := tracer.Inject(span.Context(), opentracing.HTTPHeaders, carrier)
 		if err != nil {
 			return nil, err

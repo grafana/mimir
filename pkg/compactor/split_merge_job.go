@@ -4,7 +4,6 @@ package compactor
 
 import (
 	"fmt"
-	"hash/fnv"
 	"strings"
 	"time"
 
@@ -43,12 +42,6 @@ func (j *job) shardingKey() string {
 	return fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
 }
 
-func (j *job) hash() uint32 {
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(j.shardingKey()))
-	return hasher.Sum32()
-}
-
 // conflicts returns true if the two jobs cannot be planned at the same time.
 func (j *job) conflicts(other *job) bool {
 	// Never conflict if related to different users or if time ranges don't overlap.
@@ -56,11 +49,13 @@ func (j *job) conflicts(other *job) bool {
 		return false
 	}
 
-	// Blocks with different downsample resolution or external labels are never merged together,
-	// so they can't conflict. Since all blocks within the same job are expected to have the same
+	// Blocks with different downsample resolution or external labels (excluding the shard ID)
+	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		if !labels.Equal(labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels), labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels)) {
+		myLabels := labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(ShardIDLabelName)
+		otherLabels := labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(ShardIDLabelName)
+		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
 		if j.blocksGroup.blocks[0].Thanos.Downsample != other.blocksGroup.blocks[0].Thanos.Downsample {

@@ -15,8 +15,8 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"
-	"github.com/thanos-io/thanos/pkg/runutil"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/chunk"

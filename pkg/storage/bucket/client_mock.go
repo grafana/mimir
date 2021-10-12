@@ -77,6 +77,12 @@ func (m *ClientMock) MockIterWithCallback(prefix string, objects []string, err e
 // Get mocks objstore.Bucket.Get()
 func (m *ClientMock) Get(ctx context.Context, name string) (io.ReadCloser, error) {
 	args := m.Called(ctx, name)
+
+	// Allow to mock the Get() with a function which is called each time.
+	if fn, ok := args.Get(0).(func(ctx context.Context, name string) (io.ReadCloser, error)); ok {
+		return fn(ctx, name)
+	}
+
 	val, err := args.Get(0), args.Error(1)
 	if val == nil {
 		return nil, err
@@ -96,9 +102,8 @@ func (m *ClientMock) MockGet(name, content string, err error) {
 		// Since we return an ReadCloser and it can be consumed only once,
 		// each time the mocked Get() is called we do create a new one, so
 		// that getting the same mocked object twice works as expected.
-		mockedGet := m.On("Get", mock.Anything, name)
-		mockedGet.Run(func(args mock.Arguments) {
-			mockedGet.Return(ioutil.NopCloser(bytes.NewReader([]byte(content))), err)
+		m.On("Get", mock.Anything, name).Return(func(_ context.Context, _ string) (io.ReadCloser, error) {
+			return ioutil.NopCloser(bytes.NewReader([]byte(content))), err
 		})
 	} else {
 		m.On("Exists", mock.Anything, name).Return(false, err)

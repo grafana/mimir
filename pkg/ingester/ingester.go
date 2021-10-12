@@ -36,7 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	logutil "github.com/grafana/mimir/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -707,7 +707,7 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 	// If we have any error with regard to metadata we just log and no-op.
 	// We consider metadata a best effort approach, errors here should not stop processing.
 	if firstMetadataErr != nil {
-		logger := logutil.WithContext(ctx, i.logger)
+		logger := util_log.WithContext(ctx, i.logger)
 		level.Warn(logger).Log("msg", "failed to ingest some metadata", "err", firstMetadataErr)
 	}
 
@@ -800,7 +800,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	spanLog, ctx := spanlogger.New(stream.Context(), "QueryStream")
+	spanLog, ctx := spanlogger.New(stream.Context(), i.logger, "QueryStream")
 	defer spanLog.Finish()
 
 	from, through, matchers, err := client.FromQueryRequest(req)

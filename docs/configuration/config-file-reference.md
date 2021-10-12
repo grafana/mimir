@@ -4185,9 +4185,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [compactor_split_and_merge_shards: <int> | default = 4]
 
 # Max number of compactors that can compact blocks for single tenant. Only used
-# when split-and-merge compaction strategy is in use. 0 to disable the limit.
+# when split-and-merge compaction strategy is in use. 0 to disable the limit and
+# use all compactors.
 # CLI flag: -compactor.compactor-tenant-shard-size
-[compactor_tenant_shard_size: <int> | default = 0]
+[compactor_tenant_shard_size: <int> | default = 1]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings

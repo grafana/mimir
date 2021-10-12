@@ -148,7 +148,7 @@ func NewTripperware(
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
-	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits)}
+	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 	if cfg.AlignQueriesWithStep {
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics), StepAlignMiddleware)
 	}
@@ -178,6 +178,9 @@ func NewTripperware(
 			return nil, nil, errInvalidShardingStorage
 		}
 
+		// Disable concurrency limits for sharded queries.
+		engineOpts.ActiveQueryTracker = nil
+
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics),
@@ -199,7 +202,7 @@ func NewTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		// Finally, if the user selected any query range middleware, stitch it in.
 		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewRoundTripper(next, codec, queryRangeMiddleware...)
+			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
 			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
 				op := "query"
@@ -227,20 +230,21 @@ func NewTripperware(
 }
 
 type roundTripper struct {
-	next    http.RoundTripper
 	handler Handler
 	codec   Codec
 }
 
 // NewRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
 // using the codec to translate requests and responses.
-func NewRoundTripper(next http.RoundTripper, codec Codec, middlewares ...Middleware) http.RoundTripper {
-	transport := roundTripper{
-		next:  next,
+func NewRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
+	return roundTripper{
+		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
+			logger: logger,
+			next:   next,
+			codec:  codec,
+		}),
 		codec: codec,
 	}
-	transport.handler = MergeMiddlewares(middlewares...).Wrap(&transport)
-	return transport
 }
 
 func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -261,8 +265,16 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	return q.codec.EncodeResponse(r.Context(), response)
 }
 
+// roundTripperHandler is a handler that roundtrips requests to next roundtripper.
+// It basically encodes a Request from Handler.Do and decode response from next roundtripper.
+type roundTripperHandler struct {
+	logger log.Logger
+	next   http.RoundTripper
+	codec  Codec
+}
+
 // Do implements Handler.
-func (q roundTripper) Do(ctx context.Context, r Request) (Response, error) {
+func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
 	request, err := q.codec.EncodeRequest(ctx, r)
 	if err != nil {
 		return nil, err
@@ -278,5 +290,5 @@ func (q roundTripper) Do(ctx context.Context, r Request) (Response, error) {
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	return q.codec.DecodeResponse(ctx, response, r)
+	return q.codec.DecodeResponse(ctx, response, r, q.logger)
 }

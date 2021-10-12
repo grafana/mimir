@@ -4,22 +4,18 @@ package compactor
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
-
-	"github.com/grafana/dskit/ring"
 )
 
-func splitAndMergeGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, ring *ring.Ring, instanceAddr string, logger log.Logger, reg prometheus.Registerer) Grouper {
+func splitAndMergeGrouperFactory(ctx context.Context, cfg Config, cfgProvider ConfigProvider, userID string, logger log.Logger, reg prometheus.Registerer) Grouper {
 	return NewSplitAndMergeGrouper(
 		userID,
 		cfg.BlockRanges.ToMilliseconds(),
 		uint32(cfgProvider.CompactorSplitAndMergeShards(userID)),
-		createOwnJobFunc(ring, instanceAddr),
 		logger)
 }
 
@@ -38,26 +34,4 @@ func splitAndMergeCompactorFactory(ctx context.Context, cfg Config, logger log.L
 func configureSplitAndMergeCompactor(cfg *Config) {
 	cfg.BlocksGrouperFactory = splitAndMergeGrouperFactory
 	cfg.BlocksCompactorFactory = splitAndMergeCompactorFactory
-}
-
-func createOwnJobFunc(ring *ring.Ring, instanceAddr string) ownJobFunc {
-	return func(job *job) (bool, error) {
-		// If sharding is disabled it means we're expected to run only 1 replica of the compactor
-		// and so this compactor instance should own all jobs.
-		if ring == nil {
-			return true, nil
-		}
-
-		// Check whether this compactor instance owns the job.
-		rs, err := ring.Get(job.hash(), RingOp, nil, nil, nil)
-		if err != nil {
-			return false, err
-		}
-
-		if len(rs.Instances) != 1 {
-			return false, fmt.Errorf("unexpected number of compactors in the shard (expected 1, got %d)", len(rs.Instances))
-		}
-
-		return rs.Instances[0].Addr == instanceAddr, nil
-	}
 }

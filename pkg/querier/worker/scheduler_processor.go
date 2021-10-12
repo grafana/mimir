@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/grpcclient"
 	dsmiddleware "github.com/grafana/dskit/middleware"
 	"github.com/grafana/dskit/services"
 	otgrpc "github.com/opentracing-contrib/go-grpc"
@@ -30,8 +31,7 @@ import (
 	querier_stats "github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	"github.com/grafana/mimir/pkg/util/grpcclient"
-	"github.com/grafana/mimir/pkg/util/grpcutil"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -137,7 +137,7 @@ func (sp *schedulerProcessor) querierLoop(c schedulerpb.SchedulerForQuerier_Quer
 
 			tracer := opentracing.GlobalTracer()
 			// Ignore errors here. If we cannot get parent span, we just don't create new one.
-			parentSpanContext, _ := grpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
+			parentSpanContext, _ := httpgrpcutil.GetParentSpanForRequest(tracer, request.HttpRequest)
 			if parentSpanContext != nil {
 				queueSpan, spanCtx := opentracing.StartSpanFromContextWithTracer(ctx, tracer, "querier_processor_runRequest", opentracing.ChildOf(parentSpanContext))
 				defer queueSpan.Finish()

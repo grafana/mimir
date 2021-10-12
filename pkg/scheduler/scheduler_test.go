@@ -29,7 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
-	chunk "github.com/grafana/mimir/pkg/util/grpcutil"
+	"github.com/grafana/mimir/pkg/util/httpgrpcutil"
 )
 
 const testMaxOutstandingPerTenant = 5
@@ -252,7 +252,7 @@ func TestTracingContext(t *testing.T) {
 	}
 
 	sp, _ := opentracing.StartSpanFromContext(context.Background(), "client")
-	opentracing.GlobalTracer().Inject(sp.Context(), opentracing.HTTPHeaders, (*chunk.HttpgrpcHeadersCarrier)(req.HttpRequest))
+	opentracing.GlobalTracer().Inject(sp.Context(), opentracing.HTTPHeaders, (*httpgrpcutil.HttpgrpcHeadersCarrier)(req.HttpRequest))
 
 	frontendToScheduler(t, frontendLoop, req)
 
