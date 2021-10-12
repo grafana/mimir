@@ -70,7 +70,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 		{
 			name:             "expected no error if selector is missed",
 			selector:         "",
-			expectedMatchers: []*labels.Matcher{},
+			expectedMatchers: nil,
 		},
 		{
 			name:     "selector with metric name to be parse",
@@ -181,7 +181,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 		{
 			name:                 "expected error if `limit` param is negative",
 			request:              createRequest("/ignored-url?limit=-1", "team-a"),
-			expectedErrorMessage: "limit param can not be less 0",
+			expectedErrorMessage: "limit param can not be less than 0",
 		},
 		{
 			name:                 "expected error if `limit` param is negative",
