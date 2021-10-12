@@ -1575,11 +1575,16 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	})
 }
 
-var pathToBlock = "/Users/vdiachenko/development/block"
-var labelNames = []string{"__name__"}
-var matchers []*labels.Matcher
+const pathToBlockEnv = "BENCH_TSDB_PATH"
 
 func BenchmarkIngester_LabelValuesCardinality_solutions(b *testing.B) {
+	var (
+		labelNames  = []string{"__name__"}
+		pathToBlock = os.Getenv(pathToBlockEnv)
+	)
+	if pathToBlock == "" {
+		b.Skipf("no TSDB path given in environemnt variable %s", pathToBlock)
+	}
 	db, err := tsdb.OpenDBReadOnly(pathToBlock, nil)
 	require.NoError(b, err)
 	blocks, err := db.Blocks()
