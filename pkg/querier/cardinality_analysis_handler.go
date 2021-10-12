@@ -66,7 +66,7 @@ func extractRequestParams(r *http.Request) ([]*labels.Matcher, int, error) {
 func extractSelector(r *http.Request) (matchers []*labels.Matcher, err error) {
 	selectorParams := r.Form["selector"]
 	if len(selectorParams) == 0 {
-		return []*labels.Matcher{}, nil
+		return nil, nil
 	}
 	if len(selectorParams) > 1 {
 		return nil, fmt.Errorf("multiple `selector` params are not allowed")
@@ -88,7 +88,7 @@ func extractLimit(r *http.Request) (limit int, err error) {
 		return 0, err
 	}
 	if limit < minLimit {
-		return 0, fmt.Errorf("limit param can not be less %v", minLimit)
+		return 0, fmt.Errorf("limit param can not be less than %v", minLimit)
 	}
 	if limit > maxLimit {
 		return 0, fmt.Errorf("limit param can not be greater than %v", maxLimit)
