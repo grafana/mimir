@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -23,8 +24,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/logging"
-
-	"github.com/grafana/dskit/ring"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -152,7 +151,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 	var shardingStrategy ShardingStrategy
 
 	if gatewayCfg.ShardingEnabled {
-		lifecyclerCfg, err := gatewayCfg.ShardingRing.ToLifecyclerConfig()
+		lifecyclerCfg, err := gatewayCfg.ShardingRing.ToLifecyclerConfig(logger)
 		if err != nil {
 			return nil, errors.Wrap(err, "invalid ring lifecycler config")
 		}

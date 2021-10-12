@@ -521,7 +521,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	// store-gateways behaves with regards to blocks syncing while other replicas are JOINING.
 
 	// Wait until all the initial store-gateways sees all new store-gateways too.
-	dstest.Poll(t, 30*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
+	dstest.Poll(t, 22*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
 		metrics := initialRegistries.BuildMetricFamiliesPerUser()
 		return metrics.GetSumOfGauges("cortex_ring_members")
 	})
@@ -557,7 +557,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 
 	// At this point the new store-gateways are expected to be ACTIVE in the ring and all the initial
 	// store-gateways should unload blocks they don't own anymore.
-	dstest.Poll(t, 5*time.Second, float64(expectedBlocksLoaded), func() interface{} {
+	dstest.Poll(t, 31*time.Second, float64(expectedBlocksLoaded), func() interface{} {
 		metrics := allRegistries.BuildMetricFamiliesPerUser()
 		return metrics.GetSumOfGauges("cortex_bucket_store_blocks_loaded")
 	})

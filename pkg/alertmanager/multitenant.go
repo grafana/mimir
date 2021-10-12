@@ -405,7 +405,7 @@ func createMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, fallbackC
 	}
 
 	if cfg.ShardingEnabled {
-		lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig()
+		lifecyclerCfg, err := am.cfg.ShardingRing.ToLifecyclerConfig(am.logger)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to initialize Alertmanager's lifecycler config")
 		}

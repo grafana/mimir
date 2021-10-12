@@ -277,7 +277,7 @@ github.com/googleapis/gax-go/v2/apierror/internal/proto
 # github.com/gorilla/mux v1.8.0
 ## explicit
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20211011144203-3a88ec0b675f
+# github.com/grafana/dskit v0.0.0-20211012204420-8769f1bfe7aa
 ## explicit
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/closer

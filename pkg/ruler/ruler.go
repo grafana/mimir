@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/kv"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,8 +34,6 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/weaveworks/common/user"
 	"golang.org/x/sync/errgroup"
-
-	"github.com/grafana/dskit/ring"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -308,7 +307,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 }
 
 func enableSharding(r *Ruler, ringStore kv.Client) error {
-	lifecyclerCfg, err := r.cfg.Ring.ToLifecyclerConfig()
+	lifecyclerCfg, err := r.cfg.Ring.ToLifecyclerConfig(r.logger)
 	if err != nil {
 		return errors.Wrap(err, "failed to initialize ruler's lifecycler config")
 	}
