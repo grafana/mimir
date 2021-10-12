@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	query        = "/api/v1/query_range?end=1536716898&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
+	query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
 	responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
 )
 
@@ -33,7 +33,7 @@ var (
 	parsedRequest = &PrometheusRequest{
 		Path:  "/api/v1/query_range",
 		Start: 1536673680 * 1e3,
-		End:   1536716898 * 1e3,
+		End:   1536716880 * 1e3,
 		Step:  120 * 1e3,
 		Query: "sum(container_memory_rss) by (namespace)",
 	}
@@ -125,7 +125,7 @@ func TestShouldCache(t *testing.T) {
 		// Tests only for cacheControlHeader
 		{
 			name:    "does not contain the cacheControl header",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -138,7 +138,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "does contain the cacheControl header which has the value",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -151,7 +151,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "cacheControl header contains extra values but still good",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -164,13 +164,13 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:     "broken response",
-			request:  &PrometheusRequest{Query: "metric"},
+			request:  &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:    "nil headers",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{nil},
 			}),
@@ -178,7 +178,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "had cacheControl header but no values",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{{Name: cacheControlHeader}},
 			}),
@@ -188,7 +188,7 @@ func TestShouldCache(t *testing.T) {
 		// Tests only for cacheGenNumber header
 		{
 			name:    "cacheGenNumber not set in both header and store",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -201,7 +201,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "cacheGenNumber set in store but not in header",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -215,7 +215,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "cacheGenNumber set in header but not in store",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -228,7 +228,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "cacheGenNumber in header and store are the same",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -242,7 +242,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "inconsistency between cacheGenNumber in header and store",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -256,7 +256,7 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:    "cacheControl header says not to catch and cacheGenNumbers in store and headers have consistency",
-			request: &PrometheusRequest{Query: "metric"},
+			request: &PrometheusRequest{Query: "metric", Start: 10, End: 20, Step: 5},
 			input: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
@@ -275,111 +275,111 @@ func TestShouldCache(t *testing.T) {
 		// @ modifier on vector selectors.
 		{
 			name:     "@ modifier on vector selector, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 123", End: 125000},
+			request:  &PrometheusRequest{Query: "metric @ 123", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:     "@ modifier on vector selector, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 127", End: 125000},
+			request:  &PrometheusRequest{Query: "metric @ 127", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on vector selector, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 151", End: 200000},
+			request:  &PrometheusRequest{Query: "metric @ 151", End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on vector selector, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 151", End: 125000},
+			request:  &PrometheusRequest{Query: "metric @ 151", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on vector selector with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ start()", Start: 100000, End: 200000},
+			request:  &PrometheusRequest{Query: "metric @ start()", Start: 100000, End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:     "@ modifier on vector selector with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ end()", Start: 100000, End: 200000},
+			request:  &PrometheusRequest{Query: "metric @ end()", Start: 100000, End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		// @ modifier on matrix selectors.
 		{
 			name:     "@ modifier on matrix selector, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 123)", End: 125000},
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 123)", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:     "@ modifier on matrix selector, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 127)", End: 125000},
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 127)", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on matrix selector, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 200000},
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on matrix selector, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 125000},
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on matrix selector with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ start())", Start: 100000, End: 200000},
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ start())", Start: 100000, End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:     "@ modifier on matrix selector with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000},
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		// @ modifier on subqueries.
 		{
 			name:     "@ modifier on subqueries, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 123)", End: 125000},
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 123)", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:     "@ modifier on subqueries, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000},
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on subqueries, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000},
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on subqueries, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000},
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
 		{
 			name:     "@ modifier on subqueries with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ start())", Start: 100000, End: 200000},
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ start())", Start: 100000, End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
 			name:     "@ modifier on subqueries with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000},
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
