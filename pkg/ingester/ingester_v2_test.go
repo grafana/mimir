@@ -1558,28 +1558,21 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	ing := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
 
 	ctx := user.InjectOrgID(context.Background(), userID)
-	s := &mockLabelValuesCardinalityServer{context: ctx}
 
-	req := &client.LabelValuesCardinalityRequest{
-		LabelNames: []string{labels.MetricName},
-		Matchers: []*client.LabelMatcher{
-			{Type: client.EQUAL, Name: "label_8", Value: "8"},
-		},
-	}
-	b.Run("label values cardinality", func(b *testing.B) {
-		// Run benchmarks
-		for i := 0; i < b.N; i++ {
-			err := ing.LabelValuesCardinality(req, s)
-			require.NoError(b, err)
-		}
-	})
+	db, err := ing.getTSDBFromContext(ctx)
+	require.NoError(b, err)
+
+	idx, err := db.Head().Index()
+	require.NoError(b, err)
+	b.Cleanup(func() { _ = idx.Close() })
+
+	benchLabelValuesCardinalitySolutions(b, idx)
 }
 
 const pathToBlockEnv = "BENCH_TSDB_PATH"
 
-func BenchmarkIngester_LabelValuesCardinality_solutions(b *testing.B) {
+func BenchmarkIngester_LabelValuesCardinalityRealTSDB(b *testing.B) {
 	var (
-		labelNames  = []string{"__name__"}
 		pathToBlock = os.Getenv(pathToBlockEnv)
 	)
 	if pathToBlock == "" {
@@ -1591,28 +1584,71 @@ func BenchmarkIngester_LabelValuesCardinality_solutions(b *testing.B) {
 	require.NoError(b, err)
 	idx, err := blocks[0].Index()
 	require.NoError(b, err)
-	ctx := user.InjectOrgID(context.Background(), userID)
-	idxReader := labelValuesCardinalityIndexReader{
-		IndexReader:         idx,
+
+	benchLabelValuesCardinalitySolutions(b, idx)
+}
+
+func benchLabelValuesCardinalitySolutions(b *testing.B, idxReader tsdb.IndexReader) {
+	var (
+		ctx        = user.InjectOrgID(context.Background(), userID)
+		labelNames = []string{"__name__"}
+	)
+
+	idxPostingsReader := labelValuesCardinalityIndexReader{
+		IndexReader:         idxReader,
 		PostingsForMatchers: tsdb.PostingsForMatchers,
 	}
 
-	b.Run("solution - 1. one posting per label value", func(b *testing.B) {
-		// Run benchmarks
-		for i := 0; i < b.N; i++ {
-			s := &mockLabelValuesCardinalityServer{context: ctx}
-			err := labelValuesCardinality(idxReader, labelNames, matchers, s)
-			require.NoError(b, err)
-		}
-	})
-	b.Run("solution - 2. one posting per label name", func(b *testing.B) {
-		// Run benchmarks
-		for i := 0; i < b.N; i++ {
-			s := &mockLabelValuesCardinalityServer{context: ctx}
-			err := labelValuesCardinalityV2(idxReader, labelNames, matchers, s)
-			require.NoError(b, err)
-		}
-	})
+	for _, matchers := range []struct {
+		name string
+		m    []*labels.Matcher
+	}{
+		{
+			name: "no matchers",
+		},
+		{
+			name: "cheap matcher",
+			m: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "job", "prometheus"),
+			},
+		},
+		{
+			name: "regex matcher",
+			m: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotRegexp, "job", "a.+"),
+			},
+		},
+	} {
+		b.Run(matchers.name, func(b *testing.B) {
+			b.Run("implementation v1 - one posting per label value", func(b *testing.B) {
+				b.ReportAllocs()
+				// Run benchmarks
+				for i := 0; i < b.N; i++ {
+					s := &mockLabelValuesCardinalityServer{context: ctx}
+					err := labelValuesCardinality(idxPostingsReader, labelNames, matchers.m, s)
+					require.NoError(b, err)
+				}
+			})
+			b.Run("implementation v2 - one posting per label name", func(b *testing.B) {
+				b.ReportAllocs()
+				// Run benchmarks
+				for i := 0; i < b.N; i++ {
+					s := &mockLabelValuesCardinalityServer{context: ctx}
+					err := labelValuesCardinalityV2(idxPostingsReader, labelNames, matchers.m, s)
+					require.NoError(b, err)
+				}
+			})
+			b.Run("implementation v3 - clone posting", func(b *testing.B) {
+				b.ReportAllocs()
+				// Run benchmarks
+				for i := 0; i < b.N; i++ {
+					s := &mockLabelValuesCardinalityServer{context: ctx}
+					err := labelValuesCardinalityV3(idxPostingsReader, labelNames, matchers.m, s)
+					require.NoError(b, err)
+				}
+			})
+		})
+	}
 }
 
 type series struct {
