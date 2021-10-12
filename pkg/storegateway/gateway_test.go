@@ -453,7 +453,7 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 		overrides, err := validation.NewOverrides(limits, nil)
 		require.NoError(t, err)
 
-		reg := prometheus.NewRegistry()
+		reg := prometheus.NewPedanticRegistry()
 		g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, ringStore, overrides, mockLoggingLevel(), log.NewNopLogger(), reg)
 		require.NoError(t, err)
 
