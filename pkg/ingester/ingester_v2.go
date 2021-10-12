@@ -1336,7 +1336,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 		return err
 	}
 
-	spanlog, ctx := spanlogger.New(stream.Context(), i.logger, "v2QueryStream")
+	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "v2QueryStream")
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)

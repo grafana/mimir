@@ -296,7 +296,7 @@ func (u *BucketStores) syncUsersBlocks(ctx context.Context, f func(context.Conte
 
 // Series makes a series request to the underlying user bucket store.
 func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_SeriesServer) error {
-	spanLog, spanCtx := spanlogger.New(srv.Context(), u.logger, "BucketStores.Series")
+	spanLog, spanCtx := spanlogger.NewWithLogger(srv.Context(), u.logger, "BucketStores.Series")
 	defer spanLog.Span.Finish()
 
 	userID := getUserIDFromGRPCContext(spanCtx)
@@ -317,7 +317,7 @@ func (u *BucketStores) Series(req *storepb.SeriesRequest, srv storepb.Store_Seri
 
 // LabelNames implements the Storegateway proto service.
 func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, "BucketStores.LabelNames")
+	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelNames")
 	defer spanLog.Span.Finish()
 
 	userID := getUserIDFromGRPCContext(spanCtx)
@@ -335,7 +335,7 @@ func (u *BucketStores) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 
 // LabelValues implements the Storegateway proto service.
 func (u *BucketStores) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
-	spanLog, spanCtx := spanlogger.New(ctx, u.logger, "BucketStores.LabelValues")
+	spanLog, spanCtx := spanlogger.NewWithLogger(ctx, u.logger, "BucketStores.LabelValues")
 	defer spanLog.Span.Finish()
 
 	userID := getUserIDFromGRPCContext(spanCtx)

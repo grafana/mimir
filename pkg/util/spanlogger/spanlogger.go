@@ -9,6 +9,7 @@ import (
 	"github.com/grafana/dskit/spanlogger"
 
 	"github.com/grafana/mimir/pkg/tenant"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 const (
@@ -21,7 +22,12 @@ type SpanLogger = spanlogger.SpanLogger
 
 // New makes a new SpanLogger with a log.Logger to send logs to. The provided context will have the logger attached
 // to it and can be retrieved with FromContext.
-func New(ctx context.Context, logger log.Logger, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
+func New(ctx context.Context, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
+	return spanlogger.New(ctx, util_log.Logger, method, tenant.DefaultResolver, kvps...)
+}
+
+// NewWithLogger is like New but allows to pass a logger.
+func NewWithLogger(ctx context.Context, logger log.Logger, method string, kvps ...interface{}) (*SpanLogger, context.Context) {
 	return spanlogger.New(ctx, logger, method, tenant.DefaultResolver, kvps...)
 }
 

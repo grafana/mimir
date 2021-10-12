@@ -800,7 +800,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	spanLog, ctx := spanlogger.New(stream.Context(), i.logger, "QueryStream")
+	spanLog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "QueryStream")
 	defer spanLog.Finish()
 
 	from, through, matchers, err := client.FromQueryRequest(req)

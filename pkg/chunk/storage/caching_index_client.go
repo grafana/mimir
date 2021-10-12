@@ -20,7 +20,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
 	"github.com/grafana/mimir/pkg/tenant"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -245,7 +244,7 @@ func (s *cachingIndexClient) cacheStore(ctx context.Context, keys []string, batc
 }
 
 func (s *cachingIndexClient) cacheFetch(ctx context.Context, keys []string) (batches []ReadBatch, missed []string) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "cachingIndexClient.cacheFetch")
+	log, ctx := spanlogger.New(ctx, "cachingIndexClient.cacheFetch")
 	defer log.Finish()
 
 	cacheGets.Add(float64(len(keys)))

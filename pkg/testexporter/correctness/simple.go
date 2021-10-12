@@ -97,7 +97,7 @@ func (tc *simpleTestCase) ExpectedValueAt(t time.Time) float64 {
 }
 
 func (tc *simpleTestCase) Query(ctx context.Context, client v1.API, selectors string, start time.Time, duration time.Duration) ([]model.SamplePair, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "simpleTestCase.Query")
+	log, ctx := spanlogger.New(ctx, "simpleTestCase.Query")
 	defer log.Finish()
 
 	metricName := prometheus.BuildFQName(namespace, subsystem, tc.name)
