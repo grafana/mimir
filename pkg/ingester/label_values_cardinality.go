@@ -144,12 +144,19 @@ func countLabelValueSeries(
 	idxReader labelValuesCardinalityIndexReader,
 	labelValueMatchers []*labels.Matcher,
 ) (uint64, error) {
-	var count uint64
 
 	p, err := idxReader.PostingsForMatchers(idxReader.IndexReader, labelValueMatchers...)
 	if err != nil {
 		return 0, err
 	}
+	return countPostings(p)
+}
+
+func countPostings(
+	p index.Postings,
+) (uint64, error) {
+	var count uint64
+
 	for p.Next() {
 		count++
 	}
@@ -157,4 +164,63 @@ func countLabelValueSeries(
 		return 0, p.Err()
 	}
 	return count, nil
+}
+
+func labelValuesCardinalityV3(
+	idxReader labelValuesCardinalityIndexReader,
+	lbNames []string,
+	matchers []*labels.Matcher,
+	srv client.Ingester_LabelValuesCardinalityServer,
+) error {
+	resp := client.LabelValuesCardinalityResponse{}
+	baseSize := resp.Size()
+	respSize := baseSize
+
+	pMatchersRaw, err := idxReader.PostingsForMatchers(idxReader.IndexReader, matchers...)
+	if err != nil {
+		return err
+	}
+
+	pMatchers := index.NewPostingsCloner(pMatchersRaw)
+
+	for _, lbName := range lbNames {
+		// Obtain all values for current label name.
+		lbValues, err := idxReader.LabelValues(lbName, matchers...)
+		if err != nil {
+			return err
+		}
+		// For each value count total number of series storing the result into cardinality response.
+		for _, lbValue := range lbValues {
+			p, err := idxReader.PostingsForMatchers(idxReader, labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue))
+			if err != nil {
+			}
+
+			// Get total series count applying label matchers.
+			seriesCount, err := countPostings(index.Intersect(p, pMatchers.Clone()))
+			if err != nil {
+				return err
+			}
+			item := &client.LabelValueCardinality{
+				LabelName:   lbName,
+				LabelValue:  lbValue,
+				SeriesCount: seriesCount,
+			}
+			resp.Items = append(resp.Items, item)
+
+			// Flush the response when reached message threshold.
+			respSize += item.Size()
+			if respSize >= labelValuesCardinalityTargetSizeBytes {
+				if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+					return err
+				}
+				resp.Items = resp.Items[:0]
+				respSize = baseSize
+			}
+		}
+	}
+	// Send response in case nothing has been previously sent or there are pending items.
+	if len(resp.Items) > 0 {
+		return client.SendLabelValuesCardinalityResponse(srv, &resp)
+	}
+	return nil
 }
