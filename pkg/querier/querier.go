@@ -264,7 +264,7 @@ type querier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.New(q.ctx, q.logger, "querier.Select")
+	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "querier.Select")
 	defer log.Span.Finish()
 
 	if sp != nil {

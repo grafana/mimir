@@ -155,7 +155,7 @@ func (c *store) Put(ctx context.Context, chunks []Chunk) error {
 
 // PutOne implements Store
 func (c *store) PutOne(ctx context.Context, from, through model.Time, chunk Chunk) error {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.PutOne")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.PutOne")
 	defer log.Finish()
 	chunks := []Chunk{chunk}
 
@@ -205,7 +205,7 @@ func (c *store) calculateIndexEntries(userID string, from, through model.Time, c
 
 // Get implements Store
 func (c *store) Get(ctx context.Context, userID string, from, through model.Time, allMatchers ...*labels.Matcher) ([]Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.Get")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.Get")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "matchers", len(allMatchers))
 
@@ -227,7 +227,7 @@ func (c *store) GetChunkRefs(ctx context.Context, userID string, from, through m
 
 // LabelValuesForMetricName retrieves all label values for a single label name and metric name.
 func (c *baseStore) LabelValuesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName, labelName string) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.LabelValues")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.LabelValues")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "metricName", metricName, "labelName", labelName)
 
@@ -261,7 +261,7 @@ func (c *baseStore) LabelValuesForMetricName(ctx context.Context, userID string,
 
 // LabelNamesForMetricName retrieves all label names for a metric name.
 func (c *store) LabelNamesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName string) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.LabelNamesForMetricName")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.LabelNamesForMetricName")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "metricName", metricName)
 
@@ -294,7 +294,7 @@ func (c *store) LabelNamesForMetricName(ctx context.Context, userID string, from
 
 func (c *baseStore) validateQueryTimeRange(ctx context.Context, userID string, from *model.Time, through *model.Time) (bool, error) {
 	//nolint:ineffassign,staticcheck //Leaving ctx even though we don't currently use it, we want to make it available for when we might need it and hopefully will ensure us using the correct context at that time
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "store.validateQueryTimeRange")
+	log, ctx := spanlogger.New(ctx, "store.validateQueryTimeRange")
 	defer log.Span.Finish()
 
 	if *through < *from {
@@ -324,7 +324,7 @@ func (c *baseStore) validateQueryTimeRange(ctx context.Context, userID string, f
 }
 
 func (c *baseStore) validateQuery(ctx context.Context, userID string, from *model.Time, through *model.Time, matchers []*labels.Matcher) (string, []*labels.Matcher, bool, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "store.validateQuery")
+	log, ctx := spanlogger.New(ctx, "store.validateQuery")
 	defer log.Span.Finish()
 
 	shortcut, err := c.validateQueryTimeRange(ctx, userID, from, through)
@@ -345,7 +345,7 @@ func (c *baseStore) validateQuery(ctx context.Context, userID string, from *mode
 }
 
 func (c *store) getMetricNameChunks(ctx context.Context, userID string, from, through model.Time, allMatchers []*labels.Matcher, metricName string) ([]Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.getMetricNameChunks")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.getMetricNameChunks")
 	defer log.Finish()
 	level.Debug(log).Log("from", from, "through", through, "metricName", metricName, "matchers", len(allMatchers))
 
@@ -380,7 +380,7 @@ func (c *store) getMetricNameChunks(ctx context.Context, userID string, from, th
 }
 
 func (c *store) lookupChunksByMetricName(ctx context.Context, userID string, from, through model.Time, matchers []*labels.Matcher, metricName string) ([]Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.lookupChunksByMetricName")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.lookupChunksByMetricName")
 	defer log.Finish()
 
 	// Just get chunks for metric if there are no matchers
@@ -448,7 +448,7 @@ func (c *store) lookupChunksByMetricName(ctx context.Context, userID string, fro
 
 func (c *baseStore) lookupIdsByMetricNameMatcher(ctx context.Context, from, through model.Time, userID, metricName string, matcher *labels.Matcher) ([]string, error) {
 	formattedMatcher := formatMatcher(matcher)
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "Store.lookupIdsByMetricNameMatcher", "metricName", metricName, "matcher", formattedMatcher)
+	log, ctx := spanlogger.New(ctx, "Store.lookupIdsByMetricNameMatcher", "metricName", metricName, "matcher", formattedMatcher)
 	defer log.Span.Finish()
 
 	var err error
@@ -498,7 +498,7 @@ func formatMatcher(matcher *labels.Matcher) string {
 }
 
 func (c *baseStore) lookupEntriesByQueries(ctx context.Context, queries []IndexQuery) ([]IndexEntry, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "store.lookupEntriesByQueries")
+	log, ctx := spanlogger.New(ctx, "store.lookupEntriesByQueries")
 	defer log.Span.Finish()
 
 	// Nothing to do if there are no queries.

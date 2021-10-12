@@ -12,7 +12,6 @@ import (
 	otlog "github.com/opentracing/opentracing-go/log"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -26,7 +25,7 @@ var decodeContextPool = sync.Pool{
 
 // GetParallelChunks fetches chunks in parallel (up to maxParallel).
 func GetParallelChunks(ctx context.Context, chunks []chunk.Chunk, f func(context.Context, *chunk.DecodeContext, chunk.Chunk) (chunk.Chunk, error)) ([]chunk.Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "GetParallelChunks")
+	log, ctx := spanlogger.New(ctx, "GetParallelChunks")
 	defer log.Finish()
 	log.LogFields(otlog.Int("chunks requested", len(chunks)))
 

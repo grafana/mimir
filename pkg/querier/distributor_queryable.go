@@ -92,7 +92,7 @@ type distributorQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.New(q.ctx, q.logger, "distributorQuerier.Select")
+	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
 	defer log.Span.Finish()
 
 	// Kludge: Prometheus passes nil SelectParams if it is doing a 'series' operation,
@@ -195,7 +195,7 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 }
 
 func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.New(q.ctx, q.logger, "distributorQuerier.LabelNames")
+	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer log.Span.Finish()
 
 	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
@@ -210,7 +210,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 // this is used when the LabelNames with matchers feature is first deployed, and some ingesters may have not been updated yet, so they could be ignoring
 // the matchers, leading to wrong results.
 func (q *distributorQuerier) legacyLabelNamesWithMatchersThroughMetricsCall(ctx context.Context, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.New(ctx, q.logger, "distributorQuerier.legacyLabelNamesWithMatchersThroughMetricsCall")
+	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.legacyLabelNamesWithMatchersThroughMetricsCall")
 	defer log.Span.Finish()
 	ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
 	if err != nil {

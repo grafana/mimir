@@ -21,7 +21,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -101,7 +100,7 @@ func newSeriesStore(cfg StoreConfig, schema SeriesStoreSchema, index IndexClient
 
 // Get implements Store
 func (c *seriesStore) Get(ctx context.Context, userID string, from, through model.Time, allMatchers ...*labels.Matcher) ([]Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.Get")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.Get")
 	defer log.Span.Finish()
 	level.Debug(log).Log("from", from, "through", through, "matchers", len(allMatchers))
 
@@ -148,7 +147,7 @@ func (c *seriesStore) Get(ctx context.Context, userID string, from, through mode
 }
 
 func (c *seriesStore) GetChunkRefs(ctx context.Context, userID string, from, through model.Time, allMatchers ...*labels.Matcher) ([][]Chunk, []*Fetcher, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.GetChunkRefs")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.GetChunkRefs")
 	defer log.Span.Finish()
 
 	// Validate the query is within reasonable bounds.
@@ -198,7 +197,7 @@ func (c *seriesStore) GetChunkRefs(ctx context.Context, userID string, from, thr
 
 // LabelNamesForMetricName retrieves all label names for a metric name.
 func (c *seriesStore) LabelNamesForMetricName(ctx context.Context, userID string, from, through model.Time, metricName string) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.LabelNamesForMetricName")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.LabelNamesForMetricName")
 	defer log.Span.Finish()
 
 	shortcut, err := c.validateQueryTimeRange(ctx, userID, &from, &through)
@@ -232,7 +231,7 @@ func (c *seriesStore) LabelNamesForMetricName(ctx context.Context, userID string
 }
 
 func (c *seriesStore) lookupLabelNamesByChunks(ctx context.Context, from, through model.Time, userID string, seriesIDs []string) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.lookupLabelNamesByChunks")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupLabelNamesByChunks")
 	defer log.Span.Finish()
 
 	// Lookup the series in the index to get the chunks.
@@ -265,7 +264,7 @@ func (c *seriesStore) lookupLabelNamesByChunks(ctx context.Context, from, throug
 	return labelNamesFromChunks(allChunks), nil
 }
 func (c *seriesStore) lookupSeriesByMetricNameMatchers(ctx context.Context, from, through model.Time, userID, metricName string, matchers []*labels.Matcher) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.lookupSeriesByMetricNameMatchers", "metricName", metricName, "matchers", len(matchers))
+	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupSeriesByMetricNameMatchers", "metricName", metricName, "matchers", len(matchers))
 	defer log.Span.Finish()
 
 	// Just get series for metric if there are no matchers
@@ -343,7 +342,7 @@ func (c *seriesStore) lookupSeriesByMetricNameMatcher(ctx context.Context, from,
 }
 
 func (c *seriesStore) lookupChunksBySeries(ctx context.Context, from, through model.Time, userID string, seriesIDs []string) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.lookupChunksBySeries")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupChunksBySeries")
 	defer log.Span.Finish()
 
 	level.Debug(log).Log("seriesIDs", len(seriesIDs))
@@ -369,7 +368,7 @@ func (c *seriesStore) lookupChunksBySeries(ctx context.Context, from, through mo
 }
 
 func (c *seriesStore) lookupLabelNamesBySeries(ctx context.Context, from, through model.Time, userID string, seriesIDs []string) ([]string, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.lookupLabelNamesBySeries")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.lookupLabelNamesBySeries")
 	defer log.Span.Finish()
 
 	level.Debug(log).Log("seriesIDs", len(seriesIDs))
@@ -413,7 +412,7 @@ func (c *seriesStore) Put(ctx context.Context, chunks []Chunk) error {
 
 // PutOne implements Store
 func (c *seriesStore) PutOne(ctx context.Context, from, through model.Time, chunk Chunk) error {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "SeriesStore.PutOne")
+	log, ctx := spanlogger.New(ctx, "SeriesStore.PutOne")
 	defer log.Finish()
 	writeChunk := true
 
