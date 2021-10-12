@@ -434,7 +434,7 @@ _Requires [authentication](#authentication)._
 
 #### Request params
 
-- **match[]** - _optional_ - specifies PromQL filters that will be used to filter series that must be analyzed.
+- **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
 - **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
 
 #### Response schema

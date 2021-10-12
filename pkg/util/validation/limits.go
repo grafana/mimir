@@ -41,26 +41,26 @@ func (e LimitError) Error() string {
 // limits via flags, or per-user limits via yaml config.
 type Limits struct {
 	// Distributor enforced limits.
-	IngestionRate                          float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionRateStrategy                  string              `yaml:"ingestion_rate_strategy" json:"ingestion_rate_strategy"`
-	IngestionBurstSize                     int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
-	AcceptHASamples                        bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
-	HAClusterLabel                         string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
-	HAReplicaLabel                         string              `yaml:"ha_replica_label" json:"ha_replica_label"`
-	HAMaxClusters                          int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
-	DropLabels                             flagext.StringSlice `yaml:"drop_labels" json:"drop_labels"`
-	MaxLabelNameLength                     int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
-	MaxLabelValueLength                    int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
-	MaxLabelNamesPerSeries                 int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
-	MaxMetadataLength                      int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	RejectOldSamples                       bool                `yaml:"reject_old_samples" json:"reject_old_samples"`
-	RejectOldSamplesMaxAge                 model.Duration      `yaml:"reject_old_samples_max_age" json:"reject_old_samples_max_age"`
-	CreationGracePeriod                    model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period"`
-	EnforceMetadataMetricName              bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name"`
-	EnforceMetricName                      bool                `yaml:"enforce_metric_name" json:"enforce_metric_name"`
-	IngestionTenantShardSize               int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
-	MetricRelabelConfigs                   []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs."`
-	LabelNamesAndValuesResultsMaxSizeBytes int                 `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
+	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
+	IngestionRateStrategy     string              `yaml:"ingestion_rate_strategy" json:"ingestion_rate_strategy"`
+	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
+	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
+	HAClusterLabel            string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
+	HAReplicaLabel            string              `yaml:"ha_replica_label" json:"ha_replica_label"`
+	HAMaxClusters             int                 `yaml:"ha_max_clusters" json:"ha_max_clusters"`
+	DropLabels                flagext.StringSlice `yaml:"drop_labels" json:"drop_labels"`
+	MaxLabelNameLength        int                 `yaml:"max_label_name_length" json:"max_label_name_length"`
+	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
+	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
+	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
+	RejectOldSamples          bool                `yaml:"reject_old_samples" json:"reject_old_samples"`
+	RejectOldSamplesMaxAge    model.Duration      `yaml:"reject_old_samples_max_age" json:"reject_old_samples_max_age"`
+	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period"`
+	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name"`
+	EnforceMetricName         bool                `yaml:"enforce_metric_name" json:"enforce_metric_name"`
+	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
+	MetricRelabelConfigs      []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs."`
+
 	// Ingester enforced limits.
 	// Series
 	MaxSeriesPerQuery        int `yaml:"max_series_per_query" json:"max_series_per_query"`
@@ -78,17 +78,18 @@ type Limits struct {
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user"`
 
 	// Querier enforced limits.
-	MaxChunksPerQueryFromStore   int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
-	MaxChunksPerQuery            int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxFetchedSeriesPerQuery     int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback             model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxQueryLength               model.Duration `yaml:"max_query_length" json:"max_query_length"`
-	MaxQueryParallelism          int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	CardinalityLimit             int            `yaml:"cardinality_limit" json:"cardinality_limit"`
-	MaxCacheFreshness            model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
-	MaxQueriersPerTenant         int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards     int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	MaxChunksPerQueryFromStore             int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
+	MaxChunksPerQuery                      int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxFetchedSeriesPerQuery               int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery           int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxQueryLookback                       model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxQueryLength                         model.Duration `yaml:"max_query_length" json:"max_query_length"`
+	MaxQueryParallelism                    int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	CardinalityLimit                       int            `yaml:"cardinality_limit" json:"cardinality_limit"`
+	MaxCacheFreshness                      model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
+	MaxQueriersPerTenant                   int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards               int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	LabelNamesAndValuesResultsMaxSizeBytes int            `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay        model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -136,7 +137,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
 	f.IntVar(&l.HAMaxClusters, "distributor.ha-tracker.max-clusters", 0, "Maximum number of clusters that HA tracker will keep track of for single user. 0 to disable the limit.")
 	f.Var(&l.DropLabels, "distributor.drop-label", "This flag can be used to specify label names that to drop during sample ingestion within the distributor and can be repeated in order to drop multiple labels.")
-	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "distributor.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When distributor receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is thrown.")
 	f.IntVar(&l.MaxLabelNameLength, "validation.max-length-label-name", 1024, "Maximum length accepted for label names")
 	f.IntVar(&l.MaxLabelValueLength, "validation.max-length-label-value", 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	f.IntVar(&l.MaxLabelNamesPerSeries, "validation.max-label-names-per-series", 30, "Maximum number of label names per series.")
@@ -170,6 +170,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxQueryLength, "store.max-query-length", "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and in the chunks storage. 0 to disable.")
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split queries will be scheduled in parallel by the frontend.")
+	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.IntVar(&l.CardinalityLimit, "store.cardinality-limit", 1e5, "Cardinality limit for index queries. This limit is ignored when using blocks storage. 0 to disable.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")

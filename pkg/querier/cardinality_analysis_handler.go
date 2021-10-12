@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"sort"
 	"strconv"
-	"strings"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
@@ -32,18 +32,7 @@ func LabelNamesCardinalityHandler(d Distributor) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		err = r.ParseForm()
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		matchersParams := r.Form["match[]"]
-		matchers, err := parser.ParseMetricSelector(fmt.Sprintf("{%v}", strings.Join(matchersParams, ", ")))
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		limit, err := extractLimit(r)
+		matchers, limit, err := extractRequestParams(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -56,6 +45,33 @@ func LabelNamesCardinalityHandler(d Distributor) http.Handler {
 		cardinalityResponse := toLabelNamesCardinalityResponse(response, limit)
 		util.WriteJSONResponse(w, cardinalityResponse)
 	})
+}
+
+func extractRequestParams(r *http.Request) ([]*labels.Matcher, int, error) {
+	err := r.ParseForm()
+	if err != nil {
+		return nil, 0, err
+	}
+	matchers, err := extractSelector(r)
+	if err != nil {
+		return nil, 0, err
+	}
+	limit, err := extractLimit(r)
+	if err != nil {
+		return nil, 0, err
+	}
+	return matchers, limit, nil
+}
+
+func extractSelector(r *http.Request) (matchers []*labels.Matcher, err error) {
+	selectorParams := r.Form["selector"]
+	if len(selectorParams) == 0 {
+		return []*labels.Matcher{}, nil
+	}
+	if len(selectorParams) > 1 {
+		return nil, fmt.Errorf("multiple `selector` params are not allowed")
+	}
+	return parser.ParseMetricSelector(selectorParams[0])
 }
 
 // extractLimit parses and validates request param `limit` if it's defined, otherwise returns default value.

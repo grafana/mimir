@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -60,22 +59,30 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	td := []struct {
 		name             string
-		matcherParams    []string
+		selector         string
 		expectedMatchers []*labels.Matcher
 	}{
 		{
-			name:             "expected single matcher to be parsed",
-			matcherParams:    []string{"match[]=__name__='metric'"},
+			name:             "expected selector to be parsed",
+			selector:         "{__name__='metric'}",
 			expectedMatchers: []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric")},
 		},
 		{
-			name:             "expected no matchers to be parsed",
-			matcherParams:    []string{},
+			name:             "expected no error if selector is missed",
+			selector:         "",
 			expectedMatchers: []*labels.Matcher{},
 		},
 		{
-			name:          "expected two matchers to be parsed",
-			matcherParams: []string{"match[]=__name__='metric'", "match[]=env!='prod'"},
+			name:     "selector with metric name to be parse",
+			selector: "metric{env!='prod'}",
+			expectedMatchers: []*labels.Matcher{
+				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
+				labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"),
+			},
+		},
+		{
+			name:     "selector with two matchers to be parse",
+			selector: "{__name__='metric',env!='prod'}",
 			expectedMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"),
 				labels.MustNewMatcher(labels.MatchNotEqual, "env", "prod"),
@@ -89,14 +96,17 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
 			path := "/ignored-url"
-			if len(data.matcherParams) > 0 {
-				path += "?" + strings.Join(data.matcherParams, "&")
+			if len(data.selector) > 0 {
+				path += "?selector=" + data.selector
 			}
 			request, err := http.NewRequestWithContext(ctx, "GET", path, http.NoBody)
 			require.NoError(t, err)
 			handler.ServeHTTP(recorder, request)
-
-			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+			body := recorder.Result().Body
+			defer body.Close()
+			bodyContent, err := ioutil.ReadAll(body)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode, "unexpected error %v", string(bodyContent))
 			distributor.AssertCalled(t, "LabelNamesAndValues", mock.Anything, data.expectedMatchers)
 		})
 	}

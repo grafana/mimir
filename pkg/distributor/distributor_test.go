@@ -1956,8 +1956,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 	}{
 		"expected error if sizeLimit is reached": {
 			sizeLimitBytes: 20,
-			expectedError: "size of distinct label names and values is greater than 20 bytes. " +
-				"Change `label_names_and_values_results_max_size_bytes` limit to process the request",
+			expectedError:  "size of distinct label names and values is greater than 20 bytes",
 		},
 		"expected no error if sizeLimit is not reached": {
 			sizeLimitBytes: 25,
@@ -1997,6 +1996,7 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 		})
 	}
 }
+
 func TestDistributor_LabelNamesAndValues(t *testing.T) {
 	fixtures := []struct {
 		lbls      labels.Labels

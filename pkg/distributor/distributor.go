@@ -897,13 +897,13 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	if err != nil {
 		return nil, err
 	}
-	return toLabelNamesAndValuesResponses(merger.result), nil
+	return merger.toLabelNamesAndValuesResponses(), nil
 }
 
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
-func toLabelNamesAndValuesResponses(result map[string]map[string]struct{}) *ingester_client.LabelNamesAndValuesResponse {
-	responses := make([]*ingester_client.LabelValues, 0, len(result))
-	for name, values := range result {
+func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *ingester_client.LabelNamesAndValuesResponse {
+	responses := make([]*ingester_client.LabelValues, 0, len(m.result))
+	for name, values := range m.result {
 		labelValues := make([]string, 0, len(values))
 		for val := range values {
 			labelValues = append(labelValues, val)
@@ -954,8 +954,7 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 			if _, valueExists := values[val]; !valueExists {
 				m.currentSizeBytes += len(val)
 				if m.currentSizeBytes > m.sizeLimitBytes {
-					return fmt.Errorf("size of distinct label names and values is greater than %v bytes."+
-						" Change `label_names_and_values_results_max_size_bytes` limit to process the request", m.sizeLimitBytes)
+					return fmt.Errorf("size of distinct label names and values is greater than %v bytes", m.sizeLimitBytes)
 				}
 				values[val] = struct{}{}
 			}
