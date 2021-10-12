@@ -290,6 +290,7 @@ func (c *haTracker) updateKVLoop(ctx context.Context) {
 // electing a new replica if necessary.
 func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 	c.electedLock.RLock()
+	defer c.electedLock.RUnlock()
 	// Note the maps may change when we release the lock while talking to KVStore;
 	// the Go language allows this: https://golang.org/ref/spec#For_range note 3.
 	for userID, clusters := range c.clusters {
@@ -317,7 +318,6 @@ func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 			}
 		}
 	}
-	c.electedLock.RUnlock()
 }
 
 // Replicas marked for deletion before deadline will be deleted.
@@ -407,9 +407,7 @@ func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	}
 
 	c.electedLock.Lock()
-	entry, ok := c.clusters[userID][cluster]
-
-	if ok {
+	if entry := c.clusters[userID][cluster]; entry != nil {
 		var err error
 		if entry.elected.Replica == replica {
 			// Sample received is from elected replica: update timestamp and carry on.
