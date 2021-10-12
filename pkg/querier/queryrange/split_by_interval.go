@@ -20,17 +20,18 @@ type IntervalFn func(r Request) time.Duration
 
 // SplitByIntervalMiddleware creates a new Middleware that splits requests by a given interval.
 func SplitByIntervalMiddleware(interval IntervalFn, limits Limits, merger Merger, registerer prometheus.Registerer) Middleware {
+	splitByCounter := promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		Namespace: "cortex",
+		Name:      "frontend_split_queries_total",
+		Help:      "Total number of underlying query requests after the split by interval is applied",
+	})
 	return MiddlewareFunc(func(next Handler) Handler {
 		return splitByInterval{
-			next:     next,
-			limits:   limits,
-			merger:   merger,
-			interval: interval,
-			splitByCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-				Namespace: "cortex",
-				Name:      "frontend_split_queries_total",
-				Help:      "Total number of underlying query requests after the split by interval is applied",
-			}),
+			next:           next,
+			limits:         limits,
+			merger:         merger,
+			interval:       interval,
+			splitByCounter: splitByCounter,
 		}
 	})
 }
