@@ -34,7 +34,6 @@ type querySharding struct {
 	next   Handler
 	logger log.Logger
 
-	// Metrics.
 	queryShardingMetrics
 }
 
