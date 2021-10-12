@@ -249,7 +249,9 @@ func (c *haTracker) loop(ctx context.Context) error {
 		}
 
 		// Store the received information into our cache
+		c.electedLock.Lock()
 		c.updateCache(user, cluster, replica)
+		c.electedLock.Unlock()
 		c.electedReplicaPropagationTime.Observe(time.Since(timestamp.Time(replica.ReceivedAt)).Seconds())
 		return true
 	})
@@ -310,7 +312,7 @@ func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 			}
 			// Release lock while we talk to KVStore, which could take a while.
 			c.electedLock.RUnlock()
-			err := c.updateKVStore(ctx, userID, cluster, replica, now)
+			_, err := c.updateKVStore(ctx, userID, cluster, replica, now)
 			c.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
@@ -430,12 +432,19 @@ func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 		return tooManyClustersError{limit: limit}
 	}
 
-	// Add this cluster to the KV store - this will also update the cache.
-	err := c.updateKVStore(ctx, userID, cluster, replica, now)
+	desc, err := c.updateKVStore(ctx, userID, cluster, replica, now)
 	c.kvCASCalls.WithLabelValues(userID, cluster).Inc()
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
+	}
+	// If we stored data add it to cache, unless we already received an update via the watch loop.
+	if desc != nil {
+		c.electedLock.Lock()
+		if c.clusters[userID][cluster] == nil {
+			c.updateCache(userID, cluster, desc)
+		}
+		c.electedLock.Unlock()
 	}
 	// Cache will now have the value - recurse to check it again.
 	return c.checkReplica(ctx, userID, cluster, replica, now)
@@ -445,9 +454,8 @@ func (c *haTracker) withinUpdateTimeout(now time.Time, receivedAt int64) bool {
 	return now.Sub(timestamp.Time(receivedAt)) < c.cfg.UpdateTimeout+c.updateTimeoutJitter
 }
 
+// Must be called with electedLock held.
 func (c *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
-	c.electedLock.Lock()
-	defer c.electedLock.Unlock()
 	if c.clusters[userID] == nil {
 		c.clusters[userID] = map[string]*haClusterInfo{}
 	}
@@ -463,7 +471,9 @@ func (c *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 	c.electedReplicaTimestamp.WithLabelValues(userID, cluster).Set(float64(desc.ReceivedAt / 1000))
 }
 
-func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
+// If we do set the value then err will be nil and desc will contain the value we set.
+// If there is already a valid value in the store, return nil, nil.
+func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) (*ReplicaDesc, error) {
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
 	err := c.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -485,11 +495,7 @@ func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		}
 		return desc, true, nil
 	})
-	if err == nil && desc != nil {
-		// Update our cache to match what was read or written.
-		c.updateCache(userID, cluster, desc)
-	}
-	return err
+	return desc, err
 }
 
 type replicasNotMatchError struct {
