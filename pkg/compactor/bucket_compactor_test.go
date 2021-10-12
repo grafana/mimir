@@ -134,10 +134,10 @@ func TestGroupMaxMinTime(t *testing.T) {
 func TestFilterOwnJobs(t *testing.T) {
 	jobsFn := func() []*Job {
 		return []*Job{
-			NewJob("user", "key1", nil, 0, metadata.NoneFunc, false, 0, ""),
-			NewJob("user", "key2", nil, 0, metadata.NoneFunc, false, 0, ""),
-			NewJob("user", "key3", nil, 0, metadata.NoneFunc, false, 0, ""),
-			NewJob("user", "key4", nil, 0, metadata.NoneFunc, false, 0, ""),
+			NewJob("user", "key1", nil, 0, false, 0, ""),
+			NewJob("user", "key2", nil, 0, false, 0, ""),
+			NewJob("user", "key3", nil, 0, false, 0, ""),
+			NewJob("user", "key4", nil, 0, false, 0, ""),
 		}
 	}
 

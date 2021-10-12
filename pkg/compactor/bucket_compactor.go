@@ -213,15 +213,13 @@ func defaultGroupKey(res int64, lbls labels.Labels) string {
 // DefaultGrouper is the default grouper. It groups blocks based on downsample
 // resolution and block's labels.
 type DefaultGrouper struct {
-	userID   string
-	hashFunc metadata.HashFunc
+	userID string
 }
 
 // NewDefaultGrouper makes a new DefaultGrouper.
-func NewDefaultGrouper(userID string, hashFunc metadata.HashFunc) *DefaultGrouper {
+func NewDefaultGrouper(userID string) *DefaultGrouper {
 	return &DefaultGrouper{
-		userID:   userID,
-		hashFunc: hashFunc,
+		userID: userID,
 	}
 }
 
@@ -238,7 +236,6 @@ func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Job
 				groupKey,
 				lbls,
 				m.Thanos.Downsample.Resolution,
-				g.hashFunc,
 				false, // No splitting.
 				0,     // No splitting shards.
 				"",    // No sharding.
@@ -470,7 +467,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 
 		begin = time.Now()
 
-		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
+		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, metadata.NoneFunc); err != nil {
 			return false, nil, retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
 

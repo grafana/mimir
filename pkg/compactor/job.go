@@ -20,7 +20,6 @@ type Job struct {
 	labels         labels.Labels
 	resolution     int64
 	metasByMinTime []*metadata.Meta
-	hashFunc       metadata.HashFunc
 	useSplitting   bool
 	shardingKey    string
 
@@ -29,13 +28,12 @@ type Job struct {
 }
 
 // NewJob returns a new compaction Job.
-func NewJob(userID string, key string, lset labels.Labels, resolution int64, hashFunc metadata.HashFunc, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
+func NewJob(userID string, key string, lset labels.Labels, resolution int64, useSplitting bool, splitNumShards uint32, shardingKey string) *Job {
 	return &Job{
 		userID:         userID,
 		key:            key,
 		labels:         lset,
 		resolution:     resolution,
-		hashFunc:       hashFunc,
 		useSplitting:   useSplitting,
 		splitNumShards: splitNumShards,
 		shardingKey:    shardingKey,
