@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/common/model"
@@ -44,6 +45,7 @@ const (
 
 // mockTenantQueryableWithFilter is a storage.Queryable that can be use to return specific warnings or errors by tenant.
 type mockTenantQueryableWithFilter struct {
+	logger log.Logger
 	// extraLabels are labels added to all series for all tenants.
 	extraLabels []string
 	// warningsByTenant are warnings that will be returned for queries of that tenant.
@@ -60,6 +62,7 @@ func (m *mockTenantQueryableWithFilter) Querier(ctx context.Context, _, _ int64)
 	}
 
 	q := mockTenantQuerier{
+		logger:      m.logger,
 		tenant:      tenantIDs[0],
 		extraLabels: m.extraLabels,
 		ctx:         ctx,
@@ -95,6 +98,7 @@ type mockTenantQuerier struct {
 	warnings storage.Warnings
 	queryErr error
 	ctx      context.Context
+	logger   log.Logger
 }
 
 func (m mockTenantQuerier) matrix() model.Matrix {
@@ -166,7 +170,7 @@ func (m *mockSeriesSet) Warnings() storage.Warnings {
 
 // Select implements the storage.Querier interface.
 func (m mockTenantQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, _ := spanlogger.New(m.ctx, "mockTenantQuerier.select")
+	log, _ := spanlogger.New(m.ctx, m.logger, "mockTenantQuerier.select")
 	defer log.Span.Finish()
 	var matrix model.Matrix
 
@@ -262,7 +266,7 @@ type mergeQueryableScenario struct {
 
 func (s *mergeQueryableScenario) init() (storage.Querier, error) {
 	// initialize with default tenant label
-	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier)
+	q := NewQueryable(&s.queryable, !s.doNotByPassSingleQuerier, log.NewNopLogger())
 
 	// inject tenants into context
 	ctx := context.Background()
@@ -340,8 +344,8 @@ type labelValuesScenario struct {
 
 func TestMergeQueryable_Querier(t *testing.T) {
 	t.Run("querying without a tenant specified should error", func(t *testing.T) {
-		queryable := &mockTenantQueryableWithFilter{}
-		q := NewQueryable(queryable, false /* byPassWithSingleQuerier */)
+		queryable := &mockTenantQueryableWithFilter{logger: log.NewNopLogger()}
+		q := NewQueryable(queryable, false /* byPassWithSingleQuerier */, log.NewNopLogger())
 		// Create a context with no tenant specified.
 		ctx := context.Background()
 
@@ -922,7 +926,7 @@ func TestTracingMergeQueryable(t *testing.T) {
 	// set a multi tenant resolver
 	tenant.WithDefaultResolver(tenant.NewMultiResolver())
 	filter := mockTenantQueryableWithFilter{}
-	q := NewQueryable(&filter, false)
+	q := NewQueryable(&filter, false, log.NewNopLogger())
 	// retrieve querier if set
 	querier, err := q.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
@@ -932,18 +936,20 @@ func TestTracingMergeQueryable(t *testing.T) {
 
 	require.NoError(t, seriesSet.Err())
 	spans := mockTracer.FinishedSpans()
-	assertSpanExist(t, spans, "mergeQuerier.Select", expectedTag{spanlogger.TenantIDTagName,
+	assertSpanExists(t, spans, "mergeQuerier.Select", expectedTag{spanlogger.TenantIDsTagName,
 		[]string{"team-a", "team-b"}})
-	assertSpanExist(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDTagName,
+	assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
 		[]string{"team-a"}})
-	assertSpanExist(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDTagName,
+	assertSpanExists(t, spans, "mockTenantQuerier.select", expectedTag{spanlogger.TenantIDsTagName,
 		[]string{"team-b"}})
 }
 
-func assertSpanExist(t *testing.T,
+func assertSpanExists(t *testing.T,
 	actualSpans []*mocktracer.MockSpan,
 	name string,
 	tag expectedTag) {
+	t.Helper()
+
 	for _, span := range actualSpans {
 		if span.OperationName == name && containsTags(span, tag) {
 			return

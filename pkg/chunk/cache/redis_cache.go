@@ -65,7 +65,7 @@ func (c *RedisCache) Fetch(ctx context.Context, keys []string) (found []string, 
 	var items [][]byte
 	// Run a tracked request, using c.requestDuration to monitor requests.
 	err := instr.CollectedRequest(ctx, method, c.requestDuration, redisStatusCode, func(ctx context.Context) error {
-		log, _ := spanlogger.New(ctx, method)
+		log, _ := spanlogger.New(ctx, c.logger, method)
 		defer log.Finish()
 		log.LogFields(otlog.Int("keys requested", len(keys)))
 

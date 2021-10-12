@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -96,7 +97,7 @@ func (tc *simpleTestCase) ExpectedValueAt(t time.Time) float64 {
 }
 
 func (tc *simpleTestCase) Query(ctx context.Context, client v1.API, selectors string, start time.Time, duration time.Duration) ([]model.SamplePair, error) {
-	log, ctx := spanlogger.New(ctx, "simpleTestCase.Query")
+	log, ctx := spanlogger.New(ctx, util_log.Logger, "simpleTestCase.Query")
 	defer log.Finish()
 
 	metricName := prometheus.BuildFQName(namespace, subsystem, tc.name)
@@ -143,14 +144,14 @@ func (tc *simpleTestCase) Query(ctx context.Context, client v1.API, selectors st
 }
 
 func (tc *simpleTestCase) Test(ctx context.Context, client v1.API, selectors string, start time.Time, duration time.Duration) (bool, error) {
-	log := spanlogger.FromContext(ctx)
+	log := spanlogger.FromContext(ctx, util_log.Logger)
 	pairs, err := tc.Query(ctx, client, selectors, start, duration)
 	if err != nil {
 		level.Info(log).Log("err", err)
 		return false, err
 	}
 
-	return verifySamples(spanlogger.FromContext(ctx), tc, pairs, duration, tc.cfg), nil
+	return verifySamples(spanlogger.FromContext(ctx, util_log.Logger), tc, pairs, duration, tc.cfg), nil
 }
 
 func (tc *simpleTestCase) MinQueryTime() time.Time {

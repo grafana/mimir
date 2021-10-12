@@ -300,6 +300,7 @@ github.com/grafana/dskit/multierror
 github.com/grafana/dskit/runtimeconfig
 github.com/grafana/dskit/runutil
 github.com/grafana/dskit/services
+github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/test
 # github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 github.com/grpc-ecosystem/go-grpc-middleware
