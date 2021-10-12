@@ -145,8 +145,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
   containerCPUUsagePanel(title, containerName)::
     $.panel(title) +
     $.queryPanel([
-      'sum by(%s) (rate(container_cpu_usage_seconds_total{%s,container="%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_cpu_quota{%s,container="%s"} / container_spec_cpu_period{%s,container="%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
+      'sum by(%s) (rate(container_cpu_usage_seconds_total{%s,container=~"%s"}[$__rate_interval]))' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
+      'min(container_spec_cpu_quota{%s,container=~"%s"} / container_spec_cpu_period{%s,container=~"%s"})' % [$.namespaceMatcher(), containerName, $.namespaceMatcher(), containerName],
     ], ['{{%s}}' % $._config.per_instance_label, 'limit']) +
     {
       seriesOverrides: [
@@ -164,8 +164,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     $.queryPanel([
       // We use "max" instead of "sum" otherwise during a rolling update of a statefulset we will end up
       // summing the memory of the old instance/pod (whose metric will be stale for 5m) to the new instance/pod.
-      'max by(%s) (container_memory_working_set_bytes{%s,container="%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
-      'min(container_spec_memory_limit_bytes{%s,container="%s"} > 0)' % [$.namespaceMatcher(), containerName],
+      'max by(%s) (container_memory_working_set_bytes{%s,container=~"%s"})' % [$._config.per_instance_label, $.namespaceMatcher(), containerName],
+      'min(container_spec_memory_limit_bytes{%s,container=~"%s"} > 0)' % [$.namespaceMatcher(), containerName],
     ], ['{{%s}}' % $._config.per_instance_label, 'limit']) +
     {
       seriesOverrides: [
