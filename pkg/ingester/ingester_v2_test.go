@@ -1575,6 +1575,41 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 	})
 }
 
+var pathToBlock = "/Users/vdiachenko/development/block"
+var labelNames = []string{"__name__"}
+var matchers []*labels.Matcher
+
+func BenchmarkIngester_LabelValuesCardinality_solutions(b *testing.B) {
+	db, err := tsdb.OpenDBReadOnly(pathToBlock, nil)
+	require.NoError(b, err)
+	blocks, err := db.Blocks()
+	require.NoError(b, err)
+	idx, err := blocks[0].Index()
+	require.NoError(b, err)
+	ctx := user.InjectOrgID(context.Background(), userID)
+	idxReader := labelValuesCardinalityIndexReader{
+		IndexReader:         idx,
+		PostingsForMatchers: tsdb.PostingsForMatchers,
+	}
+
+	b.Run("solution - 1. one posting per label value", func(b *testing.B) {
+		// Run benchmarks
+		for i := 0; i < b.N; i++ {
+			s := &mockLabelValuesCardinalityServer{context: ctx}
+			err := labelValuesCardinality(idxReader, labelNames, matchers, s)
+			require.NoError(b, err)
+		}
+	})
+	b.Run("solution - 2. one posting per label name", func(b *testing.B) {
+		// Run benchmarks
+		for i := 0; i < b.N; i++ {
+			s := &mockLabelValuesCardinalityServer{context: ctx}
+			err := labelValuesCardinalityV2(idxReader, labelNames, matchers, s)
+			require.NoError(b, err)
+		}
+	})
+}
+
 type series struct {
 	lbls      labels.Labels
 	value     float64

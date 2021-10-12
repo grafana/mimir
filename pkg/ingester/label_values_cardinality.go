@@ -6,6 +6,7 @@
 package ingester
 
 import (
+	"fmt"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -20,6 +21,74 @@ var labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
 type labelValuesCardinalityIndexReader struct {
 	tsdb.IndexReader
 	PostingsForMatchers func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
+}
+
+func labelValuesCardinalityV2(
+	idxReader labelValuesCardinalityIndexReader,
+	lbNames []string,
+	matchers []*labels.Matcher,
+	srv client.Ingester_LabelValuesCardinalityServer,
+) error {
+	var resp client.LabelValuesCardinalityResponse
+
+	respItems := make(map[string]*client.LabelValueCardinality)
+	respSz := 0
+
+	for _, lbName := range lbNames {
+		// Fetch all postings matching label names and matchers.
+		labelValueMatchers := append(matchers, labels.MustNewMatcher(labels.MatchNotEqual, lbName, ""))
+
+		p, err := idxReader.PostingsForMatchers(idxReader.IndexReader, labelValueMatchers...)
+		if err != nil {
+			return err
+		}
+		// Iterate through all postings building up the responses for all encountered values
+		// for the requested label names.
+		ssLabels := make(labels.Labels, 0)
+		for p.Next() {
+			err := idxReader.Series(p.At(), &ssLabels, nil)
+			if err != nil {
+				return err
+			}
+			for _, ssLabel := range ssLabels {
+				if ssLabel.Name != lbName {
+					continue
+				}
+				// Update existing response item
+				k := fmt.Sprintf("%s:%s", ssLabel.Name, ssLabel.Value)
+
+				if rItem := respItems[k]; rItem != nil {
+					rItem.SeriesCount++
+					continue
+				}
+				// If not existing, create a new response item and keep track of it.
+				rItem := &client.LabelValueCardinality{
+					LabelName:   ssLabel.Name,
+					LabelValue:  ssLabel.Value,
+					SeriesCount: 1,
+				}
+				respItems[k] = rItem
+
+				// Flush response items when reached message threshold.
+				respSz += rItem.Size()
+				if respSz >= labelValuesCardinalityTargetSizeBytes {
+					if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+						return err
+					}
+					resp.Items = resp.Items[:0]
+					respSz = 0
+				}
+			}
+			ssLabels = ssLabels[:0]
+		}
+	}
+	// Send response in case nothing has been previously sent or there are pending items.
+	if len(respItems) > 0 {
+		if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func labelValuesCardinality(
