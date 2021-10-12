@@ -1,17 +1,13 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/grpcclient/backoff_retry.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package grpcclient
 
 import (
 	"context"
 
-	"github.com/grafana/dskit/backoff"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	"github.com/grafana/dskit/backoff"
 )
 
 // NewBackoffRetry gRPC middleware.
