@@ -383,6 +383,19 @@ func TestShouldCache(t *testing.T) {
 			input:    Response(&PrometheusResponse{}),
 			expected: false,
 		},
+		// On step aligned and non-aligned requests
+		{
+			name:     "request that is step aligned",
+			request:  parsedRequest,
+			input:    Response(&PrometheusResponse{}),
+			expected: true,
+		},
+		{
+			name:     "request that is NOT step aligned",
+			request:  &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			input:    Response(&PrometheusResponse{}),
+			expected: false,
+		},
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
