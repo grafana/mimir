@@ -83,7 +83,7 @@ func extractLimit(r *http.Request) (limit int, err error) {
 // toLabelNamesCardinalityResponse converts ingester's response to LabelNamesCardinalityResponse
 func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValuesResponse, limit int) *LabelNamesCardinalityResponse {
 	labelsWithValues := response.Items
-	sortByValuesCountAndName(&labelsWithValues)
+	sortByValuesCountAndName(labelsWithValues)
 	valuesCountTotal := getValuesCountTotal(labelsWithValues)
 	items := make([]*LabelNamesCardinalityItem, util_math.Min(len(labelsWithValues), limit))
 	for i := 0; i < len(items); i++ {
@@ -96,11 +96,10 @@ func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValu
 	}
 }
 
-func sortByValuesCountAndName(labelsWithValues *[]*ingester_client.LabelValues) {
-	labelValues := *labelsWithValues
-	sort.Slice(labelValues, func(i, j int) bool {
-		left := labelValues[i]
-		right := labelValues[j]
+func sortByValuesCountAndName(labelsWithValues []*ingester_client.LabelValues) {
+	sort.Slice(labelsWithValues, func(i, j int) bool {
+		left := labelsWithValues[i]
+		right := labelsWithValues[j]
 		return len(left.Values) > len(right.Values) || (len(left.Values) == len(right.Values) && left.LabelName < right.LabelName)
 	})
 }
