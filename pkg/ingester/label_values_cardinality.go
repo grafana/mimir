@@ -6,7 +6,6 @@
 package ingester
 
 import (
-	"fmt"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -23,6 +22,11 @@ type labelValuesCardinalityIndexReader struct {
 	PostingsForMatchers func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
 }
 
+type labelNameValueKey struct {
+	labelName  string
+	labelValue string
+}
+
 func labelValuesCardinalityV2(
 	idxReader labelValuesCardinalityIndexReader,
 	lbNames []string,
@@ -31,7 +35,7 @@ func labelValuesCardinalityV2(
 ) error {
 	var resp client.LabelValuesCardinalityResponse
 
-	respItems := make(map[string]*client.LabelValueCardinality)
+	respItems := make(map[labelNameValueKey]*client.LabelValueCardinality)
 	respSz := 0
 
 	for _, lbName := range lbNames {
@@ -44,44 +48,39 @@ func labelValuesCardinalityV2(
 		}
 		// Iterate through all postings building up the responses for all encountered values
 		// for the requested label names.
-		ssLabels := make(labels.Labels, 0)
 		for p.Next() {
-			err := idxReader.Series(p.At(), &ssLabels, nil)
+
+			lbValue, err := idxReader.LabelValueFor(p.At(), lbName)
 			if err != nil {
 				return err
 			}
-			for _, ssLabel := range ssLabels {
-				if ssLabel.Name != lbName {
-					continue
-				}
-				// Update existing response item
-				k := fmt.Sprintf("%s:%s", ssLabel.Name, ssLabel.Value)
+			// Update existing response item
+			k := labelNameValueKey{labelName: lbName, labelValue: lbValue}
 
-				if rItem := respItems[k]; rItem != nil {
-					rItem.SeriesCount++
-					continue
-				}
-				// If not existing, create a new response item and keep track of it.
-				rItem := &client.LabelValueCardinality{
-					LabelName:   ssLabel.Name,
-					LabelValue:  ssLabel.Value,
-					SeriesCount: 1,
-				}
-				respItems[k] = rItem
-
-				// Flush response items when reached message threshold.
-				respSz += rItem.Size()
-				if respSz >= labelValuesCardinalityTargetSizeBytes {
-					if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
-						return err
-					}
-					resp.Items = resp.Items[:0]
-					respSz = 0
-				}
+			if rItem := respItems[k]; rItem != nil {
+				rItem.SeriesCount++
+				continue
 			}
-			ssLabels = ssLabels[:0]
+			// If not existing, create a new response item and keep track of it.
+			rItem := &client.LabelValueCardinality{
+				LabelName:   lbName,
+				LabelValue:  lbValue,
+				SeriesCount: 1,
+			}
+			respItems[k] = rItem
+
+			// Flush response items when reached message threshold.
+			respSz += rItem.Size()
+			if respSz >= labelValuesCardinalityTargetSizeBytes {
+				if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+					return err
+				}
+				resp.Items = resp.Items[:0]
+				respSz = 0
+			}
 		}
 	}
+
 	// Send response in case nothing has been previously sent or there are pending items.
 	if len(respItems) > 0 {
 		if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
