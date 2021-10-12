@@ -51,20 +51,19 @@ func TestHandler_ignoresSkipLabelNameValidationIfSet(t *testing.T) {
 	}
 }
 
-func verifyWriteRequestHandler(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
+func verifyWriteRequestHandler(t *testing.T, expectSource mimirpb.WriteRequest_SourceEnum) func(ctx context.Context, request *mimirpb.WriteRequest) (response *mimirpb.WriteResponse, err error) {
 	t.Helper()
-	return func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
+	return func(ctx context.Context, request *mimirpb.WriteRequest) (response *mimirpb.WriteResponse, err error) {
 		assert.Len(t, request.Timeseries, 1)
 		assert.Equal(t, "__name__", request.Timeseries[0].Labels[0].Name)
 		assert.Equal(t, "foo", request.Timeseries[0].Labels[0].Value)
 		assert.Equal(t, expectSource, request.Source)
 		assert.False(t, request.SkipLabelNameValidation)
-		cleanup()
 		return &mimirpb.WriteResponse{}, nil
 	}
 }
 
-func createRequest(t testing.TB, protobuf []byte) *http.Request {
+func createRequest(t *testing.T, protobuf []byte) *http.Request {
 	t.Helper()
 	inoutBytes := snappy.Encode(nil, protobuf)
 	req, err := http.NewRequest("POST", "http://localhost/", bytes.NewReader(inoutBytes))
@@ -75,7 +74,7 @@ func createRequest(t testing.TB, protobuf []byte) *http.Request {
 	return req
 }
 
-func createPrometheusRemoteWriteProtobuf(t testing.TB) []byte {
+func createPrometheusRemoteWriteProtobuf(t *testing.T) []byte {
 	t.Helper()
 	input := prompb.WriteRequest{
 		Timeseries: []prompb.TimeSeries{
@@ -114,29 +113,3 @@ func createMimirWriteRequestProtobuf(t *testing.T, skipLabelNameValidation bool)
 	require.NoError(t, err)
 	return inoutBytes
 }
-
-func BenchmarkPushHandler(b *testing.B) {
-	protobuf := createPrometheusRemoteWriteProtobuf(b)
-	buf := bytes.NewBuffer(snappy.Encode(nil, protobuf))
-	req := createRequest(b, protobuf)
-	pushFunc := func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
-		cleanup()
-		return &mimirpb.WriteResponse{}, nil
-	}
-	handler := Handler(100000, nil, pushFunc)
-	b.ResetTimer()
-	for iter := 0; iter < b.N; iter++ {
-		req.Body = bufCloser{Buffer: buf} // reset Body so it can be read each time round the loop
-		resp := httptest.NewRecorder()
-		handler.ServeHTTP(resp, req)
-		assert.Equal(b, 200, resp.Code)
-	}
-}
-
-// Implements both io.ReadCloser required by http.NewRequest and BytesBuffer used by push handler.
-type bufCloser struct {
-	*bytes.Buffer
-}
-
-func (bufCloser) Close() error                 { return nil }
-func (n bufCloser) BytesBuffer() *bytes.Buffer { return n.Buffer }

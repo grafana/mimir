@@ -83,7 +83,7 @@
 * [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #180
 * [ENHANCEMENT] New options `-server.http-listen-network` and `-server.grpc-listen-network` allow binding as 'tcp4' or 'tcp6'. #180
 * [ENHANCEMENT] Add tags to tracing span for distributor push with user, cluster and replica. #210
-* [ENHANCEMENT] Optimisations to distributor. #212 #217 #242
+* [ENHANCEMENT] Some optimisations to distributor. #212 #242
 * [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
 * [ENHANCEMENT] Compactor: when sharding is enabled, skip already planned compaction jobs if the tenant doesn't belong to the compactor instance anymore. #303
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312

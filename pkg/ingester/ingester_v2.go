@@ -775,7 +775,8 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	var firstPartialErr error
 
 	// NOTE: because we use `unsafe` in deserialisation, we must not
-	// retain anything from `req` past the exit from this function.
+	// retain anything from `req` past the call to ReuseSlice
+	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
