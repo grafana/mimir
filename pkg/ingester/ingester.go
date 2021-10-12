@@ -512,14 +512,6 @@ func (i *Ingester) checkRunning() error {
 
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
-	return i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
-}
-
-func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
-	// NOTE: because we use `unsafe` in deserialisation, we must not
-	// retain anything from `req` past the exit from this function.
-	defer cleanup()
-
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -538,6 +530,10 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2Push(ctx, req)
 	}
+
+	// NOTE: because we use `unsafe` in deserialisation, we must not
+	// retain anything from `req` past the call to ReuseSlice
+	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {

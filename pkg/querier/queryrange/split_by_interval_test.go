@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -360,4 +361,13 @@ func Test_evaluateAtModifier(t *testing.T) {
 			require.Equal(t, expectedExpr.String(), out)
 		})
 	}
+}
+
+func TestSplitByInterval_WrapMultipleTimes(t *testing.T) {
+	interval := func(_ Request) time.Duration { return 24 * time.Hour }
+	m := SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, prometheus.NewRegistry())
+	require.NotPanics(t, func() {
+		m.Wrap(mockHandlerWith(nil, nil))
+		m.Wrap(mockHandlerWith(nil, nil))
+	})
 }

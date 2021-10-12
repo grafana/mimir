@@ -197,7 +197,7 @@ func TestParseProtoReader(t *testing.T) {
 				reader = bytesBuffered{Buffer: &buf}
 			}
 
-			_, err := util.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, nil, &fromWire, tt.compression)
+			err := util.ParseProtoReader(context.Background(), reader, 0, tt.maxSize, &fromWire, tt.compression)
 			if tt.expectErr {
 				assert.NotNil(t, err)
 				return
