@@ -14,6 +14,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
@@ -115,11 +117,13 @@ type limitedRoundTripper struct {
 
 	codec      Codec
 	middleware Middleware
+
+	nonAlignedQueriesPerTenant *prometheus.CounterVec
 }
 
 // NewLimitedRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
-	transport := limitedRoundTripper{
+func NewLimitedRoundTripper(registerer prometheus.Registerer, next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
+	return limitedRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
 			codec: codec,
@@ -127,8 +131,12 @@ func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, 
 		codec:      codec,
 		limits:     limits,
 		middleware: MergeMiddlewares(middlewares...),
+
+		nonAlignedQueriesPerTenant: promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_non_step_aligned_queries_total",
+			Help: "Total queries sent per tenant that are not step aligned.",
+		}, []string{"user"}),
 	}
-	return transport
 }
 
 type subRequest struct {
@@ -169,10 +177,13 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	if span := opentracing.SpanFromContext(ctx); span != nil {
 		request.LogToSpan(span)
 	}
-
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+	}
+
+	if request.GetStart()%request.GetStep() != 0 || request.GetEnd()%request.GetStep() != 0 {
+		rt.nonAlignedQueriesPerTenant.WithLabelValues(tenant.JoinTenantIDs(tenantIDs)).Inc()
 	}
 
 	// Creates workers that will process the sub-requests in parallel for this query.
