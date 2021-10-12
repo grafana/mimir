@@ -7,10 +7,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('Gateway')
       .addPanel(
-        $.containerCPUUsagePanel('CPU', 'cortex-gw'),
+        $.containerCPUUsagePanel('CPU', $._config.job_names.gateway),
       )
       .addPanel(
-        $.containerMemoryWorkingSetPanel('Memory (workingset)', 'cortex-gw'),
+        $.containerMemoryWorkingSetPanel('Memory (workingset)', $._config.job_names.gateway),
       )
       .addPanel(
         $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.gateway),
