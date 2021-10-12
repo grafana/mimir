@@ -319,9 +319,9 @@ type Compactor interface {
 
 // runCompactionJob plans and runs a single compaction against the provided job. The compacted result
 // is uploaded into the bucket the blocks were retrieved from.
-func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir string, planner Planner, comp Compactor, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
+func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
 	jobLogger := log.With(c.logger, "groupKey", job.Key())
-	subDir := filepath.Join(dir, job.Key())
+	subDir := filepath.Join(c.compactDir, job.Key())
 
 	defer func() {
 		// Leave the compact directory for inspection if it is a halt error
@@ -338,7 +338,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 		return false, nil, errors.Wrap(err, "create compaction job dir")
 	}
 
-	toCompact, err := planner.Plan(ctx, job.metasByMinTime)
+	toCompact, err := c.planner.Plan(ctx, job.metasByMinTime)
 	if err != nil {
 		return false, nil, errors.Wrap(err, "plan compaction")
 	}
@@ -362,7 +362,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 
 	toCompactDirs := make([]string, 0, len(toCompact))
 	for _, meta := range toCompact {
-		bdir := filepath.Join(dir, meta.ULID.String())
+		bdir := filepath.Join(subDir, meta.ULID.String())
 		for _, s := range meta.Compaction.Sources {
 			if _, ok := uniqueSources[s]; ok {
 				return false, nil, halt(errors.Errorf("overlapping sources detected for plan %v", toCompact))
@@ -402,10 +402,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 	begin = time.Now()
 
 	if job.UseSplitting() {
-		compIDs, err = comp.CompactWithSplitting(dir, toCompactDirs, nil, uint64(job.SplittingShards()))
+		compIDs, err = c.comp.CompactWithSplitting(subDir, toCompactDirs, nil, uint64(job.SplittingShards()))
 	} else {
 		var compID ulid.ULID
-		compID, err = comp.Compact(dir, toCompactDirs, nil)
+		compID, err = c.comp.Compact(subDir, toCompactDirs, nil)
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
@@ -417,7 +417,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", toCompactDirs))
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
-				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(dir, meta.ULID.String()), jobLogger, blocksMarkedForDeletion); err != nil {
+				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
 					level.Warn(jobLogger).Log("msg", "failed to mark for deletion an empty block found during compaction", "block", meta.ULID, "err", err)
 				}
 			}
@@ -440,7 +440,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 			continue
 		}
 
-		bdir := filepath.Join(dir, compID.String())
+		bdir := filepath.Join(subDir, compID.String())
 		index := filepath.Join(bdir, block.IndexFilename)
 
 		// When splitting is enabled, we need to inject the shard ID as external label.
@@ -481,10 +481,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job, dir st
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
-		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(dir, meta.ULID.String()), jobLogger, blocksMarkedForDeletion); err != nil {
+		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
 			return false, nil, retry(errors.Wrapf(err, "mark old block for deletion from bucket"))
 		}
-		garbageCollectedBlocks.Inc()
+		c.metrics.garbageCollectedBlocks.Inc()
 	}
 
 	return true, compIDs, nil
@@ -803,7 +803,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 
 					c.metrics.groupCompactionRunsStarted.Inc()
 
-					shouldRerunJob, compactedBlockIDs, err := c.runCompactionJob(workCtx, g, c.compactDir, c.planner, c.comp, c.metrics.blocksMarkedForDeletion, c.metrics.garbageCollectedBlocks)
+					shouldRerunJob, compactedBlockIDs, err := c.runCompactionJob(workCtx, g)
 					if err == nil {
 						c.metrics.groupCompactionRunsCompleted.Inc()
 						if hasNonZeroULIDs(compactedBlockIDs) {
