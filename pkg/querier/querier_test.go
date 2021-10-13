@@ -766,6 +766,10 @@ func (m *errDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMe
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, map[string]map[string]uint64, error) {
+	return 0, nil, errDistributorError
+}
+
 type emptyChunkStore struct {
 	sync.Mutex
 	called bool
@@ -816,6 +820,10 @@ func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, th
 
 func (d *emptyDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
 	return nil, nil
+}
+
+func (d *emptyDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, map[string]map[string]uint64, error) {
+	return 0, nil, nil
 }
 
 func TestShortTermQueryToLTS(t *testing.T) {

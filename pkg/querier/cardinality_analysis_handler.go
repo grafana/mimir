@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -22,6 +24,50 @@ const (
 	maxLimit     = 500
 	defaultLimit = 20
 )
+
+func LabelValuesCardinalityHandler(distributor Distributor) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		// Guarantee request's context is for a single tenant id
+		_, err := tenant.TenantID(ctx)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Parse query params from GET requests and parse request body for POST requests
+		if err := r.ParseForm(); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		labelNames, err := getLabelNamesParam(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		matchers, err := getSelectorParam(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		limit, err := getLimitParam(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		seriesCountTotal, labelNamesMap, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		util.WriteJSONResponse(w, toLabelValuesCardinalityResponse(seriesCountTotal, labelNamesMap, limit))
+	})
+}
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
 func LabelNamesCardinalityHandler(d Distributor) http.Handler {
@@ -137,4 +183,67 @@ type LabelNamesCardinalityResponse struct {
 type LabelNamesCardinalityItem struct {
 	LabelName   string `json:"label_name"`
 	ValuesCount int    `json:"values_count"`
+}
+
+
+func toLabelValuesCardinalityResponse(seriesCountTotal uint64, labelNamesMap map[string]map[string]uint64, limit int) *labelValuesCardinalityResponse {
+	labels := make([]labelNamesCardinality, 0, len(labelNamesMap))
+
+	for labelName, labelValueSeriesCountMap := range labelNamesMap {
+		var labelValuesSeriesCountTotal uint64 = 0
+
+		cardinality := make([]labelValuesCardinality, 0, len(labelValueSeriesCountMap))
+		for labelValue, seriesCount := range labelValueSeriesCountMap {
+			labelValuesSeriesCountTotal += seriesCount
+			cardinality = append(cardinality, labelValuesCardinality{
+				LabelValue:  labelValue,
+				SeriesCount: seriesCount,
+			})
+		}
+
+		labels = append(labels, labelNamesCardinality{
+			LabelName:        labelName,
+			LabelValuesCount: uint64(len(labelValueSeriesCountMap)),
+			SeriesCount:      labelValuesSeriesCountTotal,
+			Cardinality:      limitLabelValuesCardinality(sortBySeriesCountAndLabelValue(cardinality), limit),
+		})
+	}
+
+	return &labelValuesCardinalityResponse{
+		SeriesCountTotal: seriesCountTotal,
+		Labels:           labels,
+	}
+}
+
+func sortBySeriesCountAndLabelValue(labelValuesCardinality []labelValuesCardinality) []labelValuesCardinality {
+	sort.Slice(labelValuesCardinality, func(l, r int) bool {
+		left := labelValuesCardinality[l]
+		right := labelValuesCardinality[r]
+		return left.SeriesCount > right.SeriesCount || (left.SeriesCount == right.SeriesCount && left.LabelValue < right.LabelValue)
+	})
+	return labelValuesCardinality
+}
+
+func limitLabelValuesCardinality(labelValuesCardinality []labelValuesCardinality, limit int) []labelValuesCardinality {
+	if len(labelValuesCardinality) < limit {
+		return labelValuesCardinality
+	}
+	return labelValuesCardinality[:limit]
+}
+
+type labelValuesCardinality struct {
+	LabelValue  string `json:"label_value"`
+	SeriesCount uint64 `json:"series_count"`
+}
+
+type labelNamesCardinality struct {
+	LabelName        string                   `json:"label_name"`
+	LabelValuesCount uint64                   `json:"label_values_count"`
+	SeriesCount      uint64                   `json:"series_count"`
+	Cardinality      []labelValuesCardinality `json:"cardinality"`
+}
+
+type labelValuesCardinalityResponse struct {
+	SeriesCountTotal uint64                  `json:"series_count_total"`
+	Labels           []labelNamesCardinality `json:"labels"`
 }
