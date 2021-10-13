@@ -106,9 +106,9 @@ func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValu
 		items[i] = &LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, LabelValuesCount: len(labelsWithValues[i].Values)}
 	}
 	return &LabelNamesCardinalityResponse{
-		ValuesCountTotal: valuesCountTotal,
-		LabelNamesCount:  len(response.Items),
-		Cardinality:      items,
+		LabelValuesCountTotal: valuesCountTotal,
+		LabelNamesCount:       len(response.Items),
+		Cardinality:           items,
 	}
 }
 
@@ -129,9 +129,9 @@ func getValuesCountTotal(labelsWithValues []*ingester_client.LabelValues) int {
 }
 
 type LabelNamesCardinalityResponse struct {
-	ValuesCountTotal int                          `json:"values_count_total"`
-	LabelNamesCount  int                          `json:"label_names_count"`
-	Cardinality      []*LabelNamesCardinalityItem `json:"cardinality"`
+	LabelValuesCountTotal int                          `json:"label_values_count_total"`
+	LabelNamesCount       int                          `json:"label_names_count"`
+	Cardinality           []*LabelNamesCardinalityItem `json:"cardinality"`
 }
 
 type LabelNamesCardinalityItem struct {

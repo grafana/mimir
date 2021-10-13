@@ -44,7 +44,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 	err = json.Unmarshal(bodyContent, &responseBody)
 	require.NoError(t, err)
 	require.Equal(t, 4, responseBody.LabelNamesCount)
-	require.Equal(t, 8, responseBody.ValuesCountTotal)
+	require.Equal(t, 8, responseBody.LabelValuesCountTotal)
 	require.Len(t, responseBody.Cardinality, 4)
 	require.Equal(t, responseBody.Cardinality[0], &LabelNamesCardinalityItem{LabelName: "label-z", LabelValuesCount: 3},
 		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
@@ -166,7 +166,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			err = json.Unmarshal(bodyContent, &responseBody)
 			require.NoError(t, err)
 			require.Equal(t, labelCountTotal, responseBody.LabelNamesCount)
-			require.Equal(t, valuesCountTotal, responseBody.ValuesCountTotal)
+			require.Equal(t, valuesCountTotal, responseBody.LabelValuesCountTotal)
 			require.Len(t, responseBody.Cardinality, data.expectedValuesCount)
 		})
 	}
