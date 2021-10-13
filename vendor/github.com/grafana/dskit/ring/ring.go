@@ -288,7 +288,7 @@ func (r *Ring) starting(ctx context.Context) error {
 	r.metricsUpdateCloser = make(chan struct{})
 	go func() {
 		// Start metrics update ticker to update the ring metrics.
-		ticker := time.NewTimer(10 * time.Second)
+		ticker := time.NewTicker(10 * time.Second)
 		defer ticker.Stop()
 
 		for {
