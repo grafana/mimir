@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -496,7 +497,7 @@ func TestShardSummer(t *testing.T) {
 		tt := tt
 
 		t.Run(tt.in, func(t *testing.T) {
-			mapper, err := NewSharding(3)
+			mapper, err := NewSharding(3, log.NewNopLogger())
 			require.NoError(t, err)
 			expr, err := parser.ParseExpr(tt.in)
 			require.NoError(t, err)
@@ -542,7 +543,7 @@ func TestShardSummerWithEncoding(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			summer, err := newShardSummer(c.shards, vectorSquasher)
+			summer, err := newShardSummer(c.shards, vectorSquasher, log.NewNopLogger())
 			require.Nil(t, err)
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)

@@ -1,24 +1,19 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/grpcclient/grpcclient.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package grpcclient
 
 import (
 	"flag"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/grafana/dskit/backoff"
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
+	"github.com/go-kit/log"
+	middleware "github.com/grpc-ecosystem/go-grpc-middleware"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/encoding/gzip"
 	"google.golang.org/grpc/keepalive"
 
-	"github.com/grafana/mimir/pkg/util/grpc/encoding/snappy"
-	"github.com/grafana/mimir/pkg/util/tls"
+	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/dskit/crypto/tls"
+	"github.com/grafana/dskit/grpcencoding/snappy"
 )
 
 // Config for a gRPC client.
@@ -97,8 +92,8 @@ func (cfg *Config) DialOption(unaryClientInterceptors []grpc.UnaryClientIntercep
 	return append(
 		opts,
 		grpc.WithDefaultCallOptions(cfg.CallOptions()...),
-		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(unaryClientInterceptors...)),
-		grpc.WithStreamInterceptor(grpc_middleware.ChainStreamClient(streamClientInterceptors...)),
+		grpc.WithUnaryInterceptor(middleware.ChainUnaryClient(unaryClientInterceptors...)),
+		grpc.WithStreamInterceptor(middleware.ChainStreamClient(streamClientInterceptors...)),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                time.Second * 20,
 			Timeout:             time.Second * 10,

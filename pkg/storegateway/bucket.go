@@ -1718,7 +1718,15 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		case <-done:
 		}
 
-		return refs, err
+		if err != nil {
+			return nil, err
+		}
+
+		// We must make a copy of refs to return, because caller can modify the postings slice in place.
+		refsCopy := make([]uint64, len(refs))
+		copy(refsCopy, refs)
+
+		return refsCopy, nil
 	}
 
 	key := matchersKey(ms)
