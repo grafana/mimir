@@ -11,6 +11,7 @@ import (
 	"github.com/grafana/dskit/services"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -18,7 +19,6 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 
 	"github.com/grafana/mimir/pkg/ring/client"
-	"github.com/grafana/mimir/pkg/util/grpcclient"
 )
 
 // ClientsPool is the interface used to get the client from the pool for a specified address.

@@ -1,9 +1,6 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/grpc/grpc-go/tree/v1.29.x/naming
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: gRPC authors.
+package grpcutil
 
-package naming
+// Copied from https://github.com/grpc/grpc-go/tree/v1.29.x/naming.
 
 import (
 	"context"
@@ -13,7 +10,8 @@ import (
 	"strconv"
 	"time"
 
-	"google.golang.org/grpc/grpclog"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 const (
@@ -31,18 +29,22 @@ var (
 
 // NewDNSResolverWithFreq creates a DNS Resolver that can resolve DNS names, and
 // create watchers that poll the DNS server using the frequency set by freq.
-func NewDNSResolverWithFreq(freq time.Duration) (Resolver, error) {
-	return &dnsResolver{freq: freq}, nil
+func NewDNSResolverWithFreq(freq time.Duration, logger log.Logger) (Resolver, error) {
+	return &dnsResolver{
+		logger: logger,
+		freq:   freq,
+	}, nil
 }
 
 // NewDNSResolver creates a DNS Resolver that can resolve DNS names, and create
 // watchers that poll the DNS server using the default frequency defined by defaultFreq.
-func NewDNSResolver() (Resolver, error) {
-	return NewDNSResolverWithFreq(defaultFreq)
+func NewDNSResolver(logger log.Logger) (Resolver, error) {
+	return NewDNSResolverWithFreq(defaultFreq, logger)
 }
 
 // dnsResolver handles name resolution for names following the DNS scheme
 type dnsResolver struct {
+	logger log.Logger
 	// frequency of polling the DNS server that the watchers created by this resolver will use.
 	freq time.Duration
 }
@@ -118,6 +120,7 @@ func (r *dnsResolver) Resolve(target string) (Watcher, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &dnsWatcher{
 		r:      r,
+		logger: r.logger,
 		host:   host,
 		port:   port,
 		ctx:    ctx,
@@ -128,9 +131,10 @@ func (r *dnsResolver) Resolve(target string) (Watcher, error) {
 
 // dnsWatcher watches for the name resolution update for a specific target
 type dnsWatcher struct {
-	r    *dnsResolver
-	host string
-	port string
+	r      *dnsResolver
+	logger log.Logger
+	host   string
+	port   string
 	// The latest resolved address set
 	curAddrs map[string]*Update
 	ctx      context.Context
@@ -202,19 +206,19 @@ func (w *dnsWatcher) lookupSRV() map[string]*Update {
 	newAddrs := make(map[string]*Update)
 	_, srvs, err := lookupSRV(w.ctx, "grpclb", "tcp", w.host)
 	if err != nil {
-		grpclog.Infof("grpc: failed dns SRV record lookup due to %v.\n", err)
+		level.Info(w.logger).Log("msg", "failed DNS SRV record lookup", "err", err)
 		return nil
 	}
 	for _, s := range srvs {
 		lbAddrs, err := lookupHost(w.ctx, s.Target)
 		if err != nil {
-			grpclog.Warningf("grpc: failed load balancer address dns lookup due to %v.\n", err)
+			level.Warn(w.logger).Log("msg", "failed load balancer address DNS lookup", "err", err)
 			continue
 		}
 		for _, a := range lbAddrs {
 			a, ok := formatIP(a)
 			if !ok {
-				grpclog.Errorf("grpc: failed IP parsing due to %v.\n", err)
+				level.Error(w.logger).Log("failed IP parsing", "err", err)
 				continue
 			}
 			addr := a + ":" + strconv.Itoa(int(s.Port))
@@ -229,13 +233,13 @@ func (w *dnsWatcher) lookupHost() map[string]*Update {
 	newAddrs := make(map[string]*Update)
 	addrs, err := lookupHost(w.ctx, w.host)
 	if err != nil {
-		grpclog.Warningf("grpc: failed dns A record lookup due to %v.\n", err)
+		level.Warn(w.logger).Log("msg", "failed DNS A record lookup", "err", err)
 		return nil
 	}
 	for _, a := range addrs {
 		a, ok := formatIP(a)
 		if !ok {
-			grpclog.Errorf("grpc: failed IP parsing due to %v.\n", err)
+			level.Error(w.logger).Log("msg", "failed IP parsing", "err", err)
 			continue
 		}
 		addr := a + ":" + w.port

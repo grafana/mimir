@@ -65,6 +65,7 @@
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42
 * [FEATURE] Ingester: Enable snapshotting of in-memory TSDB on disk during shutdown via `-blocks-storage.tsdb.memory-snapshot-on-shutdown`. #249
+* [FEATURE] Compactor: added support for a new compaction strategy `-compactor.compaction-strategy=split-and-merge`. When the `split-and-merge` compactor is used, source blocks for a given tenant are split into `-compactor.split-and-merge-shards` shards (configurable on a per-tenant basis) and compaction of each tenant shards can be horizontally scaled. Number of compactors that work on jobs for single tenant can be limited by using `-compactor.compactor-tenant-shard-size` parameter, or per-tenant `compactor_tenant_shard_size` override.  #275 #281 #282 #283 #288 #290 #303 #307 #317 #323 #324 #328 #353
 * [FEATURE] Compactor: added support for a new compaction strategy `-compactor.compaction-strategy=split-and-merge`. When the `split-and-merge` compactor is used, source blocks for a given tenant are split into `-compactor.split-and-merge-shards` shards (configurable on a per-tenant basis) and compaction of each tenant shards can be horizontally scaled. Number of compactors that work on jobs for single tenant can be limited by using `-compactor.compactor-tenant-shard-size` parameter, or per-tenant `compactor_tenant_shard_size` override.  #275 #281 #282 #283 #288 #290 #303 #307 #317 #323 #324 #328
 * [FEATURE] Querier: Added label names cardinality endpoint `<prefix>/api/v1/cardinality/label_names`. #301
 * [ENHANCEMENT] Add a flag (`--proxy.compare-use-relative-error`) in the query-tee to compare floating point values using relative error. #208
@@ -84,7 +85,7 @@
 * [ENHANCEMENT] Exemplars are now emitted for all gRPC calls and many operations tracked by histograms. #180
 * [ENHANCEMENT] New options `-server.http-listen-network` and `-server.grpc-listen-network` allow binding as 'tcp4' or 'tcp6'. #180
 * [ENHANCEMENT] Add tags to tracing span for distributor push with user, cluster and replica. #210
-* [ENHANCEMENT] Some optimisations to distributor. #212 #242
+* [ENHANCEMENT] Optimisations to distributor. #212 #217 #242
 * [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
 * [ENHANCEMENT] Compactor: when sharding is enabled, skip already planned compaction jobs if the tenant doesn't belong to the compactor instance anymore. #303
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312

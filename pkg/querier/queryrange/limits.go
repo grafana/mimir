@@ -11,8 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/opentracing/opentracing-go"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
@@ -45,21 +48,23 @@ type Limits interface {
 
 type limitsMiddleware struct {
 	Limits
-	next Handler
+	next   Handler
+	logger log.Logger
 }
 
 // NewLimitsMiddleware creates a new Middleware that enforces query limits.
-func NewLimitsMiddleware(l Limits) Middleware {
+func NewLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 	return MiddlewareFunc(func(next Handler) Handler {
 		return limitsMiddleware{
 			next:   next,
 			Limits: l,
+			logger: logger,
 		}
 	})
 }
 
 func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.New(ctx, "limits")
+	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
 	defer log.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -112,11 +117,13 @@ type limitedRoundTripper struct {
 
 	codec      Codec
 	middleware Middleware
+
+	nonAlignedQueriesPerTenant prometheus.Counter
 }
 
 // NewLimitedRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
-	transport := limitedRoundTripper{
+func NewLimitedRoundTripper(registerer prometheus.Registerer, next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
+	return limitedRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
 			codec: codec,
@@ -124,8 +131,12 @@ func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, 
 		codec:      codec,
 		limits:     limits,
 		middleware: MergeMiddlewares(middlewares...),
+
+		nonAlignedQueriesPerTenant: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_non_step_aligned_queries_total",
+			Help: "Total queries sent that are not step aligned.",
+		}),
 	}
-	return transport
 }
 
 type subRequest struct {
@@ -166,10 +177,13 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	if span := opentracing.SpanFromContext(ctx); span != nil {
 		request.LogToSpan(span)
 	}
-
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+	}
+
+	if request.GetStep() != 0 && (request.GetEnd()%request.GetStep() != 0 || request.GetStart()%request.GetStep() != 0) {
+		rt.nonAlignedQueriesPerTenant.Inc()
 	}
 
 	// Creates workers that will process the sub-requests in parallel for this query.

@@ -12,6 +12,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 const duplicateMeta = "duplicate"
@@ -166,7 +168,7 @@ type blockWithSuccessors struct {
 func newBlockWithSuccessors(m *metadata.Meta) *blockWithSuccessors {
 	b := &blockWithSuccessors{meta: m}
 	if m != nil {
-		b.shardID = m.Thanos.Labels[ShardIDLabelName]
+		b.shardID = m.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
 		b.sources = make(map[ulid.ULID]struct{}, len(m.Compaction.Sources))
 		for _, bid := range m.Compaction.Sources {
 			b.sources[bid] = struct{}{}

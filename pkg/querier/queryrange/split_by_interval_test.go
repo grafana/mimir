@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
@@ -285,7 +287,7 @@ func TestSplitByDay(t *testing.T) {
 			roundtripper := NewRoundTripper(singleHostRoundTripper{
 				host: u.Host,
 				next: http.DefaultTransport,
-			}, PrometheusCodec, NewLimitsMiddleware(mockLimits{}), SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, nil))
+			}, PrometheusCodec, log.NewNopLogger(), NewLimitsMiddleware(mockLimits{}, log.NewNopLogger()), SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, nil))
 
 			req, err := http.NewRequest("GET", tc.path, http.NoBody)
 			require.NoError(t, err)
@@ -360,4 +362,13 @@ func Test_evaluateAtModifier(t *testing.T) {
 			require.Equal(t, expectedExpr.String(), out)
 		})
 	}
+}
+
+func TestSplitByInterval_WrapMultipleTimes(t *testing.T) {
+	interval := func(_ Request) time.Duration { return 24 * time.Hour }
+	m := SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, prometheus.NewRegistry())
+	require.NotPanics(t, func() {
+		m.Wrap(mockHandlerWith(nil, nil))
+		m.Wrap(mockHandlerWith(nil, nil))
+	})
 }

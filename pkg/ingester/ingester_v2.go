@@ -49,7 +49,7 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
-	logutil "github.com/grafana/mimir/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -668,7 +668,7 @@ func (i *Ingester) stoppingV2(_ error) error {
 func (i *Ingester) updateLoop(ctx context.Context) error {
 	if limits := i.getInstanceLimits(); limits != nil && *limits != (InstanceLimits{}) {
 		// This check will not cover enabling instance limits in runtime, but it will do for now.
-		logutil.WarnExperimentalUse("ingester instance limits")
+		util_log.WarnExperimentalUse("ingester instance limits")
 	}
 
 	rateUpdateTicker := time.NewTicker(i.cfg.RateUpdatePeriod)
@@ -775,8 +775,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	var firstPartialErr error
 
 	// NOTE: because we use `unsafe` in deserialisation, we must not
-	// retain anything from `req` past the call to ReuseSlice
-	defer mimirpb.ReuseSlice(req.Timeseries)
+	// retain anything from `req` past the exit from this function.
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -1365,7 +1364,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 		return err
 	}
 
-	spanlog, ctx := spanlogger.New(stream.Context(), "v2QueryStream")
+	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "v2QueryStream")
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -1668,7 +1667,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
-	userLogger := logutil.WithUserID(userID, i.logger)
+	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 
