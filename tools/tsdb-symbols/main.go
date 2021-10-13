@@ -10,11 +10,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	gokitlog "github.com/go-kit/log"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
+	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
@@ -67,6 +71,9 @@ func main() {
 			shardSymbolsLength,
 			(float64(shardSymbolsLength)/float64(uniqueSymbolsLength))*100.0)
 	}
+
+	fmt.Println()
+	fmt.Println("Analysis complete")
 }
 
 func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
@@ -81,6 +88,14 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 		return fmt.Errorf("failed to open block index: %v", err)
 	}
 	defer idx.Close()
+
+	fmt.Printf("%s: mint=%d (%v), maxt=%d (%v)\n", block.Meta().ULID.String(),
+		block.MinTime(), util.TimeFromMillis(block.MinTime()).UTC().Format(time.RFC3339),
+		block.MaxTime(), util.TimeFromMillis(block.MaxTime()).UTC().Format(time.RFC3339))
+
+	if thanosMeta, err := readMetadata(blockDir); err == nil {
+		fmt.Printf("%s: %v\n", block.Meta().ULID.String(), labels.FromMap(thanosMeta.Thanos.Labels))
+	}
 
 	symbolsTableSizeFromFile, symbolsCountFromFile, err := readSymbolsTableSizeAndSymbolsCount(filepath.Join(blockDir, "index"))
 	if err != nil {
@@ -149,6 +164,16 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 
 	fmt.Printf("%s: found %d unique symbols from series in the block\n", block.Meta().ULID.String(), len(uniqueSymbolsPerBlock))
 	return nil
+}
+
+func readMetadata(dir string) (*metadata.Meta, error) {
+	f, err := os.Open(filepath.Join(dir, "meta.json"))
+	if err != nil {
+		return nil, err
+	}
+
+	// this also closes reader
+	return metadata.Read(f)
 }
 
 // https://github.com/prometheus/prometheus/blob/release-2.30/tsdb/docs/format/index.md
