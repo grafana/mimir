@@ -735,7 +735,7 @@
           },
           annotations: {
             message: |||
-              Cortex {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to Consul store ${{ labels.kv_name }}.
+              Cortex {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to Consul store {{ $labels.kv_name }}.
             ||| % $._config,
           },
         },
