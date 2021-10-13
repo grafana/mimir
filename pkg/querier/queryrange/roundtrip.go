@@ -202,7 +202,7 @@ func NewTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		// Finally, if the user selected any query range middleware, stitch it in.
 		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+			queryrange := NewLimitedRoundTripper(registerer, next, codec, limits, queryRangeMiddleware...)
 			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
 				op := "query"
