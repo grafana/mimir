@@ -179,13 +179,8 @@ func TestGroupCompactE2E(t *testing.T) {
 				}
 
 				for _, fi := range fs {
-					// Used by Prometheus LeveledCompactor when doing compaction.
-					const tmpForCreationBlockDirSuffix = ".tmp-for-creation"
-
-					toCheck := fi.Name()
-					if strings.HasSuffix(toCheck, tmpForCreationBlockDirSuffix) {
-						toCheck = toCheck[:len(toCheck)-len(tmpForCreationBlockDirSuffix)]
-					}
+					// Suffix used by Prometheus LeveledCompactor when doing compaction.
+					toCheck := strings.TrimSuffix(fi.Name(), ".tmp-for-creation")
 
 					_, err := ulid.Parse(toCheck)
 					if err == nil {
