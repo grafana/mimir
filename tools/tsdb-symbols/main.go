@@ -89,9 +89,10 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	}
 	defer idx.Close()
 
-	fmt.Printf("%s: mint=%d (%v), maxt=%d (%v)\n", block.Meta().ULID.String(),
+	fmt.Printf("%s: mint=%d (%v), maxt=%d (%v), duration: %v\n", block.Meta().ULID.String(),
 		block.MinTime(), util.TimeFromMillis(block.MinTime()).UTC().Format(time.RFC3339),
-		block.MaxTime(), util.TimeFromMillis(block.MaxTime()).UTC().Format(time.RFC3339))
+		block.MaxTime(), util.TimeFromMillis(block.MaxTime()).UTC().Format(time.RFC3339),
+		util.TimeFromMillis(block.MaxTime()).Sub(util.TimeFromMillis(block.MinTime())))
 
 	if thanosMeta, err := readMetadata(blockDir); err == nil {
 		fmt.Printf("%s: %v\n", block.Meta().ULID.String(), labels.FromMap(thanosMeta.Thanos.Labels))
