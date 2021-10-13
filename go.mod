@@ -88,16 +88,16 @@ replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 // TODO review the change introduced by https://github.com/grpc/grpc-go/pull/4416 before upgrading to 1.39.0
 replace google.golang.org/grpc => google.golang.org/grpc v1.38.0
 
-// Pin in order to avoid upgrade through dskit
+// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
 replace github.com/grpc-ecosystem/go-grpc-middleware => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
 
-// Pin in order to avoid upgrade through dskit
+// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
 replace go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
 
-// Pin in order to avoid upgrade through dskit
+// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
 replace github.com/gogo/status => github.com/gogo/status v1.0.3
 
-// Pin in order to avoid upgrade through dskit
+// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
 replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20210923155558-c15594a03c45
