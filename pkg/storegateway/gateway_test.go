@@ -864,9 +864,10 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	for idx, blockID := range blockIDs {
 		meta := metadata.Thanos{
 			Labels: map[string]string{
-				mimir_tsdb.TenantIDExternalLabel:   userID,
-				mimir_tsdb.IngesterIDExternalLabel: fmt.Sprintf("ingester-%d", idx),
-				mimir_tsdb.ShardIDExternalLabel:    fmt.Sprintf("shard-%d", idx),
+				mimir_tsdb.TenantIDExternalLabel:          userID,
+				mimir_tsdb.IngesterIDExternalLabel:        fmt.Sprintf("ingester-%d", idx),
+				mimir_tsdb.CompactorShardIDExternalLabel:  fmt.Sprintf("%d_of_2", (idx%2)+1),
+				mimir_tsdb.DeprecatedShardIDExternalLabel: fmt.Sprintf("shard-%d", idx),
 			},
 			Source: metadata.TestSource,
 		}
