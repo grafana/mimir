@@ -238,6 +238,12 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 
 // shouldCacheResponse says whether the response should be cached or not.
 func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Response, maxCacheTime int64) bool {
+	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
+	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
+	if req.GetStep() != 0 && (req.GetEnd()%req.GetStep() != 0 || req.GetStart()%req.GetStep() != 0) {
+		return false
+	}
+
 	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
 	for _, v := range headerValues {
 		if v == noStoreValue {
@@ -362,7 +368,7 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		reqResps []RequestResponse
 		err      error
 	)
-	log, ctx := spanlogger.New(ctx, "handleHit")
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "handleHit")
 	defer log.Finish()
 
 	requests, responses, err := s.partition(r, extents)
@@ -570,7 +576,7 @@ func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
 	}
 
 	var resp CachedResponse
-	log, ctx := spanlogger.New(ctx, "unmarshal-extent") //nolint:ineffassign,staticcheck
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "unmarshal-extent") //nolint:ineffassign,staticcheck
 	defer log.Finish()
 
 	log.LogFields(otlog.Int("bytes", len(bufs[0])))

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/exemplar"
@@ -40,8 +41,9 @@ type Distributor interface {
 	LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error)
 }
 
-func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, queryLabelNamesWithMatchers bool) QueryableWithFilter {
+func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFunc, queryIngestersWithin time.Duration, queryLabelNamesWithMatchers bool, logger log.Logger) QueryableWithFilter {
 	return distributorQueryable{
+		logger:                      logger,
 		distributor:                 distributor,
 		iteratorFn:                  iteratorFn,
 		queryIngestersWithin:        queryIngestersWithin,
@@ -50,6 +52,7 @@ func newDistributorQueryable(distributor Distributor, iteratorFn chunkIteratorFu
 }
 
 type distributorQueryable struct {
+	logger               log.Logger
 	distributor          Distributor
 	iteratorFn           chunkIteratorFunc
 	queryIngestersWithin time.Duration
@@ -59,6 +62,7 @@ type distributorQueryable struct {
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return &distributorQuerier{
+		logger:               d.logger,
 		distributor:          d.distributor,
 		ctx:                  ctx,
 		mint:                 mint,
@@ -76,6 +80,7 @@ func (d distributorQueryable) UseQueryable(now time.Time, _, queryMaxT int64) bo
 }
 
 type distributorQuerier struct {
+	logger               log.Logger
 	distributor          Distributor
 	ctx                  context.Context
 	mint, maxt           int64
@@ -88,7 +93,7 @@ type distributorQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.New(q.ctx, "distributorQuerier.Select")
+	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
 	defer log.Span.Finish()
 
 	// Kludge: Prometheus passes nil SelectParams if it is doing a 'series' operation,
@@ -191,7 +196,7 @@ func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matche
 }
 
 func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.New(q.ctx, "distributorQuerier.LabelNames")
+	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer log.Span.Finish()
 
 	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
@@ -206,7 +211,7 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 // this is used when the LabelNames with matchers feature is first deployed, and some ingesters may have not been updated yet, so they could be ignoring
 // the matchers, leading to wrong results.
 func (q *distributorQuerier) legacyLabelNamesWithMatchersThroughMetricsCall(ctx context.Context, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, ctx := spanlogger.New(ctx, "distributorQuerier.legacyLabelNamesWithMatchersThroughMetricsCall")
+	log, ctx := spanlogger.NewWithLogger(ctx, q.logger, "distributorQuerier.legacyLabelNamesWithMatchersThroughMetricsCall")
 	defer log.Span.Finish()
 	ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
 	if err != nil {

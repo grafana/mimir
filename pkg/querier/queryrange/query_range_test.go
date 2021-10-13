@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/go-kit/kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -96,7 +97,7 @@ func TestResponse(t *testing.T) {
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Body:       ioutil.NopCloser(bytes.NewBuffer([]byte(tc.body))),
 			}
-			resp, err := PrometheusCodec.DecodeResponse(context.Background(), response, nil)
+			resp, err := PrometheusCodec.DecodeResponse(context.Background(), response, nil, log.NewNopLogger())
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, resp)
 

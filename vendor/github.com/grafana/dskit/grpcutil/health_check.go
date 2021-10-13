@@ -1,17 +1,13 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/util/grpc/healthcheck/health_check.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
-package healthcheck
+package grpcutil
 
 import (
 	"context"
 
 	"github.com/gogo/status"
-	"github.com/grafana/dskit/services"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health/grpc_health_v1"
+
+	"github.com/grafana/dskit/services"
 )
 
 // HealthCheck fulfills the grpc_health_v1.HealthServer interface by ensuring
@@ -20,8 +16,8 @@ type HealthCheck struct {
 	sm *services.Manager
 }
 
-// New returns a new HealthCheck for the provided service manager.
-func New(sm *services.Manager) *HealthCheck {
+// NewHealthCheck returns a new HealthCheck for the provided service manager.
+func NewHealthCheck(sm *services.Manager) *HealthCheck {
 	return &HealthCheck{
 		sm: sm,
 	}
@@ -41,7 +37,7 @@ func (h *HealthCheck) Watch(_ *grpc_health_v1.HealthCheckRequest, _ grpc_health_
 	return status.Error(codes.Unimplemented, "Watching is not supported")
 }
 
-// isHealthy returns whether the Mimir instance should be considered healthy.
+// isHealthy returns whether the instance should be considered healthy.
 func (h *HealthCheck) isHealthy() bool {
 	states := h.sm.ServicesByState()
 

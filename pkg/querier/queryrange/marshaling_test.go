@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -38,7 +39,7 @@ func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
 			StatusCode:    200,
 			Body:          ioutil.NopCloser(bytes.NewReader(encodedRes)),
 			ContentLength: int64(len(encodedRes)),
-		}, nil)
+		}, nil, log.NewNopLogger())
 		require.NoError(b, err)
 	}
 }

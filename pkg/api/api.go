@@ -85,10 +85,10 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 // Push either wraps the distributor push function as configured or returns the distributor push directly.
 func (cfg *Config) wrapDistributorPush(d *distributor.Distributor) push.Func {
 	if cfg.DistributorPushWrapper != nil {
-		return cfg.DistributorPushWrapper(d.Push)
+		return cfg.DistributorPushWrapper(d.PushWithCleanup)
 	}
 
-	return d.Push
+	return d.PushWithCleanup
 }
 
 type API struct {
@@ -249,7 +249,7 @@ type Ingester interface {
 	client.IngesterServer
 	FlushHandler(http.ResponseWriter, *http.Request)
 	ShutdownHandler(http.ResponseWriter, *http.Request)
-	Push(context.Context, *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error)
+	PushWithCleanup(context.Context, *mimirpb.WriteRequest, func()) (*mimirpb.WriteResponse, error)
 }
 
 // RegisterIngester registers the ingesters HTTP and GRPC service
@@ -260,12 +260,12 @@ func (a *API) RegisterIngester(i Ingester, pushConfig distributor.Config) {
 	a.indexPage.AddLink(SectionDangerous, "/ingester/shutdown", "Trigger Ingester Shutdown (Dangerous)")
 	a.RegisterRoute("/ingester/flush", http.HandlerFunc(i.FlushHandler), false, "GET", "POST")
 	a.RegisterRoute("/ingester/shutdown", http.HandlerFunc(i.ShutdownHandler), false, "GET", "POST")
-	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, i.Push), true, "POST") // For testing and debugging.
+	a.RegisterRoute("/ingester/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, i.PushWithCleanup), true, "POST") // For testing and debugging.
 
 	// Legacy Routes
 	a.RegisterRoute("/flush", http.HandlerFunc(i.FlushHandler), false, "GET", "POST")
 	a.RegisterRoute("/shutdown", http.HandlerFunc(i.ShutdownHandler), false, "GET", "POST")
-	a.RegisterRoute("/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, i.Push), true, "POST") // For testing and debugging.
+	a.RegisterRoute("/push", push.Handler(pushConfig.MaxRecvMsgSize, a.sourceIPs, i.PushWithCleanup), true, "POST") // For testing and debugging.
 }
 
 // RegisterChunksPurger registers the endpoints associated with the Purger/DeleteStore. They do not exactly

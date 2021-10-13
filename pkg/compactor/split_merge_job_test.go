@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
+
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestJob_conflicts(t *testing.T) {
@@ -32,7 +34,7 @@ func TestJob_conflicts(t *testing.T) {
 
 	withShardIDLabel := func(meta *metadata.Meta, shardID string) *metadata.Meta {
 		meta = copyMeta(meta)
-		meta.Thanos.Labels = map[string]string{ShardIDLabelName: shardID}
+		meta.Thanos.Labels = map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: shardID}
 		return meta
 	}
 
@@ -256,15 +258,15 @@ func TestBlocksGroup_getNonShardedBlocks(t *testing.T) {
 		},
 		"should return nil if the group contains only sharded blocks": {
 			input: blocksGroup{blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1"}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 			}},
 			expected: nil,
 		},
 		"should return the list of non-sharded blocks if exist in the group": {
 			input: blocksGroup{blocks: []*metadata.Meta{
 				{BlockMeta: tsdb.BlockMeta{ULID: block1}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{"key": "value"}}},
 			}},
 			expected: []*metadata.Meta{
@@ -274,12 +276,12 @@ func TestBlocksGroup_getNonShardedBlocks(t *testing.T) {
 		},
 		"should consider non-sharded a block with the shard ID label but empty value": {
 			input: blocksGroup{blocks: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: ""}}},
-				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: "1"}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: ""}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1"}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{"key": "value"}}},
 			}},
 			expected: []*metadata.Meta{
-				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{ShardIDLabelName: ""}}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block1}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: ""}}},
 				{BlockMeta: tsdb.BlockMeta{ULID: block3}, Thanos: metadata.Thanos{Labels: map[string]string{"key": "value"}}},
 			},
 		},

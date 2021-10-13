@@ -148,7 +148,7 @@ func NewTripperware(
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
-	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits)}
+	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 	if cfg.AlignQueriesWithStep {
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics), StepAlignMiddleware)
 	}
@@ -202,7 +202,7 @@ func NewTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		// Finally, if the user selected any query range middleware, stitch it in.
 		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+			queryrange := NewLimitedRoundTripper(registerer, next, codec, limits, queryRangeMiddleware...)
 			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
 				op := "query"
@@ -236,11 +236,12 @@ type roundTripper struct {
 
 // NewRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
 // using the codec to translate requests and responses.
-func NewRoundTripper(next http.RoundTripper, codec Codec, middlewares ...Middleware) http.RoundTripper {
+func NewRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
 	return roundTripper{
 		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
-			next:  next,
-			codec: codec,
+			logger: logger,
+			next:   next,
+			codec:  codec,
 		}),
 		codec: codec,
 	}
@@ -267,8 +268,9 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 // roundTripperHandler is a handler that roundtrips requests to next roundtripper.
 // It basically encodes a Request from Handler.Do and decode response from next roundtripper.
 type roundTripperHandler struct {
-	next  http.RoundTripper
-	codec Codec
+	logger log.Logger
+	next   http.RoundTripper
+	codec  Codec
 }
 
 // Do implements Handler.
@@ -288,5 +290,5 @@ func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	return q.codec.DecodeResponse(ctx, response, r)
+	return q.codec.DecodeResponse(ctx, response, r, q.logger)
 }
