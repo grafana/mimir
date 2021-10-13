@@ -164,9 +164,40 @@ func TestGroupCompactE2E(t *testing.T) {
 		defer cancel()
 
 		// Create fresh, empty directory for actual test.
-		dir, err := ioutil.TempDir("", "test-compact")
-		require.NoError(t, err)
-		defer func() { require.NoError(t, os.RemoveAll(dir)) }()
+		dir := t.TempDir()
+
+		// Start dir checker... we make sure that "dir" only contains group subdirectories during compaction,
+		// and not any block directories. Dir checker stops when context is canceled, or on first error,
+		// in which case error is logger and test is failed. (We cannot use Fatal or FailNow from a goroutine).
+		go func() {
+			for ctx.Err() == nil {
+				fs, err := ioutil.ReadDir(dir)
+				if err != nil && !os.IsNotExist(err) {
+					t.Log("error while listing directory", dir)
+					t.Fail()
+					return
+				}
+
+				for _, fi := range fs {
+					// Suffix used by Prometheus LeveledCompactor when doing compaction.
+					toCheck := strings.TrimSuffix(fi.Name(), ".tmp-for-creation")
+
+					_, err := ulid.Parse(toCheck)
+					if err == nil {
+						t.Log("found block directory in main compaction directory", fi.Name())
+						t.Fail()
+						return
+					}
+				}
+
+				select {
+				case <-time.After(100 * time.Millisecond):
+					continue
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 
 		logger := log.NewLogfmtLogger(os.Stderr)
 
