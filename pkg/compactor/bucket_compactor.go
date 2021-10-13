@@ -23,15 +23,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/thanos-io/thanos/pkg/extprom"
-	"github.com/thanos-io/thanos/pkg/runutil"
-	"golang.org/x/sync/errgroup"
-
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/errutil"
+	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
+	"github.com/thanos-io/thanos/pkg/runutil"
+	"golang.org/x/sync/errgroup"
+
+	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type ResolutionLevel int64
@@ -446,7 +447,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// When splitting is enabled, we need to inject the shard ID as external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
-			newLabels[ShardIDLabelName] = formatShardIDLabelValue(uint32(shardID), job.SplittingShards())
+			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = formatShardIDLabelValue(uint32(shardID), job.SplittingShards())
 		}
 
 		newMeta, err := metadata.InjectThanos(jobLogger, bdir, metadata.Thanos{

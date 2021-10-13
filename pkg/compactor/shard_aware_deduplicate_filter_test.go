@@ -18,6 +18,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
+
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func ULID(i int) ulid.ULID { return ulid.MustNew(uint64(i), nil) }
@@ -358,7 +360,7 @@ func TestShardAwareDeduplicateFilter_Filter(t *testing.T) {
 							Resolution: metaInfo.resolution,
 						},
 						Labels: map[string]string{
-							ShardIDLabelName: metaInfo.shardID,
+							mimir_tsdb.CompactorShardIDExternalLabel: metaInfo.shardID,
 						},
 					},
 				}

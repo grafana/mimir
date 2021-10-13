@@ -457,7 +457,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		NewReplicaLabelRemover(userLogger, []string{
 			tsdb.TenantIDExternalLabel,
 			tsdb.IngesterIDExternalLabel,
-			tsdb.ShardIDExternalLabel,
+			tsdb.CompactorShardIDExternalLabel,
+			tsdb.DeprecatedShardIDExternalLabel,
 		}),
 	}
 

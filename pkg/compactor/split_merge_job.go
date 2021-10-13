@@ -9,6 +9,8 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type compactionStage string
@@ -53,8 +55,8 @@ func (j *job) conflicts(other *job) bool {
 	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		myLabels := labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(ShardIDLabelName)
-		otherLabels := labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(ShardIDLabelName)
+		myLabels := labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(tsdb.CompactorShardIDExternalLabel)
+		otherLabels := labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(tsdb.CompactorShardIDExternalLabel)
 		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
@@ -130,7 +132,7 @@ func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
 	var out []*metadata.Meta
 
 	for _, b := range g.blocks {
-		if value, ok := b.Thanos.Labels[ShardIDLabelName]; !ok || value == "" {
+		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {
 			out = append(out, b)
 		}
 	}
