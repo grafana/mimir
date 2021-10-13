@@ -112,8 +112,13 @@ func TestExpectedAllLabelNamesAndValuesToBeReturnedInSingleMessage(t *testing.T)
 
 func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 	existingLabels := map[string][]string{
-		"label-a": {"a-0", "a-1", "a-2"},
-		"label-b": {"b-0", "b-1", "b-2", "b-3"},
+		"lbl-a": {"a0000000", "a1111111", "a2222222"},
+		"lbl-b": {"b0000000", "b1111111", "b2222222", "b3333333"},
+		"lbl-c": {"c0000000"},
+		"lbl-d": {"d0000000"},
+		"lbl-e": {"e0000000"},
+		"lbl-f": {"f0000000", "f1111111", "f2222222"},
+		"lbl-g": {"g0000000"},
 	}
 	// server
 	mockServer := &mockLabelValuesCardinalityServer{context: context.Background()}
@@ -128,7 +133,7 @@ func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 	}
 	err := labelValuesCardinality(
 		idxReader,
-		[]string{"label-a", "label-b"},
+		[]string{"lbl-a", "lbl-b", "lbl-c", "lbl-d", "lbl-e", "lbl-f", "lbl-g"},
 		[]*labels.Matcher{},
 		25,
 		server,
@@ -138,22 +143,74 @@ func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 	require.Len(t, mockServer.SentResponses, 4)
 
 	require.Equal(t, []*client.LabelValueSeriesCount{
-		{LabelName: "label-a", LabelValue: "a-0", SeriesCount: 100},
-		{LabelName: "label-a", LabelValue: "a-1", SeriesCount: 100},
+		{
+			LabelName: "lbl-a",
+			LabelValueSeries: map[string]uint64{
+				"a0000000": 100,
+				"a1111111": 100,
+				"a2222222": 100,
+			},
+		},
+		{
+			LabelName: "lbl-b",
+			LabelValueSeries: map[string]uint64{
+				"b0000000": 100,
+			},
+		},
 	}, mockServer.SentResponses[0].Items)
 
 	require.Equal(t, []*client.LabelValueSeriesCount{
-		{LabelName: "label-a", LabelValue: "a-2", SeriesCount: 100},
-		{LabelName: "label-b", LabelValue: "b-0", SeriesCount: 100},
+		{
+			LabelName: "lbl-b",
+			LabelValueSeries: map[string]uint64{
+				"b1111111": 100,
+				"b2222222": 100,
+				"b3333333": 100,
+			},
+		},
+		{
+			LabelName: "lbl-c",
+			LabelValueSeries: map[string]uint64{
+				"c0000000": 100,
+			},
+		},
 	}, mockServer.SentResponses[1].Items)
 
 	require.Equal(t, []*client.LabelValueSeriesCount{
-		{LabelName: "label-b", LabelValue: "b-1", SeriesCount: 100},
-		{LabelName: "label-b", LabelValue: "b-2", SeriesCount: 100},
+		{
+			LabelName: "lbl-d",
+			LabelValueSeries: map[string]uint64{
+				"d0000000": 100,
+			},
+		},
+		{
+			LabelName: "lbl-e",
+			LabelValueSeries: map[string]uint64{
+				"e0000000": 100,
+			},
+		},
+		{
+			LabelName: "lbl-f",
+			LabelValueSeries: map[string]uint64{
+				"f0000000": 100,
+				"f1111111": 100,
+			},
+		},
 	}, mockServer.SentResponses[2].Items)
 
 	require.Equal(t, []*client.LabelValueSeriesCount{
-		{LabelName: "label-b", LabelValue: "b-3", SeriesCount: 100},
+		{
+			LabelName: "lbl-f",
+			LabelValueSeries: map[string]uint64{
+				"f2222222": 100,
+			},
+		},
+		{
+			LabelName: "lbl-g",
+			LabelValueSeries: map[string]uint64{
+				"g0000000": 100,
+			},
+		},
 	}, mockServer.SentResponses[3].Items)
 }
 
@@ -164,12 +221,22 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 		expectedItems  []*client.LabelValueSeriesCount
 	}{
 		{
+			"empty response is returned when no labels are provided",
+			map[string][]string{},
+			nil,
+		},
+		{
+			"empty response is returned when no matching labels are requested",
+			map[string][]string{"lba": {"a-0"}},
+			nil,
+		},
+		{
 			"all values returned in a single message even if only one label",
 			map[string][]string{
 				"label-a": {"a-0"},
 			},
 			[]*client.LabelValueSeriesCount{
-				{SeriesCount: 50, LabelName: "label-a", LabelValue: "a-0"},
+				{LabelName: "label-a", LabelValueSeries: map[string]uint64{"a-0": 50}},
 			},
 		},
 		{
@@ -179,11 +246,14 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 				"label-b": {"b-0", "b-1"},
 			},
 			[]*client.LabelValueSeriesCount{
-				{SeriesCount: 50, LabelName: "label-a", LabelValue: "a-0"},
-				{SeriesCount: 50, LabelName: "label-a", LabelValue: "a-1"},
-				{SeriesCount: 50, LabelName: "label-a", LabelValue: "a-2"},
-				{SeriesCount: 50, LabelName: "label-b", LabelValue: "b-0"},
-				{SeriesCount: 50, LabelName: "label-b", LabelValue: "b-1"},
+				{
+					LabelName:        "label-a",
+					LabelValueSeries: map[string]uint64{"a-0": 50, "a-1": 50, "a-2": 50},
+				},
+				{
+					LabelName:        "label-b",
+					LabelValueSeries: map[string]uint64{"b-0": 50, "b-1": 50},
+				},
 			},
 		},
 	} {
@@ -278,12 +348,19 @@ type mockLabelValuesCardinalityServer struct {
 	context       context.Context
 }
 
-func (m *mockLabelValuesCardinalityServer) Send(response *client.LabelValuesCardinalityResponse) error {
-	items := make([]*client.LabelValueSeriesCount, len(response.Items))
-	copy(items, response.Items)
-	m.SentResponses = append(m.SentResponses, client.LabelValuesCardinalityResponse{
-		Items: items,
-	})
+func (m *mockLabelValuesCardinalityServer) Send(resp *client.LabelValuesCardinalityResponse) error {
+	var sentResp client.LabelValuesCardinalityResponse
+	for _, item := range resp.Items {
+		sentRespItem := &client.LabelValueSeriesCount{
+			LabelName:        item.LabelName,
+			LabelValueSeries: make(map[string]uint64, len(item.LabelValueSeries)),
+		}
+		for k, v := range item.LabelValueSeries {
+			sentRespItem.LabelValueSeries[k] = v
+		}
+		sentResp.Items = append(sentResp.Items, sentRespItem)
+	}
+	m.SentResponses = append(m.SentResponses, sentResp)
 	return nil
 }
 

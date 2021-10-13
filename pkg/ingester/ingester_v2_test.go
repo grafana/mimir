@@ -1475,22 +1475,31 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		expectedItems []*client.LabelValueSeriesCount
 	}{
 		{
-			testName:      "no label matches",
-			labelNames:    []string{"pod"},
-			matchers:      []*client.LabelMatcher{},
-			expectedItems: nil,
-		},
-		{
 			testName:   "expected all label values cardinality",
 			labelNames: []string{labels.MetricName, "env", "status"},
 			matchers:   []*client.LabelMatcher{},
 			expectedItems: []*client.LabelValueSeriesCount{
-				{LabelName: "status", LabelValue: "200", SeriesCount: 1},
-				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
-				{LabelName: "status", LabelValue: "500", SeriesCount: 1},
-				{LabelName: labels.MetricName, LabelValue: "metric_0", SeriesCount: 2},
-				{LabelName: labels.MetricName, LabelValue: "metric_1", SeriesCount: 2},
-				{LabelName: "env", LabelValue: "prod", SeriesCount: 2},
+				{
+					LabelName: "status",
+					LabelValueSeries: map[string]uint64{
+						"200": 1,
+						"300": 1,
+						"500": 1,
+					},
+				},
+				{
+					LabelName: labels.MetricName,
+					LabelValueSeries: map[string]uint64{
+						"metric_0": 2,
+						"metric_1": 2,
+					},
+				},
+				{
+					LabelName: "env",
+					LabelValueSeries: map[string]uint64{
+						"prod": 2,
+					},
+				},
 			},
 		},
 		{
@@ -1500,7 +1509,10 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
 			},
 			expectedItems: []*client.LabelValueSeriesCount{
-				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
+				{
+					LabelName:        "status",
+					LabelValueSeries: map[string]uint64{"300": 1},
+				},
 			},
 		},
 	}
@@ -1523,16 +1535,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			// sort response items
 			for _, item := range s.SentResponses {
 				sort.Slice(item.Items, func(i, j int) bool {
-					if item.Items[i].LabelName < item.Items[j].LabelName {
-						return true
-					}
-					if item.Items[i].LabelValue < item.Items[j].LabelValue {
-						return true
-					}
-					if item.Items[i].SeriesCount < item.Items[j].SeriesCount {
-						return true
-					}
-					return false
+					return item.Items[i].LabelName < item.Items[j].LabelName
 				})
 			}
 			if len(tc.expectedItems) == 0 {

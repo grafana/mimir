@@ -91,12 +91,11 @@ func labelValuesCardinality(
 	idxReader labelValuesCardinalityIndexReader,
 	lbNames []string,
 	matchers []*labels.Matcher,
-	messageSizeThreshold int,
-	server client.Ingester_LabelValuesCardinalityServer,
+	msgSizeThreshold int,
+	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
 	resp := client.LabelValuesCardinalityResponse{}
-	baseSize := resp.Size()
-	respSize := baseSize
+	respSize := 0
 
 	lblValMatchers := make([]*labels.Matcher, 0, len(matchers)+1)
 	for _, lbName := range lbNames {
@@ -105,8 +104,18 @@ func labelValuesCardinality(
 		if err != nil {
 			return err
 		}
-		// For each value count total number of series storing the result into cardinality response.
-		for _, lbValue := range lbValues {
+		if len(lbValues) == 0 {
+			continue
+		}
+		// Create label name response item entry.
+		respItem := &client.LabelValueSeriesCount{
+			LabelName:        lbName,
+			LabelValueSeries: make(map[string]uint64),
+		}
+		resp.Items = append(resp.Items, respItem)
+
+		// For each value count total number of series storing the result into the response item.
+		for i, lbValue := range lbValues {
 			lblValMatchers = append(lblValMatchers, labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue))
 			lblValMatchers = append(lblValMatchers, matchers...)
 
@@ -115,28 +124,33 @@ func labelValuesCardinality(
 			if err != nil {
 				return err
 			}
-			item := &client.LabelValueSeriesCount{
-				LabelName:   lbName,
-				LabelValue:  lbValue,
-				SeriesCount: seriesCount,
-			}
-			resp.Items = append(resp.Items, item)
+			respItem.LabelValueSeries[lbValue] = seriesCount
 
-			// Flush the response when reached message threshold.
-			respSize += item.Size()
-			if respSize >= messageSizeThreshold {
-				if err := client.SendLabelValuesCardinalityResponse(server, &resp); err != nil {
-					return err
-				}
-				resp.Items = resp.Items[:0]
-				respSize = baseSize
-			}
 			lblValMatchers = lblValMatchers[:0]
+
+			respSize += len(lbValue)
+			if respSize < msgSizeThreshold {
+				continue
+			}
+			// Flush the response when reached message threshold.
+			if err := client.SendLabelValuesCardinalityResponse(srv, &resp); err != nil {
+				return err
+			}
+			resp.Items = resp.Items[:0]
+			respSize = 0
+
+			// Re-register response entry in case there are still pending values to compute for current label name.
+			if i < len(lbValues)-1 {
+				for k := range respItem.LabelValueSeries {
+					delete(respItem.LabelValueSeries, k)
+				}
+				resp.Items = append(resp.Items, respItem)
+			}
 		}
 	}
-	// Send response in case nothing has been previously sent or there are pending items.
+	// Send response in case there are any pending items.
 	if len(resp.Items) > 0 {
-		return client.SendLabelValuesCardinalityResponse(server, &resp)
+		return client.SendLabelValuesCardinalityResponse(srv, &resp)
 	}
 	return nil
 }
