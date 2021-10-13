@@ -914,6 +914,13 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	return merger.toLabelNamesAndValuesResponses(), nil
 }
 
+type labelNamesAndValuesResponseMerger struct {
+	lock             sync.Mutex
+	result           map[string]map[string]struct{}
+	sizeLimitBytes   int
+	currentSizeBytes int
+}
+
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
 func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *ingester_client.LabelNamesAndValuesResponse {
 	responses := make([]*ingester_client.LabelValues, 0, len(m.result))
@@ -928,13 +935,6 @@ func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *in
 		})
 	}
 	return &ingester_client.LabelNamesAndValuesResponse{Items: responses}
-}
-
-type labelNamesAndValuesResponseMerger struct {
-	lock             sync.Mutex
-	result           map[string]map[string]struct{}
-	sizeLimitBytes   int
-	currentSizeBytes int
 }
 
 // collectResponses listens for the stream and once the message is received, puts labels and values to the map with distinct label values.

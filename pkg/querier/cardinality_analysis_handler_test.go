@@ -46,14 +46,14 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 	require.Equal(t, 4, responseBody.LabelNamesCount)
 	require.Equal(t, 8, responseBody.ValuesCountTotal)
 	require.Len(t, responseBody.Cardinality, 4)
-	require.Equal(t, responseBody.Cardinality[0], &LabelNamesCardinalityItem{LabelName: "label-z", ValuesCount: 3},
-		"items must be sorted by ValuesCount in DESC order and by LabelName in ASC order")
-	require.Equal(t, responseBody.Cardinality[1], &LabelNamesCardinalityItem{LabelName: "label-a", ValuesCount: 2},
-		"items must be sorted by ValuesCount in DESC order and by LabelName in ASC order")
-	require.Equal(t, responseBody.Cardinality[2], &LabelNamesCardinalityItem{LabelName: "label-b", ValuesCount: 2},
-		"items must be sorted by ValuesCount in DESC order and by LabelName in ASC order")
-	require.Equal(t, responseBody.Cardinality[3], &LabelNamesCardinalityItem{LabelName: "label-c", ValuesCount: 1},
-		"items must be sorted by ValuesCount in DESC order and by LabelName in ASC order")
+	require.Equal(t, responseBody.Cardinality[0], &LabelNamesCardinalityItem{LabelName: "label-z", LabelValuesCount: 3},
+		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+	require.Equal(t, responseBody.Cardinality[1], &LabelNamesCardinalityItem{LabelName: "label-a", LabelValuesCount: 2},
+		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+	require.Equal(t, responseBody.Cardinality[2], &LabelNamesCardinalityItem{LabelName: "label-b", LabelValuesCount: 2},
+		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
+	require.Equal(t, responseBody.Cardinality[3], &LabelNamesCardinalityItem{LabelName: "label-c", LabelValuesCount: 1},
+		"items must be sorted by LabelValuesCount in DESC order and by LabelName in ASC order")
 }
 
 func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {

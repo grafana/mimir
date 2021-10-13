@@ -103,7 +103,7 @@ func toLabelNamesCardinalityResponse(response *ingester_client.LabelNamesAndValu
 	valuesCountTotal := getValuesCountTotal(labelsWithValues)
 	items := make([]*LabelNamesCardinalityItem, util_math.Min(len(labelsWithValues), limit))
 	for i := 0; i < len(items); i++ {
-		items[i] = &LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, ValuesCount: len(labelsWithValues[i].Values)}
+		items[i] = &LabelNamesCardinalityItem{LabelName: labelsWithValues[i].LabelName, LabelValuesCount: len(labelsWithValues[i].Values)}
 	}
 	return &LabelNamesCardinalityResponse{
 		ValuesCountTotal: valuesCountTotal,
@@ -135,6 +135,6 @@ type LabelNamesCardinalityResponse struct {
 }
 
 type LabelNamesCardinalityItem struct {
-	LabelName   string `json:"label_name"`
-	ValuesCount int    `json:"values_count"`
+	LabelName        string `json:"label_name"`
+	LabelValuesCount int    `json:"label_values_count"`
 }
