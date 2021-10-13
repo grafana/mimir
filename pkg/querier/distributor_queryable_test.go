@@ -369,3 +369,10 @@ func (m *mockDistributor) LabelNamesAndValues(ctx context.Context, matchers []*l
 	args := m.Called(ctx, matchers)
 	return args.Get(0).(*client.LabelNamesAndValuesResponse), args.Error(1)
 }
+
+func (m *mockDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64,
+	map[string]map[string]uint64,
+	error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).(uint64), args.Get(1).(map[string]map[string]uint64), args.Error(2)
+}

@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -41,19 +40,9 @@ func LabelValuesCardinalityHandler(distributor Distributor) http.Handler {
 			return
 		}
 
+		matchers, limit, err := extractRequestParams(r)
+
 		labelNames, err := getLabelNamesParam(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		matchers, err := getSelectorParam(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-
-		limit, err := getLimitParam(r)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -67,6 +56,25 @@ func LabelValuesCardinalityHandler(distributor Distributor) http.Handler {
 
 		util.WriteJSONResponse(w, toLabelValuesCardinalityResponse(seriesCountTotal, labelNamesMap, limit))
 	})
+}
+
+// Parse and get label_names query parameter containing an array of label values
+func getLabelNamesParam(r *http.Request) ([]model.LabelName, error) {
+	labelNamesParams := r.Form["label_names[]"]
+	if len(labelNamesParams) == 0 {
+		return nil, fmt.Errorf("label_names param is required")
+	}
+
+	var labelNames []model.LabelName
+	for _, labelNameParam := range labelNamesParams {
+		labelName := model.LabelName(labelNameParam)
+		if !labelName.IsValid() {
+			return nil, fmt.Errorf("invalid label_names param '%v'", labelNameParam)
+		}
+		labelNames = append(labelNames, labelName)
+	}
+
+	return labelNames, nil
 }
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
@@ -184,7 +192,6 @@ type LabelNamesCardinalityItem struct {
 	LabelName   string `json:"label_name"`
 	ValuesCount int    `json:"values_count"`
 }
-
 
 func toLabelValuesCardinalityResponse(seriesCountTotal uint64, labelNamesMap map[string]map[string]uint64, limit int) *labelValuesCardinalityResponse {
 	labels := make([]labelNamesCardinality, 0, len(labelNamesMap))
