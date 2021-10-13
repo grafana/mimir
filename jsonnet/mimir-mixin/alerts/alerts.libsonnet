@@ -715,5 +715,31 @@
         },
       ],
     },
+    {
+      name: 'cortex-consul-alerts',
+      rules: [
+        {
+          alert: 'CortexFailingToTalkToConsul',
+          expr: |||
+            (
+              sum by(%s, pod, status_code, kv_name) (rate(cortex_consul_request_duration_seconds_count{status_code!~"2.+"}[1m]))
+              /
+              sum by(%s, pod, status_code, kv_name) (rate(cortex_consul_request_duration_seconds_count[1m]))
+            )
+            # We want to get alerted only in case there's a constant failure.
+            == 1
+          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Cortex {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to Consul store ${{ labels.kv_name }}.
+            ||| % $._config,
+          },
+        },
+      ],
+    },
   ],
 }
