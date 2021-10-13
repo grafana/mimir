@@ -413,6 +413,67 @@
       ],
     },
     {
+      name: 'cortex-rollout-alerts',
+      rules: [
+        {
+          alert: 'CortexRolloutStuck',
+          expr: |||
+            (
+              max without (revision) (
+                kube_statefulset_status_current_revision
+                  unless
+                kube_statefulset_status_update_revision
+              )
+                *
+              (
+                kube_statefulset_replicas
+                  !=
+                kube_statefulset_status_replicas_updated
+              )
+            )  and (
+              changes(kube_statefulset_status_replicas_updated[15m])
+                ==
+              0
+            )
+            * on(%s) group_left max by(%s) (cortex_build_info)
+          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              The {{ $labels.statefulset }} rollout is stuck in %(alert_aggregation_variables)s.
+            ||| % $._config,
+          },
+        },
+        {
+          alert: 'CortexRolloutStuck',
+          expr: |||
+            (
+              kube_deployment_spec_replicas
+                !=
+              kube_deployment_status_replicas_updated
+            ) and (
+              changes(kube_deployment_status_replicas_updated[15m])
+                ==
+              0
+            )
+            * on(%s) group_left max by(%s) (cortex_build_info)
+          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          'for': '15m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              The {{ $labels.deployment }} rollout is stuck in %(alert_aggregation_variables)s.
+            ||| % $._config,
+          },
+        },
+      ],
+    },
+    {
       name: 'cortex-provisioning',
       rules: [
         {

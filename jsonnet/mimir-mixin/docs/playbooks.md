@@ -231,6 +231,16 @@ How to **investigate**:
 
 _If the alert `CortexIngesterTSDBHeadCompactionFailed` fired as well, then give priority to it because that could be the cause._
 
+### CortexRolloutStuck
+
+This alert fires when a Cortex service rollout is stuck, which means the number of updated replicas doesn't match the expected one and looks there's no progress in the rollout. The alert monitors services deployed as Kubernetes `StatefulSet` and `Deployment`.
+
+How to **investigate**:
+- Run `kubectl -n <namespace> get pods -l name=<statefulset|deployment>` to get a list of running pods
+- Ensure there's no pod in a failing state (eg. `Error`, `OOMKilled`, `CrashLoopBackOff`)
+- Ensure there's no pod `NotReady` (the number of ready containers should match the total number of containers, eg. `1/1` or `2/2`)
+- Run `kubectl -n <namespace> describe statefulset <name>` or `kubectl -n <namespace> describe deployment <name>` and look at "Pod Status" and "Events" to get more information
+
 #### Ingester hit the disk capacity
 
 If the ingester hit the disk capacity, any attempt to append samples will fail. You should:
