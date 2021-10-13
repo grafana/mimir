@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
@@ -20,8 +19,6 @@ import (
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 // TestRulerShutdown tests shutting down ruler unregisters correctly
@@ -123,7 +120,6 @@ func numTokens(c kv.Client, name, ringKey string) int {
 	// The ringDesc may be null if the lifecycler hasn't stored the ring
 	// to the KVStore yet.
 	if ringDesc == nil || err != nil {
-		level.Error(util_log.Logger).Log("msg", "error reading consul", "err", err)
 		return 0
 	}
 	rd := ringDesc.(*ring.Desc)

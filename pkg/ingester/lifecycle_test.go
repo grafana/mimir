@@ -16,7 +16,6 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -35,7 +34,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -389,7 +387,6 @@ func numTokens(c kv.Client, name, ringKey string) int {
 	// The ringDesc may be null if the lifecycler hasn't stored the ring
 	// to the KVStore yet.
 	if ringDesc == nil || err != nil {
-		level.Error(util_log.Logger).Log("msg", "error reading consul", "err", err)
 		return 0
 	}
 	rd := ringDesc.(*ring.Desc)
