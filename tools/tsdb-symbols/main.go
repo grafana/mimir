@@ -32,6 +32,8 @@ func main() {
 		return
 	}
 
+	startTime := time.Now()
+
 	uniqueSymbols := map[string]struct{}{}
 	var uniqueSymbolsPerShard []map[string]struct{}
 	if shards > 1 {
@@ -73,7 +75,7 @@ func main() {
 	}
 
 	fmt.Println()
-	fmt.Println("Analysis complete")
+	fmt.Println("Analysis complete in", time.Since(startTime))
 }
 
 func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSymbolsPerShard []map[string]struct{}) error {
