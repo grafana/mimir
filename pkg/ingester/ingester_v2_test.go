@@ -1424,7 +1424,7 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 				Matchers: tc.matchers,
 			}
 
-			s := MockLabelNamesAndValuesServer{context: ctx}
+			s := mockLabelNamesAndValuesServer{context: ctx}
 			require.NoError(t, i.LabelNamesAndValues(req, &s))
 
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
@@ -1472,7 +1472,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 		testName      string
 		labelNames    []string
 		matchers      []*client.LabelMatcher
-		expectedItems []*client.LabelValueCardinality
+		expectedItems []*client.LabelValueSeriesCount
 	}{
 		{
 			testName:      "no label matches",
@@ -1484,7 +1484,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			testName:   "expected all label values cardinality",
 			labelNames: []string{labels.MetricName, "env", "status"},
 			matchers:   []*client.LabelMatcher{},
-			expectedItems: []*client.LabelValueCardinality{
+			expectedItems: []*client.LabelValueSeriesCount{
 				{LabelName: "status", LabelValue: "200", SeriesCount: 1},
 				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
 				{LabelName: "status", LabelValue: "500", SeriesCount: 1},
@@ -1499,7 +1499,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
 			},
-			expectedItems: []*client.LabelValueCardinality{
+			expectedItems: []*client.LabelValueSeriesCount{
 				{LabelName: "status", LabelValue: "300", SeriesCount: 1},
 			},
 		},

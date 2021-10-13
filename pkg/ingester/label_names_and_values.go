@@ -5,6 +5,7 @@ package ingester
 import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
@@ -77,4 +78,81 @@ func labelNamesAndValues(
 		return client.SendLabelNamesAndValuesResponse(server, &response)
 	}
 	return nil
+}
+
+type labelValuesCardinalityIndexReader struct {
+	tsdb.IndexReader
+	PostingsForMatchers func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
+}
+
+// labelValuesCardinality returns all values and series total count for label_names labels that match the matchers.
+// Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
+func labelValuesCardinality(
+	idxReader labelValuesCardinalityIndexReader,
+	lbNames []string,
+	matchers []*labels.Matcher,
+	messageSizeThreshold int,
+	server client.Ingester_LabelValuesCardinalityServer,
+) error {
+	resp := client.LabelValuesCardinalityResponse{}
+	baseSize := resp.Size()
+	respSize := baseSize
+
+	lblValMatchers := make([]*labels.Matcher, 0, len(matchers)+1)
+	for _, lbName := range lbNames {
+		// Obtain all values for current label name.
+		lbValues, err := idxReader.LabelValues(lbName, matchers...)
+		if err != nil {
+			return err
+		}
+		// For each value count total number of series storing the result into cardinality response.
+		for _, lbValue := range lbValues {
+			lblValMatchers = append(lblValMatchers, labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue))
+			lblValMatchers = append(lblValMatchers, matchers...)
+
+			// Get total series count applying label matchers.
+			seriesCount, err := countLabelValueSeries(idxReader, lblValMatchers)
+			if err != nil {
+				return err
+			}
+			item := &client.LabelValueSeriesCount{
+				LabelName:   lbName,
+				LabelValue:  lbValue,
+				SeriesCount: seriesCount,
+			}
+			resp.Items = append(resp.Items, item)
+
+			// Flush the response when reached message threshold.
+			respSize += item.Size()
+			if respSize >= messageSizeThreshold {
+				if err := client.SendLabelValuesCardinalityResponse(server, &resp); err != nil {
+					return err
+				}
+				resp.Items = resp.Items[:0]
+				respSize = baseSize
+			}
+			lblValMatchers = lblValMatchers[:0]
+		}
+	}
+	// Send response in case nothing has been previously sent or there are pending items.
+	if len(resp.Items) > 0 {
+		return client.SendLabelValuesCardinalityResponse(server, &resp)
+	}
+	return nil
+}
+
+func countLabelValueSeries(idxReader labelValuesCardinalityIndexReader, lblValMatchers []*labels.Matcher) (uint64, error) {
+	var count uint64
+
+	p, err := idxReader.PostingsForMatchers(idxReader.IndexReader, lblValMatchers...)
+	if err != nil {
+		return 0, err
+	}
+	for p.Next() {
+		count++
+	}
+	if p.Err() != nil {
+		return 0, p.Err()
+	}
+	return count, nil
 }

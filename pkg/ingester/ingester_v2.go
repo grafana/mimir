@@ -1296,9 +1296,13 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
-	db, err := i.getTSDBFromContext(server.Context())
+	userID, err := tenant.TenantID(server.Context())
 	if err != nil {
 		return err
+	}
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
 	}
 	index, err := db.Head().Index()
 	if err != nil {
@@ -1312,6 +1316,10 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
 }
 
+// labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
+// We arbitrarily set it to 1mb to avoid reaching the actual gRPC default limit (4mb).
+const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
+
 func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) error {
 	if !i.cfg.BlocksStorageEnabled {
 		return errors.New("LabelValuesCardinality endpoint supports only blocks storage type")
@@ -1319,9 +1327,13 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err := i.checkRunning(); err != nil {
 		return err
 	}
-	db, err := i.getTSDBFromContext(srv.Context())
+	userID, err := tenant.TenantID(srv.Context())
 	if err != nil {
 		return err
+	}
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
 	}
 	idx, err := db.Head().Index()
 	if err != nil {
@@ -1341,6 +1353,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 		idxReader,
 		req.GetLabelNames(),
 		matchers,
+		labelValuesCardinalityTargetSizeBytes,
 		srv,
 	)
 }
@@ -1586,14 +1599,6 @@ func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, 
 	}
 
 	return numSeries, numSamples, nil
-}
-
-func (i *Ingester) getTSDBFromContext(ctx context.Context) (*userTSDB, error) {
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	return i.getTSDB(userID), nil
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {
