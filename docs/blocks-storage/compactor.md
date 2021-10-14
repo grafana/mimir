@@ -69,7 +69,7 @@ This strategy is suited for clusters with large tenants. The `N` number of split
 
 When sharding is enabled, each compaction stage (both split and merge) planned by the compactor can be horizontally scaled. Non conflicting / overlapping jobs will be executed in parallel.
 
-#### How does it behaves if `-compactor.split-and-merge-shards` changes?
+#### How does it behave if `-compactor.split-and-merge-shards` changes?
 
 In case you change the `-compactor.split-and-merge-shards` setting, the change will affect only compaction of blocks which haven't been split yet. Blocks which have already run through the split stage will not be split again to produce a number of shards equal to the new setting, but will be merged keeping the old configuration (this information is stored in the `meta.json` of each split block).
 
