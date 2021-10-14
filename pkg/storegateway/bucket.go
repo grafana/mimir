@@ -1872,10 +1872,9 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
 func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
-	if m.Type == labels.MatchRegexp && len(findSetMatches(m.Value)) > 0 {
-		vals := findSetMatches(m.Value)
-		toAdd := make([]labels.Label, 0, len(vals))
-		for _, val := range vals {
+	if setMatches := m.SetMatches(); m.Type == labels.MatchRegexp && len(setMatches) > 0 {
+		toAdd := make([]labels.Label, 0, len(setMatches))
+		for _, val := range setMatches {
 			toAdd = append(toAdd, labels.Label{Name: m.Name, Value: val})
 		}
 		return newPostingGroup(false, toAdd, nil), nil
