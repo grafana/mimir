@@ -84,13 +84,9 @@ func TestTripperware(t *testing.T) {
 			req, err := http.NewRequest("GET", tc.path, http.NoBody)
 			require.NoError(t, err)
 
-			// query-frontend doesn't actually authenticate requests, we rely on
-			// the queriers to do this.  Hence we ensure the request doesn't have a
-			// org ID in the ctx, but does have the header.
-			ctx := user.InjectOrgID(context.Background(), "1")
+			ctx := user.InjectOrgID(context.Background(), "user-1")
 			req = req.WithContext(ctx)
-			err = user.InjectOrgIDIntoHTTPRequest(ctx, req)
-			require.NoError(t, err)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
 
 			resp, err := tw(downstream).RoundTrip(req)
 			require.NoError(t, err)
@@ -159,13 +155,9 @@ func TestTripperware_Metrics(t *testing.T) {
 			req, err := http.NewRequest("GET", testData.path, http.NoBody)
 			require.NoError(t, err)
 
-			// query-frontend doesn't actually authenticate requests, we rely on
-			// the queriers to do this.  Hence we ensure the request doesn't have a
-			// org ID in the ctx, but does have the header.
-			ctx := user.InjectOrgID(context.Background(), "1")
+			ctx := user.InjectOrgID(context.Background(), "user-1")
 			req = req.WithContext(ctx)
-			err = user.InjectOrgIDIntoHTTPRequest(ctx, req)
-			require.NoError(t, err)
+			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
 
 			resp, err := tw(downstream).RoundTrip(req)
 			require.NoError(t, err)
