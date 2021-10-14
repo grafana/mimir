@@ -333,6 +333,36 @@ func TestMergeAPIResponses(t *testing.T) {
 	}
 }
 
+func TestIsRequestStepAligned(t *testing.T) {
+	tests := map[string]struct {
+		req      Request
+		expected bool
+	}{
+		"should return true if start and end are aligned to step": {
+			req:      &PrometheusRequest{Start: 10, End: 20, Step: 10},
+			expected: true,
+		},
+		"should return false if start is not aligned to step": {
+			req:      &PrometheusRequest{Start: 11, End: 20, Step: 10},
+			expected: false,
+		},
+		"should return false if end is not aligned to step": {
+			req:      &PrometheusRequest{Start: 10, End: 19, Step: 10},
+			expected: false,
+		},
+		"should return true if step is 0": {
+			req:      &PrometheusRequest{Start: 10, End: 11, Step: 0},
+			expected: true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, isRequestStepAligned(testData.req))
+		})
+	}
+}
+
 func mustParse(t *testing.T, response string) Response {
 	var resp PrometheusResponse
 	// Needed as goimports automatically add a json import otherwise.

@@ -7,16 +7,21 @@ package queryrange
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
@@ -24,7 +29,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/storage"
 )
 
-func TestRoundTrip(t *testing.T) {
+func TestTripperware(t *testing.T) {
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +60,7 @@ func TestRoundTrip(t *testing.T) {
 		mockLimits{},
 		PrometheusCodec,
 		nil,
-		storage.StorageEngineChunks,
+		storage.StorageEngineBlocks,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
 			Reg:        nil,
@@ -94,6 +99,89 @@ func TestRoundTrip(t *testing.T) {
 			bs, err := ioutil.ReadAll(resp.Body)
 			require.NoError(t, err)
 			require.Equal(t, tc.expectedBody, string(bs))
+		})
+	}
+}
+
+func TestTripperware_Metrics(t *testing.T) {
+	tests := map[string]struct {
+		path                    string
+		expectedNotAlignedCount int
+	}{
+		"start/end is aligned to step": {
+			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
+			expectedNotAlignedCount: 0,
+		},
+		"start/end is not aligned to step": {
+			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			expectedNotAlignedCount: 1,
+		},
+	}
+
+	s := httptest.NewServer(
+		middleware.AuthenticateUser.Wrap(
+			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, err := w.Write([]byte("{}"))
+				require.NoError(t, err)
+			}),
+		),
+	)
+	defer s.Close()
+
+	u, err := url.Parse(s.URL)
+	require.NoError(t, err)
+
+	downstream := singleHostRoundTripper{
+		host: u.Host,
+		next: http.DefaultTransport,
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			reg := prometheus.NewPedanticRegistry()
+			tw, _, err := NewTripperware(Config{},
+				log.NewNopLogger(),
+				mockLimits{},
+				PrometheusCodec,
+				nil,
+				storage.StorageEngineBlocks,
+				promql.EngineOpts{
+					Logger:     log.NewNopLogger(),
+					Reg:        nil,
+					MaxSamples: 1000,
+					Timeout:    time.Minute,
+				},
+				reg,
+				nil,
+			)
+			require.NoError(t, err)
+
+			req, err := http.NewRequest("GET", testData.path, http.NoBody)
+			require.NoError(t, err)
+
+			// query-frontend doesn't actually authenticate requests, we rely on
+			// the queriers to do this.  Hence we ensure the request doesn't have a
+			// org ID in the ctx, but does have the header.
+			ctx := user.InjectOrgID(context.Background(), "1")
+			req = req.WithContext(ctx)
+			err = user.InjectOrgIDIntoHTTPRequest(ctx, req)
+			require.NoError(t, err)
+
+			resp, err := tw(downstream).RoundTrip(req)
+			require.NoError(t, err)
+			require.Equal(t, 200, resp.StatusCode)
+
+			body, err := ioutil.ReadAll(resp.Body)
+			require.NoError(t, err)
+			require.Equal(t, `{"status":"","data":{"resultType":"","result":null}}`, string(body))
+
+			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
+				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
+				cortex_query_frontend_non_step_aligned_queries_total %d
+			`, testData.expectedNotAlignedCount)),
+				"cortex_query_frontend_non_step_aligned_queries_total",
+			))
 		})
 	}
 }
