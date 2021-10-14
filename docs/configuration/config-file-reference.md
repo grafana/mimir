@@ -1130,7 +1130,9 @@ The `query_range_config` configures the query splitting and caching in the query
 # CLI flag: -querier.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 0s]
 
-# Mutate incoming queries to align their start and end with their step.
+# Mutate incoming queries to align their start and end with their step. Can be
+# disabled on a per-request basis setting 'Cache-Control: no-store' header (will
+# disable results cache too).
 # CLI flag: -querier.align-querier-with-step
 [align_queries_with_step: <boolean> | default = false]
 

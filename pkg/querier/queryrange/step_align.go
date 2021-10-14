@@ -22,6 +22,12 @@ type stepAlign struct {
 }
 
 func (s stepAlign) Do(ctx context.Context, r Request) (Response, error) {
+	// No need to align step if results cache is disabled. Moreover, we want to provide customers
+	// a way to disable step alignment too on a per-request basis (ie. used by PromQL compliance test).
+	if r.GetOptions().CacheDisabled {
+		return s.next.Do(ctx, r)
+	}
+
 	start := (r.GetStart() / r.GetStep()) * r.GetStep()
 	end := (r.GetEnd() / r.GetStep()) * r.GetStep()
 	return s.next.Do(ctx, r.WithStartEnd(start, end))
