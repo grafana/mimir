@@ -14,8 +14,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/opentracing/opentracing-go"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
@@ -117,12 +115,10 @@ type limitedRoundTripper struct {
 
 	codec      Codec
 	middleware Middleware
-
-	nonAlignedQueriesPerTenant prometheus.Counter
 }
 
 // NewLimitedRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
-func NewLimitedRoundTripper(registerer prometheus.Registerer, next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
+func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
 	return limitedRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
@@ -131,11 +127,6 @@ func NewLimitedRoundTripper(registerer prometheus.Registerer, next http.RoundTri
 		codec:      codec,
 		limits:     limits,
 		middleware: MergeMiddlewares(middlewares...),
-
-		nonAlignedQueriesPerTenant: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_query_frontend_non_step_aligned_queries_total",
-			Help: "Total queries sent that are not step aligned.",
-		}),
 	}
 }
 
@@ -180,10 +171,6 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
-	}
-
-	if request.GetStep() != 0 && (request.GetEnd()%request.GetStep() != 0 || request.GetStart()%request.GetStep() != 0) {
-		rt.nonAlignedQueriesPerTenant.Inc()
 	}
 
 	// Creates workers that will process the sub-requests in parallel for this query.

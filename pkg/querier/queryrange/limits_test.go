@@ -264,7 +264,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedRoundTripper(nil, downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
@@ -307,7 +307,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedRoundTripper(nil, downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				// fire up work and we don't wait.
@@ -347,7 +347,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedRoundTripper(nil, downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup

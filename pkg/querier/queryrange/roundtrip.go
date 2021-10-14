@@ -197,12 +197,15 @@ func NewTripperware(
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
 	}
 
+	// Track query range statistics.
+	queryRangeMiddleware = append(queryRangeMiddleware, newQueryStatsMiddleware(registerer))
+
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
 		// Finally, if the user selected any query range middleware, stitch it in.
 		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewLimitedRoundTripper(registerer, next, codec, limits, queryRangeMiddleware...)
+			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
 			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
 				op := "query"
