@@ -66,28 +66,21 @@ if [[ -z "$TEST_QUERY" ]]; then
     exit 1
 fi
 
-<<<<<<< HEAD
-=======
 DATE_BIN=$(which date)
 # This script uses BSD date, the default one on Mac OS.
 # Fall back to BSD date if coreutils is used.
 # If you're on linux, you probably have GNU date by default,
-# and -v param below won't work for you. You can use '-d' instead, 
+# and -v param below won't work for you. You can use '-d' instead,
 # but your time ranges will have to be 3HOUR instead of 3H.
 if [[ $DATE_BIN == *"coreutils"* ]]; then
     DATE_BIN=/bin/date
 fi
 
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
 # Regex used to get the query response time from the HTTP headers.
 RESPONSE_TIME_REGEX="response_time;dur=([0-9\\.]+)"
 
 write_tsv_header() {
-<<<<<<< HEAD
-  echo -e "Query\tTimerange\tStep\tShards\tResponse time (ms)"
-=======
   echo -e "Query\tTimerange\tStep\tShards\tResponse time (ms)\tjaeger-debug-id"
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
 }
 
 # Params:
@@ -96,14 +89,9 @@ write_tsv_header() {
 # $3 - Step
 # $4 - Num shards
 # $5 - Response time (ms)
-<<<<<<< HEAD
-write_tsv_line() {
-  echo -e "$1\t$2\t$3\t$4\t$5"
-=======
 # $6 - jaeger-debug-id
 write_tsv_line() {
   echo -e "$1\t$2\t$3\t$4\t$5\t$6"
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
 }
 
 # Params:
@@ -112,36 +100,25 @@ write_tsv_line() {
 # $3 - Step (if empty it's auto computed based on timerange)
 # $4 - Sharding enabled
 # $5 - Shards size
-<<<<<<< HEAD
-=======
 # $6 - jaeger-debug-id
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
 benchmark_query() {
   QUERY="$1"
   TIME_RANGE="$2"
   STEP="$3"
   SHARDING_ENABLED="$4"
   SHARD_SIZE="$5"
-<<<<<<< HEAD
-  START_TIME="$(date -v -${TIME_RANGE} +%s)"
-  END_TIME="$(date +%s)"
-=======
   JAEGER_DEBUG_ID="$6"
   START_TIME="$($DATE_BIN -v -${TIME_RANGE} +%s)"
   END_TIME="$($DATE_BIN +%s)"
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
   HEADERS_FILE=".benchmark-response-headers"
 
   # Compute the step based on the query time range,
   # in order to have 1000 points in output.
   if [ -z "$STEP" ]; then
     STEP="$(((END_TIME-$START_TIME)/1000))s"
-<<<<<<< HEAD
-=======
     if [ "$STEP" == "0s" ]; then
       STEP="1s"
     fi
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
   fi
 
   # Cleanup any headers file left from a previous run.
@@ -164,13 +141,9 @@ benchmark_query() {
     --data-urlencode "query=${QUERY}" \
     --data-urlencode "step=${STEP}" \
     -H "X-Scope-OrgID: ${TENANT_ID}" \
-<<<<<<< HEAD
-    -H "${SHARDING_CONTROL_HEADER}" \
-=======
     -H "Cache-Control: no-store" \
     -H "${SHARDING_CONTROL_HEADER}" \
     -H "jaeger-debug-id: $JAEGER_DEBUG_ID" \
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
     --dump-header "${HEADERS_FILE}" \
     "${URL}/api/v1/query_range" > /dev/null
   STATUS=$?
@@ -186,20 +159,12 @@ benchmark_query() {
   fi
 
   # Write the TSV entry.
-<<<<<<< HEAD
-  write_tsv_line "$QUERY" "$TIME_RANGE" "$STEP" "${SHARD_SIZE:-No sharding}" "$RESPONSE_TIME_MS"
-=======
   write_tsv_line "$QUERY" "$TIME_RANGE" "$STEP" "${SHARD_SIZE:-No sharding}" "$RESPONSE_TIME_MS" "$JAEGER_DEBUG_ID"
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
 }
 
 benchmark_query_with_multiple_runs() {
   for i in {1..3}; do
-<<<<<<< HEAD
-   benchmark_query "$1" "$2" "$3" "$4" "$5"
-=======
    benchmark_query "$1" "$2" "$3" "$4" "$5" "$6/$i"
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
   done
 }
 
@@ -208,16 +173,6 @@ if [ "$TSV_HEADER" == "true" ]; then
   write_tsv_header
 fi
 
-<<<<<<< HEAD
-for TIME_RANGE in $TEST_TIME_RANGES; do
-  # Sharding enabled.
-  for SHARD_SIZE in $TEST_SHARDS; do
-    benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "yes" "${SHARD_SIZE}"
-  done
-
-  # Sharding disabled.
-  benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "no" ""
-=======
 
 JAEGER_DEBUG_PREFIX="$USER-$(date +%s)"
 for TIME_RANGE in $TEST_TIME_RANGES; do
@@ -228,5 +183,4 @@ for TIME_RANGE in $TEST_TIME_RANGES; do
 
   # Sharding disabled.
   benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "no" "" "$JAEGER_DEBUG_PREFIX/$TIME_RANGE"
->>>>>>> 5a63823fd1c1fa77058c9e695dee31e0769f868f
 done

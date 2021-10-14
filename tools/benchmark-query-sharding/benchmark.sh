@@ -55,3 +55,10 @@ SHARDS="16"
 # Way slower with sharding (see: https://raintank-corp.slack.com/archives/C029912SXT8/p1633707737059500)
 #./run.sh --url "${URL}" --tenant-id "${TENANT_ID}" --tsv-no-header --time-ranges "2d" --shards "${SHARDS}" \
 #  --query '100 - ( sum (rate(cortex_request_duration_seconds_bucket{namespace="gr-prod-03-mirrored", cluster="prod-us-central-0", le="25.0", route=~"graphite_.*",route!~"graphite_metrics|graphite_config_.*", job=~"gr-.*/cortex-gw"}[5m])) / sum(rate(cortex_request_duration_seconds_count{namespace="gr-prod-03-mirrored", cluster="prod-us-central-0", route=~"graphite_.*",route!~"graphite_metrics|graphite_config_.*", job=~"gr-.*/cortex-gw"}[5m]) ) * 100)'
+
+
+# Runs a set of queries that have low and high cardinality
+cat queries.txt | while read query
+do
+  ./run.sh --url "${URL}" --tenant-id "${TENANT_ID}"  --query "${query}" --time-ranges "1H 6H 12H 24H 2d 7d"
+done
