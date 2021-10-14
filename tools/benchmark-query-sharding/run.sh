@@ -66,6 +66,16 @@ if [[ -z "$TEST_QUERY" ]]; then
     exit 1
 fi
 
+DATE_BIN=$(which date)
+# This script uses BSD date, the default one on Mac OS.
+# Fall back to BSD date if coreutils is used.
+# If you're on linux, you probably have GNU date by default,
+# and -v param below won't work for you. You can use '-d' instead, 
+# but your time ranges will have to be 3HOUR instead of 3H.
+if [[ $DATE_BIN == *"coreutils"* ]]; then
+    DATE_BIN=/bin/date
+fi
+
 # Regex used to get the query response time from the HTTP headers.
 RESPONSE_TIME_REGEX="response_time;dur=([0-9\\.]+)"
 
@@ -95,8 +105,8 @@ benchmark_query() {
   STEP="$3"
   SHARDING_ENABLED="$4"
   SHARD_SIZE="$5"
-  START_TIME="$(date -v -${TIME_RANGE} +%s)"
-  END_TIME="$(date +%s)"
+  START_TIME="$($DATE_BIN -v -${TIME_RANGE} +%s)"
+  END_TIME="$($DATE_BIN +%s)"
   HEADERS_FILE=".benchmark-response-headers"
 
   # Compute the step based on the query time range,
