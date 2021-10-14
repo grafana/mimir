@@ -110,6 +110,19 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errors.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
 		},
+		"should fail on unknown compaction priority": {
+			setup: func(cfg *Config) {
+				cfg.CompactionPriority = "everything-is-top-priority"
+			},
+			expected: errInvalidCompactionPriority.Error(),
+		},
+		"should fail on unsupported compaction priority": {
+			setup: func(cfg *Config) {
+				cfg.CompactionStrategy = CompactionStrategyDefault
+				cfg.CompactionPriority = CompactionPriorityNewestFirst
+			},
+			expected: errors.Errorf(errUnsupportedCompactionPriority, CompactionStrategyDefault, CompactionPriorityNewestFirst).Error(),
+		},
 	}
 
 	for testName, testData := range tests {

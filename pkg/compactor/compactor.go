@@ -47,13 +47,19 @@ const (
 
 	CompactionStrategyDefault    = "default"
 	CompactionStrategySplitMerge = "split-and-merge"
+
+	CompactionPriorityOldestFirst = "smallest-range-oldest-blocks-first"
+	CompactionPriorityNewestFirst = "newest-blocks-first"
 )
 
 var (
-	errInvalidBlockRanges = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
-	RingOp                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	errInvalidBlockRanges            = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
+	errInvalidCompactionPriority     = errors.Errorf("unsupported compaction priority (supported values: %s)", strings.Join(compactionPriorities, ", "))
+	errUnsupportedCompactionPriority = "the %s compaction strategy does not support %s priority"
+	RingOp                           = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
+	compactionPriorities = []string{CompactionPriorityOldestFirst, CompactionPriorityNewestFirst}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -98,6 +104,7 @@ type Config struct {
 
 	// Compaction strategy.
 	CompactionStrategy string `yaml:"compaction_strategy"`
+	CompactionPriority string `yaml:"compaction_priority"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
@@ -130,6 +137,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard tenants across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
 	f.StringVar(&cfg.CompactionStrategy, "compactor.compaction-strategy", CompactionStrategyDefault, fmt.Sprintf("The compaction strategy to use. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
+	f.StringVar(&cfg.CompactionPriority, "compactor.compaction-priority", CompactionPriorityOldestFirst, fmt.Sprintf("The compaction priority to use. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
@@ -149,6 +157,14 @@ func (cfg *Config) Validate() error {
 
 	if !util.StringsContain(compactionStrategies, cfg.CompactionStrategy) {
 		return fmt.Errorf("unsupported compaction strategy (supported values: %s)", strings.Join(compactionStrategies, ", "))
+	}
+
+	if !util.StringsContain(compactionPriorities, cfg.CompactionPriority) {
+		return errInvalidCompactionPriority
+	}
+
+	if cfg.CompactionStrategy == CompactionStrategyDefault && cfg.CompactionPriority != CompactionPriorityOldestFirst {
+		return fmt.Errorf(errUnsupportedCompactionPriority, cfg.CompactionStrategy, cfg.CompactionPriority)
 	}
 
 	return nil
@@ -204,6 +220,7 @@ type MultitenantCompactor struct {
 	ringSubservicesWatcher *services.FailureWatcher
 
 	shardingStrategy shardingStrategy
+	priorityPolicy   sortJobsFunc
 
 	// Metrics.
 	compactionRunsStarted          prometheus.Counter
@@ -327,6 +344,12 @@ func newMultitenantCompactor(
 	}
 	if len(compactorCfg.DisabledTenants) > 0 {
 		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
+	}
+
+	if compactorCfg.CompactionPriority == CompactionPriorityNewestFirst {
+		c.priorityPolicy = sortJobsByNewestBlocksFirst
+	} else {
+		c.priorityPolicy = sortJobsBySmallestRangeOldestBlocksFirst
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
@@ -674,6 +697,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
 		c.shardingStrategy.ownJob,
+		c.priorityPolicy,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {

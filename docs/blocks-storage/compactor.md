@@ -100,6 +100,27 @@ To reduce the likelihood this could happen, the compactor waits for a stable rin
 
 To disable this waiting logic, you can start the compactor with `-compactor.ring.wait-stability-min-duration=0`.
 
+## Compaction priority
+
+The compactor allows to configure the compaction priority policy via the `-compactor.compaction-priority` flag (or its respective YAML config option). The configured policy defines which compaction jobs should be executed first. The following options are supported:
+
+- `smallest-range-oldest-blocks-first` (default)
+- `newest-blocks-first` (not supported by `default` compaction strategy)
+
+### `smallest-range-oldest-blocks-first`
+
+It gives priority to smallest range, oldest blocks first.
+
+To give you an example, let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this priority policy, the compactor give preference to compact all 2h ranges first and among them it gives priority to oldest blocks. Then, once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
+
+### `newest-blocks-first`
+
+It gives priority to most recent time ranges first, regardless of their compaction level.
+
+To give you an example, let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this priority policy, the compactor compacts up to the 24h range the most recent blocks first and the move to older ones. This policy favours most recent blocks, assuming they are the one most frequently queried.
+
+This priority policy is not supported by the `default` [compaction strategy](#compaction-strategy).
+
 ## Soft and hard blocks deletion
 
 When the compactor successfully compacts some source blocks into a larger block, source blocks are deleted from the storage. Blocks deletion is not immediate, but follows a two steps process:
@@ -283,4 +304,10 @@ compactor:
   # split-and-merge.
   # CLI flag: -compactor.compaction-strategy
   [compaction_strategy: <string> | default = "default"]
+
+  # The compaction priority to use. Changing this setting is not supported by
+  # the default compaction strategy. Supported values are: default,
+  # split-and-merge.
+  # CLI flag: -compactor.compaction-priority
+  [compaction_priority: <string> | default = "smallest-range-oldest-blocks-first"]
 ```
