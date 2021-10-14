@@ -37,7 +37,7 @@ type config struct {
 	userID              string
 	showDeleted         bool
 	showLabels          bool
-	showCreationTime    bool
+	showUlidTime        bool
 	showSources         bool
 	showParents         bool
 	showCompactionLevel bool
@@ -52,7 +52,7 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
-	flag.BoolVar(&cfg.showCreationTime, "show-ulid-time", false, "Show time from ULID")
+	flag.BoolVar(&cfg.showUlidTime, "show-ulid-time", false, "Show time from ULID")
 	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
 	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
 	flag.BoolVar(&cfg.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
@@ -214,7 +214,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	if cfg.splitCount > 0 {
 		fmt.Fprintf(tabber, "Split ID\t")
 	}
-	if cfg.showCreationTime {
+	if cfg.showUlidTime {
 		fmt.Fprintf(tabber, "ULID Time\t")
 	}
 	fmt.Fprintf(tabber, "Min Time\t")
@@ -253,7 +253,7 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 		if cfg.splitCount > 0 {
 			fmt.Fprintf(tabber, "%d\t", tsdb.HashBlockID(b.ULID)%uint32(cfg.splitCount))
 		}
-		if cfg.showCreationTime {
+		if cfg.showUlidTime {
 			fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(int64(b.ULID.Time())).UTC().Format(time.RFC3339))
 		}
 		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
