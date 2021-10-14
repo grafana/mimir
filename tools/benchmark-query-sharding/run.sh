@@ -164,7 +164,7 @@ benchmark_query() {
 
 benchmark_query_with_multiple_runs() {
   for i in {1..3}; do
-   benchmark_query "$1" "$2" "$3" "$4" "$5" "$6/$i"
+   benchmark_query "$1" "$2" "$3" "$4" "$5" "$6-$i"
   done
 }
 
@@ -178,9 +178,9 @@ JAEGER_DEBUG_PREFIX="$USER-$(date +%s)"
 for TIME_RANGE in $TEST_TIME_RANGES; do
   # Sharding enabled.
   for SHARD_SIZE in $TEST_SHARDS; do
-    benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "yes" "${SHARD_SIZE}" "$JAEGER_DEBUG_PREFIX/${SHARD_SIZE}s/$TIME_RANGE"
+    benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "yes" "${SHARD_SIZE}" "$JAEGER_DEBUG_PREFIX-${SHARD_SIZE}s-$TIME_RANGE"
   done
 
   # Sharding disabled.
-  benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "no" "" "$JAEGER_DEBUG_PREFIX/$TIME_RANGE"
+  benchmark_query_with_multiple_runs "$TEST_QUERY" "$TIME_RANGE" "$TEST_STEP" "no" "" "$JAEGER_DEBUG_PREFIX-$TIME_RANGE"
 done
