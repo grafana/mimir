@@ -17,9 +17,9 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -35,11 +35,11 @@ func TestRequest(t *testing.T) {
 		},
 		{
 			url:         "api/v1/query_range?start=foo",
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, "invalid parameter \"start\"; cannot parse \"foo\" to a valid timestamp"),
+			expectedErr: apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=bar",
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, "invalid parameter \"end\"; cannot parse \"bar\" to a valid timestamp"),
+			expectedErr: apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "invalid parameter \"end\": cannot parse \"bar\" to a valid timestamp"),
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=0",
@@ -47,7 +47,7 @@ func TestRequest(t *testing.T) {
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=456&step=baz",
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, "invalid parameter \"step\"; cannot parse \"baz\" to a valid duration"),
+			expectedErr: apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "invalid parameter \"step\": cannot parse \"baz\" to a valid duration"),
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=456&step=-1",

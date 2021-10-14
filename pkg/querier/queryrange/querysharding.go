@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -96,7 +96,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
 	}
 
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
@@ -175,7 +175,7 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, err
+		return "", nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
 	}
 
 	stats := astmapper.NewMapperStats()

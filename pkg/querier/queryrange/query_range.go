@@ -8,7 +8,6 @@ package queryrange
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -27,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -42,9 +42,9 @@ var (
 		SortMapKeys:            true,
 		ValidateJsonRawMessage: true,
 	}.Froze()
-	errEndBeforeStart = httpgrpc.Errorf(http.StatusBadRequest, "end timestamp must not be before start time")
-	errNegativeStep   = httpgrpc.Errorf(http.StatusBadRequest, "zero or negative query resolution step widths are not accepted. Try a positive integer")
-	errStepTooSmall   = httpgrpc.Errorf(http.StatusBadRequest, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errEndBeforeStart = apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, `invalid parameter "end": end timestamp must not be before start time`)
+	errNegativeStep   = apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
+	errStepTooSmall   = apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 
 	// PrometheusCodec is a codec to encode and decode Prometheus query range requests and responses.
 	PrometheusCodec Codec = &prometheusCodec{}
@@ -233,7 +233,7 @@ func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Reques
 func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
 	promReq, ok := r.(*PrometheusRequest)
 	if !ok {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "invalid request format")
+		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "invalid request format")
 	}
 	params := url.Values{
 		"start": []string{encodeTime(promReq.Start)},
@@ -273,7 +273,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 
 	var resp PrometheusResponse
 	if err := json.Unmarshal(buf, &resp); err != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error decoding response: %v", err)
+		return nil, apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "error decoding response: %v", err)
 	}
 
 	for h, hv := range r.Header {
@@ -300,7 +300,7 @@ func bodyBuffer(res *http.Response) ([]byte, error) {
 	// internally works.
 	buf := bytes.NewBuffer(make([]byte, 0, res.ContentLength+bytes.MinRead))
 	if _, err := buf.ReadFrom(res.Body); err != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error decoding response: %v", err)
+		return nil, apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "error decoding response: %v", err)
 	}
 	return buf.Bytes(), nil
 }
@@ -311,14 +311,14 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 
 	a, ok := res.(*PrometheusResponse)
 	if !ok {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "invalid response format")
+		return nil, apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "invalid response format")
 	}
 
 	sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 
 	b, err := json.Marshal(a)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error encoding response: %v", err)
+		return nil, apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "error encoding response: %v", err)
 	}
 
 	sp.LogFields(otlog.Int("bytes", len(b)))
@@ -447,11 +447,11 @@ func encodeDurationMs(d int64) string {
 }
 
 func decorateWithParamName(err error, field string) error {
-	errTmpl := "invalid parameter %q; %v"
+	errTmpl := "invalid parameter %q: %v"
 	if status, ok := status.FromError(err); ok {
-		return httpgrpc.Errorf(int(status.Code()), errTmpl, field, status.Message())
+		return apierror.JSONErrorf(apierror.TypeBadData, int(status.Code()), errTmpl, field, status.Message())
 	}
-	return fmt.Errorf(errTmpl, field, err)
+	return apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, errTmpl, field, err)
 }
 
 // isRequestStepAligned returns whether the Request start and end timestamps are aligned

@@ -149,21 +149,25 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 		strconv.FormatFloat(step.Seconds(), 'f', -1, 64),
 	)
 
-	return c.query(addr)
+	return c.GetRequest(addr)
+}
+
+func (c *Client) QuerierAddress() string {
+	return c.querierAddress
 }
 
 // QueryRaw runs a query directly against the querier API.
 func (c *Client) QueryRaw(query string) (*http.Response, []byte, error) {
 	addr := fmt.Sprintf("http://%s/api/prom/api/v1/query?query=%s", c.querierAddress, url.QueryEscape(query))
 
-	return c.query(addr)
+	return c.GetRequest(addr)
 }
 
-func (c *Client) query(addr string) (*http.Response, []byte, error) {
+func (c *Client) GetRequest(url string) (*http.Response, []byte, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", addr, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, nil, err
 	}

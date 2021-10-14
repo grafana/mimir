@@ -19,10 +19,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 const seconds = 1e3 // 1e3 milliseconds per second.
@@ -346,7 +347,7 @@ func Test_evaluateAtModifier(t *testing.T) {
 				[2m:])
 			[10m:])`, nil,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", httpgrpc.Errorf(http.StatusBadRequest, `1:19: parse error: bad duration syntax: ""`)},
+		{"sum by (foo) (bar[buzz])", "foo{}", apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, `1:19: parse error: bad duration syntax: ""`)},
 	} {
 		tt := tt
 		t.Run(tt.in, func(t *testing.T) {
