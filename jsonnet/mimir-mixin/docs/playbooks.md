@@ -734,6 +734,20 @@ How to **investigate**:
 - Ensure there's no pod `NotReady` (the number of ready containers should match the total number of containers, eg. `1/1` or `2/2`)
 - Run `kubectl -n <namespace> describe statefulset <name>` or `kubectl -n <namespace> describe deployment <name>` and look at "Pod Status" and "Events" to get more information
 
+### CortexKVStoreFailure
+
+This alert fires if a Cortex instance is failing to run any operation on a KV store (eg. consul or etcd).
+
+How it **works**:
+- Consul is typically used to store the hash ring state.
+- Etcd is typically used to store by the HA tracker (distributor) to deduplicate samples.
+- If an instance is failing operations on the **hash ring**, either the instance can't update the heartbeat in the ring or is failing to receive ring updates.
+- If an instance is failing operations on the **HA tracker** backend, either the instance can't update the authoritative replica or is failing to receive updates.
+
+How to **investigate**:
+- Ensure Consul/Etcd is up and running.
+- Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
+
 ## Cortex routes by path
 
 **Write path**:

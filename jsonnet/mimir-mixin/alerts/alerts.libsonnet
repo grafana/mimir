@@ -236,6 +236,27 @@
           },
         },
         {
+          alert: 'CortexKVStoreFailure',
+          expr: |||
+            (
+              sum by(%s, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
+              /
+              sum by(%s, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count[1m]))
+            )
+            # We want to get alerted only in case there's a constant failure.
+            == 1
+          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+          'for': '5m',
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: |||
+              Cortex {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
+            ||| % $._config,
+          },
+        },
+        {
           alert: 'CortexMemoryMapAreasTooHigh',
           expr: |||
             process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway)"} > 0.8
