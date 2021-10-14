@@ -28,6 +28,12 @@ func StreamsToMatrix(from, through model.Time, responses []*client.QueryStreamRe
 		}
 
 		result = append(result, series...)
+
+		series, err = TimeseriesToMatrix(from, through, response.Timeseries)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, series...)
 	}
 	return result, nil
 }
@@ -53,6 +59,35 @@ func SeriesChunksToMatrix(from, through model.Time, serieses []client.TimeSeries
 				return nil, err
 			}
 			samples = util.MergeSampleSets(samples, ss)
+		}
+
+		result = append(result, &model.SampleStream{
+			Metric: metric,
+			Values: samples,
+		})
+	}
+	return result, nil
+}
+
+func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (model.Matrix, error) {
+	if series == nil {
+		return nil, nil
+	}
+
+	result := model.Matrix{}
+	for _, ser := range series {
+		metric := mimirpb.FromLabelAdaptersToMetric(ser.Labels)
+
+		var samples []model.SamplePair
+		for _, sam := range ser.Samples {
+			if sam.TimestampMs < int64(from) || sam.TimestampMs > int64(through) {
+				continue
+			}
+
+			samples = append(samples, model.SamplePair{
+				Timestamp: model.Time(sam.TimestampMs),
+				Value:     model.SampleValue(sam.Value),
+			})
 		}
 
 		result = append(result, &model.SampleStream{

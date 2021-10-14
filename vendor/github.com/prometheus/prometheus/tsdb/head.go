@@ -79,13 +79,11 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
-	symMtx  sync.RWMutex
-	symbols map[string]struct{}
-
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
 	postings *index.MemPostings // Postings lists for terms.
+	pfmc     *PostingsForMatchersCache
 
 	tombstones *tombstones.MemTombstones
 
@@ -113,6 +111,7 @@ type ExemplarStorage interface {
 	storage.ExemplarQueryable
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
 	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
+	IterateExemplars(f func(seriesLabels labels.Labels, e exemplar.Exemplar) error) error
 }
 
 // HeadOptions are parameters for the Head block.
@@ -178,6 +177,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		stats = NewHeadStats()
 	}
 
+	if !opts.EnableExemplarStorage {
+		opts.MaxExemplars.Store(0)
+	}
+
 	h := &Head{
 		wal:    wal,
 		logger: l,
@@ -189,6 +192,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		},
 		stats: stats,
 		reg:   r,
+
+		pfmc: NewPostingsForMatchersCache(defaultPostingsForMatchersCacheTTL, defaultPostingsForMatchersCacheSize),
 	}
 	if err := h.resetInMemoryState(); err != nil {
 		return nil, err
@@ -213,7 +218,16 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 
 func (h *Head) resetInMemoryState() error {
 	var err error
-	em := NewExemplarMetrics(h.reg)
+	var em *ExemplarMetrics
+	if h.exemplars != nil {
+		ce, ok := h.exemplars.(*CircularExemplarStorage)
+		if ok {
+			em = ce.metrics
+		}
+	}
+	if em == nil {
+		em = NewExemplarMetrics(h.reg)
+	}
 	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em)
 	if err != nil {
 		return err
@@ -222,7 +236,6 @@ func (h *Head) resetInMemoryState() error {
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
-	h.symbols = map[string]struct{}{}
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.iso = newIsolation()
@@ -454,7 +467,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // Init loads data from the write ahead log and prepares the head for writes.
 // It should be called before using an appender so that it
 // limits the ingested samples to the head min valid time.
-func (h *Head) Init(minValidTime int64) (err error) {
+func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
@@ -474,6 +487,7 @@ func (h *Head) Init(minValidTime int64) (err error) {
 
 	if h.opts.EnableMemorySnapshotOnShutdown {
 		level.Info(h.logger).Log("msg", "Chunk snapshot is enabled, replaying from the snapshot")
+		var err error
 		snapIdx, snapOffset, refSeries, err = h.loadChunkSnapshot()
 		if err != nil {
 			snapIdx, snapOffset = -1, 0
@@ -523,7 +537,7 @@ func (h *Head) Init(minValidTime int64) (err error) {
 	h.startWALReplayStatus(startFrom, endAt)
 
 	multiRef := map[uint64]uint64{}
-	if err == nil {
+	if err == nil && startFrom >= snapIdx {
 		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
@@ -736,6 +750,11 @@ func (h *Head) Truncate(mint int64) (err error) {
 		return nil
 	}
 	return h.truncateWAL(mint)
+}
+
+// OverlapsClosedInterval returns true if the head overlaps [mint, maxt].
+func (h *Head) OverlapsClosedInterval(mint, maxt int64) bool {
+	return h.MinTime() <= maxt && mint <= h.MaxTime()
 }
 
 // truncateMemory removes old data before mint from the head.
@@ -1049,7 +1068,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	ir := h.indexRange(mint, maxt)
 
-	p, err := PostingsForMatchers(ir, ms...)
+	p, err := ir.PostingsForMatchers(false, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
@@ -1103,6 +1122,10 @@ func (h *Head) gc() int64 {
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted)
 
+	// Remove tombstones referring to the deleted series.
+	h.tombstones.DeleteTombstones(deleted)
+	h.tombstones.TruncateBefore(mint)
+
 	if h.wal != nil {
 		_, last, _ := wal.Segments(h.wal.Dir())
 		h.deletedMtx.Lock()
@@ -1117,22 +1140,6 @@ func (h *Head) gc() int64 {
 		}
 		h.deletedMtx.Unlock()
 	}
-
-	// Rebuild symbols and label value indices from what is left in the postings terms.
-	// symMtx ensures that append of symbols and postings is disabled for rebuild time.
-	h.symMtx.Lock()
-	defer h.symMtx.Unlock()
-
-	symbols := make(map[string]struct{}, len(h.symbols))
-	if err := h.postings.Iter(func(l labels.Label, _ index.Postings) error {
-		symbols[l.Name] = struct{}{}
-		symbols[l.Value] = struct{}{}
-		return nil
-	}); err != nil {
-		// This should never happen, as the iteration function only returns nil.
-		panic(err)
-	}
-	h.symbols = symbols
 
 	return actualMint
 }
@@ -1186,11 +1193,11 @@ func (h *Head) Close() error {
 	defer h.closedMtx.Unlock()
 	h.closed = true
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
-	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
-		errs.Add(h.performChunkSnapshot())
-	}
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
+	}
+	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
+		errs.Add(h.performChunkSnapshot())
 	}
 	return errs.Err()
 
@@ -1231,14 +1238,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 
 	h.metrics.seriesCreated.Inc()
 	h.numSeries.Inc()
-
-	h.symMtx.Lock()
-	defer h.symMtx.Unlock()
-
-	for _, l := range lset {
-		h.symbols[l.Name] = struct{}{}
-		h.symbols[l.Value] = struct{}{}
-	}
 
 	h.postings.Add(id, lset)
 	return s, true, nil

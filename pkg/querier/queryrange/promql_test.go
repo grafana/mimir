@@ -168,6 +168,48 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn: "sqrt",
 		},
 		{
+			fn: "deg",
+		},
+		{
+			fn: "asinh",
+		},
+		{
+			fn: "rad",
+		},
+		{
+			fn: "cosh",
+		},
+		{
+			fn: "atan",
+		},
+		{
+			fn: "atanh",
+		},
+		{
+			fn: "asin",
+		},
+		{
+			fn: "sinh",
+		},
+		{
+			fn: "cos",
+		},
+		{
+			fn: "acosh",
+		},
+		{
+			fn: "sin",
+		},
+		{
+			fn: "tanh",
+		},
+		{
+			fn: "tan",
+		},
+		{
+			fn: "acos",
+		},
+		{
 			fn:           "stddev_over_time",
 			isTestMatrix: true,
 		},
@@ -231,6 +273,14 @@ func Test_FunctionParallelism(t *testing.T) {
 			fn:           "holt_winters",
 			isTestMatrix: true,
 			fArgs:        []string{"0.5", "0.7"},
+		},
+		{
+			fn:    "label_replace",
+			fArgs: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`},
+		},
+		{
+			fn:    "label_join",
+			fArgs: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`},
 		},
 	}
 
@@ -296,7 +346,17 @@ func Test_FunctionParallelism(t *testing.T) {
 		testedFns[tc.fn] = struct{}{}
 	}
 
+	fnToIgnore := map[string]struct{}{
+		"time":   {},
+		"scalar": {},
+		"vector": {},
+		"pi":     {},
+	}
+
 	for expectedFn := range promql.FunctionCalls {
+		if _, ok := fnToIgnore[expectedFn]; ok {
+			continue
+		}
 		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
 		_, ok := testedFns[expectedFn]
 		assert.Truef(t, ok || util.StringsContain(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)

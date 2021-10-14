@@ -224,7 +224,9 @@ func compareSampleValue(first, second model.SampleValue, opts SampleComparisonOp
 	f := float64(first)
 	s := float64(second)
 
-	if math.IsNaN(f) && math.IsNaN(s) {
+	if (math.IsNaN(f) && math.IsNaN(s)) ||
+		(math.IsInf(f, 1) && math.IsInf(s, 1)) ||
+		(math.IsInf(f, -1) && math.IsInf(s, -1)) {
 		return true
 	} else if opts.Tolerance <= 0 {
 		return math.Float64bits(f) == math.Float64bits(s)

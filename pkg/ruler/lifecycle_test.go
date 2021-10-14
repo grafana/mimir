@@ -14,12 +14,12 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/testutils"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 // TestRulerShutdown tests shutting down ruler unregisters correctly
@@ -29,7 +29,7 @@ func TestRulerShutdown(t *testing.T) {
 	config, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 	defer cleanup()
 
-	r, rcleanup := newRuler(t, config)
+	r, rcleanup := buildRuler(t, config, nil)
 	defer rcleanup()
 
 	r.cfg.EnableSharding = true
@@ -64,7 +64,7 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	ctx := context.Background()
 	config, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 	defer cleanup()
-	r, rcleanup := newRuler(t, config)
+	r, rcleanup := buildRuler(t, config, nil)
 	defer rcleanup()
 	r.cfg.EnableSharding = true
 	r.cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond

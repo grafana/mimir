@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -19,7 +20,6 @@ import (
 	"google.golang.org/grpc/test/bufconn"
 
 	grpc_util "github.com/grafana/mimir/pkg/util/grpc"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestSendQueryStream(t *testing.T) {

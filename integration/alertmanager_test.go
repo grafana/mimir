@@ -590,6 +590,33 @@ func TestAlertmanagerSharding(t *testing.T) {
 				e2e.Equals(float64(3*testCfg.replicationFactor)),
 				[]string{"cortex_alertmanager_alerts_received_total"},
 				e2e.SkipMissingMetrics))
+
+			// Endpoint: Non-API endpoints such as the web user interface
+			{
+				for _, c := range clients {
+					// Static paths - just check route, not content.
+					_, err := c.GetAlertmanager(context.Background(), "/script.js")
+					assert.NoError(t, err)
+					_, err = c.GetAlertmanager(context.Background(), "/favicon.ico")
+					assert.NoError(t, err)
+
+					// Status paths - fixed response.
+					body, err := c.GetAlertmanager(context.Background(), "/-/healthy")
+					assert.NoError(t, err)
+					assert.Equal(t, "OK", body)
+					body, err = c.GetAlertmanager(context.Background(), "/-/ready")
+					assert.NoError(t, err)
+					assert.Equal(t, "OK", body)
+
+					// Disabled paths - should 404.
+					_, err = c.GetAlertmanager(context.Background(), "/metrics")
+					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
+					_, err = c.GetAlertmanager(context.Background(), "/debug/pprof")
+					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
+					err = c.PostAlertmanager(context.Background(), "/-/reload")
+					assert.EqualError(t, err, e2emimir.ErrNotFound.Error())
+				}
+			}
 		})
 	}
 }

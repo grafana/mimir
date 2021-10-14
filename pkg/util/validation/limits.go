@@ -18,6 +18,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"golang.org/x/time/rate"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var errMaxGlobalSeriesPerUserValidation = errors.New("The ingester.max-global-series-per-user limit is unsupported if distributor.shard-by-all-labels is disabled")
@@ -62,7 +64,6 @@ type Limits struct {
 	// Ingester enforced limits.
 	// Series
 	MaxSeriesPerQuery        int `yaml:"max_series_per_query" json:"max_series_per_query"`
-	MaxSamplesPerQuery       int `yaml:"max_samples_per_query" json:"max_samples_per_query"`
 	MaxLocalSeriesPerUser    int `yaml:"max_series_per_user" json:"max_series_per_user"`
 	MaxLocalSeriesPerMetric  int `yaml:"max_series_per_metric" json:"max_series_per_metric"`
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
@@ -100,6 +101,8 @@ type Limits struct {
 
 	// Compactor.
 	CompactorBlocksRetentionPeriod model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
+	CompactorSplitAndMergeShards   int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorTenantShardSize       int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
 	// their own original config struct.
@@ -146,7 +149,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
 	f.IntVar(&l.MaxSeriesPerQuery, "ingester.max-series-per-query", 100000, "The maximum number of series for which a query can fetch samples from each ingester. This limit is enforced only in the ingesters (when querying samples not flushed to the storage yet) and it's a per-instance limit. This limit is ignored when using blocks storage. When running with blocks storage use -querier.max-fetched-series-per-query limit instead.")
-	f.IntVar(&l.MaxSamplesPerQuery, "ingester.max-samples-per-query", 1000000, "The maximum number of samples that a query can return. This limit only applies when using chunks storage with -querier.ingester-streaming=false.")
+	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
+	flagext.DeprecatedFlag(f, "ingester.max-samples-per-query", "This option is no longer used, and will be removed.", util_log.Logger)
 	f.IntVar(&l.MaxLocalSeriesPerUser, "ingester.max-series-per-user", 5000000, "The maximum number of active series per user, per ingester. 0 to disable.")
 	f.IntVar(&l.MaxLocalSeriesPerMetric, "ingester.max-series-per-metric", 50000, "The maximum number of active series per metric name, per ingester. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 0, "The maximum number of active series per user, across the cluster before replication. 0 to disable. Supported only if -distributor.shard-by-all-labels is true.")
@@ -177,6 +181,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.RulerMaxRuleGroupsPerTenant, "ruler.max-rule-groups-per-tenant", 0, "Maximum number of rule groups per-tenant. 0 to disable.")
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. 0 to disable.")
+	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 4, "The number of shards to use when splitting blocks. This config option is used only when split-and-merge compaction strategy is in use. 0 to disable splitting but keep using the split-and-merge compaction strategy.")
+	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 1, "Max number of compactors that can compact blocks for single tenant. Only used when split-and-merge compaction strategy is in use. 0 to disable the limit and use all compactors.")
 
 	// Store-gateway.
 	f.IntVar(&l.StoreGatewayTenantShardSize, "store-gateway.tenant-shard-size", 0, "The default tenant's shard size when the shuffle-sharding strategy is used. Must be set when the store-gateway sharding is enabled with the shuffle-sharding strategy. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
@@ -370,11 +376,6 @@ func (o *Overrides) MaxSeriesPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxSeriesPerQuery
 }
 
-// MaxSamplesPerQuery returns the maximum number of samples in a query (from the ingester).
-func (o *Overrides) MaxSamplesPerQuery(userID string) int {
-	return o.getOverridesForUser(userID).MaxSamplesPerQuery
-}
-
 // MaxLocalSeriesPerUser returns the maximum number of series a user is allowed to store in a single ingester.
 func (o *Overrides) MaxLocalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxLocalSeriesPerUser
@@ -506,6 +507,12 @@ func (o *Overrides) IngestionTenantShardSize(userID string) int {
 	return o.getOverridesForUser(userID).IngestionTenantShardSize
 }
 
+// CompactorTenantShardSize returns number of compactors that this user can use. Only used
+// for split-and-merge compaction strategy. 0 = all compactors.
+func (o *Overrides) CompactorTenantShardSize(userID string) int {
+	return o.getOverridesForUser(userID).CompactorTenantShardSize
+}
+
 // EvaluationDelay returns the rules evaluation delay for a given user.
 func (o *Overrides) EvaluationDelay(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).RulerEvaluationDelay)
@@ -514,6 +521,11 @@ func (o *Overrides) EvaluationDelay(userID string) time.Duration {
 // CompactorBlocksRetentionPeriod returns the retention period for a given user.
 func (o *Overrides) CompactorBlocksRetentionPeriod(userID string) time.Duration {
 	return time.Duration(o.getOverridesForUser(userID).CompactorBlocksRetentionPeriod)
+}
+
+// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
+func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
+	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

@@ -68,14 +68,14 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 	ctx := context.Background()
 	now := time.Now()
 	deletionDelay := 12 * time.Hour
-	block1 := createTSDBBlock(t, bucketClient, "user-1", 10, 20, nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", 20, 30, nil)
-	block3 := createTSDBBlock(t, bucketClient, "user-1", 30, 40, nil)
+	block1 := createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", 20, 30, 2, nil)
+	block3 := createTSDBBlock(t, bucketClient, "user-1", 30, 40, 2, nil)
 	block4 := ulid.MustNew(4, rand.Reader)
 	block5 := ulid.MustNew(5, rand.Reader)
-	block6 := createTSDBBlock(t, bucketClient, "user-1", 40, 50, nil)
-	block7 := createTSDBBlock(t, bucketClient, "user-2", 10, 20, nil)
-	block8 := createTSDBBlock(t, bucketClient, "user-2", 40, 50, nil)
+	block6 := createTSDBBlock(t, bucketClient, "user-1", 40, 50, 2, nil)
+	block7 := createTSDBBlock(t, bucketClient, "user-2", 10, 20, 2, nil)
+	block8 := createTSDBBlock(t, bucketClient, "user-2", 40, 50, 2, nil)
 	createDeletionMark(t, bucketClient, "user-1", block2, now.Add(-deletionDelay).Add(time.Hour))             // Block hasn't reached the deletion threshold yet.
 	createDeletionMark(t, bucketClient, "user-1", block3, now.Add(-deletionDelay).Add(-time.Hour))            // Block reached the deletion threshold.
 	createDeletionMark(t, bucketClient, "user-1", block4, now.Add(-deletionDelay).Add(time.Hour))             // Partial block hasn't reached the deletion threshold yet.
@@ -85,8 +85,8 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 
 	// Blocks for user-3, marked for deletion.
 	require.NoError(t, tsdb.WriteTenantDeletionMark(context.Background(), bucketClient, "user-3", nil, tsdb.NewTenantDeletionMark(time.Now())))
-	block9 := createTSDBBlock(t, bucketClient, "user-3", 10, 30, nil)
-	block10 := createTSDBBlock(t, bucketClient, "user-3", 30, 50, nil)
+	block9 := createTSDBBlock(t, bucketClient, "user-3", 10, 30, 2, nil)
+	block10 := createTSDBBlock(t, bucketClient, "user-3", 30, 50, 2, nil)
 
 	// User-4 with no more blocks, but couple of mark and debug files. Should be fully deleted.
 	user4Mark := tsdb.NewTenantDeletionMark(time.Now())
@@ -104,10 +104,9 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 
 	reg := prometheus.NewPedanticRegistry()
 	logger := log.NewNopLogger()
-	scanner := tsdb.NewUsersScanner(bucketClient, tsdb.AllUsers, logger)
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, scanner, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -217,10 +216,10 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	deletionDelay := 12 * time.Hour
-	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, nil)
-	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, nil)
-	block3 := createTSDBBlock(t, bucketClient, userID, 30, 40, nil)
-	block4 := createTSDBBlock(t, bucketClient, userID, 40, 50, nil)
+	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, 2, nil)
+	block3 := createTSDBBlock(t, bucketClient, userID, 30, 40, 2, nil)
+	block4 := createTSDBBlock(t, bucketClient, userID, 40, 50, 2, nil)
 	createDeletionMark(t, bucketClient, userID, block2, now.Add(-deletionDelay).Add(-time.Hour))
 	createDeletionMark(t, bucketClient, userID, block3, now.Add(-deletionDelay).Add(-time.Hour))
 	createDeletionMark(t, bucketClient, userID, block4, now.Add(-deletionDelay).Add(-time.Hour))
@@ -238,10 +237,9 @@ func TestBlocksCleaner_ShouldContinueOnBlockDeletionFailure(t *testing.T) {
 	}
 
 	logger := log.NewNopLogger()
-	scanner := tsdb.NewUsersScanner(bucketClient, tsdb.AllUsers, logger)
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, scanner, cfgProvider, logger, nil)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -282,9 +280,9 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	deletionDelay := 12 * time.Hour
-	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, nil)
-	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, nil)
-	block3 := createTSDBBlock(t, bucketClient, userID, 30, 40, nil)
+	block1 := createTSDBBlock(t, bucketClient, userID, 10, 20, 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, userID, 20, 30, 2, nil)
+	block3 := createTSDBBlock(t, bucketClient, userID, 30, 40, 2, nil)
 	createDeletionMark(t, bucketClient, userID, block2, now.Add(-deletionDelay).Add(-time.Hour))
 	createDeletionMark(t, bucketClient, userID, block3, now.Add(-deletionDelay).Add(time.Hour))
 
@@ -298,10 +296,9 @@ func TestBlocksCleaner_ShouldRebuildBucketIndexOnCorruptedOne(t *testing.T) {
 	}
 
 	logger := log.NewNopLogger()
-	scanner := tsdb.NewUsersScanner(bucketClient, tsdb.AllUsers, logger)
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, scanner, cfgProvider, logger, nil)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, nil)
 	require.NoError(t, services.StartAndAwaitRunning(ctx, cleaner))
 	defer services.StopAndAwaitTerminated(ctx, cleaner) //nolint:errcheck
 
@@ -336,9 +333,9 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
 
 	// Create blocks.
-	createTSDBBlock(t, bucketClient, "user-1", 10, 20, nil)
-	createTSDBBlock(t, bucketClient, "user-1", 20, 30, nil)
-	createTSDBBlock(t, bucketClient, "user-2", 30, 40, nil)
+	createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
+	createTSDBBlock(t, bucketClient, "user-1", 20, 30, 2, nil)
+	createTSDBBlock(t, bucketClient, "user-2", 30, 40, 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:      time.Hour,
@@ -349,10 +346,9 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	scanner := tsdb.NewUsersScanner(bucketClient, tsdb.AllUsers, logger)
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, scanner, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 	require.NoError(t, cleaner.cleanUsers(ctx))
 
 	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -378,8 +374,8 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	cleaner.usersScanner = tsdb.NewUsersScanner(bucketClient, func(userID string) (bool, error) { return userID == "user-1", nil }, logger)
 
 	// Create new blocks, to double check expected metrics have changed.
-	createTSDBBlock(t, bucketClient, "user-1", 40, 50, nil)
-	createTSDBBlock(t, bucketClient, "user-2", 50, 60, nil)
+	createTSDBBlock(t, bucketClient, "user-1", 40, 50, 2, nil)
+	createTSDBBlock(t, bucketClient, "user-2", 50, 60, 2, nil)
 
 	require.NoError(t, cleaner.cleanUsers(ctx))
 
@@ -406,9 +402,9 @@ func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 
-	id1 := createTSDBBlock(t, bucketClient, "user-1", 5000, 6000, nil)
-	id2 := createTSDBBlock(t, bucketClient, "user-1", 6000, 7000, nil)
-	id3 := createTSDBBlock(t, bucketClient, "user-1", 7000, 8000, nil)
+	id1 := createTSDBBlock(t, bucketClient, "user-1", 5000, 6000, 2, nil)
+	id2 := createTSDBBlock(t, bucketClient, "user-1", 6000, 7000, 2, nil)
+	id3 := createTSDBBlock(t, bucketClient, "user-1", 7000, 8000, 2, nil)
 
 	w := bucketindex.NewUpdater(bucketClient, "user-1", nil, logger)
 	idx, _, err := w.UpdateIndex(ctx, nil)
@@ -466,10 +462,10 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 		return time.Now().Add(time.Duration(hours)*time.Hour).Unix() * 1000
 	}
 
-	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), nil)
-	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), nil)
-	block3 := createTSDBBlock(t, bucketClient, "user-2", ts(-10), ts(-8), nil)
-	block4 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), nil)
+	block1 := createTSDBBlock(t, bucketClient, "user-1", ts(-10), ts(-8), 2, nil)
+	block2 := createTSDBBlock(t, bucketClient, "user-1", ts(-8), ts(-6), 2, nil)
+	block3 := createTSDBBlock(t, bucketClient, "user-2", ts(-10), ts(-8), 2, nil)
+	block4 := createTSDBBlock(t, bucketClient, "user-2", ts(-8), ts(-6), 2, nil)
 
 	cfg := BlocksCleanerConfig{
 		DeletionDelay:      time.Hour,
@@ -480,10 +476,9 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 	ctx := context.Background()
 	logger := log.NewNopLogger()
 	reg := prometheus.NewPedanticRegistry()
-	scanner := tsdb.NewUsersScanner(bucketClient, tsdb.AllUsers, logger)
 	cfgProvider := newMockConfigProvider()
 
-	cleaner := NewBlocksCleaner(cfg, bucketClient, scanner, cfgProvider, logger, reg)
+	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 
 	assertBlockExists := func(user string, block ulid.ULID, expectExists bool) {
 		exists, err := bucketClient.Exists(ctx, path.Join(user, block.String(), metadata.MetaFilename))
@@ -645,16 +640,33 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 
 type mockConfigProvider struct {
 	userRetentionPeriods map[string]time.Duration
+	splitAndMergeShards  map[string]int
+	instancesShardSize   map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
 		userRetentionPeriods: make(map[string]time.Duration),
+		splitAndMergeShards:  make(map[string]int),
 	}
 }
 
 func (m *mockConfigProvider) CompactorBlocksRetentionPeriod(user string) time.Duration {
 	if result, ok := m.userRetentionPeriods[user]; ok {
+		return result
+	}
+	return 0
+}
+
+func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
+	if result, ok := m.splitAndMergeShards[user]; ok {
+		return result
+	}
+	return 0
+}
+
+func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
+	if result, ok := m.instancesShardSize[user]; ok {
 		return result
 	}
 	return 0

@@ -23,6 +23,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -39,7 +40,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -162,11 +162,12 @@ func runTestQueryTimes(ctx context.Context, t *testing.T, ing *Ingester, ty labe
 	if err != nil {
 		return nil, nil, err
 	}
-	resp, err := ing.Query(ctx, req)
-	if err != nil {
-		return nil, nil, err
-	}
-	res := client.FromQueryResponse(resp)
+	s := stream{ctx: ctx}
+	err = ing.QueryStream(req, &s)
+	require.NoError(t, err)
+
+	res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	require.NoError(t, err)
 	sort.Sort(res)
 	return res, req, nil
 }
@@ -222,19 +223,9 @@ func retrieveTestSamples(t *testing.T, ing *Ingester, userIDs []string, testData
 	// Read samples back via ingester queries.
 	for _, userID := range userIDs {
 		ctx := user.InjectOrgID(context.Background(), userID)
-		res, req, err := runTestQuery(ctx, t, ing, labels.MatchRegexp, model.JobLabel, ".+")
+		res, _, err := runTestQuery(ctx, t, ing, labels.MatchRegexp, model.JobLabel, ".+")
 		require.NoError(t, err)
 		assert.Equal(t, testData[userID], res)
-
-		s := stream{
-			ctx: ctx,
-		}
-		err = ing.QueryStream(req, &s)
-		require.NoError(t, err)
-
-		res, err = chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
-		require.NoError(t, err)
-		assert.Equal(t, testData[userID].String(), res.String())
 	}
 }
 

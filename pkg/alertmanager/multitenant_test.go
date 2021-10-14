@@ -25,9 +25,11 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
 	"github.com/prometheus/alertmanager/notify"
 	"github.com/prometheus/alertmanager/pkg/labels"
@@ -51,8 +53,6 @@ import (
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/concurrency"
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -400,6 +400,26 @@ receivers:
       - api_url: %s
         api_secret: secret
         corp_id: babycorp
+`, backendURL)
+			},
+		},
+		"sns": {
+			getAlertmanagerConfig: func(backendURL string) string {
+				return fmt.Sprintf(`
+route:
+  receiver: sns
+  group_wait: 0s
+  group_interval: 1s
+
+receivers:
+  - name: sns
+    sns_configs:
+      - api_url: %s
+        topic_arn: arn:aws:sns:us-east-1:123456789012:MyTopic
+        sigv4:
+          region: us-east-1
+          access_key: xxx
+          secret_key: xxx
 `, backendURL)
 			},
 		},
@@ -960,6 +980,84 @@ receivers:
 	w = httptest.NewRecorder()
 	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
 
+	resp = w.Result()
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+}
+
+// This test checks that the fallback configuration does not overwrite a configuration
+// written to storage before it is picked up by the instance.
+func TestMultitenantAlertmanager_ServeHTTPBeforeSyncFailsIfConfigExists(t *testing.T) {
+	ctx := context.Background()
+	amConfig := mockAlertmanagerConfig(t)
+
+	// Prevent polling configurations, we want to test the window of time
+	// between the configuration existing and it being incorporated.
+	amConfig.PollInterval = time.Hour
+
+	// Run this test using a real storage client.
+	store := prepareInMemoryAlertStore()
+
+	externalURL := flagext.URLValue{}
+	err := externalURL.Set("http://localhost:8080/alertmanager")
+	require.NoError(t, err)
+
+	fallbackCfg := `
+global:
+  smtp_smarthost: 'localhost:25'
+  smtp_from: 'youraddress@example.org'
+route:
+  receiver: example-email
+receivers:
+  - name: example-email
+    email_configs:
+    - to: 'youraddress@example.org'
+`
+	amConfig.ExternalURL = externalURL
+
+	// Create the Multitenant Alertmanager.
+	am, err := createMultitenantAlertmanager(amConfig, nil, nil, store, nil, nil, log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	am.fallbackConfig = fallbackCfg
+
+	require.NoError(t, services.StartAndAwaitRunning(ctx, am))
+	defer services.StopAndAwaitTerminated(ctx, am) //nolint:errcheck
+
+	// Upload config for the user.
+	require.NoError(t, store.SetAlertConfig(ctx, alertspb.AlertConfigDesc{
+		User:      "user1",
+		RawConfig: simpleConfigOne,
+		Templates: []*alertspb.TemplateDesc{},
+	}))
+
+	// Request before the user configuration loaded by polling loop.
+	req := httptest.NewRequest("GET", externalURL.String()+"/api/v1/status", nil)
+	w := httptest.NewRecorder()
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
+	resp := w.Result()
+	assert.Equal(t, http.StatusNotAcceptable, resp.StatusCode)
+
+	// Check the configuration has not been replaced.
+	readConfigDesc, err := store.GetAlertConfig(ctx, "user1")
+	require.NoError(t, err)
+	assert.Equal(t, simpleConfigOne, readConfigDesc.RawConfig)
+
+	// We expect the request to fail because the user has already uploaded a
+	// configuration and should not replace it.
+	assert.Len(t, am.alertmanagers, 0)
+
+	// Now force a poll to actually load the configuration.
+	err = am.loadAndSyncConfigs(ctx, reasonPeriodic)
+	require.NoError(t, err)
+
+	// Now it should exist. This is to sanity check the test is working as expected, and
+	// that the user configuration was written correctly such that it can be picked up.
+	require.Len(t, am.alertmanagers, 1)
+	_, exists := am.alertmanagers["user1"]
+	require.True(t, exists)
+
+	// Request should now succeed.
+	w = httptest.NewRecorder()
+	am.ServeHTTP(w, req.WithContext(user.InjectOrgID(req.Context(), "user1")))
 	resp = w.Result()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 }

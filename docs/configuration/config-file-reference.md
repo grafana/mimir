@@ -810,6 +810,13 @@ lifecycler:
 # Additional custom trackers for active metrics. Active series matching a
 # provided matcher (map value) will be exposed in the custom trackers metric
 # labeled using the tracker name (map key).
+# Example:
+#   The following configuration will count the active series coming from dev and
+#   prod namespaces for each tenant and label them as {name="dev"} and
+#   {name="prod"} in the cortex_ingester_active_series_custom_tracker metric.
+#   active_series_custom_trackers:
+#       dev: '{namespace=~"dev-.*"}'
+#       prod: '{namespace=~"prod-.*"}'
 # CLI flag: -ingester.active-series-custom-trackers
 [active_series_custom_trackers: <map of tracker name (string) to matcher (string)> | default = ]
 
@@ -840,7 +847,7 @@ instance_limits:
   # Max inflight push requests that this ingester can handle (across all
   # tenants). Additional requests will be rejected. 0 = unlimited.
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests
-  [max_inflight_push_requests: <int> | default = 0]
+  [max_inflight_push_requests: <int> | default = 30000]
 
 # Comma-separated list of metric names, for which
 # -ingester.max-series-per-metric and -ingester.max-global-series-per-metric
@@ -864,10 +871,6 @@ The `querier_config` configures the querier.
 # series in memory.  Takes precedent over the -querier.iterators flag.
 # CLI flag: -querier.batch-iterators
 [batch_iterators: <boolean> | default = true]
-
-# Use streaming RPCs to query ingester.
-# CLI flag: -querier.ingester-streaming
-[ingester_streaming: <boolean> | default = true]
 
 # Maximum lookback beyond which queries are not sent to ingester. 0 means all
 # queries are sent to ingester.
@@ -1184,7 +1187,7 @@ results_cache:
 
 # Perform query parallelisations based on storage sharding configuration and
 # query ASTs. This feature is supported only by the blocks storage engine.
-# CLI flag: -querier.parallelise-shardable-queries
+# CLI flag: -query-frontend.parallelise-shardable-queries
 [parallelise_shardable_queries: <boolean> | default = false]
 ```
 
@@ -3824,6 +3827,16 @@ The `memberlist_config` configures the Gossip memberlist.
 # CLI flag: -memberlist.compression-enabled
 [compression_enabled: <boolean> | default = true]
 
+# Gossip address to advertise to other members in the cluster. Used for NAT
+# traversal.
+# CLI flag: -memberlist.advertise-addr
+[advertise_addr: <string> | default = ""]
+
+# Gossip port to advertise to other members in the cluster. Used for NAT
+# traversal.
+# CLI flag: -memberlist.advertise-port
+[advertise_port: <int> | default = 7946]
+
 # Other cluster members to join. Can be specified multiple times. It can be an
 # IP, hostname or an entry specified in the DNS Service Discovery format.
 # CLI flag: -memberlist.join
@@ -4013,11 +4026,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-series-per-query
 [max_series_per_query: <int> | default = 100000]
 
-# The maximum number of samples that a query can return. This limit only applies
-# when using chunks storage with -querier.ingester-streaming=false.
-# CLI flag: -ingester.max-samples-per-query
-[max_samples_per_query: <int> | default = 1000000]
-
 # The maximum number of active series per user, per ingester. 0 to disable.
 # CLI flag: -ingester.max-series-per-user
 [max_series_per_user: <int> | default = 5000000]
@@ -4170,6 +4178,18 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -compactor.blocks-retention-period
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
+# The number of shards to use when splitting blocks. This config option is used
+# only when split-and-merge compaction strategy is in use. 0 to disable
+# splitting but keep using the split-and-merge compaction strategy.
+# CLI flag: -compactor.split-and-merge-shards
+[compactor_split_and_merge_shards: <int> | default = 4]
+
+# Max number of compactors that can compact blocks for single tenant. Only used
+# when split-and-merge compaction strategy is in use. 0 to disable the limit and
+# use all compactors.
+# CLI flag: -compactor.compactor-tenant-shard-size
+[compactor_tenant_shard_size: <int> | default = 1]
+
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings
 # are used.
@@ -4207,7 +4227,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # is given in JSON format. Rate limit has the same meaning as
 # -alertmanager.notification-rate-limit, but only applies for specific
 # integration. Allowed integration names: webhook, email, pagerduty, opsgenie,
-# wechat, slack, victorops, pushover.
+# wechat, slack, victorops, pushover, sns.
 # CLI flag: -alertmanager.notification-rate-limit-per-integration
 [alertmanager_notification_rate_limit_per_integration: <map of string to float64> | default = {}]
 
@@ -4773,7 +4793,9 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.max-get-range-requests
     [max_get_range_requests: <int> | default = 3]
 
-    # TTL for caching object attributes for chunks.
+    # TTL for caching object attributes for chunks. If the metadata cache is
+    # configured, attributes will be stored under this cache backend, otherwise
+    # attributes are stored in the chunks cache backend.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
@@ -5009,6 +5031,11 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
   [close_idle_tsdb_timeout: <duration> | default = 0s]
 
+  # True to enable snapshotting of in-memory TSDB data on disk when shutting
+  # down.
+  # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
+  [memory_snapshot_on_shutdown: <boolean> | default = false]
+
   # Max size - in bytes - of the in-memory series hash cache. The cache is
   # shared across all tenants and it's used only when query sharding is enabled.
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
@@ -5163,6 +5190,11 @@ sharding_ring:
   # Timeout for waiting on compactor to become ACTIVE in the ring.
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
+
+# The compaction strategy to use. Supported values are: default,
+# split-and-merge.
+# CLI flag: -compactor.compaction-strategy
+[compaction_strategy: <string> | default = "default"]
 ```
 
 ### `store_gateway_config`

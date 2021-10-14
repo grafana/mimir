@@ -18,7 +18,6 @@ import (
 	"encoding/binary"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -58,6 +57,29 @@ func NewUnorderedMemPostings() *MemPostings {
 	}
 }
 
+// Symbols returns an iterator over all unique name and value strings, in order.
+func (p *MemPostings) Symbols() StringIter {
+	p.mtx.RLock()
+
+	// Add all the strings to a map to de-duplicate.
+	symbols := make(map[string]struct{}, 512)
+	for n, e := range p.m {
+		symbols[n] = struct{}{}
+		for v := range e {
+			symbols[v] = struct{}{}
+		}
+	}
+	p.mtx.RUnlock()
+
+	res := make([]string, 0, len(symbols))
+	for k := range symbols {
+		res = append(res, k)
+	}
+
+	sort.Strings(res)
+	return NewStringListIter(res)
+}
+
 // SortedKeys returns a list of sorted label keys of the postings.
 func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RLock()
@@ -71,8 +93,8 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 	p.mtx.RUnlock()
 
 	sort.Slice(keys, func(i, j int) bool {
-		if d := strings.Compare(keys[i].Name, keys[j].Name); d != 0 {
-			return d < 0
+		if keys[i].Name != keys[j].Name {
+			return keys[i].Name < keys[j].Name
 		}
 		return keys[i].Value < keys[j].Value
 	})
@@ -773,4 +795,29 @@ func (it *bigEndianPostings) Seek(x uint64) bool {
 
 func (it *bigEndianPostings) Err() error {
 	return nil
+}
+
+// PostingsCloner takes an existing Postings and allows independently clone them.
+type PostingsCloner struct {
+	ids []uint64
+	err error
+}
+
+// NewPostingsCloner takes an existing Postings and allows independently clone them.
+// The instance provided shouldn't have been used before (no Next() calls should have been done)
+// and it shouldn't be used once provided to the PostingsCloner.
+func NewPostingsCloner(p Postings) *PostingsCloner {
+	var ids []uint64
+	for p.Next() {
+		ids = append(ids, p.At())
+	}
+	return &PostingsCloner{ids: ids, err: p.Err()}
+}
+
+// Clone returns another independent Postings instance.
+func (c *PostingsCloner) Clone() Postings {
+	if c.err != nil {
+		return ErrPostings(c.err)
+	}
+	return newListPostings(c.ids...)
 }

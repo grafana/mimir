@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -47,7 +48,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/concurrency"
 	"github.com/grafana/mimir/pkg/util/extract"
 	logutil "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
@@ -743,9 +743,6 @@ func (i *Ingester) applyExemplarsSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
 		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
-		if localValue == 0 {
-			localValue = 1 // work round bug in Prometheus that we cannot change from 0 to non-0 value FIXME
-		}
 		// We populate a Config struct with just one value, which is OK
 		// because Head.ApplyConfig only looks at one value.
 		// The other fields in Config are things like Rules, Scrape
@@ -1045,74 +1042,6 @@ func (u *userTSDB) releaseAppendLock() {
 	u.pushesInFlight.Done()
 }
 
-func (i *Ingester) v2Query(ctx context.Context, req *client.QueryRequest) (*client.QueryResponse, error) {
-	if err := i.checkRunning(); err != nil {
-		return nil, err
-	}
-
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	from, through, matchers, err := client.FromQueryRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	// Check if query sharding is enabled for this query. If so, we need to remove the
-	// query sharding label from matchers and pass the shard info down the query execution path.
-	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
-	if err != nil {
-		return nil, err
-	}
-
-	i.metrics.queries.Inc()
-
-	db := i.getTSDB(userID)
-	if db == nil {
-		return &client.QueryResponse{}, nil
-	}
-
-	q, err := db.Querier(ctx, int64(from), int64(through))
-	if err != nil {
-		return nil, err
-	}
-	defer q.Close()
-
-	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	hints := getSelectHintsForShard(int64(from), int64(through), shard)
-	ss := q.Select(false, hints, matchers...)
-	if ss.Err() != nil {
-		return nil, ss.Err()
-	}
-
-	numSamples := 0
-
-	result := &client.QueryResponse{}
-	for ss.Next() {
-		series := ss.At()
-
-		ts := mimirpb.TimeSeries{
-			Labels: mimirpb.FromLabelsToLabelAdapters(series.Labels()),
-		}
-
-		it := series.Iterator()
-		for it.Next() {
-			t, v := it.At()
-			ts.Samples = append(ts.Samples, mimirpb.Sample{Value: v, TimestampMs: t})
-		}
-
-		numSamples += len(ts.Samples)
-		result.Timeseries = append(result.Timeseries, ts)
-	}
-
-	i.metrics.queriedSeries.Observe(float64(len(result.Timeseries)))
-	i.metrics.queriedSamples.Observe(float64(numSamples))
-
-	return result, ss.Err()
-}
-
 func (i *Ingester) v2QueryExemplars(ctx context.Context, req *client.ExemplarQueryRequest) (*client.ExemplarQueryResponse, error) {
 	if err := i.checkRunning(); err != nil {
 		return nil, err
@@ -1355,6 +1284,37 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 		})
 	}
 	return response, nil
+}
+
+// we defined to use the limit of 1 MB because we have default limit for the GRPC message that is 4 MB.
+// So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
+const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
+
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("labelNamesAndValues endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	userID, err := tenant.TenantID(server.Context())
+	if err != nil {
+		return err
+	}
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
+	}
+	index, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	defer index.Close()
+	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
 }
 
 func createUserStats(db *userTSDB) *client.UserStatsResponse {
@@ -1687,24 +1647,22 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
-	if maxExemplars == 0 {
-		maxExemplars = 1 // work round bug in Prometheus that we cannot change from 0 to non-0 value FIXME
-	}
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
-		RetentionDuration:         i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
-		MinBlockDuration:          blockRanges[0],
-		MaxBlockDuration:          blockRanges[len(blockRanges)-1],
-		NoLockfile:                true,
-		StripeSize:                i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize: i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
-		WALCompression:            i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
-		WALSegmentSize:            i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
-		SeriesLifecycleCallback:   userDB,
-		BlocksToDelete:            userDB.blocksToDelete,
-		EnableExemplarStorage:     true, // enable for everyone so we can raise the limit later
-		MaxExemplars:              int64(maxExemplars),
-		SeriesHashCache:           i.TSDBState.seriesHashCache,
+		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
+		MinBlockDuration:               blockRanges[0],
+		MaxBlockDuration:               blockRanges[len(blockRanges)-1],
+		NoLockfile:                     true,
+		StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
+		HeadChunksWriteBufferSize:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		WALCompression:                 i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
+		WALSegmentSize:                 i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
+		SeriesLifecycleCallback:        userDB,
+		BlocksToDelete:                 userDB.blocksToDelete,
+		EnableExemplarStorage:          true, // enable for everyone so we can raise the limit later
+		MaxExemplars:                   int64(maxExemplars),
+		SeriesHashCache:                i.TSDBState.seriesHashCache,
+		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 	}, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to open TSDB: %s", udir)

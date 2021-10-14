@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
 	"github.com/grafana/mimir/pkg/ring"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestDistributor_DistributeRequest(t *testing.T) {
@@ -107,15 +107,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			expectedTotalCalls: 3,
 			route:              "/v2/alerts/groups",
 			responseBody:       []byte(`[]`),
-		}, {
-			name:                "Read /v1/alerts/groups not supported",
-			numAM:               5,
-			numHappyAM:          5,
-			replicationFactor:   3,
-			expStatusCode:       http.StatusNotFound,
-			expectedTotalCalls:  0,
-			headersNotPreserved: true,
-			route:               "/v1/alerts/groups",
 		}, {
 			name:                "Write /alerts/groups not supported",
 			numAM:               5,
@@ -211,6 +202,15 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 			headersNotPreserved: true,
 			route:               "/status",
 		}, {
+			name:               "Read /some/place/arbitrary is sent to only 1 AM",
+			numAM:              5,
+			numHappyAM:         5,
+			replicationFactor:  3,
+			isRead:             true,
+			expStatusCode:      http.StatusOK,
+			expectedTotalCalls: 1,
+			route:              "/some/place/arbitrary",
+		}, {
 			name:               "Read /receivers is sent to only 1 AM",
 			numAM:              5,
 			numHappyAM:         5,
@@ -283,39 +283,6 @@ func TestDistributor_DistributeRequest(t *testing.T) {
 		})
 	}
 
-}
-
-func TestDistributor_IsPathSupported(t *testing.T) {
-	supported := map[string]bool{
-		"/alertmanager/api/v1/alerts":           true,
-		"/alertmanager/api/v1/alerts/groups":    false,
-		"/alertmanager/api/v1/silences":         true,
-		"/alertmanager/api/v1/silence/id":       true,
-		"/alertmanager/api/v1/silence/anything": true,
-		"/alertmanager/api/v1/silence/really":   true,
-		"/alertmanager/api/v1/status":           true,
-		"/alertmanager/api/v1/receivers":        true,
-		"/alertmanager/api/v1/other":            false,
-		"/alertmanager/api/v2/alerts":           true,
-		"/alertmanager/api/v2/alerts/groups":    true,
-		"/alertmanager/api/v2/silences":         true,
-		"/alertmanager/api/v2/silence/id":       true,
-		"/alertmanager/api/v2/silence/anything": true,
-		"/alertmanager/api/v2/silence/really":   true,
-		"/alertmanager/api/v2/status":           true,
-		"/alertmanager/api/v2/receivers":        true,
-		"/alertmanager/api/v2/other":            false,
-		"/alertmanager/other":                   false,
-		"/other":                                false,
-	}
-
-	for path, isSupported := range supported {
-		t.Run(path, func(t *testing.T) {
-			d, _, cleanup := prepare(t, 1, 1, 1, []byte{})
-			t.Cleanup(cleanup)
-			require.Equal(t, isSupported, d.IsPathSupported(path))
-		})
-	}
 }
 
 func prepare(t *testing.T, numAM, numHappyAM, replicationFactor int, responseBody []byte) (*Distributor, []*mockAlertmanager, func()) {

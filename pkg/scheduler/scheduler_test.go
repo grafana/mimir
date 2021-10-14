@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
@@ -29,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	chunk "github.com/grafana/mimir/pkg/util/grpcutil"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const testMaxOutstandingPerTenant = 5

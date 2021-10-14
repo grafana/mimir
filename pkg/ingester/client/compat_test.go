@@ -6,9 +6,7 @@
 package client
 
 import (
-	"fmt"
 	"reflect"
-	"sort"
 	"strconv"
 	"testing"
 
@@ -83,36 +81,6 @@ func TestLabelNamesRequest(t *testing.T) {
 	assert.Equal(t, int64(mint), actualMinT)
 	assert.Equal(t, int64(maxt), actualMaxT)
 	assert.Equal(t, matchers, actualMatchers)
-}
-
-func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matrix {
-	m := make(model.Matrix, 0, numSeries)
-	for i := 0; i < numSeries; i++ {
-		ss := model.SampleStream{
-			Metric: model.Metric{
-				model.MetricNameLabel: model.LabelValue(fmt.Sprintf("testmetric_%d", i)),
-				model.JobLabel:        "testjob",
-			},
-			Values: make([]model.SamplePair, 0, samplesPerSeries),
-		}
-		for j := 0; j < samplesPerSeries; j++ {
-			ss.Values = append(ss.Values, model.SamplePair{
-				Timestamp: model.Time(i + j + offset),
-				Value:     model.SampleValue(i + j + offset),
-			})
-		}
-		m = append(m, &ss)
-	}
-	sort.Sort(m)
-	return m
-}
-
-func TestQueryResponse(t *testing.T) {
-	want := buildTestMatrix(10, 10, 10)
-	have := FromQueryResponse(ToQueryResponse(want))
-	if !reflect.DeepEqual(have, want) {
-		t.Fatalf("Bad FromQueryResponse(ToQueryResponse) round trip")
-	}
 }
 
 // This test shows label sets with same fingerprints, and also shows how to easily create new collisions

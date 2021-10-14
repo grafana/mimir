@@ -27,6 +27,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -54,14 +55,15 @@ import (
 	"github.com/grafana/mimir/pkg/ring"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	util_math "github.com/grafana/mimir/pkg/util/math"
-	"github.com/grafana/mimir/pkg/util/test"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestIngester_v2Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
 	metricNames := []string{
 		"cortex_ingester_ingested_samples_total",
 		"cortex_ingester_ingested_samples_failures_total",
@@ -77,7 +79,7 @@ func TestIngester_v2Push(t *testing.T) {
 	tests := map[string]struct {
 		reqs                      []*mimirpb.WriteRequest
 		expectedErr               error
-		expectedIngested          []mimirpb.TimeSeries
+		expectedIngested          model.Matrix
 		expectedMetadataIngested  []*mimirpb.MetricMetadata
 		expectedExemplarsIngested []mimirpb.TimeSeries
 		expectedMetrics           string
@@ -103,8 +105,8 @@ func TestIngester_v2Push(t *testing.T) {
 					mimirpb.API),
 			},
 			expectedErr: nil,
-			expectedIngested: []mimirpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}, {Value: 2, TimestampMs: 10}}},
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
 			expectedMetadataIngested: []*mimirpb.MetricMetadata{
 				{MetricFamilyName: "metric_name_2", Help: "a help for metric_name_2", Unit: "", Type: mimirpb.GAUGE},
@@ -185,8 +187,8 @@ func TestIngester_v2Push(t *testing.T) {
 				},
 			},
 			expectedErr: nil,
-			expectedIngested: []mimirpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}}},
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}}},
 			},
 			expectedExemplarsIngested: []mimirpb.TimeSeries{
 				{
@@ -272,8 +274,8 @@ func TestIngester_v2Push(t *testing.T) {
 					mimirpb.API),
 			},
 			expectedErr: nil,
-			expectedIngested: []mimirpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 9}, {Value: 2, TimestampMs: 10}}},
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 1, Timestamp: 9}, {Value: 2, Timestamp: 10}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -310,8 +312,8 @@ func TestIngester_v2Push(t *testing.T) {
 					mimirpb.API),
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfOrderSample, model.Time(9), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
-			expectedIngested: []mimirpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 10}}},
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 10}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -354,8 +356,8 @@ func TestIngester_v2Push(t *testing.T) {
 					mimirpb.API),
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
-			expectedIngested: []mimirpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}}},
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -398,8 +400,8 @@ func TestIngester_v2Push(t *testing.T) {
 					mimirpb.API),
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrDuplicateSampleForTimestamp, model.Time(1575043969), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
-			expectedIngested: []mimirpb.TimeSeries{
-				{Labels: metricLabelAdapters, Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}}},
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}}},
 			},
 			expectedMetrics: `
 				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
@@ -583,15 +585,20 @@ func TestIngester_v2Push(t *testing.T) {
 			}
 
 			// Read back samples to see what has been really ingested
-			res, err := i.v2Query(ctx, &client.QueryRequest{
+			s := &stream{ctx: ctx}
+			err = i.v2QueryStream(&client.QueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
-			})
-
+			}, s)
 			require.NoError(t, err)
-			require.NotNil(t, res)
-			assert.Equal(t, testData.expectedIngested, res.Timeseries)
+
+			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			require.NoError(t, err)
+			if len(res) == 0 {
+				res = nil
+			}
+			assert.Equal(t, testData.expectedIngested, res)
 
 			// Read back samples to see what has been really ingested
 			exemplarRes, err := i.v2QueryExemplars(ctx, &client.ExemplarQueryRequest{
@@ -610,7 +617,7 @@ func TestIngester_v2Push(t *testing.T) {
 			mres, err := i.MetricsMetadata(ctx, &client.MetricsMetadataRequest{})
 
 			require.NoError(t, err)
-			require.NotNil(t, res)
+			require.NotNil(t, mres)
 
 			// Order is never guaranteed.
 			assert.ElementsMatch(t, testData.expectedMetadataIngested, mres.Metadata)
@@ -1248,11 +1255,7 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 }
 
 func Test_Ingester_v2Query(t *testing.T) {
-	series := []struct {
-		lbls      labels.Labels
-		value     float64
-		timestamp int64
-	}{
+	series := []series{
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}, {Name: "route", Value: "get_user"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "route", Value: "get_user"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
@@ -1262,7 +1265,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 		from     int64
 		to       int64
 		matchers []*client.LabelMatcher
-		expected []mimirpb.TimeSeries
+		expected model.Matrix
 	}{
 		"should return an empty response if no metric matches": {
 			from: math.MinInt64,
@@ -1270,7 +1273,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "unknown"},
 			},
-			expected: []mimirpb.TimeSeries{},
+			expected: model.Matrix{},
 		},
 		"should filter series by == matcher": {
 			from: math.MinInt64,
@@ -1278,9 +1281,9 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
-			expected: []mimirpb.TimeSeries{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 100000}}},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 110000}}},
+			expected: model.Matrix{
+				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by != matcher": {
@@ -1289,8 +1292,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.NOT_EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
-			expected: []mimirpb.TimeSeries{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[2].lbls), Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 200000}}},
+			expected: model.Matrix{
+				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by =~ matcher": {
@@ -1299,9 +1302,9 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.REGEX_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
-			expected: []mimirpb.TimeSeries{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 100000}}},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 110000}}},
+			expected: model.Matrix{
+				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
+				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by !~ matcher": {
@@ -1310,8 +1313,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.REGEX_NO_MATCH, Name: model.MetricNameLabel, Value: ".*_1"},
 			},
-			expected: []mimirpb.TimeSeries{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[2].lbls), Samples: []mimirpb.Sample{{Value: 2, TimestampMs: 200000}}},
+			expected: model.Matrix{
+				&model.SampleStream{Metric: util.LabelsToMetric(series[2].lbls), Values: []model.SamplePair{{Value: 2, Timestamp: 200000}}},
 			},
 		},
 		"should filter series by multiple matchers": {
@@ -1321,8 +1324,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				{Type: client.REGEX_MATCH, Name: "status", Value: "5.."},
 			},
-			expected: []mimirpb.TimeSeries{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[1].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 110000}}},
+			expected: model.Matrix{
+				&model.SampleStream{Metric: util.LabelsToMetric(series[1].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 110000}}},
 			},
 		},
 		"should filter series by matcher and time range": {
@@ -1331,8 +1334,8 @@ func Test_Ingester_v2Query(t *testing.T) {
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 			},
-			expected: []mimirpb.TimeSeries{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(series[0].lbls), Samples: []mimirpb.Sample{{Value: 1, TimestampMs: 100000}}},
+			expected: model.Matrix{
+				&model.SampleStream{Metric: util.LabelsToMetric(series[0].lbls), Values: []model.SamplePair{{Value: 1, Timestamp: 100000}}},
 			},
 		},
 	}
@@ -1366,11 +1369,94 @@ func Test_Ingester_v2Query(t *testing.T) {
 				Matchers:         testData.matchers,
 			}
 
-			res, err := i.v2Query(ctx, req)
+			s := stream{ctx: ctx}
+			err = i.v2QueryStream(req, &s)
 			require.NoError(t, err)
-			assert.ElementsMatch(t, testData.expected, res.Timeseries)
+
+			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, testData.expected, res)
 		})
 	}
+}
+
+func TestIngester_LabelNamesCardinality(t *testing.T) {
+	series := []series{
+		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "500"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "metric_0"}, {Name: "status", Value: "200"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "metric_1"}, {Name: "env", Value: "prod"}}, 2, 200000},
+		{labels.Labels{
+			{Name: labels.MetricName, Value: "metric_1"},
+			{Name: "env", Value: "prod"},
+			{Name: "status", Value: "300"}}, 3, 200000},
+	}
+
+	tests := []struct {
+		testName string
+		matchers []*client.LabelMatcher
+		expected []*client.LabelValues
+	}{
+		{testName: "expected all label with values",
+			matchers: []*client.LabelMatcher{},
+			expected: []*client.LabelValues{
+				{LabelName: labels.MetricName, Values: []string{"metric_0", "metric_1"}},
+				{LabelName: "status", Values: []string{"200", "300", "500"}},
+				{LabelName: "env", Values: []string{"prod"}}},
+		},
+		{testName: "expected label values only from `metric_0`",
+			matchers: []*client.LabelMatcher{{Type: client.EQUAL, Name: "__name__", Value: "metric_0"}},
+			expected: []*client.LabelValues{
+				{LabelName: labels.MetricName, Values: []string{"metric_0"}},
+				{LabelName: "status", Values: []string{"200", "500"}},
+			},
+		},
+	}
+
+	// Create ingester
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+
+	ctx := pushSeriesToIngester(t, series, i)
+
+	// Run tests
+	for _, tc := range tests {
+		t.Run(tc.testName, func(t *testing.T) {
+			req := &client.LabelNamesAndValuesRequest{
+				Matchers: tc.matchers,
+			}
+
+			s := MockLabelNamesAndValuesServer{context: ctx}
+			require.NoError(t, i.LabelNamesAndValues(req, &s))
+
+			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
+		})
+	}
+}
+
+type series struct {
+	lbls      labels.Labels
+	value     float64
+	timestamp int64
+}
+
+func pushSeriesToIngester(t *testing.T, series []series, i *Ingester) context.Context {
+	ctx := user.InjectOrgID(context.Background(), "test")
+	for _, series := range series {
+		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
+		_, err := i.v2Push(ctx, req)
+		require.NoError(t, err)
+	}
+	return ctx
+}
+
+func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse) []*client.LabelValues {
+	var items []*client.LabelValues
+	for _, res := range responses {
+		items = append(items, res.Items...)
+	}
+	for _, it := range items {
+		sort.Strings(it.Values)
+	}
+	return items
 }
 
 func TestIngester_v2Query_QuerySharding(t *testing.T) {
@@ -1412,7 +1498,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 	}
 
 	// Query all series.
-	var actualTimeseries []mimirpb.TimeSeries
+	var actualTimeseries model.Matrix
 
 	for shardIndex := 0; shardIndex < numShards; shardIndex++ {
 		req := &client.QueryRequest{
@@ -1427,10 +1513,13 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 			},
 		}
 
-		res, err := i.v2Query(ctx, req)
+		s := stream{ctx: ctx}
+		err = i.v2QueryStream(req, &s)
 		require.NoError(t, err)
 
-		actualTimeseries = append(actualTimeseries, res.Timeseries...)
+		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+		require.NoError(t, err)
+		actualTimeseries = append(actualTimeseries, res...)
 	}
 
 	// We expect that all series have been returned.
@@ -1439,7 +1528,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 	actualSeriesIDs := map[int]struct{}{}
 
 	for _, series := range actualTimeseries {
-		seriesID, err := strconv.Atoi(mimirpb.FromLabelAdaptersToLabels(series.Labels).Get("series_id"))
+		seriesID, err := strconv.Atoi(string(series.Metric[model.LabelName("series_id")]))
 		require.NoError(t, err)
 
 		// We expect no duplicated series in the result.
@@ -1448,9 +1537,9 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 		actualSeriesIDs[seriesID] = struct{}{}
 
 		// We expect 1 sample with the same timestamp and value we've written.
-		require.Len(t, series.Samples, 1)
-		assert.Equal(t, int64(seriesID), series.Samples[0].TimestampMs)
-		assert.Equal(t, float64(seriesID), series.Samples[0].Value)
+		require.Len(t, series.Values, 1)
+		assert.Equal(t, int64(seriesID), int64(series.Values[0].Timestamp))
+		assert.Equal(t, float64(seriesID), float64(series.Values[0].Value))
 	}
 }
 
@@ -1465,9 +1554,11 @@ func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &client.QueryRequest{}
 
-	res, err := i.v2Query(ctx, req)
+	s := stream{ctx: ctx}
+	err = i.v2QueryStream(req, &s)
 	require.NoError(t, err)
-	assert.Equal(t, &client.QueryResponse{}, res)
+
+	assert.Empty(t, s.responses)
 
 	// Check if the TSDB has been created
 	_, tsdbCreated := i.TSDBState.dbs[userID]
@@ -2380,6 +2471,26 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 			})
 		}
 	})
+}
+
+func requireActiveIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
+	ingester := getStartedIngesterWithBlocksStorage(t, ingesterCfg, registerer)
+	// Wait until the ingester is ACTIVE
+	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
+		return ingester.lifecycler.GetState()
+	})
+	return ingester
+}
+
+func getStartedIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
+	ingester, err := prepareIngesterWithBlocksStorage(t, ingesterCfg, registerer)
+	require.NoError(t, err)
+	ctx := context.Background()
+	require.NoError(t, services.StartAndAwaitRunning(ctx, ingester))
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ingester))
+	})
+	return ingester
 }
 
 func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, queryShardingEnabled bool, numShards int) {

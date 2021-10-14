@@ -17,7 +17,7 @@ import (
 func TestSyncerMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 
-	sm := newSyncerMetrics(reg)
+	sm := newAggregatedSyncerMetrics(reg)
 	sm.gatherThanosSyncerMetrics(generateTestData(12345))
 	sm.gatherThanosSyncerMetrics(generateTestData(76543))
 	sm.gatherThanosSyncerMetrics(generateTestData(22222))
@@ -90,29 +90,6 @@ func TestSyncerMetrics(t *testing.T) {
 			cortex_compactor_garbage_collection_duration_seconds_bucket{le="+Inf"} 3
 			cortex_compactor_garbage_collection_duration_seconds_sum 77.777
 			cortex_compactor_garbage_collection_duration_seconds_count 3
-
-			# HELP cortex_compactor_group_compactions_total Total number of group compaction attempts that resulted in a new block.
-			# TYPE cortex_compactor_group_compactions_total counter
-			# Sum across all groups
-			cortex_compactor_group_compactions_total 2999970
-
-			# HELP cortex_compactor_group_compaction_runs_started_total Total number of group compaction attempts.
-			# TYPE cortex_compactor_group_compaction_runs_started_total counter
-			# Sum across all groups
-			cortex_compactor_group_compaction_runs_started_total 3999960
-
-			# HELP cortex_compactor_group_compaction_runs_completed_total Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.
-			# TYPE cortex_compactor_group_compaction_runs_completed_total counter
-			# Sum across all groups
-			cortex_compactor_group_compaction_runs_completed_total 4999950
-
-			# HELP cortex_compactor_group_compactions_failures_total Total number of failed group compactions.
-			# TYPE cortex_compactor_group_compactions_failures_total counter
-			cortex_compactor_group_compactions_failures_total 5999940
-
-			# HELP cortex_compactor_group_vertical_compactions_total Total number of group compaction attempts that resulted in a new block based on overlapping blocks.
-			# TYPE cortex_compactor_group_vertical_compactions_total counter
-			cortex_compactor_group_vertical_compactions_total 6999930
 	`))
 	require.NoError(t, err)
 }
@@ -127,21 +104,6 @@ func generateTestData(base float64) *prometheus.Registry {
 	m.garbageCollections.Add(5 * base)
 	m.garbageCollectionFailures.Add(6 * base)
 	m.garbageCollectionDuration.Observe(7 * base / 10000)
-	m.compactions.WithLabelValues("aaa").Add(8 * base)
-	m.compactions.WithLabelValues("bbb").Add(9 * base)
-	m.compactions.WithLabelValues("ccc").Add(10 * base)
-	m.compactionRunsStarted.WithLabelValues("aaa").Add(11 * base)
-	m.compactionRunsStarted.WithLabelValues("bbb").Add(12 * base)
-	m.compactionRunsStarted.WithLabelValues("ccc").Add(13 * base)
-	m.compactionRunsCompleted.WithLabelValues("aaa").Add(14 * base)
-	m.compactionRunsCompleted.WithLabelValues("bbb").Add(15 * base)
-	m.compactionRunsCompleted.WithLabelValues("ccc").Add(16 * base)
-	m.compactionFailures.WithLabelValues("aaa").Add(17 * base)
-	m.compactionFailures.WithLabelValues("bbb").Add(18 * base)
-	m.compactionFailures.WithLabelValues("ccc").Add(19 * base)
-	m.verticalCompactions.WithLabelValues("aaa").Add(20 * base)
-	m.verticalCompactions.WithLabelValues("bbb").Add(21 * base)
-	m.verticalCompactions.WithLabelValues("ccc").Add(22 * base)
 	return r
 }
 
@@ -154,11 +116,6 @@ type testSyncerMetrics struct {
 	garbageCollections        prometheus.Counter
 	garbageCollectionFailures prometheus.Counter
 	garbageCollectionDuration prometheus.Histogram
-	compactions               *prometheus.CounterVec
-	compactionRunsStarted     *prometheus.CounterVec
-	compactionRunsCompleted   *prometheus.CounterVec
-	compactionFailures        *prometheus.CounterVec
-	verticalCompactions       *prometheus.CounterVec
 }
 
 func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
@@ -196,27 +153,6 @@ func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 		Buckets: []float64{0.01, 0.1, 0.3, 0.6, 1, 3, 6, 9, 20, 30, 60, 90, 120, 240, 360, 720},
 	})
 
-	m.compactions = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_compact_group_compactions_total",
-		Help: "Total number of group compaction attempts that resulted in a new block.",
-	}, []string{"group"})
-	m.compactionRunsStarted = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_compact_group_compaction_runs_started_total",
-		Help: "Total number of group compaction attempts.",
-	}, []string{"group"})
-	m.compactionRunsCompleted = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_compact_group_compaction_runs_completed_total",
-		Help: "Total number of group completed compaction runs. This also includes compactor group runs that resulted with no compaction.",
-	}, []string{"group"})
-	m.compactionFailures = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_compact_group_compactions_failures_total",
-		Help: "Total number of failed group compactions.",
-	}, []string{"group"})
-	m.verticalCompactions = prometheus.NewCounterVec(prometheus.CounterOpts{
-		Name: "thanos_compact_group_vertical_compactions_total",
-		Help: "Total number of group compaction attempts that resulted in a new block based on overlapping blocks.",
-	}, []string{"group"})
-
 	if reg != nil {
 		reg.MustRegister(
 			m.metaSync,
@@ -226,11 +162,6 @@ func newTestSyncerMetrics(reg prometheus.Registerer) *testSyncerMetrics {
 			m.garbageCollections,
 			m.garbageCollectionFailures,
 			m.garbageCollectionDuration,
-			m.compactions,
-			m.compactionRunsStarted,
-			m.compactionRunsCompleted,
-			m.compactionFailures,
-			m.verticalCompactions,
 		)
 	}
 	return &m

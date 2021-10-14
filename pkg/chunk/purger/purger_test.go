@@ -17,6 +17,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -25,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/test"
 )
 
 const (
@@ -122,8 +122,10 @@ var purgePlanTestCases = []struct {
 		deleteRequestInterval:  model.Interval{End: model.Time(millisecondPerDay / 2)},
 		expectedNumberOfPlans:  1,
 		numChunksToDelete:      12 + 1, // one chunk for each hour + end time touches chunk at boundary
-		lastChunkPartialDeletionInterval: &Interval{StartTimestampMs: int64(millisecondPerDay / 2),
-			EndTimestampMs: int64(millisecondPerDay / 2)},
+		lastChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: int64(millisecondPerDay / 2),
+			EndTimestampMs:   int64(millisecondPerDay / 2),
+		},
 	},
 	{
 		name:                   "deleting a full day from 2 days data",
@@ -131,32 +133,46 @@ var purgePlanTestCases = []struct {
 		deleteRequestInterval:  model.Interval{End: modelTimeDay},
 		expectedNumberOfPlans:  1,
 		numChunksToDelete:      24 + 1, // one chunk for each hour + end time touches chunk at boundary
-		lastChunkPartialDeletionInterval: &Interval{StartTimestampMs: millisecondPerDay,
-			EndTimestampMs: millisecondPerDay},
+		lastChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: millisecondPerDay,
+			EndTimestampMs:   millisecondPerDay,
+		},
 	},
 	{
 		name:                   "deleting 2 days partially from 2 days data",
 		chunkStoreDataInterval: model.Interval{End: modelTimeDay * 2},
-		deleteRequestInterval: model.Interval{Start: model.Time(millisecondPerDay / 2),
-			End: model.Time(millisecondPerDay + millisecondPerDay/2)},
+		deleteRequestInterval: model.Interval{
+			Start: model.Time(millisecondPerDay / 2),
+			End:   model.Time(millisecondPerDay + millisecondPerDay/2),
+		},
 		expectedNumberOfPlans: 2,
 		numChunksToDelete:     24 + 2, // one chunk for each hour + start and end time touches chunk at boundary
-		firstChunkPartialDeletionInterval: &Interval{StartTimestampMs: int64(millisecondPerDay / 2),
-			EndTimestampMs: int64(millisecondPerDay / 2)},
-		lastChunkPartialDeletionInterval: &Interval{StartTimestampMs: millisecondPerDay + millisecondPerDay/2,
-			EndTimestampMs: millisecondPerDay + millisecondPerDay/2},
+		firstChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: int64(millisecondPerDay / 2),
+			EndTimestampMs:   int64(millisecondPerDay / 2),
+		},
+		lastChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: millisecondPerDay + millisecondPerDay/2,
+			EndTimestampMs:   millisecondPerDay + millisecondPerDay/2,
+		},
 	},
 	{
 		name:                   "deleting 2 days partially, not aligned with hour, from 2 days data",
 		chunkStoreDataInterval: model.Interval{End: modelTimeDay * 2},
-		deleteRequestInterval: model.Interval{Start: model.Time(millisecondPerDay / 2).Add(time.Minute),
-			End: model.Time(millisecondPerDay + millisecondPerDay/2).Add(-time.Minute)},
+		deleteRequestInterval: model.Interval{
+			Start: model.Time(millisecondPerDay / 2).Add(time.Minute),
+			End:   model.Time(millisecondPerDay + millisecondPerDay/2).Add(-time.Minute),
+		},
 		expectedNumberOfPlans: 2,
 		numChunksToDelete:     24, // one chunk for each hour, no chunks touched at boundary
-		firstChunkPartialDeletionInterval: &Interval{StartTimestampMs: int64(model.Time(millisecondPerDay / 2).Add(time.Minute)),
-			EndTimestampMs: int64(model.Time(millisecondPerDay / 2).Add(time.Hour))},
-		lastChunkPartialDeletionInterval: &Interval{StartTimestampMs: int64(model.Time(millisecondPerDay + millisecondPerDay/2).Add(-time.Hour)),
-			EndTimestampMs: int64(model.Time(millisecondPerDay + millisecondPerDay/2).Add(-time.Minute))},
+		firstChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: int64(model.Time(millisecondPerDay / 2).Add(time.Minute)),
+			EndTimestampMs:   int64(model.Time(millisecondPerDay / 2).Add(time.Hour)),
+		},
+		lastChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: int64(model.Time(millisecondPerDay + millisecondPerDay/2).Add(-time.Hour)),
+			EndTimestampMs:   int64(model.Time(millisecondPerDay + millisecondPerDay/2).Add(-time.Minute)),
+		},
 	},
 	{
 		name:                   "deleting data outside of period of existing data",
@@ -171,8 +187,10 @@ var purgePlanTestCases = []struct {
 		deleteRequestInterval:  model.Interval{Start: modelTimeDay.Add(-30 * time.Minute), End: modelTimeDay.Add(-15 * time.Minute)},
 		expectedNumberOfPlans:  1,
 		numChunksToDelete:      1,
-		firstChunkPartialDeletionInterval: &Interval{StartTimestampMs: int64(modelTimeDay.Add(-30 * time.Minute)),
-			EndTimestampMs: int64(modelTimeDay.Add(-15 * time.Minute))},
+		firstChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: int64(modelTimeDay.Add(-30 * time.Minute)),
+			EndTimestampMs:   int64(modelTimeDay.Add(-15 * time.Minute)),
+		},
 	},
 	{
 		name:                   "building multi-day chunk and deleting part of it for each day",
@@ -180,8 +198,10 @@ var purgePlanTestCases = []struct {
 		deleteRequestInterval:  model.Interval{Start: modelTimeDay.Add(-15 * time.Minute), End: modelTimeDay.Add(15 * time.Minute)},
 		expectedNumberOfPlans:  2,
 		numChunksToDelete:      1,
-		firstChunkPartialDeletionInterval: &Interval{StartTimestampMs: int64(modelTimeDay.Add(-15 * time.Minute)),
-			EndTimestampMs: int64(modelTimeDay.Add(15 * time.Minute))},
+		firstChunkPartialDeletionInterval: &Interval{
+			StartTimestampMs: int64(modelTimeDay.Add(-15 * time.Minute)),
+			EndTimestampMs:   int64(modelTimeDay.Add(15 * time.Minute)),
+		},
 	},
 }
 
@@ -389,6 +409,7 @@ func TestPurger_Restarts(t *testing.T) {
 }
 
 func TestPurger_Metrics(t *testing.T) {
+	t.Skip("mimir doesn't use the chunk storage anymore and this test is flakky.")
 	deleteStore, chunkStore, storageClient, purger, _ := setupStoresAndPurger(t)
 	defer func() {
 		purger.StopAsync()

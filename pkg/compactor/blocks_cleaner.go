@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -25,7 +26,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/concurrency"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -62,11 +62,11 @@ type BlocksCleaner struct {
 	tenantBucketIndexLastUpdate *prometheus.GaugeVec
 }
 
-func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, usersScanner *mimir_tsdb.UsersScanner, cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
+func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, ownUser func(userID string) (bool, error), cfgProvider ConfigProvider, logger log.Logger, reg prometheus.Registerer) *BlocksCleaner {
 	c := &BlocksCleaner{
 		cfg:          cfg,
 		bucketClient: bucketClient,
-		usersScanner: usersScanner,
+		usersScanner: mimir_tsdb.NewUsersScanner(bucketClient, ownUser, logger),
 		cfgProvider:  cfgProvider,
 		logger:       log.With(logger, "component", "cleaner"),
 		runsStarted: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -126,8 +126,8 @@ func NewBlocksCleaner(cfg BlocksCleanerConfig, bucketClient objstore.Bucket, use
 }
 
 func (c *BlocksCleaner) starting(ctx context.Context) error {
-	// Run a cleanup so that any other service depending on this service
-	// is guaranteed to start once the initial cleanup has been done.
+	// Run an initial cleanup in starting state. (Note that compactor no longer waits
+	// for blocks cleaner to finish starting before it starts compactions.)
 	c.runCleanup(ctx)
 
 	return nil

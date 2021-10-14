@@ -323,6 +323,39 @@ func TestCompareSamplesResponse(t *testing.T) {
 						}`),
 		},
 		{
+			name: "should correctly compare Inf values",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"Inf"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"Inf"]}]}
+						}`),
+		},
+		{
+			name: "should correctly compare -Inf values",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"-Inf"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"-Inf"]}]}
+						}`),
+		},
+		{
+			name: "should correctly compare +Inf values",
+			expected: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"+Inf"]}]}
+						}`),
+			actual: json.RawMessage(`{
+							"status": "success",
+							"data": {"resultType":"vector","result":[{"metric":{"foo":"bar"},"value":[1,"+Inf"]}]}
+						}`),
+		},
+		{
 			name:      "should fail if values are significantly different, over the tolerance",
 			tolerance: 0.000001,
 			expected: json.RawMessage(`{

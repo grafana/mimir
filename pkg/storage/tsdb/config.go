@@ -150,6 +150,7 @@ type TSDBConfig struct {
 	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes"`
 	FlushBlocksOnShutdown     bool          `yaml:"flush_blocks_on_shutdown"`
 	CloseIdleTSDBTimeout      time.Duration `yaml:"close_idle_tsdb_timeout"`
+	MemorySnapshotOnShutdown  bool          `yaml:"memory_snapshot_on_shutdown"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes"`
@@ -187,6 +188,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.WALSegmentSizeBytes, "blocks-storage.tsdb.wal-segment-size-bytes", wal.DefaultSegmentSize, "TSDB WAL segments files max size (bytes).")
 	f.BoolVar(&cfg.FlushBlocksOnShutdown, "blocks-storage.tsdb.flush-blocks-on-shutdown", false, "True to flush blocks to storage on shutdown. If false, incomplete blocks will be reused after restart.")
 	f.DurationVar(&cfg.CloseIdleTSDBTimeout, "blocks-storage.tsdb.close-idle-tsdb-timeout", 0, "If TSDB has not received any data for this duration, and all blocks from TSDB have been shipped, TSDB is closed and deleted from local disk. If set to positive value, this value should be equal or higher than -querier.query-ingesters-within flag to make sure that TSDB is not closed prematurely, which could cause partial query results. 0 or negative value disables closing of idle TSDB.")
+	f.BoolVar(&cfg.MemorySnapshotOnShutdown, "blocks-storage.tsdb.memory-snapshot-on-shutdown", false, "True to enable snapshotting of in-memory TSDB data on disk when shutting down.")
 }
 
 // Validate the config.

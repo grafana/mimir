@@ -29,6 +29,18 @@ var (
 	yamlFieldInlineParser = regexp.MustCompile("^[^,]*,inline$")
 )
 
+// ExamplerConfig can be implemented by configs to provide examples.
+// If string is non-empty, it will be added as comment.
+// If yaml value is non-empty, it will be marshaled as yaml under the same key as it would appear in config.
+type ExamplerConfig interface {
+	ExampleDoc() (comment string, yaml interface{})
+}
+
+type fieldExample struct {
+	comment string
+	yaml    interface{}
+}
+
 type configBlock struct {
 	name          string
 	desc          string
@@ -56,6 +68,7 @@ type configEntry struct {
 	fieldDesc    string
 	fieldType    string
 	fieldDefault string
+	fieldExample *fieldExample
 }
 
 type rootBlock struct {
@@ -204,11 +217,12 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 		}
 		if fieldFlag == nil {
 			block.Add(&configEntry{
-				kind:      "field",
-				name:      fieldName,
-				required:  isFieldRequired(field),
-				fieldDesc: getFieldDescription(field, ""),
-				fieldType: fieldType,
+				kind:         "field",
+				name:         fieldName,
+				required:     isFieldRequired(field),
+				fieldDesc:    getFieldDescription(field, ""),
+				fieldType:    fieldType,
+				fieldExample: getFieldExample(fieldName, field.Type),
 			})
 			continue
 		}
@@ -221,6 +235,7 @@ func parseConfig(block *configBlock, cfg interface{}, flags map[uintptr]*flag.Fl
 			fieldDesc:    getFieldDescription(field, fieldFlag.Usage),
 			fieldType:    fieldType,
 			fieldDefault: fieldFlag.DefValue,
+			fieldExample: getFieldExample(fieldName, field.Type),
 		})
 	}
 
@@ -330,6 +345,18 @@ func getFieldFlag(field reflect.StructField, fieldValue reflect.Value, flags map
 	}
 
 	return fieldFlag, nil
+}
+
+func getFieldExample(fieldKey string, fieldType reflect.Type) *fieldExample {
+	ex, ok := reflect.New(fieldType).Interface().(ExamplerConfig)
+	if !ok {
+		return nil
+	}
+	comment, yml := ex.ExampleDoc()
+	return &fieldExample{
+		comment: comment,
+		yaml:    map[string]interface{}{fieldKey: yml},
+	}
 }
 
 func getCustomFieldEntry(field reflect.StructField, fieldValue reflect.Value, flags map[uintptr]*flag.Flag) (*configEntry, error) {

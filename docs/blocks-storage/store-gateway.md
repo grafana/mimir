@@ -634,7 +634,9 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.max-get-range-requests
       [max_get_range_requests: <int> | default = 3]
 
-      # TTL for caching object attributes for chunks.
+      # TTL for caching object attributes for chunks. If the metadata cache is
+      # configured, attributes will be stored under this cache backend,
+      # otherwise attributes are stored in the chunks cache backend.
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
       [attributes_ttl: <duration> | default = 168h]
 
@@ -872,6 +874,11 @@ blocks_storage:
     # disables closing of idle TSDB.
     # CLI flag: -blocks-storage.tsdb.close-idle-tsdb-timeout
     [close_idle_tsdb_timeout: <duration> | default = 0s]
+
+    # True to enable snapshotting of in-memory TSDB data on disk when shutting
+    # down.
+    # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
+    [memory_snapshot_on_shutdown: <boolean> | default = false]
 
     # Max size - in bytes - of the in-memory series hash cache. The cache is
     # shared across all tenants and it's used only when query sharding is

@@ -50,20 +50,20 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/indexheader"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/compact"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/thanos-io/thanos/pkg/pool"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
 
@@ -1042,6 +1042,7 @@ func benchmarkExpandedPostings(
 	r indexheader.Reader,
 	series int,
 ) {
+	ctx := context.Background()
 	n1 := labels.MustNewMatcher(labels.MatchEqual, "n", "1"+labelLongSuffix)
 
 	jFoo := labels.MustNewMatcher(labels.MatchEqual, "j", "foo")
@@ -1094,11 +1095,11 @@ func benchmarkExpandedPostings(
 				partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
 			}
 
-			indexr := newBucketIndexReader(context.Background(), b)
+			indexr := newBucketIndexReader(b)
 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
-				p, err := indexr.ExpandedPostings(c.matchers)
+				p, err := indexr.ExpandedPostings(ctx, c.matchers)
 				assert.NoError(t, err)
 				assert.Equal(t, c.expectedLen, len(p))
 			}
@@ -1948,7 +1949,8 @@ func TestLabelNamesAndValuesHints(t *testing.T) {
 					{Id: block2.String()},
 				},
 			},
-		}, {
+		},
+		{
 			name: "querying a range containing multiple blocks but filtering a specific block should query only the requested block",
 
 			labelNamesReq: &storepb.LabelNamesRequest{
@@ -2091,7 +2093,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 }
 
 func BenchmarkBlockSeries(b *testing.B) {
-	blk, blockMeta := prepareBucket(b, compact.ResolutionLevelRaw)
+	blk, blockMeta := prepareBucket(b, compactor.ResolutionLevelRaw)
 
 	aggrs := []storepb.Aggr{storepb.Aggr_RAW}
 	for _, concurrency := range []int{1, 2, 4, 8, 16, 32} {
@@ -2103,7 +2105,7 @@ func BenchmarkBlockSeries(b *testing.B) {
 	}
 }
 
-func prepareBucket(b *testing.B, resolutionLevel compact.ResolutionLevel) (*bucketBlock, *metadata.Meta) {
+func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bucketBlock, *metadata.Meta) {
 	var (
 		ctx    = context.Background()
 		logger = log.NewNopLogger()
@@ -2231,10 +2233,10 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				// must be called only from the goroutine running the Benchmark function.
 				require.NoError(b, err)
 
-				indexReader := blk.indexReader(ctx)
+				indexReader := blk.indexReader()
 				chunkReader := blk.chunkReader(ctx)
 
-				seriesSet, _, err := blockSeries(nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
+				seriesSet, _, err := blockSeries(context.Background(), nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
@@ -2250,7 +2252,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 }
 
 func BenchmarkDownsampledBlockSeries(b *testing.B) {
-	blk, blockMeta := prepareBucket(b, compact.ResolutionLevel5m)
+	blk, blockMeta := prepareBucket(b, compactor.ResolutionLevel5m)
 	aggrs := []storepb.Aggr{}
 	for i := 1; i < int(storepb.Aggr_COUNTER); i++ {
 		aggrs = append(aggrs, storepb.Aggr(i))

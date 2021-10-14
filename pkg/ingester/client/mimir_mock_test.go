@@ -7,6 +7,7 @@ package client
 
 import (
 	"context"
+	"errors"
 
 	"github.com/stretchr/testify/mock"
 
@@ -70,4 +71,8 @@ func (m *IngesterServerMock) MetricsMetadata(ctx context.Context, r *MetricsMeta
 func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) error {
 	args := m.Called(s)
 	return args.Error(0)
+}
+
+func (m *IngesterServerMock) LabelNamesAndValues(_ *LabelNamesAndValuesRequest, _ Ingester_LabelNamesAndValuesServer) error {
+	return errors.New("not implemented")
 }

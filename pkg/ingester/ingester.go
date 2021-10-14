@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	tsdb_record "github.com/prometheus/prometheus/tsdb/record"
-	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
 	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
@@ -145,7 +144,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Float64Var(&cfg.DefaultLimits.MaxIngestionRate, "ingester.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that ingester will accept. This limit is per-ingester, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. This limit only works when using blocks engine. 0 = unlimited.")
 	f.Int64Var(&cfg.DefaultLimits.MaxInMemoryTenants, "ingester.instance-limits.max-tenants", 0, "Max users that this ingester can hold. Requests from additional users will be rejected. This limit only works when using blocks engine. 0 = unlimited.")
 	f.Int64Var(&cfg.DefaultLimits.MaxInMemorySeries, "ingester.instance-limits.max-series", 0, "Max series that this ingester can hold (across all tenants). Requests to create additional series will be rejected. This limit only works when using blocks engine. 0 = unlimited.")
-	f.Int64Var(&cfg.DefaultLimits.MaxInflightPushRequests, "ingester.instance-limits.max-inflight-push-requests", 0, "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
+	f.Int64Var(&cfg.DefaultLimits.MaxInflightPushRequests, "ingester.instance-limits.max-inflight-push-requests", 30000, "Max inflight push requests that this ingester can handle (across all tenants). Additional requests will be rejected. 0 = unlimited.")
 
 	f.StringVar(&cfg.IgnoreSeriesLimitForMetricNames, "ingester.ignore-series-limit-for-metric-names", "", "Comma-separated list of metric names, for which -ingester.max-series-per-metric and -ingester.max-global-series-per-metric limits will be ignored. Does not affect max-series-per-user or max-global-series-per-metric limits.")
 }
@@ -789,73 +788,6 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 		// Remove all metadata that we no longer need to retain.
 		metadata.purge(deadline)
 	}
-}
-
-// Query implements service.IngesterServer
-func (i *Ingester) Query(ctx context.Context, req *client.QueryRequest) (*client.QueryResponse, error) {
-	if i.cfg.BlocksStorageEnabled {
-		return i.v2Query(ctx, req)
-	}
-
-	if err := i.checkRunningOrStopping(); err != nil {
-		return nil, err
-	}
-
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	from, through, matchers, err := client.FromQueryRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	i.metrics.queries.Inc()
-
-	i.userStatesMtx.RLock()
-	state, ok, err := i.userStates.getViaContext(ctx)
-	i.userStatesMtx.RUnlock()
-	if err != nil {
-		return nil, err
-	} else if !ok {
-		return &client.QueryResponse{}, nil
-	}
-
-	result := &client.QueryResponse{}
-	numSeries, numSamples := 0, 0
-	maxSamplesPerQuery := i.limits.MaxSamplesPerQuery(userID)
-	err = state.forSeriesMatching(ctx, matchers, func(ctx context.Context, _ model.Fingerprint, series *memorySeries) error {
-		values, err := series.samplesForRange(from, through)
-		if err != nil {
-			return err
-		}
-		if len(values) == 0 {
-			return nil
-		}
-		numSeries++
-
-		numSamples += len(values)
-		if numSamples > maxSamplesPerQuery {
-			return httpgrpc.Errorf(http.StatusRequestEntityTooLarge, "exceeded maximum number of samples in a query (%d)", maxSamplesPerQuery)
-		}
-
-		ts := mimirpb.TimeSeries{
-			Labels:  mimirpb.FromLabelsToLabelAdapters(series.metric),
-			Samples: make([]mimirpb.Sample, 0, len(values)),
-		}
-		for _, s := range values {
-			ts.Samples = append(ts.Samples, mimirpb.Sample{
-				Value:       float64(s.Value),
-				TimestampMs: int64(s.Timestamp),
-			})
-		}
-		result.Timeseries = append(result.Timeseries, ts)
-		return nil
-	}, nil, 0)
-	i.metrics.queriedSeries.Observe(float64(numSeries))
-	i.metrics.queriedSamples.Observe(float64(numSamples))
-	return result, err
 }
 
 // QueryStream implements service.IngesterServer

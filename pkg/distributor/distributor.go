@@ -45,8 +45,6 @@ import (
 )
 
 var (
-	emptyPreallocSeries = mimirpb.PreallocTimeseries{}
-
 	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
 
 	// Validation errors.
@@ -499,52 +497,30 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 	return true, nil
 }
 
-// Validates a single series from a write request. Will remove labels if
-// any are configured to be dropped for the user ID.
-// Returns the validated series with it's labels/samples, and any error.
+// Validates a single series from a write request.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) (mimirpb.PreallocTimeseries, validation.ValidationError) {
-	d.labelsHistogram.Observe(float64(len(ts.Labels)))
+func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
-		return emptyPreallocSeries, err
+		return err
 	}
 
-	var samples []mimirpb.Sample
-	if len(ts.Samples) > 0 {
-		// Only alloc when data present
-		samples = make([]mimirpb.Sample, 0, len(ts.Samples))
-		for _, s := range ts.Samples {
-			if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
-				return emptyPreallocSeries, err
-			}
-			samples = append(samples, s)
+	for _, s := range ts.Samples {
+		if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
+			return err
 		}
 	}
 
-	var exemplars []mimirpb.Exemplar
-	if len(ts.Exemplars) > 0 {
-		// Only alloc when data present
-		exemplars = make([]mimirpb.Exemplar, 0, len(ts.Exemplars))
-		for _, e := range ts.Exemplars {
-			if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
-				// An exemplar validation error prevents ingesting samples
-				// in the same series object. However because the current Prometheus
-				// remote write implementation only populates one or the other,
-				// there never will be any.
-				return emptyPreallocSeries, err
-			}
-			exemplars = append(exemplars, e)
+	for _, e := range ts.Exemplars {
+		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
+			// An exemplar validation error prevents ingesting samples
+			// in the same series object. However because the current Prometheus
+			// remote write implementation only populates one or the other,
+			// there never will be any.
+			return err
 		}
 	}
 
-	return mimirpb.PreallocTimeseries{
-			TimeSeries: &mimirpb.TimeSeries{
-				Labels:    ts.Labels,
-				Samples:   samples,
-				Exemplars: exemplars,
-			},
-		},
-		nil
+	return nil
 }
 
 // Push implements client.IngesterServer
@@ -616,12 +592,12 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusAccepted, err.Error())
+				return nil, httpgrpc.Errorf(http.StatusAccepted, "%s", err)
 			}
 
 			if errors.Is(err, tooManyClustersError{}) {
 				validation.DiscardedSamples.WithLabelValues(validation.TooManyHAClusters, userID).Add(float64(numSamples))
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())
+				return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
 			}
 
 			return nil, err
@@ -682,31 +658,30 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 			return nil, err
 		}
 
+		d.labelsHistogram.Observe(float64(len(ts.Labels)))
+
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		validatedSeries, validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
+		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.
-		if validationErr != nil && firstPartialErr == nil {
-			// The series labels may be retained by validationErr but that's not a problem for this
-			// use case because we format it calling Error() and then we discard it.
-			firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
-		}
-
-		// validateSeries would have returned an emptyPreallocSeries if there were no valid samples.
-		if validatedSeries == emptyPreallocSeries {
+		if validationErr != nil {
+			if firstPartialErr == nil {
+				// The series labels may be retained by validationErr but that's not a problem for this
+				// use case because we format it calling Error() and then we discard it.
+				firstPartialErr = httpgrpc.Errorf(http.StatusBadRequest, validationErr.Error())
+			}
 			continue
 		}
 
 		seriesKeys = append(seriesKeys, key)
-		validatedTimeseries = append(validatedTimeseries, validatedSeries)
+		validatedTimeseries = append(validatedTimeseries, ts)
 		validatedSamples += len(ts.Samples)
 		validatedExemplars += len(ts.Exemplars)
 	}
 
 	for _, m := range req.Metadata {
 		err := validation.ValidateMetadata(d.limits, userID, m)
-
 		if err != nil {
 			if firstPartialErr == nil {
 				firstPartialErr = err
@@ -797,7 +772,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	sorted := true
 	last := ""
 	for _, l := range labels {
-		if strings.Compare(last, l.Name) > 0 {
+		if last > l.Name {
 			sorted = false
 			break
 		}
@@ -809,7 +784,7 @@ func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
 	}
 
 	sort.Slice(labels, func(i, j int) bool {
-		return strings.Compare(labels[i].Name, labels[j].Name) < 0
+		return labels[i].Name < labels[j].Name
 	})
 }
 
@@ -1096,7 +1071,7 @@ func (d *Distributor) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if d.distributorsRing != nil {
 		d.distributorsRing.ServeHTTP(w, req)
 	} else {
-		var ringNotEnabledPage = `
+		ringNotEnabledPage := `
 			<!DOCTYPE html>
 			<html>
 				<head>

@@ -32,7 +32,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
-	storecache "github.com/thanos-io/thanos/pkg/store/cache"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/logging"
@@ -40,6 +39,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"

@@ -19,6 +19,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/assert"
@@ -32,7 +33,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/ring/testutils"
-	"github.com/grafana/mimir/pkg/util/test"
+	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -150,7 +151,10 @@ func TestIngesterChunksTransfer(t *testing.T) {
 	})
 
 	// Now write a sample to this ingester
-	req, expectedResponse, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "foo"}}, 456, 123000)
+	req, _, expectedResponse, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "foo"}}, 456, 123000)
+	expectedResponseMatrix, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, []*client.QueryStreamResponse{expectedResponse})
+	require.NoError(t, err)
+
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = ing1.Push(ctx, req)
 	require.NoError(t, err)
@@ -186,17 +190,24 @@ func TestIngesterChunksTransfer(t *testing.T) {
 	request, err := client.ToQueryRequest(model.TimeFromUnix(0), model.TimeFromUnix(200), []*labels.Matcher{matcher})
 	require.NoError(t, err)
 
-	response, err := ing2.Query(ctx, request)
+	s := &stream{ctx: ctx}
+	err = ing2.QueryStream(request, s)
 	require.NoError(t, err)
-	assert.Equal(t, expectedResponse, response)
+	res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	require.NoError(t, err)
+	assert.Equal(t, expectedResponseMatrix, res)
 
 	// Check we can send the same sample again to the new ingester and get the same result
 	req, _, _, _ = mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "foo"}}, 456, 123000)
 	_, err = ing2.Push(ctx, req)
 	require.NoError(t, err)
-	response, err = ing2.Query(ctx, request)
+
+	s = &stream{ctx: ctx}
+	err = ing2.QueryStream(request, s)
 	require.NoError(t, err)
-	assert.Equal(t, expectedResponse, response)
+	res, err = chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
+	require.NoError(t, err)
+	assert.Equal(t, expectedResponseMatrix, res)
 }
 
 func TestIngesterBadTransfer(t *testing.T) {

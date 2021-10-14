@@ -39,12 +39,11 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/metadata"
 
-	"github.com/grafana/mimir/pkg/util/test"
-
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/test"
 )
 
 func TestBucketStores_InitialSync(t *testing.T) {

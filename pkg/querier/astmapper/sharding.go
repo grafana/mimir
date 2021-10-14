@@ -86,17 +86,15 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 	case *parser.Call:
 		// only shard the most outer function call.
 		if summer.currentShard == nil {
-			// Subqueries are parallelizable if they are parallelizable themselves
+			// Only shards Subqueries, they are parallelizable if they are parallelizable themselves
 			// and they don't contain aggregations over series in children nodes.
-			if isSubquery(n) && containsAggregateExpr(n) {
-				return n, true, nil
-			}
-			// Other functions with aggregates are not parallelizable at this level.
-			// but could be at the aggregate level.
-			if containsAggregateExpr(n) {
-				return n, false, nil
-			}
-			if CanParallelize(n) {
+			if isSubquery(n) {
+				if containsAggregateExpr(n) {
+					return n, true, nil
+				}
+				if !CanParallelize(n) {
+					return n, true, nil
+				}
 				return summer.shardAndSquashFuncCall(n, stats)
 			}
 			return n, false, nil
@@ -340,14 +338,16 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 }
 
 func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard, shards))
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, querysharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}
-
 	return &parser.VectorSelector{
-		Name:   selector.Name,
-		Offset: selector.Offset,
+		Name:           selector.Name,
+		Offset:         selector.Offset,
+		OriginalOffset: selector.OriginalOffset,
+		Timestamp:      copyTimestamp(selector.Timestamp),
+		StartOrEnd:     selector.StartOrEnd,
 		LabelMatchers: append(
 			[]*labels.Matcher{shardMatcher},
 			selector.LabelMatchers...,
@@ -356,7 +356,7 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 }
 
 func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard, shards))
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, querysharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}
@@ -364,16 +364,17 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 	if vs, ok := selector.VectorSelector.(*parser.VectorSelector); ok {
 		return &parser.MatrixSelector{
 			VectorSelector: &parser.VectorSelector{
-				Name:   vs.Name,
-				Offset: vs.Offset,
+				Name:           vs.Name,
+				OriginalOffset: vs.OriginalOffset,
+				Offset:         vs.Offset,
+				Timestamp:      copyTimestamp(vs.Timestamp),
+				StartOrEnd:     vs.StartOrEnd,
 				LabelMatchers: append(
 					[]*labels.Matcher{shardMatcher},
 					vs.LabelMatchers...,
 				),
-				PosRange: vs.PosRange,
 			},
-			Range:  selector.Range,
-			EndPos: selector.EndPos,
+			Range: selector.Range,
 		}, nil
 	}
 
@@ -382,6 +383,17 @@ func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) 
 
 // isSubquery returns true if the given function call expression is a subquery.
 func isSubquery(n *parser.Call) bool {
+	if len(n.Args) == 0 {
+		return false
+	}
 	_, ok := n.Args[0].(*parser.SubqueryExpr)
 	return ok
+}
+
+func copyTimestamp(original *int64) *int64 {
+	if original == nil {
+		return nil
+	}
+	ts := *original
+	return &ts
 }
