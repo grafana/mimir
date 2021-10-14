@@ -426,7 +426,7 @@ Works only with blocks storage.
 As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
 cutting between the calls.
 
-The items in the field `cardinality` are sorted by `values_count` in DESC order and by `label_name` in ASC order.
+The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
 
 The count of items is limited by `limit` request param.
 
@@ -441,12 +441,12 @@ _Requires [authentication](#authentication)._
 
 ```json
 {
-  "values_count_total": <number>,
+  "label_values_count_total": <number>,
   "label_names_count": <number>,
   "cardinality": [
     {
       "label_name": <string>,
-      "values_count": <number>
+      "label_values_count": <number>
     }
   ]
 }
