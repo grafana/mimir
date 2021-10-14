@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gogo/protobuf/proto"
@@ -180,6 +181,31 @@ func (c *Client) LabelValues(label string, start, end time.Time, matches []strin
 func (c *Client) LabelNames(start, end time.Time) ([]string, error) {
 	result, _, err := c.querierClient.LabelNames(context.Background(), nil, start, end)
 	return result, err
+}
+
+// LabelNamesAndValues returns distinct label values per label name.
+func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response, error) {
+	body := make(url.Values)
+	if len(selector) > 0 {
+		body.Set("selector", selector)
+	}
+	if limit > 0 {
+		body.Set("limit", strconv.Itoa(limit))
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/api/prom/api/v1/cardinality/label_names", c.querierAddress), strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(body.Encode())))
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	return c.httpClient.Do(req.WithContext(ctx))
 }
 
 type addOrgIDRoundTripper struct {
