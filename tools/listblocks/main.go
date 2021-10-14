@@ -33,16 +33,17 @@ import (
 )
 
 type config struct {
-	bucket           bucket.Config
-	userID           string
-	showDeleted      bool
-	showLabels       bool
-	showCreationTime bool
-	showSources      bool
-	showParents      bool
-	splitCount       int
-	minTime          flagext.Time
-	maxTime          flagext.Time
+	bucket              bucket.Config
+	userID              string
+	showDeleted         bool
+	showLabels          bool
+	showCreationTime    bool
+	showSources         bool
+	showParents         bool
+	showCompactionLevel bool
+	splitCount          int
+	minTime             flagext.Time
+	maxTime             flagext.Time
 }
 
 func main() {
@@ -51,9 +52,10 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.BoolVar(&cfg.showDeleted, "show-deleted", false, "Show deleted blocks")
 	flag.BoolVar(&cfg.showLabels, "show-labels", false, "Show block labels")
-	flag.BoolVar(&cfg.showCreationTime, "show-creation-time", false, "Show when block was created (from ULID)")
+	flag.BoolVar(&cfg.showCreationTime, "show-ulid-time", false, "Show time from ULID")
 	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
 	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
+	flag.BoolVar(&cfg.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
 	flag.IntVar(&cfg.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
 	flag.Var(&cfg.minTime, "min-time", "If set, only blocks with MinTime >= this value are printed")
 	flag.Var(&cfg.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
@@ -213,13 +215,16 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 		fmt.Fprintf(tabber, "Split ID\t")
 	}
 	if cfg.showCreationTime {
-		fmt.Fprintf(tabber, "Created\t")
+		fmt.Fprintf(tabber, "ULID Time\t")
 	}
 	fmt.Fprintf(tabber, "Min Time\t")
 	fmt.Fprintf(tabber, "Max Time\t")
 	fmt.Fprintf(tabber, "Duration\t")
 	if cfg.showDeleted {
 		fmt.Fprintf(tabber, "Deletion Time\t")
+	}
+	if cfg.showCompactionLevel {
+		fmt.Fprintf(tabber, "Lvl\t")
 	}
 	if cfg.showLabels {
 		fmt.Fprintf(tabber, "Labels (excl. "+tsdb.TenantIDExternalLabel+")\t")
@@ -261,6 +266,10 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 			} else {
 				fmt.Fprintf(tabber, "%v\t", deletedTimes[b.ULID].UTC().Format(time.RFC3339))
 			}
+		}
+
+		if cfg.showCompactionLevel {
+			fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
 		}
 
 		if cfg.showLabels {
