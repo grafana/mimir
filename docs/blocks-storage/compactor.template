@@ -109,15 +109,15 @@ The compactor allows to configure the compaction jobs order via the `-compactor.
 
 ### `smallest-range-oldest-blocks-first`
 
-It gives priority to smallest range, oldest blocks first.
+This ordering gives priority to smallest range, oldest blocks first.
 
-To give you an example, let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this sorting, the compactor give preference to compact all 2h ranges first and among them it gives priority to oldest blocks. Then, once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
+For example let's assume that you run the compactor with the compaction ranges `2h, 12h, 24h`. Compactor will compact 2h ranges first and among them it gives priority to oldest blocks. Once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
 
 ### `newest-blocks-first`
 
-It gives priority to most recent time ranges first, regardless of their compaction level.
+This ordering gives priority to most recent time ranges first, regardless of their compaction level.
 
-To give you an example, let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this sorting, the compactor compacts up to the 24h range the most recent blocks first and the move to older ones. This policy favours most recent blocks, assuming they are the one most frequently queried.
+Let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this sorting the compactor compacts the most recent blocks first (up to the 24h range) and then moves to older blocks. This policy favours most recent blocks, assuming they are queried the most frequently.
 
 This sorting is not supported by the `default` [compaction strategy](#compaction-strategy).
 
