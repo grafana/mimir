@@ -520,10 +520,10 @@ func TestStoreGateway_BlocksSyncWithDefaultSharding_RingTopologyChangedAfterScal
 	// store-gateways behaves with regards to blocks syncing while other replicas are JOINING.
 
 	// Wait until all the initial store-gateways sees all new store-gateways too.
-	// dstest.Poll(t, 22*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
-	// 	metrics := initialRegistries.BuildMetricFamiliesPerUser()
-	// 	return metrics.GetSumOfGauges("cortex_ring_members")
-	// })
+	dstest.Poll(t, 11*time.Second, float64(numAllGateways*numInitialGateways), func() interface{} {
+		metrics := initialRegistries.BuildMetricFamiliesPerUser()
+		return metrics.GetSumOfGauges("cortex_ring_members")
+	})
 
 	// We expect each block to be available for querying on at least 1 initial store-gateway.
 	for _, userID := range []string{"user-1", "user-2"} {

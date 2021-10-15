@@ -276,14 +276,14 @@ func (r *Ring) starting(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "unable to initialise ring state")
 	}
-	if value == nil {
+	if value != nil {
+		r.updateRingState(value.(*Desc))
+	} else {
 		level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
-		return nil
 	}
 
-	r.updateRingState(value.(*Desc))
+	// Update the ring metrics at start.
 	r.updateRingMetrics()
-
 	// Use this channel to close the go routine to prevent leaks.
 	r.metricsUpdateCloser = make(chan struct{})
 	go func() {
@@ -300,6 +300,7 @@ func (r *Ring) starting(ctx context.Context) error {
 			}
 		}
 	}()
+
 	return nil
 }
 
