@@ -42,6 +42,10 @@ type Limits interface {
 
 	// QueryShardingTotalShards returns the number of shards to use for a given tenant.
 	QueryShardingTotalShards(string) int
+
+	// QueryShardingMaxShardedQueries returns the max number of sharded queries that can
+	// be run for a given received query. 0 to disable limit.
+	QueryShardingMaxShardedQueries(string) int
 }
 
 type limitsMiddleware struct {
