@@ -312,7 +312,7 @@ func (c *haTracker) updateKVStoreAll(ctx context.Context, now time.Time) {
 			}
 			// Release lock while we talk to KVStore, which could take a while.
 			c.electedLock.RUnlock()
-			_, err := c.updateKVStore(ctx, userID, cluster, replica, now)
+			err := c.updateKVStore(ctx, userID, cluster, replica, now)
 			c.electedLock.RLock()
 			if err != nil {
 				// Failed to store - log it but carry on
@@ -432,19 +432,11 @@ func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 		return tooManyClustersError{limit: limit}
 	}
 
-	desc, err := c.updateKVStore(ctx, userID, cluster, replica, now)
+	err := c.updateKVStore(ctx, userID, cluster, replica, now)
 	c.kvCASCalls.WithLabelValues(userID, cluster).Inc()
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
-	}
-	// If we stored data add it to cache, unless we already received an update via the watch loop.
-	if desc != nil {
-		c.electedLock.Lock()
-		if c.clusters[userID][cluster] == nil {
-			c.updateCache(userID, cluster, desc)
-		}
-		c.electedLock.Unlock()
 	}
 	// Cache will now have the value - recurse to check it again.
 	return c.checkReplica(ctx, userID, cluster, replica, now)
@@ -473,7 +465,7 @@ func (c *haTracker) updateCache(userID, cluster string, desc *ReplicaDesc) {
 
 // If we do set the value then err will be nil and desc will contain the value we set.
 // If there is already a valid value in the store, return nil, nil.
-func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) (*ReplicaDesc, error) {
+func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica string, now time.Time) error {
 	key := fmt.Sprintf("%s/%s", userID, cluster)
 	var desc *ReplicaDesc
 	err := c.client.CAS(ctx, key, func(in interface{}) (out interface{}, retry bool, err error) {
@@ -495,7 +487,15 @@ func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		}
 		return desc, true, nil
 	})
-	return desc, err
+	// If cache is currently empty, add the data we either stored or received from KVStore
+	if err == nil && desc != nil {
+		c.electedLock.Lock()
+		if c.clusters[userID][cluster] == nil {
+			c.updateCache(userID, cluster, desc)
+		}
+		c.electedLock.Unlock()
+	}
+	return err
 }
 
 type replicasNotMatchError struct {
