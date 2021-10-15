@@ -80,53 +80,49 @@ func labelNamesAndValues(
 	return nil
 }
 
-type labelValuesCardinalityIndexReader struct {
-	tsdb.IndexReader
-	PostingsForMatchers func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error)
-}
-
 // labelValuesCardinality returns all values and series total count for label_names labels that match the matchers.
-// Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
+// Messages are immediately sent as soon they reach message size threshold.
 func labelValuesCardinality(
-	idxReader labelValuesCardinalityIndexReader,
 	lbNames []string,
 	matchers []*labels.Matcher,
+	idxReader tsdb.IndexReader,
+	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	msgSizeThreshold int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
 
-	lblValMatchers := make([]*labels.Matcher, 0, len(matchers)+1)
+	// We will use original matchers + one extra matcher for label value.
+	lblValMatchers := make([]*labels.Matcher, len(matchers)+1)
+	copy(lblValMatchers, matchers)
+
 	for _, lbName := range lbNames {
 		// Obtain all values for current label name.
 		lbValues, err := idxReader.LabelValues(lbName, matchers...)
 		if err != nil {
 			return err
 		}
-		if len(lbValues) == 0 {
-			continue
-		}
-		// Create label name response item entry.
-		respItem := &client.LabelValueSeriesCount{
-			LabelName:        lbName,
-			LabelValueSeries: make(map[string]uint64),
-		}
-		resp.Items = append(resp.Items, respItem)
+		// For each value count total number of series storing the result into cardinality response item.
+		var respItem *client.LabelValueSeriesCount
 
-		// For each value count total number of series storing the result into the response item.
-		for i, lbValue := range lbValues {
-			lblValMatchers = append(lblValMatchers, labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue))
-			lblValMatchers = append(lblValMatchers, matchers...)
-
+		for _, lbValue := range lbValues {
+			// Create label name response item entry.
+			if respItem == nil {
+				respItem = &client.LabelValueSeriesCount{
+					LabelName:        lbName,
+					LabelValueSeries: make(map[string]uint64),
+				}
+				resp.Items = append(resp.Items, respItem)
+			}
 			// Get total series count applying label matchers.
-			seriesCount, err := countLabelValueSeries(idxReader, lblValMatchers)
+			lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue)
+
+			seriesCount, err := countLabelValueSeries(idxReader, postingsForMatchersFn, lblValMatchers)
 			if err != nil {
 				return err
 			}
 			respItem.LabelValueSeries[lbValue] = seriesCount
-
-			lblValMatchers = lblValMatchers[:0]
 
 			respSize += len(lbValue)
 			if respSize < msgSizeThreshold {
@@ -138,14 +134,7 @@ func labelValuesCardinality(
 			}
 			resp.Items = resp.Items[:0]
 			respSize = 0
-
-			// Re-register response entry in case there are still pending values to compute for current label name.
-			if i < len(lbValues)-1 {
-				for k := range respItem.LabelValueSeries {
-					delete(respItem.LabelValueSeries, k)
-				}
-				resp.Items = append(resp.Items, respItem)
-			}
+			respItem = nil
 		}
 	}
 	// Send response in case there are any pending items.
@@ -155,10 +144,14 @@ func labelValuesCardinality(
 	return nil
 }
 
-func countLabelValueSeries(idxReader labelValuesCardinalityIndexReader, lblValMatchers []*labels.Matcher) (uint64, error) {
+func countLabelValueSeries(
+	idxReader tsdb.IndexReader,
+	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
+	lblValMatchers []*labels.Matcher,
+) (uint64, error) {
 	var count uint64
 
-	p, err := idxReader.PostingsForMatchers(idxReader.IndexReader, lblValMatchers...)
+	p, err := postingsForMatchersFn(idxReader, lblValMatchers...)
 	if err != nil {
 		return 0, err
 	}

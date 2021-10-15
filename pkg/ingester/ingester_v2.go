@@ -1345,14 +1345,11 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err != nil {
 		return err
 	}
-	idxReader := labelValuesCardinalityIndexReader{
-		IndexReader:         idx,
-		PostingsForMatchers: tsdb.PostingsForMatchers,
-	}
 	return labelValuesCardinality(
-		idxReader,
 		req.GetLabelNames(),
 		matchers,
+		idx,
+		tsdb.PostingsForMatchers,
 		labelValuesCardinalityTargetSizeBytes,
 		srv,
 	)

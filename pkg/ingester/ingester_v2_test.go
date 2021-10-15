@@ -1515,6 +1515,14 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 				},
 			},
 		},
+		{
+			testName:   "empty response is returned when no matchers match the requested labels",
+			labelNames: []string{"status"},
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: "job", Value: "store-gateway"},
+			},
+			expectedItems: nil,
+		},
 	}
 
 	// Create ingester

@@ -60,7 +60,7 @@ message LabelValuesCardinalityRequest {
 }
 
 message LabelValuesCardinalityResponse {
-  repeated LabelValueSeriesCount items = 2;
+  repeated LabelValueSeriesCount items = 1;
 }
 
 message LabelValueSeriesCount {
