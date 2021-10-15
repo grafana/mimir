@@ -46,7 +46,7 @@ type Config struct {
 	ResultsCacheConfig     `yaml:"results_cache"`
 	CacheResults           bool `yaml:"cache_results"`
 	MaxRetries             int  `yaml:"max_retries"`
-	ShardedQueries         bool `yaml:"parallelise_shardable_queries"`
+	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -55,7 +55,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.SplitQueriesByInterval, "querier.split-queries-by-interval", 0, "Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
-	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
+	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "Perform query parallelizations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
