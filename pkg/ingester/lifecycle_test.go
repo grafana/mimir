@@ -383,7 +383,6 @@ func TestIngesterFlush(t *testing.T) {
 // address
 func numTokens(c kv.Client, name, ringKey string) int {
 	ringDesc, err := c.Get(context.Background(), ringKey)
-
 	// The ringDesc may be null if the lifecycler hasn't stored the ring
 	// to the KVStore yet.
 	if ringDesc == nil || err != nil {
