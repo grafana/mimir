@@ -31,14 +31,12 @@ func (t TracingCache) Fetch(ctx context.Context, keys []string) (result map[stri
 		bytes  int
 		logger = spanlogger.FromContext(ctx, t.logger)
 	)
-	defer func() {
-		level.Debug(logger).Log("msg", "cache_fetch", "name", t.Name(), "requested keys", len(keys), "returned keys", len(result), "returned bytes", bytes)
-	}()
 	result = t.c.Fetch(ctx, keys)
 
 	for _, v := range result {
 		bytes += len(v)
 	}
+	level.Debug(logger).Log("msg", "cache_fetch", "name", t.Name(), "requested keys", len(keys), "returned keys", len(result), "returned bytes", bytes)
 
 	return
 }
