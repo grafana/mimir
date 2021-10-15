@@ -58,6 +58,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 )
 
@@ -159,6 +160,13 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []label
 func (noopCache) StoreSeries(context.Context, ulid.ULID, uint64, []byte) {}
 func (noopCache) FetchMultiSeries(_ context.Context, _ ulid.ULID, ids []uint64) (map[uint64][]byte, []uint64) {
 	return map[uint64][]byte{}, ids
+}
+
+func (c noopCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey, v []byte) {
+}
+
+func (c noopCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
 }
 
 // BucketStoreOption are functions that configure BucketStore.
@@ -1729,13 +1737,28 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		return refsCopy, nil
 	}
 
-	key := matchersKey(ms)
+	key := cache.CanonicalLabelMatchersKey(ms)
 	oldPromise, loaded := r.block.expandedPostingsPromises.LoadOrStore(key, promise)
 	if loaded {
 		return oldPromise.(func(ctx context.Context) ([]uint64, error))
 	}
 
-	refs, err = r.expandedPostings(ctx, ms)
+	if cached, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key); ok {
+		var p index.Postings
+		p, err = r.decodePostings(cached)
+		if err == nil {
+			refs, err = index.ExpandPostings(p)
+		}
+	} else {
+		refs, err = r.expandedPostings(ctx, ms)
+
+		data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+		if encodeErr != nil {
+			err = errors.Wrap(err, "encode expanded postings for cache")
+		} else {
+			r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+		}
+	}
 
 	close(done)
 	r.block.expandedPostingsPromises.Delete(key)
@@ -1947,24 +1970,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			r.stats.postingsTouched++
 			r.stats.postingsTouchedSizeSum += len(b)
 
-			// Even if this instance is not using compression, there may be compressed
-			// entries in the cache written by other stores.
-			var (
-				l   index.Postings
-				err error
-			)
-			if isDiffVarintSnappyEncodedPostings(b) {
-				s := time.Now()
-				l, err = diffVarintSnappyDecode(b)
-				r.stats.cachedPostingsDecompressions++
-				r.stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-				if err != nil {
-					r.stats.cachedPostingsDecompressionErrors++
-				}
-			} else {
-				_, l, err = r.dec.Postings(b)
-			}
-
+			l, err := r.decodePostings(b)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode postings")
 			}
@@ -2074,6 +2080,27 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	}
 
 	return output, g.Wait()
+}
+
+func (r *bucketIndexReader) decodePostings(b []byte) (index.Postings, error) {
+	// Even if this instance is not using compression, there may be compressed
+	// entries in the cache written by other stores.
+	var (
+		l   index.Postings
+		err error
+	)
+	if isDiffVarintSnappyEncodedPostings(b) {
+		s := time.Now()
+		l, err = diffVarintSnappyDecode(b)
+		r.stats.cachedPostingsDecompressions++
+		r.stats.cachedPostingsDecompressionTimeSum += time.Since(s)
+		if err != nil {
+			r.stats.cachedPostingsDecompressionErrors++
+		}
+	} else {
+		_, l, err = r.dec.Postings(b)
+	}
+	return l, err
 }
 
 func resizePostings(b []byte) ([]byte, error) {
@@ -2660,28 +2687,4 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 // NewDefaultChunkBytesPool returns a chunk bytes pool with default settings.
 func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
 	return pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, maxChunkPoolBytes)
-}
-
-// matchersKey provides a unique string key for the given matchers slice
-// NOTE: different orders of matchers will produce different keys,
-// but it's unlikely that we'll receive same matchers in different orders at the same time
-func matchersKey(ms []*labels.Matcher) string {
-	const (
-		typeLen = 2
-		sepLen  = 1
-	)
-	var size int
-	for _, m := range ms {
-		size += len(m.Name) + len(m.Value) + typeLen + sepLen
-	}
-	sb := strings.Builder{}
-	sb.Grow(size)
-	for _, m := range ms {
-		sb.WriteString(m.Name)
-		sb.WriteString(m.Type.String())
-		sb.WriteString(m.Value)
-		sb.WriteByte(0)
-	}
-	key := sb.String()
-	return key
 }

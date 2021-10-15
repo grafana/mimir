@@ -107,3 +107,25 @@ func BenchmarkCacheKey_string_Series(b *testing.B) {
 		key.string()
 	}
 }
+
+func TestCanonicalLabelMatchersKey(t *testing.T) {
+	foo := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
+	bar := labels.MustNewMatcher(labels.MatchEqual, "bar", "foo")
+
+	assert.Equal(t, CanonicalLabelMatchersKey([]*labels.Matcher{foo, bar}), CanonicalLabelMatchersKey([]*labels.Matcher{bar, foo}))
+}
+
+func BenchmarkCanonicalLabelMatchersKey(b *testing.B) {
+	ms := make([]*labels.Matcher, 20)
+	for i := range ms {
+		ms[i] = labels.MustNewMatcher(labels.MatchType(i%4), fmt.Sprintf("%04x", i%3), fmt.Sprintf("%04x", i%2))
+	}
+	for _, l := range []int{1, 5, 10, 20} {
+		b.Run(fmt.Sprintf("%d matchers", l), func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = CanonicalLabelMatchersKey(ms[:l])
+			}
+		})
+	}
+}

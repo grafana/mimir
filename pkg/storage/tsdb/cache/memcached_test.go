@@ -198,6 +198,90 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 	}
 }
 
+func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
+	t.Parallel()
+
+	// Init some data to conveniently define test cases later one.
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	matchers2 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "baz", "boo")}
+	value1 := []byte{1}
+	value2 := []byte{2}
+	value3 := []byte{3}
+
+	tests := map[string]struct {
+		setup        []mockedExpandedPostings
+		mockedErr    error
+		fetchBlockID ulid.ULID
+		fetchKey     LabelMatchersKey
+		expectedData []byte
+		expectedOk   bool
+	}{
+		"should return no hit on empty cache": {
+			setup:        []mockedExpandedPostings{},
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			expectedData: nil,
+			expectedOk:   false,
+		},
+		"should return no miss on hit": {
+			setup: []mockedExpandedPostings{
+				{block: block1, matchers: matchers1, value: value1},
+				{block: block1, matchers: matchers2, value: value2},
+				{block: block2, matchers: matchers1, value: value3},
+			},
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			expectedData: value1,
+			expectedOk:   true,
+		},
+		"should return no hit on memcached error": {
+			setup: []mockedExpandedPostings{
+				{block: block1, matchers: matchers1, value: value1},
+				{block: block1, matchers: matchers2, value: value2},
+				{block: block2, matchers: matchers1, value: value3},
+			},
+			mockedErr:    context.DeadlineExceeded,
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			expectedData: nil,
+			expectedOk:   false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			memcached := newMockedMemcachedClient(testData.mockedErr)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			assert.NoError(t, err)
+
+			// Store the postings expected before running the test.
+			ctx := context.Background()
+			for _, p := range testData.setup {
+				c.StoreExpandedPostings(ctx, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+			}
+
+			// Fetch postings from cached and assert on it.
+			data, ok := c.FetchExpandedPostings(ctx, testData.fetchBlockID, testData.fetchKey)
+			assert.Equal(t, testData.expectedData, data)
+			assert.Equal(t, testData.expectedOk, ok)
+
+			// Assert on metrics.
+			expectedHits := 0.0
+			if testData.expectedOk {
+				expectedHits = 1.0
+			}
+			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeExpandedPostings)))
+			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeExpandedPostings)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
+		})
+	}
+}
+
 type mockedPostings struct {
 	block ulid.ULID
 	label labels.Label
@@ -208,6 +292,12 @@ type mockedSeries struct {
 	block ulid.ULID
 	id    uint64
 	value []byte
+}
+
+type mockedExpandedPostings struct {
+	block    ulid.ULID
+	matchers []*labels.Matcher
+	value    []byte
 }
 
 type mockedMemcachedClient struct {

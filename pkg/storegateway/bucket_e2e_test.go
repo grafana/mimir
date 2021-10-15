@@ -88,6 +88,14 @@ func (c *swappableCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID
 	return c.ptr.FetchMultiSeries(ctx, blockID, ids)
 }
 
+func (c *swappableCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {
+	c.ptr.StoreExpandedPostings(ctx, blockID, key, v)
+}
+
+func (c *swappableCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
+	return c.ptr.FetchExpandedPostings(ctx, blockID, key)
+}
+
 type storeSuite struct {
 	store            *BucketStore
 	minTime, maxTime int64
