@@ -554,26 +554,9 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Create a temporary directory for compactor.
-			workDir, err := ioutil.TempDir(os.TempDir(), "compactor")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(workDir))
-			})
-
-			// Create a temporary directory for local storage.
-			storageDir, err := ioutil.TempDir(os.TempDir(), "storage")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(storageDir))
-			})
-
-			// Create a temporary directory for fetcher.
-			fetcherDir, err := ioutil.TempDir(os.TempDir(), "fetcher")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(fetcherDir))
-			})
+			workDir := t.TempDir()
+			storageDir := t.TempDir()
+			fetcherDir := t.TempDir()
 
 			storageCfg := mimir_tsdb.BlocksStorageConfig{}
 			flagext.DefaultValues(&storageCfg)
@@ -705,19 +688,8 @@ func TestMultitenantCompactor_ShouldSupportRollbackFromSplitAndMergeToDefaultCom
 		},
 	}
 
-	// Create a temporary directory for compactor.
-	workDir, err := ioutil.TempDir(os.TempDir(), "compactor")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(workDir))
-	})
-
-	// Create a temporary directory for fetcher.
-	fetcherDir, err := ioutil.TempDir(os.TempDir(), "fetcher")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(fetcherDir))
-	})
+	workDir := t.TempDir()
+	fetcherDir := t.TempDir()
 
 	compactorCfg := prepareConfig()
 	compactorCfg.DataDir = workDir
