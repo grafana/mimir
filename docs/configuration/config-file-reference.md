@@ -4076,6 +4076,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
+# The maximum number of label names allowed per cardinality request.
+# CLI flag: -ingester.max-cardinality-label-names-per-request
+[max_cardinality_label_names_per_request: <int> | default = 100]
+
 # Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
 # respective YAML config option instead. Maximum number of chunks that can be
 # fetched in a single query. This limit is enforced when fetching chunks from

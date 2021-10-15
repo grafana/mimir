@@ -76,6 +76,8 @@ type Limits struct {
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user"`
+	// Cardinality
+	MaxCardinalityLabelNamesPerRequest int `yaml:"max_cardinality_label_names_per_request" json:"max_cardinality_label_names_per_request"`
 
 	// Querier enforced limits.
 	MaxChunksPerQueryFromStore             int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
@@ -163,6 +165,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per user, across the cluster. 0 to disable. Supported only if -distributor.shard-by-all-labels is true.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, "ingester.max-global-metadata-per-metric", 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
+	f.IntVar(&l.MaxCardinalityLabelNamesPerRequest, "ingester.max-cardinality-label-names-per-request", 100, "The maximum number of label names allowed per cardinality request.")
+
 	f.IntVar(&l.MaxChunksPerQueryFromStore, "store.query-chunk-limit", 2e6, "Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its respective YAML config option instead. Maximum number of chunks that can be fetched in a single query. This limit is enforced when fetching chunks from the long-term storage only. When using chunks storage, this limit is enforced in the querier and ruler, while when using blocks storage this limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 0, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. Takes precedence over the deprecated -store.query-chunk-limit. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, "querier.max-fetched-series-per-query", 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and blocks storage. This limit is enforced in the querier only when running with blocks storage. 0 to disable")
@@ -506,6 +510,11 @@ func (o *Overrides) MaxGlobalMetadataPerMetric(userID string) int {
 // MaxGlobalExemplars returns the maximum number of exemplars held in memory across the cluster.
 func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalExemplarsPerUser
+}
+
+// MaxCardinalityLabelNamesPerRequest returns the maximum number of label names per cardinality request.
+func (o *Overrides) MaxCardinalityLabelNamesPerRequest(userID string) int {
+	return o.getOverridesForUser(userID).MaxCardinalityLabelNamesPerRequest
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.
