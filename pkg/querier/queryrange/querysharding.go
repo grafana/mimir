@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -152,7 +153,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	res := qry.Exec(ctx)
 	extracted, err := FromResult(res)
 	if err != nil {
-		return nil, err
+		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
 		Status: StatusSuccess,
@@ -162,6 +163,28 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+func mapEngineError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	statusCode := http.StatusInternalServerError
+	errorType := apierror.TypeInternal
+	switch errors.Cause(err).(type) {
+	case promql.ErrQueryCanceled:
+		statusCode = http.StatusServiceUnavailable
+		errorType = apierror.TypeCanceled
+	case promql.ErrQueryTimeout:
+		statusCode = http.StatusServiceUnavailable
+		errorType = apierror.TypeTimeout
+	case promql.ErrStorage:
+		statusCode = http.StatusServiceUnavailable
+		errorType = apierror.TypeInternal
+	}
+
+	return apierror.JSONErrorf(errorType, statusCode, "%s", err)
 }
 
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
