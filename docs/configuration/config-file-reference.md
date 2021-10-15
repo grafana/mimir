@@ -4150,6 +4150,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
+# The max number of sharded queries that can be run for a given received query.
+# 0 to disable limit.
+# CLI flag: -frontend.query-sharding-max-sharded-queries
+[query_sharding_max_sharded_queries: <int> | default = 128]
+
 # Maximum size in bytes of distinct label names and values. When querier
 # receives response from ingester, it merges the response with responses from
 # other ingesters. This maximum size limit is applied to the merged(distinct)

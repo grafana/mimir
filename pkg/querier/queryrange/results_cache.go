@@ -131,6 +131,9 @@ func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
 // or not. If not, just send the request to next handler.
 type ShouldCacheFn func(r Request) bool
 
+// resultsCacheAlwaysEnabled is a ShouldCacheFn function always returning true.
+var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
+
 type resultsCache struct {
 	logger   log.Logger
 	cfg      ResultsCacheConfig
@@ -184,7 +187,7 @@ func NewResultsCacheMiddleware(
 			limits:               limits,
 			merger:               merger,
 			extractor:            extractor,
-			minCacheExtent:       (5 * time.Minute).Milliseconds(),
+			minCacheExtent:       defaultMinCacheExtent,
 			splitter:             splitter,
 			cacheGenNumberLoader: cacheGenNumberLoader,
 			shouldCache:          shouldCache,
@@ -420,6 +423,11 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
 // The input extents can be overlapping and are not required to be sorted.
 func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, extents []Extent) ([]Extent, error) {
+	// Fast path.
+	if len(extents) <= 1 {
+		return extents, nil
+	}
+
 	sort.Slice(extents, func(i, j int) bool {
 		if extents[i].Start == extents[j].Start {
 			// as an optimization, for two extents starts at the same time, we
