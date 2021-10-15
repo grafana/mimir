@@ -6,7 +6,6 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -633,18 +631,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			require.Empty(t, partials)
 
 			// Sort blocks by MinTime and labels so that we get a stable comparison.
-			var actual []*metadata.Meta
-			for _, m := range metas {
-				actual = append(actual, m)
-			}
-
-			sort.Slice(actual, func(i, j int) bool {
-				if actual[i].BlockMeta.MinTime != actual[j].BlockMeta.MinTime {
-					return actual[i].BlockMeta.MinTime < actual[j].BlockMeta.MinTime
-				}
-
-				return labels.Compare(labels.FromMap(actual[i].Thanos.Labels), labels.FromMap(actual[j].Thanos.Labels)) < 0
-			})
+			actual := sortMetasByMinTime(convertMetasMapToSlice(metas))
 
 			// Compare actual blocks with the expected ones.
 			require.Len(t, actual, len(expected))
