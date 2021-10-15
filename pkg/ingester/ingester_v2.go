@@ -1339,7 +1339,7 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err != nil {
 		return err
 	}
-	defer func() { _ = idx.Close() }()
+	defer idx.Close()
 
 	matchers, err := client.FromLabelMatchers(req.GetMatchers())
 	if err != nil {

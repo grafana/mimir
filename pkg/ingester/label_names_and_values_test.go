@@ -3,7 +3,9 @@
 package ingester
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
@@ -214,37 +216,36 @@ func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
 }
 
 func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) {
-	for _, tc := range []struct {
-		description    string
+	testCases := map[string]struct {
+		labels         []string
+		matchers       []*labels.Matcher
 		existingLabels map[string][]string
 		expectedItems  []*client.LabelValueSeriesCount
 	}{
-		{
-			"empty response is returned when no labels are provided",
-			map[string][]string{},
-			nil,
+		"empty response is returned when no labels are provided": {
+			labels:         []string{"label-a", "label-b"},
+			matchers:       []*labels.Matcher{},
+			existingLabels: map[string][]string{},
+			expectedItems:  nil,
 		},
-		{
-			"empty response is returned when no matching labels are requested",
-			map[string][]string{"lba": {"a-0"}},
-			nil,
-		},
-		{
-			"all values returned in a single message even if only one label",
-			map[string][]string{
+		"all values returned in a single message": {
+			labels:   []string{"label-a", "label-b"},
+			matchers: []*labels.Matcher{},
+			existingLabels: map[string][]string{
 				"label-a": {"a-0"},
 			},
-			[]*client.LabelValueSeriesCount{
+			expectedItems: []*client.LabelValueSeriesCount{
 				{LabelName: "label-a", LabelValueSeries: map[string]uint64{"a-0": 50}},
 			},
 		},
-		{
-			"all values returned in a single message if label values count less then batch size",
-			map[string][]string{
+		"all values returned in a single message if response size is less then batch size": {
+			labels:   []string{"label-a", "label-b"},
+			matchers: []*labels.Matcher{},
+			existingLabels: map[string][]string{
 				"label-a": {"a-0", "a-1", "a-2"},
 				"label-b": {"b-0", "b-1"},
 			},
-			[]*client.LabelValueSeriesCount{
+			expectedItems: []*client.LabelValueSeriesCount{
 				{
 					LabelName:        "label-a",
 					LabelValueSeries: map[string]uint64{"a-0": 50, "a-1": 50, "a-2": 50},
@@ -255,32 +256,33 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 				},
 			},
 		},
-	} {
-		t.Run(tc.description, func(t *testing.T) {
+	}
+	for tName, tCfg := range testCases {
+		t.Run(tName, func(t *testing.T) {
 			// server
 			mockServer := &mockLabelValuesCardinalityServer{context: context.Background()}
 			var server client.Ingester_LabelValuesCardinalityServer = mockServer
 
 			// index reader
-			idxReader := &mockIndex{existingLabels: tc.existingLabels}
+			idxReader := &mockIndex{existingLabels: tCfg.existingLabels}
 			postingsForMatchersFn := func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
 				return &mockPostings{n: 50}, nil
 			}
 			err := labelValuesCardinality(
-				[]string{"label-a", "label-b"},
-				[]*labels.Matcher{},
+				tCfg.labels,
+				tCfg.matchers,
 				idxReader,
 				postingsForMatchersFn,
 				1000,
 				server,
 			)
 			require.NoError(t, err)
-			if tc.expectedItems == nil {
+			if tCfg.expectedItems == nil {
 				require.Empty(t, mockServer.SentResponses)
 				return
 			}
 			require.Len(t, mockServer.SentResponses, 1)
-			require.Equal(t, tc.expectedItems, mockServer.SentResponses[0].Items)
+			require.Equal(t, tCfg.expectedItems, mockServer.SentResponses[0].Items)
 		})
 	}
 }
@@ -348,15 +350,12 @@ type mockLabelValuesCardinalityServer struct {
 
 func (m *mockLabelValuesCardinalityServer) Send(resp *client.LabelValuesCardinalityResponse) error {
 	var sentResp client.LabelValuesCardinalityResponse
-	for _, item := range resp.Items {
-		sentRespItem := &client.LabelValueSeriesCount{
-			LabelName:        item.LabelName,
-			LabelValueSeries: make(map[string]uint64, len(item.LabelValueSeries)),
-		}
-		for k, v := range item.LabelValueSeries {
-			sentRespItem.LabelValueSeries[k] = v
-		}
-		sentResp.Items = append(sentResp.Items, sentRespItem)
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	if err := json.NewDecoder(bytes.NewReader(b)).Decode(&sentResp); err != nil {
+		return err
 	}
 	m.SentResponses = append(m.SentResponses, sentResp)
 	return nil

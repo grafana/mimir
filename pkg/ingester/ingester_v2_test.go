@@ -1468,14 +1468,12 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			timestamp: 100090,
 		},
 	}
-	tests := []struct {
-		testName      string
+	tests := map[string]struct {
 		labelNames    []string
 		matchers      []*client.LabelMatcher
 		expectedItems []*client.LabelValueSeriesCount
 	}{
-		{
-			testName:   "expected all label values cardinality",
+		"expected all label values cardinality": {
 			labelNames: []string{labels.MetricName, "env", "status"},
 			matchers:   []*client.LabelMatcher{},
 			expectedItems: []*client.LabelValueSeriesCount{
@@ -1502,8 +1500,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 				},
 			},
 		},
-		{
-			testName:   "expected status values cardinality applying matchers",
+		"expected status values cardinality applying matchers": {
 			labelNames: []string{"status"},
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
@@ -1515,8 +1512,7 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 				},
 			},
 		},
-		{
-			testName:   "empty response is returned when no matchers match the requested labels",
+		"empty response is returned when no matchers match the requested labels": {
 			labelNames: []string{"status"},
 			matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: "job", Value: "store-gateway"},
@@ -1530,8 +1526,8 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 
 	ctx := pushSeriesToIngester(t, series, i)
 	// Run tests
-	for _, tc := range tests {
-		t.Run(tc.testName, func(t *testing.T) {
+	for tName, tc := range tests {
+		t.Run(tName, func(t *testing.T) {
 			req := &client.LabelValuesCardinalityRequest{
 				LabelNames: tc.labelNames,
 				Matchers:   tc.matchers,
@@ -1540,12 +1536,6 @@ func TestIngester_LabelValuesCardinality(t *testing.T) {
 			s := &mockLabelValuesCardinalityServer{context: ctx}
 			require.NoError(t, i.LabelValuesCardinality(req, s))
 
-			// sort response items
-			for _, item := range s.SentResponses {
-				sort.Slice(item.Items, func(i, j int) bool {
-					return item.Items[i].LabelName < item.Items[j].LabelName
-				})
-			}
 			if len(tc.expectedItems) == 0 {
 				require.Len(t, s.SentResponses, 0)
 				return
