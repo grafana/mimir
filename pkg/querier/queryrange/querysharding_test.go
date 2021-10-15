@@ -584,6 +584,25 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 	assert.Equal(t, downstreamErr, err)
 }
 
+func TestQuerySharding_WrapMultipleTime(t *testing.T) {
+	req := &PrometheusRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: "vector(1)", // A non shardable query.
+	}
+
+	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, prometheus.NewRegistry())
+
+	require.NotPanics(t, func() {
+		_, err := shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.Nil(t, err)
+		_, err = shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.Nil(t, err)
+	})
+}
+
 func BenchmarkQuerySharding(b *testing.B) {
 	var shards []int
 

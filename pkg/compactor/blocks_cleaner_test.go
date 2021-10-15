@@ -396,6 +396,56 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	))
 }
 
+func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *testing.T) {
+	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
+
+	// Create blocks.
+	createTSDBBlock(t, bucketClient, "user-1", 10, 20, 2, nil)
+	createTSDBBlock(t, bucketClient, "user-2", 20, 30, 2, nil)
+
+	cfg := BlocksCleanerConfig{
+		DeletionDelay:      time.Hour,
+		CleanupInterval:    time.Minute,
+		CleanupConcurrency: 1,
+	}
+
+	ctx := context.Background()
+	logger := log.NewNopLogger()
+	reg := prometheus.NewPedanticRegistry()
+	cfgProvider := newMockConfigProvider()
+
+	// We will simulate change of "ownUser" by counting number of replies per user. First reply will be "true",
+	// all subsequent replies will be false.
+
+	userSeen := map[string]bool{}
+	ownUser := func(user string) (bool, error) {
+		if userSeen[user] {
+			return false, nil
+		}
+		userSeen[user] = true
+		return true, nil
+	}
+
+	cleaner := NewBlocksCleaner(cfg, bucketClient, ownUser, cfgProvider, logger, reg)
+	require.NoError(t, cleaner.cleanUsers(ctx))
+
+	// Verify that we have seen the users
+	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
+
+	// But there are no metrics for any user, because we did not in fact clean them.
+	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
+		# TYPE cortex_bucket_blocks_count gauge
+	`),
+		"cortex_bucket_blocks_count",
+	))
+
+	// Running cleanUsers again will see that users are no longer owned.
+	require.NoError(t, cleaner.cleanUsers(ctx))
+	require.ElementsMatch(t, []string{}, cleaner.lastOwnedUsers)
+}
+
 func TestBlocksCleaner_ListBlocksOutsideRetentionPeriod(t *testing.T) {
 	bucketClient, _ := mimir_testutil.PrepareFilesystemBucket(t)
 	bucketClient = bucketindex.BucketWithGlobalMarkers(bucketClient)
@@ -641,6 +691,7 @@ func (m *mockBucketFailure) Delete(ctx context.Context, name string) error {
 type mockConfigProvider struct {
 	userRetentionPeriods map[string]time.Duration
 	splitAndMergeShards  map[string]int
+	instancesShardSize   map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
@@ -659,6 +710,13 @@ func (m *mockConfigProvider) CompactorBlocksRetentionPeriod(user string) time.Du
 
 func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
 	if result, ok := m.splitAndMergeShards[user]; ok {
+		return result
+	}
+	return 0
+}
+
+func (m *mockConfigProvider) CompactorTenantShardSize(user string) int {
+	if result, ok := m.instancesShardSize[user]; ok {
 		return result
 	}
 	return 0

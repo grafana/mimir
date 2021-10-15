@@ -4006,10 +4006,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -validation.enforce-metric-name
 [enforce_metric_name: <boolean> | default = true]
 
-# The default tenant's shard size when the shuffle-sharding strategy is used.
-# Must be set both on ingesters and distributors. When this setting is specified
-# in the per-tenant overrides, a value of 0 disables shuffle sharding for the
-# tenant.
+# The tenant's shard size when the shuffle-sharding strategy is used. Must be
+# set both on ingesters and distributors. When this setting is specified in the
+# per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 
@@ -4147,14 +4146,21 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
+# Maximum size in bytes of distinct label names and values. When querier
+# receives response from ingester, it merges the response with responses from
+# other ingesters. This maximum size limit is applied to the merged(distinct)
+# results. If the limit is reached, an error is returned.
+# CLI flag: -querier.label-names-and-values-results-max-size-bytes
+[label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
+
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 0s]
 
-# The default tenant's shard size when the shuffle-sharding strategy is used by
-# ruler. When this setting is specified in the per-tenant overrides, a value of
-# 0 disables shuffle sharding for the tenant.
+# The tenant's shard size when the shuffle-sharding strategy is used by ruler.
+# When this setting is specified in the per-tenant overrides, a value of 0
+# disables shuffle sharding for the tenant.
 # CLI flag: -ruler.tenant-shard-size
 [ruler_tenant_shard_size: <int> | default = 0]
 
@@ -4166,10 +4172,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ruler.max-rule-groups-per-tenant
 [ruler_max_rule_groups_per_tenant: <int> | default = 0]
 
-# The default tenant's shard size when the shuffle-sharding strategy is used.
-# Must be set when the store-gateway sharding is enabled with the
-# shuffle-sharding strategy. When this setting is specified in the per-tenant
-# overrides, a value of 0 disables shuffle sharding for the tenant.
+# The tenant's shard size when the shuffle-sharding strategy is used. Must be
+# set when the store-gateway sharding is enabled with the shuffle-sharding
+# strategy. When this setting is specified in the per-tenant overrides, a value
+# of 0 disables shuffle sharding for the tenant.
 # CLI flag: -store-gateway.tenant-shard-size
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
@@ -4183,6 +4189,12 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # splitting but keep using the split-and-merge compaction strategy.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 4]
+
+# Max number of compactors that can compact blocks for single tenant. Only used
+# when split-and-merge compaction strategy is in use. 0 to disable the limit and
+# use all compactors.
+# CLI flag: -compactor.compactor-tenant-shard-size
+[compactor_tenant_shard_size: <int> | default = 1]
 
 # S3 server-side encryption type. Required to enable server-side encryption
 # overrides for a specific tenant. If not set, the default S3 client settings

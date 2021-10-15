@@ -36,7 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	logutil "github.com/grafana/mimir/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -512,6 +512,14 @@ func (i *Ingester) checkRunning() error {
 
 // Push implements client.IngesterServer
 func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	return i.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+}
+
+func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+	// NOTE: because we use `unsafe` in deserialisation, we must not
+	// retain anything from `req` past the exit from this function.
+	defer cleanup()
+
 	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
@@ -530,10 +538,6 @@ func (i *Ingester) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirp
 	if i.cfg.BlocksStorageEnabled {
 		return i.v2Push(ctx, req)
 	}
-
-	// NOTE: because we use `unsafe` in deserialisation, we must not
-	// retain anything from `req` past the call to ReuseSlice
-	defer mimirpb.ReuseSlice(req.Timeseries)
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -707,7 +711,7 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 	// If we have any error with regard to metadata we just log and no-op.
 	// We consider metadata a best effort approach, errors here should not stop processing.
 	if firstMetadataErr != nil {
-		logger := logutil.WithContext(ctx, i.logger)
+		logger := util_log.WithContext(ctx, i.logger)
 		level.Warn(logger).Log("msg", "failed to ingest some metadata", "err", firstMetadataErr)
 	}
 
@@ -800,7 +804,7 @@ func (i *Ingester) QueryStream(req *client.QueryRequest, stream client.Ingester_
 		return err
 	}
 
-	spanLog, ctx := spanlogger.New(stream.Context(), "QueryStream")
+	spanLog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "QueryStream")
 	defer spanLog.Finish()
 
 	from, through, matchers, err := client.FromQueryRequest(req)

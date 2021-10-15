@@ -12,14 +12,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/grpcutil"
 	"github.com/grafana/dskit/test"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
-
-	grpc_util "github.com/grafana/mimir/pkg/util/grpc"
 )
 
 func TestSendQueryStream(t *testing.T) {
@@ -76,7 +75,7 @@ func TestSendQueryStream(t *testing.T) {
 	// Try to receive the response and assert the error we get is the context.Canceled
 	// wrapped within a gRPC error.
 	_, err = stream.Recv()
-	assert.Equal(t, true, grpc_util.IsGRPCContextCanceled(err))
+	assert.Equal(t, true, grpcutil.IsGRPCContextCanceled(err))
 
 	// Wait until the assertions in the server mock have completed.
 	wg.Wait()

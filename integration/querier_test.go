@@ -251,21 +251,26 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			}
 
 			// Query range. We expect 1 data point with a value of 3 (number of series).
-			result, err = c.QueryRange(`count({__name__=~"series.*"})`, series3Timestamp, series3Timestamp, time.Minute)
-			require.NoError(t, err)
-			require.Equal(t, model.ValMatrix, result.Type())
+			// Run this query multiple times to ensure each time we get the same result.
+			const numRangeQueries = 10
 
-			matrix := result.(model.Matrix)
-			require.Equal(t, 1, len(matrix))
-			require.Equal(t, 1, len(matrix[0].Values))
-			assert.Equal(t, model.SampleValue(3), matrix[0].Values[0].Value)
-			expectedFetchedSeries += 4 // series_2 is fetched both from ingester and storage, while other series are fetched either from ingester or storage.
+			for i := 0; i < numRangeQueries; i++ {
+				result, err = c.QueryRange(`count({__name__=~"series.*"})`, series3Timestamp, series3Timestamp, time.Minute)
+				require.NoError(t, err)
+				require.Equal(t, model.ValMatrix, result.Type())
+
+				matrix := result.(model.Matrix)
+				require.Equal(t, 1, len(matrix))
+				require.Equal(t, 1, len(matrix[0].Values))
+				assert.Equal(t, model.SampleValue(3), matrix[0].Values[0].Value)
+				expectedFetchedSeries += 4 // series_2 is fetched both from ingester and storage, while other series are fetched either from ingester or storage.
+			}
 
 			// When query sharding is enabled, we expect the range query above to be sharded.
 			if testCfg.queryShardingEnabled {
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_frontend_query_sharding_rewrites_attempted_total"))
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(16), "cortex_frontend_sharded_queries_total"))
+				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries), "cortex_frontend_query_sharding_rewrites_attempted_total"))
+				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
+				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries*16), "cortex_frontend_sharded_queries_total"))
 			}
 
 			// Check query stats (supported only when gRPC streaming is enabled).

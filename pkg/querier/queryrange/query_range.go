@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	jsoniter "github.com/json-iterator/go"
@@ -60,7 +61,7 @@ type Codec interface {
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeResponse(context.Context, *http.Response, Request) (Response, error)
+	DecodeResponse(context.Context, *http.Response, Request, log.Logger) (Response, error)
 	// EncodeRequest encodes a Request into an http request.
 	EncodeRequest(context.Context, Request) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
@@ -255,12 +256,12 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 	return req.WithContext(ctx), nil
 }
 
-func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request) (Response, error) {
+func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
 	if r.StatusCode/100 != 2 {
 		body, _ := ioutil.ReadAll(r.Body)
 		return nil, httpgrpc.Errorf(r.StatusCode, string(body))
 	}
-	log, ctx := spanlogger.New(ctx, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
+	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
 	defer log.Finish()
 
 	buf, err := bodyBuffer(r)
@@ -451,4 +452,14 @@ func decorateWithParamName(err error, field string) error {
 		return httpgrpc.Errorf(int(status.Code()), errTmpl, field, status.Message())
 	}
 	return fmt.Errorf(errTmpl, field, err)
+}
+
+// isRequestStepAligned returns whether the Request start and end timestamps are aligned
+// with the step.
+func isRequestStepAligned(req Request) bool {
+	if req.GetStep() == 0 {
+		return true
+	}
+
+	return req.GetEnd()%req.GetStep() == 0 && req.GetStart()%req.GetStep() == 0
 }

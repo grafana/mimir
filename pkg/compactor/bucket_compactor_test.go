@@ -8,9 +8,12 @@ package compactor
 import (
 	"testing"
 
+	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/errutil"
@@ -116,7 +119,7 @@ func TestGroupKey(t *testing.T) {
 }
 
 func TestGroupMaxMinTime(t *testing.T) {
-	g := &Group{
+	g := &Job{
 		metasByMinTime: []*metadata.Meta{
 			{BlockMeta: tsdb.BlockMeta{MinTime: 0, MaxTime: 10}},
 			{BlockMeta: tsdb.BlockMeta{MinTime: 1, MaxTime: 20}},
@@ -126,4 +129,56 @@ func TestGroupMaxMinTime(t *testing.T) {
 
 	assert.Equal(t, int64(0), g.MinTime())
 	assert.Equal(t, int64(30), g.MaxTime())
+}
+
+func TestFilterOwnJobs(t *testing.T) {
+	jobsFn := func() []*Job {
+		return []*Job{
+			NewJob("user", "key1", nil, 0, metadata.NoneFunc, false, 0, ""),
+			NewJob("user", "key2", nil, 0, metadata.NoneFunc, false, 0, ""),
+			NewJob("user", "key3", nil, 0, metadata.NoneFunc, false, 0, ""),
+			NewJob("user", "key4", nil, 0, metadata.NoneFunc, false, 0, ""),
+		}
+	}
+
+	tests := map[string]struct {
+		ownJob       ownCompactionJobFunc
+		expectedJobs int
+	}{
+		"should return all planned jobs if the compactor instance owns all of them": {
+			ownJob: func(job *Job) (bool, error) {
+				return true, nil
+			},
+			expectedJobs: 4,
+		},
+		"should return no jobs if the compactor instance owns none of them": {
+			ownJob: func(job *Job) (bool, error) {
+				return false, nil
+			},
+			expectedJobs: 0,
+		},
+		"should return some jobs if the compactor instance owns some of them": {
+			ownJob: func() ownCompactionJobFunc {
+				count := 0
+				return func(job *Job) (bool, error) {
+					count++
+					return count%2 == 0, nil
+				}
+			}(),
+			expectedJobs: 2,
+		},
+	}
+
+	m := NewBucketCompactorMetrics(prometheus.NewCounter(prometheus.CounterOpts{}), prometheus.NewCounter(prometheus.CounterOpts{}), nil)
+	for testName, testCase := range tests {
+		t.Run(testName, func(t *testing.T) {
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, m)
+			require.NoError(t, err)
+
+			res, err := bc.filterOwnJobs(jobsFn())
+
+			require.NoError(t, err)
+			assert.Len(t, res, testCase.expectedJobs)
+		})
+	}
 }

@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/scrape"
@@ -89,7 +90,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
-			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, true)
+			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, true, log.NewNopLogger())
 			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
@@ -115,7 +116,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 
 func TestDistributorQueryableFilter(t *testing.T) {
 	d := &mockDistributor{}
-	dq := newDistributorQueryable(d, nil, 1*time.Hour, true)
+	dq := newDistributorQueryable(d, nil, 1*time.Hour, true, log.NewNopLogger())
 
 	now := time.Now()
 
@@ -161,7 +162,7 @@ func TestIngesterStreaming(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, true)
+	queryable := newDistributorQueryable(d, mergeChunks, 0, true, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -237,7 +238,7 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 		nil)
 
 	ctx := user.InjectOrgID(context.Background(), "0")
-	queryable := newDistributorQueryable(d, mergeChunks, 0, true)
+	queryable := newDistributorQueryable(d, mergeChunks, 0, true, log.NewNopLogger())
 	querier, err := queryable.Querier(ctx, mint, maxt)
 	require.NoError(t, err)
 
@@ -267,7 +268,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d.On("LabelNames", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(labelNames, nil)
 
-			queryable := newDistributorQueryable(d, nil, 0, true)
+			queryable := newDistributorQueryable(d, nil, 0, true, log.NewNopLogger())
 			querier, err := queryable.Querier(context.Background(), mint, maxt)
 			require.NoError(t, err)
 
@@ -287,7 +288,7 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 			d.On("MetricsForLabelMatchers", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
 				Return(metrics, nil)
 
-			queryable := newDistributorQueryable(d, nil, 0, false)
+			queryable := newDistributorQueryable(d, nil, 0, false, log.NewNopLogger())
 			querier, err := queryable.Querier(context.Background(), mint, maxt)
 			require.NoError(t, err)
 
@@ -362,4 +363,9 @@ func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to 
 func (m *mockDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
 	args := m.Called(ctx)
 	return args.Get(0).([]scrape.MetricMetadata), args.Error(1)
+}
+
+func (m *mockDistributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+	args := m.Called(ctx, matchers)
+	return args.Get(0).(*client.LabelNamesAndValuesResponse), args.Error(1)
 }

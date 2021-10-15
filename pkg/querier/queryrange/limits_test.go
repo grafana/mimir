@@ -7,13 +7,17 @@ package queryrange
 
 import (
 	"context"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -77,7 +81,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
-			middleware := NewLimitsMiddleware(limits)
+			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
@@ -162,7 +166,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 			}
 
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
-			middleware := NewLimitsMiddleware(limits)
+			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := NewEmptyPrometheusResponse()
 			inner := &mockHandler{}
@@ -192,10 +196,11 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 }
 
 type mockLimits struct {
-	maxQueryLookback  time.Duration
-	maxQueryLength    time.Duration
-	maxCacheFreshness time.Duration
-	totalShards       int
+	maxQueryLookback    time.Duration
+	maxQueryLength      time.Duration
+	maxCacheFreshness   time.Duration
+	maxQueryParallelism int
+	totalShards         int
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -206,8 +211,11 @@ func (m mockLimits) MaxQueryLength(string) time.Duration {
 	return m.maxQueryLength
 }
 
-func (mockLimits) MaxQueryParallelism(string) int {
-	return 14 // Flag default.
+func (m mockLimits) MaxQueryParallelism(string) int {
+	if m.maxQueryParallelism == 0 {
+		return 14 // Flag default.
+	}
+	return m.maxQueryParallelism
 }
 
 func (m mockLimits) MaxCacheFreshness(string) time.Duration {
@@ -225,4 +233,150 @@ type mockHandler struct {
 func (m *mockHandler) Do(ctx context.Context, req Request) (Response, error) {
 	args := m.Called(ctx, req)
 	return args.Get(0).(Response), args.Error(1)
+}
+
+func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
+	var (
+		maxQueryParallelism = 2
+		count               atomic.Int32
+		max                 atomic.Int32
+		downstream          = RoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			cur := count.Inc()
+			if cur > max.Load() {
+				max.Store(cur)
+			}
+			defer count.Dec()
+			// simulate some work
+			time.Sleep(20 * time.Millisecond)
+			return &http.Response{
+				Body: http.NoBody,
+			}, nil
+		})
+		ctx = user.InjectOrgID(context.Background(), "foo")
+	)
+
+	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRequest{
+		Path:  "/query_range",
+		Start: time.Now().Add(time.Hour).Unix(),
+		End:   util.TimeToMillis(time.Now()),
+		Step:  int64(1 * time.Second * time.Millisecond),
+		Query: `foo`,
+	})
+	require.Nil(t, err)
+
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+		MiddlewareFunc(func(next Handler) Handler {
+			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+				var wg sync.WaitGroup
+				for i := 0; i < maxQueryParallelism+20; i++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						_, _ = next.Do(c, &PrometheusRequest{})
+					}()
+				}
+				wg.Wait()
+				return NewEmptyPrometheusResponse(), nil
+			})
+		}),
+	).RoundTrip(r)
+	require.NoError(t, err)
+	maxFound := int(max.Load())
+	require.LessOrEqual(t, maxFound, maxQueryParallelism, "max query parallelism: ", maxFound, " went over the configured one:", maxQueryParallelism)
+}
+
+func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
+	var (
+		maxQueryParallelism = 2
+		downstream          = RoundTripFunc(func(_ *http.Request) (*http.Response, error) {
+			// simulate some work
+			time.Sleep(20 * time.Millisecond)
+			return &http.Response{
+				Body: http.NoBody,
+			}, nil
+		})
+		ctx = user.InjectOrgID(context.Background(), "foo")
+	)
+
+	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRequest{
+		Path:  "/query_range",
+		Start: time.Now().Add(time.Hour).Unix(),
+		End:   util.TimeToMillis(time.Now()),
+		Step:  int64(1 * time.Second * time.Millisecond),
+		Query: `foo`,
+	})
+	require.Nil(t, err)
+
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+		MiddlewareFunc(func(next Handler) Handler {
+			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+				// fire up work and we don't wait.
+				for i := 0; i < 10; i++ {
+					go func() {
+						_, _ = next.Do(c, &PrometheusRequest{})
+					}()
+				}
+				return NewEmptyPrometheusResponse(), nil
+			})
+		}),
+	).RoundTrip(r)
+	require.NoError(t, err)
+}
+
+func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
+	var (
+		maxQueryParallelism = 2
+		downstream          = RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+			// Sleep for a long time or until the request context is canceled.
+			select {
+			case <-time.After(time.Minute):
+				return &http.Response{Body: http.NoBody}, nil
+			case <-req.Context().Done():
+				return nil, req.Context().Err()
+			}
+		})
+		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
+	)
+
+	r, err := PrometheusCodec.EncodeRequest(reqCtx, &PrometheusRequest{
+		Path:  "/query_range",
+		Start: time.Now().Add(time.Hour).Unix(),
+		End:   util.TimeToMillis(time.Now()),
+		Step:  int64(1 * time.Second * time.Millisecond),
+		Query: `foo`,
+	})
+	require.Nil(t, err)
+
+	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+		MiddlewareFunc(func(next Handler) Handler {
+			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
+				var wg sync.WaitGroup
+
+				// Fire up some work. Each sub-request will either be blocked in the sleep or in the queue
+				// waiting to be scheduled.
+				for i := 0; i < maxQueryParallelism+20; i++ {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+						_, _ = next.Do(c, &PrometheusRequest{})
+					}()
+				}
+
+				// Give it a bit a time to get the first sub-requests running.
+				time.Sleep(100 * time.Millisecond)
+
+				// Cancel the original request context.
+				reqCancel()
+
+				// Wait until all sub-requests have done. We expect all of them to cancel asap,
+				// so it should take a very short time.
+				waitStart := time.Now()
+				wg.Wait()
+				assert.Less(t, time.Since(waitStart).Milliseconds(), int64(100))
+
+				return NewEmptyPrometheusResponse(), nil
+			})
+		}),
+	).RoundTrip(r)
+	require.NoError(t, err)
 }

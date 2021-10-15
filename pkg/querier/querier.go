@@ -137,7 +137,7 @@ func NewChunkStoreQueryable(cfg Config, chunkStore chunkstore.ChunkStore) storag
 func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, tombstonesLoader *purger.TombstonesLoader, reg prometheus.Registerer, logger log.Logger) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
-	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, cfg.QueryLabelNamesWithMatchers)
+	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, cfg.QueryLabelNamesWithMatchers, logger)
 
 	ns := make([]QueryableWithFilter, len(stores))
 	for ix, s := range stores {
@@ -146,7 +146,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 			QueryStoreAfter:     cfg.QueryStoreAfter,
 		}
 	}
-	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, tombstonesLoader)
+	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, tombstonesLoader, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
@@ -185,7 +185,7 @@ type QueryableWithFilter interface {
 }
 
 // NewQueryable creates a new Queryable for mimir.
-func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, tombstonesLoader *purger.TombstonesLoader) storage.Queryable {
+func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, tombstonesLoader *purger.TombstonesLoader, logger log.Logger) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()
 
@@ -196,7 +196,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 
 		ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(limits.MaxFetchedSeriesPerQuery(userID), limits.MaxFetchedChunkBytesPerQuery(userID), limits.MaxChunksPerQuery(userID)))
 
-		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture)
+		mint, maxt, err = validateQueryTimeRange(ctx, userID, mint, maxt, limits, cfg.MaxQueryIntoFuture, logger)
 		if err == errEmptyTimeRange {
 			return storage.NoopQuerier(), nil
 		} else if err != nil {
@@ -212,6 +212,7 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			limits:              limits,
 			maxQueryIntoFuture:  cfg.MaxQueryIntoFuture,
 			queryStoreForLabels: cfg.QueryStoreForLabels,
+			logger:              logger,
 		}
 
 		dqr, err := distributor.Querier(ctx, mint, maxt)
@@ -257,12 +258,13 @@ type querier struct {
 	limits              *validation.Overrides
 	maxQueryIntoFuture  time.Duration
 	queryStoreForLabels bool
+	logger              log.Logger
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.New(q.ctx, "querier.Select")
+	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "querier.Select")
 	defer log.Span.Finish()
 
 	if sp != nil {
@@ -290,7 +292,7 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	// Validate query time range. Even if the time range has already been validated when we created
 	// the querier, we need to check it again here because the time range specified in hints may be
 	// different.
-	startMs, endMs, err := validateQueryTimeRange(ctx, userID, sp.Start, sp.End, q.limits, q.maxQueryIntoFuture)
+	startMs, endMs, err := validateQueryTimeRange(ctx, userID, sp.Start, sp.End, q.limits, q.maxQueryIntoFuture, q.logger)
 	if err == errEmptyTimeRange {
 		return storage.NoopSeriesSet()
 	} else if err != nil {
@@ -568,7 +570,7 @@ func UseBeforeTimestampQueryable(queryable storage.Queryable, ts time.Time) Quer
 	}
 }
 
-func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration) (int64, int64, error) {
+func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs int64, limits *validation.Overrides, maxQueryIntoFuture time.Duration, logger log.Logger) (int64, int64, error) {
 	now := model.Now()
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
@@ -579,7 +581,7 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 		endTime = now.Add(maxQueryIntoFuture)
 
 		// Make sure to log it in traces to ease debugging.
-		level.Debug(spanlogger.FromContext(ctx)).Log(
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
 			"msg", "the end time of the query has been manipulated because of the 'max query into future' setting",
 			"original", util.FormatTimeModel(origEndTime),
 			"updated", util.FormatTimeModel(endTime))
@@ -595,7 +597,7 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 		startTime = now.Add(-maxQueryLookback)
 
 		// Make sure to log it in traces to ease debugging.
-		level.Debug(spanlogger.FromContext(ctx)).Log(
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
 			"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
 			"original", util.FormatTimeModel(origStartTime),
 			"updated", util.FormatTimeModel(startTime))

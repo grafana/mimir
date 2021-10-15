@@ -22,9 +22,12 @@ import (
 	"sync"
 	"time"
 
+	otlog "github.com/opentracing/opentracing-go/log"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -44,7 +47,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
-	"github.com/thanos-io/thanos/pkg/runutil"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
@@ -1507,6 +1509,8 @@ type bucketBlock struct {
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
 	relabelLabels labels.Labels
+
+	expandedPostingsPromises sync.Map
 }
 
 func newBucketBlock(
@@ -1684,19 +1688,69 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
+	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
+	defer func() {
+		span.LogKV("returned postings", len(returnRefs))
+		if returnErr != nil {
+			span.LogFields(otlog.Error(returnErr))
+		}
+		span.Finish()
+	}()
+	return r.expandedPostingsPromise(ctx, ms)(ctx)
+}
+
+// expandedPostingsPromise provides a promise for the execution of expandedPostings method.
+// First call to this method will be blocking until the expandedPostings are calculated.
+// While first call is blocking, concurrent calls with same matchers will return a promise for the same results, without recalculating them.
+// TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
+// TODO: https://github.com/grafana/mimir/issues/331
+func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) func(ctx context.Context) ([]uint64, error) {
+	var (
+		refs []uint64
+		err  error
+		done = make(chan struct{})
+	)
+
+	promise := func(ctx context.Context) ([]uint64, error) {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-done:
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		// We must make a copy of refs to return, because caller can modify the postings slice in place.
+		refsCopy := make([]uint64, len(refs))
+		copy(refsCopy, refs)
+
+		return refsCopy, nil
+	}
+
+	key := matchersKey(ms)
+	oldPromise, loaded := r.block.expandedPostingsPromises.LoadOrStore(key, promise)
+	if loaded {
+		return oldPromise.(func(ctx context.Context) ([]uint64, error))
+	}
+
+	refs, err = r.expandedPostings(ctx, ms)
+
+	close(done)
+	r.block.expandedPostingsPromises.Delete(key)
+
+	return promise
+}
+
+// expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
+func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
 	var (
 		postingGroups []*postingGroup
 		allRequested  = false
 		hasAdds       = false
 		keys          []labels.Label
 	)
-
-	// Track the number of returned postings in a tracing span.
-	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
-	defer func() {
-		span.LogKV("returned postings", len(returnRefs))
-		span.Finish()
-	}()
 
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
@@ -1818,10 +1872,9 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
 func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
-	if m.Type == labels.MatchRegexp && len(findSetMatches(m.Value)) > 0 {
-		vals := findSetMatches(m.Value)
-		toAdd := make([]labels.Label, 0, len(vals))
-		for _, val := range vals {
+	if setMatches := m.SetMatches(); m.Type == labels.MatchRegexp && len(setMatches) > 0 {
+		toAdd := make([]labels.Label, 0, len(setMatches))
+		for _, val := range setMatches {
 			toAdd = append(toAdd, labels.Label{Name: m.Name, Value: val})
 		}
 		return newPostingGroup(false, toAdd, nil), nil
@@ -2607,4 +2660,28 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 // NewDefaultChunkBytesPool returns a chunk bytes pool with default settings.
 func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
 	return pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, maxChunkPoolBytes)
+}
+
+// matchersKey provides a unique string key for the given matchers slice
+// NOTE: different orders of matchers will produce different keys,
+// but it's unlikely that we'll receive same matchers in different orders at the same time
+func matchersKey(ms []*labels.Matcher) string {
+	const (
+		typeLen = 2
+		sepLen  = 1
+	)
+	var size int
+	for _, m := range ms {
+		size += len(m.Name) + len(m.Value) + typeLen + sepLen
+	}
+	sb := strings.Builder{}
+	sb.Grow(size)
+	for _, m := range ms {
+		sb.WriteString(m.Name)
+		sb.WriteString(m.Type.String())
+		sb.WriteString(m.Value)
+		sb.WriteByte(0)
+	}
+	key := sb.String()
+	return key
 }

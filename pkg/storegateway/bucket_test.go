@@ -936,6 +936,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
+	const series = 500
 
 	tmpDir, err := ioutil.TempDir("", "test-expanded-postings")
 	assert.NoError(tb, err)
@@ -945,12 +946,182 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	assert.NoError(tb, err)
 	defer func() { assert.NoError(tb, bkt.Close()) }()
 
-	id := uploadTestBlock(tb, tmpDir, bkt, 500)
+	id := uploadTestBlock(tb, tmpDir, bkt, series)
 
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
 	assert.NoError(tb, err)
 
-	benchmarkExpandedPostings(tb, bkt, id, r, 500)
+	benchmarkExpandedPostings(tb, bkt, id, r, series)
+
+	t.Run("promise", func(t *testing.T) {
+		expectedErr := fmt.Errorf("failed as expected")
+
+		labelValuesCalls := map[string]*sync.WaitGroup{"i": {}, "n": {}, "fail": {}}
+		for _, c := range labelValuesCalls {
+			// we expect one call for each label name
+			c.Add(1)
+		}
+
+		releaseCalls := make(chan struct{})
+		onlabelValuesCalled := func(labelName string) error {
+			// this will panic if unexpected label is called, or called too many (>1) times
+			labelValuesCalls[labelName].Done()
+			<-releaseCalls
+			if labelName == "fail" {
+				return expectedErr
+			}
+			return nil
+		}
+
+		b := &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onlabelValuesCalled: onlabelValuesCalled},
+			indexCache:        noopCache{},
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		// we're building a scenario where:
+		// - first three calls (0, 1, 2) will be called concurrently with same matchers
+		//   - call 0 will create the promise, but it's expandedPostings call won't return until we have received all calls
+		//   - call 1 will wait on the promise
+		//   - call 2 will cancel the context once we see it waiting on the promise, so it should stop waiting
+		//
+		// - call 3 will be called concurrently with the first three, but with different matchers, so we can see that results are not mixed
+		//
+		// - calls 4 and 5 are called concurrently with a matcher that causes LabelValues to artificially fail, the error should be stored in the promise
+		var (
+			ress    [6][]uint64
+			errs    [6]error
+			results sync.WaitGroup
+		)
+		results.Add(6)
+
+		deduplicatedCallMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")} // all series match this, but we need to call LabelValues("i")
+		otherMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "n", "^0_.*$")}          // one fifth of series match this, but we need to call LabelValues("n")
+		failingMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "fail", "^.*$")}       // LabelValues() is mocked to fail with "fail" label
+
+		// first call will create the promise
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
+			ress[0], errs[0] = indexr.ExpandedPostings(context.Background(), deduplicatedCallMatchers)
+		}()
+		// wait for this call to actually create a promise and call LabelValues
+		labelValuesCalls["i"].Wait()
+
+		// second call will wait on the promise
+		secondContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
+			ress[1], errs[1] = indexr.ExpandedPostings(secondContext, deduplicatedCallMatchers)
+		}()
+		// wait until this is waiting on the promise
+		<-secondContext.waitingDone
+
+		// third call will have context canceled before promise returns
+		thirdCallInnerContext, thirdContextCancel := context.WithCancel(context.Background())
+		thirdContext := &contextNotifyingOnDoneWaiting{Context: thirdCallInnerContext, waitingDone: make(chan struct{})}
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
+			ress[2], errs[2] = indexr.ExpandedPostings(thirdContext, deduplicatedCallMatchers)
+		}()
+		// wait until this is waiting on the promise
+		<-thirdContext.waitingDone
+		// and cancel its context
+		thirdContextCancel()
+
+		// fourth call will create its own promise
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
+			ress[3], errs[3] = indexr.ExpandedPostings(context.Background(), otherMatchers)
+		}()
+		// wait for this call to actually create a promise and call LabelValues
+		labelValuesCalls["n"].Wait()
+
+		// fifth call will create its own promise which will fail
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
+			ress[4], errs[4] = indexr.ExpandedPostings(context.Background(), failingMatchers)
+		}()
+		// wait for this call to actually create a promise and call LabelValues
+		labelValuesCalls["fail"].Wait()
+
+		// sixth call will wait on the promise to see it fail
+		sixthContext := &contextNotifyingOnDoneWaiting{Context: context.Background(), waitingDone: make(chan struct{})}
+		go func() {
+			defer results.Done()
+			indexr := b.indexReader()
+			defer indexr.Close()
+
+			ress[5], errs[5] = indexr.ExpandedPostings(sixthContext, failingMatchers)
+		}()
+		// wait until this is waiting on the promise
+		<-sixthContext.waitingDone
+
+		// let all calls return and wait for the results
+		close(releaseCalls)
+		results.Wait()
+
+		require.Equal(t, series, len(ress[0]), "First result should have %d series (all of them)", series)
+		require.NoError(t, errs[0], "First results should not fail")
+
+		require.Equal(t, series, len(ress[1]), "Second result should have %d series (all of them)", series)
+		require.NoError(t, errs[1], "Second results should not fail")
+
+		require.Nil(t, ress[2], "Third result should not have series")
+		require.ErrorIs(t, errs[2], context.Canceled, "Third result should have a context.Canceled error")
+
+		require.Equal(t, series/5, len(ress[3]), "Fourth result should have %d series (one fifth of total)", series/5)
+		require.NoError(t, errs[3], "Fourth results should not fail")
+
+		require.Nil(t, ress[4], "Fifth result should not have series")
+		require.ErrorIs(t, errs[4], expectedErr, "failed", "Fifth result should fail as 'failed'")
+
+		require.Nil(t, ress[5], "Sixth result should not have series")
+		require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
+	})
+}
+
+type blockingLabelValuesIndexReader struct {
+	indexheader.Reader
+	onlabelValuesCalled func(name string) error
+}
+
+func (bir *blockingLabelValuesIndexReader) LabelValues(name string) ([]string, error) {
+	if err := bir.onlabelValuesCalled(name); err != nil {
+		return nil, err
+	}
+	return bir.Reader.LabelValues(name)
+}
+
+type contextNotifyingOnDoneWaiting struct {
+	context.Context
+	once        sync.Once
+	waitingDone chan struct{}
+}
+
+func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
+	w.once.Do(func() {
+		close(w.waitingDone)
+	})
+	return w.Context.Done()
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
@@ -1055,7 +1226,9 @@ func benchmarkExpandedPostings(
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
-	iRegexSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
+	iRegexAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
+	iRegexAlternateSuffix := labels.MustNewMatcher(labels.MatchRegexp, "i", "(0|1|2)"+labelLongSuffix)
+	iRegexClass := labels.MustNewMatcher(labels.MatchRegexp, "i", "[0-2]"+labelLongSuffix)
 
 	series = series / 5
 	cases := []struct {
@@ -1080,7 +1253,9 @@ func benchmarkExpandedPostings(
 		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}, int(float64(series) * 0.011111)},
 		{`n="1",i=~".+",i!="2",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2, jFoo}, int(float64(series) * 0.1)},
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}, int(1 + float64(series)*0.088888)},
-		{`i=~"0|1|2"`, []*labels.Matcher{iRegexSet}, 150}, // 50 series for "1", 50 for "2" and 50 for "3".
+		{`i=~"0xxx|1xxx|2xxx"`, []*labels.Matcher{iRegexAlternate}, 150},   // 50 series for "1", 50 for "2" and 50 for "3".
+		{`i=~"(0|1|2)xxx"`, []*labels.Matcher{iRegexAlternateSuffix}, 150}, // 50 series for "1", 50 for "2" and 50 for "3".
+		{`i=~"[0-2]xxx"`, []*labels.Matcher{iRegexClass}, 150},             // 50 series for "1", 50 for "2" and 50 for "3".
 	}
 
 	for _, c := range cases {
@@ -1100,8 +1275,13 @@ func benchmarkExpandedPostings(
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				p, err := indexr.ExpandedPostings(ctx, c.matchers)
-				assert.NoError(t, err)
-				assert.Equal(t, c.expectedLen, len(p))
+
+				if err != nil {
+					t.Fatal(err.Error())
+				}
+				if c.expectedLen != len(p) {
+					t.Fatalf("expected %d postings but got %d", c.expectedLen, len(p))
+				}
 			}
 		})
 	}

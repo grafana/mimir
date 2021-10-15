@@ -6,9 +6,9 @@
 package distributor
 
 import (
+	"github.com/grafana/dskit/limiter"
 	"golang.org/x/time/rate"
 
-	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
