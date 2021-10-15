@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"errors"
+	"fmt"
 	"math"
 	"sort"
 
@@ -121,4 +122,8 @@ func (job *Job) SplittingShards() uint32 {
 // ShardingKey returns the key used to shard this job across multiple instances.
 func (job *Job) ShardingKey() string {
 	return job.shardingKey
+}
+
+func (job *Job) String() string {
+	return fmt.Sprintf("%s (minTime: %d maxTime: %d)", job.Key(), job.MinTime(), job.MaxTime())
 }

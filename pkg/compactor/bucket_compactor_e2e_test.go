@@ -224,7 +224,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewPlanner(logger, []int64{1000, 3000}, noCompactMarkerFilter)
 		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, metrics)
+		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, metrics)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.

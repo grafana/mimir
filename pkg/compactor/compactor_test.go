@@ -110,6 +110,19 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errors.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
 		},
+		"should fail on unknown compaction jobs order": {
+			setup: func(cfg *Config) {
+				cfg.CompactionJobsOrder = "everything-is-important"
+			},
+			expected: errInvalidCompactionOrder.Error(),
+		},
+		"should fail on unsupported compaction jobs order": {
+			setup: func(cfg *Config) {
+				cfg.CompactionStrategy = CompactionStrategyDefault
+				cfg.CompactionJobsOrder = CompactionOrderNewestFirst
+			},
+			expected: errors.Errorf(errUnsupportedCompactionOrder, CompactionStrategyDefault, CompactionOrderNewestFirst).Error(),
+		},
 	}
 
 	for testName, testData := range tests {

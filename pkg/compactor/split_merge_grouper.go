@@ -91,25 +91,6 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		level.Debug(g.logger).Log("msg", "grouper found a compactable blocks group", "groupKey", groupKey, "job", job.String())
 	}
 
-	// Ensure jobs are sorted by smallest range, oldest min time first. The rationale
-	// is that we want to favor smaller ranges first (ie. to deduplicate samples sooner
-	// than later) and older ones are more likely to be "complete" (no missing block still
-	// to be uploaded).
-	sort.SliceStable(res, func(i, j int) bool {
-		iLength := res[i].MaxTime() - res[i].MinTime()
-		jLength := res[j].MaxTime() - res[j].MinTime()
-
-		if iLength != jLength {
-			return iLength < jLength
-		}
-		if res[i].MinTime() != res[j].MinTime() {
-			return res[i].MinTime() < res[j].MinTime()
-		}
-
-		// Guarantee stable sort for tests.
-		return res[i].Key() < res[j].Key()
-	})
-
 	return res, nil
 }
 

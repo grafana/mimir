@@ -100,6 +100,27 @@ To reduce the likelihood this could happen, the compactor waits for a stable rin
 
 To disable this waiting logic, you can start the compactor with `-compactor.ring.wait-stability-min-duration=0`.
 
+## Compaction jobs order
+
+The compactor allows to configure the compaction jobs order via the `-compactor.compaction-jobs-order` flag (or its respective YAML config option). The configured ordering defines which compaction jobs should be executed first. The following options are supported:
+
+- `smallest-range-oldest-blocks-first` (default)
+- `newest-blocks-first` (not supported by `default` compaction strategy)
+
+### `smallest-range-oldest-blocks-first`
+
+This ordering gives priority to smallest range, oldest blocks first.
+
+For example let's assume that you run the compactor with the compaction ranges `2h, 12h, 24h`. Compactor will compact 2h ranges first and among them it gives priority to oldest blocks. Once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
+
+### `newest-blocks-first`
+
+This ordering gives priority to most recent time ranges first, regardless of their compaction level.
+
+Let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this sorting the compactor compacts the most recent blocks first (up to the 24h range) and then moves to older blocks. This policy favours most recent blocks, assuming they are queried the most frequently.
+
+This sorting is not supported by the `default` [compaction strategy](#compaction-strategy).
+
 ## Soft and hard blocks deletion
 
 When the compactor successfully compacts some source blocks into a larger block, source blocks are deleted from the storage. Blocks deletion is not immediate, but follows a two steps process:
