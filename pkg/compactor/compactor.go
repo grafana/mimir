@@ -632,12 +632,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatches the source blocks of the older blocks.
-	var deduplicateBlocksFilter DeduplicateFilter
-	if c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		deduplicateBlocksFilter = NewShardAwareDeduplicateFilter()
-	} else {
-		deduplicateBlocksFilter = block.NewDeduplicateFilter()
-	}
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 	fetcherFilters = append(fetcherFilters, deduplicateBlocksFilter)
 
 	fetcher, err := block.NewMetaFetcher(
