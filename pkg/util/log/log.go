@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/go-kit/kit/log"
-	kitlog "github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	kitlog "github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
 )

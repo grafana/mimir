@@ -17,7 +17,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	gokitlog "github.com/go-kit/kit/log"
+	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"

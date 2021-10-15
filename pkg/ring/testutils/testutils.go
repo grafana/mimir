@@ -8,7 +8,7 @@ package testutils
 import (
 	"context"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/kv"
 
 	"github.com/grafana/mimir/pkg/ring"

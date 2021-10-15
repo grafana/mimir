@@ -7,14 +7,22 @@ linters:
     - golint
     - gofmt
     - misspell
+    - depguard
 
 linters-settings:
   errcheck:
     # path to a file containing a list of functions to exclude from checking
     # see https://github.com/kisielk/errcheck#excluding-functions for details
     exclude: ./.errcheck-exclude
+
   goimports:
     local-prefixes: "github.com/grafana/mimir"
+
+  depguard:
+    list-type: blacklist
+    include-go-root: true
+    packages-with-error-message:
+      - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
 
 run:
   timeout: 5m
