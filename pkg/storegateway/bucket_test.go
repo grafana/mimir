@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -976,7 +977,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		b := &bucketBlock{
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onlabelValuesCalled: onlabelValuesCalled},
+			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onLabelValuesCalled: onlabelValuesCalled},
 			indexCache:        noopCache{},
 			bkt:               bkt,
 			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
@@ -1097,15 +1098,60 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		require.Nil(t, ress[5], "Sixth result should not have series")
 		require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
 	})
+
+	t.Run("cached", func(t *testing.T) {
+		labelValuesCalls := map[string]int{}
+		onLabelValuesCalled := func(name string) error {
+			labelValuesCalls[name]++
+			return nil
+		}
+		conf := []byte(strings.Join([]string{
+			"max_size: 1MB",
+			"max_item_size: 2KB",
+		}, "\n"))
+		cache, err := storecache.NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
+		require.NoError(t, err)
+
+		b := &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onLabelValuesCalled: onLabelValuesCalled},
+			indexCache:        cache,
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		// first call succeeds and caches value
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
+
+		// second call uses cached value, so it doesn't call LabelValues again
+		refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
+
+		// different matcher on same label should not be cached
+		differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
+		refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
+
+	})
 }
 
 type blockingLabelValuesIndexReader struct {
 	indexheader.Reader
-	onlabelValuesCalled func(name string) error
+	onLabelValuesCalled func(name string) error
 }
 
 func (bir *blockingLabelValuesIndexReader) LabelValues(name string) ([]string, error) {
-	if err := bir.onlabelValuesCalled(name); err != nil {
+	if err := bir.onLabelValuesCalled(name); err != nil {
 		return nil, err
 	}
 	return bir.Reader.LabelValues(name)
