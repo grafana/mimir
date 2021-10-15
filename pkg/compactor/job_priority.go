@@ -6,7 +6,7 @@ import (
 	"sort"
 )
 
-type sortJobsFunc func(jobs []*Job) []*Job
+type jobsOrderFunc func(jobs []*Job) []*Job
 
 // sortJobsBySmallestRangeOldestBlocksFirst returns input jobs sorted by smallest range, oldest min time first.
 // The rationale of this sorting is that we may want to favor smaller ranges first (ie. to deduplicate samples

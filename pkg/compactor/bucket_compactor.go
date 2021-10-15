@@ -723,7 +723,7 @@ type BucketCompactor struct {
 	concurrency                    int
 	skipBlocksWithOutOfOrderChunks bool
 	ownJob                         ownCompactionJobFunc
-	sortJobs                       sortJobsFunc
+	sortJobs                       jobsOrderFunc
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -739,7 +739,7 @@ func NewBucketCompactor(
 	concurrency int,
 	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
-	sortJobs sortJobsFunc,
+	sortJobs jobsOrderFunc,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
@@ -880,7 +880,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			return err
 		}
 
-		// Sort jobs based on the configured priority.
+		// Sort jobs based on the configured ordering algorithm.
 		jobs = c.sortJobs(jobs)
 
 		ignoreDirs := []string{}
