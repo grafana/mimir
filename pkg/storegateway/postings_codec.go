@@ -25,7 +25,8 @@ import (
 // significantly (to about 20% of original), snappy then halves it to ~10% of the original.
 
 const (
-	codecHeaderSnappy = "dvs" // As in "diff+varint+snappy".
+	codecHeaderSnappy              = "dvs"  // As in "diff+varint+snappy".
+	codecHeaderSnappyIndexedVarint = "idvs" // As in "indexed+diff+varint+snappy"
 )
 
 // isDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by diff+varint+snappy codec.
@@ -142,5 +143,216 @@ func (it *diffVarintPostings) Seek(x storage.SeriesRef) bool {
 }
 
 func (it *diffVarintPostings) Err() error {
+	return it.buf.Err()
+}
+
+// isIndexedDiffVarintSnappyEncodedPostings returns true, if input looks like it has been encoded by indexed+diff+varint+snappy codec.
+func isIndexedDiffVarintSnappyEncodedPostings(input []byte) bool {
+	return bytes.HasPrefix(input, []byte(codecHeaderSnappyIndexedVarint))
+}
+
+// indexedDiffVarintSnappyEncode encodes postings into diff+varint representation with an index,
+// and applies snappy compression on the result.
+// Returned byte slice starts with codecHeaderSnappyIndexedVarint header.
+// Length argument is expected number of postings, used for preallocating buffer.
+func indexedDiffVarintSnappyEncode(p index.Postings, length int) ([]byte, error) {
+	buf, err := indexedDiffVarintEncodeNoHeader(p, length)
+	if err != nil {
+		return nil, err
+	}
+
+	// Make result buffer large enough to hold our header and compressed block.
+	result := make([]byte, len(codecHeaderSnappyIndexedVarint)+snappy.MaxEncodedLen(len(buf)))
+	copy(result, codecHeaderSnappyIndexedVarint)
+
+	compressed := snappy.Encode(result[len(codecHeaderSnappyIndexedVarint):], buf)
+
+	// Slice result buffer based on compressed size.
+	result = result[:len(codecHeaderSnappyIndexedVarint)+len(compressed)]
+	return result, nil
+}
+
+type diffVarintIndexEntry struct {
+	offset int
+	first  storage.SeriesRef
+}
+
+const indexedDiffVarintPageSize = 256
+const indexedDiffVarintMaxPages = 4096
+
+// indexedDiffVarintEncodeNoHeader encodes postings into diff+varint representation with an index.
+// It doesn't add any header to the output bytes.
+// Length argument is expected number of postings, used for preallocating buffer.
+// The structure of the output is:
+// - varint indexLen
+// - (indexLen times):
+//   - diffVarint offset (diff with previous page's offset in the slice)
+//   - diffVarint first posting (diff with previous pages's first posting)
+// diff-varint encoding of each page (offsets above refer to this slice)
+func indexedDiffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
+	pageSize := indexedDiffVarintPageSize
+	indexCap := 128
+	buf := encoding.Encbuf{}
+
+	// This encoding uses around ~1 bytes per posting, but let's use
+	// conservative 1.25 bytes per posting to avoid extra allocations.
+	if length > 0 {
+		if length/pageSize > indexedDiffVarintMaxPages {
+			pageSize = length / indexedDiffVarintMaxPages
+		}
+		buf.B = make([]byte, 0, 5*length/4)
+		if length/pageSize > indexCap {
+			indexCap = length / pageSize
+		}
+	}
+
+	index := make([]diffVarintIndexEntry, 0, indexCap)
+	count := 0
+	var prev storage.SeriesRef
+	for p.Next() {
+		v := p.At()
+		if v < prev {
+			return nil, errors.Errorf("postings entries must be in increasing order, current: %d, previous: %d", v, prev)
+		}
+
+		// This is the 'diff' part -- compute difference from previous value.
+		buf.PutUvarint64(uint64(v - prev))
+		if count == 0 {
+			index = append(index, diffVarintIndexEntry{
+				offset: len(buf.B),
+				first:  v,
+			})
+		}
+
+		prev = v
+
+		count++
+		if count == pageSize {
+			count = 0
+		}
+	}
+	if p.Err() != nil {
+		return nil, p.Err()
+	}
+
+	indexBuf := encoding.Encbuf{
+		B: make(
+			[]byte,
+			0,
+			2 /*len(index)*/ +
+				2 /*offset*/ *len(index)+
+				8 /*first*/ *len(index),
+		),
+	}
+	indexBuf.PutUvarint(len(index))
+	prevOffset, prevFirst := 0, storage.SeriesRef(0)
+	for i := range index {
+		indexBuf.PutUvarint(index[i].offset - prevOffset)
+		prevOffset = index[i].offset
+		indexBuf.PutUvarint64(uint64(index[i].first - prevFirst))
+		prevFirst = index[i].first
+	}
+
+	// TODO: instead of appending here, we can pre-allocate some space in buf.B beforehand, and copy indexBuf instead
+	return append(indexBuf.B, buf.B...), nil
+}
+
+func indexedDiffVarintSnappyDecode(input []byte) (index.Postings, error) {
+	if !isIndexedDiffVarintSnappyEncodedPostings(input) {
+		return nil, errors.New("header not found")
+	}
+
+	raw, err := snappy.Decode(nil, input[len(codecHeaderSnappyIndexedVarint):])
+	if err != nil {
+		return nil, errors.Wrap(err, "snappy decode")
+	}
+	return newIndexedDiffVarintPostings(raw)
+}
+
+func newIndexedDiffVarintPostings(input []byte) (*indexedDiffVarintPostings, error) {
+	buf := &encoding.Decbuf{B: input}
+	indexLen := buf.Uvarint()
+	if err := buf.Err(); err != nil {
+		return nil, errors.Wrap(err, "reading index len")
+	}
+	index := make([]diffVarintIndexEntry, indexLen)
+	prevOffset, prevFirst := 0, storage.SeriesRef(0)
+	for i := 0; i < indexLen; i++ {
+		index[i].offset = buf.Uvarint() + prevOffset
+		if err := buf.Err(); err != nil {
+			return nil, errors.Wrapf(err, "reading page offset %d", i)
+		}
+		prevOffset = index[i].offset
+
+		index[i].first = storage.SeriesRef(buf.Uvarint64()) + prevFirst
+		if err := buf.Err(); err != nil {
+			return nil, errors.Wrapf(err, "reading page value %d", i)
+		}
+		prevFirst = index[i].first
+	}
+
+	return &indexedDiffVarintPostings{
+		buf:   buf,
+		raw:   buf.B,
+		index: index,
+	}, nil
+}
+
+// indexedDiffVarintPostings is an implementation of index.Postings based on diff+varint data encoded in index.
+type indexedDiffVarintPostings struct {
+	buf *encoding.Decbuf
+	raw []byte
+
+	page  int
+	index []diffVarintIndexEntry
+
+	cur storage.SeriesRef
+}
+
+func (it *indexedDiffVarintPostings) At() storage.SeriesRef {
+	return it.cur
+}
+
+func (it *indexedDiffVarintPostings) Next() bool {
+	if it.buf.Err() != nil || it.buf.Len() == 0 {
+		return false
+	}
+
+	val := storage.SeriesRef(it.buf.Uvarint64())
+	if it.buf.Err() != nil {
+		return false
+	}
+	it.cur = it.cur + val
+
+	if next := it.page + 1; next < len(it.index) && it.index[next].first == it.cur {
+		it.page = next
+	}
+
+	return true
+}
+
+func (it *indexedDiffVarintPostings) Seek(x storage.SeriesRef) bool {
+	for it.page+1 < len(it.index) && it.index[it.page+1].first < x {
+		it.page++
+		it.buf.B = it.raw[it.index[it.page].offset:]
+		it.cur = it.index[it.page].first
+	}
+
+	if it.cur >= x {
+		return true
+	}
+
+	// We cannot do any search within a page due to how values are stored,
+	// so we simply advance until we find the right value.
+	for it.Next() {
+		if it.At() >= x {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (it *indexedDiffVarintPostings) Err() error {
 	return it.buf.Err()
 }
