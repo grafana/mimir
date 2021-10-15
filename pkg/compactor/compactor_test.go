@@ -1246,6 +1246,7 @@ func removeIgnoredLogs(input []string) []string {
 		`component=compactor level=info msg="lifecycler loop() exited gracefully" ring=compactor`:                                                                 {},
 		`component=compactor level=info msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`:                                     {},
 		`component=compactor level=error msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`: {},
+		`component=compactor level=error msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from JOINING -> LEAVING is disallowed"`: {},
 		`component=compactor level=debug msg="unregistering instance from ring" ring=compactor`:                                                                   {},
 		`component=compactor level=info msg="instance removed from the KV store" ring=compactor`:                                                                  {},
 		`component=compactor level=info msg="observing tokens before going ACTIVE" ring=compactor`:                                                                {},
