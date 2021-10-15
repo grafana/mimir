@@ -333,10 +333,17 @@ func getRangeStart(m *metadata.Meta, tr int64) int64 {
 	return tr * ((m.MinTime - tr + 1) / tr)
 }
 
-func sortMetasByMinTime(metas []*metadata.Meta) {
+func sortMetasByMinTime(metas []*metadata.Meta) []*metadata.Meta {
 	sort.Slice(metas, func(i, j int) bool {
-		return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		if metas[i].BlockMeta.MinTime != metas[j].BlockMeta.MinTime {
+			return metas[i].BlockMeta.MinTime < metas[j].BlockMeta.MinTime
+		}
+
+		// Compare labels in case of same MinTime to get stable results.
+		return labels.Compare(labels.FromMap(metas[i].Thanos.Labels), labels.FromMap(metas[j].Thanos.Labels)) < 0
 	})
+
+	return metas
 }
 
 // getMaxTime returns the highest max time across all input blocks.
