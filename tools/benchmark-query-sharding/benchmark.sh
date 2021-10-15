@@ -58,7 +58,17 @@ SHARDS="16"
 
 
 # Runs a set of queries that have low and high cardinality
-cat queries.txt | while read query
-do
-  ./run.sh --url "${URL}" --tenant-id "${TENANT_ID}"  --query "${query}" --time-ranges "1H 6H 12H 24H 2d 7d"
-done
+# cat queries.txt | while read query
+# do
+#   ./run.sh --url "${URL}" --tenant-id "${TENANT_ID}"  --query "${query}" --time-ranges "1H 6H 12H 24H 2d 7d"
+# done
+
+
+# Oversharding.
+# ./run.sh --url "${URL}" --tenant-id "${TENANT_ID}" \
+#  --query '100 *count by (nat_gateway_name) (count by (nat_gateway_name, instance_id) (stackdriver_gce_instance_compute_googleapis_com_nat_allocated_ports{nat_gateway_name=~"(prod-australia-southeast1|prod-europe-west1|prod-europe-west2|prod-us-central1|prod-us-east4)"})) /(64512 *count by (nat_gateway_name) (count by (nat_gateway_name, nat_ip) (stackdriver_gce_instance_compute_googleapis_com_nat_allocated_ports{nat_gateway_name=~"(prod-australia-southeast1|prod-europe-west1|prod-europe-west2|prod-us-central1|prod-us-east4)"})) /max by (nat_gateway_name) (stackdriver_gce_instance_compute_googleapis_com_nat_allocated_ports{nat_gateway_name=~"(prod-australia-southeast1|prod-europe-west1|prod-europe-west2|prod-us-central1|prod-us-east4)"}))' --time-ranges "7d" --shards "${SHARDS}"
+
+
+# 30d that should run faster.
+# ./run.sh --url "${URL}" --tenant-id "${TENANT_ID}" \
+#  --query 'histogram_quantile(0.99, avg by (le) (rate(graphite_samples_per_query_by_phase_bucket{phase="fetched_from_aggregation_cache", cluster=~".+", job=~"(.+)/(graphite-querier|cortex$)"}[615s])))' --time-ranges "30d"
