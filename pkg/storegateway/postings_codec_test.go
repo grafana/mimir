@@ -10,6 +10,7 @@ package storegateway
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -17,13 +18,15 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/assert"
 )
 
-func TestDiffVarintCodec(t *testing.T) {
+func TestDiffVarintCodecs(t *testing.T) {
 	chunksDir, err := ioutil.TempDir("", "diff_varint_codec")
 	assert.NoError(t, err)
 	t.Cleanup(func() {
@@ -66,8 +69,10 @@ func TestDiffVarintCodec(t *testing.T) {
 		codingFunction   func(index.Postings, int) ([]byte, error)
 		decodingFunction func([]byte) (index.Postings, error)
 	}{
-		"raw":    {codingFunction: diffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newDiffVarintPostings(bytes), nil }},
-		"snappy": {codingFunction: diffVarintSnappyEncode, decodingFunction: diffVarintSnappyDecode},
+		"raw":            {codingFunction: diffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newDiffVarintPostings(bytes), nil }},
+		"snappy":         {codingFunction: diffVarintSnappyEncode, decodingFunction: diffVarintSnappyDecode},
+		"indexed_raw":    {codingFunction: indexedDiffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newIndexedDiffVarintPostings(bytes) }},
+		"indexed_snappy": {codingFunction: indexedDiffVarintSnappyEncode, decodingFunction: indexedDiffVarintSnappyDecode},
 	}
 
 	for postingName, postings := range postingsMap {
@@ -96,6 +101,81 @@ func TestDiffVarintCodec(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestIndexedDiffVarintPostings_Seek(t *testing.T) {
+	for i, tc := range []struct {
+		input []uint64
+		test  func(t *testing.T, p index.Postings)
+	}{
+		{
+			test: func(t *testing.T, p index.Postings) {
+				require.True(t, p.Seek(1))
+				require.Equal(t, uint64(1), p.At())
+			},
+		},
+		{
+			test: func(t *testing.T, p index.Postings) {
+				require.True(t, p.Seek(indexedDiffVarintPageSize-1))
+				require.Equal(t, uint64(indexedDiffVarintPageSize-1), p.At())
+			},
+		},
+
+		{
+			test: func(t *testing.T, p index.Postings) {
+				require.True(t, p.Seek(indexedDiffVarintPageSize))
+				require.Equal(t, uint64(indexedDiffVarintPageSize), p.At())
+			},
+		},
+		{
+			test: func(t *testing.T, p index.Postings) {
+				require.True(t, p.Seek(indexedDiffVarintPageSize+1))
+				require.Equal(t, uint64(indexedDiffVarintPageSize+1), p.At())
+				require.True(t, p.Seek(indexedDiffVarintPageSize+1))
+				require.Equal(t, uint64(indexedDiffVarintPageSize+1), p.At())
+			},
+		},
+		{
+			test: func(t *testing.T, p index.Postings) {
+				require.True(t, p.Seek(indexedDiffVarintPageSize-1))
+				require.Equal(t, uint64(indexedDiffVarintPageSize-1), p.At())
+				require.True(t, p.Seek(indexedDiffVarintPageSize+1))
+				require.Equal(t, uint64(indexedDiffVarintPageSize+1), p.At())
+			},
+		},
+		{
+			input: []uint64{},
+			test: func(t *testing.T, p index.Postings) {
+				require.False(t, p.Seek(1))
+				require.False(t, p.Next())
+				require.Nil(t, p.Err())
+			},
+		},
+	} {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			ids := tc.input
+			if ids == nil {
+				for i := 1; i <= indexedDiffVarintPageSize*2; i++ {
+					ids = append(ids, uint64(i))
+				}
+			}
+
+			enc, err := indexedDiffVarintEncodeNoHeader(index.NewListPostings(ids), indexedDiffVarintPageSize*2)
+			require.NoError(t, err)
+
+			diffVarintChunked, err := newIndexedDiffVarintPostings(enc)
+			require.NoError(t, err)
+
+			// run the test on the list too, just to validate that our test is actually correct
+			t.Run("index.ListPostings", func(t *testing.T) {
+				tc.test(t, index.NewListPostings(ids))
+			})
+			t.Run("indexedDiffVarintPostings", func(t *testing.T) {
+				tc.test(t, diffVarintChunked)
+			})
+		})
+	}
+
 }
 
 func comparePostings(t *testing.T, p1, p2 index.Postings) {
