@@ -1,4 +1,3 @@
-
 package ring
 
 // Based on https://raw.githubusercontent.com/stathat/consistent/master/consistent.go
@@ -14,7 +13,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -50,7 +48,6 @@ const (
 
 // ReadRing represents the read interface to the ring.
 type ReadRing interface {
-
 
 	// Get returns n (or more) instances which form the replicas for the given key.
 	// bufDescs, bufHosts and bufZones are slices to be overwritten for the return value
@@ -265,7 +262,6 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 			ConstLabels: map[string]string{"name": name}},
 			[]string{"state"}),
 		logger: logger,
-
 	}
 
 	r.Service = services.NewBasicService(r.starting, r.loop, r.stopping).WithName(fmt.Sprintf("%s ring client", name))
@@ -549,7 +545,6 @@ func (r *Ring) GetReplicationSetForOperation(op Operation) (ReplicationSet, erro
 	}, nil
 }
 
-
 // countTokens returns the number of tokens and tokens within the range for each instance.
 // The ring read lock must be already taken when calling this function.
 func (r *Ring) countTokens() (map[string]uint32, map[string]uint32) {
@@ -590,7 +585,6 @@ func (r *Ring) updateRingMetrics() {
 	for id, totalOwned := range ownedRange {
 		r.memberOwnershipGaugeVec.WithLabelValues(id).Set(float64(totalOwned) / float64(math.MaxUint32))
 		r.numTokensGaugeVec.WithLabelValues(id).Set(float64(numTokens[id]))
-
 	}
 
 	numByState := map[string]int{}
@@ -615,14 +609,11 @@ func (r *Ring) updateRingMetrics() {
 
 	for state, count := range numByState {
 		r.numMembersGaugeVec.WithLabelValues(state).Set(float64(count))
-
 	}
 	for state, timestamp := range oldestTimestampByState {
 		r.oldestTimestampGaugeVec.WithLabelValues(state).Set(float64(timestamp))
-
 	}
 	r.totalTokensGauge.Set(float64(len(r.ringTokens)))
-
 }
 
 // ShuffleShard returns a subring for the provided identifier (eg. a tenant ID)

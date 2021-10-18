@@ -1,4 +1,3 @@
-
 package ring
 
 import (
@@ -12,18 +11,15 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-
 	"github.com/pkg/errors"
 	perrors "github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-
 	"go.uber.org/atomic"
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
 	dstime "github.com/grafana/dskit/time"
-
 )
 
 // LifecyclerConfig is the config to build a Lifecycler.
@@ -78,7 +74,6 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 	hostname, err := os.Hostname()
 	if err != nil {
 		panic(fmt.Errorf("failed to get hostname %s", err))
-
 	}
 
 	cfg.InfNames = []string{"eth0", "en0"}

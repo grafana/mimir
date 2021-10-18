@@ -1,4 +1,3 @@
-
 package ring
 
 import (
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-
 )
 
 const pageContent = `
