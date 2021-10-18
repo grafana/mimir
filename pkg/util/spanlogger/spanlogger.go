@@ -5,7 +5,7 @@ package spanlogger
 import (
 	"context"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/spanlogger"
 
 	"github.com/grafana/mimir/pkg/tenant"

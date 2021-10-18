@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	promApi "github.com/prometheus/client_golang/api"
 	promV1 "github.com/prometheus/client_golang/api/prometheus/v1"
