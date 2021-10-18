@@ -1717,9 +1717,19 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		refs []uint64
 		err  error
 		done = make(chan struct{})
+
+		// loaded and source are used to track the source of the data on the span
+		loaded bool
+		source string
 	)
 
 	promise := func(ctx context.Context) ([]uint64, error) {
+		span, ctx := tracing.StartSpan(ctx, "expandedPostingsPromise()")
+		defer func() {
+			span.LogKV("loaded", loaded, "source", source)
+			span.Finish()
+		}()
+
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -1738,18 +1748,22 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	}
 
 	key := cache.CanonicalLabelMatchersKey(ms)
-	oldPromise, loaded := r.block.expandedPostingsPromises.LoadOrStore(key, promise)
+
+	var loadedPromise interface{}
+	loadedPromise, loaded = r.block.expandedPostingsPromises.LoadOrStore(key, promise)
 	if loaded {
-		return oldPromise.(func(ctx context.Context) ([]uint64, error))
+		return loadedPromise.(func(ctx context.Context) ([]uint64, error))
 	}
 
 	if cached, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key); ok {
+		source = "cache"
 		var p index.Postings
 		p, err = r.decodePostings(cached)
 		if err == nil {
 			refs, err = index.ExpandPostings(p)
 		}
 	} else {
+		source = "index"
 		refs, err = r.expandedPostings(ctx, ms)
 
 		data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
