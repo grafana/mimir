@@ -181,6 +181,7 @@ func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid
 	return hits, misses
 }
 
+// StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
 	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
 
@@ -189,6 +190,7 @@ func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID
 	}
 }
 
+// FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
 	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
 	results := c.memcached.GetMulti(ctx, []string{key})
