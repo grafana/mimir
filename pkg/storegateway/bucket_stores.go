@@ -520,6 +520,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		true, // Enable series hints.
 		u.cfg.BucketStore.IndexHeaderLazyLoadingEnabled,
 		u.cfg.BucketStore.IndexHeaderLazyLoadingIdleTimeout,
+		u.cfg.BucketStore.IndexedDiffVarintPostingsCacheEncodingEnabled,
+		u.cfg.BucketStore.IndexedDiffVarintPostingsCacheMigrationRate,
 		u.seriesHashCache,
 		u.bucketStoreMetrics,
 		bucketStoreOpts...,
