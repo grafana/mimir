@@ -338,10 +338,12 @@ func (c *InMemoryIndexCache) FetchMultiSeries(_ context.Context, blockID ulid.UL
 	return hits, misses
 }
 
+// StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
 	c.set(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)}, v)
 }
 
+// FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
 	return c.get(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)})
 }

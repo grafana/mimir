@@ -43,10 +43,10 @@ type IndexCache interface {
 	// and returns a map containing cache hits, along with a list of missing IDs.
 	FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []uint64) (hits map[uint64][]byte, misses []uint64)
 
-	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec
+	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec.
 	StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte)
 
-	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec
+	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
 	FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
 }
 
@@ -110,7 +110,6 @@ type LabelMatchersKey string
 
 // CanonicalLabelMatchersKey creates a canonical version of LabelMatchersKey
 func CanonicalLabelMatchersKey(ms []*labels.Matcher) LabelMatchersKey {
-	// TODO consider building a []int, sort that based on the ms order, and then build the string.
 	sorted := make([]labels.Matcher, len(ms))
 	for i := range ms {
 		sorted[i] = labels.Matcher{Type: ms[i].Type, Name: ms[i].Name, Value: ms[i].Value}
