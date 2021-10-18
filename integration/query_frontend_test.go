@@ -309,4 +309,31 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	assertServiceMetricsPrefixes(t, Querier, querier)
 	assertServiceMetricsPrefixes(t, QueryFrontend, queryFrontend)
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
+
+	// Tests for error responses.
+	{
+		c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "user-0")
+		require.NoError(t, err)
+
+		// Syntax Error (Instant Query)
+		_, err = c.Query("asd(", now)
+		assert.EqualError(t, err, "bad_data: invalid parameter \"query\": 1:5: parse error: unclosed left parenthesis")
+
+		// Syntax Error (Range Query)
+		_, err = c.QueryRange("asd(", now.Add(-time.Minute), now, time.Second*15)
+		assert.EqualError(t, err, "bad_data: invalid parameter \"query\": 1:5: parse error: unclosed left parenthesis")
+
+		// End Before Start
+		_, err = c.QueryRange("cortex_query_seconds_total", now, now.Add(-time.Minute), time.Second*15)
+		assert.EqualError(t, err, "bad_data: invalid parameter \"end\": end timestamp must not be before start time")
+
+		// Negative Step
+		_, err = c.QueryRange("cortex_query_seconds_total", now.Add(-time.Minute), now, -time.Second*15)
+		assert.EqualError(t, err, "bad_data: invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer")
+
+		// Step Too Small
+		_, err = c.QueryRange("cortex_query_seconds_total", now.Add(-time.Hour*25), now, time.Second)
+		assert.EqualError(t, err, "bad_data: invalid parameter \"step\": exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+
+	}
 }

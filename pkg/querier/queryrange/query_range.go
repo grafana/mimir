@@ -23,6 +23,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
@@ -42,9 +43,9 @@ var (
 		SortMapKeys:            true,
 		ValidateJsonRawMessage: true,
 	}.Froze()
-	errEndBeforeStart = httpgrpc.Errorf(http.StatusBadRequest, "end timestamp must not be before start time")
-	errNegativeStep   = httpgrpc.Errorf(http.StatusBadRequest, "zero or negative query resolution step widths are not accepted. Try a positive integer")
-	errStepTooSmall   = httpgrpc.Errorf(http.StatusBadRequest, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errEndBeforeStart = newInvalidParamError(errors.New("end timestamp must not be before start time"), "end")
+	errNegativeStep   = newInvalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
+	errStepTooSmall   = newInvalidParamError(errors.New("exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)"), "step")
 
 	// PrometheusCodec is a codec to encode and decode Prometheus query range requests and responses.
 	PrometheusCodec Codec = &prometheusCodec{}
