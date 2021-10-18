@@ -1251,18 +1251,18 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 func removeIgnoredLogs(input []string) []string {
 	ignoredLogStringsMap := map[string]struct{}{
 		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected but are just ring setup information.
-		`component=compactor level=info msg="ring doesn't exist in KV store yet"`:                                                                                 {},
-		`component=compactor level=info msg="not loading tokens from file, tokens file path is empty"`:                                                            {},
-		`component=compactor level=info msg="instance not found in ring, adding with no tokens" ring=compactor`:                                                   {},
-		`component=compactor level=debug msg="JoinAfter expired" ring=compactor`:                                                                                  {},
-		`component=compactor level=info msg="auto-joining cluster after timeout" ring=compactor`:                                                                  {},
-		`component=compactor level=info msg="lifecycler loop() exited gracefully" ring=compactor`:                                                                 {},
-		`component=compactor level=info msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`:                                     {},
-		`component=compactor level=error msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`: {},
-		`component=compactor level=error msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from JOINING -> LEAVING is disallowed"`: {},
-		`component=compactor level=debug msg="unregistering instance from ring" ring=compactor`:                                                                   {},
-		`component=compactor level=info msg="instance removed from the KV store" ring=compactor`:                                                                  {},
-		`component=compactor level=info msg="observing tokens before going ACTIVE" ring=compactor`:                                                                {},
+		`level=info component=compactor msg="ring doesn't exist in KV store yet"`:                                                                                 {},
+		`level=info component=compactor msg="not loading tokens from file, tokens file path is empty"`:                                                            {},
+		`level=info component=compactor msg="instance not found in ring, adding with no tokens" ring=compactor`:                                                   {},
+		`level=debug component=compactor msg="JoinAfter expired" ring=compactor`:                                                                                  {},
+		`level=info component=compactor msg="auto-joining cluster after timeout" ring=compactor`:                                                                  {},
+		`level=info component=compactor msg="lifecycler loop() exited gracefully" ring=compactor`:                                                                 {},
+		`level=info component=compactor msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`:                                     {},
+		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`: {},
+		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from JOINING -> LEAVING is disallowed"`: {},
+		`level=debug component=compactor msg="unregistering instance from ring" ring=compactor`:                                                                   {},
+		`level=info component=compactor msg="instance removed from the KV store" ring=compactor`:                                                                  {},
+		`level=info component=compactor msg="observing tokens before going ACTIVE" ring=compactor`:                                                                {},
 	}
 
 	out := make([]string, 0, len(input))
