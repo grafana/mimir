@@ -1,23 +1,17 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/http.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package ring
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log/level"
-
-	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/log"
 )
 
 const pageContent = `
@@ -113,7 +107,7 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodPost {
 		ingesterID := req.FormValue("forget")
 		if err := r.forget(req.Context(), ingesterID); err != nil {
-			level.Error(log.WithContext(req.Context(), log.Logger)).Log("msg", "error forgetting instance", "err", err)
+			level.Error(r.logger).Log("msg", "error forgetting instance", "err", err)
 		}
 
 		// Implement PRG pattern to prevent double-POST and work with CSRF middleware.
@@ -179,7 +173,7 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	tokensParam := req.URL.Query().Get("tokens")
 
-	util.RenderHTTPResponse(w, struct {
+	renderHTTPResponse(w, struct {
 		Ingesters  []interface{} `json:"shards"`
 		Now        time.Time     `json:"now"`
 		ShowTokens bool          `json:"-"`
@@ -188,4 +182,35 @@ func (r *Ring) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		Now:        now,
 		ShowTokens: tokensParam == "true",
 	}, pageTemplate, req)
+}
+
+// RenderHTTPResponse either responds with json or a rendered html page using the passed in template
+// by checking the Accepts header
+func renderHTTPResponse(w http.ResponseWriter, v interface{}, t *template.Template, r *http.Request) {
+	accept := r.Header.Get("Accept")
+	if strings.Contains(accept, "application/json") {
+		writeJSONResponse(w, v)
+		return
+	}
+
+	err := t.Execute(w, v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// WriteJSONResponse writes some JSON as a HTTP response.
+func writeJSONResponse(w http.ResponseWriter, v interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+
+	data, err := json.Marshal(v)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// We ignore errors here, because we cannot do anything about them.
+	// Write will trigger sending Status code, so we cannot send a different status code afterwards.
+	// Also this isn't internal error, but error communicating with client.
+	_, _ = w.Write(data)
 }

@@ -11,13 +11,13 @@ import (
 	"math/rand"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/ring"
+	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/grafana/mimir/pkg/ring"
-	"github.com/grafana/mimir/pkg/ring/client"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/util"

@@ -11,10 +11,10 @@ import (
 	"os"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
-
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
 )
 
 const (
@@ -76,8 +76,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 
 // ToLifecyclerConfig returns a LifecyclerConfig based on the ruler
 // ring config.
-func (cfg *RingConfig) ToLifecyclerConfig() (ring.BasicLifecyclerConfig, error) {
-	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames)
+func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecyclerConfig, error) {
+	instanceAddr, err := ring.GetInstanceAddr(cfg.InstanceAddr, cfg.InstanceInterfaceNames, logger)
 	if err != nil {
 		return ring.BasicLifecyclerConfig{}, err
 	}

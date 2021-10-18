@@ -10,13 +10,13 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/ring"
 	"github.com/oklog/ulid"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/grafana/mimir/pkg/ring"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 

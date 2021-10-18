@@ -1,14 +1,9 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/ring/client/ring_service_discovery.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package client
 
 import (
 	"errors"
 
-	"github.com/grafana/mimir/pkg/ring"
+	"github.com/grafana/dskit/ring"
 )
 
 func NewRingServiceDiscovery(r ring.ReadRing) PoolServiceDiscovery {
