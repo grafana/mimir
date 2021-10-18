@@ -9,7 +9,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 type ReplicationStrategy interface {
@@ -45,10 +48,12 @@ func (s *defaultReplicationStrategy) Filter(instances []InstanceDesc, op Operati
 	// Skip those that have not heartbeated in a while. NB these are still
 	// included in the calculation of minSuccess, so if too many failed instances
 	// will cause the whole write to fail.
+	var skipped []string
 	for i := 0; i < len(instances); {
 		if instances[i].IsHealthy(op, heartbeatTimeout, now) {
 			i++
 		} else {
+			skipped = append(skipped, instances[i].Addr)
 			instances = append(instances[:i], instances[i+1:]...)
 		}
 	}
@@ -59,8 +64,14 @@ func (s *defaultReplicationStrategy) Filter(instances []InstanceDesc, op Operati
 		var err error
 
 		if zoneAwarenessEnabled {
+			level.Error(util_log.Logger).Log("msg",
+				fmt.Sprintf("at least %d live replicas required across different availability zones, could only find %d",
+					minSuccess, len(instances)), "unhealthy", skipped)
 			err = fmt.Errorf("at least %d live replicas required across different availability zones, could only find %d", minSuccess, len(instances))
 		} else {
+			level.Error(util_log.Logger).Log("msg",
+				fmt.Sprintf("at least %d live replicas required, could only find %d",
+					minSuccess, len(instances)), "unhealthy", skipped)
 			err = fmt.Errorf("at least %d live replicas required, could only find %d", minSuccess, len(instances))
 		}
 
@@ -79,16 +90,19 @@ func NewIgnoreUnhealthyInstancesReplicationStrategy() ReplicationStrategy {
 func (r *ignoreUnhealthyInstancesReplicationStrategy) Filter(instances []InstanceDesc, op Operation, _ int, heartbeatTimeout time.Duration, _ bool) (healthy []InstanceDesc, maxFailures int, err error) {
 	now := time.Now()
 	// Filter out unhealthy instances.
+	var skipped []string
 	for i := 0; i < len(instances); {
 		if instances[i].IsHealthy(op, heartbeatTimeout, now) {
 			i++
 		} else {
+			skipped = append(skipped, instances[i].Addr)
 			instances = append(instances[:i], instances[i+1:]...)
 		}
 	}
 
 	// We need at least 1 healthy instance no matter what is the replication factor set to.
 	if len(instances) == 0 {
+		level.Error(util_log.Logger).Log("msg", "failed to find any healthy ring replicas", "unhealthy", skipped)
 		return nil, 0, errors.New("at least 1 healthy replica required, could only find 0")
 	}
 
