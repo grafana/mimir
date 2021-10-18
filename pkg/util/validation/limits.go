@@ -90,6 +90,7 @@ type Limits struct {
 	MaxQueriersPerTenant                   int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards               int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
 	LabelNamesAndValuesResultsMaxSizeBytes int            `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
+	CardinalityAnalysisEnabled             bool           `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay        model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -171,6 +172,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.MaxQueryLookback, "querier.max-query-lookback", "Limit how long back data (series and metadata) can be queried, up until <lookback> duration ago. This limit is enforced in the query-frontend, querier and ruler. If the requested time range is outside the allowed range, the request will not fail but will be manipulated to only query data within the allowed time range. 0 to disable.")
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split queries will be scheduled in parallel by the frontend.")
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
+	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.CardinalityLimit, "store.cardinality-limit", 1e5, "Cardinality limit for index queries. This limit is ignored when using blocks storage. 0 to disable.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
@@ -304,6 +306,10 @@ func (o *Overrides) IngestionRate(userID string) float64 {
 
 func (o *Overrides) LabelNamesAndValuesResultsMaxSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).LabelNamesAndValuesResultsMaxSizeBytes
+}
+
+func (o *Overrides) CardinalityAnalysisEnabled(userID string) bool {
+	return o.getOverridesForUser(userID).CardinalityAnalysisEnabled
 }
 
 // IngestionRateStrategy returns whether the ingestion rate limit should be individually applied

@@ -885,6 +885,13 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 
 // LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
 func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
+	tenantID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !d.limits.CardinalityAnalysisEnabled(tenantID) {
+		return nil, fmt.Errorf("cardinality analysis is disabled for tenant: %v", tenantID)
+	}
 	replicationSet, err := d.GetIngestersForMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -894,11 +901,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 	if err != nil {
 		return nil, err
 	}
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
+	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(tenantID)
 	merger := &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
 	_, err = d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
 		stream, err := client.LabelNamesAndValues(ctx, req)

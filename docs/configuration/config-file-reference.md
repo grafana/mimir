@@ -4153,6 +4153,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -querier.label-names-and-values-results-max-size-bytes
 [label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
 
+# Enables endpoints used for cardinality analysis.
+# CLI flag: -querier.cardinality-analysis-enabled
+[cardinality_analysis_enabled: <boolean> | default = false]
+
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
