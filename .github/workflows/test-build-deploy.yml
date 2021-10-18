@@ -36,6 +36,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
+      - name: Check Mixin
+        run: make BUILD_IN_CONTAINER=false check-mixin
       - name: Check White Noise.
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
