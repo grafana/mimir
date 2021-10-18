@@ -24,8 +24,8 @@ import (
 
 	otlog "github.com/opentracing/opentracing-go/log"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
@@ -1718,7 +1718,15 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		case <-done:
 		}
 
-		return refs, err
+		if err != nil {
+			return nil, err
+		}
+
+		// We must make a copy of refs to return, because caller can modify the postings slice in place.
+		refsCopy := make([]uint64, len(refs))
+		copy(refsCopy, refs)
+
+		return refsCopy, nil
 	}
 
 	key := matchersKey(ms)
@@ -1864,10 +1872,9 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
 func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
-	if m.Type == labels.MatchRegexp && len(findSetMatches(m.Value)) > 0 {
-		vals := findSetMatches(m.Value)
-		toAdd := make([]labels.Label, 0, len(vals))
-		for _, val := range vals {
+	if setMatches := m.SetMatches(); m.Type == labels.MatchRegexp && len(setMatches) > 0 {
+		toAdd := make([]labels.Label, 0, len(setMatches))
+		for _, val := range setMatches {
 			toAdd = append(toAdd, labels.Label{Name: m.Name, Value: val})
 		}
 		return newPostingGroup(false, toAdd, nil), nil

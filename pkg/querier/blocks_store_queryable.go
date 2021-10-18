@@ -14,8 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
@@ -328,7 +328,7 @@ func (q *blocksStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.New(q.ctx, q.logger, "blocksStoreQuerier.LabelNames")
+	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelNames")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -363,7 +363,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 }
 
 func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	spanLog, spanCtx := spanlogger.New(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
+	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.LabelValues")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
@@ -402,7 +402,7 @@ func (q *blocksStoreQuerier) Close() error {
 }
 
 func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	spanLog, spanCtx := spanlogger.New(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
+	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT

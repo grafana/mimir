@@ -17,7 +17,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	jsoniter "github.com/json-iterator/go"
@@ -261,7 +261,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 		body, _ := ioutil.ReadAll(r.Body)
 		return nil, httpgrpc.Errorf(r.StatusCode, string(body))
 	}
-	log, ctx := spanlogger.New(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
+	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
 	defer log.Finish()
 
 	buf, err := bodyBuffer(r)
@@ -452,4 +452,14 @@ func decorateWithParamName(err error, field string) error {
 		return httpgrpc.Errorf(int(status.Code()), errTmpl, field, status.Message())
 	}
 	return fmt.Errorf(errTmpl, field, err)
+}
+
+// isRequestStepAligned returns whether the Request start and end timestamps are aligned
+// with the step.
+func isRequestStepAligned(req Request) bool {
+	if req.GetStep() == 0 {
+		return true
+	}
+
+	return req.GetEnd()%req.GetStep() == 0 && req.GetStart()%req.GetStep() == 0
 }

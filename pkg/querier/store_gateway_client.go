@@ -9,7 +9,7 @@ import (
 	"flag"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/crypto/tls"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"

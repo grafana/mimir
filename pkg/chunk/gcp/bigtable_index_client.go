@@ -16,14 +16,13 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigtable"
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/chunk"
 	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -338,7 +337,7 @@ func (s *storageClientV1) QueryPages(ctx context.Context, queries []chunk.IndexQ
 func (s *storageClientV1) query(ctx context.Context, query chunk.IndexQuery, callback chunk_util.Callback) error {
 	const null = string('\xff')
 
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "QueryPages", ot.Tag{Key: "tableName", Value: query.TableName}, ot.Tag{Key: "hashValue", Value: query.HashValue})
+	log, ctx := spanlogger.New(ctx, "QueryPages", ot.Tag{Key: "tableName", Value: query.TableName}, ot.Tag{Key: "hashValue", Value: query.HashValue})
 	defer log.Finish()
 
 	table := s.client.Open(query.TableName)

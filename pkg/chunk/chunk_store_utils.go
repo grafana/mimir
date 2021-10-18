@@ -9,7 +9,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -145,7 +145,7 @@ func (c *Fetcher) worker() {
 // FetchChunks fetches a set of chunks from cache and store. Note that the keys passed in must be
 // lexicographically sorted, while the returned chunks are not in the same order as the passed in chunks.
 func (c *Fetcher) FetchChunks(ctx context.Context, chunks []Chunk, keys []string) ([]Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "ChunkStore.FetchChunks")
+	log, ctx := spanlogger.New(ctx, "ChunkStore.FetchChunks")
 	defer log.Span.Finish()
 
 	// Now fetch the actual chunk data from Memcache / S3
@@ -205,7 +205,7 @@ func (c *Fetcher) processCacheResponse(ctx context.Context, chunks []Chunk, keys
 		responses = make(chan decodeResponse)
 		missing   []Chunk
 	)
-	log, _ := spanlogger.New(ctx, util_log.Logger, "Fetcher.processCacheResponse")
+	log, _ := spanlogger.New(ctx, "Fetcher.processCacheResponse")
 	defer log.Span.Finish()
 
 	i, j := 0, 0

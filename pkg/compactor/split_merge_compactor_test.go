@@ -6,19 +6,17 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
-	"sort"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -48,7 +46,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 		}
 
 		if shardID != "" {
-			labels[ShardIDLabelName] = shardID
+			labels[mimir_tsdb.CompactorShardIDExternalLabel] = shardID
 		}
 		return labels
 	}
@@ -74,8 +72,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -88,8 +86,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -117,8 +115,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -131,8 +129,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					}, {
@@ -174,8 +172,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -188,8 +186,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					}, {
@@ -231,8 +229,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -245,8 +243,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					}, {
@@ -302,8 +300,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -316,8 +314,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -333,8 +331,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -347,8 +345,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -376,8 +374,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -390,8 +388,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -416,8 +414,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					},
@@ -500,8 +498,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "1_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2",
 							},
 						},
 					}, {
@@ -514,8 +512,8 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 						},
 						Thanos: metadata.Thanos{
 							Labels: map[string]string{
-								mimir_tsdb.TenantIDExternalLabel: userID,
-								ShardIDLabelName:                 "2_of_2",
+								mimir_tsdb.TenantIDExternalLabel:         userID,
+								mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2",
 							},
 						},
 					},
@@ -556,26 +554,9 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			// Create a temporary directory for compactor.
-			workDir, err := ioutil.TempDir(os.TempDir(), "compactor")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(workDir))
-			})
-
-			// Create a temporary directory for local storage.
-			storageDir, err := ioutil.TempDir(os.TempDir(), "storage")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(storageDir))
-			})
-
-			// Create a temporary directory for fetcher.
-			fetcherDir, err := ioutil.TempDir(os.TempDir(), "fetcher")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(fetcherDir))
-			})
+			workDir := t.TempDir()
+			storageDir := t.TempDir()
+			fetcherDir := t.TempDir()
 
 			storageCfg := mimir_tsdb.BlocksStorageConfig{}
 			flagext.DefaultValues(&storageCfg)
@@ -633,18 +614,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			require.Empty(t, partials)
 
 			// Sort blocks by MinTime and labels so that we get a stable comparison.
-			var actual []*metadata.Meta
-			for _, m := range metas {
-				actual = append(actual, m)
-			}
-
-			sort.Slice(actual, func(i, j int) bool {
-				if actual[i].BlockMeta.MinTime != actual[j].BlockMeta.MinTime {
-					return actual[i].BlockMeta.MinTime < actual[j].BlockMeta.MinTime
-				}
-
-				return labels.Compare(labels.FromMap(actual[i].Thanos.Labels), labels.FromMap(actual[j].Thanos.Labels)) < 0
-			})
+			actual := sortMetasByMinTime(convertMetasMapToSlice(metas))
 
 			// Compare actual blocks with the expected ones.
 			require.Len(t, actual, len(expected))
@@ -656,4 +626,177 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 			}
 		})
 	}
+}
+
+func TestMultitenantCompactor_ShouldSupportRollbackFromSplitAndMergeToDefaultCompactor(t *testing.T) {
+	const (
+		userID     = "user-1"
+		numSeries  = 100
+		blockRange = 2 * time.Hour
+		numShards  = 2
+	)
+
+	var (
+		ctx              = context.Background()
+		logger           = log.NewLogfmtLogger(os.Stdout)
+		blockRangeMillis = blockRange.Milliseconds()
+		compactionRanges = mimir_tsdb.DurationList{blockRange, 2 * blockRange}
+	)
+
+	// Create a temporary directory for local storage.
+	storageDir, err := ioutil.TempDir(os.TempDir(), "storage")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(storageDir))
+	})
+
+	storageCfg := mimir_tsdb.BlocksStorageConfig{}
+	flagext.DefaultValues(&storageCfg)
+	storageCfg.Bucket.Backend = bucket.Filesystem
+	storageCfg.Bucket.Filesystem.Directory = storageDir
+
+	bkt, err := bucket.NewClient(ctx, storageCfg.Bucket, "test", logger, nil)
+	require.NoError(t, err)
+
+	// Create some blocks to compact in the storage.
+	block1 := createTSDBBlock(t, bkt, userID, 0*blockRangeMillis, 1*blockRangeMillis, numSeries, nil)
+	block2 := createTSDBBlock(t, bkt, userID, 1*blockRangeMillis, 2*blockRangeMillis, numSeries, nil)
+
+	expected := []metadata.Meta{
+		{
+			BlockMeta: tsdb.BlockMeta{
+				MinTime: 0,
+				MaxTime: 2 * blockRangeMillis,
+				Compaction: tsdb.BlockMetaCompaction{
+					Sources: []ulid.ULID{block1, block2},
+				},
+			},
+			Thanos: metadata.Thanos{
+				Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"},
+			},
+		}, {
+			BlockMeta: tsdb.BlockMeta{
+				MinTime: 0,
+				MaxTime: 2 * blockRangeMillis,
+				Compaction: tsdb.BlockMetaCompaction{
+					Sources: []ulid.ULID{block1, block2},
+				},
+			},
+			Thanos: metadata.Thanos{
+				Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"},
+			},
+		},
+	}
+
+	workDir := t.TempDir()
+	fetcherDir := t.TempDir()
+
+	compactorCfg := prepareConfig()
+	compactorCfg.DataDir = workDir
+	compactorCfg.BlockRanges = compactionRanges
+
+	cfgProvider := newMockConfigProvider()
+	cfgProvider.splitAndMergeShards[userID] = numShards
+
+	t.Run("run split-and-merge compaction strategy", func(t *testing.T) {
+		compactorCfg.CompactionStrategy = CompactionStrategySplitMerge
+
+		reg := prometheus.NewPedanticRegistry()
+		c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+		})
+
+		// Wait until the first compaction run completed.
+		test.Poll(t, 15*time.Second, nil, func() interface{} {
+			return testutil.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+					# TYPE cortex_compactor_runs_completed_total counter
+					cortex_compactor_runs_completed_total 1
+				`), "cortex_compactor_runs_completed_total")
+		})
+
+		// List any (non deleted) block from the storage.
+		userBucket := bucket.NewUserBucketClient(userID, bkt, nil)
+		fetcher, err := block.NewMetaFetcher(logger,
+			1,
+			userBucket,
+			fetcherDir,
+			reg,
+			[]block.MetadataFilter{block.NewIgnoreDeletionMarkFilter(logger, userBucket, 0, block.FetcherConcurrency)},
+			nil)
+		require.NoError(t, err)
+		metas, partials, err := fetcher.Fetch(ctx)
+		require.NoError(t, err)
+		require.Empty(t, partials)
+
+		// Sort blocks by MinTime and labels so that we get a stable comparison.
+		actual := sortMetasByMinTime(convertMetasMapToSlice(metas))
+
+		// Compare actual blocks with the expected ones.
+		require.Len(t, actual, len(expected))
+		for i, e := range expected {
+			assert.Equal(t, e.MinTime, actual[i].MinTime)
+			assert.Equal(t, e.MaxTime, actual[i].MaxTime)
+			assert.Equal(t, e.Compaction.Sources, actual[i].Compaction.Sources)
+			assert.Equal(t, e.Thanos.Labels, actual[i].Thanos.Labels)
+		}
+	})
+
+	t.Run("rollback to default compaction strategy", func(t *testing.T) {
+		compactorCfg.CompactionStrategy = CompactionStrategyDefault
+
+		reg := prometheus.NewPedanticRegistry()
+		c, err := NewMultitenantCompactor(compactorCfg, storageCfg, cfgProvider, logger, reg)
+		require.NoError(t, err)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+		t.Cleanup(func() {
+			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+		})
+
+		// Wait until the first compaction run completed.
+		test.Poll(t, 15*time.Second, nil, func() interface{} {
+			return testutil.GatherAndCompare(reg, strings.NewReader(`
+					# HELP cortex_compactor_runs_completed_total Total number of compaction runs successfully completed.
+					# TYPE cortex_compactor_runs_completed_total counter
+					cortex_compactor_runs_completed_total 1
+				`), "cortex_compactor_runs_completed_total")
+		})
+
+		// List any (non deleted) block from the storage.
+		userBucket := bucket.NewUserBucketClient(userID, bkt, nil)
+		fetcher, err := block.NewMetaFetcher(logger,
+			1,
+			userBucket,
+			fetcherDir,
+			reg,
+			[]block.MetadataFilter{block.NewIgnoreDeletionMarkFilter(logger, userBucket, 0, block.FetcherConcurrency)},
+			nil)
+		require.NoError(t, err)
+		metas, partials, err := fetcher.Fetch(ctx)
+		require.NoError(t, err)
+		require.Empty(t, partials)
+
+		// Sort blocks by MinTime and labels so that we get a stable comparison.
+		actual := sortMetasByMinTime(convertMetasMapToSlice(metas))
+
+		// Compare actual blocks with the expected ones.
+		require.Len(t, actual, len(expected))
+		for i, e := range expected {
+			assert.Equal(t, e.MinTime, actual[i].MinTime)
+			assert.Equal(t, e.MaxTime, actual[i].MaxTime)
+			assert.Equal(t, e.Compaction.Sources, actual[i].Compaction.Sources)
+			assert.Equal(t, e.Thanos.Labels, actual[i].Thanos.Labels)
+		}
+	})
+}
+
+func convertMetasMapToSlice(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
+	var out []*metadata.Meta
+	for _, m := range metas {
+		out = append(out, m)
+	}
+	return out
 }

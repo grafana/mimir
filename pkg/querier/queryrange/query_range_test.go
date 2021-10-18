@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -329,6 +329,36 @@ func TestMergeAPIResponses(t *testing.T) {
 			output, err := PrometheusCodec.MergeResponse(tc.input...)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, output)
+		})
+	}
+}
+
+func TestIsRequestStepAligned(t *testing.T) {
+	tests := map[string]struct {
+		req      Request
+		expected bool
+	}{
+		"should return true if start and end are aligned to step": {
+			req:      &PrometheusRequest{Start: 10, End: 20, Step: 10},
+			expected: true,
+		},
+		"should return false if start is not aligned to step": {
+			req:      &PrometheusRequest{Start: 11, End: 20, Step: 10},
+			expected: false,
+		},
+		"should return false if end is not aligned to step": {
+			req:      &PrometheusRequest{Start: 10, End: 19, Step: 10},
+			expected: false,
+		},
+		"should return true if step is 0": {
+			req:      &PrometheusRequest{Start: 10, End: 11, Step: 0},
+			expected: true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, isRequestStepAligned(testData.req))
 		})
 	}
 }

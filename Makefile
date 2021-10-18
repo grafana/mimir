@@ -163,7 +163,6 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 
 lint: lint-packaging-scripts
 	misspell -error docs
-	prettier --check "**/*.md"
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -172,6 +171,7 @@ lint: lint-packaging-scripts
 	GOFLAGS="-tags=requires_docker" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
+		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
 		github.com/weaveworks/common/user.{ExtractOrgID}=github.com/grafana/mimir/pkg/tenant.{TenantID,TenantIDs},\
 		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
@@ -260,6 +260,9 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
 	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/guides/overrides-exporter.md
+
+	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
+	prettier --write "**/*.md"
 
 # Add license header to files.
 license:

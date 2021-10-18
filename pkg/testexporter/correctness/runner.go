@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/api"
@@ -24,7 +24,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/weaveworks/common/user"
 
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -185,7 +184,7 @@ func (r *Runner) runRandomTest() {
 	r.mtx.Unlock()
 
 	ctx := context.Background()
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "runRandomTest")
+	log, ctx := spanlogger.New(ctx, "runRandomTest")
 	span, trace := opentracing.SpanFromContext(ctx), "<none>"
 	if span != nil {
 		trace = fmt.Sprintf("%s", span.Context())

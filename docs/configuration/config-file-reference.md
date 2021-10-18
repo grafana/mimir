@@ -1185,10 +1185,10 @@ results_cache:
 # CLI flag: -querier.max-retries-per-request
 [max_retries: <int> | default = 5]
 
-# Perform query parallelisations based on storage sharding configuration and
+# Perform query parallelizations based on storage sharding configuration and
 # query ASTs. This feature is supported only by the blocks storage engine.
-# CLI flag: -query-frontend.parallelise-shardable-queries
-[parallelise_shardable_queries: <boolean> | default = false]
+# CLI flag: -query-frontend.parallelize-shardable-queries
+[parallelize_shardable_queries: <boolean> | default = false]
 ```
 
 ### `ruler_config`
@@ -2804,7 +2804,7 @@ aws:
       # CLI flag: -metrics.read-error-query
       [read_error_query: <string> | default = "sum(increase(cortex_dynamo_failures_total{operation=\"DynamoDB.QueryPages\",error=\"ProvisionedThroughputExceededException\"}[1m])) by (table) > 0"]
 
-    # Number of chunks to group together to parallelise fetches (zero to
+    # Number of chunks to group together to parallelize fetches (zero to
     # disable)
     # CLI flag: -dynamodb.chunk-gang-size
     [chunk_gang_size: <int> | default = 10]
@@ -4006,10 +4006,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -validation.enforce-metric-name
 [enforce_metric_name: <boolean> | default = true]
 
-# The default tenant's shard size when the shuffle-sharding strategy is used.
-# Must be set both on ingesters and distributors. When this setting is specified
-# in the per-tenant overrides, a value of 0 disables shuffle sharding for the
-# tenant.
+# The tenant's shard size when the shuffle-sharding strategy is used. Must be
+# set both on ingesters and distributors. When this setting is specified in the
+# per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 
@@ -4147,14 +4146,21 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
+# Maximum size in bytes of distinct label names and values. When querier
+# receives response from ingester, it merges the response with responses from
+# other ingesters. This maximum size limit is applied to the merged(distinct)
+# results. If the limit is reached, an error is returned.
+# CLI flag: -querier.label-names-and-values-results-max-size-bytes
+[label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
+
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 0s]
 
-# The default tenant's shard size when the shuffle-sharding strategy is used by
-# ruler. When this setting is specified in the per-tenant overrides, a value of
-# 0 disables shuffle sharding for the tenant.
+# The tenant's shard size when the shuffle-sharding strategy is used by ruler.
+# When this setting is specified in the per-tenant overrides, a value of 0
+# disables shuffle sharding for the tenant.
 # CLI flag: -ruler.tenant-shard-size
 [ruler_tenant_shard_size: <int> | default = 0]
 
@@ -4166,10 +4172,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ruler.max-rule-groups-per-tenant
 [ruler_max_rule_groups_per_tenant: <int> | default = 0]
 
-# The default tenant's shard size when the shuffle-sharding strategy is used.
-# Must be set when the store-gateway sharding is enabled with the
-# shuffle-sharding strategy. When this setting is specified in the per-tenant
-# overrides, a value of 0 disables shuffle sharding for the tenant.
+# The tenant's shard size when the shuffle-sharding strategy is used. Must be
+# set when the store-gateway sharding is enabled with the shuffle-sharding
+# strategy. When this setting is specified in the per-tenant overrides, a value
+# of 0 disables shuffle sharding for the tenant.
 # CLI flag: -store-gateway.tenant-shard-size
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
@@ -5195,6 +5201,12 @@ sharding_ring:
 # split-and-merge.
 # CLI flag: -compactor.compaction-strategy
 [compaction_strategy: <string> | default = "default"]
+
+# The sorting to use when deciding which compacton jobs should run first for a
+# given tenant. Changing this setting is not supported by the default compaction
+# strategy. Supported values are: default, split-and-merge.
+# CLI flag: -compactor.compaction-jobs-order
+[compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```
 
 ### `store_gateway_config`

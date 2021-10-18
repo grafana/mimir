@@ -8,7 +8,7 @@ package ruler
 import (
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/grpcclient"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"

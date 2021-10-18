@@ -18,10 +18,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
 	"github.com/grafana/dskit/ring"
@@ -863,9 +864,10 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	for idx, blockID := range blockIDs {
 		meta := metadata.Thanos{
 			Labels: map[string]string{
-				mimir_tsdb.TenantIDExternalLabel:   userID,
-				mimir_tsdb.IngesterIDExternalLabel: fmt.Sprintf("ingester-%d", idx),
-				mimir_tsdb.ShardIDExternalLabel:    fmt.Sprintf("shard-%d", idx),
+				mimir_tsdb.TenantIDExternalLabel:          userID,
+				mimir_tsdb.IngesterIDExternalLabel:        fmt.Sprintf("ingester-%d", idx),
+				mimir_tsdb.CompactorShardIDExternalLabel:  fmt.Sprintf("%d_of_2", (idx%2)+1),
+				mimir_tsdb.DeprecatedShardIDExternalLabel: fmt.Sprintf("shard-%d", idx),
 			},
 			Source: metadata.TestSource,
 		}
@@ -920,7 +922,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 	}
 }
 
-func TestBucketStore_Series_QuerySharding(t *testing.T) {
+func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	var (
@@ -1012,6 +1014,109 @@ func TestBucketStore_Series_QuerySharding(t *testing.T) {
 			assert.ElementsMatch(t, testData.expectedMetrics, actualMetrics)
 		})
 	}
+}
+
+func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
+	test.VerifyNoLeak(t)
+
+	var (
+		ctx        = context.Background()
+		userID     = "user-1"
+		numSeries  = 1000
+		numQueries = 100
+		shardCount = 16
+		now        = time.Now()
+	)
+
+	// Prepare the storage dir.
+	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
+
+	// Generate a TSDB block in the storage dir, containing the fixture series.
+	mockTSDBWithGenerator(t, path.Join(storageDir, userID), func() func() (bool, labels.Labels, int64, float64) {
+		nextID := 0
+		return func() (bool, labels.Labels, int64, float64) {
+			if nextID >= numSeries {
+				return false, labels.Labels{}, 0, 0
+			}
+
+			series := labels.New(labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", nextID)})
+			nextID++
+
+			return true, series, util.TimeToMillis(now), float64(nextID)
+		}
+	}())
+
+	createBucketIndex(t, bucketClient, userID)
+
+	// Create a store-gateway.
+	gatewayCfg := mockGatewayConfig()
+	gatewayCfg.ShardingEnabled = false
+	storageCfg := mockStorageConfig(t)
+	storageCfg.BucketStore.BucketIndex.Enabled = true
+
+	g, err := newStoreGateway(gatewayCfg, storageCfg, bucketClient, nil, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(ctx, g))
+	t.Cleanup(func() { assert.NoError(t, services.StopAndAwaitTerminated(ctx, g)) })
+
+	// Keep track of all responses received (by shard).
+	responsesMx := sync.Mutex{}
+	responses := make(map[int][][]*storepb.Series)
+
+	wg := sync.WaitGroup{}
+	wg.Add(numQueries)
+
+	for i := 0; i < numQueries; i++ {
+		go func(shardIndex int) {
+			defer wg.Done()
+
+			req := &storepb.SeriesRequest{
+				MinTime: math.MinInt64,
+				MaxTime: math.MaxInt64,
+				Matchers: []storepb.LabelMatcher{
+					{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
+					{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+						ShardIndex: uint64(shardIndex),
+						ShardCount: uint64(shardCount),
+					}.LabelValue()},
+				},
+			}
+
+			srv := newBucketStoreSeriesServer(setUserIDToGRPCContext(ctx, userID))
+			err := g.Series(req, srv)
+			require.NoError(t, err)
+			assert.Empty(t, srv.Warnings)
+
+			responsesMx.Lock()
+			responses[shardIndex] = append(responses[shardIndex], srv.SeriesSet)
+			responsesMx.Unlock()
+		}(i % shardCount)
+	}
+
+	// Wait until all requests completed.
+	wg.Wait()
+
+	// We expect all responses for a given shard contain the same series
+	// and all shards merged together contain all the series in the TSDB block.
+	totalSeries := 0
+
+	for shardIndex := 0; shardIndex < shardCount; shardIndex++ {
+		var expected []*storepb.Series
+
+		for resIdx, res := range responses[shardIndex] {
+			// We consider the 1st response for a shard as the expected one
+			// (all in all we expect all responses to be the same).
+			if resIdx == 0 {
+				expected = res
+				totalSeries += len(res)
+				continue
+			}
+
+			assert.Equalf(t, expected, res, "shard: %d", shardIndex)
+		}
+	}
+
+	assert.Equal(t, numSeries, totalSeries)
 }
 
 func TestStoreGateway_SeriesQueryingShouldEnforceMaxChunksPerQueryLimit(t *testing.T) {

@@ -1,3 +1,4 @@
+
 package ring
 
 import (
@@ -9,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 

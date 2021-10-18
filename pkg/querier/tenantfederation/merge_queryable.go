@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -147,7 +147,7 @@ type mergeQuerier struct {
 // For the label "original_" + `idLabelName it will return all the values
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, _ := spanlogger.New(m.ctx, m.logger, "mergeQuerier.LabelValues")
+	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
 	defer log.Span.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
@@ -177,7 +177,7 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, _ := spanlogger.New(m.ctx, m.logger, "mergeQuerier.LabelNames")
+	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
 	defer log.Span.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
@@ -309,7 +309,7 @@ type selectJob struct {
 // matching. The forwarded labelSelector is not containing those that operate
 // on `idLabelName`.
 func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.New(m.ctx, m.logger, "mergeQuerier.Select")
+	log, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.Select")
 	defer log.Span.Finish()
 	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 	var jobs = make([]interface{}, len(matchedValues))

@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/leanovate/gopter"
@@ -1226,7 +1226,9 @@ func benchmarkExpandedPostings(
 	iNotEmpty := labels.MustNewMatcher(labels.MatchNotEqual, "i", "")
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+labelLongSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
-	iRegexSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
+	iRegexAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "0"+labelLongSuffix+"|1"+labelLongSuffix+"|2"+labelLongSuffix)
+	iRegexAlternateSuffix := labels.MustNewMatcher(labels.MatchRegexp, "i", "(0|1|2)"+labelLongSuffix)
+	iRegexClass := labels.MustNewMatcher(labels.MatchRegexp, "i", "[0-2]"+labelLongSuffix)
 
 	series = series / 5
 	cases := []struct {
@@ -1251,7 +1253,9 @@ func benchmarkExpandedPostings(
 		{`n="1",i=~"1.+",j="foo"`, []*labels.Matcher{n1, i1Plus, jFoo}, int(float64(series) * 0.011111)},
 		{`n="1",i=~".+",i!="2",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2, jFoo}, int(float64(series) * 0.1)},
 		{`n="1",i=~".+",i!~"2.*",j="foo"`, []*labels.Matcher{n1, iPlus, iNot2Star, jFoo}, int(1 + float64(series)*0.088888)},
-		{`i=~"0|1|2"`, []*labels.Matcher{iRegexSet}, 150}, // 50 series for "1", 50 for "2" and 50 for "3".
+		{`i=~"0xxx|1xxx|2xxx"`, []*labels.Matcher{iRegexAlternate}, 150},   // 50 series for "1", 50 for "2" and 50 for "3".
+		{`i=~"(0|1|2)xxx"`, []*labels.Matcher{iRegexAlternateSuffix}, 150}, // 50 series for "1", 50 for "2" and 50 for "3".
+		{`i=~"[0-2]xxx"`, []*labels.Matcher{iRegexClass}, 150},             // 50 series for "1", 50 for "2" and 50 for "3".
 	}
 
 	for _, c := range cases {
@@ -1271,8 +1275,13 @@ func benchmarkExpandedPostings(
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
 				p, err := indexr.ExpandedPostings(ctx, c.matchers)
-				assert.NoError(t, err)
-				assert.Equal(t, c.expectedLen, len(p))
+
+				if err != nil {
+					t.Fatal(err.Error())
+				}
+				if c.expectedLen != len(p) {
+					t.Fatalf("expected %d postings but got %d", c.expectedLen, len(p))
+				}
 			}
 		})
 	}

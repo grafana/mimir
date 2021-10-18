@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
@@ -91,7 +91,7 @@ func NewQueryShardingMiddleware(
 }
 
 func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.New(ctx, s.logger, "querySharding.Do")
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "querySharding.Do")
 	defer log.Span.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)

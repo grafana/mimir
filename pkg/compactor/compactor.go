@@ -18,8 +18,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/ring"
@@ -47,13 +47,19 @@ const (
 
 	CompactionStrategyDefault    = "default"
 	CompactionStrategySplitMerge = "split-and-merge"
+
+	CompactionOrderOldestFirst = "smallest-range-oldest-blocks-first"
+	CompactionOrderNewestFirst = "newest-blocks-first"
 )
 
 var (
-	errInvalidBlockRanges = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
-	RingOp                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	errInvalidBlockRanges         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
+	errInvalidCompactionOrder     = errors.Errorf("unsupported compaction order (supported values: %s)", strings.Join(compactionOrders, ", "))
+	errUnsupportedCompactionOrder = "the %s compaction strategy does not support %s order"
+	RingOp                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
+	compactionOrders     = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -97,7 +103,8 @@ type Config struct {
 	ShardingRing    RingConfig `yaml:"sharding_ring"`
 
 	// Compaction strategy.
-	CompactionStrategy string `yaml:"compaction_strategy"`
+	CompactionStrategy  string `yaml:"compaction_strategy"`
+	CompactionJobsOrder string `yaml:"compaction_jobs_order"`
 
 	// No need to add options to customize the retry backoff,
 	// given the defaults should be fine, but allow to override
@@ -130,6 +137,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard tenants across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
 	f.StringVar(&cfg.CompactionStrategy, "compactor.compaction-strategy", CompactionStrategyDefault, fmt.Sprintf("The compaction strategy to use. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
+	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compacton jobs should run first for a given tenant. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
@@ -149,6 +157,14 @@ func (cfg *Config) Validate() error {
 
 	if !util.StringsContain(compactionStrategies, cfg.CompactionStrategy) {
 		return fmt.Errorf("unsupported compaction strategy (supported values: %s)", strings.Join(compactionStrategies, ", "))
+	}
+
+	if !util.StringsContain(compactionOrders, cfg.CompactionJobsOrder) {
+		return errInvalidCompactionOrder
+	}
+
+	if cfg.CompactionStrategy == CompactionStrategyDefault && cfg.CompactionJobsOrder != CompactionOrderOldestFirst {
+		return fmt.Errorf(errUnsupportedCompactionOrder, cfg.CompactionStrategy, cfg.CompactionJobsOrder)
 	}
 
 	return nil
@@ -204,6 +220,7 @@ type MultitenantCompactor struct {
 	ringSubservicesWatcher *services.FailureWatcher
 
 	shardingStrategy shardingStrategy
+	jobsOrder        jobsOrderFunc
 
 	// Metrics.
 	compactionRunsStarted          prometheus.Counter
@@ -327,6 +344,12 @@ func newMultitenantCompactor(
 	}
 	if len(compactorCfg.DisabledTenants) > 0 {
 		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
+	}
+
+	if compactorCfg.CompactionJobsOrder == CompactionOrderNewestFirst {
+		c.jobsOrder = sortJobsByNewestBlocksFirst
+	} else {
+		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirst
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
@@ -632,12 +655,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatches the source blocks of the older blocks.
-	var deduplicateBlocksFilter DeduplicateFilter
-	if c.compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		deduplicateBlocksFilter = NewShardAwareDeduplicateFilter()
-	} else {
-		deduplicateBlocksFilter = block.NewDeduplicateFilter()
-	}
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 	fetcherFilters = append(fetcherFilters, deduplicateBlocksFilter)
 
 	fetcher, err := block.NewMetaFetcher(
@@ -679,6 +697,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		c.compactorCfg.CompactionConcurrency,
 		false, // Do not skip blocks with out of order chunks.
 		c.shardingStrategy.ownJob,
+		c.jobsOrder,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {

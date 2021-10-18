@@ -22,7 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/dynamodb"
 	"github.com/aws/aws-sdk-go/service/dynamodb/dynamodbiface"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/flagext"
 	ot "github.com/opentracing/opentracing-go"
@@ -37,7 +37,6 @@ import (
 	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/log"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -75,7 +74,7 @@ func (cfg *DynamoDBConfig) RegisterFlags(f *flag.FlagSet) {
 		"If only region is specified as a host, proper endpoint will be deduced. Use inmemory:///<table-name> to use a mock in-memory implementation.")
 	f.Float64Var(&cfg.APILimit, "dynamodb.api-limit", 2.0, "DynamoDB table management requests per second limit.")
 	f.Float64Var(&cfg.ThrottleLimit, "dynamodb.throttle-limit", 10.0, "DynamoDB rate cap to back off when throttled.")
-	f.IntVar(&cfg.ChunkGangSize, "dynamodb.chunk-gang-size", 10, "Number of chunks to group together to parallelise fetches (zero to disable)")
+	f.IntVar(&cfg.ChunkGangSize, "dynamodb.chunk-gang-size", 10, "Number of chunks to group together to parallelize fetches (zero to disable)")
 	f.IntVar(&cfg.ChunkGetMaxParallelism, "dynamodb.chunk.get-max-parallelism", 32, "Max number of chunk-get operations to start in parallel")
 	f.DurationVar(&cfg.BackoffConfig.MinBackoff, "dynamodb.min-backoff", 100*time.Millisecond, "Minimum backoff time")
 	f.DurationVar(&cfg.BackoffConfig.MaxBackoff, "dynamodb.max-backoff", 50*time.Second, "Maximum backoff time")
@@ -374,7 +373,7 @@ type chunksPlusError struct {
 
 // GetChunks implements chunk.Client.
 func (a dynamoDBStorageClient) GetChunks(ctx context.Context, chunks []chunk.Chunk) ([]chunk.Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "GetChunks.DynamoDB", ot.Tag{Key: "numChunks", Value: len(chunks)})
+	log, ctx := spanlogger.New(ctx, "GetChunks.DynamoDB", ot.Tag{Key: "numChunks", Value: len(chunks)})
 	defer log.Span.Finish()
 	level.Debug(log).Log("chunks requested", len(chunks))
 
@@ -423,7 +422,7 @@ var placeholder = []byte{'c'}
 // Structure is identical to BatchWrite(), but operating on different datatypes
 // so cannot share implementation.  If you fix a bug here fix it there too.
 func (a dynamoDBStorageClient) getDynamoDBChunks(ctx context.Context, chunks []chunk.Chunk) ([]chunk.Chunk, error) {
-	log, ctx := spanlogger.New(ctx, util_log.Logger, "getDynamoDBChunks", ot.Tag{Key: "numChunks", Value: len(chunks)})
+	log, ctx := spanlogger.New(ctx, "getDynamoDBChunks", ot.Tag{Key: "numChunks", Value: len(chunks)})
 	defer log.Span.Finish()
 	outstanding := dynamoDBReadRequest{}
 	chunksByKey := map[string]chunk.Chunk{}

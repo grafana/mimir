@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/consul"
@@ -1939,6 +1939,133 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 	}
 }
 
+func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
+	// distinct values are "__name__", "label_00", "label_01" that is 24 bytes in total
+	fixtures := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.Labels{{Name: labels.MetricName, Value: "label_00"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "label_11"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "label_11"}}, 2, 200000},
+	}
+	tests := map[string]struct {
+		sizeLimitBytes int
+		expectedError  string
+	}{
+		"expected error if sizeLimit is reached": {
+			sizeLimitBytes: 20,
+			expectedError:  "size of distinct label names and values is greater than 20 bytes",
+		},
+		"expected no error if sizeLimit is not reached": {
+			sizeLimitBytes: 25,
+		},
+	}
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+
+			// Create distributor
+			limits := validation.Limits{}
+			flagext.DefaultValues(&limits)
+			limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:     3,
+				happyIngesters:   3,
+				numDistributors:  1,
+				shardByAllLabels: true,
+				limits:           &limits})
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
+
+			// Push fixtures
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			_, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+			if len(testData.expectedError) == 0 {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testData.expectedError)
+			}
+		})
+	}
+}
+
+func TestDistributor_LabelNamesAndValues(t *testing.T) {
+	fixtures := []struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.Labels{{Name: labels.MetricName, Value: "label_0"}, {Name: "status", Value: "200"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "label_1"}, {Name: "status", Value: "500"}, {Name: "reason", Value: "broken"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "label_1"}}, 2, 200000},
+	}
+	tests := map[string]struct {
+		expectedLabelValues []*client.LabelValues
+	}{
+		"should group values of labels by label name and return only distinct label values": {
+			expectedLabelValues: []*client.LabelValues{
+				{
+					LabelName: labels.MetricName,
+					Values:    []string{"label_0", "label_1"},
+				},
+				{
+					LabelName: "reason",
+					Values:    []string{"broken"},
+				},
+				{
+					LabelName: "status",
+					Values:    []string{"200", "500"},
+				},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "label-names-values")
+
+			// Create distributor
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:      12,
+				happyIngesters:    12,
+				numDistributors:   1,
+				shardByAllLabels:  true,
+				replicationFactor: 3,
+			})
+			t.Cleanup(func() {
+				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+			})
+
+			// Push fixtures
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			// Assert on metric metadata
+			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+			require.NoError(t, err)
+			require.Len(t, response.Items, len(testData.expectedLabelValues))
+
+			//sort label values to make stable assertion
+			for _, item := range response.Items {
+				sort.Strings(item.Values)
+			}
+			assert.ElementsMatch(t, response.Items, testData.expectedLabelValues)
+
+		})
+	}
+}
+
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
@@ -2457,6 +2584,51 @@ func (i *mockIngester) MetricsMetadata(ctx context.Context, req *client.MetricsM
 	}
 
 	return resp, nil
+}
+
+func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNamesAndValuesRequest, _ ...grpc.CallOption) (client.Ingester_LabelNamesAndValuesClient, error) {
+	i.Lock()
+	defer i.Unlock()
+	results := map[string]map[string]struct{}{}
+	for _, ts := range i.timeseries {
+		for _, lbl := range ts.Labels {
+			labelValues, exists := results[lbl.Name]
+			if !exists {
+				labelValues = map[string]struct{}{}
+			}
+			labelValues[lbl.Value] = struct{}{}
+			results[lbl.Name] = labelValues
+		}
+	}
+	var items []*client.LabelValues
+	for labelName, labelValues := range results {
+		var values []string
+		for val := range labelValues {
+			values = append(values, val)
+		}
+		items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
+	}
+	resp := &client.LabelNamesAndValuesResponse{Items: items}
+	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}}, nil
+}
+
+type labelNamesAndValuesMockStream struct {
+	grpc.ClientStream
+	responses []*client.LabelNamesAndValuesResponse
+	i         int
+}
+
+func (*labelNamesAndValuesMockStream) CloseSend() error {
+	return nil
+}
+
+func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesResponse, error) {
+	if s.i >= len(s.responses) {
+		return nil, io.EOF
+	}
+	result := s.responses[s.i]
+	s.i++
+	return result, nil
 }
 
 func (i *mockIngester) trackCall(name string) {

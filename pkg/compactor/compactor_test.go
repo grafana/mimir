@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
@@ -109,6 +109,19 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour, 30 * time.Hour}
 			},
 			expected: errors.Errorf(errInvalidBlockRanges, 30*time.Hour, 24*time.Hour).Error(),
+		},
+		"should fail on unknown compaction jobs order": {
+			setup: func(cfg *Config) {
+				cfg.CompactionJobsOrder = "everything-is-important"
+			},
+			expected: errInvalidCompactionOrder.Error(),
+		},
+		"should fail on unsupported compaction jobs order": {
+			setup: func(cfg *Config) {
+				cfg.CompactionStrategy = CompactionStrategyDefault
+				cfg.CompactionJobsOrder = CompactionOrderNewestFirst
+			},
+			expected: errors.Errorf(errUnsupportedCompactionOrder, CompactionStrategyDefault, CompactionOrderNewestFirst).Error(),
 		},
 	}
 

@@ -13,7 +13,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/runutil"
 	"github.com/pkg/errors"

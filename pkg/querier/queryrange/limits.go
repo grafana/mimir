@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
@@ -62,7 +62,7 @@ func NewLimitsMiddleware(l Limits, logger log.Logger) Middleware {
 }
 
 func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
-	log, ctx := spanlogger.New(ctx, l.logger, "limits")
+	log, ctx := spanlogger.NewWithLogger(ctx, l.logger, "limits")
 	defer log.Finish()
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
@@ -119,7 +119,7 @@ type limitedRoundTripper struct {
 
 // NewLimitedRoundTripper creates a new roundtripper that enforces MaxQueryParallelism to the `next` roundtripper across `middlewares`.
 func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, middlewares ...Middleware) http.RoundTripper {
-	transport := limitedRoundTripper{
+	return limitedRoundTripper{
 		downstream: roundTripperHandler{
 			next:  next,
 			codec: codec,
@@ -128,7 +128,6 @@ func NewLimitedRoundTripper(next http.RoundTripper, codec Codec, limits Limits, 
 		limits:     limits,
 		middleware: MergeMiddlewares(middlewares...),
 	}
-	return transport
 }
 
 type subRequest struct {
@@ -169,7 +168,6 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	if span := opentracing.SpanFromContext(ctx); span != nil {
 		request.LogToSpan(span)
 	}
-
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
 		return nil, httpgrpc.Errorf(http.StatusBadRequest, err.Error())

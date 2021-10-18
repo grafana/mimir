@@ -91,7 +91,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-querier.query-store-for-labels-enabled":           "true",
 				"-blocks-storage.bucket-store.bucket-index.enabled": strconv.FormatBool(testCfg.bucketIndexEnabled),
 				"-frontend.query-stats-enabled":                     "true",
-				"-query-frontend.parallelise-shardable-queries":     strconv.FormatBool(testCfg.queryShardingEnabled),
+				"-query-frontend.parallelize-shardable-queries":     strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
 
 			// Start dependencies.

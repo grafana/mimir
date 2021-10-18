@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/opentracing/opentracing-go"
 	"github.com/opentracing/opentracing-go/mocktracer"
 	"github.com/prometheus/common/model"
@@ -170,7 +170,7 @@ func (m *mockSeriesSet) Warnings() storage.Warnings {
 
 // Select implements the storage.Querier interface.
 func (m mockTenantQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, _ := spanlogger.New(m.ctx, m.logger, "mockTenantQuerier.select")
+	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mockTenantQuerier.select")
 	defer log.Span.Finish()
 	var matrix model.Matrix
 
