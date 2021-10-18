@@ -1424,12 +1424,156 @@ func TestIngester_LabelNamesCardinality(t *testing.T) {
 				Matchers: tc.matchers,
 			}
 
-			s := MockLabelNamesAndValuesServer{context: ctx}
+			s := mockLabelNamesAndValuesServer{context: ctx}
 			require.NoError(t, i.LabelNamesAndValues(req, &s))
 
 			assert.ElementsMatch(t, extractItemsWithSortedValues(s.SentResponses), tc.expected)
 		})
 	}
+}
+
+func TestIngester_LabelValuesCardinality(t *testing.T) {
+	series := []series{
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_0"},
+				{Name: "status", Value: "500"},
+			},
+			value:     1.5,
+			timestamp: 100000,
+		},
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_0"},
+				{Name: "status", Value: "200"},
+			},
+			value:     1.5,
+			timestamp: 110030,
+		},
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_1"},
+				{Name: "env", Value: "prod"},
+			},
+			value:     1.5,
+			timestamp: 100060,
+		},
+		{
+			lbls: labels.Labels{
+				{Name: labels.MetricName, Value: "metric_1"},
+				{Name: "env", Value: "prod"},
+				{Name: "status", Value: "300"},
+			},
+			value:     1.5,
+			timestamp: 100090,
+		},
+	}
+	tests := map[string]struct {
+		labelNames    []string
+		matchers      []*client.LabelMatcher
+		expectedItems []*client.LabelValueSeriesCount
+	}{
+		"expected all label values cardinality": {
+			labelNames: []string{labels.MetricName, "env", "status"},
+			matchers:   []*client.LabelMatcher{},
+			expectedItems: []*client.LabelValueSeriesCount{
+				{
+					LabelName: "status",
+					LabelValueSeries: map[string]uint64{
+						"200": 1,
+						"300": 1,
+						"500": 1,
+					},
+				},
+				{
+					LabelName: labels.MetricName,
+					LabelValueSeries: map[string]uint64{
+						"metric_0": 2,
+						"metric_1": 2,
+					},
+				},
+				{
+					LabelName: "env",
+					LabelValueSeries: map[string]uint64{
+						"prod": 2,
+					},
+				},
+			},
+		},
+		"expected status values cardinality applying matchers": {
+			labelNames: []string{"status"},
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: labels.MetricName, Value: "metric_1"},
+			},
+			expectedItems: []*client.LabelValueSeriesCount{
+				{
+					LabelName:        "status",
+					LabelValueSeries: map[string]uint64{"300": 1},
+				},
+			},
+		},
+		"empty response is returned when no matchers match the requested labels": {
+			labelNames: []string{"status"},
+			matchers: []*client.LabelMatcher{
+				{Type: client.EQUAL, Name: "job", Value: "store-gateway"},
+			},
+			expectedItems: nil,
+		},
+	}
+
+	// Create ingester
+	i := requireActiveIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+
+	ctx := pushSeriesToIngester(t, series, i)
+	// Run tests
+	for tName, tc := range tests {
+		t.Run(tName, func(t *testing.T) {
+			req := &client.LabelValuesCardinalityRequest{
+				LabelNames: tc.labelNames,
+				Matchers:   tc.matchers,
+			}
+
+			s := &mockLabelValuesCardinalityServer{context: ctx}
+			require.NoError(t, i.LabelValuesCardinality(req, s))
+
+			if len(tc.expectedItems) == 0 {
+				require.Len(t, s.SentResponses, 0)
+				return
+			}
+			require.Len(t, s.SentResponses, 1)
+			require.ElementsMatch(t, s.SentResponses[0].Items, tc.expectedItems)
+		})
+	}
+}
+
+func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
+	var (
+		userID              = "test"
+		numSeries           = 10000
+		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
+		startTimestamp      = util.TimeToMillis(time.Now())
+		step                = int64(60000) // 1 sample per minute
+	)
+
+	// Create ingester
+	ing := createIngesterWithSeries(b, userID, numSeries, numSamplesPerSeries, startTimestamp, step)
+
+	ctx := user.InjectOrgID(context.Background(), userID)
+	s := &mockLabelValuesCardinalityServer{context: ctx}
+
+	req := &client.LabelValuesCardinalityRequest{
+		LabelNames: []string{labels.MetricName},
+		Matchers: []*client.LabelMatcher{
+			{Type: client.EQUAL, Name: "label_8", Value: "8"},
+		},
+	}
+	b.Run("label values cardinality", func(b *testing.B) {
+		// Run benchmarks
+		for i := 0; i < b.N; i++ {
+			err := ing.LabelValuesCardinality(req, s)
+			require.NoError(b, err)
+		}
+	})
 }
 
 type series struct {
@@ -1438,7 +1582,7 @@ type series struct {
 	timestamp int64
 }
 
-func pushSeriesToIngester(t *testing.T, series []series, i *Ingester) context.Context {
+func pushSeriesToIngester(t testing.TB, series []series, i *Ingester) context.Context {
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
@@ -2532,7 +2676,7 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 	}
 }
 
-func mockWriteRequest(t *testing.T, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
+func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestampMs int64) (*mimirpb.WriteRequest, *client.QueryResponse, *client.QueryStreamResponse, *client.QueryStreamResponse) {
 	samples := []mimirpb.Sample{
 		{
 			TimestampMs: timestampMs,

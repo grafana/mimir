@@ -33,6 +33,14 @@ func SendLabelNamesAndValuesResponse(s Ingester_LabelNamesAndValuesServer, respo
 	})
 }
 
+// SendLabelValuesCardinalityResponse wraps the stream's Send() checking if the context is done
+// before calling Send().
+func SendLabelValuesCardinalityResponse(s Ingester_LabelValuesCardinalityServer, response *LabelValuesCardinalityResponse) error {
+	return sendWithContextErrChecking(s.Context(), func() error {
+		return s.Send(response)
+	})
+}
+
 func sendWithContextErrChecking(ctx context.Context, send func() error) error {
 	// If the context has been canceled or its deadline exceeded, we should return it
 	// instead of the cryptic error the Send() will return.

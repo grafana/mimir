@@ -3,13 +3,16 @@
 package ingester
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -43,9 +46,9 @@ func TestLabelNamesAndValuesAreSentInBatches(t *testing.T) {
 		"label-ff":                     {"f0000000", "f1111111", "f2222222"},
 		"label-gg":                     {"g0000000"},
 	}
-	mockServer := MockLabelNamesAndValuesServer{context: context.Background()}
+	mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
-	require.NoError(t, labelNamesAndValues(MockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, server))
+	require.NoError(t, labelNamesAndValues(mockIndex{existingLabels: existingLabels}, []*labels.Matcher{}, 32, server))
 
 	require.Len(t, mockServer.SentResponses, 7)
 
@@ -98,10 +101,10 @@ func TestExpectedAllLabelNamesAndValuesToBeReturnedInSingleMessage(t *testing.T)
 		},
 	} {
 		t.Run(tc.description, func(t *testing.T) {
-			mockServer := MockLabelNamesAndValuesServer{context: context.Background()}
+			mockServer := mockLabelNamesAndValuesServer{context: context.Background()}
 			var server client.Ingester_LabelNamesAndValuesServer = &mockServer
 
-			require.NoError(t, labelNamesAndValues(MockIndex{existingLabels: tc.existingLabels}, []*labels.Matcher{}, 128, server))
+			require.NoError(t, labelNamesAndValues(mockIndex{existingLabels: tc.existingLabels}, []*labels.Matcher{}, 128, server))
 
 			require.Len(t, mockServer.SentResponses, 1)
 			require.Equal(t, tc.expectedMessage, mockServer.SentResponses[0].Items)
@@ -109,12 +112,201 @@ func TestExpectedAllLabelNamesAndValuesToBeReturnedInSingleMessage(t *testing.T)
 	}
 }
 
-type MockIndex struct {
+func TestLabelValues_CardinalityReportSentInBatches(t *testing.T) {
+	existingLabels := map[string][]string{
+		"lbl-a": {"a0000000", "a1111111", "a2222222"},
+		"lbl-b": {"b0000000", "b1111111", "b2222222", "b3333333"},
+		"lbl-c": {"c0000000"},
+		"lbl-d": {"d0000000"},
+		"lbl-e": {"e0000000"},
+		"lbl-f": {"f0000000", "f1111111", "f2222222"},
+		"lbl-g": {"g0000000"},
+	}
+	// server
+	mockServer := &mockLabelValuesCardinalityServer{context: context.Background()}
+	var server client.Ingester_LabelValuesCardinalityServer = mockServer
+
+	// index reader
+	idxReader := &mockIndex{existingLabels: existingLabels}
+	postingsForMatchersFn := func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+		return &mockPostings{n: 100}, nil
+	}
+	err := labelValuesCardinality(
+		[]string{"lbl-a", "lbl-b", "lbl-c", "lbl-d", "lbl-e", "lbl-f", "lbl-g"},
+		[]*labels.Matcher{},
+		idxReader,
+		postingsForMatchersFn,
+		25,
+		server,
+	)
+	require.NoError(t, err)
+
+	require.Len(t, mockServer.SentResponses, 4)
+
+	require.Equal(t, []*client.LabelValueSeriesCount{
+		{
+			LabelName: "lbl-a",
+			LabelValueSeries: map[string]uint64{
+				"a0000000": 100,
+				"a1111111": 100,
+				"a2222222": 100,
+			},
+		},
+		{
+			LabelName: "lbl-b",
+			LabelValueSeries: map[string]uint64{
+				"b0000000": 100,
+			},
+		},
+	}, mockServer.SentResponses[0].Items)
+
+	require.Equal(t, []*client.LabelValueSeriesCount{
+		{
+			LabelName: "lbl-b",
+			LabelValueSeries: map[string]uint64{
+				"b1111111": 100,
+				"b2222222": 100,
+				"b3333333": 100,
+			},
+		},
+		{
+			LabelName: "lbl-c",
+			LabelValueSeries: map[string]uint64{
+				"c0000000": 100,
+			},
+		},
+	}, mockServer.SentResponses[1].Items)
+
+	require.Equal(t, []*client.LabelValueSeriesCount{
+		{
+			LabelName: "lbl-d",
+			LabelValueSeries: map[string]uint64{
+				"d0000000": 100,
+			},
+		},
+		{
+			LabelName: "lbl-e",
+			LabelValueSeries: map[string]uint64{
+				"e0000000": 100,
+			},
+		},
+		{
+			LabelName: "lbl-f",
+			LabelValueSeries: map[string]uint64{
+				"f0000000": 100,
+				"f1111111": 100,
+			},
+		},
+	}, mockServer.SentResponses[2].Items)
+
+	require.Equal(t, []*client.LabelValueSeriesCount{
+		{
+			LabelName: "lbl-f",
+			LabelValueSeries: map[string]uint64{
+				"f2222222": 100,
+			},
+		},
+		{
+			LabelName: "lbl-g",
+			LabelValueSeries: map[string]uint64{
+				"g0000000": 100,
+			},
+		},
+	}, mockServer.SentResponses[3].Items)
+}
+
+func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) {
+	testCases := map[string]struct {
+		labels         []string
+		matchers       []*labels.Matcher
+		existingLabels map[string][]string
+		expectedItems  []*client.LabelValueSeriesCount
+	}{
+		"empty response is returned when no labels are provided": {
+			labels:         []string{"label-a", "label-b"},
+			matchers:       []*labels.Matcher{},
+			existingLabels: map[string][]string{},
+			expectedItems:  nil,
+		},
+		"all values returned in a single message": {
+			labels:   []string{"label-a", "label-b"},
+			matchers: []*labels.Matcher{},
+			existingLabels: map[string][]string{
+				"label-a": {"a-0"},
+			},
+			expectedItems: []*client.LabelValueSeriesCount{
+				{LabelName: "label-a", LabelValueSeries: map[string]uint64{"a-0": 50}},
+			},
+		},
+		"all values returned in a single message if response size is less then batch size": {
+			labels:   []string{"label-a", "label-b"},
+			matchers: []*labels.Matcher{},
+			existingLabels: map[string][]string{
+				"label-a": {"a-0", "a-1", "a-2"},
+				"label-b": {"b-0", "b-1"},
+			},
+			expectedItems: []*client.LabelValueSeriesCount{
+				{
+					LabelName:        "label-a",
+					LabelValueSeries: map[string]uint64{"a-0": 50, "a-1": 50, "a-2": 50},
+				},
+				{
+					LabelName:        "label-b",
+					LabelValueSeries: map[string]uint64{"b-0": 50, "b-1": 50},
+				},
+			},
+		},
+	}
+	for tName, tCfg := range testCases {
+		t.Run(tName, func(t *testing.T) {
+			// server
+			mockServer := &mockLabelValuesCardinalityServer{context: context.Background()}
+			var server client.Ingester_LabelValuesCardinalityServer = mockServer
+
+			// index reader
+			idxReader := &mockIndex{existingLabels: tCfg.existingLabels}
+			postingsForMatchersFn := func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+				return &mockPostings{n: 50}, nil
+			}
+			err := labelValuesCardinality(
+				tCfg.labels,
+				tCfg.matchers,
+				idxReader,
+				postingsForMatchersFn,
+				1000,
+				server,
+			)
+			require.NoError(t, err)
+			if tCfg.expectedItems == nil {
+				require.Empty(t, mockServer.SentResponses)
+				return
+			}
+			require.Len(t, mockServer.SentResponses, 1)
+			require.Equal(t, tCfg.expectedItems, mockServer.SentResponses[0].Items)
+		})
+	}
+}
+
+type mockPostings struct {
+	index.Postings
+	n int
+}
+
+func (m *mockPostings) Next() bool {
+	if m.n == 0 {
+		return false
+	}
+	m.n--
+	return true
+}
+func (m *mockPostings) Err() error { return nil }
+
+type mockIndex struct {
 	tsdb.IndexReader
 	existingLabels map[string][]string
 }
 
-func (i MockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
+func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 	var l []string
 	for k := range i.existingLabels {
 		l = append(l, k)
@@ -122,17 +314,20 @@ func (i MockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 	sort.Strings(l)
 	return l, nil
 }
-func (i MockIndex) LabelValues(name string, _ ...*labels.Matcher) ([]string, error) {
+
+func (i mockIndex) LabelValues(name string, _ ...*labels.Matcher) ([]string, error) {
 	return i.existingLabels[name], nil
 }
 
-type MockLabelNamesAndValuesServer struct {
+func (i mockIndex) Close() error { return nil }
+
+type mockLabelNamesAndValuesServer struct {
 	client.Ingester_LabelNamesAndValuesServer
 	SentResponses []client.LabelNamesAndValuesResponse
 	context       context.Context
 }
 
-func (m *MockLabelNamesAndValuesServer) Send(response *client.LabelNamesAndValuesResponse) error {
+func (m *mockLabelNamesAndValuesServer) Send(response *client.LabelNamesAndValuesResponse) error {
 	items := make([]*client.LabelValues, len(response.Items))
 	for i, it := range response.Items {
 		values := make([]string, len(it.Values))
@@ -143,6 +338,29 @@ func (m *MockLabelNamesAndValuesServer) Send(response *client.LabelNamesAndValue
 	return nil
 }
 
-func (m *MockLabelNamesAndValuesServer) Context() context.Context {
+func (m *mockLabelNamesAndValuesServer) Context() context.Context {
+	return m.context
+}
+
+type mockLabelValuesCardinalityServer struct {
+	client.Ingester_LabelValuesCardinalityServer
+	SentResponses []client.LabelValuesCardinalityResponse
+	context       context.Context
+}
+
+func (m *mockLabelValuesCardinalityServer) Send(resp *client.LabelValuesCardinalityResponse) error {
+	var sentResp client.LabelValuesCardinalityResponse
+	b, err := json.Marshal(resp)
+	if err != nil {
+		return err
+	}
+	if err := json.NewDecoder(bytes.NewReader(b)).Decode(&sentResp); err != nil {
+		return err
+	}
+	m.SentResponses = append(m.SentResponses, sentResp)
+	return nil
+}
+
+func (m *mockLabelValuesCardinalityServer) Context() context.Context {
 	return m.context
 }
