@@ -280,6 +280,9 @@ type BucketStoreConfig struct {
 	// On the contrary, smaller value will increase baseline memory usage, but improve latency slightly.
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
 	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" doc:"hidden"`
+
+	IndexedDiffVarintPostingsCacheEncodingEnabled bool    `yaml:"indexed_diff_varint_postings_cache_encoding_enabled"`
+	IndexedDiffVarintPostingsCacheMigrationRate   float64 `yaml:"indexed_diff_varint_postings_cache_migration_rate"`
 }
 
 // RegisterFlags registers the BucketStore flags
@@ -307,6 +310,8 @@ func (cfg *BucketStoreConfig) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.IndexHeaderLazyLoadingEnabled, "blocks-storage.bucket-store.index-header-lazy-loading-enabled", false, "If enabled, store-gateway will lazy load an index-header only once required by a query.")
 	f.DurationVar(&cfg.IndexHeaderLazyLoadingIdleTimeout, "blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout", 20*time.Minute, "If index-header lazy loading is enabled and this setting is > 0, the store-gateway will offload unused index-headers after 'idle timeout' inactivity.")
 	f.Uint64Var(&cfg.PartitionerMaxGapBytes, "blocks-storage.bucket-store.partitioner-max-gap-bytes", DefaultPartitionerMaxGapSize, "Max size - in bytes - of a gap for which the partitioner aggregates together two bucket GET object requests.")
+	f.BoolVar(&cfg.IndexedDiffVarintPostingsCacheEncodingEnabled, "blocks-storage.bucket-store.indexed-diff-varint-postings-cache-encoding-enabled", false, "If enabled, store-gateway will use more CPU-efficient indexed+diff+varint encoding for postings cache.")
+	f.Float64Var(&cfg.IndexedDiffVarintPostingsCacheMigrationRate, "blocks-storage.bucket-store.indexed-diff-varint-postings-cache-migration-rate", 0, "Probability in [0,1] interval of migrating an existing diff+varint cache key to indexed+diff+varint encoding. 0 means that diff+varint cache entries will be untouched. 1 or more means that any diff+varint encoded entry found will be immediately stored in indexed+diff+varint encoding. Can be used as a know to reduce load on MC during migration.")
 }
 
 // Validate the config.

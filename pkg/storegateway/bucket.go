@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"math/rand"
 	"os"
 	"path"
 	"path/filepath"
@@ -148,6 +149,11 @@ type BucketStore struct {
 
 	// Enables hints in the Series() response.
 	enableSeriesResponseHints bool
+
+	// Enables storing cached postings in indexed+diff+varint coded.
+	indexedDiffVarintPostingsEnabled bool
+	// Enables migration of cached postings to indexed+diff+varint (probability in [0,1])
+	indexedDiffVarintMigrationRate float64
 }
 
 type noopCache struct{}
@@ -229,29 +235,33 @@ func NewBucketStore(
 	enableSeriesResponseHints bool, // TODO(pracucci) Thanos 0.12 and below doesn't gracefully handle new fields in SeriesResponse. Drop this flag and always enable hints once we can drop backward compatibility.
 	lazyIndexReaderEnabled bool,
 	lazyIndexReaderIdleTimeout time.Duration,
+	indexedDiffVarintPostingsEnabled bool,
+	indexedDiffVarintMigrationRate float64,
 	seriesHashCache *hashcache.SeriesHashCache,
 	metrics *BucketStoreMetrics,
 	options ...BucketStoreOption,
 ) (*BucketStore, error) {
 	s := &BucketStore{
-		logger:                      log.NewNopLogger(),
-		bkt:                         bkt,
-		fetcher:                     fetcher,
-		dir:                         dir,
-		indexCache:                  noopCache{},
-		chunkPool:                   pool.NoopBytes{},
-		blocks:                      map[ulid.ULID]*bucketBlock{},
-		blockSets:                   map[uint64]*bucketBlockSet{},
-		blockSyncConcurrency:        blockSyncConcurrency,
-		queryGate:                   gate.NewNoop(),
-		chunksLimiterFactory:        chunksLimiterFactory,
-		seriesLimiterFactory:        seriesLimiterFactory,
-		partitioner:                 partitioner,
-		enableCompatibilityLabel:    enableCompatibilityLabel,
-		postingOffsetsInMemSampling: postingOffsetsInMemSampling,
-		enableSeriesResponseHints:   enableSeriesResponseHints,
-		seriesHashCache:             seriesHashCache,
-		metrics:                     metrics,
+		logger:                           log.NewNopLogger(),
+		bkt:                              bkt,
+		fetcher:                          fetcher,
+		dir:                              dir,
+		indexCache:                       noopCache{},
+		chunkPool:                        pool.NoopBytes{},
+		blocks:                           map[ulid.ULID]*bucketBlock{},
+		blockSets:                        map[uint64]*bucketBlockSet{},
+		blockSyncConcurrency:             blockSyncConcurrency,
+		queryGate:                        gate.NewNoop(),
+		chunksLimiterFactory:             chunksLimiterFactory,
+		seriesLimiterFactory:             seriesLimiterFactory,
+		partitioner:                      partitioner,
+		enableCompatibilityLabel:         enableCompatibilityLabel,
+		postingOffsetsInMemSampling:      postingOffsetsInMemSampling,
+		enableSeriesResponseHints:        enableSeriesResponseHints,
+		seriesHashCache:                  seriesHashCache,
+		metrics:                          metrics,
+		indexedDiffVarintPostingsEnabled: indexedDiffVarintPostingsEnabled,
+		indexedDiffVarintMigrationRate:   indexedDiffVarintMigrationRate,
 	}
 
 	for _, option := range options {
@@ -449,6 +459,8 @@ func (s *BucketStore) addBlock(ctx context.Context, meta *metadata.Meta) (err er
 		s.chunkPool,
 		indexHeaderReader,
 		s.partitioner,
+		s.indexedDiffVarintPostingsEnabled,
+		s.indexedDiffVarintMigrationRate,
 	)
 	if err != nil {
 		return errors.Wrap(err, "new bucket block")
@@ -1519,6 +1531,9 @@ type bucketBlock struct {
 	relabelLabels labels.Labels
 
 	expandedPostingsPromises sync.Map
+
+	indexedDiffVarintPostingsEnabled bool
+	indexedDiffVarintMigrationRate   float64
 }
 
 func newBucketBlock(
@@ -1532,6 +1547,8 @@ func newBucketBlock(
 	chunkPool pool.Bytes,
 	indexHeadReader indexheader.Reader,
 	p Partitioner,
+	indexedDiffVarintPostingsEnabled bool,
+	indexedDiffVarintMigrationRate float64,
 ) (b *bucketBlock, err error) {
 	b = &bucketBlock{
 		logger:            logger,
@@ -1550,6 +1567,8 @@ func newBucketBlock(
 			Name:  block.BlockIDLabel,
 			Value: meta.ULID.String(),
 		}),
+		indexedDiffVarintPostingsEnabled: indexedDiffVarintPostingsEnabled,
+		indexedDiffVarintMigrationRate:   indexedDiffVarintMigrationRate,
 	}
 	sort.Sort(b.extLset)
 	sort.Sort(b.relabelLabels)
@@ -2010,6 +2029,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			if err != nil {
 				return nil, errors.Wrap(err, "decode postings")
 			}
+			l, err = r.maybeMigratePostingsToIndexedDiffVarint(ctx, l, key)
+			if err != nil {
+				return nil, errors.Wrap(err, "migrate postings")
+			}
 
 			output[ix] = l
 			continue
@@ -2041,6 +2064,10 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 		return uint64(ptrs[i].ptr.Start), uint64(ptrs[i].ptr.End)
 	})
 
+	encodePostings := diffVarintSnappyEncode
+	if r.block.indexedDiffVarintPostingsEnabled {
+		encodePostings = indexedDiffVarintSnappyEncode
+	}
 	g, ctx := errgroup.WithContext(ctx)
 	for _, part := range parts {
 		i, j := part.ElemRng[0], part.ElemRng[1]
@@ -2085,7 +2112,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				compressions++
 				s := time.Now()
 				bep := newBigEndianPostings(pBytes[4:])
-				data, err := indexedDiffVarintSnappyEncode(bep, bep.length())
+				data, err := encodePostings(bep, bep.length())
 				compressionTime = time.Since(s)
 				if err == nil {
 					dataToCache = data
@@ -2145,6 +2172,36 @@ func (r *bucketIndexReader) decodePostings(b []byte) (index.Postings, error) {
 		_, l, err = r.dec.Postings(b)
 	}
 	return l, err
+}
+
+func (r *bucketIndexReader) maybeMigratePostingsToIndexedDiffVarint(ctx context.Context, p index.Postings, key labels.Label) (index.Postings, error) {
+	if !r.block.indexedDiffVarintPostingsEnabled || r.block.indexedDiffVarintMigrationRate < rand.Float64() {
+		return p, nil
+	}
+	if _, ok := p.(*diffVarintPostings); !ok {
+		return p, nil
+	}
+
+	var refs []uint64
+	refs, err := index.ExpandPostings(p)
+	if err != nil {
+		return p, err
+	}
+
+	t0 := time.Now()
+	compressed, err := indexedDiffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+	compressionTime := time.Since(t0)
+	if err != nil {
+		r.stats.cachedPostingsCompressionErrors++
+		return index.NewListPostings(refs), nil
+	}
+
+	r.block.indexCache.StorePostings(ctx, r.block.meta.ULID, key, compressed)
+	r.stats.cachedPostingsCompressions++
+	r.stats.cachedPostingsOriginalSizeSum += 4 * len(refs) // estimate 32 bit per ref
+	r.stats.cachedPostingsCompressedSizeSum += len(compressed)
+	r.stats.cachedPostingsCompressionTimeSum += compressionTime
+	return index.NewListPostings(refs), nil
 }
 
 func resizePostings(b []byte) ([]byte, error) {

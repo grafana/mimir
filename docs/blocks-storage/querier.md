@@ -747,6 +747,19 @@ blocks_storage:
     # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
     [index_header_lazy_loading_idle_timeout: <duration> | default = 20m]
 
+    # If enabled, store-gateway will use more CPU-efficient indexed+diff+varint
+    # encoding for postings cache.
+    # CLI flag: -blocks-storage.bucket-store.indexed-diff-varint-postings-cache-encoding-enabled
+    [indexed_diff_varint_postings_cache_encoding_enabled: <boolean> | default = false]
+
+    # Probability in [0,1] interval of migrating an existing diff+varint cache
+    # key to indexed+diff+varint encoding. 0 means that diff+varint cache
+    # entries will be untouched. 1 or more means that any diff+varint encoded
+    # entry found will be immediately stored in indexed+diff+varint encoding.
+    # Can be used as a know to reduce load on MC during migration.
+    # CLI flag: -blocks-storage.bucket-store.indexed-diff-varint-postings-cache-migration-rate
+    [indexed_diff_varint_postings_cache_migration_rate: <float> | default = 0]
+
   tsdb:
     # Local directory to store TSDBs in the ingesters.
     # CLI flag: -blocks-storage.tsdb.dir
