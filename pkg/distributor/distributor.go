@@ -995,26 +995,19 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 		return 0, nil, fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
 	}
 
-	type labelValuesCardinalityJob string
-	const (
-		labelValuesCardinality labelValuesCardinalityJob = "labelValuesCardinality"
-		userStats              labelValuesCardinalityJob = "userStats"
-	)
-
-	concurrentJobs := concurrency.CreateJobsFromStrings([]string{string(labelValuesCardinality), string(userStats)})
-
+	concurrentJobs := []interface{}{d.labelValuesCardinality, d.UserStats}
 	err = concurrency.ForEach(ctx, concurrentJobs, len(concurrentJobs), func(ctx context.Context, job interface{}) error {
-		jobType := job.(string)
-
-		switch labelValuesCardinalityJob(jobType) {
-		case labelValuesCardinality:
-			response, err := d.labelValuesCardinality(ctx, labelNames, matchers)
+		switch jobFunc := job.(type) {
+		// labelValuesCardinality function
+		case func(context.Context, []model.LabelName, []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error):
+			response, err := jobFunc(ctx, labelNames, matchers)
 			if err != nil {
 				return err
 			}
 			labelValuesCardinalityResponse = response
-		case userStats:
-			response, err := d.UserStats(ctx)
+		// UserStats function
+		case func(context.Context) (*UserStats, error):
+			response, err := jobFunc(ctx)
 			if err != nil {
 				return err
 			}
