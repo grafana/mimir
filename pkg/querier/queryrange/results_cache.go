@@ -226,7 +226,7 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	if err == nil && len(extents) > 0 {
-		extents, err := s.filterRecentExtents(r, maxCacheFreshness, extents)
+		extents, err := filterRecentCacheExtents(r, maxCacheFreshness, s.extractor, extents)
 		if err != nil {
 			return nil, err
 		}
@@ -548,7 +548,7 @@ func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Res
 	return requests, cachedResponses, nil
 }
 
-func (s resultsCache) filterRecentExtents(req Request, maxCacheFreshness time.Duration, extents []Extent) ([]Extent, error) {
+func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
 	maxCacheTime := (int64(model.Now().Add(-maxCacheFreshness)) / req.GetStep()) * req.GetStep()
 	for i := range extents {
 		// Never cache data for the latest freshness period.
@@ -558,7 +558,7 @@ func (s resultsCache) filterRecentExtents(req Request, maxCacheFreshness time.Du
 			if err != nil {
 				return nil, err
 			}
-			extracted := s.extractor.Extract(extents[i].Start, maxCacheTime, res)
+			extracted := extractor.Extract(extents[i].Start, maxCacheTime, res)
 			any, err := types.MarshalAny(extracted)
 			if err != nil {
 				return nil, err
