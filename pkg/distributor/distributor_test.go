@@ -2066,6 +2066,132 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 	}
 }
 
+func TestDistributor_LabelValuesCardinality(t *testing.T) {
+	const numIngesters = 3
+	const replicationFactor = 3
+
+	fixtures := []struct {
+		labels    labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "reason", Value: "broken"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
+	}
+
+	tests := map[string]struct {
+		labelNames                []model.LabelName
+		matchers                  []*labels.Matcher
+		ingestersSeriesCountTotal uint64
+		expectedResult            *client.LabelValuesCardinalityResponse
+		expectedIngesters         int
+		expectedSeriesCountTotal  uint64
+	}{
+		"should return an empty map if no label names": {
+			labelNames:                []model.LabelName{},
+			matchers:                  []*labels.Matcher{},
+			ingestersSeriesCountTotal: 0,
+			expectedResult:            &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}},
+			expectedIngesters:         numIngesters,
+			expectedSeriesCountTotal:  0,
+		},
+		"should return a map with the label values and series occurrences of a single label name": {
+			labelNames:                []model.LabelName{labels.MetricName},
+			matchers:                  []*labels.Matcher{},
+			ingestersSeriesCountTotal: 100,
+			expectedResult: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
+				}},
+			},
+			expectedIngesters:        numIngesters,
+			expectedSeriesCountTotal: 100,
+		},
+		"should return a map with the label values and series occurrences of all the label names": {
+			labelNames:                []model.LabelName{labels.MetricName, "status"},
+			matchers:                  []*labels.Matcher{},
+			ingestersSeriesCountTotal: 100,
+			expectedResult: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{
+					{
+						LabelName:        labels.MetricName,
+						LabelValueSeries: map[string]uint64{"test_1": 2, "test_2": 1},
+					},
+					{
+						LabelName:        "status",
+						LabelValueSeries: map[string]uint64{"200": 1, "500": 1},
+					},
+				},
+			},
+			expectedIngesters:        numIngesters,
+			expectedSeriesCountTotal: 100,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Create distributor
+			ds, ingesters, _ := prepare(t, prepConfig{
+				numIngesters:              numIngesters,
+				happyIngesters:            numIngesters,
+				numDistributors:           1,
+				replicationFactor:         replicationFactor,
+				ingestersSeriesCountTotal: testData.ingestersSeriesCountTotal,
+			})
+
+			// Push fixtures
+			ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
+
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.labels, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
+			// the final ingester may not have received series yet.
+			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
+			test.Poll(t, time.Second, true, func() interface{} {
+				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers)
+				require.NoError(t, err)
+				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
+				// Make sure the resultant label names are sorted
+				sort.Slice(cardinalityMap.Items, func(l, r int) bool {
+					return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
+				})
+				return assert.Equal(t, testData.expectedResult, cardinalityMap)
+			})
+
+			// Make sure all the ingesters have been queried
+			assert.Contains(t, []int{testData.expectedIngesters}, countMockIngestersCalls(ingesters, "LabelValuesCardinality"))
+		})
+	}
+}
+
+func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
+	const numIngesters = 3
+
+	t.Run("should fail with an error if at least one ingester's LabelValuesCardinality and/or UserStats operations fails", func(t *testing.T) {
+		// Create distributor
+		ds, ingesters, _ := prepare(t, prepConfig{
+			numIngesters:    numIngesters,
+			happyIngesters:  numIngesters,
+			numDistributors: 1,
+		})
+
+		// Push fixtures
+		ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
+
+		// Set the first ingester as unhappy
+		ingesters[0].happy = false
+
+		_, _, err := ds[0].LabelValuesCardinality(ctx, []model.LabelName{labels.MetricName}, []*labels.Matcher{})
+		require.Error(t, err)
+	})
+}
+
 func mustNewMatcher(t labels.MatchType, n, v string) *labels.Matcher {
 	m, err := labels.NewMatcher(t, n, v)
 	if err != nil {
@@ -2099,19 +2225,22 @@ type prepConfig struct {
 	maxIngestionRate             float64
 	replicationFactor            int
 	enableTracker                bool
+	ingestersSeriesCountTotal    uint64
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
 	ingesters := []mockIngester{}
 	for i := 0; i < cfg.happyIngesters; i++ {
 		ingesters = append(ingesters, mockIngester{
-			happy:      true,
-			queryDelay: cfg.queryDelay,
+			happy:            true,
+			queryDelay:       cfg.queryDelay,
+			seriesCountTotal: cfg.ingestersSeriesCountTotal,
 		})
 	}
 	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
 		ingesters = append(ingesters, mockIngester{
-			queryDelay: cfg.queryDelay,
+			queryDelay:       cfg.queryDelay,
+			seriesCountTotal: cfg.ingestersSeriesCountTotal,
 		})
 	}
 
@@ -2358,12 +2487,13 @@ type mockIngester struct {
 	sync.Mutex
 	client.IngesterClient
 	grpc_health_v1.HealthClient
-	happy      bool
-	stats      client.UsersStatsResponse
-	timeseries map[uint32]*mimirpb.PreallocTimeseries
-	metadata   map[uint32]map[mimirpb.MetricMetadata]struct{}
-	queryDelay time.Duration
-	calls      map[string]int
+	happy            bool
+	stats            client.UsersStatsResponse
+	timeseries       map[uint32]*mimirpb.PreallocTimeseries
+	metadata         map[uint32]map[mimirpb.MetricMetadata]struct{}
+	queryDelay       time.Duration
+	calls            map[string]int
+	seriesCountTotal uint64
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -2631,6 +2761,76 @@ func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesRespo
 	return result, nil
 }
 
+func (i *mockIngester) LabelValuesCardinality(ctx context.Context, req *client.LabelValuesCardinalityRequest, opts ...grpc.CallOption) (client.Ingester_LabelValuesCardinalityClient, error) {
+	i.Lock()
+	defer i.Unlock()
+
+	i.trackCall("LabelValuesCardinality")
+
+	if !i.happy {
+		return nil, errFail
+	}
+
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return nil, err
+	}
+
+	labelValuesSeriesCount := map[string]map[string]uint64{}
+	for _, ts := range i.timeseries {
+		if !match(ts.Labels, matchers) {
+			continue
+		}
+		for _, reqLabelName := range req.LabelNames {
+			for _, lbl := range ts.Labels {
+				if reqLabelName != lbl.Name {
+					continue
+				}
+				if _, exists := labelValuesSeriesCount[lbl.Name]; !exists {
+					labelValuesSeriesCount[lbl.Name] = map[string]uint64{lbl.Value: 1}
+				} else {
+					labelValuesSeriesCount[lbl.Name][lbl.Value]++
+				}
+			}
+		}
+	}
+
+	result := &client.LabelValuesCardinalityResponse{}
+	for labelName, labelValuesSeriesCount := range labelValuesSeriesCount {
+		labelValueSeriesMap := map[string]uint64{}
+		for labelValue, seriesCount := range labelValuesSeriesCount {
+			labelValueSeriesMap[labelValue] = seriesCount
+		}
+		lblCardinality := &client.LabelValueSeriesCount{
+			LabelName:        labelName,
+			LabelValueSeries: labelValueSeriesMap,
+		}
+
+		result.Items = append(result.Items, lblCardinality)
+	}
+
+	return &labelValuesCardinalityStream{results: []*client.LabelValuesCardinalityResponse{result}}, nil
+}
+
+type labelValuesCardinalityStream struct {
+	grpc.ClientStream
+	i       int
+	results []*client.LabelValuesCardinalityResponse
+}
+
+func (*labelValuesCardinalityStream) CloseSend() error {
+	return nil
+}
+
+func (s *labelValuesCardinalityStream) Recv() (*client.LabelValuesCardinalityResponse, error) {
+	if s.i >= len(s.results) {
+		return nil, io.EOF
+	}
+	result := s.results[s.i]
+	s.i++
+	return result, nil
+}
+
 func (i *mockIngester) trackCall(name string) {
 	if i.calls == nil {
 		i.calls = map[string]int{}
@@ -2681,6 +2881,19 @@ func (s *stream) Recv() (*client.QueryStreamResponse, error) {
 
 func (i *mockIngester) AllUserStats(ctx context.Context, in *client.UserStatsRequest, opts ...grpc.CallOption) (*client.UsersStatsResponse, error) {
 	return &i.stats, nil
+}
+
+func (i *mockIngester) UserStats(ctx context.Context, in *client.UserStatsRequest, opts ...grpc.CallOption) (*client.UserStatsResponse, error) {
+	if !i.happy {
+		return nil, errFail
+	}
+
+	return &client.UserStatsResponse{
+		IngestionRate:     0,
+		NumSeries:         i.seriesCountTotal,
+		ApiIngestionRate:  0,
+		RuleIngestionRate: 0,
+	}, nil
 }
 
 func match(labels []mimirpb.LabelAdapter, matchers []*labels.Matcher) bool {

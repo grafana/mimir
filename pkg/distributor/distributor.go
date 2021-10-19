@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -975,6 +976,154 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 		}
 	}
 	return nil
+}
+
+// LabelValuesCardinality performs the following two operations in parallel:
+//  * queries ingesters for label values cardinality of a set of labelNames
+//  * queries ingesters for user stats to get the ingester's series head count
+func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
+	var userStatsResponse uint64
+	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
+
+	type labelValuesCardinalityJob string
+	const (
+		labelValuesCardinality labelValuesCardinalityJob = "labelValuesCardinality"
+		userStats              labelValuesCardinalityJob = "userStats"
+	)
+	concurrentJobs := concurrency.CreateJobsFromStrings([]string{string(labelValuesCardinality), string(userStats)})
+
+	err := concurrency.ForEach(ctx, concurrentJobs, len(concurrentJobs), func(ctx context.Context, job interface{}) error {
+		jobType := job.(string)
+
+		switch labelValuesCardinalityJob(jobType) {
+		case labelValuesCardinality:
+			response, err := d.labelValuesCardinality(ctx, labelNames, matchers)
+			if err != nil {
+				return err
+			}
+			labelValuesCardinalityResponse = response
+		case userStats:
+			response, err := d.UserStats(ctx)
+			if err != nil {
+				return err
+			}
+			userStatsResponse = response.NumSeries
+		default:
+			return errors.New("invalid concurrent job type")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+
+	return userStatsResponse, labelValuesCardinalityResponse, nil
+}
+
+type labelValuesCardinalityConcurrentMap struct {
+	cardinalityMap map[string]map[string]uint64
+	lock           sync.Mutex
+}
+
+// labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
+// Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
+func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error) {
+	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Make sure we get a successful response from all the ingesters
+	replicationSet.MaxErrors = 0
+
+	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
+		cardinalityMap: map[string]map[string]uint64{},
+	}
+
+	labelValuesReq, err := ingester_client.ToLabelValuesCardinalityRequest(labelNames, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+		stream, err := client.LabelValuesCardinality(ctx, labelValuesReq)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = stream.CloseSend() }()
+
+		err = cardinalityConcurrentMap.processLabelValuesCardinalityMessages(stream)
+		if err != nil {
+			return nil, err
+		}
+
+		return nil, err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(labelNames))
+
+	// Adjust label values' series count based on the ingester's replication factor
+	for labelName, labelValueSeriesCountMap := range cardinalityConcurrentMap.cardinalityMap {
+		for labelValue, seriesCount := range labelValueSeriesCountMap {
+			cardinalityConcurrentMap.cardinalityMap[labelName][labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
+		}
+		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
+			LabelName:        labelName,
+			LabelValueSeries: cardinalityConcurrentMap.cardinalityMap[labelName],
+		})
+	}
+
+	cardinalityResponse := &ingester_client.LabelValuesCardinalityResponse{
+		Items: cardinalityItems,
+	}
+
+	return cardinalityResponse, nil
+}
+
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(
+	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
+	for {
+		message, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+		cm.processLabelValuesCardinalityMessage(message)
+	}
+	return nil
+}
+
+/*
+ * Build a map from all the responses received from all the ingesters.
+ * Each label name will represent a key on the cardinalityMap which will have as value a second map, containing
+ * as key the label_value and value the respective series_count. This series_count will represent the cumulative result
+ * of all (label_name, label_value) tuples from all ingesters.
+ *
+ * Map: (label_name -> (label_value -> series_count))
+ *
+ * This method is called per each LabelValuesCardinalityResponse consumed from each ingester
+ */
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessage(
+	message *ingester_client.LabelValuesCardinalityResponse) {
+
+	cm.lock.Lock()
+	defer cm.lock.Unlock()
+
+	for _, item := range message.Items {
+		if _, exists := cm.cardinalityMap[item.LabelName]; !exists {
+			// Label name nonexistent
+			cm.cardinalityMap[item.LabelName] = map[string]uint64{}
+		}
+		for labelValue, seriesCount := range item.LabelValueSeries {
+			// Label name existent
+			cm.cardinalityMap[item.LabelName][labelValue] += seriesCount
+		}
+	}
 }
 
 // LabelNames returns all of the label names.
