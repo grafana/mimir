@@ -32,6 +32,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
+	"github.com/golang/snappy"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -1141,7 +1142,22 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, series, len(refs))
 		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
+	})
 
+	t.Run("corrupt cached expanded postings", func(t *testing.T) {
+		b := &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: r,
+			indexCache:        corruptedExpandedPostingsCache{},
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.ErrorIs(t, err, snappy.ErrCorrupt)
 	})
 }
 
@@ -1168,6 +1184,12 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 		close(w.waitingDone)
 	})
 	return w.Context.Done()
+}
+
+type corruptedExpandedPostingsCache struct{ noopCache }
+
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
+	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
