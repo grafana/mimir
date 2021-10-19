@@ -408,7 +408,7 @@ func TestIsResponseCachable(t *testing.T) {
 	}
 }
 
-func TestPartition(t *testing.T) {
+func TestPartitionCacheExtents(t *testing.T) {
 	for _, tc := range []struct {
 		name                   string
 		input                  Request
@@ -538,11 +538,10 @@ func TestPartition(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := resultsCache{
-				extractor:      PrometheusResponseExtractor{},
-				minCacheExtent: 10,
-			}
-			reqs, resps, err := s.partition(tc.input, tc.prevCachedResponse)
+			extractor := PrometheusResponseExtractor{}
+			minCacheExtent := int64(10)
+
+			reqs, resps, err := partitionCacheExtents(tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)

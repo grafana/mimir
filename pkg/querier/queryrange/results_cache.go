@@ -371,7 +371,7 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "handleHit")
 	defer log.Finish()
 
-	requests, responses, err := s.partition(r, extents)
+	requests, responses, err := partitionCacheExtents(r, extents, s.minCacheExtent, s.extractor)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -496,9 +496,9 @@ func toExtent(ctx context.Context, req Request, res Response) (Extent, error) {
 	}, nil
 }
 
-// partition calculates the required requests to satisfy req given the cached data.
+// partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Response, error) {
+func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, extractor Extractor) ([]Request, []Response, error) {
 	var requests []Request
 	var cachedResponses []Response
 	start := req.GetStart()
@@ -515,7 +515,7 @@ func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Res
 		// However if the step is large enough, the split_query_by_interval middleware would generate a query with same start and end.
 		// For example, if the step size is more than 12h and the interval is 24h.
 		// This means the extent's start and end time would be same, even if the timerange covers several hours.
-		if (req.GetStart() != req.GetEnd()) && (req.GetEnd()-req.GetStart() > s.minCacheExtent) && (extent.End-extent.Start < s.minCacheExtent) {
+		if (req.GetStart() != req.GetEnd()) && (req.GetEnd()-req.GetStart() > minCacheExtent) && (extent.End-extent.Start < minCacheExtent) {
 			continue
 		}
 
@@ -529,7 +529,7 @@ func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Res
 			return nil, nil, err
 		}
 		// extract the overlap from the cached extent.
-		cachedResponses = append(cachedResponses, s.extractor.Extract(start, req.GetEnd(), res))
+		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
 		start = extent.End
 	}
 
