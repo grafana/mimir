@@ -2170,6 +2170,65 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 	}
 }
 
+func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
+	fixtures := []struct {
+		labels    labels.Labels
+		value     float64
+		timestamp int64
+	}{
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}}, 1, 100000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "reason", Value: "broken"}}, 1, 110000},
+		{labels.Labels{{Name: labels.MetricName, Value: "test_2"}}, 2, 200000},
+	}
+
+	tests := map[string]struct {
+		labelNames              []model.LabelName
+		maxLabelNamesPerRequest int
+		expectedError           string
+	}{
+		"should return an error if the maximum number of label names per request is reached": {
+			labelNames:              []model.LabelName{labels.MetricName, "status"},
+			maxLabelNamesPerRequest: 1,
+			expectedError:           "label values cardinality request label names limit (limit: 1 actual: 2) exceeded",
+		},
+		"should succeed if the maximum number of label names per request is not reached": {
+			labelNames:              []model.LabelName{labels.MetricName},
+			maxLabelNamesPerRequest: 1,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			// Create distributor
+			limits := validation.Limits{}
+			flagext.DefaultValues(&limits)
+			limits.LabelValuesMaxCardinalityLabelNamesPerRequest = testData.maxLabelNamesPerRequest
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          &limits,
+			})
+
+			// Push fixtures
+			ctx := user.InjectOrgID(context.Background(), "label-values-cardinality")
+
+			for _, series := range fixtures {
+				req := mockWriteRequest(series.labels, series.value, series.timestamp)
+				_, err := ds[0].Push(ctx, req)
+				require.NoError(t, err)
+			}
+
+			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{})
+			if len(testData.expectedError) == 0 {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, testData.expectedError)
+			}
+		})
+	}
+}
+
 func TestDistributor_LabelValuesCardinality_Concurrency(t *testing.T) {
 	const numIngesters = 3
 

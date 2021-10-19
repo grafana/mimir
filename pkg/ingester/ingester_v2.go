@@ -1331,10 +1331,6 @@ func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequ
 	if err != nil {
 		return err
 	}
-	lbNamesLim := i.limits.MaxCardinalityLabelNamesPerRequest(userID)
-	if len(req.LabelNames) > lbNamesLim {
-		return fmt.Errorf("cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLim, len(req.LabelNames))
-	}
 
 	db := i.getTSDB(userID)
 	if db == nil {

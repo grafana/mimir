@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"golang.org/x/time/rate"
 
+	"github.com/grafana/dskit/flagext"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -76,23 +76,23 @@ type Limits struct {
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user"`
-	// Cardinality
-	MaxCardinalityLabelNamesPerRequest int `yaml:"max_cardinality_label_names_per_request" json:"max_cardinality_label_names_per_request"`
 
 	// Querier enforced limits.
-	MaxChunksPerQueryFromStore             int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
-	MaxChunksPerQuery                      int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
-	MaxFetchedSeriesPerQuery               int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
-	MaxFetchedChunkBytesPerQuery           int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
-	MaxQueryLookback                       model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
-	MaxQueryLength                         model.Duration `yaml:"max_query_length" json:"max_query_length"`
-	MaxQueryParallelism                    int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
-	CardinalityLimit                       int            `yaml:"cardinality_limit" json:"cardinality_limit"`
-	MaxCacheFreshness                      model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
-	MaxQueriersPerTenant                   int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
-	QueryShardingTotalShards               int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
-	LabelNamesAndValuesResultsMaxSizeBytes int            `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
-	CardinalityAnalysisEnabled             bool           `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
+	MaxChunksPerQueryFromStore   int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
+	MaxChunksPerQuery            int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
+	MaxFetchedSeriesPerQuery     int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
+	MaxFetchedChunkBytesPerQuery int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
+	MaxQueryLookback             model.Duration `yaml:"max_query_lookback" json:"max_query_lookback"`
+	MaxQueryLength               model.Duration `yaml:"max_query_length" json:"max_query_length"`
+	MaxQueryParallelism          int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
+	CardinalityLimit             int            `yaml:"cardinality_limit" json:"cardinality_limit"`
+	MaxCacheFreshness            model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
+	MaxQueriersPerTenant         int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
+	QueryShardingTotalShards     int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
+	// Cardinality
+	CardinalityAnalysisEnabled                    bool `yaml:"cardinality_analysis_enabled" json:"cardinality_analysis_enabled"`
+	LabelNamesAndValuesResultsMaxSizeBytes        int  `yaml:"label_names_and_values_results_max_size_bytes" json:"label_names_and_values_results_max_size_bytes"`
+	LabelValuesMaxCardinalityLabelNamesPerRequest int  `yaml:"label_values_max_cardinality_label_names_per_request" json:"label_values_max_cardinality_label_names_per_request"`
 
 	// Ruler defaults and limits.
 	RulerEvaluationDelay        model.Duration `yaml:"ruler_evaluation_delay_duration" json:"ruler_evaluation_delay_duration"`
@@ -166,7 +166,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per user, across the cluster. 0 to disable. Supported only if -distributor.shard-by-all-labels is true.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, "ingester.max-global-metadata-per-metric", 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
-	f.IntVar(&l.MaxCardinalityLabelNamesPerRequest, "ingester.max-cardinality-label-names-per-request", 100, "The maximum number of label names allowed per cardinality request.")
 
 	f.IntVar(&l.MaxChunksPerQueryFromStore, "store.query-chunk-limit", 2e6, "Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its respective YAML config option instead. Maximum number of chunks that can be fetched in a single query. This limit is enforced when fetching chunks from the long-term storage only. When using chunks storage, this limit is enforced in the querier and ruler, while when using blocks storage this limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 0, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. Takes precedence over the deprecated -store.query-chunk-limit. 0 to disable.")
@@ -177,6 +176,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxQueryParallelism, "querier.max-query-parallelism", 14, "Maximum number of split queries will be scheduled in parallel by the frontend.")
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
+	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed per label values cardinality request to the ingesters.")
 	f.IntVar(&l.CardinalityLimit, "store.cardinality-limit", 1e5, "Cardinality limit for index queries. This limit is ignored when using blocks storage. 0 to disable.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
@@ -308,12 +308,18 @@ func (o *Overrides) IngestionRate(userID string) float64 {
 	return o.getOverridesForUser(userID).IngestionRate
 }
 
+// LabelNamesAndValuesResultsMaxSizeBytes returns the maximum size in bytes of distinct label names and values
 func (o *Overrides) LabelNamesAndValuesResultsMaxSizeBytes(userID string) int {
 	return o.getOverridesForUser(userID).LabelNamesAndValuesResultsMaxSizeBytes
 }
 
 func (o *Overrides) CardinalityAnalysisEnabled(userID string) bool {
 	return o.getOverridesForUser(userID).CardinalityAnalysisEnabled
+}
+
+// LabelValuesMaxCardinalityLabelNamesPerRequest returns the maximum number of label names per cardinality request.
+func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string) int {
+	return o.getOverridesForUser(userID).LabelValuesMaxCardinalityLabelNamesPerRequest
 }
 
 // IngestionRateStrategy returns whether the ingestion rate limit should be individually applied
@@ -516,11 +522,6 @@ func (o *Overrides) MaxGlobalMetadataPerMetric(userID string) int {
 // MaxGlobalExemplars returns the maximum number of exemplars held in memory across the cluster.
 func (o *Overrides) MaxGlobalExemplarsPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalExemplarsPerUser
-}
-
-// MaxCardinalityLabelNamesPerRequest returns the maximum number of label names per cardinality request.
-func (o *Overrides) MaxCardinalityLabelNamesPerRequest(userID string) int {
-	return o.getOverridesForUser(userID).MaxCardinalityLabelNamesPerRequest
 }
 
 // IngestionTenantShardSize returns the ingesters shard size for a given user.

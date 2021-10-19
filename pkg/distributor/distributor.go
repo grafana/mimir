@@ -985,14 +985,25 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 	var userStatsResponse uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
 
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
+	if len(labelNames) > lbNamesLimit {
+		return 0, nil, fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
+	}
+
 	type labelValuesCardinalityJob string
 	const (
 		labelValuesCardinality labelValuesCardinalityJob = "labelValuesCardinality"
 		userStats              labelValuesCardinalityJob = "userStats"
 	)
+
 	concurrentJobs := concurrency.CreateJobsFromStrings([]string{string(labelValuesCardinality), string(userStats)})
 
-	err := concurrency.ForEach(ctx, concurrentJobs, len(concurrentJobs), func(ctx context.Context, job interface{}) error {
+	err = concurrency.ForEach(ctx, concurrentJobs, len(concurrentJobs), func(ctx context.Context, job interface{}) error {
 		jobType := job.(string)
 
 		switch labelValuesCardinalityJob(jobType) {
