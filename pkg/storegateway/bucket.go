@@ -1696,74 +1696,77 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
+	var (
+		loaded bool
+		cached bool
+	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
-		span.LogKV("returned postings", len(returnRefs))
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)
 		if returnErr != nil {
 			span.LogFields(otlog.Error(returnErr))
 		}
 		span.Finish()
 	}()
-	return r.expandedPostingsPromise(ctx, ms)(ctx)
+	var promise expandedPostingsPromise
+	promise, loaded = r.expandedPostingsPromise(ctx, ms)
+	returnRefs, cached, returnErr = promise(ctx)
+	return returnRefs, returnErr
 }
+
+// expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
+// The second return value indicates whether the returned data comes from the cache.
+type expandedPostingsPromise func(ctx context.Context) ([]uint64, bool, error)
 
 // expandedPostingsPromise provides a promise for the execution of expandedPostings method.
 // First call to this method will be blocking until the expandedPostings are calculated.
 // While first call is blocking, concurrent calls with same matchers will return a promise for the same results, without recalculating them.
+// The second value returned by this function is set to true when this call just loaded a promise created by another goroutine.
+// The promise returned by this function returns a bool value fromCache, set to true when data was loaded from cache.
 // TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
 // TODO: https://github.com/grafana/mimir/issues/331
-func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) func(ctx context.Context) ([]uint64, error) {
+func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) (_ expandedPostingsPromise, loaded bool) {
 	var (
-		refs []uint64
-		err  error
-		done = make(chan struct{})
-
-		// loaded and source are used to track the source of the data on the span
-		loaded bool
-		source string
+		refs   []uint64
+		err    error
+		done   = make(chan struct{})
+		cached bool
 	)
 
-	promise := func(ctx context.Context) ([]uint64, error) {
-		span, ctx := tracing.StartSpan(ctx, "expandedPostingsPromise()")
-		defer func() {
-			span.LogKV("loaded", loaded, "source", source)
-			span.Finish()
-		}()
-
+	promise := expandedPostingsPromise(func(ctx context.Context) ([]uint64, bool, error) {
 		select {
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, false, ctx.Err()
 		case <-done:
 		}
 
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 
 		// We must make a copy of refs to return, because caller can modify the postings slice in place.
 		refsCopy := make([]uint64, len(refs))
 		copy(refsCopy, refs)
 
-		return refsCopy, nil
-	}
+		return refsCopy, cached, nil
+	})
 
 	key := cache.CanonicalLabelMatchersKey(ms)
 
 	var loadedPromise interface{}
 	loadedPromise, loaded = r.block.expandedPostingsPromises.LoadOrStore(key, promise)
 	if loaded {
-		return loadedPromise.(func(ctx context.Context) ([]uint64, error))
+		return loadedPromise.(expandedPostingsPromise), true
 	}
 
-	if cached, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key); ok {
-		source = "cache"
+	if data, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key); ok {
+		cached = true
 		var p index.Postings
-		p, err = r.decodePostings(cached)
+		p, err = r.decodePostings(data)
 		if err == nil {
 			refs, err = index.ExpandPostings(p)
 		}
 	} else {
-		source = "index"
 		refs, err = r.expandedPostings(ctx, ms)
 
 		data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
@@ -1777,7 +1780,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	close(done)
 	r.block.expandedPostingsPromises.Delete(key)
 
-	return promise
+	return promise, false
 }
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
