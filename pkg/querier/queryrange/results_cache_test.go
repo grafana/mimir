@@ -112,9 +112,9 @@ func mkExtentWithStep(start, end, step int64) Extent {
 	}
 }
 
-func TestShouldCache(t *testing.T) {
+func TestIsResponseCachable(t *testing.T) {
 	maxCacheTime := int64(150 * 1000)
-	c := &resultsCache{logger: log.NewNopLogger(), cacheGenNumberLoader: newMockCacheGenNumberLoader()}
+
 	for _, tc := range []struct {
 		name                   string
 		request                Request
@@ -400,7 +400,8 @@ func TestShouldCache(t *testing.T) {
 		{
 			t.Run(tc.name, func(t *testing.T) {
 				ctx := cache.InjectCacheGenNumber(context.Background(), tc.cacheGenNumberToInject)
-				ret := c.shouldCacheResponse(ctx, tc.request, tc.input, maxCacheTime)
+				cacheGenLoader := newMockCacheGenNumberLoader()
+				ret := isResponseCachable(ctx, tc.request, tc.input, maxCacheTime, cacheGenLoader, log.NewNopLogger())
 				require.Equal(t, tc.expected, ret)
 			})
 		}

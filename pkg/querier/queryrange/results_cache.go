@@ -236,8 +236,8 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	return response, err
 }
 
-// shouldCacheResponse says whether the response should be cached or not.
-func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Response, maxCacheTime int64) bool {
+// isResponseCachable says whether the response should be cached or not.
+func isResponseCachable(ctx context.Context, req Request, r Response, maxCacheTime int64, cacheGenNumberLoader CacheGenNumberLoader, logger log.Logger) bool {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !isRequestStepAligned(req) {
@@ -247,16 +247,16 @@ func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Re
 	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
 	for _, v := range headerValues {
 		if v == noStoreValue {
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
+			level.Debug(logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
 			return false
 		}
 	}
 
-	if !isAtModifierCachable(req, maxCacheTime, s.logger) {
+	if !isAtModifierCachable(req, maxCacheTime, logger) {
 		return false
 	}
 
-	if s.cacheGenNumberLoader == nil {
+	if cacheGenNumberLoader == nil {
 		return true
 	}
 
@@ -264,13 +264,13 @@ func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Re
 	genNumberFromCtx := cache.ExtractCacheGenNumber(ctx)
 
 	if len(genNumbersFromResp) == 0 && genNumberFromCtx != "" {
-		level.Debug(s.logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
+		level.Debug(logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
 		return false
 	}
 
 	for _, gen := range genNumbersFromResp {
 		if gen != genNumberFromCtx {
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
+			level.Debug(logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
 			return false
 		}
 	}
@@ -348,7 +348,7 @@ func (s resultsCache) handleMiss(ctx context.Context, r Request, maxCacheTime in
 		return nil, nil, err
 	}
 
-	if !s.shouldCacheResponse(ctx, r, response, maxCacheTime) {
+	if !isResponseCachable(ctx, r, response, maxCacheTime, s.cacheGenNumberLoader, s.logger) {
 		return response, []Extent{}, nil
 	}
 
@@ -388,7 +388,7 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 
 	for _, reqResp := range reqResps {
 		responses = append(responses, reqResp.Response)
-		if !s.shouldCacheResponse(ctx, r, reqResp.Response, maxCacheTime) {
+		if !isResponseCachable(ctx, r, reqResp.Response, maxCacheTime, s.cacheGenNumberLoader, s.logger) {
 			continue
 		}
 		extent, err := toExtent(ctx, reqResp.Request, s.extractor.ResponseWithoutHeaders(reqResp.Response))
