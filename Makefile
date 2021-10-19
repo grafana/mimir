@@ -29,7 +29,7 @@ UPTODATE := .uptodate
 JSONNET_FMT := jsonnetfmt
 
 # path to the mimir/mixin
-MIXIN_PATH := jsonnet/mimir-mixin
+MIXIN_PATH := operations/mimir-mixin
 
 .PHONY: image-tag
 image-tag:
