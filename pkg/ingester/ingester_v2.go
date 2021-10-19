@@ -22,6 +22,8 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
+	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -819,6 +821,11 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	}
 	defer db.releaseAppendLock()
 
+	span := opentracing.SpanFromContext(ctx)
+	if span != nil {
+		span.LogFields(otlog.String("event", "acquired append lock"))
+	}
+
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
 	var (
@@ -842,6 +849,12 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
+
+	if span != nil {
+		span.LogFields(otlog.String("event", "got appender"),
+			otlog.Int("numseries", len(req.Timeseries)))
+	}
+
 	for _, ts := range req.Timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -958,6 +971,14 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
 	i.TSDBState.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	if span != nil {
+		span.LogFields(otlog.String("event", "start commit"),
+			otlog.Int("succeededSamplesCount", succeededSamplesCount),
+			otlog.Int("failedSamplesCount", failedSamplesCount),
+			otlog.Int("succeededExemplarsCount", succeededExemplarsCount),
+			otlog.Int("failedExemplarsCount", failedExemplarsCount))
+	}
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
