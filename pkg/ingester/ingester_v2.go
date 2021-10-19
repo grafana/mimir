@@ -16,9 +16,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -43,7 +44,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
-	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -529,7 +529,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", ring.IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, registerer)
+	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", ring.IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -1291,7 +1291,7 @@ const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
 
 func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
 	if !i.cfg.BlocksStorageEnabled {
-		return errors.New("labelNamesAndValues endpoint supports only blocks storage type")
+		return errors.New("LabelNamesAndValues endpoint supports only blocks storage type")
 	}
 	if err := i.checkRunning(); err != nil {
 		return err
@@ -1314,6 +1314,50 @@ func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesReques
 		return err
 	}
 	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
+}
+
+// labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
+// We arbitrarily set it to 1mb to avoid reaching the actual gRPC default limit (4mb).
+const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
+
+func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) error {
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("LabelValuesCardinality endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	userID, err := tenant.TenantID(srv.Context())
+	if err != nil {
+		return err
+	}
+	lbNamesLim := i.limits.MaxCardinalityLabelNamesPerRequest(userID)
+	if len(req.LabelNames) > lbNamesLim {
+		return fmt.Errorf("cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLim, len(req.LabelNames))
+	}
+
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
+	}
+	idx, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	defer idx.Close()
+
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return labelValuesCardinality(
+		req.GetLabelNames(),
+		matchers,
+		idx,
+		tsdb.PostingsForMatchers,
+		labelValuesCardinalityTargetSizeBytes,
+		srv,
+	)
 }
 
 func createUserStats(db *userTSDB) *client.UserStatsResponse {

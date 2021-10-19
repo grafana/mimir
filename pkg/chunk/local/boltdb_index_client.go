@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"go.etcd.io/bbolt"
 
 	"github.com/grafana/mimir/pkg/chunk"

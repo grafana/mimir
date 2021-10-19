@@ -22,10 +22,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv/consul"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/oklog/ulid"
@@ -41,7 +42,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -1249,12 +1249,32 @@ func findCompactorByUserID(compactors []*MultitenantCompactor, logs []*concurren
 }
 
 func removeIgnoredLogs(input []string) []string {
+	ignoredLogStringsMap := map[string]struct{}{
+		// Since we moved to the component logger from the global logger for the ring in dskit these lines are now expected but are just ring setup information.
+		`level=info component=compactor msg="ring doesn't exist in KV store yet"`:                                                                                 {},
+		`level=info component=compactor msg="not loading tokens from file, tokens file path is empty"`:                                                            {},
+		`level=info component=compactor msg="instance not found in ring, adding with no tokens" ring=compactor`:                                                   {},
+		`level=debug component=compactor msg="JoinAfter expired" ring=compactor`:                                                                                  {},
+		`level=info component=compactor msg="auto-joining cluster after timeout" ring=compactor`:                                                                  {},
+		`level=info component=compactor msg="lifecycler loop() exited gracefully" ring=compactor`:                                                                 {},
+		`level=info component=compactor msg="changing instance state from" old_state=ACTIVE new_state=LEAVING ring=compactor`:                                     {},
+		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from LEAVING -> LEAVING is disallowed"`: {},
+		`level=error component=compactor msg="failed to set state to LEAVING" ring=compactor err="Changing instance state from JOINING -> LEAVING is disallowed"`: {},
+		`level=debug component=compactor msg="unregistering instance from ring" ring=compactor`:                                                                   {},
+		`level=info component=compactor msg="instance removed from the KV store" ring=compactor`:                                                                  {},
+		`level=info component=compactor msg="observing tokens before going ACTIVE" ring=compactor`:                                                                {},
+	}
+
 	out := make([]string, 0, len(input))
 	durationRe := regexp.MustCompile(`\s?duration=\S+`)
 
 	for i := 0; i < len(input); i++ {
 		log := input[i]
 		if strings.Contains(log, "block.MetaFetcher") || strings.Contains(log, "block.BaseFetcher") {
+			continue
+		}
+
+		if _, exists := ignoredLogStringsMap[log]; exists {
 			continue
 		}
 
