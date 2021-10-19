@@ -55,7 +55,7 @@ func (s splitByInterval) Do(ctx context.Context, r Request) (Response, error) {
 	}
 	s.splitByCounter.Add(float64(len(reqs)))
 
-	reqResps, err := DoRequests(ctx, s.next, reqs, s.limits)
+	reqResps, err := DoRequests(ctx, s.next, reqs, s.limits, true)
 	if err != nil {
 		return nil, err
 	}

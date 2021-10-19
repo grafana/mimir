@@ -381,7 +381,7 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		return response, nil, err
 	}
 
-	reqResps, err = DoRequests(ctx, s.next, requests, s.limits)
+	reqResps, err = DoRequests(ctx, s.next, requests, s.limits, false)
 	if err != nil {
 		return nil, nil, err
 	}
