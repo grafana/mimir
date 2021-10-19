@@ -10,7 +10,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-4e65adf94
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-c62520540
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -46,7 +46,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-4e65adf94
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-c62520540
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -70,7 +70,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-4e65adf94
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-c62520540
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
