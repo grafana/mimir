@@ -8,11 +8,13 @@ This document contains playbooks, or at least a checklist of what to look for, f
 ## Alerts
 
 ### CortexIngesterRestarts
+
 First, check if the alert is for a single ingester or multiple. Even if the alert is only for one ingester, it's best to follow up by checking `kubectl get pods --namespace=<prod/staging/etc.>` every few minutes, or looking at the query `rate(kube_pod_container_status_restarts_total{container="ingester"}[30m]) > 0` just until you're sure there isn't a larger issue causing multiple restarts.
 
 Next, check `kubectl get events`, with and without the addition of the `--namespace` flag, to look for node restarts or other related issues. Grep or something similar to filter the output can be useful here. The most common cause of this alert is a single cloud providers node restarting and causing the ingester on that node to be rescheduled somewhere else.
 
 In events you're looking for things like:
+
 ```
 57m Normal NodeControllerEviction Pod Marking for deletion Pod ingester-01 from Node cloud-provider-node-01
 37m Normal SuccessfulDelete ReplicaSet (combined from similar events): Deleted pod: ingester-01
@@ -21,6 +23,7 @@ In events you're looking for things like:
 ```
 
 If nothing obvious from the above, check for increased load:
+
 - If there is an increase in the number of active series and the memory provisioned is not enough, scale up the ingesters horizontally to have the same number of series as before per ingester.
 - If we had an outage and once Cortex is back up, the incoming traffic increases. (or) The clients have their Prometheus remote-write lagging and starts to send samples at a higher rate (again, an increase in traffic but in terms of number of samples). Scale up the ingester horizontally in this case too.
 
@@ -29,10 +32,12 @@ If nothing obvious from the above, check for increased load:
 This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
 
 In case of **emergency**:
+
 - If the actual number of series is very close to or already hit the limit, then you can increase the limit via runtime config to gain some time
 - Increasing the limit will increase the ingesters' memory utilization. Please monitor the ingesters' memory utilization via the `Cortex / Writes Resources` dashboard
 
 How the limit is **configured**:
+
 - The limit can be configured either on CLI (`-ingester.instance-limits.max-series`) or in the runtime config:
   ```
   ingester_limits:
@@ -50,32 +55,37 @@ How the limit is **configured**:
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_series"}`
 
 How to **fix**:
+
 1. **Temporarily increase the limit**<br />
    If the actual number of series is very close to or already hit the limit, or if you foresee the ingester will hit the limit before dropping the stale series as an effect of the scale up, you should also temporarily increase the limit.
 2. **Check if shuffle-sharding shard size is correct**<br />
-  - When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
-  - Run the following **instant query** to find tenants that may cause higher pressure on some ingesters:
-    ```
-    (
-      sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
-      -
-      cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
-    )
-    >
-    (
-      max by(user) (cortex_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
-      *
-      scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
-      *
-      0.5
-    )
-    > 200000
 
-    # Decomment the following to show only tenants beloging to a specific ingester's shard.
-    # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
-    ```
-  - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
-  - The in-memory series in the ingesters will be effectively reduced at the TSDB head compaction happening at least 1h after you increased the shard size for the affected tenants
+- When shuffle-sharding is enabled, we target up to 100K series / tenant / ingester assuming tenants on average use 50% of their max series limit.
+- Run the following **instant query** to find tenants that may cause higher pressure on some ingesters:
+
+  ```
+  (
+    sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>"}
+    -
+    cortex_ingester_memory_series_removed_total{namespace="<namespace>"})
+  )
+  >
+  (
+    max by(user) (cortex_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
+    *
+    scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
+    *
+    0.5
+  )
+  > 200000
+
+  # Decomment the following to show only tenants beloging to a specific ingester's shard.
+  # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
+  ```
+
+- Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
+- The in-memory series in the ingesters will be effectively reduced at the TSDB head compaction happening at least 1h after you increased the shard size for the affected tenants
+
 3. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
@@ -84,10 +94,12 @@ How to **fix**:
 This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
 In case of **emergency**:
+
 - If the actual number of tenants is very close to or already hit the limit, then you can increase the limit via runtime config to gain some time
 - Increasing the limit will increase the ingesters' memory utilization. Please monitor the ingesters' memory utilization via the `Cortex / Writes Resources` dashboard
 
 How the limit is **configured**:
+
 - The limit can be configured either on CLI (`-ingester.instance-limits.max-tenants`) or in the runtime config:
   ```
   ingester_limits:
@@ -105,6 +117,7 @@ How the limit is **configured**:
 - The configured limit can be queried via `cortex_ingester_instance_limits{limit="max_tenants"}`
 
 How to **fix**:
+
 1. Ensure shuffle-sharding is enabled in the Cortex cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
@@ -117,6 +130,7 @@ The alert message includes both the Cortex service and route experiencing the hi
 #### Write Latency
 
 How to **investigate**:
+
 - Check the `Cortex / Writes` dashboard
   - Looking at the dashboard you should see in which Cortex service the high latency originates
   - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> distributor -> ingester)
@@ -137,6 +151,7 @@ How to **investigate**:
 Query performance is a known issue. A query may be slow because of high cardinality, large time range and/or because not leveraging on cache (eg. querying series data not cached yet). When investigating this alert, you should check if it's caused by few slow queries or there's an operational / config issue to be fixed.
 
 How to **investigate**:
+
 - Check the `Cortex / Reads` dashboard
   - Looking at the dashboard you should see in which Cortex service the high latency originates
   - The panels in the dashboard are vertically sorted by the network path (eg. cortex-gw -> query-frontend -> query->scheduler -> querier -> store-gateway)
@@ -166,6 +181,7 @@ This alert fires when the rate of 5xx errors of a specific route is > 1% for som
 This alert typically acts as a last resort to detect issues / outages. SLO alerts are expected to trigger earlier: if an **SLO alert** has triggered as well for the same read/write path, then you can ignore this alert and focus on the SLO one (but the investigation procedure is typically the same).
 
 How to **investigate**:
+
 - Check for which route the alert fired (see [Cortex routes by path](#cortex-routes-by-path))
   - Write path: open the `Cortex / Writes` dashboard
   - Read path: open the `Cortex / Reads` dashboard
@@ -175,9 +191,11 @@ How to **investigate**:
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
 
 ### CortexTransferFailed
+
 This alert goes off when an ingester fails to find another node to transfer its data to when it was shutting down. If there is both a pod stuck terminating and one stuck joining, look at the kubernetes events. This may be due to scheduling problems caused by some combination of anti affinity rules/resource utilization. Adding a new node can help in these circumstances. You can see recent events associated with a resource via kubectl describe, ex: `kubectl -n <namespace> describe pod <pod>`
 
 ### CortexIngesterUnhealthy
+
 This alert goes off when an ingester is marked as unhealthy. Check the ring web page to see which is marked as unhealthy. You could then check the logs to see if there are any related to that ingester ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forgot" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, ex: `kubectl get events --namespace=prod | grep cloud-provider-node`.
 
 ### CortexMemoryMapAreasTooHigh
@@ -185,10 +203,12 @@ This alert goes off when an ingester is marked as unhealthy. Check the ring web 
 This alert fires when a Cortex process has a number of memory map areas close to the limit. The limit is a per-process limit imposed by the kernel and this issue is typically caused by a large number of mmap-ed failes.
 
 How to **fix**:
+
 - Increase the limit on your system: `sysctl -w vm.max_map_count=<NEW LIMIT>`
 - If it's caused by a store-gateway, consider enabling `-blocks-storage.bucket-store.index-header-lazy-loading-enabled=true` to lazy mmap index-headers at query time
 
 More information:
+
 - [Kernel doc](https://www.kernel.org/doc/Documentation/sysctl/vm.txt)
 - [Side effects when increasing `vm.max_map_count`](https://www.suse.com/support/kb/doc/?id=000016692)
 
@@ -204,6 +224,7 @@ In general, pushing samples can fail due to problems with Cortex operations (eg.
 This alert fires only for first kind of problems, and not for problems caused by limits or invalid rules.
 
 How to **fix**:
+
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
 
 ### CortexRulerTooManyFailedQueries
@@ -215,6 +236,7 @@ Each rule evaluation may fail due to many reasons, eg. due to invalid PromQL exp
 There is a category of errors that is more important: errors due to failure to read data from store-gateways or ingesters. These errors would result in 500 when run from querier. This alert fires if there is too many of such failures.
 
 How to **fix**:
+
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 
 ### CortexRulerMissedEvaluations
@@ -226,6 +248,7 @@ _TODO: this playbook has not been written yet._
 This alert fires when a Cortex ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
 
 How to **investigate**:
+
 - Ensure the ingester is receiving write-path traffic (samples to ingest)
 - Look for any upload error in the ingester logs (ie. networking or authentication issues)
 
@@ -237,8 +260,9 @@ If the ingester hit the disk capacity, any attempt to append samples will fail. 
 
 1. Increase the disk size and restart the ingester. If the ingester is running in Kubernetes with a Persistent Volume, please refers to [Resizing Persistent Volumes using Kubernetes](#resizing-persistent-volumes-using-kubernetes).
 2. Investigate why the disk capacity has been hit
-  - Was the disk just too small?
-  - Was there an issue compacting TSDB head and the WAL is increasing indefinitely?
+
+- Was the disk just too small?
+- Was there an issue compacting TSDB head and the WAL is increasing indefinitely?
 
 ### CortexIngesterHasNotShippedBlocksSinceStart
 
@@ -249,6 +273,7 @@ Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks
 This alert fires when a Cortex ingester has compacted some blocks but such blocks haven't been successfully uploaded to the storage yet.
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 
 ### CortexIngesterTSDBHeadCompactionFailed
@@ -258,11 +283,13 @@ This alert fires when a Cortex ingester is failing to compact the TSDB head into
 A TSDB instance is opened for each tenant writing at least 1 series to the ingester and its head contains the in-memory series not flushed to a block yet. Once the TSDB head is compactable, the ingester will try to compact it every 1 minute. If the TSDB head compaction repeatedly fails, it means it's failing to compact a block from the in-memory series for at least 1 tenant, and it's a critical condition that should be immediately investigated.
 
 The cause triggering this alert could **lead to**:
+
 - Ingesters run out of memory
 - Ingesters run out of disk space
 - Queries return partial results after `-querier.query-ingesters-within` time since the beginning of the incident
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 
 ### CortexIngesterTSDBHeadTruncationFailed
@@ -272,6 +299,7 @@ This alert fires when a Cortex ingester fails to truncate the TSDB head.
 The TSDB head is the in-memory store used to keep series and samples not compacted into a block yet. If head truncation fails for a long time, the ingester disk might get full as it won't continue to the WAL truncation stage and the subsequent ingester restart may take a long time or even go into an OOMKilled crash loop because of the huge WAL to replay. For this reason, it's important to investigate and address the issue as soon as it happen.
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 
 ### CortexIngesterTSDBCheckpointCreationFailed
@@ -279,6 +307,7 @@ How to **investigate**:
 This alert fires when a Cortex ingester fails to create a TSDB checkpoint.
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 - If the checkpoint fails because of a `corruption in segment`, you can restart the ingester because at next startup TSDB will try to "repair" it. After restart, if the issue is repaired and the ingester is running, you should also get paged by `CortexIngesterTSDBWALCorrupted` to signal you the WAL was corrupted and manual investigation is required.
 
@@ -289,6 +318,7 @@ This alert fires when a Cortex ingester fails to delete a TSDB checkpoint.
 Generally, this is not an urgent issue, but manual investigation is required to find the root cause of the issue and fix it.
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 
 ### CortexIngesterTSDBWALTruncationFailed
@@ -296,6 +326,7 @@ How to **investigate**:
 This alert fires when a Cortex ingester fails to truncate the TSDB WAL.
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 
 ### CortexIngesterTSDBWALCorrupted
@@ -311,6 +342,7 @@ If this alert fires during a **checkpoint creation**, you should have also been 
 This alert fires when a Cortex ingester is failing to log records to the TSDB WAL on disk.
 
 How to **investigate**:
+
 - Look for details in the ingester logs
 
 ### CortexQuerierHasNotScanTheBucket
@@ -318,6 +350,7 @@ How to **investigate**:
 This alert fires when a Cortex querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
 How to **investigate**:
+
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
 ### CortexQuerierHighRefetchRate
@@ -325,6 +358,7 @@ How to **investigate**:
 This alert fires when there's an high number of queries for which series have been refetched from a different store-gateway because of missing blocks. This could happen for a short time whenever a store-gateway ring resharding occurs (e.g. during/after an outage or while rolling out store-gateway) but store-gateways should reconcile in a short time. This alert fires if the issue persist for an unexpected long time and thus it should be investigated.
 
 How to **investigate**:
+
 - Ensure there are no errors related to blocks scan or sync in the queriers and store-gateways
 - Check store-gateway logs to see if all store-gateway have successfully completed a blocks sync
 
@@ -333,6 +367,7 @@ How to **investigate**:
 This alert fires when a Cortex store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
 How to **investigate**:
+
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
 
 ### CortexCompactorHasNotSuccessfullyCleanedUpBlocks
@@ -340,6 +375,7 @@ How to **investigate**:
 This alert fires when a Cortex compactor is not successfully deleting blocks marked for deletion for a long time.
 
 How to **investigate**:
+
 - Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
 - Look for any error in the compactor logs (ie. bucket Delete API errors)
 
@@ -352,6 +388,7 @@ Same as [`CortexCompactorHasNotSuccessfullyCleanedUpBlocks`](#CortexCompactorHas
 This alert fires when a Cortex compactor is not uploading any compacted blocks to the storage since a long time.
 
 How to **investigate**:
+
 - If the alert `CortexCompactorHasNotSuccessfullyRunCompaction` has fired as well, then investigate that issue first
 - If the alert `CortexIngesterHasNotShippedBlocks` or `CortexIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage
@@ -364,6 +401,7 @@ This alert fires if the compactor is not able to successfully compact all discov
 When this alert fires, the compactor may still have successfully compacted some blocks but, for some reason, other blocks compaction is consistently failing. A common case is when the compactor is trying to compact a corrupted block for a single tenant: in this case the compaction of blocks for other tenants is still working, but compaction for the affected tenant is blocked by the corrupted block.
 
 How to **investigate**:
+
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
 
@@ -376,15 +414,19 @@ level=error ts=2020-07-12T17:35:05.516823471Z caller=compactor.go:339 component=
 ```
 
 When this happen you should:
+
 1. Rename the block prefixing it with `corrupted-` so that it will be skipped by the compactor and queriers. Keep in mind that doing so the block will become invisible to the queriers too, so its series/samples will not be queried. If the corruption affects only 1 block whose compaction `level` is 1 (the information is stored inside its `meta.json`) then Cortex guarantees no data loss because all the data is replicated across other blocks. In all other cases, there may be some data loss once you rename the block and stop querying it.
 2. Ensure the compactor has recovered
 3. Investigate offline the root cause (eg. download the corrupted block and debug it locally)
 
 To rename a block stored on GCS you can use the `gsutil` CLI command:
+
 ```
 gsutil mv gs://BUCKET/TENANT/BLOCK gs://BUCKET/TENANT/corrupted-BLOCK
 ```
+
 Where:
+
 - `BUCKET` is the gcs bucket name the compactor is using. The cell's bucket name is specified as the `blocks_storage_bucket_name` in the cell configuration
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
@@ -394,6 +436,7 @@ Where:
 This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store.
 
 How to **investigate**:
+
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
 
@@ -405,6 +448,7 @@ This alert fires when Cortex finds partial blocks for a given tenant. A partial 
 2. A block deletion has been interrupted and `deletion-mark.json` has been deleted before `meta.json`
 
 How to **investigate**:
+
 - Look for the block ID in the logs. Example Loki query:
   ```
   {cluster="<cluster>",namespace="<namespace>",container="compactor"} |= "skipped partial block"
@@ -421,17 +465,19 @@ This alert is only related to the chunks storage. This can happen because of 2 r
 WAL corruptions are only detected at startups, so at this point the WAL/Checkpoint would have been repaired automatically. So we can only check what happened and if there was any data loss and take actions to avoid this happening in future.
 
 1. Check if there was any node restarts that force killed pods. If there is, then the corruption is from the non graceful shutdown of ingesters, which is generally fine. You can:
-  * Describe the pod to see the last state.
-  * Use `kube_pod_info` to check the node for the pod. `node_boot_time_seconds` to see if node just booted (which also indicates restart).
-  * You can use `eventrouter` logs to double check.
-  * Check ingester logs to check if the shutdown logs are missing at that time.
+
+- Describe the pod to see the last state.
+- Use `kube_pod_info` to check the node for the pod. `node_boot_time_seconds` to see if node just booted (which also indicates restart).
+- You can use `eventrouter` logs to double check.
+- Check ingester logs to check if the shutdown logs are missing at that time.
+
 2. To confirm this, in the logs, check the WAL segment on which the corruption happened (let's say `X`) and the last checkpoint attempt number (let's say `Y`, this is the last WAL segment that was present when checkpointing started).
 3. If `X > Y`, then it's most likely an abrupt restart of ingester and the corruption would be on the last few records of the last segment. To verify this, check the file timestamps of WAL segment `X` and `X - 1` if they were recent.
 4. If `X < Y`, then the corruption was in some WAL segment which was not the last one. This indicates faulty disk and some data loss on that ingester.
 5. In case of faulty disk corruption, if the number or ingesters that had corruption within the chunk flush age:
-  1. Less than the quorum number for your replication factor: No data loss, because there is a guarantee that the data is replicated. For example, if replication factor is 3, then it's fine if corruption was on 1 ingester.
-  2. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
-  3. Equal or more than the replication factor: Then there is definitely some data loss.
+6. Less than the quorum number for your replication factor: No data loss, because there is a guarantee that the data is replicated. For example, if replication factor is 3, then it's fine if corruption was on 1 ingester.
+7. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
+8. Equal or more than the replication factor: Then there is definitely some data loss.
 
 ### CortexTableSyncFailure
 
@@ -448,6 +494,7 @@ This alert fires if multiple replicas of the same Cortex service are using a dif
 The Cortex runtime config is a config file which gets live reloaded by Cortex at runtime. In order for Cortex to work properly, the loaded config is expected to be the exact same across multiple replicas of the same Cortex service (eg. distributors, ingesters, ...). When the config changes, there may be short periods of time during which some replicas have loaded the new config and others are still running on the previous one, but it shouldn't last for more than few minutes.
 
 How to **investigate**:
+
 - Check how many different config file versions (hashes) are reported
   ```
   count by (sha256) (cortex_runtime_config_hash{namespace="<namespace>"})
@@ -466,6 +513,7 @@ This alert fires if Cortex is unable to reload the runtime config.
 This typically means an invalid runtime config was deployed. Cortex keeps running with the previous (valid) version of the runtime config; running Cortex replicas and the system availability shouldn't be affected, but new replicas won't be able to startup until the runtime config is fixed.
 
 How to **investigate**:
+
 - Check the latest runtime config update (it's likely to be broken)
 - Check Cortex logs to get more details about what's wrong with the config
 
@@ -480,12 +528,14 @@ The procedure to investigate it is the same as the one for [`CortexSchedulerQuer
 This alert fires if queries are piling up in the query-scheduler.
 
 How it **works**:
+
 - A query-frontend API endpoint is called to execute a query
 - The query-frontend enqueues the request to the query-scheduler
 - The query-scheduler is responsible for dispatching enqueued queries to idle querier workers
 - The querier runs the query, sends the response back directly to the query-frontend and notifies the query-scheduler that it can process another query
 
 How to **investigate**:
+
 - Are queriers in a crash loop (eg. OOMKilled)?
   - `OOMKilled`: temporarily increase queriers memory request/limit
   - `panic`: look for the stack trace in the logs and investigate from there
@@ -505,6 +555,7 @@ How to **investigate**:
 This alert fires if Cortex memcached client is experiencing an high error rate for a specific cache and operation.
 
 How to **investigate**:
+
 - The alert reports which cache is experiencing issue
   - `metadata-cache`: object store metadata cache
   - `index-cache`: TSDB index cache
@@ -549,6 +600,7 @@ _This alert applies to Cortex chunks storage only._
 This alert fires if the average number of in-memory series per ingester is above our target (1.5M).
 
 How to **fix**:
+
 - Scale up ingesters
   - To find out the Cortex clusters where ingesters should be scaled up and how many minimum replicas are expected:
     ```
@@ -562,6 +614,7 @@ How to **fix**:
 This alert fires if the average number of samples ingested / sec in ingesters is above our target.
 
 How to **fix**:
+
 - Scale up ingesters
   - To compute the desired number of ingesters to satisfy the average samples rate you can run the following query, replacing `<namespace>` with the namespace to analyse and `<target>` with the target number of samples/sec per ingester (check out the alert threshold to see the current target):
     ```
@@ -573,6 +626,7 @@ How to **fix**:
 This alert fires when an ingester memory utilization is getting closer to the limit.
 
 How it **works**:
+
 - Cortex ingesters are a stateful service
 - Having 2+ ingesters `OOMKilled` may cause a cluster outage
 - Ingester memory baseline usage is primarily influenced by memory allocated by the process (mostly go heap) and mmap-ed files (used by TSDB)
@@ -580,6 +634,7 @@ How it **works**:
 - A pod gets `OOMKilled` once its working set memory reaches the configured limit, so it's important to prevent ingesters' memory utilization (working set memory) from getting close to the limit (we need to keep at least 30% room for spikes due to queries)
 
 How to **fix**:
+
 - Check if the issue occurs only for few ingesters. If so:
   - Restart affected ingesters 1 by 1 (proceed with the next one once the previous pod has restarted and it's Ready)
     ```
@@ -595,6 +650,7 @@ How to **fix**:
 This alert fires when any instance does not register all other instances as members of the memberlist cluster.
 
 How it **works**:
+
 - This alert applies when memberlist is used for the ring backing store.
 - All Cortex instances using the ring, regardless of type, join a single memberlist cluster.
 - Each instance (=memberlist cluster member) should be able to see all others.
@@ -603,6 +659,7 @@ How it **works**:
   - The total number of currently responsive instances.
 
 How to **investigate**:
+
 - The instance which has the incomplete view of the cluster (too few members) is specified in the alert.
 - If the count is zero:
   - It is possible that the joining the cluster has yet to succeed.
@@ -729,6 +786,7 @@ When an alertmanager cannot read the state for a tenant from storage it gets log
 This alert fires when a Cortex service rollout is stuck, which means the number of updated replicas doesn't match the expected one and looks there's no progress in the rollout. The alert monitors services deployed as Kubernetes `StatefulSet` and `Deployment`.
 
 How to **investigate**:
+
 - Run `kubectl -n <namespace> get pods -l name=<statefulset|deployment>` to get a list of running pods
 - Ensure there's no pod in a failing state (eg. `Error`, `OOMKilled`, `CrashLoopBackOff`)
 - Ensure there's no pod `NotReady` (the number of ready containers should match the total number of containers, eg. `1/1` or `2/2`)
@@ -739,18 +797,21 @@ How to **investigate**:
 This alert fires if a Cortex instance is failing to run any operation on a KV store (eg. consul or etcd).
 
 How it **works**:
+
 - Consul is typically used to store the hash ring state.
 - Etcd is typically used to store by the HA tracker (distributor) to deduplicate samples.
 - If an instance is failing operations on the **hash ring**, either the instance can't update the heartbeat in the ring or is failing to receive ring updates.
 - If an instance is failing operations on the **HA tracker** backend, either the instance can't update the authoritative replica or is failing to receive updates.
 
 How to **investigate**:
+
 - Ensure Consul/Etcd is up and running.
 - Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
 
 ## Cortex routes by path
 
 **Write path**:
+
 - `/distributor.Distributor/Push`
 - `/cortex.Ingester/Push`
 - `api_v1_push`
@@ -758,6 +819,7 @@ How to **investigate**:
 - `api_v1_push_influx_write`
 
 **Read path**:
+
 - `/schedulerpb.SchedulerForFrontend/FrontendLoop`
 - `/cortex.Ingester/QueryStream`
 - `/cortex.Ingester/QueryExemplars`
@@ -766,6 +828,7 @@ How to **investigate**:
 - `api_prom_api_v1_query_exemplars`
 
 **Ruler / rules path**:
+
 - `api_v1_rules`
 - `api_v1_rules_namespace`
 - `api_prom_rules_namespace`
@@ -826,7 +889,9 @@ To take a **GCP persistent disk snapshot**:
 Halting the ingesters should be the **very last resort** because of the side effects. To halt the ingesters, while preserving their disk and without disrupting the cluster write path, you need to:
 
 1. Create a second pool of ingesters
-  - Uses the functions `newIngesterStatefulSet()`, `newIngesterPdb()`
+
+- Uses the functions `newIngesterStatefulSet()`, `newIngesterPdb()`
+
 2. Wait until the second pool is up and running
 3. Halt existing ingesters (scale down to 0 or delete their statefulset)
 
@@ -865,7 +930,7 @@ metadata:
   name: clone-ingester-7-pv
 spec:
   accessModes:
-  - ReadWriteOnce
+    - ReadWriteOnce
   capacity:
     storage: 150Gi
   gcePersistentDisk:
@@ -892,20 +957,20 @@ spec:
 apiVersion: v1
 kind: Pod
 metadata:
-    name: clone-ingester-7-dataaccess
+  name: clone-ingester-7-dataaccess
 spec:
-    containers:
+  containers:
     - name: alpine
       image: alpine:latest
-      command: ['sleep', 'infinity']
+      command: ["sleep", "infinity"]
       volumeMounts:
-      - name: mypvc
-        mountPath: /data
+        - name: mypvc
+          mountPath: /data
       resources:
         requests:
           cpu: 500m
           memory: 1024Mi
-    volumes:
+  volumes:
     - name: mypvc
       persistentVolumeClaim:
         claimName: clone-ingester-7-pvc
@@ -928,6 +993,7 @@ After this preparation, one can use `kubectl exec -t -i clone-ingester-7-dataacc
    ./gsutil/gsutil --help
    ```
 3. Configure credentials
+
    ```
    gsutil config -e
 
@@ -944,7 +1010,6 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 - `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
 - `Delete`: the volume will be automatically deleted
 
-
 ## Log lines
 
 ### Log line containing 'sample with repeated timestamp but different value'
@@ -952,5 +1017,6 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 This means a sample with the same timestamp as the latest one was received with a different value. The number of occurrences is recorded in the `cortex_discarded_samples_total` metric with the label `reason="new-value-for-timestamp"`.
 
 Possible reasons for this are:
+
 - Incorrect relabelling rules can cause a label to be dropped from a series so that multiple series have the same labels. If these series were collected from the same target they will have the same timestamp.
 - The exporter being scraped sets the same timestamp on every scrape. Note that exporters should generally not set timestamps.
