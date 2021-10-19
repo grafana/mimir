@@ -49,7 +49,7 @@ type splitByInterval struct {
 func (s splitByInterval) Do(ctx context.Context, r Request) (Response, error) {
 	// First we're going to build new requests, one for each day, taking care
 	// to line up the boundaries with step.
-	reqs, err := splitQuery(r, s.interval(r))
+	reqs, err := splitQueryByInterval(r, s.interval(r))
 	if err != nil {
 		return nil, err
 	}
@@ -72,7 +72,7 @@ func (s splitByInterval) Do(ctx context.Context, r Request) (Response, error) {
 	return response, nil
 }
 
-func splitQuery(r Request, interval time.Duration) ([]Request, error) {
+func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
 	query, err := evaluateAtModifierFunction(r.GetQuery(), r.GetStart(), r.GetEnd())
