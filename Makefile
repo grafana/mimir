@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin
+.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format
 .DEFAULT_GOAL := all
 
 # Version number
@@ -24,12 +24,6 @@ IMAGE_TAG ?= $(if $(GIT_TAG),$(GIT_TAG),$(shell ./tools/image-tag))
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
-
-# path to jsonnetfmt
-JSONNET_FMT := jsonnetfmt
-
-# path to the mimir/mixin
-MIXIN_PATH := operations/mimir-mixin
 
 .PHONY: image-tag
 image-tag:
@@ -126,7 +120,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= 20211018_import-cortex-mixin-e7b4eab3c
+LATEST_BUILD_IMAGE_TAG ?= add-prettier-08d2e2a61
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -319,33 +313,6 @@ clean-white-noise:
 
 check-white-noise: clean-white-noise
 	@git diff --exit-code --quiet -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
-
-check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
-	@git diff --exit-code --quiet -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
-
-	@cd $(MIXIN_PATH) && \
-	jb install && \
-	mixtool lint mixin.libsonnet
-
-check-mixin-jb:
-	@cd $(MIXIN_PATH) && \
-	jb install
-
-check-mixin-mixtool: check-mixin-jb
-	@cd $(MIXIN_PATH) && \
-	mixtool lint mixin.libsonnet
-
-check-mixin-playbook: build-mixin
-	@$(MIXIN_PATH)/scripts/lint-playbooks.sh
-
-build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_PATH)/out && mkdir $(MIXIN_PATH)/out
-	@cd $(MIXIN_PATH) && \
-	mixtool generate all --output-alerts out/alerts.yaml --output-rules out/rules.yaml --directory out/dashboards mixin.libsonnet && \
-	zip -q -r mimir-mixin.zip out
-
-format-mixin:
-	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
 web-serve:
 	cd website && hugo --config config.toml --minify -v server

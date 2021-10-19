@@ -10,7 +10,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-e7b4eab3c
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -36,8 +36,6 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check Mixin
-        run: make BUILD_IN_CONTAINER=false check-mixin
       - name: Check White Noise.
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
@@ -46,7 +44,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-e7b4eab3c
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -70,7 +68,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211018_import-cortex-mixin-e7b4eab3c
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
