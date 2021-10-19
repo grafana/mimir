@@ -397,6 +397,19 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		}
 		extents = append(extents, extent)
 	}
+
+	mergedExtents, err := mergeCacheExtentsForRequest(ctx, r, s.merger, extents)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	response, err := s.merger.MergeResponse(responses...)
+	return response, mergedExtents, err
+}
+
+// mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
+// The input extents can be overlapping and are not required to be sorted.
+func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, extents []Extent) ([]Extent, error) {
 	sort.Slice(extents, func(i, j int) bool {
 		if extents[i].Start == extents[j].Start {
 			// as an optimization, for two extents starts at the same time, we
@@ -411,19 +424,19 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 	// Merge any extents - potentially overlapping
 	accumulator, err := newAccumulator(extents[0])
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	mergedExtents := make([]Extent, 0, len(extents))
 
 	for i := 1; i < len(extents); i++ {
 		if accumulator.End+r.GetStep() < extents[i].Start {
-			mergedExtents, err = merge(mergedExtents, accumulator)
+			mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			accumulator, err = newAccumulator(extents[i])
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			continue
 		}
@@ -436,22 +449,16 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		merged, err := s.merger.MergeResponse(accumulator.Response, currentRes)
+		merged, err := merger.MergeResponse(accumulator.Response, currentRes)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		accumulator.Response = merged
 	}
 
-	mergedExtents, err = merge(mergedExtents, accumulator)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	response, err := s.merger.MergeResponse(responses...)
-	return response, mergedExtents, err
+	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 }
 
 type accumulator struct {
@@ -459,7 +466,7 @@ type accumulator struct {
 	Extent
 }
 
-func merge(extents []Extent, acc *accumulator) ([]Extent, error) {
+func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
 	any, err := types.MarshalAny(acc.Response)
 	if err != nil {
 		return nil, err
