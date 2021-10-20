@@ -18,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/limiter"
 	"github.com/grafana/dskit/ring"
 	ring_client "github.com/grafana/dskit/ring/client"
@@ -35,6 +34,7 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
@@ -995,33 +995,25 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 		return 0, nil, fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
 	}
 
-	concurrentJobs := []interface{}{d.labelValuesCardinality, d.UserStats}
-	err = concurrency.ForEach(ctx, concurrentJobs, len(concurrentJobs), func(ctx context.Context, job interface{}) error {
-		switch jobFunc := job.(type) {
-		// labelValuesCardinality function
-		case func(context.Context, []model.LabelName, []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error):
-			response, err := jobFunc(ctx, labelNames, matchers)
-			if err != nil {
-				return err
-			}
+	// Run labelValuesCardinality and UserStats methods in parallel
+	group, ctx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		response, err := d.labelValuesCardinality(ctx, labelNames, matchers)
+		if err == nil {
 			labelValuesCardinalityResponse = response
-		// UserStats function
-		case func(context.Context) (*UserStats, error):
-			response, err := jobFunc(ctx)
-			if err != nil {
-				return err
-			}
-			userStatsResponse = response.NumSeries
-		default:
-			return errors.New("invalid concurrent job type")
 		}
-
-		return nil
+		return err
 	})
-	if err != nil {
+	group.Go(func() error {
+		response, err := d.UserStats(ctx)
+		if err == nil {
+			userStatsResponse = response.NumSeries
+		}
+		return err
+	})
+	if err := group.Wait(); err != nil {
 		return 0, nil, err
 	}
-
 	return userStatsResponse, labelValuesCardinalityResponse, nil
 }
 
