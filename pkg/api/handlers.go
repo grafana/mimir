@@ -7,7 +7,6 @@ package api
 
 import (
 	"context"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"html/template"
 	"net/http"
 	"path"
@@ -32,6 +31,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (

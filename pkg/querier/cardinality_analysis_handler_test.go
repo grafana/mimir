@@ -6,19 +6,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/grafana/dskit/flagext"
-	"github.com/grafana/mimir/pkg/util/validation"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 func TestLabelNamesCardinalityHandler(t *testing.T) {
@@ -29,8 +29,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
 	distributor := newMockDistributor(items...)
-	handler, err := createEnabledHandler(distributor)
-	require.NoError(t, err)
+	handler := createEnabledHandler(t, distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
 	require.NoError(t, err)
@@ -95,8 +94,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
 			distributor := newMockDistributor()
-			handler, err := createEnabledHandler(distributor)
-			require.NoError(t, err)
+			handler := createEnabledHandler(t, distributor)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
 			path := "/ignored-url"
@@ -148,7 +146,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
 			distributor := newMockDistributor(items...)
-			handler, err := createEnabledHandler(distributor)
+			handler := createEnabledHandler(t, distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			path := "/ignored-url"
@@ -176,16 +174,14 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 	}
 }
 
-func createEnabledHandler(distributor *mockDistributor) (http.Handler, error) {
+func createEnabledHandler(t *testing.T, distributor *mockDistributor) http.Handler {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	limits.CardinalityAnalysisEnabled = true
 	overrides, err := validation.NewOverrides(limits, nil)
-	if err != nil {
-		return nil, err
-	}
+	require.NoError(t, err)
 	handler := LabelNamesCardinalityHandler(distributor, overrides)
-	return handler, err
+	return handler
 }
 
 func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
