@@ -44,7 +44,7 @@ type frontendSchedulerWorkers struct {
 	// Set to nil when stop is called... no more workers are created afterwards.
 	workers map[string]*frontendSchedulerWorker
 
-	servedRequests *prometheus.CounterVec
+	enqueuedRequests *prometheus.CounterVec
 }
 
 func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh <-chan *frontendRequest, log log.Logger, reg prometheus.Registerer) (*frontendSchedulerWorkers, error) {
@@ -54,9 +54,9 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 		frontendAddress: frontendAddress,
 		requestsCh:      requestsCh,
 		workers:         map[string]*frontendSchedulerWorker{},
-		servedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_frontend_workers_served_requests_total",
-			Help: "Total amount of requests served by each query frontend worker (regardless of the , labeled by scheduler address.",
+		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_query_frontend_workers_enqueued_requests_total",
+			Help: "Total amount of requests enqueued by each query frontend worker (regardless of the result, labeled by scheduler address.",
 		}, []string{"scheduler_address"}),
 	}
 
@@ -108,7 +108,7 @@ func (f *frontendSchedulerWorkers) AddressAdded(address string) {
 	}
 
 	// No worker for this address yet, start a new one.
-	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.servedRequests.WithLabelValues(address), f.log)
+	w = newFrontendSchedulerWorker(conn, address, f.frontendAddress, f.requestsCh, f.cfg.WorkerConcurrency, f.enqueuedRequests.WithLabelValues(address), f.log)
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -185,19 +185,19 @@ type frontendSchedulerWorker struct {
 	cancelCh chan uint64
 
 	// Amount of queries sent to this scheduler
-	servedRequests prometheus.Counter
+	enqueuedRequests prometheus.Counter
 }
 
-func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestCh <-chan *frontendRequest, concurrency int, servedRequests prometheus.Counter, log log.Logger) *frontendSchedulerWorker {
+func newFrontendSchedulerWorker(conn *grpc.ClientConn, schedulerAddr string, frontendAddr string, requestCh <-chan *frontendRequest, concurrency int, enqueuedRequests prometheus.Counter, log log.Logger) *frontendSchedulerWorker {
 	w := &frontendSchedulerWorker{
-		log:            log,
-		conn:           conn,
-		concurrency:    concurrency,
-		schedulerAddr:  schedulerAddr,
-		frontendAddr:   frontendAddr,
-		requestCh:      requestCh,
-		cancelCh:       make(chan uint64),
-		servedRequests: servedRequests,
+		log:              log,
+		conn:             conn,
+		concurrency:      concurrency,
+		schedulerAddr:    schedulerAddr,
+		frontendAddr:     frontendAddr,
+		requestCh:        requestCh,
+		cancelCh:         make(chan uint64),
+		enqueuedRequests: enqueuedRequests,
 	}
 	w.ctx, w.cancel = context.WithCancel(context.Background())
 
@@ -290,7 +290,7 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 				FrontendAddress: w.frontendAddr,
 				StatsEnabled:    req.statsEnabled,
 			})
-			w.servedRequests.Inc()
+			w.enqueuedRequests.Inc()
 
 			if err != nil {
 				req.enqueue <- enqueueResult{status: failed}
