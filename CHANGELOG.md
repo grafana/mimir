@@ -99,6 +99,7 @@
 * [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
 * [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
 * [BUGFIX] Query-tee: Ensure POST requests are handled correctly #286
+* [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360
 
 ### Query-tee
 
