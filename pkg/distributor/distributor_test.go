@@ -2051,6 +2051,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 				require.NoError(t, err)
 			}
 
+			// Assert on metric metadata
 			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
 			require.NoError(t, err)
 			require.Len(t, response.Items, len(testData.expectedLabelValues))
