@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -27,7 +29,8 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
 	distributor := newMockDistributor(items...)
-	handler := LabelNamesCardinalityHandler(distributor)
+	handler, err := createEnabledHandler(distributor)
+	require.NoError(t, err)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
 	require.NoError(t, err)
@@ -92,7 +95,8 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
 			distributor := newMockDistributor()
-			handler := LabelNamesCardinalityHandler(distributor)
+			handler, err := createEnabledHandler(distributor)
+			require.NoError(t, err)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
 			path := "/ignored-url"
@@ -144,7 +148,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
 			distributor := newMockDistributor(items...)
-			handler := LabelNamesCardinalityHandler(distributor)
+			handler, err := createEnabledHandler(distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			path := "/ignored-url"
@@ -172,11 +176,24 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 	}
 }
 
+func createEnabledHandler(distributor *mockDistributor) (http.Handler, error) {
+	limits := validation.Limits{}
+	flagext.DefaultValues(&limits)
+	limits.CardinalityAnalysisEnabled = true
+	overrides, err := validation.NewOverrides(limits, nil)
+	if err != nil {
+		return nil, err
+	}
+	handler := LabelNamesCardinalityHandler(distributor, overrides)
+	return handler, err
+}
+
 func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 	td := []struct {
-		name                 string
-		request              *http.Request
-		expectedErrorMessage string
+		name                        string
+		request                     *http.Request
+		expectedErrorMessage        string
+		cardinalityAnalysisDisabled bool
 	}{
 		{
 			name:                 "expected error if `limit` param is negative",
@@ -198,10 +215,23 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			request:              createRequest("/ignored-url?limit=10&limit=20", "team-a"),
 			expectedErrorMessage: "multiple `limit` params are not allowed",
 		},
+		{
+			name:                        "expected error that cardinality analysis feature is disabled",
+			request:                     createRequest("/ignored-url", "team-a"),
+			expectedErrorMessage:        "cardinality analysis is disabled for the tenant: team-a",
+			cardinalityAnalysisDisabled: true,
+		},
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			handler := LabelNamesCardinalityHandler(newMockDistributor())
+			limits := validation.Limits{}
+			flagext.DefaultValues(&limits)
+			if !data.cardinalityAnalysisDisabled {
+				limits.CardinalityAnalysisEnabled = true
+			}
+			overrides, err := validation.NewOverrides(limits, nil)
+			require.NoError(t, err)
+			handler := LabelNamesCardinalityHandler(newMockDistributor(), overrides)
 
 			recorder := httptest.NewRecorder()
 

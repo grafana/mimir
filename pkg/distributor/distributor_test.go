@@ -1970,7 +1970,6 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 			limits := validation.Limits{}
 			flagext.DefaultValues(&limits)
 			limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
-			limits.CardinalityAnalysisEnabled = true
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:     3,
 				happyIngesters:   3,
@@ -2009,9 +2008,7 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 		{labels.Labels{{Name: labels.MetricName, Value: "label_1"}}, 2, 200000},
 	}
 	tests := map[string]struct {
-		expectedLabelValues         []*client.LabelValues
-		cardinalityAnalysisDisabled bool
-		expectedError               string
+		expectedLabelValues []*client.LabelValues
 	}{
 		"should group values of labels by label name and return only distinct label values": {
 			expectedLabelValues: []*client.LabelValues{
@@ -2029,10 +2026,6 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 				},
 			},
 		},
-		"expected error if feature is disabled": {
-			expectedError:               "cardinality analysis is disabled for tenant: label-names-values",
-			cardinalityAnalysisDisabled: true,
-		},
 	}
 
 	for testName, testData := range tests {
@@ -2040,18 +2033,12 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "label-names-values")
 
 			// Create distributor
-			limits := validation.Limits{}
-			flagext.DefaultValues(&limits)
-			if !testData.cardinalityAnalysisDisabled {
-				limits.CardinalityAnalysisEnabled = true
-			}
 			ds, _, _ := prepare(t, prepConfig{
 				numIngesters:      12,
 				happyIngesters:    12,
 				numDistributors:   1,
 				shardByAllLabels:  true,
 				replicationFactor: 3,
-				limits:            &limits,
 			})
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
@@ -2065,11 +2052,6 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 			}
 
 			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
-			if len(testData.expectedError) > 0 {
-				require.EqualError(t, err, testData.expectedError)
-				return
-			}
-
 			require.NoError(t, err)
 			require.Len(t, response.Items, len(testData.expectedLabelValues))
 

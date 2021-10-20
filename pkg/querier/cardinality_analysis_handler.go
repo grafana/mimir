@@ -15,6 +15,7 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -24,12 +25,16 @@ const (
 )
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
-func LabelNamesCardinalityHandler(d Distributor) http.Handler {
+func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
-		_, err := tenant.TenantID(ctx)
+		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !limits.CardinalityAnalysisEnabled(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
 		matchers, limit, err := extractRequestParams(r)
