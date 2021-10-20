@@ -284,7 +284,7 @@ func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error
 	}
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	response, err := q.next.RoundTrip(request)

@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -195,7 +194,7 @@ func NewResultsCacheMiddleware(
 func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	if s.shouldCache != nil && !s.shouldCache(r) {

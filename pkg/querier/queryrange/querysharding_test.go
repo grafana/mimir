@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/http"
 	"runtime"
 	"strings"
 	"testing"
@@ -643,34 +642,34 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			name:             "downstream - timeout",
 			engineDownstream: engineTimeout,
 			engineSharding:   engine,
-			expError:         apierror.JSONErrorf(apierror.TypeTimeout, http.StatusServiceUnavailable, "%s", "query timed out in expression evaluation"),
+			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
 			queryable:        queryableSlow,
 		},
 		{
 			name:             "downstream - sample limit",
 			engineDownstream: engineSampleLimit,
 			engineSharding:   engine,
-			expError:         apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "%s", "query processing would load too many samples into memory in query execution"),
+			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:             "sharding - timeout",
 			engineDownstream: engine,
 			engineSharding:   engineTimeout,
-			expError:         apierror.JSONErrorf(apierror.TypeTimeout, http.StatusServiceUnavailable, "%s", "query timed out in expression evaluation"),
+			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
 			queryable:        queryableSlow,
 		},
 		{
 			name:             "downstream - sample limit",
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
-			expError:         apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "%s", "query processing would load too many samples into memory in query execution"),
+			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:             "downstream - storage",
 			engineDownstream: engine,
 			engineSharding:   engineSampleLimit,
 			queryable:        queryableErr,
-			expError:         apierror.JSONErrorf(apierror.TypeInternal, http.StatusInternalServerError, "%s", "fatal queryable error"),
+			expError:         apierror.New(apierror.TypeInternal, "fatal queryable error"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

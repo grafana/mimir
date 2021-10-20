@@ -67,7 +67,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	// Clamp the time range based on the max query lookback.
@@ -102,7 +102,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLength); maxQueryLength > 0 {
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
-			return nil, apierror.JSONErrorf(apierror.TypeTimeout, http.StatusBadRequest, validation.ErrQueryTooLong, queryLen, maxQueryLength)
+			return nil, apierror.Newf(apierror.TypeTimeout, validation.ErrQueryTooLong, queryLen, maxQueryLength)
 		}
 	}
 
@@ -170,7 +170,7 @@ func (rt limitedRoundTripper) RoundTrip(r *http.Request) (*http.Response, error)
 	}
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	// Creates workers that will process the sub-requests in parallel for this query.

@@ -347,7 +347,7 @@ func Test_evaluateAtModifier(t *testing.T) {
 				[2m:])
 			[10m:])`, nil,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, `1:19: parse error: bad duration syntax: ""`)},
+		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `1:19: parse error: bad duration syntax: ""`)},
 	} {
 		tt := tt
 		t.Run(tt.in, func(t *testing.T) {

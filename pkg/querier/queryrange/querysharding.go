@@ -7,7 +7,6 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -97,7 +96,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
@@ -170,21 +169,17 @@ func mapEngineError(err error) error {
 		return nil
 	}
 
-	statusCode := http.StatusInternalServerError
 	errorType := apierror.TypeInternal
 	switch errors.Cause(err).(type) {
 	case promql.ErrQueryCanceled:
-		statusCode = http.StatusServiceUnavailable
 		errorType = apierror.TypeCanceled
 	case promql.ErrQueryTimeout:
-		statusCode = http.StatusServiceUnavailable
 		errorType = apierror.TypeTimeout
 	case promql.ErrStorage:
-		statusCode = http.StatusServiceUnavailable
 		errorType = apierror.TypeInternal
 	}
 
-	return apierror.JSONErrorf(errorType, statusCode, "%s", err)
+	return apierror.New(errorType, err.Error())
 }
 
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
@@ -198,7 +193,7 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, apierror.JSONErrorf(apierror.TypeBadData, http.StatusBadRequest, "%s", err)
+		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	stats := astmapper.NewMapperStats()
