@@ -31,7 +31,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-a", Values: []string{"0a", "1a"}},
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
-	distributor := mockDistributorLabelNamesCardinality(items...)
+	distributor := mockDistributorLabelNamesAndValues(items...)
 	handler := createEnabledHandler(t, distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
@@ -96,7 +96,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			distributor := mockDistributorLabelNamesCardinality()
+			distributor := mockDistributorLabelNamesAndValues()
 			handler := createEnabledHandler(t, distributor)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
@@ -148,7 +148,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 		t.Run(data.name, func(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
-			distributor := mockDistributorLabelNamesCardinality(items...)
+			distributor := mockDistributorLabelNamesAndValues(items...)
 			handler := createEnabledHandler(t, distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
@@ -230,7 +230,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			}
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
-			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesCardinality(), overrides)
+			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues(), overrides)
 
 			recorder := httptest.NewRecorder()
 
@@ -248,7 +248,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 
 func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 	seriesCountTotal := uint64(100)
-	nameMatcher, _ := labels.NewMatcher(labels.MatchEqual, "__name__", "test1")
+	nameMatcher, _ := labels.NewMatcher(labels.MatchEqual, "__name__", "test_1")
 
 	tests := map[string]struct {
 		url                    string
@@ -280,7 +280,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality for the specified label name with matching selector": {
-			url:        "/label_values?label_names[]=__name__&selector={__name__='test1'}",
+			url:        "/label_values?label_names[]=__name__&selector={__name__='test_1'}",
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher{nameMatcher},
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -423,8 +423,8 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 				}},
 			},
 		},
-		"should return the label values cardinality array with the defined limit": {
-			url:        "/label_values?label_names[]=__name__&limit3",
+		"should return all the label values cardinality array if the number of label values is equal to the specified limit": {
+			url:        "/label_values?label_names[]=__name__&limit=3",
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -612,7 +612,7 @@ func generateLabelValues(count int) ([]*client.LabelValues, int) {
 	return items, valuesCount
 }
 
-func mockDistributorLabelNamesCardinality(items ...*client.LabelValues) *mockDistributor {
+func mockDistributorLabelNamesAndValues(items ...*client.LabelValues) *mockDistributor {
 	d := &mockDistributor{}
 	d.On("LabelNamesAndValues", mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, nil)
 	return d

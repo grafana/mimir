@@ -982,7 +982,7 @@ func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_clie
 //  * queries ingesters for label values cardinality of a set of labelNames
 //  * queries ingesters for user stats to get the ingester's series head count
 func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
-	var userStatsResponse uint64
+	var totalSeries uint64
 	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
 
 	userID, err := tenant.TenantID(ctx)
@@ -1007,19 +1007,14 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 	group.Go(func() error {
 		response, err := d.UserStats(ctx)
 		if err == nil {
-			userStatsResponse = response.NumSeries
+			totalSeries = response.NumSeries
 		}
 		return err
 	})
 	if err := group.Wait(); err != nil {
 		return 0, nil, err
 	}
-	return userStatsResponse, labelValuesCardinalityResponse, nil
-}
-
-type labelValuesCardinalityConcurrentMap struct {
-	cardinalityMap map[string]map[string]uint64
-	lock           sync.Mutex
+	return totalSeries, labelValuesCardinalityResponse, nil
 }
 
 // labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
@@ -1049,12 +1044,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		}
 		defer func() { _ = stream.CloseSend() }()
 
-		err = cardinalityConcurrentMap.processLabelValuesCardinalityMessages(stream)
-		if err != nil {
-			return nil, err
-		}
-
-		return nil, err
+		return nil, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(stream)
 	})
 	if err != nil {
 		return nil, err
@@ -1065,11 +1055,11 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	// Adjust label values' series count based on the ingester's replication factor
 	for labelName, labelValueSeriesCountMap := range cardinalityConcurrentMap.cardinalityMap {
 		for labelValue, seriesCount := range labelValueSeriesCountMap {
-			cardinalityConcurrentMap.cardinalityMap[labelName][labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
+			labelValueSeriesCountMap[labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
 		}
 		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
 			LabelName:        labelName,
-			LabelValueSeries: cardinalityConcurrentMap.cardinalityMap[labelName],
+			LabelValueSeries: labelValueSeriesCountMap,
 		})
 	}
 
@@ -1078,6 +1068,11 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	}
 
 	return cardinalityResponse, nil
+}
+
+type labelValuesCardinalityConcurrentMap struct {
+	cardinalityMap map[string]map[string]uint64
+	lock           sync.Mutex
 }
 
 func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(

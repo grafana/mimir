@@ -97,22 +97,22 @@ func extractLabelNamesRequestParams(r *http.Request) ([]*labels.Matcher, int, er
 }
 
 // extractLabelValuesRequestParams parses query params from GET requests and parses request body from POST requests
-func extractLabelValuesRequestParams(r *http.Request) ([]model.LabelName, []*labels.Matcher, int, error) {
+func extractLabelValuesRequestParams(r *http.Request) (labelNames []model.LabelName, matchers []*labels.Matcher, limit int, err error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, nil, 0, err
 	}
 
-	labelNames, err := getLabelNamesParam(r)
+	labelNames, err = extractLabelNames(r)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	matchers, err := extractSelector(r)
+	matchers, err = extractSelector(r)
 	if err != nil {
 		return nil, nil, 0, err
 	}
 
-	limit, err := extractLimit(r)
+	limit, err = extractLimit(r)
 	if err != nil {
 		return nil, nil, 0, err
 	}
@@ -154,14 +154,14 @@ func extractLimit(r *http.Request) (limit int, err error) {
 	return limit, nil
 }
 
-// getLabelNamesParam parses and gets label_names query parameter containing an array of label values
-func getLabelNamesParam(r *http.Request) ([]model.LabelName, error) {
+// extractLabelNames parses and gets label_names query parameter containing an array of label values
+func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 	labelNamesParams := r.Form["label_names[]"]
 	if len(labelNamesParams) == 0 {
 		return nil, fmt.Errorf("'label_names[]' param is required")
 	}
 
-	var labelNames []model.LabelName
+	labelNames := make([]model.LabelName, 0, len(labelNamesParams))
 	for _, labelNameParam := range labelNamesParams {
 		labelName := model.LabelName(labelNameParam)
 		if !labelName.IsValid() {
@@ -268,7 +268,7 @@ func sortBySeriesCountAndLabelValue(labelValuesCardinality []labelValuesCardinal
 }
 
 func limitLabelValuesCardinality(labelValuesCardinality []labelValuesCardinality, limit int) []labelValuesCardinality {
-	if len(labelValuesCardinality) < limit {
+	if len(labelValuesCardinality) <= limit {
 		return labelValuesCardinality
 	}
 	return labelValuesCardinality[:limit]

@@ -508,9 +508,9 @@ _Requires [authentication](#authentication)._
 - **series_count_total** - total number of series across opened TSDBs in all ingesters
 - **labels[].label_name** - label name requested via the request param `label_names[]`
 - **labels[].label_values_count** - total number of label values for the label name (note that dependent on the `limit` request param it is possible that not all label values are present in `cardinality`)
-- **labels[].series_count** - total number of series count of all the label values
+- **labels[].series_count** - total number of series having `labels[].label_name`
 - **labels[].cardinality[].label_value** - label value associated to `labels[].label_name`
-- **labels[].cardinality[].series_count** - series count of `label_value`
+- **labels[].cardinality[].series_count** - total number of series having `label_value` for `label_name`
 
 ## Querier
 
