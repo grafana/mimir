@@ -4157,8 +4157,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -querier.label-names-and-values-results-max-size-bytes
 [label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
 
-# Maximum number of label names allowed per label values cardinality request to
-# the ingesters.
+# Maximum number of label names allowed to be queried in a single
+# /api/v1/cardinality/label_values API call.
 # CLI flag: -querier.label-values-max-cardinality-label-names-per-request
 [label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 

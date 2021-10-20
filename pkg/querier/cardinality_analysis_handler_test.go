@@ -247,7 +247,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 }
 
 func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
-	const labelValuesUrl = "/label_values"
+	const labelValuesURL = "/label_values"
 	seriesCountTotal := uint64(100)
 	nameMatcher, _ := labels.NewMatcher(labels.MatchEqual, "__name__", "test_1")
 
@@ -507,7 +507,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 		ctx := user.InjectOrgID(context.Background(), "test")
 
 		t.Run("GET request "+testName, func(t *testing.T) {
-			request, err := http.NewRequestWithContext(ctx, "GET", labelValuesUrl+testData.getRequestParams, http.NoBody)
+			request, err := http.NewRequestWithContext(ctx, "GET", labelValuesURL+testData.getRequestParams, http.NoBody)
 			require.NoError(t, err)
 			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
@@ -526,7 +526,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			require.Equal(t, testData.expectedResponse, responseBody)
 		})
 		t.Run("POST request "+testName, func(t *testing.T) {
-			request, err := http.NewRequestWithContext(ctx, "POST", labelValuesUrl, strings.NewReader(testData.postRequestForm.Encode()))
+			request, err := http.NewRequestWithContext(ctx, "POST", labelValuesURL, strings.NewReader(testData.postRequestForm.Encode()))
 			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 			require.NoError(t, err)
 			recorder := httptest.NewRecorder()
