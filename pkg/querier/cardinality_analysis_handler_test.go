@@ -247,18 +247,23 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 }
 
 func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
+	const labelValuesUrl = "/label_values"
 	seriesCountTotal := uint64(100)
 	nameMatcher, _ := labels.NewMatcher(labels.MatchEqual, "__name__", "test_1")
 
 	tests := map[string]struct {
-		url                    string
+		getRequestParams       string
+		postRequestForm        url.Values
 		labelNames             []model.LabelName
 		matcher                []*labels.Matcher
 		labelValuesCardinality *client.LabelValuesCardinalityResponse
 		expectedResponse       labelValuesCardinalityResponse
 	}{
 		"should return the label values cardinality for the specified label name": {
-			url:        "/label_values?label_names[]=__name__",
+			getRequestParams: "?label_names[]=__name__",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -280,7 +285,11 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality for the specified label name with matching selector": {
-			url:        "/label_values?label_names[]=__name__&selector={__name__='test_1'}",
+			getRequestParams: "?label_names[]=__name__&selector={__name__='test_1'}",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+				"selector":      []string{"{__name__='test_1'}"},
+			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher{nameMatcher},
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -302,7 +311,10 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality for the specified label names in descending order": {
-			url:        "/label_values?label_names[]=foo&label_names[]=bar",
+			getRequestParams: "?label_names[]=foo&label_names[]=bar",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"foo", "bar"},
+			},
 			labelNames: []model.LabelName{"foo", "bar"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -340,7 +352,10 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality for the specified label names in ascending order for label names with the same series count": {
-			url:        "/label_values?label_names[]=foo&label_names[]=bar",
+			getRequestParams: "?label_names[]=foo&label_names[]=bar",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"foo", "bar"},
+			},
 			labelNames: []model.LabelName{"foo", "bar"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -378,7 +393,10 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality sorted by series count in descending order": {
-			url:        "/label_values?label_names[]=__name__",
+			getRequestParams: "?label_names[]=__name__",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -401,7 +419,10 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality sorted by label name in ascending order for label values with the same series count": {
-			url:        "/label_values?label_names[]=__name__",
+			getRequestParams: "?label_names[]=__name__",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -424,7 +445,11 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return all the label values cardinality array if the number of label values is equal to the specified limit": {
-			url:        "/label_values?label_names[]=__name__&limit=3",
+			getRequestParams: "?label_names[]=__name__&limit=3",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+				"limit":         []string{"3"},
+			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -448,7 +473,11 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			},
 		},
 		"should return the label values cardinality array limited by the limit param": {
-			url:        "/label_values?label_names[]=__name__&limit=2",
+			getRequestParams: "?label_names[]=__name__&limit=2",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+				"limit":         []string{"2"},
+			},
 			labelNames: []model.LabelName{"__name__"},
 			matcher:    []*labels.Matcher(nil),
 			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
@@ -473,15 +502,34 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			distributor := mockDistributorLabelValuesCardinality(testData.labelNames, testData.matcher)(seriesCountTotal, testData.labelValuesCardinality)
-			handler := LabelValuesCardinalityHandler(distributor)
-			ctx := user.InjectOrgID(context.Background(), "test")
+		distributor := mockDistributorLabelValuesCardinality(testData.labelNames, testData.matcher)(seriesCountTotal, testData.labelValuesCardinality)
+		handler := LabelValuesCardinalityHandler(distributor)
+		ctx := user.InjectOrgID(context.Background(), "test")
 
-			request, err := http.NewRequestWithContext(ctx, "GET", testData.url, http.NoBody)
+		t.Run("GET request "+testName, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(ctx, "GET", labelValuesUrl+testData.getRequestParams, http.NoBody)
 			require.NoError(t, err)
 			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
 
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			body := recorder.Result().Body
+			defer func() { _ = body.Close() }()
+
+			responseBody := labelValuesCardinalityResponse{}
+			bodyContent, err := ioutil.ReadAll(body)
+			require.NoError(t, err)
+			err = json.Unmarshal(bodyContent, &responseBody)
+			require.NoError(t, err)
+
+			require.Equal(t, testData.expectedResponse, responseBody)
+		})
+		t.Run("POST request "+testName, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(ctx, "POST", labelValuesUrl, strings.NewReader(testData.postRequestForm.Encode()))
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
 			handler.ServeHTTP(recorder, request)
 
 			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
@@ -498,31 +546,6 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 			require.Equal(t, testData.expectedResponse, responseBody)
 		})
 	}
-}
-
-func TestLabelValuesCardinalityHandler_Success_POST(t *testing.T) {
-	nameMatcher, _ := labels.NewMatcher(labels.MatchRegexp, "__name__", "test*")
-
-	labelValuesRequestForm := url.Values{
-		"label_names[]": []string{"__name__"},
-		"selector":      []string{"{__name__=~'test*'}"},
-		"limit":         []string{"2"},
-	}
-
-	t.Run("should return the label values cardinality for the specified label name, selector and limit", func(t *testing.T) {
-		distributor := mockDistributorLabelValuesCardinality([]model.LabelName{"__name__"}, []*labels.Matcher{nameMatcher})(uint64(30), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}})
-		handler := LabelValuesCardinalityHandler(distributor)
-		ctx := user.InjectOrgID(context.Background(), "test")
-
-		request, err := http.NewRequestWithContext(ctx, "POST", "/label_values", strings.NewReader(labelValuesRequestForm.Encode()))
-		request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-		require.NoError(t, err)
-		recorder := httptest.NewRecorder()
-
-		handler.ServeHTTP(recorder, request)
-
-		require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
-	})
 }
 
 func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
