@@ -197,6 +197,9 @@ lint: lint-packaging-scripts
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/querysharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 
+	# Ensure all errors are report as APIError
+	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/querier/queryrange/...
+
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
 		github.com/grafana/mimir/pkg/tenant.{TenantID}=github.com/grafana/mimir/pkg/tenant.{TenantIDs}" \

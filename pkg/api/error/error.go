@@ -25,17 +25,17 @@ const (
 	TypeNotFound    Type = "not_found"
 )
 
-type APIError struct {
+type apiError struct {
 	Type    Type
 	Message string
 }
 
-func (e *APIError) Error() string {
+func (e *apiError) Error() string {
 	return e.Message
 }
 
-// adapted from https://github.com/grafana/mimir/blob/8f49e25bbd603ce85eadb6247204764c388e7d84/vendor/github.com/prometheus/prometheus/web/api/v1/api.go#L1508-L1521
-func (e *APIError) StatusCode() int {
+// adapted from https://github.com/prometheus/prometheus/blob/fdbc40a9efcc8197a94f23f0e479b0b56e52d424/web/api/v1/api.go#L1508-L1521
+func (e *apiError) statusCode() int {
 	switch e.Type {
 	case TypeBadData:
 		return http.StatusBadRequest
@@ -51,10 +51,10 @@ func (e *APIError) StatusCode() int {
 	return http.StatusInternalServerError
 }
 
-// HTTPResponseFromError converts an APIError into a JSON HTTP response
+// HTTPResponseFromError converts an apiError into a JSON HTTP response
 func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
-	var apiError *APIError
-	if !errors.As(err, &apiError) {
+	var apiErr *apiError
+	if !errors.As(err, &apiErr) {
 		return nil, false
 	}
 
@@ -65,8 +65,8 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 			Error     string `json:"error,omitempty"`
 		}{
 			Status:    "error",
-			Error:     apiError.Message,
-			ErrorType: apiError.Type,
+			Error:     apiErr.Message,
+			ErrorType: apiErr.Type,
 		},
 	)
 	if err != nil {
@@ -74,7 +74,7 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 	}
 
 	return &httpgrpc.HTTPResponse{
-		Code: int32(apiError.StatusCode()),
+		Code: int32(apiErr.statusCode()),
 		Body: body,
 		Headers: []*httpgrpc.Header{
 			{Key: "Content-Type", Values: []string{"application/json"}},
@@ -82,13 +82,15 @@ func HTTPResponseFromError(err error) (*httpgrpc.HTTPResponse, bool) {
 	}, true
 }
 
+// New creates a new apiError with a static string message
 func New(typ Type, msg string) error {
-	return &APIError{
+	return &apiError{
 		Message: msg,
 		Type:    typ,
 	}
 }
 
+// Newf creates a new apiError with a static string message
 func Newf(typ Type, tmpl string, args ...interface{}) error {
 	return New(typ, fmt.Sprintf(tmpl, args...))
 }
