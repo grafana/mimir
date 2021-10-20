@@ -97,6 +97,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.evicted.WithLabelValues(cacheTypePostings)
 	c.evicted.WithLabelValues(cacheTypeSeries)
+	c.evicted.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.added = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_items_added_total",
@@ -104,6 +105,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.added.WithLabelValues(cacheTypePostings)
 	c.added.WithLabelValues(cacheTypeSeries)
+	c.added.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_requests_total",
@@ -111,6 +113,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.requests.WithLabelValues(cacheTypePostings)
 	c.requests.WithLabelValues(cacheTypeSeries)
+	c.requests.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.overflow = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_items_overflowed_total",
@@ -118,6 +121,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.overflow.WithLabelValues(cacheTypePostings)
 	c.overflow.WithLabelValues(cacheTypeSeries)
+	c.overflow.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_hits_total",
@@ -125,6 +129,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.hits.WithLabelValues(cacheTypePostings)
 	c.hits.WithLabelValues(cacheTypeSeries)
+	c.hits.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.current = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_items",
@@ -132,6 +137,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.current.WithLabelValues(cacheTypePostings)
 	c.current.WithLabelValues(cacheTypeSeries)
+	c.current.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.currentSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_items_size_bytes",
@@ -139,6 +145,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.currentSize.WithLabelValues(cacheTypePostings)
 	c.currentSize.WithLabelValues(cacheTypeSeries)
+	c.currentSize.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.totalCurrentSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_total_size_bytes",
@@ -146,6 +153,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 	}, []string{"item_type"})
 	c.totalCurrentSize.WithLabelValues(cacheTypePostings)
 	c.totalCurrentSize.WithLabelValues(cacheTypeSeries)
+	c.totalCurrentSize.WithLabelValues(cacheTypeExpandedPostings)
 
 	_ = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_max_size_bytes",
@@ -328,4 +336,14 @@ func (c *InMemoryIndexCache) FetchMultiSeries(_ context.Context, blockID ulid.UL
 	}
 
 	return hits, misses
+}
+
+// StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
+func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
+	c.set(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)}, v)
+}
+
+// FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
+func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
+	return c.get(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)})
 }
