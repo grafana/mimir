@@ -3,7 +3,7 @@
 # Provenance-includes-license: Apache-2.0
 # Provenance-includes-copyright: The Cortex Authors.
 
-FROM golang:1.16.6-buster
+FROM golang:1.16.9-buster
 ARG goproxyValue
 ENV GOPROXY=${goproxyValue}
 RUN apt-get update && apt-get install -y curl python-requests python-yaml file jq zip unzip protobuf-compiler libprotobuf-dev shellcheck && \
