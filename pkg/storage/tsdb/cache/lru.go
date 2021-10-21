@@ -4,6 +4,7 @@ package cache
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"time"
 
@@ -45,15 +46,16 @@ func WrapWithLRUCache(c cache.Cache, reg prometheus.Registerer, lruSize int, def
 		return nil, err
 	}
 	cache.lru = lru
+	cacheName := strings.ReplaceAll(cache.Name(), "-", "_")
 	cache.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Namespace: "cortex",
-		Name:      "store_" + cache.Name() + "_cache_requests_total",
+		Name:      "store_" + cacheName + "_cache_requests_total",
 		Help:      "Total number of requests to the cache.",
 	})
 
 	cache.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Namespace: "cortex",
-		Name:      "store_" + cache.Name() + "_cache_hits_total",
+		Name:      "store_" + cacheName + "_cache_hits_total",
 		Help:      "Total number of requests to the cache that were a hit.",
 	})
 	return cache, nil
