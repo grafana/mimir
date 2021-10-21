@@ -2153,7 +2153,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
 			// the final ingester may not have received series yet.
 			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
-			test.Poll(t, time.Second, true, func() interface{} {
+			test.Poll(t, time.Second, testData.expectedResult, func() interface{} {
 				seriesCountTotal, cardinalityMap, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, testData.matchers)
 				require.NoError(t, err)
 				assert.Equal(t, testData.expectedSeriesCountTotal, seriesCountTotal)
@@ -2161,7 +2161,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				sort.Slice(cardinalityMap.Items, func(l, r int) bool {
 					return cardinalityMap.Items[l].LabelName < cardinalityMap.Items[r].LabelName
 				})
-				return assert.Equal(t, testData.expectedResult, cardinalityMap)
+				return cardinalityMap
 			})
 
 			// Make sure all the ingesters have been queried
