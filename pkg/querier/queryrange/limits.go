@@ -102,7 +102,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	if maxQueryLength := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLength); maxQueryLength > 0 {
 		queryLen := timestamp.Time(r.GetEnd()).Sub(timestamp.Time(r.GetStart()))
 		if queryLen > maxQueryLength {
-			return nil, apierror.Newf(apierror.TypeTimeout, validation.ErrQueryTooLong, queryLen, maxQueryLength)
+			return nil, apierror.Newf(apierror.TypeBadData, validation.ErrQueryTooLong, queryLen, maxQueryLength)
 		}
 	}
 
