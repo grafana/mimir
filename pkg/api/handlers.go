@@ -15,6 +15,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/mimir/pkg/chunk/purger"
+	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/querier/stats"
+	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/validation"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -26,12 +31,6 @@ import (
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/middleware"
-
-	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/querier/stats"
-	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (

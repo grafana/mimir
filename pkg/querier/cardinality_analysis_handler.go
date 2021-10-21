@@ -8,15 +8,18 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/promql/parser"
-
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
+	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/httpgrpc"
 )
 
 const (
@@ -26,7 +29,7 @@ const (
 )
 
 // LabelNamesCardinalityHandler creates handler for label names cardinality endpoint.
-func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) http.Handler {
+func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides, logger log.Logger) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		tenantID, err := tenant.TenantID(ctx)
@@ -45,7 +48,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 		}
 		response, err := d.LabelNamesAndValues(ctx, matchers)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondFromError(err, w, logger)
 			return
 		}
 		cardinalityResponse := toLabelNamesCardinalityResponse(response, limit)
@@ -76,7 +79,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 
 		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondFromError(err, w)
 			return
 		}
 
@@ -175,6 +178,20 @@ func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 	}
 
 	return labelNames, nil
+}
+
+func respondFromError(err error, w http.ResponseWriter, logger log.Logger) {
+	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	if !ok {
+		level.Error(logger).Log("msg", "failed to process the request to the distributor", "err", err)
+		http.Error(w, "Failed to process the request to the distributor", http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(int(httpResp.Code))
+	if _, err := w.Write(httpResp.Body); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 // toLabelNamesCardinalityResponse converts ingester's response to LabelNamesCardinalityResponse
