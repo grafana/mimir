@@ -7,17 +7,17 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -96,7 +96,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
@@ -152,7 +152,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	res := qry.Exec(ctx)
 	extracted, err := FromResult(res)
 	if err != nil {
-		return nil, err
+		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
 		Status: StatusSuccess,
@@ -162,6 +162,24 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+func mapEngineError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	errorType := apierror.TypeInternal
+	switch errors.Cause(err).(type) {
+	case promql.ErrQueryCanceled:
+		errorType = apierror.TypeCanceled
+	case promql.ErrQueryTimeout:
+		errorType = apierror.TypeTimeout
+	case promql.ErrStorage:
+		errorType = apierror.TypeInternal
+	}
+
+	return apierror.New(errorType, err.Error())
 }
 
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
@@ -175,7 +193,7 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, err
+		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	stats := astmapper.NewMapperStats()

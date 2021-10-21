@@ -18,6 +18,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -27,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -582,6 +584,125 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 	_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.Error(t, err)
 	assert.Equal(t, downstreamErr, err)
+}
+
+func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
+	var (
+		engine        = newEngine()
+		engineTimeout = promql.NewEngine(promql.EngineOpts{
+			Logger:             log.NewNopLogger(),
+			Reg:                nil,
+			MaxSamples:         10e6,
+			Timeout:            50 * time.Millisecond,
+			ActiveQueryTracker: nil,
+			LookbackDelta:      lookbackDelta,
+			EnableAtModifier:   true,
+			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
+			},
+		})
+		engineSampleLimit = promql.NewEngine(promql.EngineOpts{
+			Logger:             log.NewNopLogger(),
+			Reg:                nil,
+			MaxSamples:         1,
+			Timeout:            time.Hour,
+			ActiveQueryTracker: nil,
+			LookbackDelta:      lookbackDelta,
+			EnableAtModifier:   true,
+			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+				return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
+			},
+		})
+		queryableErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return nil, errors.New("fatal queryable error")
+		})
+		queryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return &querierMock{
+				series: []*promql.StorageSeries{
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, factor(5)),
+				},
+			}, nil
+		})
+		queryableSlow = NewMockShardedQueryable(
+			2,
+			[]string{"a", "b", "c"},
+			1,
+			time.Second,
+		)
+	)
+
+	for _, tc := range []struct {
+		name             string
+		engineDownstream *promql.Engine
+		engineSharding   *promql.Engine
+		expError         error
+		queryable        storage.Queryable
+	}{
+		{
+			name:             "downstream - timeout",
+			engineDownstream: engineTimeout,
+			engineSharding:   engine,
+			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
+			queryable:        queryableSlow,
+		},
+		{
+			name:             "downstream - sample limit",
+			engineDownstream: engineSampleLimit,
+			engineSharding:   engine,
+			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
+		},
+		{
+			name:             "sharding - timeout",
+			engineDownstream: engine,
+			engineSharding:   engineTimeout,
+			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
+			queryable:        queryableSlow,
+		},
+		{
+			name:             "downstream - sample limit",
+			engineDownstream: engine,
+			engineSharding:   engineSampleLimit,
+			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
+		},
+		{
+			name:             "downstream - storage",
+			engineDownstream: engine,
+			engineSharding:   engineSampleLimit,
+			queryable:        queryableErr,
+			expError:         apierror.New(apierror.TypeInternal, "fatal queryable error"),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &PrometheusRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: "sum(bar1)",
+			}
+
+			shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, nil)
+
+			if tc.queryable == nil {
+				tc.queryable = queryable
+			}
+
+			downstream := &downstreamHandler{
+				engine:    tc.engineDownstream,
+				queryable: tc.queryable,
+			}
+
+			// Run the query with sharding middleware wrapping the downstream one.
+			// We expect to get the downstream error.
+			_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			if tc.expError == nil {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				assert.Equal(t, tc.expError, err)
+			}
+		})
+	}
 }
 
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {

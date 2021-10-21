@@ -7,10 +7,8 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 
-	"github.com/weaveworks/common/httpgrpc"
-
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -25,7 +23,7 @@ type RequestResponse struct {
 func DoRequests(ctx context.Context, downstream Handler, reqs []Request, limits Limits) ([]RequestResponse, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.Newf(apierror.TypeBadData, err.Error())
 	}
 
 	// If one of the requests fail, we want to be able to cancel the rest of them.
