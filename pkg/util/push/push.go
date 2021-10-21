@@ -31,8 +31,15 @@ var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }
 
+const AllowSkipLabelNameValidationHeader = "X-Mimir-AllowSkipLabelNameValidation"
+
 // Handler is a http.Handler which accepts WriteRequests.
-func Handler(maxRecvMsgSize int, sourceIPs *middleware.SourceIPExtractor, push Func) http.Handler {
+func Handler(
+	maxRecvMsgSize int,
+	sourceIPs *middleware.SourceIPExtractor,
+	allowSkipLabelNameValidation bool,
+	push Func,
+	) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := log.WithContext(ctx, log.Logger)
@@ -62,7 +69,12 @@ func Handler(maxRecvMsgSize int, sourceIPs *middleware.SourceIPExtractor, push F
 			bufferPool.Put(bufHolder)
 		}
 
-		req.SkipLabelNameValidation = false
+		if allowSkipLabelNameValidation {
+			req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(AllowSkipLabelNameValidationHeader) == "true"
+		} else {
+			req.SkipLabelNameValidation = false
+		}
+
 		if req.Source == 0 {
 			req.Source = mimirpb.API
 		}

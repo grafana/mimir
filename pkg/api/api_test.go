@@ -62,3 +62,15 @@ func TestNewApiWithInvalidSourceIPExtractor(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, api)
 }
+
+func TestNewApiWithAllowSkipLabelNameValidationHeaderUnset(t *testing.T) {
+	cfg := Config{}
+	s := server.Server{
+		HTTP: &mux.Router{},
+	}
+	serverCfg := server.Config{}
+	api, err := New(cfg, serverCfg, &s, &FakeLogger{})
+	require.NoError(t, err)
+	require.NotNil(t, api)
+	require.False(t, api.cfg.AllowSkipLabelNameValidationHeader)
+}
