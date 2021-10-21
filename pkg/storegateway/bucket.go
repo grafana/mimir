@@ -1725,7 +1725,7 @@ type expandedPostingsPromise func(ctx context.Context) ([]uint64, bool, error)
 // The promise returned by this function returns a bool value fromCache, set to true when data was loaded from cache.
 // TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
 // TODO: https://github.com/grafana/mimir/issues/331
-func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) (_ expandedPostingsPromise, loaded bool) {
+func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) (promise expandedPostingsPromise, loaded bool) {
 	var (
 		refs   []uint64
 		err    error
@@ -1733,7 +1733,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		cached bool
 	)
 
-	promise := expandedPostingsPromise(func(ctx context.Context) ([]uint64, bool, error) {
+	promise = func(ctx context.Context) ([]uint64, bool, error) {
 		select {
 		case <-ctx.Done():
 			return nil, false, ctx.Err()
@@ -1749,7 +1749,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		copy(refsCopy, refs)
 
 		return refsCopy, cached, nil
-	})
+	}
 
 	key := cache.CanonicalLabelMatchersKey(ms)
 
@@ -1759,26 +1759,31 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		return loadedPromise.(expandedPostingsPromise), true
 	}
 
+	defer close(done)
+	defer r.block.expandedPostingsPromises.Delete(key)
+
 	if data, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key); ok {
 		cached = true
 		var p index.Postings
 		p, err = r.decodePostings(data)
-		if err == nil {
-			refs, err = index.ExpandPostings(p)
+		if err != nil {
+			return promise, true
 		}
-	} else {
-		refs, err = r.expandedPostings(ctx, ms)
-		if err == nil {
-			if data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs)); encodeErr != nil {
-				level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
-			} else {
-				r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
-			}
-		}
+
+		refs, err = index.ExpandPostings(p)
+		return promise, true
 	}
 
-	close(done)
-	r.block.expandedPostingsPromises.Delete(key)
+	refs, err = r.expandedPostings(ctx, ms)
+	if err != nil {
+		return promise, false
+	}
+
+	if data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs)); encodeErr != nil {
+		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+	} else {
+		r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+	}
 
 	return promise, false
 }
