@@ -131,6 +131,9 @@ func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
 // or not. If not, just send the request to next handler.
 type ShouldCacheFn func(r Request) bool
 
+// resultsCacheAlwaysEnabled is a ShouldCacheFn function always returning true.
+var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
+
 type resultsCache struct {
 	logger   log.Logger
 	cfg      ResultsCacheConfig
@@ -184,7 +187,7 @@ func NewResultsCacheMiddleware(
 			limits:               limits,
 			merger:               merger,
 			extractor:            extractor,
-			minCacheExtent:       (5 * time.Minute).Milliseconds(),
+			minCacheExtent:       defaultMinCacheExtent,
 			splitter:             splitter,
 			cacheGenNumberLoader: cacheGenNumberLoader,
 			shouldCache:          shouldCache,
@@ -236,24 +239,34 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	return response, err
 }
 
-// isResponseCachable says whether the response should be cached or not.
-func isResponseCachable(ctx context.Context, req Request, r Response, maxCacheTime int64, cacheGenNumberLoader CacheGenNumberLoader, logger log.Logger) bool {
+// isRequestCachable says whether the request is eligible for caching.
+func isRequestCachable(req Request, maxCacheTime int64, logger log.Logger) bool {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
 	if !isRequestStepAligned(req) {
 		return false
 	}
 
+	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
+	if req.GetStart() > maxCacheTime {
+		return false
+	}
+
+	if !isAtModifierCachable(req, maxCacheTime, logger) {
+		return false
+	}
+
+	return true
+}
+
+// isResponseCachable says whether the response should be cached or not.
+func isResponseCachable(ctx context.Context, r Response, cacheGenNumberLoader CacheGenNumberLoader, logger log.Logger) bool {
 	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
 	for _, v := range headerValues {
 		if v == noStoreValue {
 			level.Debug(logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
 			return false
 		}
-	}
-
-	if !isAtModifierCachable(req, maxCacheTime, logger) {
-		return false
 	}
 
 	if cacheGenNumberLoader == nil {
@@ -348,7 +361,7 @@ func (s resultsCache) handleMiss(ctx context.Context, r Request, maxCacheTime in
 		return nil, nil, err
 	}
 
-	if !isResponseCachable(ctx, r, response, maxCacheTime, s.cacheGenNumberLoader, s.logger) {
+	if !isRequestCachable(r, maxCacheTime, s.logger) || !isResponseCachable(ctx, response, s.cacheGenNumberLoader, s.logger) {
 		return response, []Extent{}, nil
 	}
 
@@ -388,7 +401,7 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 
 	for _, reqResp := range reqResps {
 		responses = append(responses, reqResp.Response)
-		if !isResponseCachable(ctx, r, reqResp.Response, maxCacheTime, s.cacheGenNumberLoader, s.logger) {
+		if !isRequestCachable(r, maxCacheTime, s.logger) || !isResponseCachable(ctx, reqResp.Response, s.cacheGenNumberLoader, s.logger) {
 			continue
 		}
 		extent, err := toExtent(ctx, reqResp.Request, s.extractor.ResponseWithoutHeaders(reqResp.Response))
@@ -410,6 +423,11 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
 // The input extents can be overlapping and are not required to be sorted.
 func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, extents []Extent) ([]Extent, error) {
+	// Fast path.
+	if len(extents) <= 1 {
+		return extents, nil
+	}
+
 	sort.Slice(extents, func(i, j int) bool {
 		if extents[i].Start == extents[j].Start {
 			// as an optimization, for two extents starts at the same time, we

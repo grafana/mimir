@@ -25,6 +25,13 @@ message PrometheusRequest {
   google.protobuf.Duration timeout = 5 [(gogoproto.stdduration) = true, (gogoproto.nullable) = false];
   string query = 6;
   Options options = 7 [(gogoproto.nullable) = false];
+
+  // Opaque ID of the request. The actual value is implementation specific.
+  int64 id = 8;
+
+  // Hints that could be optionally attached to the request to pass down the stack.
+  // These hints can be used to optimize the query execution.
+  Hints hints = 9 [(gogoproto.nullable) = true];
 }
 
 message PrometheusResponseHeader {
@@ -70,4 +77,9 @@ message Options {
   bool CacheDisabled = 1;
   bool ShardingDisabled = 2;
   int32 TotalShards = 3;
+}
+
+message Hints {
+  // Total number of queries that are expected to to be executed to serve the original request.
+  int32 TotalQueries = 1;
 }
