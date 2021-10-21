@@ -4075,10 +4075,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
-# The maximum number of label names allowed per cardinality request.
-# CLI flag: -ingester.max-cardinality-label-names-per-request
-[max_cardinality_label_names_per_request: <int> | default = 100]
-
 # Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
 # respective YAML config option instead. Maximum number of chunks that can be
 # fetched in a single query. This limit is enforced when fetching chunks from
@@ -4150,6 +4146,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
+# Enables endpoints used for cardinality analysis.
+# CLI flag: -querier.cardinality-analysis-enabled
+[cardinality_analysis_enabled: <boolean> | default = false]
+
 # Maximum size in bytes of distinct label names and values. When querier
 # receives response from ingester, it merges the response with responses from
 # other ingesters. This maximum size limit is applied to the merged(distinct)
@@ -4157,9 +4157,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -querier.label-names-and-values-results-max-size-bytes
 [label_names_and_values_results_max_size_bytes: <int> | default = 419430400]
 
-# Enables endpoints used for cardinality analysis.
-# CLI flag: -querier.cardinality-analysis-enabled
-[cardinality_analysis_enabled: <boolean> | default = false]
+# Maximum number of label names allowed to be queried in a single
+# /api/v1/cardinality/label_values API call.
+# CLI flag: -querier.label-values-max-cardinality-label-names-per-request
+[label_values_max_cardinality_label_names_per_request: <int> | default = 100]
 
 # Duration to delay the evaluation of rules to ensure the underlying metrics
 # have been pushed.

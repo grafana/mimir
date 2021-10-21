@@ -132,6 +132,18 @@ func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, matche
 	}, nil
 }
 
+func ToLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*LabelValuesCardinalityRequest, error) {
+	matchersProto, err := toLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	labelNamesStr := make([]string, 0, len(labelNames))
+	for _, labelName := range labelNames {
+		labelNamesStr = append(labelNamesStr, string(labelName))
+	}
+	return &LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto}, nil
+}
+
 // FromLabelValuesRequest unpacks a LabelValuesRequest proto
 func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, []*labels.Matcher, error) {
 	var err error

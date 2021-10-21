@@ -9,9 +9,12 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -28,7 +31,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-a", Values: []string{"0a", "1a"}},
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
-	distributor := newMockDistributor(items...)
+	distributor := mockDistributorLabelNamesAndValues(items...)
 	handler := createEnabledHandler(t, distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
@@ -93,7 +96,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			distributor := newMockDistributor()
+			distributor := mockDistributorLabelNamesAndValues()
 			handler := createEnabledHandler(t, distributor)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
@@ -145,7 +148,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 		t.Run(data.name, func(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
-			distributor := newMockDistributor(items...)
+			distributor := mockDistributorLabelNamesAndValues(items...)
 			handler := createEnabledHandler(t, distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
@@ -194,12 +197,12 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 		{
 			name:                 "expected error if `limit` param is negative",
 			request:              createRequest("/ignored-url?limit=-1", "team-a"),
-			expectedErrorMessage: "limit param can not be less than 0",
+			expectedErrorMessage: "'limit' param cannot be less than '0'",
 		},
 		{
 			name:                 "expected error if `limit` param is negative",
 			request:              createRequest("/ignored-url?limit=5000", "team-a"),
-			expectedErrorMessage: "limit param can not be greater than 500",
+			expectedErrorMessage: "'limit' param cannot be greater than '500'",
 		},
 		{
 			name:                 "expected error if tenantId is not defined",
@@ -209,7 +212,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 		{
 			name:                 "expected error if multiple limits are sent",
 			request:              createRequest("/ignored-url?limit=10&limit=20", "team-a"),
-			expectedErrorMessage: "multiple `limit` params are not allowed",
+			expectedErrorMessage: "multiple 'limit' params are not allowed",
 		},
 		{
 			name:                        "expected error that cardinality analysis feature is disabled",
@@ -227,7 +230,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			}
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
-			handler := LabelNamesCardinalityHandler(newMockDistributor(), overrides)
+			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues(), overrides)
 
 			recorder := httptest.NewRecorder()
 
@@ -241,6 +244,372 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			require.Contains(t, string(bytes), data.expectedErrorMessage)
 		})
 	}
+}
+
+func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
+	const labelValuesURL = "/label_values"
+	seriesCountTotal := uint64(100)
+	nameMatcher, _ := labels.NewMatcher(labels.MatchEqual, "__name__", "test_1")
+
+	tests := map[string]struct {
+		getRequestParams       string
+		postRequestForm        url.Values
+		labelNames             []model.LabelName
+		matcher                []*labels.Matcher
+		labelValuesCardinality *client.LabelValuesCardinalityResponse
+		expectedResponse       labelValuesCardinalityResponse
+	}{
+		"should return the label values cardinality for the specified label name": {
+			getRequestParams: "?label_names[]=__name__",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+			},
+			labelNames: []model.LabelName{"__name__"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 10},
+				}},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{{
+					LabelName:        "__name__",
+					LabelValuesCount: 1,
+					SeriesCount:      10,
+					Cardinality: []labelValuesCardinality{
+						{LabelValue: "test_1", SeriesCount: 10},
+					},
+				}},
+			},
+		},
+		"should return the label values cardinality for the specified label name with matching selector": {
+			getRequestParams: "?label_names[]=__name__&selector={__name__='test_1'}",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+				"selector":      []string{"{__name__='test_1'}"},
+			},
+			labelNames: []model.LabelName{"__name__"},
+			matcher:    []*labels.Matcher{nameMatcher},
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 10},
+				}},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{{
+					LabelName:        "__name__",
+					LabelValuesCount: 1,
+					SeriesCount:      10,
+					Cardinality: []labelValuesCardinality{
+						{LabelValue: "test_1", SeriesCount: 10},
+					},
+				}},
+			},
+		},
+		"should return the label values cardinality for the specified label names in descending order": {
+			getRequestParams: "?label_names[]=foo&label_names[]=bar",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"foo", "bar"},
+			},
+			labelNames: []model.LabelName{"foo", "bar"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{
+					{
+						LabelName:        "foo",
+						LabelValueSeries: map[string]uint64{"test_1": 10},
+					},
+					{
+						LabelName:        "bar",
+						LabelValueSeries: map[string]uint64{"test_1": 20},
+					},
+				},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{
+					{
+						LabelName:        "bar",
+						LabelValuesCount: 1,
+						SeriesCount:      20,
+						Cardinality: []labelValuesCardinality{
+							{LabelValue: "test_1", SeriesCount: 20},
+						},
+					},
+					{
+						LabelName:        "foo",
+						LabelValuesCount: 1,
+						SeriesCount:      10,
+						Cardinality: []labelValuesCardinality{
+							{LabelValue: "test_1", SeriesCount: 10},
+						},
+					},
+				},
+			},
+		},
+		"should return the label values cardinality for the specified label names in ascending order for label names with the same series count": {
+			getRequestParams: "?label_names[]=foo&label_names[]=bar",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"foo", "bar"},
+			},
+			labelNames: []model.LabelName{"foo", "bar"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{
+					{
+						LabelName:        "foo",
+						LabelValueSeries: map[string]uint64{"test_1": 10},
+					},
+					{
+						LabelName:        "bar",
+						LabelValueSeries: map[string]uint64{"test_1": 10},
+					},
+				},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{
+					{
+						LabelName:        "bar",
+						LabelValuesCount: 1,
+						SeriesCount:      10,
+						Cardinality: []labelValuesCardinality{
+							{LabelValue: "test_1", SeriesCount: 10},
+						},
+					},
+					{
+						LabelName:        "foo",
+						LabelValuesCount: 1,
+						SeriesCount:      10,
+						Cardinality: []labelValuesCardinality{
+							{LabelValue: "test_1", SeriesCount: 10},
+						},
+					},
+				},
+			},
+		},
+		"should return the label values cardinality sorted by series count in descending order": {
+			getRequestParams: "?label_names[]=__name__",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+			},
+			labelNames: []model.LabelName{"__name__"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 20},
+				}},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{{
+					LabelName:        "__name__",
+					LabelValuesCount: 2,
+					SeriesCount:      30,
+					Cardinality: []labelValuesCardinality{
+						{LabelValue: "test_2", SeriesCount: 20},
+						{LabelValue: "test_1", SeriesCount: 10},
+					},
+				}},
+			},
+		},
+		"should return the label values cardinality sorted by label name in ascending order for label values with the same series count": {
+			getRequestParams: "?label_names[]=__name__",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+			},
+			labelNames: []model.LabelName{"__name__"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 10, "test_2": 10},
+				}},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{{
+					LabelName:        "__name__",
+					LabelValuesCount: 2,
+					SeriesCount:      20,
+					Cardinality: []labelValuesCardinality{
+						{LabelValue: "test_1", SeriesCount: 10},
+						{LabelValue: "test_2", SeriesCount: 10},
+					},
+				}},
+			},
+		},
+		"should return all the label values cardinality array if the number of label values is equal to the specified limit": {
+			getRequestParams: "?label_names[]=__name__&limit=3",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+				"limit":         []string{"3"},
+			},
+			labelNames: []model.LabelName{"__name__"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
+				}},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{{
+					LabelName:        "__name__",
+					LabelValuesCount: 3,
+					SeriesCount:      150,
+					Cardinality: []labelValuesCardinality{
+						{LabelValue: "test_1", SeriesCount: 100},
+						{LabelValue: "test_3", SeriesCount: 30},
+						{LabelValue: "test_2", SeriesCount: 20},
+					},
+				}},
+			},
+		},
+		"should return the label values cardinality array limited by the limit param": {
+			getRequestParams: "?label_names[]=__name__&limit=2",
+			postRequestForm: url.Values{
+				"label_names[]": []string{"__name__"},
+				"limit":         []string{"2"},
+			},
+			labelNames: []model.LabelName{"__name__"},
+			matcher:    []*labels.Matcher(nil),
+			labelValuesCardinality: &client.LabelValuesCardinalityResponse{
+				Items: []*client.LabelValueSeriesCount{{
+					LabelName:        labels.MetricName,
+					LabelValueSeries: map[string]uint64{"test_1": 100, "test_2": 20, "test_3": 30},
+				}},
+			},
+			expectedResponse: labelValuesCardinalityResponse{
+				SeriesCountTotal: seriesCountTotal,
+				Labels: []labelNamesCardinality{{
+					LabelName:        "__name__",
+					LabelValuesCount: 3,
+					SeriesCount:      150,
+					Cardinality: []labelValuesCardinality{
+						{LabelValue: "test_1", SeriesCount: 100},
+						{LabelValue: "test_3", SeriesCount: 30},
+					},
+				}},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		distributor := mockDistributorLabelValuesCardinality(testData.labelNames, testData.matcher)(seriesCountTotal, testData.labelValuesCardinality)
+		handler := LabelValuesCardinalityHandler(distributor)
+		ctx := user.InjectOrgID(context.Background(), "test")
+
+		t.Run("GET request "+testName, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(ctx, "GET", labelValuesURL+testData.getRequestParams, http.NoBody)
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			body := recorder.Result().Body
+			defer func() { _ = body.Close() }()
+
+			responseBody := labelValuesCardinalityResponse{}
+			bodyContent, err := ioutil.ReadAll(body)
+			require.NoError(t, err)
+			err = json.Unmarshal(bodyContent, &responseBody)
+			require.NoError(t, err)
+
+			require.Equal(t, testData.expectedResponse, responseBody)
+		})
+		t.Run("POST request "+testName, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(ctx, "POST", labelValuesURL, strings.NewReader(testData.postRequestForm.Encode()))
+			request.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+			require.NoError(t, err)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, request)
+
+			require.Equal(t, http.StatusOK, recorder.Result().StatusCode)
+
+			body := recorder.Result().Body
+			defer func() { _ = body.Close() }()
+
+			responseBody := labelValuesCardinalityResponse{}
+			bodyContent, err := ioutil.ReadAll(body)
+			require.NoError(t, err)
+			err = json.Unmarshal(bodyContent, &responseBody)
+			require.NoError(t, err)
+
+			require.Equal(t, testData.expectedResponse, responseBody)
+		})
+	}
+}
+
+func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
+	distributor := mockDistributorLabelValuesCardinality([]model.LabelName{}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}})
+	handler := LabelValuesCardinalityHandler(distributor)
+	ctx := user.InjectOrgID(context.Background(), "test")
+
+	t.Run("should return bad request if no tenant id is provided", func(t *testing.T) {
+		request, err := http.NewRequestWithContext(context.Background(), "GET", "/label_values", http.NoBody)
+		require.NoError(t, err)
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+
+		require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+	})
+	t.Run("should return bad request if ", func(t *testing.T) {
+		tests := map[string]struct {
+			url                  string
+			expectedErrorMessage string
+		}{
+			"label_names param is empty": {
+				url:                  "/label_values",
+				expectedErrorMessage: "'label_names[]' param is required",
+			},
+			"label_names param is invalid": {
+				url:                  "/label_values?label_names[]=olá",
+				expectedErrorMessage: "invalid 'label_names' param 'olá'",
+			},
+			"multiple selector params are provided": {
+				url:                  "/label_values?label_names[]=hello&selector=foo&selector=bar",
+				expectedErrorMessage: "multiple 'selector' params are not allowed",
+			},
+			"limit param is not a number": {
+				url:                  "/label_values?label_names[]=hello&limit=foo",
+				expectedErrorMessage: "strconv.Atoi: parsing \"foo\": invalid syntax",
+			},
+			"limit param is a negative number": {
+				url:                  "/label_values?label_names[]=hello&limit=-20",
+				expectedErrorMessage: "'limit' param cannot be less than '0'",
+			},
+			"limit param exceeds the maximum limit parameter": {
+				url:                  "/label_values?label_names[]=hello&limit=501",
+				expectedErrorMessage: "'limit' param cannot be greater than '500'",
+			},
+		}
+		for testName, testData := range tests {
+			t.Run(testName, func(t *testing.T) {
+				request, err := http.NewRequestWithContext(ctx, "GET", testData.url, http.NoBody)
+				require.NoError(t, err)
+				recorder := httptest.NewRecorder()
+				handler.ServeHTTP(recorder, request)
+
+				require.Equal(t, http.StatusBadRequest, recorder.Result().StatusCode)
+
+				body := recorder.Result().Body
+				defer func() { _ = body.Close() }()
+
+				bytes, err := ioutil.ReadAll(body)
+				require.NoError(t, err)
+				require.Contains(t, string(bytes), testData.expectedErrorMessage)
+			})
+
+		}
+	})
 }
 
 func createRequest(path string, tenantID string) *http.Request {
@@ -266,8 +635,16 @@ func generateLabelValues(count int) ([]*client.LabelValues, int) {
 	return items, valuesCount
 }
 
-func newMockDistributor(items ...*client.LabelValues) *mockDistributor {
+func mockDistributorLabelNamesAndValues(items ...*client.LabelValues) *mockDistributor {
 	d := &mockDistributor{}
 	d.On("LabelNamesAndValues", mock.Anything, mock.Anything).Return(&client.LabelNamesAndValuesResponse{Items: items}, nil)
 	return d
+}
+
+func mockDistributorLabelValuesCardinality(labelNames []model.LabelName, matchers []*labels.Matcher) func(uint64, *client.LabelValuesCardinalityResponse) *mockDistributor {
+	return func(seriesCount uint64, cardinalityResponse *client.LabelValuesCardinalityResponse) *mockDistributor {
+		distributor := &mockDistributor{}
+		distributor.On("LabelValuesCardinality", mock.Anything, labelNames, matchers).Return(seriesCount, cardinalityResponse, nil)
+		return distributor
+	}
 }
