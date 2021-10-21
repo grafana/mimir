@@ -9,6 +9,7 @@ package integration
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -139,7 +140,7 @@ func TestZoneAwareReplication(t *testing.T) {
 
 	// Query back any series => fail (either because of a timeout or 500)
 	result, _, err := client.QueryRaw("series_1")
-	if !errors.Is(err, context.DeadlineExceeded) {
+	if !errIsTimeout(err) {
 		require.NoError(t, err)
 		require.Equal(t, 500, result.StatusCode)
 	}
@@ -153,4 +154,20 @@ func TestZoneAwareReplication(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 500, res.StatusCode)
 
+}
+
+func errIsTimeout(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+
+	if strings.Contains(err.Error(), "Client.Timeout") {
+		return true
+	}
+
+	return false
 }

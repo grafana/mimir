@@ -149,38 +149,19 @@ func (c *Client) QueryRangeRaw(query string, start, end time.Time, step time.Dur
 		strconv.FormatFloat(step.Seconds(), 'f', -1, 64),
 	)
 
-	return c.query(addr)
+	return c.DoGetBody(addr)
+}
+
+// QuerierAddress returns the address of the querier
+func (c *Client) QuerierAddress() string {
+	return c.querierAddress
 }
 
 // QueryRaw runs a query directly against the querier API.
 func (c *Client) QueryRaw(query string) (*http.Response, []byte, error) {
 	addr := fmt.Sprintf("http://%s/api/prom/api/v1/query?query=%s", c.querierAddress, url.QueryEscape(query))
 
-	return c.query(addr)
-}
-
-func (c *Client) query(addr string) (*http.Response, []byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "GET", addr, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	req.Header.Set("X-Scope-OrgID", c.orgID)
-
-	res, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, nil, err
-	}
-	defer res.Body.Close()
-
-	body, err := ioutil.ReadAll(res.Body)
-	if err != nil {
-		return nil, nil, err
-	}
-	return res, body, nil
+	return c.DoGetBody(addr)
 }
 
 // Series finds series by label matchers.
@@ -916,15 +897,48 @@ func (c *Client) GetReceivers(ctx context.Context) ([]string, error) {
 	return decoded.Data, nil
 }
 
-func (c *Client) PostRequest(url string, body io.Reader) (*http.Response, error) {
-	req, err := http.NewRequest("POST", url, body)
+// DoGet performs a HTTP GET request towards the supplied URL. The request
+// contains the X-Scope-OrgID header and the timeout configured by the client
+// object.
+func (c *Client) DoGet(url string) (*http.Response, error) {
+	return c.doRequest("GET", url, nil)
+}
+
+// DoGetBody performs a HTTP GET request towards the supplied URL and returns
+// the full response body. The request contains the X-Scope-OrgID header and
+// the timeout configured by the client object.
+func (c *Client) DoGetBody(url string) (*http.Response, []byte, error) {
+	resp, err := c.DoGet(url)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return resp, body, nil
+}
+
+// DoPost performs a HTTP POST request towards the supplied URL and using the
+// given request body. The request contains the X-Scope-OrgID header and the
+// timeout configured by the client object.
+func (c *Client) DoPost(url string, body io.Reader) (*http.Response, error) {
+	return c.doRequest("POST", url, body)
+}
+
+func (c *Client) doRequest(method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
-
 	req.Header.Set("X-Scope-OrgID", c.orgID)
 
-	client := &http.Client{Timeout: c.timeout}
+	client := *c.httpClient
+	client.Timeout = c.timeout
+
 	return client.Do(req)
 }
 

@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
@@ -28,8 +27,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/uber/jaeger-client-go"
-	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -195,7 +194,7 @@ func NewResultsCacheMiddleware(
 func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	if s.shouldCache != nil && !s.shouldCache(r) {
