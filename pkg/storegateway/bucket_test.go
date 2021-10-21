@@ -65,6 +65,7 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -1159,6 +1160,24 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
 		require.ErrorIs(t, err, snappy.ErrCorrupt)
 	})
+
+	t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
+		b := &bucketBlock{
+			logger:  log.NewNopLogger(),
+			metrics: NewBucketStoreMetrics(nil),
+			indexHeaderReader: &blockingLabelValuesIndexReader{onLabelValuesCalled: func(_ string) error {
+				return context.Canceled // alwaysFails
+			}},
+			indexCache:  cacheNotExpectingToStoreExpandedPostings{t: t},
+			bkt:         bkt,
+			meta:        &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.Error(t, err)
+	})
 }
 
 type blockingLabelValuesIndexReader struct {
@@ -1190,6 +1209,15 @@ type corruptedExpandedPostingsCache struct{ noopCache }
 
 func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
+}
+
+type cacheNotExpectingToStoreExpandedPostings struct {
+	noopCache
+	t *testing.T
+}
+
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey, v []byte) {
+	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {

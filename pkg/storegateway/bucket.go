@@ -1768,12 +1768,13 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		}
 	} else {
 		refs, err = r.expandedPostings(ctx, ms)
-
-		data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
-		if encodeErr != nil {
-			err = errors.Wrap(err, "encode expanded postings for cache")
-		} else {
-			r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+		if err == nil {
+			data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+			if encodeErr != nil {
+				err = errors.Wrap(encodeErr, "encode expanded postings for cache")
+			} else {
+				r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+			}
 		}
 	}
 
