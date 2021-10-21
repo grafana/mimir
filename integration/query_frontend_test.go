@@ -412,7 +412,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 		{
 			name: "wrong duration specified in step",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.GetRequest(fmt.Sprintf(
+				return c.DoGetBody(fmt.Sprintf(
 					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 					c.QuerierAddress(),
 					url.QueryEscape("unknown"),
@@ -427,7 +427,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 		{
 			name: "wrong timestamp in start",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.GetRequest(fmt.Sprintf(
+				return c.DoGetBody(fmt.Sprintf(
 					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
 					c.QuerierAddress(),
 					url.QueryEscape("unknown"),

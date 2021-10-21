@@ -7,6 +7,7 @@ package e2e
 
 import (
 	"context"
+	"io"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -77,18 +78,25 @@ func BuildArgs(flags map[string]string) []string {
 	return args
 }
 
-func GetRequest(url string) (*http.Response, error) {
-	const timeout = 1 * time.Second
-
-	client := &http.Client{Timeout: timeout}
-	return client.Get(url)
+// DoGet performs a HTTP GET request towards the supplied URL and using a
+// timeout of 1 second.
+func DoGet(url string) (*http.Response, error) {
+	return doRequest("GET", url, nil)
 }
 
-func PostRequest(url string) (*http.Response, error) {
-	const timeout = 1 * time.Second
+// DoPost performs a HTTP POST request towards the supplied URL with an empty
+// body and using a timeout of 1 second.
+func DoPost(url string) (*http.Response, error) {
+	return doRequest("POST", url, strings.NewReader(""))
+}
 
-	client := &http.Client{Timeout: timeout}
-	return client.Post(url, "", strings.NewReader(""))
+func doRequest(method, url string, body io.Reader) (*http.Response, error) {
+	req, err := http.NewRequest(method, url, body)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{Timeout: time.Second}
+	return client.Do(req)
 }
 
 // TimeToMilliseconds returns the input time as milliseconds, using the same
