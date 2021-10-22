@@ -196,12 +196,12 @@ func indexedDiffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, erro
 	// This encoding uses around ~1 bytes per posting, but let's use
 	// conservative 1.25 bytes per posting to avoid extra allocations.
 	if length > 0 {
-		if length/pageSize > indexedDiffVarintPageSize {
-			pageSize = length / indexedDiffVarintPageSize
+		if length/pageSize > indexedDiffVarintMaxPages {
+			pageSize = length / indexedDiffVarintMaxPages
 		}
 		buf.B = make([]byte, 0, 5*length/4)
-		if length/indexedDiffVarintPageSize > indexCap {
-			indexCap = length / indexedDiffVarintPageSize
+		if length/pageSize > indexCap {
+			indexCap = length / pageSize
 		}
 	}
 
