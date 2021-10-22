@@ -1797,7 +1797,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, key
 	refs, err := index.ExpandPostings(p)
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't expand decoded expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
-		return nil, true
+		return nil, false
 	}
 	return refs, true
 }
