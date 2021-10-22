@@ -282,5 +282,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
+      .addPanel(
+        $.panel('ExpandedPostings cache hit ratio') +
+        $.queryPanel(|||
+          sum(rate(thanos_store_index_cache_hits_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
+          /
+          sum(rate(thanos_store_index_cache_requests_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
     ),
 }
