@@ -74,7 +74,6 @@ func Handler(
 		} else {
 			if r.Header.Get(AllowSkipLabelNameValidationHeader) != "" {
 				http.Error(w, "allow skip label name validation header was found but feature is not enabled by config", http.StatusBadRequest)
-				bufferPool.Put(bufHolder)
 				return
 			}
 
