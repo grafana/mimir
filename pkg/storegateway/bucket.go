@@ -1758,34 +1758,48 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	if loaded {
 		return loadedPromise.(expandedPostingsPromise), true
 	}
-
 	defer close(done)
 	defer r.block.expandedPostingsPromises.Delete(key)
 
-	if data, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key); ok {
-		cached = true
-		var p index.Postings
-		p, err = r.decodePostings(data)
-		if err != nil {
-			return promise, true
-		}
-
-		refs, err = index.ExpandPostings(p)
-		return promise, true
+	refs, cached = r.fetchCachedExpandedPostings(ctx, key)
+	if cached {
+		return promise, false
 	}
-
 	refs, err = r.expandedPostings(ctx, ms)
 	if err != nil {
 		return promise, false
 	}
+	r.cacheExpandedPostings(ctx, key, refs)
+	return promise, false
+}
 
-	if data, encodeErr := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs)); encodeErr != nil {
+func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, key storecache.LabelMatchersKey, refs []uint64) {
+	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
-	} else {
-		r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+		return
+	}
+	r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+}
+
+func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, key cache.LabelMatchersKey) ([]uint64, bool) {
+	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key)
+	if !ok {
+		return nil, false
 	}
 
-	return promise, false
+	p, err := r.decodePostings(data)
+	if err != nil {
+		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return nil, false
+	}
+
+	refs, err := index.ExpandPostings(p)
+	if err != nil {
+		level.Warn(r.block.logger).Log("msg", "can't expand decoded expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return nil, true
+	}
+	return refs, true
 }
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.

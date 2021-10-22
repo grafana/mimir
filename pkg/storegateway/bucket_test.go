@@ -32,7 +32,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
-	"github.com/golang/snappy"
 	"github.com/leanovate/gopter"
 	"github.com/leanovate/gopter/gen"
 	"github.com/leanovate/gopter/prop"
@@ -1145,7 +1144,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
 	})
 
-	t.Run("corrupt cached expanded postings", func(t *testing.T) {
+	t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
 		b := &bucketBlock{
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
@@ -1157,8 +1156,9 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		}
 
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
-		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
-		require.ErrorIs(t, err, snappy.ErrCorrupt)
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
 	})
 
 	t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
