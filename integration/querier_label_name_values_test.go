@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/ingester_limits_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
 // +build requires_docker
 
@@ -111,8 +108,9 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			defer s.Close()
 
 			// Set configuration.
-			flags := BlocksStorageFlags()
-			flags["-distributor.replication-factor"] = "3"
+			flags := mergeFlags(BlocksStorageFlags(), map[string]string{
+				"-distributor.replication-factor": "3",
+			})
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
@@ -130,7 +128,9 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
 			ingester3 := e2emimir.NewIngester("ingester-3", consul.NetworkHTTPEndpoint(), flags, "")
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+
 			require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3, querier))
+			require.NoError(t, s.WaitReady(queryFrontend))
 
 			// Wait until distributor and queriers have updated the ring.
 			require.NoError(t, distributor.WaitSumMetricsWithOptions(e2e.Equals(3), []string{"cortex_ring_members"}, e2e.WithLabelMatchers(
