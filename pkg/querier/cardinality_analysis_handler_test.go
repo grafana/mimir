@@ -32,7 +32,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
 	distributor := mockDistributorLabelNamesAndValues(items...)
-	handler := createEnabledHandler(t, distributor)
+	handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
 	require.NoError(t, err)
@@ -97,7 +97,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
 			distributor := mockDistributorLabelNamesAndValues()
-			handler := createEnabledHandler(t, distributor)
+			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
 			path := "/ignored-url"
@@ -149,7 +149,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
 			distributor := mockDistributorLabelNamesAndValues(items...)
-			handler := createEnabledHandler(t, distributor)
+			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			path := "/ignored-url"
@@ -175,16 +175,6 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 			require.Len(t, responseBody.Cardinality, data.expectedValuesCount)
 		})
 	}
-}
-
-func createEnabledHandler(t *testing.T, distributor *mockDistributor) http.Handler {
-	limits := validation.Limits{}
-	flagext.DefaultValues(&limits)
-	limits.CardinalityAnalysisEnabled = true
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-	handler := LabelNamesCardinalityHandler(distributor, overrides)
-	return handler
 }
 
 func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
@@ -503,7 +493,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 
 	for testName, testData := range tests {
 		distributor := mockDistributorLabelValuesCardinality(testData.labelNames, testData.matcher)(seriesCountTotal, testData.labelValuesCardinality)
-		handler := LabelValuesCardinalityHandler(distributor)
+		handler := createEnabledHandler(t, LabelValuesCardinalityHandler, distributor)
 		ctx := user.InjectOrgID(context.Background(), "test")
 
 		t.Run("GET request "+testName, func(t *testing.T) {
@@ -548,9 +538,57 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 	}
 }
 
+func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
+	const labelValuesURL = "/label_values?label_names[]=foo"
+
+	tests := map[string]struct {
+		request                    *http.Request
+		cardinalityAnalysisEnabled bool
+		expectedStatusCode         int
+		expectedErrorMessage       string
+	}{
+		"should return an error if the cardinality analysis feature is disabled by default": {
+			request:                    createRequest(labelValuesURL, "team-a"),
+			cardinalityAnalysisEnabled: false,
+			expectedStatusCode:         http.StatusBadRequest,
+			expectedErrorMessage:       "cardinality analysis is disabled for the tenant: team-a\n",
+		},
+		"should succeed if the cardinality analysis feature is enabled by default": {
+			request:                    createRequest(labelValuesURL, "team-a"),
+			cardinalityAnalysisEnabled: true,
+			expectedStatusCode:         http.StatusOK,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			distributor := mockDistributorLabelValuesCardinality([]model.LabelName{"foo"}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}})
+
+			limits := validation.Limits{CardinalityAnalysisEnabled: testData.cardinalityAnalysisEnabled}
+			overrides, err := validation.NewOverrides(limits, nil)
+			require.NoError(t, err)
+			handler := LabelValuesCardinalityHandler(distributor, overrides)
+
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, testData.request)
+
+			require.Equal(t, testData.expectedStatusCode, recorder.Result().StatusCode)
+
+			if len(testData.expectedErrorMessage) > 0 {
+				body := recorder.Result().Body
+				defer func() { _ = body.Close() }()
+
+				bodyContent, err := ioutil.ReadAll(body)
+				require.NoError(t, err)
+				require.Equal(t, string(bodyContent), testData.expectedErrorMessage)
+			}
+		})
+	}
+}
+
 func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 	distributor := mockDistributorLabelValuesCardinality([]model.LabelName{}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}})
-	handler := LabelValuesCardinalityHandler(distributor)
+	handler := createEnabledHandler(t, LabelValuesCardinalityHandler, distributor)
 	ctx := user.InjectOrgID(context.Background(), "test")
 
 	t.Run("should return bad request if no tenant id is provided", func(t *testing.T) {
@@ -610,6 +648,16 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 
 		}
 	})
+}
+
+// createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
+func createEnabledHandler(t *testing.T, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
+	limits := validation.Limits{CardinalityAnalysisEnabled: true}
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	handler := cardinalityHandler(distributor, overrides)
+	return handler
 }
 
 func createRequest(path string, tenantID string) *http.Request {

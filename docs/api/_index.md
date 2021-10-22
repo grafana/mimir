@@ -476,6 +476,8 @@ The items in the field `cardinality` are sorted by `series_count` in DESC order 
 
 The count of `cardinality` items is limited by request param `limit`.
 
+_This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option)._
+
 _Requires [authentication](#authentication)._
 
 #### Request params
