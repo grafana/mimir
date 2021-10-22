@@ -44,7 +44,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 		name                                      string
 		allowSkipLabelNameValidation              bool
 		req                                       *http.Request
-		disableAllowSkiplabelNameValidationHeader bool
+		includeAllowSkiplabelNameValidationHeader bool
 		verifyReqHandler                          func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error)
 		expectedStatusCode                        int
 	}{
@@ -61,7 +61,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				cleanup()
 				return &mimirpb.WriteResponse{}, nil
 			},
-			disableAllowSkiplabelNameValidationHeader: true,
+			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
 		},
 		{
@@ -77,7 +77,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				cleanup()
 				return &mimirpb.WriteResponse{}, nil
 			},
-			disableAllowSkiplabelNameValidationHeader: true,
+			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
 		},
 		{
@@ -138,7 +138,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 				cleanup()
 				return &mimirpb.WriteResponse{}, nil
 			},
-			disableAllowSkiplabelNameValidationHeader: true,
+			includeAllowSkiplabelNameValidationHeader: true,
 			expectedStatusCode:                        http.StatusOK,
 		},
 	}
@@ -146,7 +146,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			resp := httptest.NewRecorder()
 			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, tc.verifyReqHandler)
-			if !tc.disableAllowSkiplabelNameValidationHeader {
+			if !tc.includeAllowSkiplabelNameValidationHeader {
 				tc.req.Header.Set(AllowSkipLabelNameValidationHeader, "true")
 			}
 			handler.ServeHTTP(resp, tc.req)

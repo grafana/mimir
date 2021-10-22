@@ -73,7 +73,7 @@ func Handler(
 			req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(AllowSkipLabelNameValidationHeader) == "true"
 		} else {
 			if r.Header.Get(AllowSkipLabelNameValidationHeader) != "" {
-				http.Error(w, "allow skip label name validation header was found but feature is not enabled by config", http.StatusBadRequest)
+				http.Error(w, "allow skip label name validation header was found but feature is not enabled '-api.allow-skip-label-name-validation-header-enabled", http.StatusBadRequest)
 				return
 			}
 
