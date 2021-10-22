@@ -39,7 +39,7 @@ func Handler(
 	sourceIPs *middleware.SourceIPExtractor,
 	allowSkipLabelNameValidation bool,
 	push Func,
-	) http.Handler {
+) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		logger := log.WithContext(ctx, log.Logger)
@@ -72,6 +72,12 @@ func Handler(
 		if allowSkipLabelNameValidation {
 			req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(AllowSkipLabelNameValidationHeader) == "true"
 		} else {
+			if r.Header.Get(AllowSkipLabelNameValidationHeader) != "" {
+				http.Error(w, "allow skip label name validation header was found but feature is not enabled by config", http.StatusBadRequest)
+				bufferPool.Put(bufHolder)
+				return
+			}
+
 			req.SkipLabelNameValidation = false
 		}
 
