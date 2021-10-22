@@ -307,21 +307,27 @@ func indexedSpansDiffVarintSnappyDecode(input []byte) (index.Postings, error) {
 }
 
 const indexedSpansDiffVarintPageSize = 256
+const indexedSpansDiffVarintMaxPages = 4096
 
 // indexedSpansDiffVarintEncodeNoHeader encodes postings into diff+varint representation with an index
 // it summarizes spans of postings with same diff
 // It doesn't add any header to the output bytes.
 // Length argument is expected number of postings, used for preallocating buffer.
 func indexedSpansDiffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
-	var indexCap = 128
-	buf := encoding.Encbuf{}
+	indexCap := 128
+	pageSize := indexedSpansDiffVarintPageSize
 
+	buf := encoding.Encbuf{}
 	// This encoding uses around ~1 bytes per posting, but let's use
 	// conservative 1.25 bytes per posting to avoid extra allocations.
 	if length > 0 {
+		if length/pageSize > indexedSpansDiffVarintMaxPages {
+			pageSize = length / indexedSpansDiffVarintMaxPages
+		}
+
 		buf.B = make([]byte, 0, 5*length/4)
-		if length/indexedSpansDiffVarintPageSize > indexCap {
-			indexCap = length / indexedSpansDiffVarintPageSize
+		if length/pageSize > indexCap {
+			indexCap = length / pageSize
 		}
 	}
 
@@ -349,7 +355,7 @@ func indexedSpansDiffVarintEncodeNoHeader(p index.Postings, length int) ([]byte,
 			}
 			// write index before delta&spanLen, because we'll need to read them
 			// this is different from indexed+diff+varint
-			if indexEntrySize >= indexedSpansDiffVarintPageSize {
+			if indexEntrySize >= pageSize {
 				index = append(index, diffVarintIndexEntry{
 					offset: len(buf.B),
 					first:  v,
