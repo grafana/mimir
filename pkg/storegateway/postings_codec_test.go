@@ -69,10 +69,12 @@ func TestDiffVarintCodecs(t *testing.T) {
 		codingFunction   func(index.Postings, int) ([]byte, error)
 		decodingFunction func([]byte) (index.Postings, error)
 	}{
-		"raw":            {codingFunction: diffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newDiffVarintPostings(bytes), nil }},
-		"snappy":         {codingFunction: diffVarintSnappyEncode, decodingFunction: diffVarintSnappyDecode},
-		"indexed_raw":    {codingFunction: indexedDiffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newIndexedDiffVarintPostings(bytes) }},
-		"indexed_snappy": {codingFunction: indexedDiffVarintSnappyEncode, decodingFunction: indexedDiffVarintSnappyDecode},
+		"raw":                  {codingFunction: diffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newDiffVarintPostings(bytes), nil }},
+		"snappy":               {codingFunction: diffVarintSnappyEncode, decodingFunction: diffVarintSnappyDecode},
+		"indexed_raw":          {codingFunction: indexedDiffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newIndexedDiffVarintPostings(bytes) }},
+		"indexed_snappy":       {codingFunction: indexedDiffVarintSnappyEncode, decodingFunction: indexedDiffVarintSnappyDecode},
+		"indexed_spans_raw":    {codingFunction: indexedSpansDiffVarintEncodeNoHeader, decodingFunction: func(bytes []byte) (index.Postings, error) { return newIndexedSpansDiffVarintPostings(bytes) }},
+		"indexed_spans_snappy": {codingFunction: indexedSpansDiffVarintSnappyEncode, decodingFunction: indexedSpansDiffVarintSnappyDecode},
 	}
 
 	for postingName, postings := range postingsMap {
@@ -148,7 +150,7 @@ func TestIndexedDiffVarintPostings_Seek(t *testing.T) {
 			test: func(t *testing.T, p index.Postings) {
 				require.False(t, p.Seek(1))
 				require.False(t, p.Next())
-				require.Nil(t, p.Err())
+				require.NoError(t, p.Err())
 			},
 		},
 	} {
@@ -160,17 +162,24 @@ func TestIndexedDiffVarintPostings_Seek(t *testing.T) {
 				}
 			}
 
-			enc, err := indexedDiffVarintEncodeNoHeader(index.NewListPostings(ids), indexedDiffVarintPageSize*2)
-			require.NoError(t, err)
-
-			diffVarintChunked, err := newIndexedDiffVarintPostings(enc)
-			require.NoError(t, err)
-
 			// run the test on the list too, just to validate that our test is actually correct
 			t.Run("index.ListPostings", func(t *testing.T) {
 				tc.test(t, index.NewListPostings(ids))
 			})
 			t.Run("indexedDiffVarintPostings", func(t *testing.T) {
+				enc, err := indexedDiffVarintEncodeNoHeader(index.NewListPostings(ids), indexedDiffVarintPageSize*2)
+				require.NoError(t, err)
+
+				diffVarintChunked, err := newIndexedDiffVarintPostings(enc)
+				require.NoError(t, err)
+				tc.test(t, diffVarintChunked)
+			})
+			t.Run("indexedSpansDiffVarintPostings", func(t *testing.T) {
+				enc, err := indexedSpansDiffVarintEncodeNoHeader(index.NewListPostings(ids), indexedDiffVarintPageSize*2)
+				require.NoError(t, err)
+
+				diffVarintChunked, err := newIndexedSpansDiffVarintPostings(enc)
+				require.NoError(t, err)
 				tc.test(t, diffVarintChunked)
 			})
 		})
@@ -306,4 +315,21 @@ func allPostings(t testing.TB, ix tsdb.IndexReader) index.Postings {
 	p, err := ix.Postings(k, v)
 	assert.NoError(t, err)
 	return p
+}
+
+func TestIndexedSpansCodec(t *testing.T) {
+	ints := func(in []uint64) (out []int) {
+		for _, v := range in {
+			out = append(out, int(v))
+		}
+		return out
+	}
+	refs := []uint64{10, 20, 30, 40, 50, 100, 200, 300, 400, 500, 550, 600, 650, 700, 800, 801, 802, 803, 804, 805}
+	data, err := indexedSpansDiffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+	require.NoError(t, err)
+	p, err := indexedSpansDiffVarintSnappyDecode(data)
+	require.NoError(t, err)
+	got, err := index.ExpandPostings(p)
+	require.NoError(t, err)
+	assert.Equal(t, ints(refs), ints(got))
 }
