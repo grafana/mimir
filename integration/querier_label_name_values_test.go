@@ -23,7 +23,7 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-func TestIngesterLabelNamesAndValues(t *testing.T) {
+func TestQuerierLabelNamesAndValues(t *testing.T) {
 	const numSeriesToPush = 1000
 
 	// Define response types.
@@ -119,7 +119,12 @@ func TestIngesterLabelNamesAndValues(t *testing.T) {
 			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
 			require.NoError(t, s.StartAndWaitReady(consul, minio))
 
-			// Start Mimir components.
+			// Start the query-frontend.
+			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+			require.NoError(t, s.Start(queryFrontend))
+			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+			// Start all other Mimir services.
 			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
 			ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flags, "")
 			ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), flags, "")
@@ -139,7 +144,7 @@ func TestIngesterLabelNamesAndValues(t *testing.T) {
 			// Push series.
 			now := time.Now()
 
-			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", "", userID)
+			client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", userID)
 			require.NoError(t, err)
 
 			for i := 1; i <= numSeriesToPush; i++ {
