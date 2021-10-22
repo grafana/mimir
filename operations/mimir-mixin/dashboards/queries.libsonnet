@@ -283,7 +283,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
       .addPanel(
-        $.panel('ExpandedPostings memcache hit ratio') +
+        $.panel('ExpandedPostings cache hit ratio') +
         $.queryPanel(|||
           sum(rate(thanos_store_index_cache_hits_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
           /
