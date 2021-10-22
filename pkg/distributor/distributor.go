@@ -533,7 +533,15 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
-func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
+	// We will report *this* request in the error too.
+	inflight := d.inflightPushRequests.Inc()
+
+	// Decrement counter after all ingester calls have finished or been cancelled.
+	cleanup := func() {
+		callerCleanup()
+		d.inflightPushRequests.Dec()
+	}
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
@@ -549,10 +557,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	if span != nil {
 		span.SetTag("organization", userID)
 	}
-
-	// We will report *this* request in the error too.
-	inflight := d.inflightPushRequests.Inc()
-	defer d.inflightPushRequests.Dec()
 
 	if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 		return nil, errTooManyInflightPushRequests
