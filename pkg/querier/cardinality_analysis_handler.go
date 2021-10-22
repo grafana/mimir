@@ -54,13 +54,17 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 }
 
 // LabelValuesCardinalityHandler creates handler for label values cardinality endpoint.
-func LabelValuesCardinalityHandler(distributor Distributor) http.Handler {
+func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
-		_, err := tenant.TenantID(ctx)
+		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !limits.CardinalityAnalysisEnabled(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
 
