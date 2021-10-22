@@ -74,6 +74,10 @@ api:
   # CLI flag: -api.response-compression-enabled
   [response_compression_enabled: <boolean> | default = false]
 
+  # Allows to skip label name validation via header on the http write path.
+  # CLI flag: -api.allow-skip-label-name-validation-header-enabled
+  [allow_skip_label_name_validation_header_enabled: <boolean> | default = false]
+
   # HTTP URL path under which the Alertmanager ui and api will be served.
   # CLI flag: -http.alertmanager-http-prefix
   [alertmanager_http_prefix: <string> | default = "/alertmanager"]
