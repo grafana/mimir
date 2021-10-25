@@ -493,6 +493,67 @@ func TestShardSummer(t *testing.T) {
 			) + `)`,
 			3,
 		},
+		{
+			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2`,
+			`sum by (job)(
+				` + concat(
+				`sum by (job)(rate(http_requests_total{__query_shard__="1_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="2_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="3_of_3"}[1h] offset 1w @ 10))`,
+			) + `) / 2`,
+			3,
+		},
+		{
+			`sum by (job)(rate(http_requests_total[1h] offset 1w @ 10)) / 2 ^ 2`,
+			`sum by (job)(
+				` + concat(
+				`sum by (job)(rate(http_requests_total{__query_shard__="1_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="2_of_3"}[1h] offset 1w @ 10))`,
+				`sum by (job)(rate(http_requests_total{__query_shard__="3_of_3"}[1h] offset 1w @ 10))`,
+			) + `) / 2 ^ 2`,
+			3,
+		},
+		{
+			`sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+			`sum by (group_1) (` + concat(
+				`sum by (group_1) (rate(metric_counter{__query_shard__="1_of_3"}[1m]))`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="2_of_3"}[1m]))`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="3_of_3"}[1m]))`,
+			) + `) / time() *2`,
+			3,
+		},
+		{
+			`sum by (group_1) (rate(metric_counter[1m])) / time()`,
+			`sum by (group_1) (` + concat(
+				`sum by (group_1) (rate(metric_counter{__query_shard__="1_of_3"}[1m]))`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="2_of_3"}[1m]))`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="3_of_3"}[1m]))`,
+			) + `) / time()`,
+			3,
+		},
+		{
+			`sum by (group_1) (rate(metric_counter[1m])) / vector(3) ^ month()`,
+			`sum by (group_1) (` + concat(
+				`sum by (group_1) (rate(metric_counter{__query_shard__="1_of_3"}[1m]))`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="2_of_3"}[1m]))`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="3_of_3"}[1m]))`,
+			) + `) / vector(3) ^ month()`,
+			3,
+		},
+		{
+			`vector(3) ^ month()`,
+			`vector(3) ^ month()`,
+			0,
+		},
+		{
+			`sum(rate(metric_counter[1m])) / vector(3) ^ year(foo)`,
+			`sum(` + concat(
+				`sum(rate(metric_counter{__query_shard__="1_of_3"}[1m]))`,
+				`sum(rate(metric_counter{__query_shard__="2_of_3"}[1m]))`,
+				`sum(rate(metric_counter{__query_shard__="3_of_3"}[1m]))`,
+			) + `) / ` + concat(`vector(3) ^ year(foo)`),
+			3,
+		},
 	} {
 		tt := tt
 

@@ -225,6 +225,24 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
 		},
+		"sum by (rate()) / 2 ^ 2": {
+			query: `
+			sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,
+			expectedShardedQueries: 1,
+		},
+		"sum by (rate()) / time() *2": {
+			query: `
+			sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate()) / vector(3) ^ month()": {
+			query:                  `sum(rate(metric_counter[1m])) / vector(3) ^ month()`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate(metric_counter[1m])) / vector(3) ^ vector(2) + sum(ln(metric_counter))": {
+			query:                  `sum(rate(metric_counter[1m])) / vector(3) ^ vector(2) + sum(ln(metric_counter))`,
+			expectedShardedQueries: 2,
+		},
 		"nested count()": {
 			query: `sum(
 				  count(
