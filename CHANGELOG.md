@@ -21,7 +21,7 @@
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
 * [CHANGE] Query-frontend: the `cortex_frontend_mapped_asts_total` metric has been renamed to `cortex_frontend_query_sharding_rewrites_attempted_total`. #150
-* [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173
+* [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
 * [CHANGE] Allow experimental ingester max-exemplars setting to be changed dynamically #144
   * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
   * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
