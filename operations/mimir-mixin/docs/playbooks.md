@@ -132,10 +132,12 @@ How to **fix**:
 This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of inflight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing inflight push requests will continue to succeed.
 
 In case of **emergency**:
+
 - If the actual number of inflight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
 - Increasing the limit will increase the number of inflight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Cortex / Writes Resources` dashboard
 
 How the limit is **configured**:
+
 - The limit can be configured either by the CLI flag (`-distributor.instance-limits.max-inflight-push-requests`) or in the config:
   ```
   distributor:
@@ -146,6 +148,7 @@ How the limit is **configured**:
 - The configured limit can be queried via `cortex_distributor_instance_limits{limit="max_inflight_push_requests"})`
 
 How to **fix**:
+
 1. **Temporarily increase the limit**<br />
    If the actual number of inflight push requests is very close to or already hit the limit.
 2. **Scale up distributors**<br />
