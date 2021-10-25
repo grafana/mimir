@@ -808,6 +808,32 @@ How to **investigate**:
 - Ensure Consul/Etcd is up and running.
 - Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
 
+### CortexReachingTCPConnectionsLimit
+
+This alert fires if a Cortex instance is configured with `-server.http-conn-limit` or `-server.grpc-conn-limit` and is reaching the limit.
+
+How it **works**:
+
+- A Cortex service could be configured with a limit of the max number of TCP connections accepted simultaneously on the HTTP and/or gRPC port.
+- If the limit is reached:
+  - New connections acceptance will put on hold until some existing connections are closed.
+  - The **health check endpoint may fail** (eg. timeout).
+- The limit is typically set way higher than expected usage, so if limit is reached (or close to be) then it means there's a critical issue.
+
+How to **investigate**:
+
+- Limit reached in `cortex-gateway`:
+  - Check if it's caused by an **high latency on write path**:
+    - Check the distributors and ingesters latency in the `Cortex / Writes` dashboard
+    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus cortex-gateway
+  - Check if it's caused by a **single tenant**:
+    - We don't have a metric tracking the active TCP connections or QPS per tenant
+    - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
+    ```
+    topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
+    ```
+    - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
+
 ## Cortex routes by path
 
 **Write path**:

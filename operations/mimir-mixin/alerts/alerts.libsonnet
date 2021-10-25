@@ -362,7 +362,7 @@
           },
           annotations: {
             message: |||
-              Cortex instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit.
+              Cortex instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
             |||,
           },
         },
