@@ -13,7 +13,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -32,7 +31,7 @@ func TestLabelNamesCardinalityHandler(t *testing.T) {
 		{LabelName: "label-a", Values: []string{"0a", "1a"}},
 		{LabelName: "label-z", Values: []string{"0z", "1z", "2z"}},
 	}
-	distributor := mockDistributorLabelNamesAndValues(items...)
+	distributor := mockDistributorLabelNamesAndValues(items...)(nil)
 	handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 	ctx := user.InjectOrgID(context.Background(), "team-a")
 	request, err := http.NewRequestWithContext(ctx, "GET", "/ignored-url?limit=4", http.NoBody)
@@ -97,7 +96,7 @@ func TestLabelNamesCardinalityHandler_MatchersTest(t *testing.T) {
 	}
 	for _, data := range td {
 		t.Run(data.name, func(t *testing.T) {
-			distributor := mockDistributorLabelNamesAndValues()
+			distributor := mockDistributorLabelNamesAndValues()(nil)
 			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 			ctx := user.InjectOrgID(context.Background(), "team-a")
 			recorder := httptest.NewRecorder()
@@ -149,7 +148,7 @@ func TestLabelNamesCardinalityHandler_LimitTest(t *testing.T) {
 		t.Run(data.name, func(t *testing.T) {
 			labelCountTotal := 30
 			items, valuesCountTotal := generateLabelValues(labelCountTotal)
-			distributor := mockDistributorLabelNamesAndValues(items...)
+			distributor := mockDistributorLabelNamesAndValues(items...)(nil)
 			handler := createEnabledHandler(t, LabelNamesCardinalityHandler, distributor)
 
 			ctx := user.InjectOrgID(context.Background(), "team-a")
@@ -195,9 +194,9 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			expectedHTTPBody:       "httpgrpc error",
 		},
 		"should return internal server error if the distributor returns a non httpgrpc error": {
-			distributorError:       fmt.Errorf("normal error"),
+			distributorError:       fmt.Errorf("non httpgrpc error"),
 			expectedHTTPStatusCode: 500,
-			expectedHTTPBody:       "Failed to process the request to the distributor\n",
+			expectedHTTPBody:       "non httpgrpc error\n",
 		},
 	}
 
@@ -209,7 +208,7 @@ func TestLabelNamesCardinalityHandler_DistributorError(t *testing.T) {
 			limits.CardinalityAnalysisEnabled = true
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
-			handler := LabelNamesCardinalityHandler(distributor, overrides, log.NewNopLogger())
+			handler := LabelNamesCardinalityHandler(distributor, overrides)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
 			request, err := http.NewRequestWithContext(ctx, "GET", labelNamesURL, http.NoBody)
@@ -274,7 +273,7 @@ func TestLabelNamesCardinalityHandler_NegativeTests(t *testing.T) {
 			}
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
-			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues()(nil), overrides, log.NewNopLogger())
+			handler := LabelNamesCardinalityHandler(mockDistributorLabelNamesAndValues()(nil), overrides)
 
 			recorder := httptest.NewRecorder()
 
@@ -546,7 +545,7 @@ func TestLabelValuesCardinalityHandler_Success(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		distributor := mockDistributorLabelValuesCardinality(testData.labelNames, testData.matcher)(seriesCountTotal, testData.labelValuesCardinality)
+		distributor := mockDistributorLabelValuesCardinality(testData.labelNames, testData.matcher)(seriesCountTotal, testData.labelValuesCardinality, nil)
 		handler := createEnabledHandler(t, LabelValuesCardinalityHandler, distributor)
 		ctx := user.InjectOrgID(context.Background(), "test")
 
@@ -616,7 +615,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			distributor := mockDistributorLabelValuesCardinality([]model.LabelName{"foo"}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}})
+			distributor := mockDistributorLabelValuesCardinality([]model.LabelName{"foo"}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}}, nil)
 
 			limits := validation.Limits{CardinalityAnalysisEnabled: testData.cardinalityAnalysisEnabled}
 			overrides, err := validation.NewOverrides(limits, nil)
@@ -641,7 +640,7 @@ func TestLabelValuesCardinalityHandler_FeatureFlag(t *testing.T) {
 }
 
 func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
-	distributor := mockDistributorLabelValuesCardinality([]model.LabelName{}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}})
+	distributor := mockDistributorLabelValuesCardinality([]model.LabelName{}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}}, nil)
 	handler := createEnabledHandler(t, LabelValuesCardinalityHandler, distributor)
 	ctx := user.InjectOrgID(context.Background(), "test")
 
@@ -704,16 +703,6 @@ func TestLabelValuesCardinalityHandler_ParseError(t *testing.T) {
 	})
 }
 
-// createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
-func createEnabledHandler(t *testing.T, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
-	limits := validation.Limits{CardinalityAnalysisEnabled: true}
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
-	handler := cardinalityHandler(distributor, overrides)
-	return handler
-}
-
 func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 	const labelValuesURL = "/label_values?label_names[]=foo&label_names[]=bar"
 
@@ -731,16 +720,16 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 			expectedHTTPBody:       "httpgrpc error",
 		},
 		"should return internal server error if the distributor returns a non httpgrpc error": {
-			distributorError:       fmt.Errorf("normal error"),
+			distributorError:       fmt.Errorf("non httpgrpc error"),
 			expectedHTTPStatusCode: 500,
-			expectedHTTPBody:       "Failed to process the request to the distributor\n",
+			expectedHTTPBody:       "non httpgrpc error\n",
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			distributor := mockDistributorLabelValuesCardinality([]model.LabelName{"foo", "bar"}, []*labels.Matcher(nil))(uint64(0), &client.LabelValuesCardinalityResponse{Items: []*client.LabelValueSeriesCount{}}, testData.distributorError)
-			handler := LabelValuesCardinalityHandler(distributor, log.NewNopLogger())
+			handler := createEnabledHandler(t, LabelValuesCardinalityHandler, distributor)
 			ctx := user.InjectOrgID(context.Background(), "test")
 
 			request, err := http.NewRequestWithContext(ctx, "GET", labelValuesURL, http.NoBody)
@@ -760,6 +749,16 @@ func TestLabelValuesCardinalityHandler_DistributorError(t *testing.T) {
 			require.Equal(t, testData.expectedHTTPBody, bodyErrMessage)
 		})
 	}
+}
+
+// createEnabledHandler creates a cardinalityHandler that can be either a LabelNamesCardinalityHandler or a LabelValuesCardinalityHandler
+func createEnabledHandler(t *testing.T, cardinalityHandler func(Distributor, *validation.Overrides) http.Handler, distributor *mockDistributor) http.Handler {
+	limits := validation.Limits{CardinalityAnalysisEnabled: true}
+	overrides, err := validation.NewOverrides(limits, nil)
+	require.NoError(t, err)
+
+	handler := cardinalityHandler(distributor, overrides)
+	return handler
 }
 
 func createRequest(path string, tenantID string) *http.Request {

@@ -996,7 +996,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
 	if len(labelNames) > lbNamesLimit {
-		return 0, nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames)))
+		return 0, nil, httpgrpc.Errorf(http.StatusBadRequest, "label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
 	}
 
 	// Run labelValuesCardinality and UserStats methods in parallel

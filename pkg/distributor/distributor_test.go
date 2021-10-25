@@ -2226,7 +2226,7 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 			if testData.expectedHTTPGrpcError == nil {
 				require.NoError(t, err)
 			} else {
-				require.Equal(t, err, testData.expectedHTTPGrpcError)
+				require.Equal(t, testData.expectedHTTPGrpcError, err)
 			}
 		})
 	}
