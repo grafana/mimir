@@ -4,7 +4,6 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/go-kit/log"
@@ -14,8 +13,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -102,7 +101,7 @@ func newSplitAndCacheMiddleware(
 func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	// Split the input requests by the configured interval (eg. day).
