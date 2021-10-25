@@ -816,7 +816,7 @@ How it **works**:
 
 - A Cortex service could be configured with a limit of the max number of TCP connections accepted simultaneously on the HTTP and/or gRPC port.
 - If the limit is reached:
-  - New connections acceptance will put on hold until some existing connections are closed.
+  - New connections acceptance will put on hold or rejected. Exact behaviour depends on backlog parameter to `listen()` call and kernel settings.
   - The **health check endpoint may fail** (eg. timeout).
 - The limit is typically set way higher than expected usage, so if limit is reached (or close to be) then it means there's a critical issue.
 
