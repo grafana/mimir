@@ -832,6 +832,7 @@ How to **investigate**:
     ```
     topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
     ```
+    - In case the surge of push requests is caused by a tenant sending old samples, you can enable `reject_old_samples` and set `reject_old_samples_max_age: 1h` for the tenant, in order to reject any sample older than 1 hour
     - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
 ## Cortex routes by path
