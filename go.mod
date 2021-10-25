@@ -52,7 +52,7 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/thanos-io/thanos v0.22.0
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
-	github.com/weaveworks/common v0.0.0-20211015155308-ebe5bdc2c89e
+	github.com/weaveworks/common v0.0.0-20211025090655-ffcd684ef9ae
 	go.etcd.io/bbolt v1.3.6
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.10
