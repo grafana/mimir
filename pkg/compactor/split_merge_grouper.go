@@ -345,8 +345,8 @@ func formatShardIDLabelValue(shardID, shardCount uint32) string {
 	return fmt.Sprintf("%d_of_%d", shardID+1, shardCount)
 }
 
-// Returns original (0-based) shard index and shard count parsed from formatted value.
-func parseShardIDLabelValue(val string) (index, shardCount uint64, _ error) {
+// ParseShardIDLabelValue returns original (0-based) shard index and shard count parsed from formatted value.
+func ParseShardIDLabelValue(val string) (index, shardCount uint64, _ error) {
 	// If we fail to parse shardID, we better not consider this block fully included in successors.
 	matches := strings.Split(val, "_")
 	if len(matches) != 3 || matches[1] != "of" {

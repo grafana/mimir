@@ -56,6 +56,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
@@ -945,7 +946,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			continue
 		}
 
-		blocks := bs.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers)
+		blocks := bs.getFor(req.MinTime, req.MaxTime, req.MaxResolutionWindow, reqBlockMatchers, shardSelector)
 
 		if s.debugLogging {
 			debugFoundBlockSetOverview(s.logger, req.MinTime, req.MaxTime, req.MaxResolutionWindow, bs.labels, blocks)
@@ -1431,7 +1432,7 @@ func int64index(s []int64, x int64) int {
 // It supports overlapping blocks.
 //
 // NOTE: s.blocks are expected to be sorted in minTime order.
-func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatchers []*labels.Matcher) (bs []*bucketBlock) {
+func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatchers []*labels.Matcher, shardSelector *querysharding.ShardSelector) (bs []*bucketBlock) {
 	if mint > maxt {
 		return nil
 	}
@@ -1458,12 +1459,12 @@ func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatc
 		}
 
 		if i+1 < len(s.resolutions) {
-			bs = append(bs, s.getFor(start, b.meta.MinTime-1, s.resolutions[i+1], blockMatchers)...)
+			bs = append(bs, s.getFor(start, b.meta.MinTime-1, s.resolutions[i+1], blockMatchers, shardSelector)...)
 		}
 
 		// Include the block in the list of matching ones only if there are no block-level matchers
 		// or they actually match.
-		if len(blockMatchers) == 0 || b.matchRelabelLabels(blockMatchers) {
+		if b.containsQueryShard(shardSelector) && b.matchRelabelLabels(blockMatchers) {
 			bs = append(bs, b)
 		}
 
@@ -1471,7 +1472,7 @@ func (s *bucketBlockSet) getFor(mint, maxt, maxResolutionMillis int64, blockMatc
 	}
 
 	if i+1 < len(s.resolutions) {
-		bs = append(bs, s.getFor(start, maxt, s.resolutions[i+1], blockMatchers)...)
+		bs = append(bs, s.getFor(start, maxt, s.resolutions[i+1], blockMatchers, shardSelector)...)
 	}
 	return bs
 }
@@ -1648,6 +1649,30 @@ func (b *bucketBlock) matchRelabelLabels(matchers []*labels.Matcher) bool {
 		}
 	}
 	return true
+}
+
+func (b *bucketBlock) containsQueryShard(queryShard *querysharding.ShardSelector) bool {
+	if queryShard == nil || queryShard.ShardCount == 0 {
+		return true
+	}
+	blockShardLabel := b.extLset.Get(mimir_tsdb.CompactorShardIDExternalLabel)
+	if blockShardLabel == "" {
+		return true
+	}
+	blockShardIndex, blockShardCount, err := compactor.ParseShardIDLabelValue(blockShardLabel)
+	if err != nil {
+		level.Warn(b.logger).Log("msg", "can't parse shard ID label value", "err", err, "block_id", b.meta.ULID, "label_value", blockShardLabel)
+		// if unsure, just query this block too
+		return true
+	}
+	if blockShardCount > queryShard.ShardCount {
+		return true
+	}
+	if queryShard.ShardCount%blockShardCount != 0 {
+		level.Debug(b.logger).Log("msg", "block shard should be a divisor of query sharding to optimize querying", "query_shard", queryShard.LabelValue(), "block_shard", blockShardLabel, "block_id", b.meta.ULID)
+		return true
+	}
+	return queryShard.ShardIndex%blockShardCount == blockShardIndex
 }
 
 // overlapsClosedInterval returns true if the block overlaps [mint, maxt).

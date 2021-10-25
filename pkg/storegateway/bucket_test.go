@@ -126,7 +126,7 @@ func TestBucketBlock_Property(t *testing.T) {
 				return true
 			}
 
-			res := set.getFor(low, high, maxResolution, nil)
+			res := set.getFor(low, high, maxResolution, nil, nil)
 
 			// The data that we get must all encompass our requested range.
 			if len(res) == 1 && (res[0].meta.Thanos.Downsample.Resolution > maxResolution ||
@@ -165,7 +165,7 @@ func TestBucketBlock_Property(t *testing.T) {
 			}
 
 			maxResolution := downsample.ResLevel2
-			res := set.getFor(low, high, maxResolution, nil)
+			res := set.getFor(low, high, maxResolution, nil, nil)
 
 			// The data that we get must all encompass our requested range.
 			if len(res) == 1 && (res[0].meta.Thanos.Downsample.Resolution > maxResolution ||
@@ -406,7 +406,7 @@ func TestBucketBlockSet_addGet(t *testing.T) {
 				m.MaxTime = b.maxt
 				exp = append(exp, &bucketBlock{meta: &m})
 			}
-			assert.Equal(t, exp, set.getFor(c.mint, c.maxt, c.maxResolution, nil))
+			assert.Equal(t, exp, set.getFor(c.mint, c.maxt, c.maxResolution, nil, nil))
 		})
 	}
 }
@@ -432,7 +432,7 @@ func TestBucketBlockSet_remove(t *testing.T) {
 		assert.NoError(t, set.add(&bucketBlock{meta: &m}))
 	}
 	set.remove(input[1].id)
-	res := set.getFor(0, 300, 0, nil)
+	res := set.getFor(0, 300, 0, nil, nil)
 
 	assert.Equal(t, 2, len(res))
 	assert.Equal(t, input[0].id, res[0].meta.ULID)

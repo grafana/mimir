@@ -258,7 +258,7 @@ func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 			return true
 		}
 
-		index, count, err := parseShardIDLabelValue(s.shardID)
+		index, count, err := ParseShardIDLabelValue(s.shardID)
 		// If we fail to parse shardID, we better not consider this block fully included in successors.
 		if err != nil {
 			return false

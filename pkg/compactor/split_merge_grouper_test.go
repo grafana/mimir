@@ -807,7 +807,7 @@ func TestFormatAndParseShardId(t *testing.T) {
 		require.True(t, id < count)
 
 		out := formatShardIDLabelValue(uint32(id), uint32(count))
-		nid, ncount, err := parseShardIDLabelValue(out)
+		nid, ncount, err := ParseShardIDLabelValue(out)
 
 		require.NoError(t, err)
 		require.Equal(t, uint64(id), nid)
@@ -823,7 +823,7 @@ func TestParseInvalidShardId(t *testing.T) {
 		"-5_of_10",
 		"5_of_-10",
 	} {
-		_, _, err := parseShardIDLabelValue(inp)
+		_, _, err := ParseShardIDLabelValue(inp)
 		require.Error(t, err)
 	}
 }
