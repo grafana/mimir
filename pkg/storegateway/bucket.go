@@ -1665,9 +1665,21 @@ func (b *bucketBlock) containsQueryShard(queryShard *querysharding.ShardSelector
 		// if unsure, just query this block too
 		return true
 	}
+
 	if blockShardCount > queryShard.ShardCount {
-		return true
+		// more block shards than query shards, for instance 4 block shards but 2 query shards
+		// query shard index 1 can be in block shards 1 or 3
+		// this only works if queryShard.ShardCount * k = blockShardCount, with k > 0
+		if queryShard.ShardCount%blockShardCount != 0 {
+			level.Debug(b.logger).Log("msg", "block shard should be a multiple of query sharding to optimize querying", "query_shard", queryShard.LabelValue(), "block_shard", blockShardLabel, "block_id", b.meta.ULID)
+			return true
+		}
+		return blockShardIndex%queryShard.ShardCount == queryShard.ShardIndex
 	}
+
+	// more query shards than block shards, for instance 2 block shards and 4 query shards
+	// query shard index 3 can be only in block 1 (but query shard 1 will be in block 1 too)
+	// this only works if queryShard.ShardCount = blockShardCount * k, with k > 0
 	if queryShard.ShardCount%blockShardCount != 0 {
 		level.Debug(b.logger).Log("msg", "block shard should be a divisor of query sharding to optimize querying", "query_shard", queryShard.LabelValue(), "block_shard", blockShardLabel, "block_id", b.meta.ULID)
 		return true
