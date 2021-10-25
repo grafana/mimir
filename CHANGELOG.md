@@ -108,6 +108,7 @@
 Mixin:
 
 * [ENHANCEMENT] Added `CortexReachingTCPConnectionsLimit` alert. #403
+* [ENHANCEMENT] Added "Cortex / Writes Networking" and "Cortex / Reads Networking" dashboards. #405
 
 ### Query-tee
 
