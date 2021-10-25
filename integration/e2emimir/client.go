@@ -208,6 +208,31 @@ func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response
 	return c.httpClient.Do(req.WithContext(ctx))
 }
 
+// LabelValuesCardinality returns all values and series total count for each label name.
+func (c *Client) LabelValuesCardinality(labelNames []string, selector string) (*http.Response, error) {
+	body := make(url.Values)
+	if len(selector) > 0 {
+		body.Set("selector", selector)
+	}
+	for _, lbName := range labelNames {
+		body.Add("label_names[]", lbName)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, fmt.Sprintf("http://%s/api/prom/api/v1/cardinality/label_values", c.querierAddress), strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-Scope-OrgID", c.orgID)
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Add("Content-Length", strconv.Itoa(len(body.Encode())))
+
+	ctx, cancel := context.WithTimeout(context.Background(), c.timeout)
+	defer cancel()
+
+	// Execute HTTP request
+	return c.httpClient.Do(req.WithContext(ctx))
+}
+
 type addOrgIDRoundTripper struct {
 	orgID string
 	next  http.RoundTripper
