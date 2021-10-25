@@ -105,6 +105,10 @@
 * [BUGFIX] Query-tee: Ensure POST requests are handled correctly #286
 * [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360
 
+Mixin:
+
+* [ENHANCEMENT] Added `CortexReachingTCPConnectionsLimit` alert. #403
+
 ### Query-tee
 
 * [ENHANCEMENT] Added `/api/v1/query_exemplars` API endpoint support (no results comparison). #168
