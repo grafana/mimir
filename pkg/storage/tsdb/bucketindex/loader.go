@@ -13,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -20,7 +21,6 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
@@ -88,7 +88,7 @@ func NewLoader(cfg LoaderConfig, bucketClient objstore.Bucket, cfgProvider bucke
 
 	// Apply a jitter to the sync frequency in order to increase the probability
 	// of hitting the shared cache (if any).
-	checkInterval := util.DurationWithJitter(cfg.CheckInterval, 0.2)
+	checkInterval := dstime.DurationWithJitter(cfg.CheckInterval, 0.2)
 	l.Service = services.NewTimerService(checkInterval, nil, l.checkCachedIndexes, nil)
 
 	return l

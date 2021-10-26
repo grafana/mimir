@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,7 +32,6 @@ import (
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -104,7 +104,7 @@ func NewBucketScanBlocksFinder(cfg BucketScanBlocksFinderConfig, bucketClient ob
 
 	// Apply a jitter to the sync frequency in order to increase the probability
 	// of hitting the shared cache (if any).
-	scanInterval := util.DurationWithJitter(cfg.ScanInterval, 0.2)
+	scanInterval := dstime.DurationWithJitter(cfg.ScanInterval, 0.2)
 	d.Service = services.NewTimerService(scanInterval, d.starting, d.scan, nil)
 
 	return d

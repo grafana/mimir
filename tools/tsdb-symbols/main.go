@@ -13,12 +13,11 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
@@ -92,9 +91,9 @@ func analyseSymbols(blockDir string, uniqueSymbols map[string]struct{}, uniqueSy
 	defer idx.Close()
 
 	fmt.Printf("%s: mint=%d (%v), maxt=%d (%v), duration: %v\n", block.Meta().ULID.String(),
-		block.MinTime(), util.TimeFromMillis(block.MinTime()).UTC().Format(time.RFC3339),
-		block.MaxTime(), util.TimeFromMillis(block.MaxTime()).UTC().Format(time.RFC3339),
-		util.TimeFromMillis(block.MaxTime()).Sub(util.TimeFromMillis(block.MinTime())))
+		block.MinTime(), dstime.FromMillis(block.MinTime()).UTC().Format(time.RFC3339),
+		block.MaxTime(), dstime.FromMillis(block.MaxTime()).UTC().Format(time.RFC3339),
+		dstime.FromMillis(block.MaxTime()).Sub(dstime.FromMillis(block.MinTime())))
 
 	if thanosMeta, err := readMetadata(blockDir); err == nil {
 		fmt.Printf("%s: %v\n", block.Meta().ULID.String(), labels.FromMap(thanosMeta.Thanos.Labels))

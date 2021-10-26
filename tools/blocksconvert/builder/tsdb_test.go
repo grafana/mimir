@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -31,7 +32,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -102,7 +102,7 @@ func TestTsdbBuilder(t *testing.T) {
 
 	// Make sure we can query expected number of samples back.
 	{
-		q, err := db.Querier(context.Background(), util.TimeToMillis(yesterdayStart), util.TimeToMillis(yesterdayEnd))
+		q, err := db.Querier(context.Background(), dstime.ToMillis(yesterdayStart), dstime.ToMillis(yesterdayEnd))
 		require.NoError(t, err)
 		res := q.Select(true, nil, labels.MustNewMatcher(labels.MatchNotEqual, labels.MetricName, "")) // Select all
 
@@ -201,9 +201,9 @@ func generateSingleSeriesWithOverlappingChunks(t *testing.T, metric labels.Label
 	for len(samplesMap) < samples {
 		var ts int64
 		if len(samplesMap) < samples/10 {
-			ts = util.TimeToMillis(start)
+			ts = dstime.ToMillis(start)
 		} else {
-			ts = util.TimeToMillis(start) + ((r.Int63n(end.Sub(start).Milliseconds()) / tsStep) * tsStep)
+			ts = dstime.ToMillis(start) + ((r.Int63n(end.Sub(start).Milliseconds()) / tsStep) * tsStep)
 		}
 
 		pc := encoding.New()
@@ -226,7 +226,7 @@ func generateSingleSeriesWithOverlappingChunks(t *testing.T, metric labels.Label
 			}
 
 			ts += tsStep
-			if ts >= util.TimeToMillis(end) {
+			if ts >= dstime.ToMillis(end) {
 				break
 			}
 		}

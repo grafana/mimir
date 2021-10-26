@@ -45,6 +45,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"google.golang.org/grpc/status"
 
+	dstime "github.com/grafana/dskit/time"
+
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
@@ -977,7 +979,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 			nextSeries := series[nextID]
 			nextID++
 
-			return true, nextSeries, util.TimeToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
+			return true, nextSeries, dstime.ToMillis(time.Now().Add(-time.Duration(nextID) * time.Second)), float64(nextID)
 		}
 	}())
 
@@ -1042,7 +1044,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 			series := labels.New(labels.Label{Name: labels.MetricName, Value: fmt.Sprintf("series_%d", nextID)})
 			nextID++
 
-			return true, series, util.TimeToMillis(now), float64(nextID)
+			return true, series, dstime.ToMillis(now), float64(nextID)
 		}
 	}())
 

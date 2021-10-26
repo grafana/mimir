@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/stretchr/testify/require"
@@ -26,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -171,7 +171,7 @@ func newSampleGenerator(t *testing.T, initTime time.Time, step time.Duration) <-
 		c := initTime
 		for {
 			select {
-			case ts <- mimirpb.Sample{Value: 0, TimestampMs: util.TimeToMillis(c)}:
+			case ts <- mimirpb.Sample{Value: 0, TimestampMs: dstime.ToMillis(c)}:
 			case <-ctx.Done():
 				return
 			}

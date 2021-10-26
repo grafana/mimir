@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
@@ -31,7 +32,6 @@ import (
 	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
@@ -432,8 +432,8 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			t.Run(fmt.Sprintf("%s (shards: %d)", testName, numShards), func(t *testing.T) {
 				req := &PrometheusRequest{
 					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
+					Start: dstime.ToMillis(start),
+					End:   dstime.ToMillis(end),
 					Step:  step.Milliseconds(),
 					Query: testData.query,
 				}
@@ -509,8 +509,8 @@ func TestQueryShardingCorrectness(t *testing.T) {
 func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
 	req := &PrometheusRequest{
 		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
+		Start: dstime.ToMillis(start),
+		End:   dstime.ToMillis(end),
 		Step:  step.Milliseconds(),
 		Query: "aaa{", // Invalid query.
 	}
@@ -533,8 +533,8 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	req := &PrometheusRequest{
 		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
+		Start: dstime.ToMillis(start),
+		End:   dstime.ToMillis(end),
 		Step:  step.Milliseconds(),
 		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
 		Options: Options{
@@ -558,8 +558,8 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	req := &PrometheusRequest{
 		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
+		Start: dstime.ToMillis(start),
+		End:   dstime.ToMillis(end),
 		Step:  step.Milliseconds(),
 		Query: "sum by (foo) (rate(bar{}[1m]))", // shardable query.
 		Options: Options{
@@ -640,8 +640,8 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRequest{
 				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
+				Start: dstime.ToMillis(start),
+				End:   dstime.ToMillis(end),
 				Step:  step.Milliseconds(),
 				Query: testData.query,
 				Hints: testData.hints,
@@ -679,8 +679,8 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
 	req := &PrometheusRequest{
 		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
+		Start: dstime.ToMillis(start),
+		End:   dstime.ToMillis(end),
 		Step:  step.Milliseconds(),
 		Query: "vector(1)", // A non shardable query.
 	}
@@ -787,8 +787,8 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			req := &PrometheusRequest{
 				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
+				Start: dstime.ToMillis(start),
+				End:   dstime.ToMillis(end),
 				Step:  step.Milliseconds(),
 				Query: "sum(bar1)",
 			}
@@ -820,8 +820,8 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 	req := &PrometheusRequest{
 		Path:  "/query_range",
-		Start: util.TimeToMillis(start),
-		End:   util.TimeToMillis(end),
+		Start: dstime.ToMillis(start),
+		End:   dstime.ToMillis(end),
 		Step:  step.Milliseconds(),
 		Query: "vector(1)", // A non shardable query.
 	}
@@ -962,8 +962,8 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 	qry, err := h.engine.NewRangeQuery(
 		h.queryable,
 		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
+		dstime.FromMillis(r.GetStart()),
+		dstime.FromMillis(r.GetEnd()),
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
 	if err != nil {

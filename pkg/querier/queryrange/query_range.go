@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
+	dstime "github.com/grafana/dskit/time"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
@@ -28,7 +29,6 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -218,12 +218,12 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
 	var result PrometheusRequest
 	var err error
-	result.Start, err = util.ParseTime(r.FormValue("start"))
+	result.Start, err = dstime.ParseTime(r.FormValue("start"))
 	if err != nil {
 		return nil, decorateWithParamName(err, "start")
 	}
 
-	result.End, err = util.ParseTime(r.FormValue("end"))
+	result.End, err = dstime.ParseTime(r.FormValue("end"))
 	if err != nil {
 		return nil, decorateWithParamName(err, "end")
 	}

@@ -13,12 +13,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -77,15 +77,15 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	// Clamp the time range based on the max query lookback.
 
 	if maxQueryLookback := validation.SmallestPositiveNonZeroDurationPerTenant(tenantIDs, l.MaxQueryLookback); maxQueryLookback > 0 {
-		minStartTime := util.TimeToMillis(time.Now().Add(-maxQueryLookback))
+		minStartTime := dstime.ToMillis(time.Now().Add(-maxQueryLookback))
 
 		if r.GetEnd() < minStartTime {
 			// The request is fully outside the allowed range, so we can return an
 			// empty response.
 			level.Debug(log).Log(
 				"msg", "skipping the execution of the query because its time range is before the 'max query lookback' setting",
-				"reqStart", util.FormatTimeMillis(r.GetStart()),
-				"redEnd", util.FormatTimeMillis(r.GetEnd()),
+				"reqStart", dstime.FormatTimeMillis(r.GetStart()),
+				"redEnd", dstime.FormatTimeMillis(r.GetEnd()),
 				"maxQueryLookback", maxQueryLookback)
 
 			return NewEmptyPrometheusResponse(), nil
@@ -95,8 +95,8 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 			// Replace the start time in the request.
 			level.Debug(log).Log(
 				"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
-				"original", util.FormatTimeMillis(r.GetStart()),
-				"updated", util.FormatTimeMillis(minStartTime))
+				"original", dstime.FormatTimeMillis(r.GetStart()),
+				"updated", dstime.FormatTimeMillis(minStartTime))
 
 			r = r.WithStartEnd(minStartTime, r.GetEnd())
 		}

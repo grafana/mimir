@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -303,8 +304,8 @@ func Test_FunctionParallelism(t *testing.T) {
 
 				req := &PrometheusRequest{
 					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
+					Start: dstime.ToMillis(start),
+					End:   dstime.ToMillis(end),
 					Step:  step.Milliseconds(),
 					Query: query,
 				}
@@ -515,7 +516,7 @@ func stale(from, to time.Time, wrap generator) generator {
 		v := wrap(ts)
 
 		// Inject the stale marker if we're at the right time.
-		if ts >= util.TimeToMillis(from) && ts <= util.TimeToMillis(to) {
+		if ts >= dstime.ToMillis(from) && ts <= dstime.ToMillis(to) {
 			return math.Float64frombits(value.StaleNaN)
 		}
 

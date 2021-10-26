@@ -17,6 +17,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -285,12 +286,12 @@ func (g *StoreGateway) running(ctx context.Context) error {
 
 	// Apply a jitter to the sync frequency in order to increase the probability
 	// of hitting the shared cache (if any).
-	syncTicker := time.NewTicker(util.DurationWithJitter(g.storageCfg.BucketStore.SyncInterval, 0.2))
+	syncTicker := time.NewTicker(dstime.DurationWithJitter(g.storageCfg.BucketStore.SyncInterval, 0.2))
 	defer syncTicker.Stop()
 
 	if g.gatewayCfg.ShardingEnabled {
 		ringLastState, _ = g.ring.GetAllHealthy(BlocksOwnerSync) // nolint:errcheck
-		ringTicker := time.NewTicker(util.DurationWithJitter(g.gatewayCfg.ShardingRing.RingCheckPeriod, 0.2))
+		ringTicker := time.NewTicker(dstime.DurationWithJitter(g.gatewayCfg.ShardingRing.RingCheckPeriod, 0.2))
 		defer ringTicker.Stop()
 		ringTickerChan = ringTicker.C
 	}

@@ -12,14 +12,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log/level"
-
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -84,7 +83,7 @@ func (dm *DeleteRequestHandler) AddDeleteRequestHandler(w http.ResponseWriter, r
 	startParam := params.Get("start")
 	startTime := int64(0)
 	if startParam != "" {
-		startTime, err = util.ParseTime(startParam)
+		startTime, err = dstime.ParseTime(startParam)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -95,7 +94,7 @@ func (dm *DeleteRequestHandler) AddDeleteRequestHandler(w http.ResponseWriter, r
 	endTime := int64(model.Now())
 
 	if endParam != "" {
-		endTime, err = util.ParseTime(endParam)
+		endTime, err = dstime.ParseTime(endParam)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

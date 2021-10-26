@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
@@ -25,7 +26,6 @@ import (
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
@@ -498,9 +498,9 @@ func testMetadataQueriesWithBlocksStorage(
 		firstSeriesInIngesterHeadName  = getMetricName(firstSeriesInIngesterHead.Labels)
 		lastSeriesInStorageName        = getMetricName(lastSeriesInStorage.Labels)
 
-		lastSeriesInStorageTs        = util.TimeFromMillis(lastSeriesInStorage.Samples[0].Timestamp)
-		lastSeriesInIngesterBlocksTs = util.TimeFromMillis(lastSeriesInIngesterBlocks.Samples[0].Timestamp)
-		firstSeriesInIngesterHeadTs  = util.TimeFromMillis(firstSeriesInIngesterHead.Samples[0].Timestamp)
+		lastSeriesInStorageTs        = dstime.FromMillis(lastSeriesInStorage.Samples[0].Timestamp)
+		lastSeriesInIngesterBlocksTs = dstime.FromMillis(lastSeriesInIngesterBlocks.Samples[0].Timestamp)
+		firstSeriesInIngesterHeadTs  = dstime.FromMillis(firstSeriesInIngesterHead.Samples[0].Timestamp)
 	)
 
 	type seriesTest struct {

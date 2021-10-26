@@ -21,6 +21,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/kv/codec"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -273,7 +274,7 @@ const (
 )
 
 func (c *haTracker) cleanupOldReplicasLoop(ctx context.Context) {
-	tick := time.NewTicker(util.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
+	tick := time.NewTicker(dstime.DurationWithJitter(cleanupCyclePeriod, cleanupCycleJitterVariance))
 	defer tick.Stop()
 
 	for {

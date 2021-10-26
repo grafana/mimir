@@ -20,11 +20,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/grafana/mimir/pkg/chunk/purger"
-	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/util/validation"
-
 	"github.com/grafana/dskit/flagext"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -36,12 +33,14 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/ingester/client"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/iterators"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
+	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 const (
@@ -384,8 +383,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryIntoFuture(t *testing.T) {
 				// Assert on the time range of the actual executed query (5s delta).
 				delta := float64(5000)
 				require.Len(t, distributor.Calls, 1)
-				assert.InDelta(t, util.TimeToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-				assert.InDelta(t, util.TimeToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+				assert.InDelta(t, dstime.ToMillis(c.expectedStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
+				assert.InDelta(t, dstime.ToMillis(c.expectedEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 			} else {
 				// Ensure no query has been executed executed (because skipped).
 				assert.Len(t, distributor.Calls, 0)
@@ -585,8 +584,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					// Assert on the time range of the actual executed query (5s delta).
 					delta := float64(5000)
 					require.Len(t, distributor.Calls, 1)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedQueryEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedQueryStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedQueryEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
 					// Ensure no query has been executed executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
@@ -598,12 +597,12 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(ctx, dstime.ToMillis(testData.queryStartTime), dstime.ToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				hints := &storage.SelectHints{
-					Start: util.TimeToMillis(testData.queryStartTime),
-					End:   util.TimeToMillis(testData.queryEndTime),
+					Start: dstime.ToMillis(testData.queryStartTime),
+					End:   dstime.ToMillis(testData.queryEndTime),
 					Func:  "series",
 				}
 				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
@@ -617,8 +616,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					delta := float64(5000)
 					require.Len(t, distributor.Calls, 1)
 					assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
 					// Ensure no query has been executed executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
@@ -633,7 +632,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("LabelNames", mock.Anything, mock.Anything, mock.Anything, matchers).Return([]string{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(ctx, dstime.ToMillis(testData.queryStartTime), dstime.ToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				_, _, err = q.LabelNames(matchers...)
@@ -645,8 +644,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					require.Len(t, distributor.Calls, 1)
 					assert.Equal(t, "LabelNames", distributor.Calls[0].Method)
 					args := distributor.Calls[0].Arguments
-					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(args.Get(1).(model.Time)), delta)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(args.Get(2).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedMetadataStartTime), int64(args.Get(1).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedMetadataEndTime), int64(args.Get(2).(model.Time)), delta)
 					assert.Equal(t, matchers, args.Get(3).([]*labels.Matcher))
 				} else {
 					// Ensure no query has been executed executed (because skipped).
@@ -659,7 +658,7 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 				distributor.On("LabelValuesForLabelName", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]string{}, nil)
 
 				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
-				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				q, err := queryable.Querier(ctx, dstime.ToMillis(testData.queryStartTime), dstime.ToMillis(testData.queryEndTime))
 				require.NoError(t, err)
 
 				_, _, err = q.LabelValues(labels.MetricName)
@@ -670,8 +669,8 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 					delta := float64(5000)
 					require.Len(t, distributor.Calls, 1)
 					assert.Equal(t, "LabelValuesForLabelName", distributor.Calls[0].Method)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
-					assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
+					assert.InDelta(t, dstime.ToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
 				} else {
 					// Ensure no query has been executed executed (because skipped).
 					assert.Len(t, distributor.Calls, 0)
@@ -927,13 +926,13 @@ func TestUseBeforeTimestamp(t *testing.T) {
 	now := time.Now()
 	qwf := UseBeforeTimestampQueryable(m, now.Add(-1*time.Hour))
 
-	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now)))
+	require.False(t, qwf.UseQueryable(now, dstime.ToMillis(now.Add(-5*time.Minute)), dstime.ToMillis(now)))
 	require.False(t, m.useQueryableCalled)
 
-	require.False(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now)))
+	require.False(t, qwf.UseQueryable(now, dstime.ToMillis(now.Add(-1*time.Hour)), dstime.ToMillis(now)))
 	require.False(t, m.useQueryableCalled)
 
-	require.True(t, qwf.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(-time.Millisecond)), util.TimeToMillis(now)))
+	require.True(t, qwf.UseQueryable(now, dstime.ToMillis(now.Add(-1*time.Hour).Add(-time.Millisecond)), dstime.ToMillis(now)))
 	require.False(t, m.useQueryableCalled) // UseBeforeTimestampQueryable wraps Queryable, and not QueryableWithFilter.
 }
 
@@ -942,13 +941,13 @@ func TestStoreQueryable(t *testing.T) {
 	now := time.Now()
 	sq := storeQueryable{m, time.Hour}
 
-	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-5*time.Minute)), util.TimeToMillis(now)))
+	require.False(t, sq.UseQueryable(now, dstime.ToMillis(now.Add(-5*time.Minute)), dstime.ToMillis(now)))
 	require.False(t, m.useQueryableCalled)
 
-	require.False(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), util.TimeToMillis(now)))
+	require.False(t, sq.UseQueryable(now, dstime.ToMillis(now.Add(-1*time.Hour).Add(time.Millisecond)), dstime.ToMillis(now)))
 	require.False(t, m.useQueryableCalled)
 
-	require.True(t, sq.UseQueryable(now, util.TimeToMillis(now.Add(-1*time.Hour)), util.TimeToMillis(now)))
+	require.True(t, sq.UseQueryable(now, dstime.ToMillis(now.Add(-1*time.Hour)), dstime.ToMillis(now)))
 	require.True(t, m.useQueryableCalled) // storeQueryable wraps QueryableWithFilter, so it must call its UseQueryable method.
 }
 

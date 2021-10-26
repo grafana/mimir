@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/scrape"
@@ -25,7 +26,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
 
@@ -46,39 +46,39 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 	}{
 		"should not manipulate query time range if queryIngestersWithin is disabled": {
 			queryIngestersWithin: 0,
-			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-30 * time.Minute)),
-			expectedMinT:         util.TimeToMillis(now.Add(-100 * time.Minute)),
-			expectedMaxT:         util.TimeToMillis(now.Add(-30 * time.Minute)),
+			queryMinT:            dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:            dstime.ToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:         dstime.ToMillis(now.Add(-100 * time.Minute)),
+			expectedMaxT:         dstime.ToMillis(now.Add(-30 * time.Minute)),
 		},
 		"should not manipulate query time range if queryIngestersWithin is enabled but query min time is newer": {
 			queryIngestersWithin: time.Hour,
-			queryMinT:            util.TimeToMillis(now.Add(-50 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-30 * time.Minute)),
-			expectedMinT:         util.TimeToMillis(now.Add(-50 * time.Minute)),
-			expectedMaxT:         util.TimeToMillis(now.Add(-30 * time.Minute)),
+			queryMinT:            dstime.ToMillis(now.Add(-50 * time.Minute)),
+			queryMaxT:            dstime.ToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:         dstime.ToMillis(now.Add(-50 * time.Minute)),
+			expectedMaxT:         dstime.ToMillis(now.Add(-30 * time.Minute)),
 		},
 		"should manipulate query time range if queryIngestersWithin is enabled and query min time is older": {
 			queryIngestersWithin: time.Hour,
-			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-30 * time.Minute)),
-			expectedMinT:         util.TimeToMillis(now.Add(-60 * time.Minute)),
-			expectedMaxT:         util.TimeToMillis(now.Add(-30 * time.Minute)),
+			queryMinT:            dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:            dstime.ToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:         dstime.ToMillis(now.Add(-60 * time.Minute)),
+			expectedMaxT:         dstime.ToMillis(now.Add(-30 * time.Minute)),
 		},
 		"should skip the query if the query max time is older than queryIngestersWithin": {
 			queryIngestersWithin: time.Hour,
-			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-90 * time.Minute)),
+			queryMinT:            dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:            dstime.ToMillis(now.Add(-90 * time.Minute)),
 			expectedMinT:         0,
 			expectedMaxT:         0,
 		},
 		"should not manipulate query time range if queryIngestersWithin is enabled and query max time is older, but the query is for /series": {
 			querySeries:          true,
 			queryIngestersWithin: time.Hour,
-			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-90 * time.Minute)),
-			expectedMinT:         util.TimeToMillis(now.Add(-100 * time.Minute)),
-			expectedMaxT:         util.TimeToMillis(now.Add(-90 * time.Minute)),
+			queryMinT:            dstime.ToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:            dstime.ToMillis(now.Add(-90 * time.Minute)),
+			expectedMinT:         dstime.ToMillis(now.Add(-100 * time.Minute)),
+			expectedMaxT:         dstime.ToMillis(now.Add(-90 * time.Minute)),
 		},
 	}
 
@@ -120,8 +120,8 @@ func TestDistributorQueryableFilter(t *testing.T) {
 
 	now := time.Now()
 
-	queryMinT := util.TimeToMillis(now.Add(-5 * time.Minute))
-	queryMaxT := util.TimeToMillis(now)
+	queryMinT := dstime.ToMillis(now.Add(-5 * time.Minute))
+	queryMaxT := dstime.ToMillis(now)
 
 	require.True(t, dq.UseQueryable(now, queryMinT, queryMaxT))
 	require.True(t, dq.UseQueryable(now.Add(time.Hour), queryMinT, queryMaxT))

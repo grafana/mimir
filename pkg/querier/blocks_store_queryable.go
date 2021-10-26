@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -465,7 +466,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 	if q.queryStoreAfter > 0 {
 		now := time.Now()
 		origMaxT := maxT
-		maxT = math.Min64(maxT, util.TimeToMillis(now.Add(-q.queryStoreAfter)))
+		maxT = math.Min64(maxT, dstime.ToMillis(now.Add(-q.queryStoreAfter)))
 
 		if origMaxT != maxT {
 			level.Debug(logger).Log("msg", "the max time of the query to blocks storage has been manipulated", "original", origMaxT, "updated", maxT)

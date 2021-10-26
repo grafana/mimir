@@ -26,6 +26,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/cluster"
 	"github.com/prometheus/alertmanager/cluster/clusterpb"
@@ -42,7 +43,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -645,7 +645,7 @@ func (am *MultitenantAlertmanager) run(ctx context.Context) error {
 	var ringTickerChan <-chan time.Time
 
 	if am.cfg.ShardingEnabled {
-		ringTicker := time.NewTicker(util.DurationWithJitter(am.cfg.ShardingRing.RingCheckPeriod, 0.2))
+		ringTicker := time.NewTicker(dstime.DurationWithJitter(am.cfg.ShardingRing.RingCheckPeriod, 0.2))
 		defer ringTicker.Stop()
 		ringTickerChan = ringTicker.C
 	}

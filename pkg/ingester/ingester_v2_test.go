@@ -29,6 +29,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -821,7 +822,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 	// Push a single time series to set the TSDB min time.
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
-	startTime := util.TimeToMillis(time.Now())
+	startTime := dstime.ToMillis(time.Now())
 
 	currTimeReq := mimirpb.ToWriteRequest(
 		[]labels.Labels{metricLabels},
@@ -902,7 +903,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 				// Push a single time series to set the TSDB min time.
 				currTimeReq := mimirpb.ToWriteRequest(
 					[]labels.Labels{{{Name: labels.MetricName, Value: metricName}}},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
+					[]mimirpb.Sample{{Value: 1, TimestampMs: dstime.ToMillis(time.Now())}},
 					nil,
 					mimirpb.API)
 				_, err := ingester.v2Push(ctx, currTimeReq)
@@ -1551,7 +1552,7 @@ func BenchmarkIngester_LabelValuesCardinality(b *testing.B) {
 		userID              = "test"
 		numSeries           = 10000
 		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
-		startTimestamp      = util.TimeToMillis(time.Now())
+		startTimestamp      = dstime.ToMillis(time.Now())
 		step                = int64(60000) // 1 sample per minute
 	)
 
@@ -1992,7 +1993,7 @@ func Test_Ingester_v2MetricsForLabelMatchers_Deduplication(t *testing.T) {
 		numSeries = 100000
 	)
 
-	now := util.TimeToMillis(time.Now())
+	now := dstime.ToMillis(time.Now())
 	i := createIngesterWithSeries(t, userID, numSeries, 1, now, 1)
 	ctx := user.InjectOrgID(context.Background(), "test")
 
@@ -2020,7 +2021,7 @@ func Benchmark_Ingester_v2MetricsForLabelMatchers(b *testing.B) {
 		userID              = "test"
 		numSeries           = 10000
 		numSamplesPerSeries = 60 * 6 // 6h on 1 sample per minute
-		startTimestamp      = util.TimeToMillis(time.Now())
+		startTimestamp      = dstime.ToMillis(time.Now())
 		step                = int64(60000) // 1 sample per minute
 	)
 
@@ -3851,7 +3852,7 @@ func verifyCompactedHead(t *testing.T, i *Ingester, expected bool) {
 
 func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
+	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, dstime.ToMillis(time.Now()))
 	req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: mimirpb.COUNTER})
 	_, err := i.v2Push(ctx, req)
 	require.NoError(t, err)
@@ -4103,7 +4104,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	require.True(t, db.casState(active, forceCompacting))
 
 	// Ingestion should fail with a 503.
-	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
+	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, dstime.ToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
 	_, err = i.v2Push(ctx, req)
 	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errors.New("forced compaction in progress"), userID).Error()), err)

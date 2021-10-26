@@ -10,13 +10,13 @@ import (
 	"compress/gzip"
 	"net/http"
 
+	dstime "github.com/grafana/dskit/time"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/grafana/mimir/pkg/querier/chunkstore"
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // ChunksHandler allows you to fetch a compressed tar of all the chunks for a
@@ -30,13 +30,13 @@ func ChunksHandler(queryable storage.Queryable) http.Handler {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		mint, err := util.ParseTime(r.FormValue("start"))
+		mint, err := dstime.ParseTime(r.FormValue("start"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-		maxt, err := util.ParseTime(r.FormValue("end"))
+		maxt, err := dstime.ParseTime(r.FormValue("end"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

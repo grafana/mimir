@@ -15,8 +15,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 
+	dstime "github.com/grafana/dskit/time"
+
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func TestBlocksConsistencyChecker_Check(t *testing.T) {
@@ -24,9 +25,9 @@ func TestBlocksConsistencyChecker_Check(t *testing.T) {
 	uploadGracePeriod := 10 * time.Minute
 	deletionGracePeriod := 5 * time.Minute
 
-	block1 := ulid.MustNew(uint64(util.TimeToMillis(now.Add(-uploadGracePeriod*2))), nil)
-	block2 := ulid.MustNew(uint64(util.TimeToMillis(now.Add(-uploadGracePeriod*3))), nil)
-	block3 := ulid.MustNew(uint64(util.TimeToMillis(now.Add(-uploadGracePeriod*4))), nil)
+	block1 := ulid.MustNew(uint64(dstime.ToMillis(now.Add(-uploadGracePeriod*2))), nil)
+	block2 := ulid.MustNew(uint64(dstime.ToMillis(now.Add(-uploadGracePeriod*3))), nil)
+	block3 := ulid.MustNew(uint64(dstime.ToMillis(now.Add(-uploadGracePeriod*4))), nil)
 
 	tests := map[string]struct {
 		knownBlocks           bucketindex.Blocks

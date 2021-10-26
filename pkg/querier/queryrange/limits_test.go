@@ -19,7 +19,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/util"
+	dstime "github.com/grafana/dskit/time"
 )
 
 func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
@@ -76,8 +76,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+				Start: dstime.ToMillis(testData.reqStartTime),
+				End:   dstime.ToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
@@ -104,8 +104,8 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 				// Assert on the time range of the request passed to the inner handler (5s delta).
 				delta := float64(5000)
 				require.Len(t, inner.Calls, 1)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
-				assert.InDelta(t, util.TimeToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
+				assert.InDelta(t, dstime.ToMillis(testData.expectedStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart(), delta)
+				assert.InDelta(t, dstime.ToMillis(testData.expectedEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd(), delta)
 			}
 		})
 	}
@@ -161,8 +161,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			req := &PrometheusRequest{
-				Start: util.TimeToMillis(testData.reqStartTime),
-				End:   util.TimeToMillis(testData.reqEndTime),
+				Start: dstime.ToMillis(testData.reqStartTime),
+				End:   dstime.ToMillis(testData.reqEndTime),
 			}
 
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
@@ -188,8 +188,8 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 
 				// The time range of the request passed to the inner handler should have not been manipulated.
 				require.Len(t, inner.Calls, 1)
-				assert.Equal(t, util.TimeToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart())
-				assert.Equal(t, util.TimeToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd())
+				assert.Equal(t, dstime.ToMillis(testData.reqStartTime), inner.Calls[0].Arguments.Get(1).(Request).GetStart())
+				assert.Equal(t, dstime.ToMillis(testData.reqEndTime), inner.Calls[0].Arguments.Get(1).(Request).GetEnd())
 			}
 		})
 	}
@@ -263,7 +263,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
+		End:   dstime.ToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
 		Query: `foo`,
 	})
@@ -306,7 +306,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
+		End:   dstime.ToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
 		Query: `foo`,
 	})
@@ -346,7 +346,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	r, err := PrometheusCodec.EncodeRequest(reqCtx, &PrometheusRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
-		End:   util.TimeToMillis(time.Now()),
+		End:   dstime.ToMillis(time.Now()),
 		Step:  int64(1 * time.Second * time.Millisecond),
 		Query: `foo`,
 	})

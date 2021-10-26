@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -22,7 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -138,8 +138,8 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	qry, err := s.engine.NewRangeQuery(
 		lazyquery.NewLazyQueryable(shardedQueryable),
 		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
+		dstime.FromMillis(r.GetStart()),
+		dstime.FromMillis(r.GetEnd()),
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	gokitlog "github.com/go-kit/log"
+	dstime "github.com/grafana/dskit/time"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -29,7 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/util"
 )
 
 func main() {
@@ -180,9 +180,9 @@ func printBlocks(metas map[ulid.ULID]*metadata.Meta) {
 
 	for _, b := range blocks {
 		fmt.Fprintf(tabber, "%v\t", b.ULID)
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MinTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).UTC().Format(time.RFC3339))
-		fmt.Fprintf(tabber, "%v\t", util.TimeFromMillis(b.MaxTime).Sub(util.TimeFromMillis(b.MinTime)))
+		fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(b.MinTime).UTC().Format(time.RFC3339))
+		fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(b.MaxTime).UTC().Format(time.RFC3339))
+		fmt.Fprintf(tabber, "%v\t", dstime.FromMillis(b.MaxTime).Sub(dstime.FromMillis(b.MinTime)))
 		fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels).WithoutLabels(tsdb.TenantIDExternalLabel))
 		fmt.Fprintln(tabber)
 	}
