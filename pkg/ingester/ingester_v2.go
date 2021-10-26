@@ -840,6 +840,8 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		perUserSeriesLimitCount   = 0
 		perMetricSeriesLimitCount = 0
 
+		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
+
 		updateFirstPartial = func(errFn func() error) {
 			if firstPartialErr == nil {
 				firstPartialErr = errFn()
@@ -855,9 +857,21 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 			otlog.Int("numseries", len(req.Timeseries)))
 	}
 
+nextTimeSeries:
 	for _, ts := range req.Timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
+
+		// Fast path in case we only have samples and they are all out of bounds.
+		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && isOutOfBounds(ts.TimeSeries, minAppendTime) {
+			failedSamplesCount++
+			sampleOutOfBoundsCount++
+
+			updateFirstPartial(func() error {
+				return wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+			})
+			continue nextTimeSeries
+		}
 
 		// Look up a reference for this series.
 		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
@@ -874,7 +888,6 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 					succeededSamplesCount++
 					continue
 				}
-
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
@@ -1014,16 +1027,17 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	if perMetricSeriesLimitCount > 0 {
 		validation.DiscardedSamples.WithLabelValues(perMetricSeriesLimit, userID).Add(float64(perMetricSeriesLimitCount))
 	}
+	if succeededSamplesCount > 0 {
+		i.ingestionRate.Add(int64(succeededSamplesCount))
 
-	i.ingestionRate.Add(int64(succeededSamplesCount))
-
-	switch req.Source {
-	case mimirpb.RULE:
-		db.ingestedRuleSamples.Add(int64(succeededSamplesCount))
-	case mimirpb.API:
-		fallthrough
-	default:
-		db.ingestedAPISamples.Add(int64(succeededSamplesCount))
+		switch req.Source {
+		case mimirpb.RULE:
+			db.ingestedRuleSamples.Add(int64(succeededSamplesCount))
+		case mimirpb.API:
+			fallthrough
+		default:
+			db.ingestedAPISamples.Add(int64(succeededSamplesCount))
+		}
 	}
 
 	if firstPartialErr != nil {
@@ -2409,4 +2423,14 @@ func getSelectHintsForShard(start, end int64, shard *querysharding.ShardSelector
 		ShardIndex: shard.ShardIndex,
 		ShardCount: shard.ShardCount,
 	}
+}
+
+func isOutOfBounds(ts *mimirpb.TimeSeries, minValidTime int64) bool {
+	for _, s := range ts.Samples {
+		if s.TimestampMs >= minValidTime {
+			return false
+		}
+	}
+
+	return true
 }

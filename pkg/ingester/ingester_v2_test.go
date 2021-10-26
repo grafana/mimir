@@ -860,7 +860,7 @@ func verifyErrorString(tb testing.TB, err error, expectedErr string) {
 	}
 }
 
-func Benchmark_Ingester_v2PushOnError(b *testing.B) {
+func Benchmark_Ingester_PushOnError(b *testing.B) {
 	var (
 		ctx             = user.InjectOrgID(context.Background(), userID)
 		sampleTimestamp = int64(100)
@@ -872,22 +872,26 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 		numConcurrentClients int
 	}{
 		"no concurrency": {
-			numSeriesPerRequest:  1000,
+			numSeriesPerRequest:  500,
 			numConcurrentClients: 1,
 		},
 		"low concurrency": {
-			numSeriesPerRequest:  1000,
+			numSeriesPerRequest:  500,
 			numConcurrentClients: 100,
 		},
 		"high concurrency": {
-			numSeriesPerRequest:  1000,
+			numSeriesPerRequest:  500,
 			numConcurrentClients: 1000,
+		},
+		"low number of series per request and very high concurrency": {
+			numSeriesPerRequest:  100,
+			numConcurrentClients: 2500,
 		},
 	}
 
 	instanceLimits := map[string]*InstanceLimits{
 		"no limits":  nil,
-		"limits set": {MaxIngestionRate: 1000, MaxInMemoryTenants: 1, MaxInMemorySeries: 1000, MaxInflightPushRequests: 1000}, // these match max values from scenarios
+		"limits set": {MaxIngestionRate: 1e12, MaxInMemoryTenants: 1, MaxInMemorySeries: 500, MaxInflightPushRequests: 2500}, // these match max values from scenarios
 	}
 
 	tests := map[string]struct {
@@ -905,7 +909,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					mimirpb.API)
-				_, err := ingester.v2Push(ctx, currTimeReq)
+				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
@@ -913,7 +917,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -930,7 +934,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 						nil,
 						mimirpb.API)
 
-					_, err := ingester.v2Push(ctx, currTimeReq)
+					_, err := ingester.Push(ctx, currTimeReq)
 					require.NoError(b, err)
 				}
 			},
@@ -939,7 +943,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 
 				// Push out of order samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -957,13 +961,13 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					mimirpb.API)
-				_, err := ingester.v2Push(ctx, currTimeReq)
+				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with a different name than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-user series limit")
 				}
 			},
@@ -980,13 +984,13 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					mimirpb.API)
-				_, err := ingester.v2Push(ctx, currTimeReq)
+				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-metric series limit")
 				}
 			},
@@ -1001,7 +1005,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Send a lot of samples
-				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 
 				ingester.ingestionRate.Tick()
@@ -1009,8 +1013,8 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
-					verifyErrorString(b, err, "push rate reached")
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+					verifyErrorString(b, err, "push rate limit reached")
 				}
 			},
 		},
@@ -1025,13 +1029,13 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Send some samples for one tenant (not the same that is used during the test)
 				ctx := user.InjectOrgID(context.Background(), "different_tenant")
-				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "max tenants limit reached")
 				}
 			},
@@ -1045,12 +1049,12 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
-				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "max series limit reached")
 				}
 			},
