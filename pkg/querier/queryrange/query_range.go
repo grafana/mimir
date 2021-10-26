@@ -76,7 +76,7 @@ type Merger interface {
 
 // Request represents a query range request that can be process by middlewares.
 type Request interface {
-	// GetId returns an opaque ID of the request. The actual value is implementation specific.
+	// GetId returns the ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
 	GetId() int64
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64

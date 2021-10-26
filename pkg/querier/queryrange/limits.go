@@ -30,22 +30,22 @@ type Limits interface {
 	MaxQueryLookback(userID string) time.Duration
 
 	// MaxQueryLength returns the limit of the length (in time) of a query.
-	MaxQueryLength(string) time.Duration
+	MaxQueryLength(userID string) time.Duration
 
 	// MaxQueryParallelism returns the limit to the number of split queries the
 	// frontend will process in parallel.
-	MaxQueryParallelism(string) int
+	MaxQueryParallelism(userID string) int
 
 	// MaxCacheFreshness returns the period after which results are cacheable,
 	// to prevent caching of very recent results.
-	MaxCacheFreshness(string) time.Duration
+	MaxCacheFreshness(userID string) time.Duration
 
 	// QueryShardingTotalShards returns the number of shards to use for a given tenant.
-	QueryShardingTotalShards(string) int
+	QueryShardingTotalShards(userID string) int
 
 	// QueryShardingMaxShardedQueries returns the max number of sharded queries that can
 	// be run for a given received query. 0 to disable limit.
-	QueryShardingMaxShardedQueries(string) int
+	QueryShardingMaxShardedQueries(userID string) int
 }
 
 type limitsMiddleware struct {

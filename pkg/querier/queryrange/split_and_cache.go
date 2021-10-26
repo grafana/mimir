@@ -34,9 +34,8 @@ type splitAndCacheMiddlewareMetrics struct {
 func newSplitAndCacheMiddlewareMetrics(reg prometheus.Registerer) *splitAndCacheMiddlewareMetrics {
 	return &splitAndCacheMiddlewareMetrics{
 		splitQueriesCount: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Namespace: "cortex",
-			Name:      "frontend_split_queries_total",
-			Help:      "Total number of underlying query requests after the split by interval is applied",
+			Name: "cortex_frontend_split_queries_total",
+			Help: "Total number of underlying query requests after the split by interval is applied",
 		}),
 	}
 }
