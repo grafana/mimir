@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
@@ -149,6 +151,21 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, http.StatusOK, res.StatusCode)
 			}
+
+			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
+			// the final ingester may not have received series yet.
+			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
+			test.Poll(t, 3*time.Second, numSeriesToPush*3, func() interface{} {
+				var totalIngestedSeries int
+				for _, ing := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
+					values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})
+					require.NoError(t, err)
+
+					numMemorySeries := e2e.SumValues(values)
+					totalIngestedSeries += int(numMemorySeries)
+				}
+				return totalIngestedSeries
+			})
 
 			// Fetch label names and values.
 			res, err := client.LabelNamesAndValues(tc.selector, tc.limit)
@@ -368,6 +385,21 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 				require.Equal(t, http.StatusOK, res.StatusCode)
 			}
 
+			// Since the Push() response is sent as soon as the quorum is reached, when we reach this point
+			// the final ingester may not have received series yet.
+			// To avoid flaky test we retry the assertions until we hit the desired state within a reasonable timeout.
+			test.Poll(t, 3*time.Second, numSeriesToPush*3, func() interface{} {
+				var totalIngestedSeries int
+				for _, ing := range []*e2emimir.MimirService{ingester1, ingester2, ingester3} {
+					values, err := ing.SumMetrics([]string{"cortex_ingester_memory_series"})
+					require.NoError(t, err)
+
+					numMemorySeries := e2e.SumValues(values)
+					totalIngestedSeries += int(numMemorySeries)
+				}
+				return totalIngestedSeries
+			})
+
 			// Fetch label values cardinality.
 			res, err := client.LabelValuesCardinality(tc.labelNames, tc.selector, tc.limit)
 			require.NoError(t, err)
@@ -387,6 +419,10 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			var lbValuesCardinalityResp labelValuesCardinalityResponse
 			require.NoError(t, json.NewDecoder(res.Body).Decode(&lbValuesCardinalityResp))
 
+			// Make sure the resultant label names are sorted
+			sort.Slice(lbValuesCardinalityResp.Labels, func(l, r int) bool {
+				return lbValuesCardinalityResp.Labels[l].LabelName < lbValuesCardinalityResp.Labels[r].LabelName
+			})
 			require.Equal(t, tc.expectedResult, lbValuesCardinalityResp)
 		})
 	}
