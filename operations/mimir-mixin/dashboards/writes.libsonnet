@@ -45,7 +45,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('Active Series') +
+        $.panel('In-memory Series') +
         $.statPanel(|||
           sum(cortex_ingester_memory_series{%(ingester)s}
           / on(%(group_by_cluster)s) group_left
