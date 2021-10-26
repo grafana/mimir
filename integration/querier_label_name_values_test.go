@@ -205,7 +205,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 		"obtain labels cardinality with default selector and limit": {
 			labelNames: []string{"env", "job"},
 			expectedResult: labelValuesCardinalityResponse{
-				SeriesCountTotal: 1000,
+				SeriesCountTotal: numSeriesToPush,
 				Labels: []labelNamesCardinality{
 					{
 						LabelName:        "env",
@@ -235,7 +235,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 		"obtain env label cardinality with default selector": {
 			labelNames: []string{"env"},
 			expectedResult: labelValuesCardinalityResponse{
-				SeriesCountTotal: 1000,
+				SeriesCountTotal: numSeriesToPush,
 				Labels: []labelNamesCardinality{
 					{
 						LabelName:        "env",
@@ -254,7 +254,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			labelNames: []string{"env", "job"},
 			selector:   "{job=~'store-.*'}",
 			expectedResult: labelValuesCardinalityResponse{
-				SeriesCountTotal: 1000,
+				SeriesCountTotal: numSeriesToPush,
 				Labels: []labelNamesCardinality{
 					{
 						LabelName:        "env",
@@ -281,7 +281,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			labelNames: []string{"env", "job"},
 			limit:      2,
 			expectedResult: labelValuesCardinalityResponse{
-				SeriesCountTotal: 1000,
+				SeriesCountTotal: numSeriesToPush,
 				Labels: []labelNamesCardinality{
 					{
 						LabelName:        "env",
