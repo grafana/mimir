@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
-	"sort"
 	"strings"
 	"time"
 
@@ -118,22 +117,6 @@ func (cfg *MetadataCacheConfig) Validate() error {
 	return cfg.CacheBackend.Validate()
 }
 
-func (cfg *MetadataCacheConfig) MinTTL() time.Duration {
-	ttls := []int{
-		int(cfg.TenantsListTTL),
-		int(cfg.TenantBlocksListTTL),
-		int(cfg.ChunksListTTL),
-		int(cfg.MetafileExistsTTL),
-		int(cfg.MetafileDoesntExistTTL),
-		int(cfg.MetafileContentTTL),
-		int(cfg.MetafileAttributesTTL),
-		int(cfg.BlockIndexAttributesTTL),
-		int(cfg.BucketIndexContentTTL),
-	}
-	sort.Ints(ttls)
-	return time.Duration(ttls[0])
-}
-
 func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
 	cfg := storecache.NewCachingBucketConfig()
 	cachingConfigured := false
@@ -151,14 +134,6 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cachingConfigured = true
 		metadataCache = cache.NewTracingCache(metadataCache)
 
-		if metadataConfig.LRUEnabled {
-			var err error
-			metadataCache, err = storecache.WrapWithLRUCache(metadataCache, reg, metadataConfig.LRUMaxItems, metadataConfig.MinTTL())
-			if err != nil {
-				return nil, errors.Wrapf(err, "lru-metadata-cache")
-			}
-		}
-
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheAttributes("metafile", metadataCache, isMetaFile, metadataConfig.MetafileAttributesTTL)
@@ -174,9 +149,19 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	if chunksCache != nil {
 		cachingConfigured = true
 		chunksCache = cache.NewTracingCache(chunksCache)
+
 		if metadataCache == nil {
 			metadataCache = chunksCache
 		}
+
+		if metadataConfig.LRUEnabled {
+			var err error
+			metadataCache, err = storecache.WrapWithLRUCache(metadataCache, reg, metadataConfig.LRUMaxItems, chunksConfig.AttributesTTL)
+			if err != nil {
+				return nil, errors.Wrapf(err, "lru-metadata-cache")
+			}
+		}
+
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, metadataCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 

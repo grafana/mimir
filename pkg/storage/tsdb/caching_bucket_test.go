@@ -8,11 +8,9 @@ package tsdb
 import (
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func TestIsTenantDir(t *testing.T) {
@@ -40,19 +38,4 @@ func TestIsBlockIndexFile(t *testing.T) {
 	assert.False(t, isBlockIndexFile("/test/index"))
 	assert.True(t, isBlockIndexFile(fmt.Sprintf("%s/index", blockID.String())))
 	assert.True(t, isBlockIndexFile(fmt.Sprintf("/%s/index", blockID.String())))
-}
-
-func TestMinTTL(t *testing.T) {
-	cfg := MetadataCacheConfig{
-		TenantsListTTL:          time.Duration(10),
-		TenantBlocksListTTL:     time.Duration(100),
-		ChunksListTTL:           time.Duration(20),
-		MetafileExistsTTL:       time.Duration(30),
-		MetafileDoesntExistTTL:  time.Duration(40),
-		MetafileContentTTL:      time.Duration(50),
-		MetafileAttributesTTL:   time.Duration(5),
-		BlockIndexAttributesTTL: time.Duration(20),
-		BucketIndexContentTTL:   time.Duration(30),
-	}
-	require.Equal(t, time.Duration(5), cfg.MinTTL())
 }
