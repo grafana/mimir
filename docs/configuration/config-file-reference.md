@@ -4814,6 +4814,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
+    # Maximum number of object attribute items to keep in a first level
+    # in-memory LRU cache. Metadata will be stored and fetched in-memory before
+    # hitting the cache backend. 0 to disable the in-memory cache.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
+    [attributes_in_memory_max_items: <int> | default = 0]
+
     # TTL for caching individual chunks subranges.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
@@ -4918,16 +4924,6 @@ bucket_store:
     # same limit in the caching backend).
     # CLI flag: -blocks-storage.bucket-store.metadata-cache.bucket-index-max-size-bytes
     [bucket_index_max_size_bytes: <int> | default = 1048576]
-
-    # Use a first level in memory LRU cache for metadata cache. Metadata will be
-    # stored and fetched in memory before hiting the cache backend.
-    # **Experimental**
-    # CLI flag: -blocks-storage.bucket-store.metadata-cache.lru-enabled
-    [lru_enabled: <boolean> | default = false]
-
-    # Maximum number of items in the first level in memory LRU cache.
-    # CLI flag: -blocks-storage.bucket-store.metadata-cache.lru-max-items
-    [lru_max_items: <int> | default = 10000]
 
   # Duration after which the blocks marked for deletion will be filtered out
   # while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore
