@@ -314,7 +314,7 @@ clean-doc:
 		./docs/guides/encryption-at-rest.md
 
 check-doc: doc
-	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md
+	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md ./operations/mimir-mixin/docs/*.md
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
@@ -324,6 +324,8 @@ check-white-noise: clean-white-noise
 	@git diff --exit-code --quiet -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
+	@echo "Checking diff:"
+	git diff
 	@git diff --exit-code --quiet -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
