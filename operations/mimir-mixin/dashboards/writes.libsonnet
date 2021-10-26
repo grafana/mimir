@@ -45,7 +45,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('In-memory Series') +
+        local title = 'In-memory Series';
+        $.panel(title) +
         $.statPanel(|||
           sum(cortex_ingester_memory_series{%(ingester)s}
           / on(%(group_by_cluster)s) group_left
@@ -53,7 +54,14 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ||| % ($._config) {
           ingester: $.jobMatcher($._config.job_names.ingester),
           distributor: $.jobMatcher($._config.job_names.distributor),
-        }, format='short')
+        }, format='short') +
+        $.panelDescription(
+          title,
+          |||
+            The number of series not yet flushed to object storage that are held in ingester memory.
+          |||
+        ),
+
       )
       .addPanel(
         $.panel('Tenants') +
