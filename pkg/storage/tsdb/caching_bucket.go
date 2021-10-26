@@ -89,6 +89,8 @@ type MetadataCacheConfig struct {
 	BlockIndexAttributesTTL time.Duration `yaml:"block_index_attributes_ttl"`
 	BucketIndexContentTTL   time.Duration `yaml:"bucket_index_content_ttl"`
 	BucketIndexMaxSize      int           `yaml:"bucket_index_max_size_bytes"`
+	LRUEnabled              bool          `yaml:"lru_enabled"`
+	LRUMaxItems             int           `yaml:"lru_max_items"`
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -107,6 +109,8 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 	f.DurationVar(&cfg.BlockIndexAttributesTTL, prefix+"block-index-attributes-ttl", 168*time.Hour, "How long to cache attributes of the block index.")
 	f.DurationVar(&cfg.BucketIndexContentTTL, prefix+"bucket-index-content-ttl", 5*time.Minute, "How long to cache content of the bucket index.")
 	f.IntVar(&cfg.BucketIndexMaxSize, prefix+"bucket-index-max-size-bytes", 1*1024*1024, "Maximum size of bucket index content to cache in bytes. Caching will be skipped if the content exceeds this size. This is useful to avoid network round trip for large content if the configured caching backend has an hard limit on cached items size (in this case, you should set this limit to the same limit in the caching backend).")
+	f.BoolVar(&cfg.LRUEnabled, prefix+"lru-enabled", false, "Use a first level in memory LRU cache for metadata cache. Metadata will be stored and fetched in memory before hiting the cache backend. **Experimental**")
+	f.IntVar(&cfg.LRUMaxItems, prefix+"lru-max-items", 10000, "Maximum number of items in the first level in memory LRU cache.")
 }
 
 func (cfg *MetadataCacheConfig) Validate() error {
@@ -148,6 +152,15 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		if metadataCache == nil {
 			metadataCache = chunksCache
 		}
+
+		if metadataConfig.LRUEnabled {
+			var err error
+			metadataCache, err = storecache.WrapWithLRUCache(metadataCache, reg, metadataConfig.LRUMaxItems, chunksConfig.AttributesTTL)
+			if err != nil {
+				return nil, errors.Wrapf(err, "lru-metadata-cache")
+			}
+		}
+
 		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, metadataCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
