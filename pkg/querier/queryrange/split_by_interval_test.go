@@ -15,12 +15,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 const seconds = 1e3 // 1e3 milliseconds per second.
@@ -63,7 +66,7 @@ func TestNextIntervalBoundary(t *testing.T) {
 	}
 }
 
-func TestSplitQuery(t *testing.T) {
+func TestSplitQueryByInterval(t *testing.T) {
 	for i, tc := range []struct {
 		input    Request
 		expected []Request
@@ -243,7 +246,7 @@ func TestSplitQuery(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			days, err := splitQuery(tc.input, tc.interval)
+			days, err := splitQueryByInterval(tc.input, tc.interval)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, days)
 		})
@@ -285,7 +288,7 @@ func TestSplitByDay(t *testing.T) {
 			roundtripper := NewRoundTripper(singleHostRoundTripper{
 				host: u.Host,
 				next: http.DefaultTransport,
-			}, PrometheusCodec, NewLimitsMiddleware(mockLimits{}), SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, nil))
+			}, PrometheusCodec, log.NewNopLogger(), NewLimitsMiddleware(mockLimits{}, log.NewNopLogger()), SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, nil))
 
 			req, err := http.NewRequest("GET", tc.path, http.NoBody)
 			require.NoError(t, err)
@@ -344,7 +347,7 @@ func Test_evaluateAtModifier(t *testing.T) {
 				[2m:])
 			[10m:])`, nil,
 		},
-		{"sum by (foo) (bar[buzz])", "foo{}", httpgrpc.Errorf(http.StatusBadRequest, `1:19: parse error: bad duration syntax: ""`)},
+		{"sum by (foo) (bar[buzz])", "foo{}", apierror.New(apierror.TypeBadData, `1:19: parse error: bad duration syntax: ""`)},
 	} {
 		tt := tt
 		t.Run(tt.in, func(t *testing.T) {
@@ -360,4 +363,13 @@ func Test_evaluateAtModifier(t *testing.T) {
 			require.Equal(t, expectedExpr.String(), out)
 		})
 	}
+}
+
+func TestSplitByInterval_WrapMultipleTimes(t *testing.T) {
+	interval := func(_ Request) time.Duration { return 24 * time.Hour }
+	m := SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, prometheus.NewRegistry())
+	require.NotPanics(t, func() {
+		m.Wrap(mockHandlerWith(nil, nil))
+		m.Wrap(mockHandlerWith(nil, nil))
+	})
 }

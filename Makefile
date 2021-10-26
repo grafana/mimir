@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format
+.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin
 .DEFAULT_GOAL := all
 
 # Version number
@@ -24,6 +24,12 @@ IMAGE_TAG ?= $(if $(GIT_TAG),$(GIT_TAG),$(shell ./tools/image-tag))
 GIT_REVISION := $(shell git rev-parse --short HEAD)
 GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
 UPTODATE := .uptodate
+
+# path to jsonnetfmt
+JSONNET_FMT := jsonnetfmt
+
+# path to the mimir/mixin
+MIXIN_PATH := operations/mimir-mixin
 
 .PHONY: image-tag
 image-tag:
@@ -120,7 +126,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= add-prettier-08d2e2a61
+LATEST_BUILD_IMAGE_TAG ?= 20211021_update-go-1.16.9-eaeb584bb
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -163,7 +169,6 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 
 lint: lint-packaging-scripts
 	misspell -error docs
-	prettier --check "**/*.md"
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -172,6 +177,7 @@ lint: lint-packaging-scripts
 	GOFLAGS="-tags=requires_docker" faillint -paths "github.com/bmizerany/assert=github.com/stretchr/testify/assert,\
 		golang.org/x/net/context=context,\
 		sync/atomic=go.uber.org/atomic,\
+		github.com/go-kit/kit/log/...=github.com/go-kit/log,\
 		github.com/prometheus/client_golang/prometheus.{MultiError}=github.com/prometheus/prometheus/tsdb/errors.{NewMulti},\
 		github.com/weaveworks/common/user.{ExtractOrgID}=github.com/grafana/mimir/pkg/tenant.{TenantID,TenantIDs},\
 		github.com/weaveworks/common/user.{ExtractOrgIDFromHTTPRequest}=github.com/grafana/mimir/pkg/tenant.{ExtractTenantIDFromHTTPRequest}" ./pkg/... ./cmd/... ./tools/... ./integration/...
@@ -190,6 +196,9 @@ lint: lint-packaging-scripts
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/querysharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
+
+	# Ensure all errors are report as APIError
+	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/querier/queryrange/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
@@ -261,6 +270,9 @@ doc: clean-doc
 	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/guides/overrides-exporter.md
 
+	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
+	prettier --write "**/*.md"
+
 # Add license header to files.
 license:
 	go run ./tools/add-license ./cmd ./integration ./pkg ./tools ./packaging ./development ./mimir-build-image
@@ -310,6 +322,33 @@ clean-white-noise:
 
 check-white-noise: clean-white-noise
 	@git diff --exit-code --quiet -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
+
+check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
+	@git diff --exit-code --quiet -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
+
+	@cd $(MIXIN_PATH) && \
+	jb install && \
+	mixtool lint mixin.libsonnet
+
+check-mixin-jb:
+	@cd $(MIXIN_PATH) && \
+	jb install
+
+check-mixin-mixtool: check-mixin-jb
+	@cd $(MIXIN_PATH) && \
+	mixtool lint mixin.libsonnet
+
+check-mixin-playbook: build-mixin
+	@$(MIXIN_PATH)/scripts/lint-playbooks.sh
+
+build-mixin: check-mixin-jb
+	@rm -rf $(MIXIN_PATH)/out && mkdir $(MIXIN_PATH)/out
+	@cd $(MIXIN_PATH) && \
+	mixtool generate all --output-alerts out/alerts.yaml --output-rules out/rules.yaml --directory out/dashboards mixin.libsonnet && \
+	zip -q -r mimir-mixin.zip out
+
+format-mixin:
+	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
 web-serve:
 	cd website && hugo --config config.toml --minify -v server

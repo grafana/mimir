@@ -33,7 +33,12 @@ func TestParseShard(t *testing.T) {
 			err:    true,
 		},
 		"should return error on invalid index (too large)": {
-			input:  "3_of_3",
+			input:  "4_of_3",
+			output: ShardSelector{},
+			err:    true,
+		},
+		"should return error on invalid index (too small)": {
+			input:  "0_of_3",
 			output: ShardSelector{},
 			err:    true,
 		},
@@ -42,8 +47,15 @@ func TestParseShard(t *testing.T) {
 			output: ShardSelector{},
 			err:    true,
 		},
-		"should succeed on valid shard selector": {
+		"should succeed on valid first shard selector": {
 			input: "1_of_2",
+			output: ShardSelector{
+				ShardIndex: 0,
+				ShardCount: 2,
+			},
+		},
+		"should succeed on valid last shard selector": {
+			input: "2_of_2",
 			output: ShardSelector{
 				ShardIndex: 1,
 				ShardCount: 2,

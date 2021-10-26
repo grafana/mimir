@@ -8,6 +8,7 @@ package astmapper
 import (
 	"fmt"
 
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -16,8 +17,8 @@ import (
 )
 
 // NewSharding creates a new query sharding mapper.
-func NewSharding(shards int) (ASTMapper, error) {
-	shardSummer, err := newShardSummer(shards, vectorSquasher)
+func NewSharding(shards int, logger log.Logger) (ASTMapper, error) {
+	shardSummer, err := newShardSummer(shards, vectorSquasher, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -34,10 +35,11 @@ type shardSummer struct {
 	shards       int
 	currentShard *int
 	squash       squasher
+	logger       log.Logger
 }
 
 // newShardSummer instantiates an ASTMapper which will fan out sum queries by shard
-func newShardSummer(shards int, squasher squasher) (ASTMapper, error) {
+func newShardSummer(shards int, squasher squasher, logger log.Logger) (ASTMapper, error) {
 	if squasher == nil {
 		return nil, errors.Errorf("squasher required and not passed")
 	}
@@ -46,6 +48,7 @@ func newShardSummer(shards int, squasher squasher) (ASTMapper, error) {
 		shards:       shards,
 		squash:       squasher,
 		currentShard: nil,
+		logger:       logger,
 	}), nil
 }
 
@@ -65,7 +68,7 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 		if summer.currentShard != nil {
 			return n, false, nil
 		}
-		if CanParallelize(n) {
+		if CanParallelize(n, summer.logger) {
 			return summer.shardAggregate(n, stats)
 		}
 		return n, false, nil
@@ -92,7 +95,7 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 				if containsAggregateExpr(n) {
 					return n, true, nil
 				}
-				if !CanParallelize(n) {
+				if !CanParallelize(n, summer.logger) {
 					return n, true, nil
 				}
 				return summer.shardAndSquashFuncCall(n, stats)
@@ -338,7 +341,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 }
 
 func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard, shards))
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, querysharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +359,7 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 }
 
 func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, fmt.Sprintf(querysharding.ShardLabelFmt, curshard, shards))
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, querysharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}

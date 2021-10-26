@@ -40,6 +40,8 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Get label values](#get-label-values)                                                 | Querier, Query-frontend  | `GET <prometheus-http-prefix>/api/v1/label/{name}/values`                   |
 | [Get metric metadata](#get-metric-metadata)                                           | Querier, Query-frontend  | `GET <prometheus-http-prefix>/api/v1/metadata`                              |
 | [Remote read](#remote-read)                                                           | Querier, Query-frontend  | `POST <prometheus-http-prefix>/api/v1/read`                                 |
+| [Label names cardinality](#label-names-cardinality)                                   | Querier, Query-frontend  | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names`         |
+| [Label values cardinality](#label-values-cardinality)                                 | Querier, Query-frontend  | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values`        |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                  | `GET /api/v1/user_stats`                                                    |
 | [Get tenant chunks](#get-tenant-chunks)                                               | Querier                  | `GET /api/v1/chunks`                                                        |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                    | `GET /ruler/ring`                                                           |
@@ -408,6 +410,109 @@ Prometheus-compatible [remote read](https://prometheus.io/docs/prometheus/latest
 _For more information, please check out Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
 
 _Requires [authentication](#authentication)._
+
+### Label names cardinality
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_names
+
+# Legacy
+GET,POST <legacy-http-prefix>/api/v1/cardinality/label_names
+```
+
+Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
+It counts distinct label values per label name.
+Works only with blocks storage.
+
+As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
+cutting between the calls.
+
+The items in the field `cardinality` are sorted by `label_values_count` in DESC order and by `label_name` in ASC order.
+
+The count of items is limited by `limit` request param.
+
+_This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option)._
+
+_Requires [authentication](#authentication)._
+
+#### Request params
+
+- **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500)
+
+#### Response schema
+
+```json
+{
+  "label_values_count_total": <number>,
+  "label_names_count": <number>,
+  "cardinality": [
+    {
+      "label_name": <string>,
+      "label_values_count": <number>
+    }
+  ]
+}
+```
+
+### Label values cardinality
+
+```
+GET,POST <prometheus-http-prefix>/api/v1/cardinality/label_values
+
+# Legacy
+GET,POST <legacy-http-prefix>/api/v1/cardinality/label_values
+```
+
+Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
+It returns the series count per label value associated to request param `label_names[]`.
+Works only with blocks storage.
+
+As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
+cutting between the calls.
+
+The items in the field `labels` are sorted by `series_count` in DESC order and by `label_name` in ASC order.
+The items in the field `cardinality` are sorted by `series_count` in DESC order and by `label_value` in ASC order.
+
+The count of `cardinality` items is limited by request param `limit`.
+
+_This endpoint is disabled by default and can be enabled via the `-querier.cardinality-analysis-enabled` CLI flag (or its respective YAML config option)._
+
+_Requires [authentication](#authentication)._
+
+#### Request params
+
+- **label_names[]** - _required_ - specifies labels for which cardinality must be provided.
+- **selector** - _optional_ - specifies PromQL selector that will be used to filter series that must be analyzed.
+- **limit** - _optional_ - specifies max count of items in field `cardinality` in response (default=20, min=0, max=500).
+
+#### Response schema
+
+```json
+{
+  "series_count_total": <number>,
+  "labels": [
+    {
+      "label_name": <string>,
+      "label_values_count": <number>,
+      "series_count": <number>,
+      "cardinality": [
+        {
+          "label_value": <string>,
+          "series_count": <number>
+        }
+      ]
+    }
+  ]
+}
+```
+
+- **series_count_total** - total number of series across opened TSDBs in all ingesters
+- **labels[].label_name** - label name requested via the request param `label_names[]`
+- **labels[].label_values_count** - total number of label values for the label name (note that dependent on the `limit` request param it is possible that not all label values are present in `cardinality`)
+- **labels[].series_count** - total number of series having `labels[].label_name`
+- **labels[].cardinality[].label_value** - label value associated to `labels[].label_name`
+- **labels[].cardinality[].series_count** - total number of series having `label_value` for `label_name`
 
 ## Querier
 

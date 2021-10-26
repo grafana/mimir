@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/bradfitz/gomemcache/memcache"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -141,7 +141,7 @@ func (c *Memcached) fetch(ctx context.Context, keys []string) (found []string, b
 	var items map[string]*memcache.Item
 	const method = "Memcache.GetMulti"
 	err := instr.CollectedRequest(ctx, method, c.requestDuration, memcacheStatusCode, func(innerCtx context.Context) error {
-		log, _ := spanlogger.New(innerCtx, method)
+		log, _ := spanlogger.NewWithLogger(innerCtx, c.logger, method)
 		defer log.Finish()
 		log.LogFields(otlog.Int("keys requested", len(keys)))
 

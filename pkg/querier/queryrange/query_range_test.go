@@ -13,12 +13,13 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -34,11 +35,11 @@ func TestRequest(t *testing.T) {
 		},
 		{
 			url:         "api/v1/query_range?start=foo",
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, "invalid parameter \"start\"; cannot parse \"foo\" to a valid timestamp"),
+			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=bar",
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, "invalid parameter \"end\"; cannot parse \"bar\" to a valid timestamp"),
+			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"end\": cannot parse \"bar\" to a valid timestamp"),
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=0",
@@ -46,7 +47,7 @@ func TestRequest(t *testing.T) {
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=456&step=baz",
-			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, "invalid parameter \"step\"; cannot parse \"baz\" to a valid duration"),
+			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"step\": cannot parse \"baz\" to a valid duration"),
 		},
 		{
 			url:         "api/v1/query_range?start=123&end=456&step=-1",
@@ -96,7 +97,7 @@ func TestResponse(t *testing.T) {
 				Header:     http.Header{"Content-Type": []string{"application/json"}},
 				Body:       ioutil.NopCloser(bytes.NewBuffer([]byte(tc.body))),
 			}
-			resp, err := PrometheusCodec.DecodeResponse(context.Background(), response, nil)
+			resp, err := PrometheusCodec.DecodeResponse(context.Background(), response, nil, log.NewNopLogger())
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, resp)
 
@@ -328,6 +329,36 @@ func TestMergeAPIResponses(t *testing.T) {
 			output, err := PrometheusCodec.MergeResponse(tc.input...)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, output)
+		})
+	}
+}
+
+func TestIsRequestStepAligned(t *testing.T) {
+	tests := map[string]struct {
+		req      Request
+		expected bool
+	}{
+		"should return true if start and end are aligned to step": {
+			req:      &PrometheusRequest{Start: 10, End: 20, Step: 10},
+			expected: true,
+		},
+		"should return false if start is not aligned to step": {
+			req:      &PrometheusRequest{Start: 11, End: 20, Step: 10},
+			expected: false,
+		},
+		"should return false if end is not aligned to step": {
+			req:      &PrometheusRequest{Start: 10, End: 19, Step: 10},
+			expected: false,
+		},
+		"should return true if step is 0": {
+			req:      &PrometheusRequest{Start: 10, End: 11, Step: 0},
+			expected: true,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, isRequestStepAligned(testData.req))
 		})
 	}
 }

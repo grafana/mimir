@@ -10,6 +10,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -309,4 +311,146 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	assertServiceMetricsPrefixes(t, Querier, querier)
 	assertServiceMetricsPrefixes(t, QueryFrontend, queryFrontend)
 	assertServiceMetricsPrefixes(t, QueryScheduler, queryScheduler)
+}
+
+// This spins up a minimal query-frontend setup and compares if errors returned
+// by QueryRanges are returned in the same way as they are with PromQL
+func TestQueryFrontendErrorMessageParity(t *testing.T) {
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	cfg := &queryFrontendTestConfig{
+		setup: func(t *testing.T, s *e2e.Scenario) (configFile string, flags map[string]string) {
+			flags = BlocksStorageFlags()
+
+			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
+			require.NoError(t, s.StartAndWaitReady(minio))
+
+			return "", flags
+		},
+	}
+
+	configFile, flags := cfg.setup(t, s)
+
+	flags = mergeFlags(flags, map[string]string{
+		"-querier.cache-results":             "true",
+		"-querier.split-queries-by-interval": "24h",
+		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
+	})
+	consul := e2edb.NewConsul()
+	require.NoError(t, s.StartAndWaitReady(consul))
+
+	queryFrontend := e2emimir.NewQueryFrontendWithConfigFile("query-frontend", configFile, flags, "")
+	require.NoError(t, s.Start(queryFrontend))
+
+	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
+
+	// Start all other services.
+	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
+
+	require.NoError(t, s.StartAndWaitReady(querier, ingester))
+	require.NoError(t, s.WaitReady(queryFrontend))
+
+	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	cQueryFrontend, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "fake")
+	require.NoError(t, err)
+
+	cQuerier, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "fake")
+	require.NoError(t, err)
+
+	now := time.Now()
+
+	for _, tc := range []struct {
+		name          string
+		query         func(*e2emimir.Client) (*http.Response, []byte, error)
+		expStatusCode int
+		expBody       string
+	}{
+		{
+			name: "maximum resolution error",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("unknown", now.Add(-time.Hour*24), now, time.Second)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "negative step",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("unknown", now.Add(-time.Hour), now, -time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"invalid parameter \"step\": zero or negative query resolution step widths are not accepted. Try a positive integer", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "unknown function",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("unknown(up)", now.Add(-time.Hour), now, time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"1:1: parse error: unknown function with name \"unknown\"", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "range vector instead of instant vector",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`sum by(grpc_method)(grpc_server_handled_total{job="cortex-dedicated-06/etcd"}[1m])`, now.Add(-time.Hour), now, time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"1:21: parse error: expected type instant vector in aggregation expression, got range vector", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "start after end",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw("unknown", now, now.Add(-time.Hour), time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"invalid parameter \"end\": end timestamp must not be before start time", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "wrong duration specified in step",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.DoGetBody(fmt.Sprintf(
+					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
+					c.QuerierAddress(),
+					url.QueryEscape("unknown"),
+					e2emimir.FormatTime(now.Add(-time.Hour)),
+					e2emimir.FormatTime(now),
+					"123notafloat",
+				))
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"invalid parameter \"step\": cannot parse \"123notafloat\" to a valid duration", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "wrong timestamp in start",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.DoGetBody(fmt.Sprintf(
+					"http://%s/api/prom/api/v1/query_range?query=%s&start=%s&end=%s&step=%s",
+					c.QuerierAddress(),
+					url.QueryEscape("unknown"),
+					"depths-of-time",
+					e2emimir.FormatTime(now),
+					"30",
+				))
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resp, body, err := tc.query(cQuerier)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "querier returns unexpected statusCode")
+			assert.JSONEq(t, tc.expBody, string(body), "querier returns unexpected body")
+
+			resp, body, err = tc.query(cQueryFrontend)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend returns unexpected statusCode")
+			assert.JSONEq(t, tc.expBody, string(body), "query-frontend returns unexpected body")
+		})
+	}
+
 }

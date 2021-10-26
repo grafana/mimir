@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/backoff"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/expfmt"
@@ -417,7 +417,7 @@ func (p *HTTPReadinessProbe) Ready(service *ConcreteService) (err error) {
 		return errors.New("service has stopped")
 	}
 
-	res, err := GetRequest("http://" + endpoint + p.path)
+	res, err := DoGet("http://" + endpoint + p.path)
 	if err != nil {
 		return err
 	}
@@ -528,7 +528,7 @@ func (s *HTTPService) Metrics() (_ string, err error) {
 	localPort := s.networkPortsContainerToLocal[s.httpPort]
 
 	// Fetch metrics.
-	res, err := GetRequest(fmt.Sprintf("http://localhost:%d/metrics", localPort))
+	res, err := DoGet(fmt.Sprintf("http://localhost:%d/metrics", localPort))
 	if err != nil {
 		return "", err
 	}

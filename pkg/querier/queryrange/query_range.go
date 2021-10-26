@@ -8,7 +8,6 @@ package queryrange
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
 	jsoniter "github.com/json-iterator/go"
@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -41,9 +42,9 @@ var (
 		SortMapKeys:            true,
 		ValidateJsonRawMessage: true,
 	}.Froze()
-	errEndBeforeStart = httpgrpc.Errorf(http.StatusBadRequest, "end timestamp must not be before start time")
-	errNegativeStep   = httpgrpc.Errorf(http.StatusBadRequest, "zero or negative query resolution step widths are not accepted. Try a positive integer")
-	errStepTooSmall   = httpgrpc.Errorf(http.StatusBadRequest, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
+	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
+	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
+	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 
 	// PrometheusCodec is a codec to encode and decode Prometheus query range requests and responses.
 	PrometheusCodec Codec = &prometheusCodec{}
@@ -60,7 +61,7 @@ type Codec interface {
 	// DecodeResponse decodes a Response from an http response.
 	// The original request is also passed as a parameter this is useful for implementation that needs the request
 	// to merge result or build the result correctly.
-	DecodeResponse(context.Context, *http.Response, Request) (Response, error)
+	DecodeResponse(context.Context, *http.Response, Request, log.Logger) (Response, error)
 	// EncodeRequest encodes a Request into an http request.
 	EncodeRequest(context.Context, Request) (*http.Request, error)
 	// EncodeResponse encodes a Response into an http response.
@@ -232,7 +233,7 @@ func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Reques
 func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
 	promReq, ok := r.(*PrometheusRequest)
 	if !ok {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "invalid request format")
+		return nil, apierror.New(apierror.TypeBadData, "invalid request format")
 	}
 	params := url.Values{
 		"start": []string{encodeTime(promReq.Start)},
@@ -255,12 +256,15 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 	return req.WithContext(ctx), nil
 }
 
-func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request) (Response, error) {
+func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ Request, logger log.Logger) (Response, error) {
 	if r.StatusCode/100 != 2 {
 		body, _ := ioutil.ReadAll(r.Body)
-		return nil, httpgrpc.Errorf(r.StatusCode, string(body))
+		return nil, httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+			Code: int32(r.StatusCode),
+			Body: body,
+		})
 	}
-	log, ctx := spanlogger.New(ctx, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
+	log, ctx := spanlogger.NewWithLogger(ctx, logger, "ParseQueryRangeResponse") //nolint:ineffassign,staticcheck
 	defer log.Finish()
 
 	buf, err := bodyBuffer(r)
@@ -272,7 +276,7 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 
 	var resp PrometheusResponse
 	if err := json.Unmarshal(buf, &resp); err != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error decoding response: %v", err)
+		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 
 	for h, hv := range r.Header {
@@ -299,7 +303,7 @@ func bodyBuffer(res *http.Response) ([]byte, error) {
 	// internally works.
 	buf := bytes.NewBuffer(make([]byte, 0, res.ContentLength+bytes.MinRead))
 	if _, err := buf.ReadFrom(res.Body); err != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error decoding response: %v", err)
+		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
 	}
 	return buf.Bytes(), nil
 }
@@ -310,14 +314,14 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 
 	a, ok := res.(*PrometheusResponse)
 	if !ok {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "invalid response format")
+		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
 
 	sp.LogFields(otlog.Int("series", len(a.Data.Result)))
 
 	b, err := json.Marshal(a)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusInternalServerError, "error encoding response: %v", err)
+		return nil, apierror.Newf(apierror.TypeInternal, "error encoding response: %v", err)
 	}
 
 	sp.LogFields(otlog.Int("bytes", len(b)))
@@ -426,14 +430,14 @@ func parseDurationMs(s string) (int64, error) {
 	if d, err := strconv.ParseFloat(s, 64); err == nil {
 		ts := d * float64(time.Second/time.Millisecond)
 		if ts > float64(math.MaxInt64) || ts < float64(math.MinInt64) {
-			return 0, httpgrpc.Errorf(http.StatusBadRequest, "cannot parse %q to a valid duration. It overflows int64", s)
+			return 0, apierror.Newf(apierror.TypeBadData, "cannot parse %q to a valid duration. It overflows int64", s)
 		}
 		return int64(ts), nil
 	}
 	if d, err := model.ParseDuration(s); err == nil {
 		return int64(d) / int64(time.Millisecond/time.Nanosecond), nil
 	}
-	return 0, httpgrpc.Errorf(http.StatusBadRequest, "cannot parse %q to a valid duration", s)
+	return 0, apierror.Newf(apierror.TypeBadData, "cannot parse %q to a valid duration", s)
 }
 
 func encodeTime(t int64) string {
@@ -446,9 +450,19 @@ func encodeDurationMs(d int64) string {
 }
 
 func decorateWithParamName(err error, field string) error {
-	errTmpl := "invalid parameter %q; %v"
+	errTmpl := "invalid parameter %q: %v"
 	if status, ok := status.FromError(err); ok {
-		return httpgrpc.Errorf(int(status.Code()), errTmpl, field, status.Message())
+		return apierror.Newf(apierror.TypeBadData, errTmpl, field, status.Message())
 	}
-	return fmt.Errorf(errTmpl, field, err)
+	return apierror.Newf(apierror.TypeBadData, errTmpl, field, err)
+}
+
+// isRequestStepAligned returns whether the Request start and end timestamps are aligned
+// with the step.
+func isRequestStepAligned(req Request) bool {
+	if req.GetStep() == 0 {
+		return true
+	}
+
+	return req.GetEnd()%req.GetStep() == 0 && req.GetStart()%req.GetStep() == 0
 }

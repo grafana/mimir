@@ -67,7 +67,7 @@ func Test_ProxyBackend_createBackendRequest_HTTPBasicAuthentication(t *testing.T
 			orig.SetBasicAuth(testData.clientUser, testData.clientPass)
 
 			b := NewProxyBackend("test", u, time.Second, false)
-			r, err := b.createBackendRequest(orig)
+			r, err := b.createBackendRequest(orig, nil)
 			require.NoError(t, err)
 
 			actualUser, actualPass, _ := r.BasicAuth()

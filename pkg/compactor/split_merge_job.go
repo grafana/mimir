@@ -4,12 +4,13 @@ package compactor
 
 import (
 	"fmt"
-	"hash/fnv"
 	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 type compactionStage string
@@ -39,12 +40,8 @@ type job struct {
 	shardID string
 }
 
-func (j *job) hash() uint32 {
-	body := fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
-
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(body))
-	return hasher.Sum32()
+func (j *job) shardingKey() string {
+	return fmt.Sprintf("%s-%s-%d-%d-%s", j.userID, j.stage, j.rangeStart, j.rangeEnd, j.shardID)
 }
 
 // conflicts returns true if the two jobs cannot be planned at the same time.
@@ -54,11 +51,13 @@ func (j *job) conflicts(other *job) bool {
 		return false
 	}
 
-	// Blocks with different downsample resolution or external labels are never merged together,
-	// so they can't conflict. Since all blocks within the same job are expected to have the same
+	// Blocks with different downsample resolution or external labels (excluding the shard ID)
+	// are never merged together, so they can't conflict. Since all blocks within the same job are expected to have the same
 	// downsample resolution and external labels, we just check the 1st block of each job.
 	if len(j.blocks) > 0 && len(other.blocks) > 0 {
-		if !labels.Equal(labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels), labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels)) {
+		myLabels := labels.FromMap(j.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(tsdb.CompactorShardIDExternalLabel)
+		otherLabels := labels.FromMap(other.blocksGroup.blocks[0].Thanos.Labels).WithoutLabels(tsdb.CompactorShardIDExternalLabel)
+		if !labels.Equal(myLabels, otherLabels) {
 			return false
 		}
 		if j.blocksGroup.blocks[0].Thanos.Downsample != other.blocksGroup.blocks[0].Thanos.Downsample {
@@ -105,14 +104,6 @@ func (g blocksGroup) overlaps(other blocksGroup) bool {
 	return true
 }
 
-func (g blocksGroup) rangeStartTime() time.Time {
-	return time.Unix(0, g.rangeStart*int64(time.Millisecond)).UTC()
-}
-
-func (g blocksGroup) rangeEndTime() time.Time {
-	return time.Unix(0, g.rangeEnd*int64(time.Millisecond)).UTC()
-}
-
 func (g blocksGroup) rangeLength() int64 {
 	return g.rangeEnd - g.rangeStart
 }
@@ -141,7 +132,7 @@ func (g blocksGroup) getNonShardedBlocks() []*metadata.Meta {
 	var out []*metadata.Meta
 
 	for _, b := range g.blocks {
-		if value, ok := b.Thanos.Labels[ShardIDLabelName]; !ok || value == "" {
+		if value, ok := b.Thanos.Labels[tsdb.CompactorShardIDExternalLabel]; !ok || value == "" {
 			out = append(out, b)
 		}
 	}

@@ -16,11 +16,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
+	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -43,13 +46,12 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/querysharding"
-	"github.com/grafana/mimir/pkg/ring"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
-	logutil "github.com/grafana/mimir/pkg/util/log"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -529,7 +531,7 @@ func NewV2(cfg Config, clientConfig client.Config, limits *validation.Overrides,
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", ring.IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, registerer)
+	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", ring.IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}
@@ -668,7 +670,7 @@ func (i *Ingester) stoppingV2(_ error) error {
 func (i *Ingester) updateLoop(ctx context.Context) error {
 	if limits := i.getInstanceLimits(); limits != nil && *limits != (InstanceLimits{}) {
 		// This check will not cover enabling instance limits in runtime, but it will do for now.
-		logutil.WarnExperimentalUse("ingester instance limits")
+		util_log.WarnExperimentalUse("ingester instance limits")
 	}
 
 	rateUpdateTicker := time.NewTicker(i.cfg.RateUpdatePeriod)
@@ -775,8 +777,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	var firstPartialErr error
 
 	// NOTE: because we use `unsafe` in deserialisation, we must not
-	// retain anything from `req` past the call to ReuseSlice
-	defer mimirpb.ReuseSlice(req.Timeseries)
+	// retain anything from `req` past the exit from this function.
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -820,6 +821,11 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	}
 	defer db.releaseAppendLock()
 
+	span := opentracing.SpanFromContext(ctx)
+	if span != nil {
+		span.LogFields(otlog.String("event", "acquired append lock"))
+	}
+
 	// Keep track of some stats which are tracked only if the samples will be
 	// successfully committed
 	var (
@@ -843,6 +849,12 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 
 	// Walk the samples, appending them to the users database
 	app := db.Appender(ctx).(extendedAppender)
+
+	if span != nil {
+		span.LogFields(otlog.String("event", "got appender"),
+			otlog.Int("numseries", len(req.Timeseries)))
+	}
+
 	for _, ts := range req.Timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
@@ -959,6 +971,14 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
 	i.TSDBState.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+
+	if span != nil {
+		span.LogFields(otlog.String("event", "start commit"),
+			otlog.Int("succeededSamplesCount", succeededSamplesCount),
+			otlog.Int("failedSamplesCount", failedSamplesCount),
+			otlog.Int("succeededExemplarsCount", succeededExemplarsCount),
+			otlog.Int("failedExemplarsCount", failedExemplarsCount))
+	}
 
 	startCommit := time.Now()
 	if err := app.Commit(); err != nil {
@@ -1286,6 +1306,77 @@ func (i *Ingester) v2AllUserStats(ctx context.Context, req *client.UserStatsRequ
 	return response, nil
 }
 
+// we defined to use the limit of 1 MB because we have default limit for the GRPC message that is 4 MB.
+// So, 1 MB limit will prevent reaching the limit and won't affect performance significantly.
+const labelNamesAndValuesTargetSizeBytes = 1 * 1024 * 1024
+
+func (i *Ingester) LabelNamesAndValues(request *client.LabelNamesAndValuesRequest, server client.Ingester_LabelNamesAndValuesServer) error {
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("LabelNamesAndValues endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	userID, err := tenant.TenantID(server.Context())
+	if err != nil {
+		return err
+	}
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
+	}
+	index, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	defer index.Close()
+	matchers, err := client.FromLabelMatchers(request.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return labelNamesAndValues(index, matchers, labelNamesAndValuesTargetSizeBytes, server)
+}
+
+// labelValuesCardinalityTargetSizeBytes is the maximum allowed size in bytes for label cardinality response.
+// We arbitrarily set it to 1mb to avoid reaching the actual gRPC default limit (4mb).
+const labelValuesCardinalityTargetSizeBytes = 1 * 1024 * 1024
+
+func (i *Ingester) LabelValuesCardinality(req *client.LabelValuesCardinalityRequest, srv client.Ingester_LabelValuesCardinalityServer) error {
+	if !i.cfg.BlocksStorageEnabled {
+		return errors.New("LabelValuesCardinality endpoint supports only blocks storage type")
+	}
+	if err := i.checkRunning(); err != nil {
+		return err
+	}
+	userID, err := tenant.TenantID(srv.Context())
+	if err != nil {
+		return err
+	}
+
+	db := i.getTSDB(userID)
+	if db == nil {
+		return nil
+	}
+	idx, err := db.Head().Index()
+	if err != nil {
+		return err
+	}
+	defer idx.Close()
+
+	matchers, err := client.FromLabelMatchers(req.GetMatchers())
+	if err != nil {
+		return err
+	}
+	return labelValuesCardinality(
+		req.GetLabelNames(),
+		matchers,
+		idx,
+		tsdb.PostingsForMatchers,
+		labelValuesCardinalityTargetSizeBytes,
+		srv,
+	)
+}
+
 func createUserStats(db *userTSDB) *client.UserStatsResponse {
 	apiRate := db.ingestedAPISamples.Rate()
 	ruleRate := db.ingestedRuleSamples.Rate()
@@ -1305,7 +1396,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 		return err
 	}
 
-	spanlog, ctx := spanlogger.New(stream.Context(), "v2QueryStream")
+	spanlog, ctx := spanlogger.NewWithLogger(stream.Context(), i.logger, "v2QueryStream")
 	defer spanlog.Finish()
 
 	userID, err := tenant.TenantID(ctx)
@@ -1600,7 +1691,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 	tsdbPromReg := prometheus.NewRegistry()
 	udir := i.cfg.BlocksStorageConfig.TSDB.BlocksDir(userID)
-	userLogger := logutil.WithUserID(userID, i.logger)
+	userLogger := util_log.WithUserID(userID, i.logger)
 
 	blockRanges := i.cfg.BlocksStorageConfig.TSDB.BlockRanges.ToMilliseconds()
 

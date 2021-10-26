@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -41,8 +42,8 @@ const (
 // If the label "__tenant_id__" is already existing, its value is overwritten
 // by the tenant ID and the previous value is exposed through a new label
 // prefixed with "original_". This behaviour is not implemented recursively.
-func NewQueryable(upstream storage.Queryable, byPassWithSingleQuerier bool) storage.Queryable {
-	return NewMergeQueryable(defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier)
+func NewQueryable(upstream storage.Queryable, byPassWithSingleQuerier bool, logger log.Logger) storage.Queryable {
+	return NewMergeQueryable(defaultTenantLabel, tenantQuerierCallback(upstream), byPassWithSingleQuerier, logger)
 }
 
 func tenantQuerierCallback(queryable storage.Queryable) MergeQuerierCallback {
@@ -85,8 +86,9 @@ type MergeQuerierCallback func(ctx context.Context, mint int64, maxt int64) (ids
 // If the label `idLabelName` is already existing, its value is overwritten and
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively.
-func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool) storage.Queryable {
+func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPassWithSingleQuerier bool, logger log.Logger) storage.Queryable {
 	return &mergeQueryable{
+		logger:                  logger,
 		idLabelName:             idLabelName,
 		callback:                callback,
 		byPassWithSingleQuerier: byPassWithSingleQuerier,
@@ -94,6 +96,7 @@ func NewMergeQueryable(idLabelName string, callback MergeQuerierCallback, byPass
 }
 
 type mergeQueryable struct {
+	logger                  log.Logger
 	idLabelName             string
 	byPassWithSingleQuerier bool
 	callback                MergeQuerierCallback
@@ -116,6 +119,7 @@ func (m *mergeQueryable) Querier(ctx context.Context, mint int64, maxt int64) (s
 	}
 
 	return &mergeQuerier{
+		logger:      m.logger,
 		ctx:         ctx,
 		idLabelName: m.idLabelName,
 		queriers:    queriers,
@@ -130,6 +134,7 @@ func (m *mergeQueryable) Querier(ctx context.Context, mint int64, maxt int64) (s
 // the previous value is exposed through a new label prefixed with "original_".
 // This behaviour is not implemented recursively
 type mergeQuerier struct {
+	logger      log.Logger
 	ctx         context.Context
 	queriers    []storage.Querier
 	idLabelName string
@@ -142,7 +147,7 @@ type mergeQuerier struct {
 // For the label "original_" + `idLabelName it will return all the values
 // of the underlying queriers for `idLabelName`.
 func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, _ := spanlogger.New(m.ctx, "mergeQuerier.LabelValues")
+	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelValues")
 	defer log.Span.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
@@ -172,7 +177,7 @@ func (m *mergeQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]
 // queriers. It also adds the `idLabelName` and if present in the original
 // results the original `idLabelName`.
 func (m *mergeQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	log, _ := spanlogger.New(m.ctx, "mergeQuerier.LabelNames")
+	log, _ := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.LabelNames")
 	defer log.Span.Finish()
 
 	matchedTenants, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
@@ -304,7 +309,7 @@ type selectJob struct {
 // matching. The forwarded labelSelector is not containing those that operate
 // on `idLabelName`.
 func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.New(m.ctx, "mergeQuerier.Select")
+	log, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.Select")
 	defer log.Span.Finish()
 	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
 	var jobs = make([]interface{}, len(matchedValues))
@@ -392,20 +397,26 @@ func filterValuesByMatchers(idLabelName string, ids []string, matchers ...*label
 }
 
 type addLabelsSeriesSet struct {
-	upstream storage.SeriesSet
-	labels   labels.Labels
+	upstream   storage.SeriesSet
+	labels     labels.Labels
+	currSeries storage.Series
 }
 
 func (m *addLabelsSeriesSet) Next() bool {
+	m.currSeries = nil
 	return m.upstream.Next()
 }
 
 // At returns full series. Returned series should be iteratable even after Next is called.
 func (m *addLabelsSeriesSet) At() storage.Series {
-	return &addLabelsSeries{
-		upstream: m.upstream.At(),
-		labels:   m.labels,
+	if m.currSeries == nil {
+		upstream := m.upstream.At()
+		m.currSeries = &addLabelsSeries{
+			upstream: upstream,
+			labels:   setLabelsRetainExisting(upstream.Labels(), m.labels...),
+		}
 	}
+	return m.currSeries
 }
 
 // The error that iteration as failed with.
@@ -446,7 +457,7 @@ type addLabelsSeries struct {
 
 // Labels returns the complete set of labels. For series it means all labels identifying the series.
 func (a *addLabelsSeries) Labels() labels.Labels {
-	return setLabelsRetainExisting(a.upstream.Labels(), a.labels...)
+	return a.labels
 }
 
 // Iterator returns a new, independent iterator of the data of the series.

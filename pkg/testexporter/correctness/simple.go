@@ -13,12 +13,13 @@ import (
 	"sort"
 	"time"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
 
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -143,14 +144,14 @@ func (tc *simpleTestCase) Query(ctx context.Context, client v1.API, selectors st
 }
 
 func (tc *simpleTestCase) Test(ctx context.Context, client v1.API, selectors string, start time.Time, duration time.Duration) (bool, error) {
-	log := spanlogger.FromContext(ctx)
+	log := spanlogger.FromContext(ctx, util_log.Logger)
 	pairs, err := tc.Query(ctx, client, selectors, start, duration)
 	if err != nil {
 		level.Info(log).Log("err", err)
 		return false, err
 	}
 
-	return verifySamples(spanlogger.FromContext(ctx), tc, pairs, duration, tc.cfg), nil
+	return verifySamples(spanlogger.FromContext(ctx, util_log.Logger), tc, pairs, duration, tc.cfg), nil
 }
 
 func (tc *simpleTestCase) MinQueryTime() time.Time {

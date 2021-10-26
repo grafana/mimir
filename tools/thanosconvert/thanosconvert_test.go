@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
@@ -209,7 +209,6 @@ func thanosMeta() metadata.Meta {
 }
 
 func getLogger() log.Logger {
-
 	l := logging.Level{}
 	if err := l.Set("info"); err != nil {
 		panic(err)
@@ -219,11 +218,7 @@ func getLogger() log.Logger {
 		panic(err)
 	}
 
-	logger, err := utillog.NewPrometheusLogger(l, f)
-	if err != nil {
-		panic(err)
-	}
-	return logger
+	return utillog.NewDefaultLogger(l, f)
 }
 
 func mockBucket(data fakeBucket) *bucket.ClientMock {

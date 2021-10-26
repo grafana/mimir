@@ -71,3 +71,13 @@ func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) err
 	args := m.Called(s)
 	return args.Error(0)
 }
+
+func (m *IngesterServerMock) LabelNamesAndValues(req *LabelNamesAndValuesRequest, srv Ingester_LabelNamesAndValuesServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}
+
+func (m *IngesterServerMock) LabelValuesCardinality(req *LabelValuesCardinalityRequest, srv Ingester_LabelValuesCardinalityServer) error {
+	args := m.Called(req, srv)
+	return args.Error(0)
+}

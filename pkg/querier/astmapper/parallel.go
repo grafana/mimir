@@ -8,10 +8,9 @@ package astmapper
 import (
 	"fmt"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/promql/parser"
-
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var summableAggregates = map[parser.ItemType]struct{}{
@@ -34,7 +33,7 @@ var NonParallelFuncs = []string{
 
 // CanParallelize tests if a subtree is parallelizable.
 // A subtree is parallelizable if all of its components are parallelizable.
-func CanParallelize(node parser.Node) bool {
+func CanParallelize(node parser.Node, logger log.Logger) bool {
 	switch n := node.(type) {
 	case nil:
 		// nil handles cases where we check optional fields that are not set
@@ -42,7 +41,7 @@ func CanParallelize(node parser.Node) bool {
 
 	case parser.Expressions:
 		for _, e := range n {
-			if !CanParallelize(e) {
+			if !CanParallelize(e, logger) {
 				return false
 			}
 		}
@@ -60,7 +59,7 @@ func CanParallelize(node parser.Node) bool {
 			return ok, nil
 		})
 
-		return err == nil && !nestedAggrs && CanParallelize(n.Expr)
+		return err == nil && !nestedAggrs && CanParallelize(n.Expr, logger)
 
 	case *parser.BinaryExpr:
 		// since binary exprs use each side for merging, they cannot be parallelized
@@ -75,7 +74,7 @@ func CanParallelize(node parser.Node) bool {
 		}
 
 		for _, e := range n.Args {
-			if !CanParallelize(e) {
+			if !CanParallelize(e, logger) {
 				return false
 			}
 		}
@@ -84,23 +83,23 @@ func CanParallelize(node parser.Node) bool {
 	case *parser.SubqueryExpr:
 		// Subqueries are parallelizable if they are parallelizable themselves
 		// and they don't contain aggregations over series in children nodes.
-		return !containsAggregateExpr(n) && CanParallelize(n.Expr)
+		return !containsAggregateExpr(n) && CanParallelize(n.Expr, logger)
 
 	case *parser.ParenExpr:
-		return CanParallelize(n.Expr)
+		return CanParallelize(n.Expr, logger)
 
 	case *parser.UnaryExpr:
 		// Since these are only currently supported for Scalars, should be parallel-compatible
 		return true
 
 	case *parser.EvalStmt:
-		return CanParallelize(n.Expr)
+		return CanParallelize(n.Expr, logger)
 
 	case *parser.MatrixSelector, *parser.NumberLiteral, *parser.StringLiteral, *parser.VectorSelector:
 		return true
 
 	default:
-		level.Error(util_log.Logger).Log("err", fmt.Sprintf("CanParallel: unhandled node type %T", node)) //lint:ignore faillint allow global logger for now
+		level.Error(logger).Log("err", fmt.Sprintf("CanParallel: unhandled node type %T", node)) //lint:ignore faillint allow global logger for now
 		return false
 	}
 }

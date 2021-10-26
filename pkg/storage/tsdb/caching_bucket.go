@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/golang/snappy"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -132,7 +132,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	}
 	if metadataCache != nil {
 		cachingConfigured = true
-		metadataCache = cache.NewTracingCache(metadataCache)
+		metadataCache = storecache.NewTracingCache(metadataCache, logger)
 
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
@@ -148,8 +148,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 
 	if chunksCache != nil {
 		cachingConfigured = true
-		chunksCache = cache.NewTracingCache(chunksCache)
-
+		chunksCache = storecache.NewTracingCache(chunksCache, logger)
 		if metadataCache == nil {
 			metadataCache = chunksCache
 		}

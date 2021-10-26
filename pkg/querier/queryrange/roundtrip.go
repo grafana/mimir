@@ -12,16 +12,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/user"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -46,7 +46,7 @@ type Config struct {
 	ResultsCacheConfig     `yaml:"results_cache"`
 	CacheResults           bool `yaml:"cache_results"`
 	MaxRetries             int  `yaml:"max_retries"`
-	ShardedQueries         bool `yaml:"parallelise_shardable_queries"`
+	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -55,7 +55,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.SplitQueriesByInterval, "querier.split-queries-by-interval", 0, "Split queries by an interval and execute in parallel, 0 disables it. You should use an a multiple of 24 hours (same as the storage bucketing scheme), to avoid queriers downloading and processing the same chunks. This also determines how cache keys are chosen when result caching is enabled")
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
-	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelise-shardable-queries", false, "Perform query parallelisations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
+	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "Perform query parallelizations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -148,7 +148,7 @@ func NewTripperware(
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
-	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits)}
+	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 	if cfg.AlignQueriesWithStep {
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics), StepAlignMiddleware)
 	}
@@ -178,6 +178,9 @@ func NewTripperware(
 			return nil, nil, errInvalidShardingStorage
 		}
 
+		// Disable concurrency limits for sharded queries.
+		engineOpts.ActiveQueryTracker = nil
+
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics),
@@ -194,12 +197,15 @@ func NewTripperware(
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
 	}
 
+	// Track query range statistics.
+	queryRangeMiddleware = append(queryRangeMiddleware, newQueryStatsMiddleware(registerer))
+
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
 		// Finally, if the user selected any query range middleware, stitch it in.
 		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewRoundTripper(next, codec, queryRangeMiddleware...)
+			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
 			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
 				op := "query"
@@ -227,20 +233,21 @@ func NewTripperware(
 }
 
 type roundTripper struct {
-	next    http.RoundTripper
 	handler Handler
 	codec   Codec
 }
 
 // NewRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
 // using the codec to translate requests and responses.
-func NewRoundTripper(next http.RoundTripper, codec Codec, middlewares ...Middleware) http.RoundTripper {
-	transport := roundTripper{
-		next:  next,
+func NewRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
+	return roundTripper{
+		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
+			logger: logger,
+			next:   next,
+			codec:  codec,
+		}),
 		codec: codec,
 	}
-	transport.handler = MergeMiddlewares(middlewares...).Wrap(&transport)
-	return transport
 }
 
 func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
@@ -261,15 +268,23 @@ func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
 	return q.codec.EncodeResponse(r.Context(), response)
 }
 
+// roundTripperHandler is a handler that roundtrips requests to next roundtripper.
+// It basically encodes a Request from Handler.Do and decode response from next roundtripper.
+type roundTripperHandler struct {
+	logger log.Logger
+	next   http.RoundTripper
+	codec  Codec
+}
+
 // Do implements Handler.
-func (q roundTripper) Do(ctx context.Context, r Request) (Response, error) {
+func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
 	request, err := q.codec.EncodeRequest(ctx, r)
 	if err != nil {
 		return nil, err
 	}
 
 	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	response, err := q.next.RoundTrip(request)
@@ -278,5 +293,5 @@ func (q roundTripper) Do(ctx context.Context, r Request) (Response, error) {
 	}
 	defer func() { _ = response.Body.Close() }()
 
-	return q.codec.DecodeResponse(ctx, response, r)
+	return q.codec.DecodeResponse(ctx, response, r, q.logger)
 }

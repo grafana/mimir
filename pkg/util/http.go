@@ -16,8 +16,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/opentracing/opentracing-go"
@@ -140,14 +140,15 @@ const (
 )
 
 // ParseProtoReader parses a compressed proto from an io.Reader.
-func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, req proto.Message, compression CompressionType) error {
+// You can pass in and receive back the decompression buffer for pooling, or pass in nil and ignore the return.
+func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSize int, dst []byte, req proto.Message, compression CompressionType) ([]byte, error) {
 	sp := opentracing.SpanFromContext(ctx)
 	if sp != nil {
 		sp.LogFields(otlog.String("event", "util.ParseProtoRequest[start reading]"))
 	}
-	body, err := decompressRequest(reader, expectedSize, maxSize, compression, sp)
+	body, err := decompressRequest(dst, reader, expectedSize, maxSize, compression, sp)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if sp != nil {
@@ -163,13 +164,13 @@ func ParseProtoReader(ctx context.Context, reader io.Reader, expectedSize, maxSi
 		err = proto.NewBuffer(body).Unmarshal(req)
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return body, nil
 }
 
-func decompressRequest(reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) (body []byte, err error) {
+func decompressRequest(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) (body []byte, err error) {
 	defer func() {
 		if err != nil && len(body) > maxSize {
 			err = fmt.Errorf(messageSizeLargerErrFmt, len(body), maxSize)
@@ -180,14 +181,14 @@ func decompressRequest(reader io.Reader, expectedSize, maxSize int, compression 
 	}
 	buffer, ok := tryBufferFromReader(reader)
 	if ok {
-		body, err = decompressFromBuffer(buffer, maxSize, compression, sp)
+		body, err = decompressFromBuffer(dst, buffer, maxSize, compression, sp)
 		return
 	}
-	body, err = decompressFromReader(reader, expectedSize, maxSize, compression, sp)
+	body, err = decompressFromReader(dst, reader, expectedSize, maxSize, compression, sp)
 	return
 }
 
-func decompressFromReader(reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
+func decompressFromReader(dst []byte, reader io.Reader, expectedSize, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
 	var (
 		buf  bytes.Buffer
 		body []byte
@@ -208,12 +209,12 @@ func decompressFromReader(reader io.Reader, expectedSize, maxSize int, compressi
 		if err != nil {
 			return nil, err
 		}
-		body, err = decompressFromBuffer(&buf, maxSize, RawSnappy, sp)
+		body, err = decompressFromBuffer(dst, &buf, maxSize, RawSnappy, sp)
 	}
 	return body, err
 }
 
-func decompressFromBuffer(buffer *bytes.Buffer, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
+func decompressFromBuffer(dst []byte, buffer *bytes.Buffer, maxSize int, compression CompressionType, sp opentracing.Span) ([]byte, error) {
 	if len(buffer.Bytes()) > maxSize {
 		return nil, fmt.Errorf(messageSizeLargerErrFmt, len(buffer.Bytes()), maxSize)
 	}
@@ -232,7 +233,7 @@ func decompressFromBuffer(buffer *bytes.Buffer, maxSize int, compression Compres
 		if size > maxSize {
 			return nil, fmt.Errorf(messageSizeLargerErrFmt, size, maxSize)
 		}
-		body, err := snappy.Decode(nil, buffer.Bytes())
+		body, err := snappy.Decode(dst, buffer.Bytes())
 		if err != nil {
 			return nil, err
 		}

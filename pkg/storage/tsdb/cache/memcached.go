@@ -9,8 +9,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -46,6 +46,7 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 	}, []string{"item_type"})
 	c.requests.WithLabelValues(cacheTypePostings)
 	c.requests.WithLabelValues(cacheTypeSeries)
+	c.requests.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_hits_total",
@@ -53,6 +54,7 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 	}, []string{"item_type"})
 	c.hits.WithLabelValues(cacheTypePostings)
 	c.hits.WithLabelValues(cacheTypeSeries)
+	c.hits.WithLabelValues(cacheTypeExpandedPostings)
 
 	level.Info(logger).Log("msg", "created memcached index cache")
 
@@ -74,7 +76,7 @@ func (c *MemcachedIndexCache) StorePostings(ctx context.Context, blockID ulid.UL
 // and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
 func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
-	// Build the cache keys, while keeping a map between input label and the cache key
+	// Build the cache keys, while keeping a map between input matchers and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(lbls))
 	keysMapping := map[labels.Label]string{}
@@ -177,4 +179,25 @@ func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid
 
 	c.hits.WithLabelValues(cacheTypeSeries).Add(float64(len(hits)))
 	return hits, misses
+}
+
+// StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
+func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
+	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
+
+	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
+		level.Error(c.logger).Log("msg", "failed to cache expanded postings in memcached", "err", err)
+	}
+}
+
+// FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
+func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
+	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
+	results := c.memcached.GetMulti(ctx, []string{key})
+	c.requests.WithLabelValues(cacheTypeExpandedPostings).Inc()
+	data, ok := results[key]
+	if ok {
+		c.hits.WithLabelValues(cacheTypeExpandedPostings).Inc()
+	}
+	return data, ok
 }

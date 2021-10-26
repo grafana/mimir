@@ -21,7 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,7 +36,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
-	"github.com/thanos-io/thanos/pkg/runutil"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/thanos-io/thanos/pkg/block"
@@ -103,7 +103,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 			require.NoError(t, bkt.Upload(ctx, path.Join(m.ULID.String(), metadata.MetaFilename), &buf))
 		}
 
-		duplicateBlocksFilter := block.NewDeduplicateFilter()
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			duplicateBlocksFilter,
 		}, nil)
@@ -147,7 +147,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 		require.NoError(t, sy.GarbageCollect(ctx))
 
 		// Only the level 3 block, the last source block in both resolutions should be left.
-		grouper := NewDefaultGrouper(nil, bkt, false, metadata.NoneFunc)
+		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
 		groups, err := grouper.Groups(sy.Metas())
 		require.NoError(t, err)
 
@@ -164,16 +164,47 @@ func TestGroupCompactE2E(t *testing.T) {
 		defer cancel()
 
 		// Create fresh, empty directory for actual test.
-		dir, err := ioutil.TempDir("", "test-compact")
-		require.NoError(t, err)
-		defer func() { require.NoError(t, os.RemoveAll(dir)) }()
+		dir := t.TempDir()
+
+		// Start dir checker... we make sure that "dir" only contains group subdirectories during compaction,
+		// and not any block directories. Dir checker stops when context is canceled, or on first error,
+		// in which case error is logger and test is failed. (We cannot use Fatal or FailNow from a goroutine).
+		go func() {
+			for ctx.Err() == nil {
+				fs, err := ioutil.ReadDir(dir)
+				if err != nil && !os.IsNotExist(err) {
+					t.Log("error while listing directory", dir)
+					t.Fail()
+					return
+				}
+
+				for _, fi := range fs {
+					// Suffix used by Prometheus LeveledCompactor when doing compaction.
+					toCheck := strings.TrimSuffix(fi.Name(), ".tmp-for-creation")
+
+					_, err := ulid.Parse(toCheck)
+					if err == nil {
+						t.Log("found block directory in main compaction directory", fi.Name())
+						t.Fail()
+						return
+					}
+				}
+
+				select {
+				case <-time.After(100 * time.Millisecond):
+					continue
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
 
 		logger := log.NewLogfmtLogger(os.Stderr)
 
 		reg := prometheus.NewRegistry()
 
 		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(logger, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
-		duplicateBlocksFilter := block.NewDeduplicateFilter()
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		noCompactMarkerFilter := NewGatherNoCompactionMarkFilter(logger, objstore.WithNoopInstr(bkt), 2)
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
@@ -191,9 +222,9 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		planner := NewPlanner(logger, []int64{1000, 3000}, noCompactMarkerFilter)
-		grouper := NewDefaultGrouper(logger, bkt, false, metadata.NoneFunc)
+		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, metrics)
+		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, metrics)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
@@ -472,7 +503,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
 
-		duplicateBlocksFilter := block.NewDeduplicateFilter()
+		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,

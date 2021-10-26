@@ -32,12 +32,12 @@ func TestIndexAPIEndpoint(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 
 	// GET / should succeed
-	res, err := e2e.GetRequest(fmt.Sprintf("http://%s", mimir1.Endpoint(9009)))
+	res, err := e2e.DoGet(fmt.Sprintf("http://%s", mimir1.Endpoint(9009)))
 	require.NoError(t, err)
 	assert.Equal(t, 200, res.StatusCode)
 
 	// POST / should fail
-	res, err = e2e.PostRequest(fmt.Sprintf("http://%s", mimir1.Endpoint(9009)))
+	res, err = e2e.DoPost(fmt.Sprintf("http://%s", mimir1.Endpoint(9009)))
 	require.NoError(t, err)
 	assert.Equal(t, 405, res.StatusCode)
 }
@@ -54,7 +54,7 @@ func TestConfigAPIEndpoint(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 
 	// Get config from /config API endpoint.
-	res, err := e2e.GetRequest(fmt.Sprintf("http://%s/config", mimir1.Endpoint(9009)))
+	res, err := e2e.DoGet(fmt.Sprintf("http://%s/config", mimir1.Endpoint(9009)))
 	require.NoError(t, err)
 
 	defer runutil.ExhaustCloseWithErrCapture(&err, res.Body, "config API response")

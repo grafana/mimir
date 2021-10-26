@@ -12,7 +12,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
 	"go.uber.org/atomic"
@@ -20,6 +20,15 @@ import (
 
 func TestRetry(t *testing.T) {
 	var try atomic.Int32
+
+	errBadRequest := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+		Code: http.StatusBadRequest,
+		Body: []byte("Bad Request"),
+	})
+	errInternal := httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+		Code: http.StatusInternalServerError,
+		Body: []byte("Internal Server Error"),
+	})
 
 	for _, tc := range []struct {
 		name    string
@@ -40,26 +49,26 @@ func TestRetry(t *testing.T) {
 		{
 			name: "don't retry 400s",
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
-				return nil, httpgrpc.Errorf(http.StatusBadRequest, "Bad Request")
+				return nil, errBadRequest
 			}),
-			err: httpgrpc.Errorf(http.StatusBadRequest, "Bad Request"),
+			err: errBadRequest,
 		},
 		{
 			name: "retry 500s",
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
-				return nil, httpgrpc.Errorf(http.StatusInternalServerError, "Internal Server Error")
+				return nil, errInternal
 			}),
-			err: httpgrpc.Errorf(http.StatusInternalServerError, "Internal Server Error"),
+			err: errInternal,
 		},
 		{
 			name: "last error",
 			handler: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
 				if try.Inc() == 5 {
-					return nil, httpgrpc.Errorf(http.StatusBadRequest, "Bad Request")
+					return nil, errBadRequest
 				}
-				return nil, httpgrpc.Errorf(http.StatusInternalServerError, "Internal Server Error")
+				return nil, errInternal
 			}),
-			err: httpgrpc.Errorf(http.StatusBadRequest, "Bad Request"),
+			err: errBadRequest,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

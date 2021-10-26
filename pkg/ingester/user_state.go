@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -319,7 +319,7 @@ func (u *userState) forSeriesMatching(ctx context.Context, allMatchers []*labels
 	add func(context.Context, model.Fingerprint, *memorySeries) error,
 	send func(context.Context) error, batchSize int,
 ) error {
-	log, ctx := spanlogger.New(ctx, "forSeriesMatching")
+	log, ctx := spanlogger.NewWithLogger(ctx, u.logger, "forSeriesMatching")
 	defer log.Finish()
 
 	filters, matchers := util.SplitFiltersAndMatchers(allMatchers)

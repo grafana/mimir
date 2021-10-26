@@ -7,17 +7,17 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
@@ -34,7 +34,10 @@ type querySharding struct {
 	next   Handler
 	logger log.Logger
 
-	// Metrics.
+	queryShardingMetrics
+}
+
+type queryShardingMetrics struct {
 	shardingAttempts       prometheus.Counter
 	shardingSuccesses      prometheus.Counter
 	shardedQueries         prometheus.Counter
@@ -53,33 +56,36 @@ func NewQueryShardingMiddleware(
 	limit Limits,
 	registerer prometheus.Registerer,
 ) Middleware {
+	metrics := queryShardingMetrics{
+		shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "frontend_query_sharding_rewrites_attempted_total",
+			Help:      "Total number of queries the query-frontend attempted to shard.",
+		}),
+		shardingSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "frontend_query_sharding_rewrites_succeeded_total",
+			Help:      "Total number of queries the query-frontend successfully rewritten in a shardable way.",
+		}),
+		shardedQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+			Namespace: "cortex",
+			Name:      "frontend_sharded_queries_total",
+			Help:      "Total number of sharded queries.",
+		}),
+		shardedQueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
+			Namespace: "cortex",
+			Name:      "frontend_sharded_queries_per_query",
+			Help:      "Number of sharded queries a single query has been rewritten to.",
+			Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
+		}),
+	}
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &querySharding{
-			next: next,
-			shardingAttempts: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-				Namespace: "cortex",
-				Name:      "frontend_query_sharding_rewrites_attempted_total",
-				Help:      "Total number of queries the query-frontend attempted to shard.",
-			}),
-			shardingSuccesses: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-				Namespace: "cortex",
-				Name:      "frontend_query_sharding_rewrites_succeeded_total",
-				Help:      "Total number of queries the query-frontend successfully rewritten in a shardable way.",
-			}),
-			shardedQueries: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-				Namespace: "cortex",
-				Name:      "frontend_sharded_queries_total",
-				Help:      "Total number of sharded queries.",
-			}),
-			shardedQueriesPerQuery: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-				Namespace: "cortex",
-				Name:      "frontend_sharded_queries_per_query",
-				Help:      "Number of sharded queries a single query has been rewritten to.",
-				Buckets:   prometheus.ExponentialBuckets(2, 2, 10),
-			}),
-			engine: engine,
-			logger: logger,
-			limit:  limit,
+			next:                 next,
+			queryShardingMetrics: metrics,
+			engine:               engine,
+			logger:               logger,
+			limit:                limit,
 		}
 	})
 }
@@ -90,7 +96,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
@@ -146,7 +152,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	res := qry.Exec(ctx)
 	extracted, err := FromResult(res)
 	if err != nil {
-		return nil, err
+		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
 		Status: StatusSuccess,
@@ -158,18 +164,36 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}, nil
 }
 
+func mapEngineError(err error) error {
+	if err == nil {
+		return nil
+	}
+
+	errorType := apierror.TypeInternal
+	switch errors.Cause(err).(type) {
+	case promql.ErrQueryCanceled:
+		errorType = apierror.TypeCanceled
+	case promql.ErrQueryTimeout:
+		errorType = apierror.TypeTimeout
+	case promql.ErrStorage:
+		errorType = apierror.TypeInternal
+	}
+
+	return apierror.New(errorType, err.Error())
+}
+
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
 // to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
-	mapper, err := astmapper.NewSharding(totalShards)
+	mapper, err := astmapper.NewSharding(totalShards, s.logger)
 	if err != nil {
 		return "", nil, err
 	}
 
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", nil, err
+		return "", nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	stats := astmapper.NewMapperStats()

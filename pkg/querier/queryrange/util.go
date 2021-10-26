@@ -7,10 +7,10 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 
-	"github.com/weaveworks/common/httpgrpc"
+	"github.com/opentracing/opentracing-go"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -22,10 +22,10 @@ type RequestResponse struct {
 }
 
 // DoRequests executes a list of requests in parallel. The limits parameters is used to limit parallelism per single request.
-func DoRequests(ctx context.Context, downstream Handler, reqs []Request, limits Limits) ([]RequestResponse, error) {
+func DoRequests(ctx context.Context, downstream Handler, reqs []Request, limits Limits, recordSpan bool) ([]RequestResponse, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.Newf(apierror.TypeBadData, err.Error())
 	}
 
 	// If one of the requests fail, we want to be able to cancel the rest of them.
@@ -49,7 +49,22 @@ func DoRequests(ctx context.Context, downstream Handler, reqs []Request, limits 
 	for i := 0; i < parallelism; i++ {
 		go func() {
 			for req := range intermediate {
-				resp, err := downstream.Do(ctx, req)
+
+				var (
+					span     opentracing.Span
+					childCtx = ctx
+				)
+
+				if recordSpan {
+					span, childCtx = opentracing.StartSpanFromContext(ctx, "DoRequests")
+					req.LogToSpan(span)
+				}
+
+				resp, err := downstream.Do(childCtx, req)
+
+				if span != nil {
+					span.Finish()
+				}
 				if err != nil {
 					errChan <- err
 				} else {

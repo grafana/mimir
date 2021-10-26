@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/mock"
@@ -737,6 +737,10 @@ func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q
 
 type errDistributor struct{}
 
+func (m *errDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+	return nil, errors.New("method is not implemented")
+}
+
 var errDistributorError = fmt.Errorf("errDistributorError")
 
 func (m *errDistributor) Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error) {
@@ -762,6 +766,10 @@ func (m *errDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMe
 	return nil, errDistributorError
 }
 
+func (m *errDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+	return 0, nil, errDistributorError
+}
+
 type emptyChunkStore struct {
 	sync.Mutex
 	called bool
@@ -781,6 +789,10 @@ func (c *emptyChunkStore) IsCalled() bool {
 }
 
 type emptyDistributor struct{}
+
+func (d *emptyDistributor) LabelNamesAndValues(_ context.Context, _ []*labels.Matcher) (*client.LabelNamesAndValuesResponse, error) {
+	return nil, errors.New("method is not implemented")
+}
 
 func (d *emptyDistributor) Query(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) (model.Matrix, error) {
 	return nil, nil
@@ -808,6 +820,10 @@ func (d *emptyDistributor) MetricsForLabelMatchers(ctx context.Context, from, th
 
 func (d *emptyDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {
 	return nil, nil
+}
+
+func (d *emptyDistributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *client.LabelValuesCardinalityResponse, error) {
+	return 0, nil, nil
 }
 
 func TestShortTermQueryToLTS(t *testing.T) {

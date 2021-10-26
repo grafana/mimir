@@ -22,9 +22,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	otlog "github.com/opentracing/opentracing-go/log"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -44,7 +47,6 @@ import (
 	"github.com/thanos-io/thanos/pkg/model"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/pool"
-	"github.com/thanos-io/thanos/pkg/runutil"
 	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
@@ -56,6 +58,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/querier/querysharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 )
 
@@ -157,6 +160,13 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []label
 func (noopCache) StoreSeries(context.Context, ulid.ULID, uint64, []byte) {}
 func (noopCache) FetchMultiSeries(_ context.Context, _ ulid.ULID, ids []uint64) (map[uint64][]byte, []uint64) {
 	return map[uint64][]byte{}, ids
+}
+
+func (c noopCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey, v []byte) {
+}
+
+func (c noopCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
 }
 
 // BucketStoreOption are functions that configure BucketStore.
@@ -1507,6 +1517,8 @@ type bucketBlock struct {
 	// Block's labels used by block-level matchers to filter blocks to query. These are used to select blocks using
 	// request hints' BlockMatchers.
 	relabelLabels labels.Labels
+
+	expandedPostingsPromises sync.Map
 }
 
 func newBucketBlock(
@@ -1685,18 +1697,119 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // single label name=value.
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
 	var (
+		loaded bool
+		cached bool
+	)
+	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
+	defer func() {
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)
+		if returnErr != nil {
+			span.LogFields(otlog.Error(returnErr))
+		}
+		span.Finish()
+	}()
+	var promise expandedPostingsPromise
+	promise, loaded = r.expandedPostingsPromise(ctx, ms)
+	returnRefs, cached, returnErr = promise(ctx)
+	return returnRefs, returnErr
+}
+
+// expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
+// The second return value indicates whether the returned data comes from the cache.
+type expandedPostingsPromise func(ctx context.Context) ([]uint64, bool, error)
+
+// expandedPostingsPromise provides a promise for the execution of expandedPostings method.
+// First call to this method will be blocking until the expandedPostings are calculated.
+// While first call is blocking, concurrent calls with same matchers will return a promise for the same results, without recalculating them.
+// The second value returned by this function is set to true when this call just loaded a promise created by another goroutine.
+// The promise returned by this function returns a bool value fromCache, set to true when data was loaded from cache.
+// TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
+// TODO: https://github.com/grafana/mimir/issues/331
+func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) (promise expandedPostingsPromise, loaded bool) {
+	var (
+		refs   []uint64
+		err    error
+		done   = make(chan struct{})
+		cached bool
+	)
+
+	promise = func(ctx context.Context) ([]uint64, bool, error) {
+		select {
+		case <-ctx.Done():
+			return nil, false, ctx.Err()
+		case <-done:
+		}
+
+		if err != nil {
+			return nil, false, err
+		}
+
+		// We must make a copy of refs to return, because caller can modify the postings slice in place.
+		refsCopy := make([]uint64, len(refs))
+		copy(refsCopy, refs)
+
+		return refsCopy, cached, nil
+	}
+
+	key := cache.CanonicalLabelMatchersKey(ms)
+
+	var loadedPromise interface{}
+	loadedPromise, loaded = r.block.expandedPostingsPromises.LoadOrStore(key, promise)
+	if loaded {
+		return loadedPromise.(expandedPostingsPromise), true
+	}
+	defer close(done)
+	defer r.block.expandedPostingsPromises.Delete(key)
+
+	refs, cached = r.fetchCachedExpandedPostings(ctx, key)
+	if cached {
+		return promise, false
+	}
+	refs, err = r.expandedPostings(ctx, ms)
+	if err != nil {
+		return promise, false
+	}
+	r.cacheExpandedPostings(ctx, key, refs)
+	return promise, false
+}
+
+func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, key storecache.LabelMatchersKey, refs []uint64) {
+	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
+	if err != nil {
+		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return
+	}
+	r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
+}
+
+func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, key cache.LabelMatchersKey) ([]uint64, bool) {
+	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key)
+	if !ok {
+		return nil, false
+	}
+
+	p, err := r.decodePostings(data)
+	if err != nil {
+		level.Warn(r.block.logger).Log("msg", "can't decode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return nil, false
+	}
+
+	refs, err := index.ExpandPostings(p)
+	if err != nil {
+		level.Warn(r.block.logger).Log("msg", "can't expand decoded expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
+		return nil, false
+	}
+	return refs, true
+}
+
+// expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
+func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
+	var (
 		postingGroups []*postingGroup
 		allRequested  = false
 		hasAdds       = false
 		keys          []labels.Label
 	)
-
-	// Track the number of returned postings in a tracing span.
-	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
-	defer func() {
-		span.LogKV("returned postings", len(returnRefs))
-		span.Finish()
-	}()
 
 	// NOTE: Derived from tsdb.PostingsForMatchers.
 	for _, m := range ms {
@@ -1818,10 +1931,9 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
 func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
-	if m.Type == labels.MatchRegexp && len(findSetMatches(m.Value)) > 0 {
-		vals := findSetMatches(m.Value)
-		toAdd := make([]labels.Label, 0, len(vals))
-		for _, val := range vals {
+	if setMatches := m.SetMatches(); m.Type == labels.MatchRegexp && len(setMatches) > 0 {
+		toAdd := make([]labels.Label, 0, len(setMatches))
+		for _, val := range setMatches {
 			toAdd = append(toAdd, labels.Label{Name: m.Name, Value: val})
 		}
 		return newPostingGroup(false, toAdd, nil), nil
@@ -1894,24 +2006,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			r.stats.postingsTouched++
 			r.stats.postingsTouchedSizeSum += len(b)
 
-			// Even if this instance is not using compression, there may be compressed
-			// entries in the cache written by other stores.
-			var (
-				l   index.Postings
-				err error
-			)
-			if isDiffVarintSnappyEncodedPostings(b) {
-				s := time.Now()
-				l, err = diffVarintSnappyDecode(b)
-				r.stats.cachedPostingsDecompressions++
-				r.stats.cachedPostingsDecompressionTimeSum += time.Since(s)
-				if err != nil {
-					r.stats.cachedPostingsDecompressionErrors++
-				}
-			} else {
-				_, l, err = r.dec.Postings(b)
-			}
-
+			l, err := r.decodePostings(b)
 			if err != nil {
 				return nil, errors.Wrap(err, "decode postings")
 			}
@@ -2021,6 +2116,27 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 	}
 
 	return output, g.Wait()
+}
+
+func (r *bucketIndexReader) decodePostings(b []byte) (index.Postings, error) {
+	// Even if this instance is not using compression, there may be compressed
+	// entries in the cache written by other stores.
+	var (
+		l   index.Postings
+		err error
+	)
+	if isDiffVarintSnappyEncodedPostings(b) {
+		s := time.Now()
+		l, err = diffVarintSnappyDecode(b)
+		r.stats.cachedPostingsDecompressions++
+		r.stats.cachedPostingsDecompressionTimeSum += time.Since(s)
+		if err != nil {
+			r.stats.cachedPostingsDecompressionErrors++
+		}
+	} else {
+		_, l, err = r.dec.Postings(b)
+	}
+	return l, err
 }
 
 func resizePostings(b []byte) ([]byte, error) {

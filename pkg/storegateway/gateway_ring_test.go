@@ -9,9 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/grafana/mimir/pkg/ring"
 )
 
 func TestIsHealthyForStoreGatewayOperations(t *testing.T) {

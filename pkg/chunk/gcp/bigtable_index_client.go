@@ -16,13 +16,13 @@ import (
 	"time"
 
 	"cloud.google.com/go/bigtable"
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	"github.com/grafana/dskit/grpcclient"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 
 	"github.com/grafana/mimir/pkg/chunk"
 	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
-	"github.com/grafana/mimir/pkg/util/grpcclient"
 	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )

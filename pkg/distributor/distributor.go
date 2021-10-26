@@ -9,13 +9,18 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/limiter"
+	"github.com/grafana/dskit/ring"
+	ring_client "github.com/grafana/dskit/ring/client"
 	"github.com/grafana/dskit/services"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
@@ -29,16 +34,14 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
-	"github.com/grafana/mimir/pkg/ring"
-	ring_client "github.com/grafana/mimir/pkg/ring/client"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/extract"
-	"github.com/grafana/mimir/pkg/util/limiter"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -214,12 +217,12 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 	if !canJoinDistributorsRing {
 		ingestionRateStrategy = newInfiniteIngestionRateStrategy()
 	} else if limits.IngestionRateStrategy() == validation.GlobalIngestionRateStrategy {
-		distributorsLifeCycler, err = ring.NewLifecycler(cfg.DistributorRing.ToLifecyclerConfig(), nil, "distributor", ring.DistributorRingKey, true, reg)
+		distributorsLifeCycler, err = ring.NewLifecycler(cfg.DistributorRing.ToLifecyclerConfig(), nil, "distributor", ring.DistributorRingKey, true, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 		if err != nil {
 			return nil, err
 		}
 
-		distributorsRing, err = ring.New(cfg.DistributorRing.ToRingConfig(), "distributor", ring.DistributorRingKey, reg)
+		distributorsRing, err = ring.New(cfg.DistributorRing.ToRingConfig(), "distributor", ring.DistributorRingKey, log, prometheus.WrapRegistererWithPrefix("cortex_", reg))
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to initialize distributors' ring client")
 		}
@@ -525,6 +528,27 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 
 // Push implements client.IngesterServer
 func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimirpb.WriteResponse, error) {
+	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
+}
+
+// PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
+// Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
+func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
+	// We will report *this* request in the error too.
+	inflight := d.inflightPushRequests.Inc()
+
+	// Decrement counter after all ingester calls have finished or been cancelled.
+	cleanup := func() {
+		callerCleanup()
+		d.inflightPushRequests.Dec()
+	}
+	cleanupInDefer := true
+	defer func() {
+		if cleanupInDefer {
+			cleanup()
+		}
+	}()
+
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return nil, err
@@ -533,10 +557,6 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	if span != nil {
 		span.SetTag("organization", userID)
 	}
-
-	// We will report *this* request in the error too.
-	inflight := d.inflightPushRequests.Inc()
-	defer d.inflightPushRequests.Dec()
 
 	if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 		return nil, errTooManyInflightPushRequests
@@ -580,15 +600,14 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 	if d.limits.AcceptHASamples(userID) && len(req.Timeseries) > 0 {
 		cluster, replica := findHALabels(d.limits.HAReplicaLabel(userID), d.limits.HAClusterLabel(userID), req.Timeseries[0].Labels)
+		// Make a copy of these, since they may be retained as labels on our metrics, e.g. dedupedSamples.
+		cluster, replica = copyString(cluster), copyString(replica)
 		if span != nil {
 			span.SetTag("cluster", cluster)
 			span.SetTag("replica", replica)
 		}
 		removeReplica, err = d.checkSample(ctx, userID, cluster, replica)
 		if err != nil {
-			// Ensure the request slice is reused if the series get deduped.
-			mimirpb.ReuseSlice(req.Timeseries)
-
 			if errors.Is(err, replicasNotMatchError{}) {
 				// These samples have been deduped.
 				d.dedupedSamples.WithLabelValues(userID, cluster).Add(float64(numSamples))
@@ -699,17 +718,11 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	d.receivedMetadata.WithLabelValues(userID).Add(float64(len(validatedMetadata)))
 
 	if len(seriesKeys) == 0 && len(metadataKeys) == 0 {
-		// Ensure the request slice is reused if there's no series or metadata passing the validation.
-		mimirpb.ReuseSlice(req.Timeseries)
-
 		return &mimirpb.WriteResponse{}, firstPartialErr
 	}
 
 	totalN := validatedSamples + validatedExemplars + len(validatedMetadata)
 	if !d.ingestionRateLimiter.AllowN(now, userID, totalN) {
-		// Ensure the request slice is reused if the request is rate limited.
-		mimirpb.ReuseSlice(req.Timeseries)
-
 		validation.DiscardedSamples.WithLabelValues(validation.RateLimited, userID).Add(float64(validatedSamples))
 		validation.DiscardedExemplars.WithLabelValues(validation.RateLimited, userID).Add(float64(validatedExemplars))
 		validation.DiscardedMetadata.WithLabelValues(validation.RateLimited, userID).Add(float64(len(validatedMetadata)))
@@ -746,6 +759,10 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		op = ring.Write
 	}
 
+	// we must not re-use buffers now until all DoBatch goroutines have finished,
+	// so set this flag false and pass cleanup() to DoBatch.
+	cleanupInDefer = false
+
 	err = ring.DoBatch(ctx, op, subRing, keys, func(ingester ring.InstanceDesc, indexes []int) error {
 		timeseries := make([]mimirpb.PreallocTimeseries, 0, len(indexes))
 		var metadata []*mimirpb.MetricMetadata
@@ -759,11 +776,15 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 		}
 
 		return d.send(localCtx, ingester, timeseries, metadata, req.Source)
-	}, func() { mimirpb.ReuseSlice(req.Timeseries); cancel() })
+	}, func() { cleanup(); cancel() })
 	if err != nil {
 		return nil, err
 	}
 	return &mimirpb.WriteResponse{}, firstPartialErr
+}
+
+func copyString(s string) string {
+	return string([]byte(s))
 }
 
 func sortLabelsIfNeeded(labels []mimirpb.LabelAdapter) {
@@ -865,6 +886,239 @@ func (d *Distributor) LabelValuesForLabelName(ctx context.Context, from, to mode
 	sort.Strings(values)
 
 	return values, nil
+}
+
+// LabelNamesAndValues query ingesters for label names and values and returns labels with distinct list of values.
+func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesResponse, error) {
+	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := ingester_client.ToLabelNamesCardinalityRequest(matchers)
+	if err != nil {
+		return nil, err
+	}
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sizeLimitBytes := d.limits.LabelNamesAndValuesResultsMaxSizeBytes(userID)
+	merger := &labelNamesAndValuesResponseMerger{result: map[string]map[string]struct{}{}, sizeLimitBytes: sizeLimitBytes}
+	_, err = d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+		stream, err := client.LabelNamesAndValues(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		defer stream.CloseSend() //nolint:errcheck
+		return nil, merger.collectResponses(stream)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return merger.toLabelNamesAndValuesResponses(), nil
+}
+
+type labelNamesAndValuesResponseMerger struct {
+	lock             sync.Mutex
+	result           map[string]map[string]struct{}
+	sizeLimitBytes   int
+	currentSizeBytes int
+}
+
+// toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
+func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *ingester_client.LabelNamesAndValuesResponse {
+	responses := make([]*ingester_client.LabelValues, 0, len(m.result))
+	for name, values := range m.result {
+		labelValues := make([]string, 0, len(values))
+		for val := range values {
+			labelValues = append(labelValues, val)
+		}
+		responses = append(responses, &ingester_client.LabelValues{
+			LabelName: name,
+			Values:    labelValues,
+		})
+	}
+	return &ingester_client.LabelNamesAndValuesResponse{Items: responses}
+}
+
+// collectResponses listens for the stream and once the message is received, puts labels and values to the map with distinct label values.
+func (m *labelNamesAndValuesResponseMerger) collectResponses(stream ingester_client.Ingester_LabelNamesAndValuesClient) error {
+	for {
+		message, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+		err = m.putItemsToMap(message)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *labelNamesAndValuesResponseMerger) putItemsToMap(message *ingester_client.LabelNamesAndValuesResponse) error {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+	for _, item := range message.Items {
+		values, exists := m.result[item.LabelName]
+		if !exists {
+			m.currentSizeBytes += len(item.LabelName)
+			values = make(map[string]struct{}, len(item.Values))
+			m.result[item.LabelName] = values
+		}
+		for _, val := range item.Values {
+			if _, valueExists := values[val]; !valueExists {
+				m.currentSizeBytes += len(val)
+				if m.currentSizeBytes > m.sizeLimitBytes {
+					return fmt.Errorf("size of distinct label names and values is greater than %v bytes", m.sizeLimitBytes)
+				}
+				values[val] = struct{}{}
+			}
+		}
+	}
+	return nil
+}
+
+// LabelValuesCardinality performs the following two operations in parallel:
+//  * queries ingesters for label values cardinality of a set of labelNames
+//  * queries ingesters for user stats to get the ingester's series head count
+func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (uint64, *ingester_client.LabelValuesCardinalityResponse, error) {
+	var totalSeries uint64
+	var labelValuesCardinalityResponse *ingester_client.LabelValuesCardinalityResponse
+
+	userID, err := tenant.TenantID(ctx)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
+	if len(labelNames) > lbNamesLimit {
+		return 0, nil, fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
+	}
+
+	// Run labelValuesCardinality and UserStats methods in parallel
+	group, ctx := errgroup.WithContext(ctx)
+	group.Go(func() error {
+		response, err := d.labelValuesCardinality(ctx, labelNames, matchers)
+		if err == nil {
+			labelValuesCardinalityResponse = response
+		}
+		return err
+	})
+	group.Go(func() error {
+		response, err := d.UserStats(ctx)
+		if err == nil {
+			totalSeries = response.NumSeries
+		}
+		return err
+	})
+	if err := group.Wait(); err != nil {
+		return 0, nil, err
+	}
+	return totalSeries, labelValuesCardinalityResponse, nil
+}
+
+// labelValuesCardinality queries ingesters for label values cardinality of a set of labelNames
+// Returns a LabelValuesCardinalityResponse where each item contains an exclusive label name and associated label values
+func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityResponse, error) {
+	replicationSet, err := d.GetIngestersForMetadata(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Make sure we get a successful response from all the ingesters
+	replicationSet.MaxErrors = 0
+
+	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
+		cardinalityMap: map[string]map[string]uint64{},
+	}
+
+	labelValuesReq, err := ingester_client.ToLabelValuesCardinalityRequest(labelNames, matchers)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {
+		stream, err := client.LabelValuesCardinality(ctx, labelValuesReq)
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = stream.CloseSend() }()
+
+		return nil, cardinalityConcurrentMap.processLabelValuesCardinalityMessages(stream)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(labelNames))
+
+	// Adjust label values' series count based on the ingester's replication factor
+	for labelName, labelValueSeriesCountMap := range cardinalityConcurrentMap.cardinalityMap {
+		for labelValue, seriesCount := range labelValueSeriesCountMap {
+			labelValueSeriesCountMap[labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
+		}
+		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
+			LabelName:        labelName,
+			LabelValueSeries: labelValueSeriesCountMap,
+		})
+	}
+
+	cardinalityResponse := &ingester_client.LabelValuesCardinalityResponse{
+		Items: cardinalityItems,
+	}
+
+	return cardinalityResponse, nil
+}
+
+type labelValuesCardinalityConcurrentMap struct {
+	cardinalityMap map[string]map[string]uint64
+	lock           sync.Mutex
+}
+
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessages(
+	stream ingester_client.Ingester_LabelValuesCardinalityClient) error {
+	for {
+		message, err := stream.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return err
+		}
+		cm.processLabelValuesCardinalityMessage(message)
+	}
+	return nil
+}
+
+/*
+ * Build a map from all the responses received from all the ingesters.
+ * Each label name will represent a key on the cardinalityMap which will have as value a second map, containing
+ * as key the label_value and value the respective series_count. This series_count will represent the cumulative result
+ * of all (label_name, label_value) tuples from all ingesters.
+ *
+ * Map: (label_name -> (label_value -> series_count))
+ *
+ * This method is called per each LabelValuesCardinalityResponse consumed from each ingester
+ */
+func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMessage(
+	message *ingester_client.LabelValuesCardinalityResponse) {
+
+	cm.lock.Lock()
+	defer cm.lock.Unlock()
+
+	for _, item := range message.Items {
+		if _, exists := cm.cardinalityMap[item.LabelName]; !exists {
+			// Label name nonexistent
+			cm.cardinalityMap[item.LabelName] = map[string]uint64{}
+		}
+		for labelValue, seriesCount := range item.LabelValueSeries {
+			// Label name existent
+			cm.cardinalityMap[item.LabelName][labelValue] += seriesCount
+		}
+	}
 }
 
 // LabelNames returns all of the label names.

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/dskit/grpcclient"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
@@ -20,7 +21,6 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
-	"github.com/grafana/mimir/pkg/util/grpcclient"
 )
 
 func Test_newStoreGatewayClientFactory(t *testing.T) {

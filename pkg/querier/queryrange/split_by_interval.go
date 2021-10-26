@@ -7,30 +7,31 @@ package queryrange
 
 import (
 	"context"
-	"net/http"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/weaveworks/common/httpgrpc"
+
+	apierror "github.com/grafana/mimir/pkg/api/error"
 )
 
 type IntervalFn func(r Request) time.Duration
 
 // SplitByIntervalMiddleware creates a new Middleware that splits requests by a given interval.
 func SplitByIntervalMiddleware(interval IntervalFn, limits Limits, merger Merger, registerer prometheus.Registerer) Middleware {
+	splitByCounter := promauto.With(registerer).NewCounter(prometheus.CounterOpts{
+		Namespace: "cortex",
+		Name:      "frontend_split_queries_total",
+		Help:      "Total number of underlying query requests after the split by interval is applied",
+	})
 	return MiddlewareFunc(func(next Handler) Handler {
 		return splitByInterval{
-			next:     next,
-			limits:   limits,
-			merger:   merger,
-			interval: interval,
-			splitByCounter: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-				Namespace: "cortex",
-				Name:      "frontend_split_queries_total",
-				Help:      "Total number of underlying query requests after the split by interval is applied",
-			}),
+			next:           next,
+			limits:         limits,
+			merger:         merger,
+			interval:       interval,
+			splitByCounter: splitByCounter,
 		}
 	})
 }
@@ -48,13 +49,13 @@ type splitByInterval struct {
 func (s splitByInterval) Do(ctx context.Context, r Request) (Response, error) {
 	// First we're going to build new requests, one for each day, taking care
 	// to line up the boundaries with step.
-	reqs, err := splitQuery(r, s.interval(r))
+	reqs, err := splitQueryByInterval(r, s.interval(r))
 	if err != nil {
 		return nil, err
 	}
 	s.splitByCounter.Add(float64(len(reqs)))
 
-	reqResps, err := DoRequests(ctx, s.next, reqs, s.limits)
+	reqResps, err := DoRequests(ctx, s.next, reqs, s.limits, true)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +72,7 @@ func (s splitByInterval) Do(ctx context.Context, r Request) (Response, error) {
 	return response, nil
 }
 
-func splitQuery(r Request, interval time.Duration) ([]Request, error) {
+func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) {
 	// Replace @ modifier function to their respective constant values in the query.
 	// This way subqueries will be evaluated at the same time as the parent query.
 	query, err := evaluateAtModifierFunction(r.GetQuery(), r.GetStart(), r.GetEnd())
@@ -96,7 +97,7 @@ func splitQuery(r Request, interval time.Duration) ([]Request, error) {
 func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
-		return "", httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return "", apierror.New(apierror.TypeBadData, err.Error())
 	}
 	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
 		if selector, ok := n.(*parser.VectorSelector); ok {

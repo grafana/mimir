@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gogo/status"
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -86,6 +86,14 @@ func (c *swappableCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id 
 
 func (c *swappableCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []uint64) (map[uint64][]byte, []uint64) {
 	return c.ptr.FetchMultiSeries(ctx, blockID, ids)
+}
+
+func (c *swappableCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {
+	c.ptr.StoreExpandedPostings(ctx, blockID, key, v)
+}
+
+func (c *swappableCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
+	return c.ptr.FetchExpandedPostings(ctx, blockID, key)
 }
 
 type storeSuite struct {

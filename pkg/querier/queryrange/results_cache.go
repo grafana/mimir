@@ -9,13 +9,12 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"net/http"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
@@ -28,8 +27,8 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/uber/jaeger-client-go"
-	"github.com/weaveworks/common/httpgrpc"
 
+	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -195,7 +194,7 @@ func NewResultsCacheMiddleware(
 func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	tenantIDs, err := tenant.TenantIDs(ctx)
 	if err != nil {
-		return nil, httpgrpc.Errorf(http.StatusBadRequest, "%s", err)
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	if s.shouldCache != nil && !s.shouldCache(r) {
@@ -226,7 +225,7 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	if err == nil && len(extents) > 0 {
-		extents, err := s.filterRecentExtents(r, maxCacheFreshness, extents)
+		extents, err := filterRecentCacheExtents(r, maxCacheFreshness, s.extractor, extents)
 		if err != nil {
 			return nil, err
 		}
@@ -236,21 +235,37 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 	return response, err
 }
 
-// shouldCacheResponse says whether the response should be cached or not.
-func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Response, maxCacheTime int64) bool {
+// isRequestCachable says whether the request is eligible for caching.
+func isRequestCachable(req Request, maxCacheTime int64, logger log.Logger) bool {
+	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
+	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
+	if !isRequestStepAligned(req) {
+		return false
+	}
+
+	// Do not cache it at all if the query time range is more recent than the configured max cache freshness.
+	if req.GetStart() > maxCacheTime {
+		return false
+	}
+
+	if !isAtModifierCachable(req, maxCacheTime, logger) {
+		return false
+	}
+
+	return true
+}
+
+// isResponseCachable says whether the response should be cached or not.
+func isResponseCachable(ctx context.Context, r Response, cacheGenNumberLoader CacheGenNumberLoader, logger log.Logger) bool {
 	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
 	for _, v := range headerValues {
 		if v == noStoreValue {
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
+			level.Debug(logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
 			return false
 		}
 	}
 
-	if !s.isAtModifierCachable(req, maxCacheTime) {
-		return false
-	}
-
-	if s.cacheGenNumberLoader == nil {
+	if cacheGenNumberLoader == nil {
 		return true
 	}
 
@@ -258,13 +273,13 @@ func (s resultsCache) shouldCacheResponse(ctx context.Context, req Request, r Re
 	genNumberFromCtx := cache.ExtractCacheGenNumber(ctx)
 
 	if len(genNumbersFromResp) == 0 && genNumberFromCtx != "" {
-		level.Debug(s.logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
+		level.Debug(logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
 		return false
 	}
 
 	for _, gen := range genNumbersFromResp {
 		if gen != genNumberFromCtx {
-			level.Debug(s.logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
+			level.Debug(logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
 			return false
 		}
 	}
@@ -276,7 +291,7 @@ var errAtModifierAfterEnd = errors.New("at modifier after end")
 
 // isAtModifierCachable returns true if the @ modifier result
 // is safe to cache.
-func (s resultsCache) isAtModifierCachable(r Request, maxCacheTime int64) bool {
+func isAtModifierCachable(r Request, maxCacheTime int64, logger log.Logger) bool {
 	// There are 2 cases when @ modifier is not safe to cache:
 	//   1. When @ modifier points to time beyond the maxCacheTime.
 	//   2. If the @ modifier time is > the query range end while being
@@ -290,7 +305,7 @@ func (s resultsCache) isAtModifierCachable(r Request, maxCacheTime int64) bool {
 	expr, err := parser.ParseExpr(query)
 	if err != nil {
 		// We are being pessimistic in such cases.
-		level.Warn(s.logger).Log("msg", "failed to parse query, considering @ modifier as not cachable", "query", query, "err", err)
+		level.Warn(logger).Log("msg", "failed to parse query, considering @ modifier as not cachable", "query", query, "err", err)
 		return false
 	}
 
@@ -342,7 +357,7 @@ func (s resultsCache) handleMiss(ctx context.Context, r Request, maxCacheTime in
 		return nil, nil, err
 	}
 
-	if !s.shouldCacheResponse(ctx, r, response, maxCacheTime) {
+	if !isRequestCachable(r, maxCacheTime, s.logger) || !isResponseCachable(ctx, response, s.cacheGenNumberLoader, s.logger) {
 		return response, []Extent{}, nil
 	}
 
@@ -362,10 +377,10 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		reqResps []RequestResponse
 		err      error
 	)
-	log, ctx := spanlogger.New(ctx, "handleHit")
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "handleHit")
 	defer log.Finish()
 
-	requests, responses, err := s.partition(r, extents)
+	requests, responses, err := partitionCacheExtents(r, extents, s.minCacheExtent, s.extractor)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -375,14 +390,14 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		return response, nil, err
 	}
 
-	reqResps, err = DoRequests(ctx, s.next, requests, s.limits)
+	reqResps, err = DoRequests(ctx, s.next, requests, s.limits, false)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	for _, reqResp := range reqResps {
 		responses = append(responses, reqResp.Response)
-		if !s.shouldCacheResponse(ctx, r, reqResp.Response, maxCacheTime) {
+		if !isRequestCachable(r, maxCacheTime, s.logger) || !isResponseCachable(ctx, reqResp.Response, s.cacheGenNumberLoader, s.logger) {
 			continue
 		}
 		extent, err := toExtent(ctx, reqResp.Request, s.extractor.ResponseWithoutHeaders(reqResp.Response))
@@ -391,6 +406,19 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		}
 		extents = append(extents, extent)
 	}
+
+	mergedExtents, err := mergeCacheExtentsForRequest(ctx, r, s.merger, extents)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	response, err := s.merger.MergeResponse(responses...)
+	return response, mergedExtents, err
+}
+
+// mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
+// The input extents can be overlapping and are not required to be sorted.
+func mergeCacheExtentsForRequest(ctx context.Context, r Request, merger Merger, extents []Extent) ([]Extent, error) {
 	sort.Slice(extents, func(i, j int) bool {
 		if extents[i].Start == extents[j].Start {
 			// as an optimization, for two extents starts at the same time, we
@@ -405,19 +433,19 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 	// Merge any extents - potentially overlapping
 	accumulator, err := newAccumulator(extents[0])
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	mergedExtents := make([]Extent, 0, len(extents))
 
 	for i := 1; i < len(extents); i++ {
 		if accumulator.End+r.GetStep() < extents[i].Start {
-			mergedExtents, err = merge(mergedExtents, accumulator)
+			mergedExtents, err = mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			accumulator, err = newAccumulator(extents[i])
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			continue
 		}
@@ -430,22 +458,16 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 		accumulator.End = extents[i].End
 		currentRes, err := extents[i].toResponse()
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		merged, err := s.merger.MergeResponse(accumulator.Response, currentRes)
+		merged, err := merger.MergeResponse(accumulator.Response, currentRes)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		accumulator.Response = merged
 	}
 
-	mergedExtents, err = merge(mergedExtents, accumulator)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	response, err := s.merger.MergeResponse(responses...)
-	return response, mergedExtents, err
+	return mergeCacheExtentsWithAccumulator(mergedExtents, accumulator)
 }
 
 type accumulator struct {
@@ -453,7 +475,7 @@ type accumulator struct {
 	Extent
 }
 
-func merge(extents []Extent, acc *accumulator) ([]Extent, error) {
+func mergeCacheExtentsWithAccumulator(extents []Extent, acc *accumulator) ([]Extent, error) {
 	any, err := types.MarshalAny(acc.Response)
 	if err != nil {
 		return nil, err
@@ -490,9 +512,9 @@ func toExtent(ctx context.Context, req Request, res Response) (Extent, error) {
 	}, nil
 }
 
-// partition calculates the required requests to satisfy req given the cached data.
+// partitionCacheExtents calculates the required requests to satisfy req given the cached data.
 // extents must be in order by start time.
-func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Response, error) {
+func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, extractor Extractor) ([]Request, []Response, error) {
 	var requests []Request
 	var cachedResponses []Response
 	start := req.GetStart()
@@ -509,7 +531,7 @@ func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Res
 		// However if the step is large enough, the split_query_by_interval middleware would generate a query with same start and end.
 		// For example, if the step size is more than 12h and the interval is 24h.
 		// This means the extent's start and end time would be same, even if the timerange covers several hours.
-		if (req.GetStart() != req.GetEnd()) && (req.GetEnd()-req.GetStart() > s.minCacheExtent) && (extent.End-extent.Start < s.minCacheExtent) {
+		if (req.GetStart() != req.GetEnd()) && (req.GetEnd()-req.GetStart() > minCacheExtent) && (extent.End-extent.Start < minCacheExtent) {
 			continue
 		}
 
@@ -523,7 +545,7 @@ func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Res
 			return nil, nil, err
 		}
 		// extract the overlap from the cached extent.
-		cachedResponses = append(cachedResponses, s.extractor.Extract(start, req.GetEnd(), res))
+		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
 		start = extent.End
 	}
 
@@ -542,7 +564,7 @@ func (s resultsCache) partition(req Request, extents []Extent) ([]Request, []Res
 	return requests, cachedResponses, nil
 }
 
-func (s resultsCache) filterRecentExtents(req Request, maxCacheFreshness time.Duration, extents []Extent) ([]Extent, error) {
+func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extractor Extractor, extents []Extent) ([]Extent, error) {
 	maxCacheTime := (int64(model.Now().Add(-maxCacheFreshness)) / req.GetStep()) * req.GetStep()
 	for i := range extents {
 		// Never cache data for the latest freshness period.
@@ -552,7 +574,7 @@ func (s resultsCache) filterRecentExtents(req Request, maxCacheFreshness time.Du
 			if err != nil {
 				return nil, err
 			}
-			extracted := s.extractor.Extract(extents[i].Start, maxCacheTime, res)
+			extracted := extractor.Extract(extents[i].Start, maxCacheTime, res)
 			any, err := types.MarshalAny(extracted)
 			if err != nil {
 				return nil, err
@@ -570,7 +592,7 @@ func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
 	}
 
 	var resp CachedResponse
-	log, ctx := spanlogger.New(ctx, "unmarshal-extent") //nolint:ineffassign,staticcheck
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "unmarshal-extent") //nolint:ineffassign,staticcheck
 	defer log.Finish()
 
 	log.LogFields(otlog.Int("bytes", len(bufs[0])))

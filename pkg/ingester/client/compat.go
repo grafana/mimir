@@ -39,6 +39,14 @@ func FromQueryRequest(req *QueryRequest) (model.Time, model.Time, []*labels.Matc
 	return from, to, matchers, nil
 }
 
+func ToLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*LabelNamesAndValuesRequest, error) {
+	matchersProto, err := toLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	return &LabelNamesAndValuesRequest{Matchers: matchersProto}, nil
+}
+
 // ToExemplarQueryRequest builds an ExemplarQueryRequest proto.
 func ToExemplarQueryRequest(from, to model.Time, matchers ...[]*labels.Matcher) (*ExemplarQueryRequest, error) {
 	var reqMatchers []*LabelMatchers
@@ -122,6 +130,18 @@ func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, matche
 		EndTimestampMs:   int64(to),
 		Matchers:         &LabelMatchers{Matchers: ms},
 	}, nil
+}
+
+func ToLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*LabelValuesCardinalityRequest, error) {
+	matchersProto, err := toLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	labelNamesStr := make([]string, 0, len(labelNames))
+	for _, labelName := range labelNames {
+		labelNamesStr = append(labelNamesStr, string(labelName))
+	}
+	return &LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto}, nil
 }
 
 // FromLabelValuesRequest unpacks a LabelValuesRequest proto

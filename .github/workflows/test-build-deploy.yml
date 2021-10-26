@@ -10,7 +10,7 @@ jobs:
   lint:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211021_update-go-1.16.9-eaeb584bb
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -36,6 +36,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-protos
       - name: Check Generated Documentation
         run: make BUILD_IN_CONTAINER=false check-doc
+      - name: Check Mixin
+        run: make BUILD_IN_CONTAINER=false check-mixin
       - name: Check White Noise.
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
@@ -44,7 +46,7 @@ jobs:
   test:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211021_update-go-1.16.9-eaeb584bb
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -68,7 +70,7 @@ jobs:
   build:
     runs-on: ubuntu-20.04
     container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:add-prettier-08d2e2a61
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211021_update-go-1.16.9-eaeb584bb
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
@@ -105,8 +107,8 @@ jobs:
       - name: Upgrade golang
         run: |
           cd /tmp
-          wget https://dl.google.com/go/go1.16.6.linux-amd64.tar.gz
-          tar -zxvf go1.16.6.linux-amd64.tar.gz
+          wget https://dl.google.com/go/go1.16.9.linux-amd64.tar.gz
+          tar -zxvf go1.16.9.linux-amd64.tar.gz
           sudo rm -fr /usr/local/go
           sudo mv /tmp/go /usr/local/go
           cd -

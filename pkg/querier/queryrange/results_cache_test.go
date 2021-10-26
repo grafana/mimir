@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	query        = "/api/v1/query_range?end=1536716898&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
+	query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
 	responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
 )
 
@@ -33,7 +33,7 @@ var (
 	parsedRequest = &PrometheusRequest{
 		Path:  "/api/v1/query_range",
 		Start: 1536673680 * 1e3,
-		End:   1536716898 * 1e3,
+		End:   1536716880 * 1e3,
 		Step:  120 * 1e3,
 		Query: "sum(container_memory_rss) by (namespace)",
 	}
@@ -112,21 +112,140 @@ func mkExtentWithStep(start, end, step int64) Extent {
 	}
 }
 
-func TestShouldCache(t *testing.T) {
+func TestIsRequestCachable(t *testing.T) {
 	maxCacheTime := int64(150 * 1000)
-	c := &resultsCache{logger: log.NewNopLogger(), cacheGenNumberLoader: newMockCacheGenNumberLoader()}
+
 	for _, tc := range []struct {
 		name                   string
 		request                Request
-		input                  Response
+		cacheGenNumberToInject string
+		expected               bool
+	}{
+		// @ modifier on vector selectors.
+		{
+			name:     "@ modifier on vector selector, before end, before maxCacheTime",
+			request:  &PrometheusRequest{Query: "metric @ 123", End: 125000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "@ modifier on vector selector, after end, before maxCacheTime",
+			request:  &PrometheusRequest{Query: "metric @ 127", End: 125000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on vector selector, before end, after maxCacheTime",
+			request:  &PrometheusRequest{Query: "metric @ 151", End: 200000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on vector selector, after end, after maxCacheTime",
+			request:  &PrometheusRequest{Query: "metric @ 151", End: 125000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on vector selector with start() before maxCacheTime",
+			request:  &PrometheusRequest{Query: "metric @ start()", Start: 100000, End: 200000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "@ modifier on vector selector with end() after maxCacheTime",
+			request:  &PrometheusRequest{Query: "metric @ end()", Start: 100000, End: 200000, Step: 5},
+			expected: false,
+		},
+		// @ modifier on matrix selectors.
+		{
+			name:     "@ modifier on matrix selector, before end, before maxCacheTime",
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 123)", End: 125000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "@ modifier on matrix selector, after end, before maxCacheTime",
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 127)", End: 125000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on matrix selector, before end, after maxCacheTime",
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 200000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on matrix selector, after end, after maxCacheTime",
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 125000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on matrix selector with start() before maxCacheTime",
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ start())", Start: 100000, End: 200000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "@ modifier on matrix selector with end() after maxCacheTime",
+			request:  &PrometheusRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000, Step: 5},
+			expected: false,
+		},
+		// @ modifier on subqueries.
+		{
+			name:     "@ modifier on subqueries, before end, before maxCacheTime",
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 123)", End: 125000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "@ modifier on subqueries, after end, before maxCacheTime",
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on subqueries, before end, after maxCacheTime",
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on subqueries, after end, after maxCacheTime",
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000, Step: 5},
+			expected: false,
+		},
+		{
+			name:     "@ modifier on subqueries with start() before maxCacheTime",
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ start())", Start: 100000, End: 200000, Step: 5},
+			expected: true,
+		},
+		{
+			name:     "@ modifier on subqueries with end() after maxCacheTime",
+			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
+			expected: false,
+		},
+		// On step aligned and non-aligned requests
+		{
+			name:     "request that is step aligned",
+			request:  &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 10},
+			expected: true,
+		},
+		{
+			name:     "request that is NOT step aligned",
+			request:  &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			expected: false,
+		},
+	} {
+		{
+			t.Run(tc.name, func(t *testing.T) {
+				ret := isRequestCachable(tc.request, maxCacheTime, log.NewNopLogger())
+				require.Equal(t, tc.expected, ret)
+			})
+		}
+	}
+}
+
+func TestIsResponseCachable(t *testing.T) {
+	for _, tc := range []struct {
+		name                   string
+		response               Response
 		cacheGenNumberToInject string
 		expected               bool
 	}{
 		// Tests only for cacheControlHeader
 		{
-			name:    "does not contain the cacheControl header",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "does not contain the cacheControl header",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   "meaninglessheader",
@@ -137,9 +256,8 @@ func TestShouldCache(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:    "does contain the cacheControl header which has the value",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "does contain the cacheControl header which has the value",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   cacheControlHeader,
@@ -150,9 +268,8 @@ func TestShouldCache(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:    "cacheControl header contains extra values but still good",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "cacheControl header contains extra values but still good",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   cacheControlHeader,
@@ -164,22 +281,19 @@ func TestShouldCache(t *testing.T) {
 		},
 		{
 			name:     "broken response",
-			request:  &PrometheusRequest{Query: "metric"},
-			input:    Response(&PrometheusResponse{}),
+			response: Response(&PrometheusResponse{}),
 			expected: true,
 		},
 		{
-			name:    "nil headers",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "nil headers",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{nil},
 			}),
 			expected: true,
 		},
 		{
-			name:    "had cacheControl header but no values",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "had cacheControl header but no values",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{{Name: cacheControlHeader}},
 			}),
 			expected: true,
@@ -187,9 +301,8 @@ func TestShouldCache(t *testing.T) {
 
 		// Tests only for cacheGenNumber header
 		{
-			name:    "cacheGenNumber not set in both header and store",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "cacheGenNumber not set in both header and store",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   "meaninglessheader",
@@ -200,9 +313,8 @@ func TestShouldCache(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:    "cacheGenNumber set in store but not in header",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "cacheGenNumber set in store but not in header",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   "meaninglessheader",
@@ -214,9 +326,8 @@ func TestShouldCache(t *testing.T) {
 			expected:               false,
 		},
 		{
-			name:    "cacheGenNumber set in header but not in store",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "cacheGenNumber set in header but not in store",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   ResultsCacheGenNumberHeaderName,
@@ -227,9 +338,8 @@ func TestShouldCache(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:    "cacheGenNumber in header and store are the same",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "cacheGenNumber in header and store are the same",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   ResultsCacheGenNumberHeaderName,
@@ -241,9 +351,8 @@ func TestShouldCache(t *testing.T) {
 			expected:               true,
 		},
 		{
-			name:    "inconsistency between cacheGenNumber in header and store",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "inconsistency between cacheGenNumber in header and store",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   ResultsCacheGenNumberHeaderName,
@@ -255,9 +364,8 @@ func TestShouldCache(t *testing.T) {
 			expected:               false,
 		},
 		{
-			name:    "cacheControl header says not to catch and cacheGenNumbers in store and headers have consistency",
-			request: &PrometheusRequest{Query: "metric"},
-			input: Response(&PrometheusResponse{
+			name: "cacheControl header says not to catch and cacheGenNumbers in store and headers have consistency",
+			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
 						Name:   cacheControlHeader,
@@ -272,129 +380,19 @@ func TestShouldCache(t *testing.T) {
 			cacheGenNumberToInject: "1",
 			expected:               false,
 		},
-		// @ modifier on vector selectors.
-		{
-			name:     "@ modifier on vector selector, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 123", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: true,
-		},
-		{
-			name:     "@ modifier on vector selector, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 127", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on vector selector, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 151", End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on vector selector, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 151", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on vector selector with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ start()", Start: 100000, End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: true,
-		},
-		{
-			name:     "@ modifier on vector selector with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ end()", Start: 100000, End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		// @ modifier on matrix selectors.
-		{
-			name:     "@ modifier on matrix selector, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 123)", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: true,
-		},
-		{
-			name:     "@ modifier on matrix selector, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 127)", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on matrix selector, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on matrix selector, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on matrix selector with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ start())", Start: 100000, End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: true,
-		},
-		{
-			name:     "@ modifier on matrix selector with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		// @ modifier on subqueries.
-		{
-			name:     "@ modifier on subqueries, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 123)", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: true,
-		},
-		{
-			name:     "@ modifier on subqueries, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on subqueries, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on subqueries, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
-		{
-			name:     "@ modifier on subqueries with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ start())", Start: 100000, End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: true,
-		},
-		{
-			name:     "@ modifier on subqueries with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000},
-			input:    Response(&PrometheusResponse{}),
-			expected: false,
-		},
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
 				ctx := cache.InjectCacheGenNumber(context.Background(), tc.cacheGenNumberToInject)
-				ret := c.shouldCacheResponse(ctx, tc.request, tc.input, maxCacheTime)
+				cacheGenLoader := newMockCacheGenNumberLoader()
+				ret := isResponseCachable(ctx, tc.response, cacheGenLoader, log.NewNopLogger())
 				require.Equal(t, tc.expected, ret)
 			})
 		}
 	}
 }
 
-func TestPartition(t *testing.T) {
+func TestPartitionCacheExtents(t *testing.T) {
 	for _, tc := range []struct {
 		name                   string
 		input                  Request
@@ -524,11 +522,10 @@ func TestPartition(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			s := resultsCache{
-				extractor:      PrometheusResponseExtractor{},
-				minCacheExtent: 10,
-			}
-			reqs, resps, err := s.partition(tc.input, tc.prevCachedResponse)
+			extractor := PrometheusResponseExtractor{}
+			minCacheExtent := int64(10)
+
+			reqs, resps, err := partitionCacheExtents(tc.input, tc.prevCachedResponse, minCacheExtent, extractor)
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
@@ -734,7 +731,7 @@ func TestHandleHit(t *testing.T) {
 			}
 
 			ctx := user.InjectOrgID(context.Background(), "1")
-			response, updatedExtents, err := sut.handleHit(ctx, tc.input, tc.cachedEntry, 0)
+			response, updatedExtents, err := sut.handleHit(ctx, tc.input, tc.cachedEntry, time.Now().Unix()*1000)
 			require.NoError(t, err)
 
 			expectedResponse := mkAPIResponse(tc.input.GetStart(), tc.input.GetEnd(), tc.input.GetStep())
