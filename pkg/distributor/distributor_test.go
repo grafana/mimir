@@ -615,7 +615,12 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				d.ingestionRate.Tick()
 
 				if testData.expectedMetrics != "" {
-					assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(testData.expectedMetrics), testData.metricNames...))
+					// The number of inflight requests is decreased asynchronously once the request to the latest
+					// ingester is completed too. To avoid flaky tests, we poll the metrics because what we expect
+					// is that metrics reconcile to the expected ones.
+					test.Poll(t, 3*time.Second, nil, func() interface{} {
+						return testutil.GatherAndCompare(regs[0], strings.NewReader(testData.expectedMetrics), testData.metricNames...)
+					})
 				}
 			}
 		})
