@@ -209,10 +209,13 @@ func (c *Client) LabelNamesAndValues(selector string, limit int) (*http.Response
 }
 
 // LabelValuesCardinality returns all values and series total count for each label name.
-func (c *Client) LabelValuesCardinality(labelNames []string, selector string) (*http.Response, error) {
+func (c *Client) LabelValuesCardinality(labelNames []string, selector string, limit int) (*http.Response, error) {
 	body := make(url.Values)
 	if len(selector) > 0 {
 		body.Set("selector", selector)
+	}
+	if limit > 0 {
+		body.Set("limit", strconv.Itoa(limit))
 	}
 	for _, lbName := range labelNames {
 		body.Add("label_names[]", lbName)

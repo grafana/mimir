@@ -199,9 +199,10 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 	tests := map[string]struct {
 		labelNames     []string
 		selector       string
+		limit          int
 		expectedResult labelValuesCardinalityResponse
 	}{
-		"obtain labels cardinality with default selector": {
+		"obtain labels cardinality with default selector and limit": {
 			labelNames: []string{"env", "job"},
 			expectedResult: labelValuesCardinalityResponse{
 				SeriesCountTotal: 1000,
@@ -276,6 +277,33 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 				},
 			},
 		},
+		"obtain labels cardinality with default and custom limit": {
+			labelNames: []string{"env", "job"},
+			limit:      2,
+			expectedResult: labelValuesCardinalityResponse{
+				SeriesCountTotal: 1000,
+				Labels: []labelNamesCardinality{
+					{
+						LabelName:        "env",
+						LabelValuesCount: 3,
+						SeriesCount:      1000,
+						Cardinality: []labelValuesCardinality{
+							{LabelValue: "staging", SeriesCount: 334},
+							{LabelValue: "dev", SeriesCount: 333},
+						},
+					},
+					{
+						LabelName:        "job",
+						LabelValuesCount: 5,
+						SeriesCount:      1000,
+						Cardinality: []labelValuesCardinality{
+							{LabelValue: "compactor", SeriesCount: 200},
+							{LabelValue: "distributor", SeriesCount: 200},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	// Run tests.
@@ -341,7 +369,7 @@ func TestQuerierLabelValuesCardinality(t *testing.T) {
 			}
 
 			// Fetch label values cardinality.
-			res, err := client.LabelValuesCardinality(tc.labelNames, tc.selector)
+			res, err := client.LabelValuesCardinality(tc.labelNames, tc.selector, tc.limit)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, res.StatusCode)
 
