@@ -17,8 +17,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('short') },
       )
       .addPanel(
-        $.panel('Queue Length') +
-        $.queryPanel('cortex_query_frontend_queue_length{%s}' % $.jobMatcher($._config.job_names.query_frontend), '{{cluster}} / {{namespace}} / {{%s}}' % $._config.per_instance_label),
+        $.panel('Queue Length (per %s)' % $._config.per_instance_label) +
+        $.queryPanel(
+          'sum by(%s) (cortex_query_frontend_queue_length{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_frontend)],
+          '{{%s}}' % $._config.per_instance_label
+        ),
+      )
+      .addPanel(
+        $.panel('Queue Length (per user)') +
+        $.queryPanel(
+          'sum by(user) (cortex_query_frontend_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_frontend)],
+          '{{user}}'
+        ),
       )
     )
     .addRow(
@@ -28,8 +38,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_query_scheduler_queue_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.query_scheduler)),
       )
       .addPanel(
-        $.panel('Queue Length') +
-        $.queryPanel('cortex_query_scheduler_queue_length{%s}' % $.jobMatcher($._config.job_names.query_scheduler), '{{cluster}} / {{namespace}} / {{%s}}' % $._config.per_instance_label),
+        $.panel('Queue Length (per %s)' % $._config.per_instance_label) +
+        $.queryPanel(
+          'sum by(%s) (cortex_query_scheduler_queue_length{%s})' % [$._config.per_instance_label, $.jobMatcher($._config.job_names.query_scheduler)],
+          '{{%s}}' % $._config.per_instance_label
+        ),
+      )
+      .addPanel(
+        $.panel('Queue Length (per user)') +
+        $.queryPanel(
+          'sum by(user) (cortex_query_scheduler_queue_length{%s}) > 0' % [$.jobMatcher($._config.job_names.query_scheduler)],
+          '{{user}}'
+        ),
       )
     )
     .addRow(
