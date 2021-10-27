@@ -19,7 +19,6 @@ import (
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
-	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -594,16 +593,22 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 }
 
 func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
-	found, bufs, _ := s.cache.Fetch(ctx, []string{cache.HashKey(key)})
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "get")
+	defer log.Finish()
+
+	hashKey := cache.HashKey(key)
+
+	level.Debug(log).Log("msg", "fetching cached result", "key", key, "hashKey", hashKey)
+
+	found, bufs, _ := s.cache.Fetch(ctx, []string{hashKey})
 	if len(found) != 1 {
+		level.Debug(log).Log("msg", "no cached result found")
 		return nil, false
 	}
 
 	var resp CachedResponse
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "unmarshal-extent") //nolint:ineffassign,staticcheck
-	defer log.Finish()
 
-	log.LogFields(otlog.Int("bytes", len(bufs[0])))
+	level.Debug(log).Log("msg", "got cached result", "bytes", len(bufs[0]))
 
 	if err := proto.Unmarshal(bufs[0], &resp); err != nil {
 		level.Error(log).Log("msg", "error unmarshalling cached value", "err", err)
@@ -622,6 +627,7 @@ func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
 		}
 	}
 
+	level.Debug(log).Log("msg", "found cached extents", "extents", len(resp.Extents))
 	return resp.Extents, true
 }
 

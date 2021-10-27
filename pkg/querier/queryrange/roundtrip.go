@@ -155,7 +155,7 @@ func NewTripperware(
 
 	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics), StepAlignMiddleware)
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), StepAlignMiddleware)
 	}
 
 	var c cache.Cache
@@ -185,7 +185,7 @@ func NewTripperware(
 				return !r.GetOptions().CacheDisabled
 			}
 
-			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics), newSplitAndCacheMiddleware(
+			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
 				cfg.SplitQueriesByInterval > 0,
 				cfg.CacheResults,
 				cfg.SplitQueriesByInterval,
@@ -203,7 +203,7 @@ func NewTripperware(
 	} else {
 		if cfg.SplitQueriesByInterval != 0 {
 			staticIntervalFn := func(_ Request) time.Duration { return cfg.SplitQueriesByInterval }
-			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval", metrics), SplitByIntervalMiddleware(staticIntervalFn, limits, codec, registerer))
+			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval", metrics, log), SplitByIntervalMiddleware(staticIntervalFn, limits, codec, registerer))
 		}
 
 		if cfg.CacheResults {
@@ -215,7 +215,7 @@ func NewTripperware(
 				return nil, nil, err
 			}
 			c = cache
-			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("results_cache", metrics), queryCacheMiddleware)
+			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("results_cache", metrics, log), queryCacheMiddleware)
 		}
 	}
 
@@ -232,7 +232,7 @@ func NewTripperware(
 
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
-			InstrumentMiddleware("querysharding", metrics),
+			InstrumentMiddleware("querysharding", metrics, log),
 			NewQueryShardingMiddleware(
 				log,
 				promql.NewEngine(engineOpts),
@@ -243,7 +243,7 @@ func NewTripperware(
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
 	}
 
 	// Track query range statistics.
