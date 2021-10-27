@@ -27,6 +27,8 @@ var cardinalityEnvLabelValues = []string{"prod", "staging", "dev"}
 var cardinalityJobLabelValues = []string{"distributor", "ingester", "store-gateway", "querier", "compactor"}
 
 func TestQuerierLabelNamesAndValues(t *testing.T) {
+	t.Skip("Flaky, see https://github.com/grafana/mimir/issues/426")
+
 	const numSeriesToPush = 1000
 
 	// Define response types.
