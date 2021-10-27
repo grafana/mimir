@@ -40,7 +40,7 @@ type PrometheusRequest struct {
 	Timeout time.Duration `protobuf:"bytes,5,opt,name=timeout,proto3,stdduration" json:"timeout"`
 	Query   string        `protobuf:"bytes,6,opt,name=query,proto3" json:"query,omitempty"`
 	Options Options       `protobuf:"bytes,7,opt,name=options,proto3" json:"options"`
-	// Opaque ID of the request. The actual value is implementation specific.
+	// ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
 	Id int64 `protobuf:"varint,8,opt,name=id,proto3" json:"id,omitempty"`
 	// Hints that could be optionally attached to the request to pass down the stack.
 	// These hints can be used to optimize the query execution.

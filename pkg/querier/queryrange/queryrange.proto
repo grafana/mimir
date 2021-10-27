@@ -26,7 +26,7 @@ message PrometheusRequest {
   string query = 6;
   Options options = 7 [(gogoproto.nullable) = false];
 
-  // Opaque ID of the request. The actual value is implementation specific.
+  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
   int64 id = 8;
 
   // Hints that could be optionally attached to the request to pass down the stack.
