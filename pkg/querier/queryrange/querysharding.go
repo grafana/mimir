@@ -229,6 +229,16 @@ func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog
 		// Calculate how many legs are shardable. To do it we use a trick: rewrite the query passing 1
 		// total shards and then we check how many sharded queries are generated. In case of any error,
 		// we just consider as if there's only 1 shardable leg (the error will be detected anyway later on).
+		//
+		// "Leg" is the terminology we use in query sharding to mention a part of the query that can be sharded.
+		// For example, look at this query:
+		// sum(metric) / count(metric)
+		//
+		// This query has 2 shardable "legs":
+		// - sum(metric)
+		// - count(metric)
+		//
+		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
 		_, shardingStats, err := s.shardQuery(r.GetQuery(), 1)
 		numShardableLegs := 1
 		if err == nil && shardingStats.GetShardedQueries() > 0 {
