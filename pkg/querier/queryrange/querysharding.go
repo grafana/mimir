@@ -23,6 +23,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
+	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -99,12 +100,8 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
-	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
-	if r.GetOptions().TotalShards > 0 {
-		totalShards = int(r.GetOptions().TotalShards)
-	}
-
-	if r.GetOptions().ShardingDisabled || totalShards <= 1 {
+	totalShards := s.getShardsForQuery(tenantIDs, r, log)
+	if totalShards <= 1 {
 		level.Debug(log).Log("msg", "query sharding is disabled for this query or tenant")
 		return s.next.Do(ctx, r)
 	}
@@ -203,4 +200,64 @@ func (s *querySharding) shardQuery(query string, totalShards int) (string, *astm
 	}
 
 	return shardedQuery.String(), stats, nil
+}
+
+// getShardsForQuery calculates and return the number of shards that should be used to run the query.
+func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog log.Logger) int {
+	// Check if sharding is disabled for the given request.
+	if r.GetOptions().ShardingDisabled {
+		return 1
+	}
+
+	// Check the default number of shards configured for the given tenant.
+	totalShards := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingTotalShards)
+	if totalShards <= 1 {
+		return 1
+	}
+
+	// Honor the number of shards specified in the request (if any).
+	if r.GetOptions().TotalShards > 0 {
+		totalShards = int(r.GetOptions().TotalShards)
+	}
+
+	maxShardedQueries := validation.SmallestPositiveIntPerTenant(tenantIDs, s.limit.QueryShardingMaxShardedQueries)
+	hints := r.GetHints()
+
+	// If total queries is provided through hints, then we adjust the number of shards for the query
+	// based on the configured max sharded queries limit.
+	if hints != nil && hints.TotalQueries > 0 && maxShardedQueries > 0 {
+		// Calculate how many legs are shardable. To do it we use a trick: rewrite the query passing 1
+		// total shards and then we check how many sharded queries are generated. In case of any error,
+		// we just consider as if there's only 1 shardable leg (the error will be detected anyway later on).
+		//
+		// "Leg" is the terminology we use in query sharding to mention a part of the query that can be sharded.
+		// For example, look at this query:
+		// sum(metric) / count(metric)
+		//
+		// This query has 2 shardable "legs":
+		// - sum(metric)
+		// - count(metric)
+		//
+		// Calling s.shardQuery() with 1 total shards we can see how many shardable legs the query has.
+		_, shardingStats, err := s.shardQuery(r.GetQuery(), 1)
+		numShardableLegs := 1
+		if err == nil && shardingStats.GetShardedQueries() > 0 {
+			numShardableLegs = shardingStats.GetShardedQueries()
+		}
+
+		prevTotalShards := totalShards
+		totalShards = util_math.Max(1, util_math.Min(totalShards, (maxShardedQueries/int(hints.TotalQueries))/numShardableLegs))
+
+		if prevTotalShards != totalShards {
+			level.Debug(spanLog).Log(
+				"msg", "the number of shards have been adjusted to honor the max sharded queries limit",
+				"updated total shards", totalShards,
+				"previous total shards", prevTotalShards,
+				"max sharded queries", maxShardedQueries,
+				"shardable legs", numShardableLegs,
+				"total queries", hints.TotalQueries)
+		}
+	}
+
+	return totalShards
 }

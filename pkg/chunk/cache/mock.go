@@ -8,6 +8,8 @@ package cache
 import (
 	"context"
 	"sync"
+
+	"go.uber.org/atomic"
 )
 
 type mockCache struct {
@@ -51,4 +53,40 @@ func NewMockCache() Cache {
 // NewNoopCache returns a no-op cache.
 func NewNoopCache() Cache {
 	return NewTiered(nil)
+}
+
+// InstrumentedMockCache is a mocked cache implementation which also tracks the number
+// of times its functions are called.
+type InstrumentedMockCache struct {
+	cache      Cache
+	storeCount atomic.Int32
+	fetchCount atomic.Int32
+}
+
+// NewInstrumentedMockCache makes a new InstrumentedMockCache.
+func NewInstrumentedMockCache() *InstrumentedMockCache {
+	return &InstrumentedMockCache{
+		cache: NewMockCache(),
+	}
+}
+
+func (m *InstrumentedMockCache) Store(ctx context.Context, keys []string, bufs [][]byte) {
+	m.storeCount.Inc()
+	m.cache.Store(ctx, keys, bufs)
+}
+
+func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string) (found []string, bufs [][]byte, missing []string) {
+	m.fetchCount.Inc()
+	return m.cache.Fetch(ctx, keys)
+}
+
+func (m *InstrumentedMockCache) Stop() {
+	m.cache.Stop()
+}
+
+func (m *InstrumentedMockCache) CountStoreCalls() int {
+	return int(m.storeCount.Load())
+}
+func (m *InstrumentedMockCache) CountFetchCalls() int {
+	return int(m.fetchCount.Load())
 }

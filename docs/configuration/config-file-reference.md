@@ -4146,6 +4146,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
+# The max number of sharded queries that can be run for a given received query.
+# 0 to disable limit.
+# CLI flag: -frontend.query-sharding-max-sharded-queries
+[query_sharding_max_sharded_queries: <int> | default = 128]
+
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
 [cardinality_analysis_enabled: <boolean> | default = false]

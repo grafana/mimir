@@ -200,6 +200,7 @@ type mockLimits struct {
 	maxQueryLength      time.Duration
 	maxCacheFreshness   time.Duration
 	maxQueryParallelism int
+	maxShardedQueries   int
 	totalShards         int
 }
 
@@ -224,6 +225,10 @@ func (m mockLimits) MaxCacheFreshness(string) time.Duration {
 
 func (m mockLimits) QueryShardingTotalShards(string) int {
 	return m.totalShards
+}
+
+func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
+	return m.maxShardedQueries
 }
 
 type mockHandler struct {
