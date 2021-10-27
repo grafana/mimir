@@ -220,6 +220,12 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 		return s.next.Do(ctx, r)
 	}
 
+	// If request is not cacheable, then don't reuse cached results in the first place. They may be incorrect
+	// for this request (eg. if request is not step-aligned, and we tried to reuse step-aligned results).
+	if !isRequestCachable(r, maxCacheTime, s.logger) {
+		return s.next.Do(ctx, r)
+	}
+
 	cached, ok := s.get(ctx, key)
 	if ok {
 		response, extents, err = s.handleHit(ctx, r, cached, maxCacheTime)
@@ -360,7 +366,7 @@ func (s resultsCache) handleMiss(ctx context.Context, r Request, maxCacheTime in
 		return nil, nil, err
 	}
 
-	if !isRequestCachable(r, maxCacheTime, s.logger) || !isResponseCachable(ctx, response, s.cacheGenNumberLoader, s.logger) {
+	if !isResponseCachable(ctx, response, s.cacheGenNumberLoader, s.logger) {
 		return response, []Extent{}, nil
 	}
 
@@ -400,7 +406,7 @@ func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent
 
 	for _, reqResp := range reqResps {
 		responses = append(responses, reqResp.Response)
-		if !isRequestCachable(r, maxCacheTime, s.logger) || !isResponseCachable(ctx, reqResp.Response, s.cacheGenNumberLoader, s.logger) {
+		if !isResponseCachable(ctx, reqResp.Response, s.cacheGenNumberLoader, s.logger) {
 			continue
 		}
 		extent, err := toExtent(ctx, reqResp.Request, s.extractor.ResponseWithoutHeaders(reqResp.Response))

@@ -8,7 +8,6 @@ package queryrange
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
@@ -824,28 +823,42 @@ func TestResultsCacheRecent(t *testing.T) {
 	require.Equal(t, parsedResponse, resp)
 }
 
-func TestResultsCacheMaxFreshness(t *testing.T) {
-	modelNow := model.Now()
-	for i, tc := range []struct {
+func TestResultsCache_Cacheability(t *testing.T) {
+	const step = 10 * 1e3
+	modelNow := (int64(model.Now()) / step) * step
+
+	for name, tc := range map[string]struct {
+		step int64
+
 		fakeLimits       Limits
 		Handler          HandlerFunc
 		expectedResponse *PrometheusResponse
 	}{
-		{
+		"cached response": {
+			step:             step,
 			fakeLimits:       mockLimits{maxCacheFreshness: 5 * time.Second},
 			Handler:          nil,
-			expectedResponse: mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), 10),
+			expectedResponse: mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), step),
 		},
-		{
-			// should not lookup cache because per-tenant override will be applied
+		// should not lookup cache because per-tenant override will be applied
+		"too fresh": {
+			step:       step,
 			fakeLimits: mockLimits{maxCacheFreshness: 10 * time.Minute},
 			Handler: HandlerFunc(func(_ context.Context, _ Request) (Response, error) {
 				return parsedResponse, nil
 			}),
 			expectedResponse: parsedResponse,
 		},
+		"not step-aligned": {
+			step:       step + 1,
+			fakeLimits: mockLimits{maxCacheFreshness: 5 * time.Second},
+			Handler: HandlerFunc(func(_ context.Context, _ Request) (Response, error) {
+				return parsedResponse, nil
+			}),
+			expectedResponse: parsedResponse,
+		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(name, func(t *testing.T) {
 			var cfg ResultsCacheConfig
 			flagext.DefaultValues(&cfg)
 			cfg.CacheConfig.Cache = cache.NewMockCache()
@@ -869,11 +882,18 @@ func TestResultsCacheMaxFreshness(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), "1")
 
 			// create request with start end within the key extents
-			req := parsedRequest.WithStartEnd(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3))
+			req := &PrometheusRequest{
+				Path: "/api/v1/query_range",
+				// Start and End are step-aligned.
+				Start: int64(modelNow) - (50 * 1e3),
+				End:   int64(modelNow) - (10 * 1e3),
+				Step:  tc.step,
+				Query: "sum(container_memory_rss) by (namespace)",
+			}
 
 			// fill cache
 			key := constSplitter(day).GenerateCacheKey("1", req)
-			rc.(*resultsCache).put(ctx, key, []Extent{mkExtent(int64(modelNow)-(600*1e3), int64(modelNow))})
+			rc.(*resultsCache).put(ctx, key, []Extent{mkExtentWithStep(modelNow-(600*1e3), modelNow, req.Step)})
 
 			resp, err := rc.Do(ctx, req)
 			require.NoError(t, err)
