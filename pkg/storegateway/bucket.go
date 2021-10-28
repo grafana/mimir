@@ -2709,7 +2709,7 @@ func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
 // Useful for logging the postings codec header.
 func printableHead(b []byte, n int) string {
 	sb := strings.Builder{}
-	for i := 0; i < n && i < len(b) && b[i] >= 32 && b[i] < 126; i++ {
+	for i := 0; i < n && i < len(b) && b[i] >= 32 && b[i] <= 126; i++ {
 		sb.WriteByte(b[i])
 	}
 	return sb.String()
