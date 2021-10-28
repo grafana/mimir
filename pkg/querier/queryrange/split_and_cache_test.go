@@ -82,6 +82,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		true,
 		false, // Cache disabled.
 		24*time.Hour,
+		false,
 		mockLimits{},
 		PrometheusCodec,
 		nil,
@@ -133,6 +134,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 		true,
 		true,
 		24*time.Hour,
+		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		PrometheusCodec,
 		cacheBackend,
@@ -206,6 +208,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		true,
 		true,
 		24*time.Hour,
+		false,
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		PrometheusCodec,
 		cacheBackend,
@@ -258,6 +261,86 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 	// Should not touch the cache at all.
 	assert.Equal(t, 0, cacheBackend.CountFetchCalls())
 	assert.Equal(t, 0, cacheBackend.CountStoreCalls())
+}
+
+func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedRequest(t *testing.T) {
+	cacheBackend := cache.NewInstrumentedMockCache()
+
+	mw := newSplitAndCacheMiddleware(
+		true,
+		true,
+		24*time.Hour,
+		true, // caching of step-unaligned requests is enabled in this test.
+		mockLimits{maxCacheFreshness: 10 * time.Minute},
+		PrometheusCodec,
+		cacheBackend,
+		constSplitter(day),
+		PrometheusResponseExtractor{},
+		nil,
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	expectedResponse := &PrometheusResponse{
+		Status: "success",
+		Data: PrometheusData{
+			ResultType: model.ValMatrix.String(),
+			Result: []SampleStream{
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "foo", Value: "bar"},
+					},
+					Samples: []mimirpb.Sample{
+						{Value: 137, TimestampMs: 1634292000000},
+						{Value: 137, TimestampMs: 1634292120000},
+					},
+				},
+			},
+		},
+	}
+
+	downstreamReqs := 0
+	rc := mw.Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+		downstreamReqs++
+		return expectedResponse, nil
+	}))
+
+	req := Request(&PrometheusRequest{
+		Path:  "/api/v1/query_range",
+		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
+		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
+		Step:  13 * 1000, // Not aligned to start/end.
+		Query: `{__name__=~".+"}`,
+	})
+
+	ctx := user.InjectOrgID(context.Background(), "1")
+	resp, err := rc.Do(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 1, downstreamReqs)
+	require.Equal(t, expectedResponse, resp)
+
+	// Since we're caching unaligned requests, we should see that.
+	assert.Equal(t, 1, cacheBackend.CountFetchCalls())
+	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
+
+	// Doing the same request reuses cached result.
+	resp, err = rc.Do(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 1, downstreamReqs)
+	require.Equal(t, expectedResponse, resp)
+	assert.Equal(t, 2, cacheBackend.CountFetchCalls())
+	assert.Equal(t, 1, cacheBackend.CountStoreCalls())
+
+	// New request with slightly different Start time will not reuse the cached result.
+	req = req.WithStartEnd(parseTimeRFC3339(t, "2021-10-15T10:00:05Z").Unix()*1000, parseTimeRFC3339(t, "2021-10-15T12:00:05Z").Unix()*1000)
+	resp, err = rc.Do(ctx, req)
+	require.NoError(t, err)
+	require.Equal(t, 2, downstreamReqs)
+	require.Equal(t, expectedResponse, resp)
+
+	assert.Equal(t, 3, cacheBackend.CountFetchCalls())
+	assert.Equal(t, 2, cacheBackend.CountStoreCalls())
 }
 
 func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMaxCacheFreshness(t *testing.T) {
@@ -318,6 +401,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 				false, // No interval splitting.
 				true,
 				24*time.Hour,
+				false,
 				mockLimits{maxCacheFreshness: maxCacheFreshness},
 				PrometheusCodec,
 				cacheBackend,
@@ -476,6 +560,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					testData.splitEnabled,
 					testData.cacheEnabled,
 					24*time.Hour,
+					false,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
@@ -737,6 +822,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 				false, // No splitting.
 				true,
 				24*time.Hour,
+				false,
 				mockLimits{},
 				PrometheusCodec,
 				cacheBackend,
@@ -782,6 +868,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		false,
 		true,
 		24*time.Hour,
+		false,
 		mockLimits{},
 		PrometheusCodec,
 		cacheBackend,
