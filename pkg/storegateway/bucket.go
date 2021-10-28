@@ -1987,12 +1987,12 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			r.stats.postingsTouchedSizeSum += len(b)
 
 			l, err := r.decodePostings(b)
-			if err != nil {
-				return nil, errors.Wrap(err, "decode postings")
+			if err == nil {
+				output[ix] = l
+				continue
 			}
 
-			output[ix] = l
-			continue
+			level.Warn(r.block.logger).Log("msg", "can't decode postings cache", "err", err, "key", fmt.Sprintf("%+v", key), "block", r.block.meta.ULID, "bytes_head", printableHead(b, 5))
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
@@ -2703,4 +2703,14 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 // NewDefaultChunkBytesPool returns a chunk bytes pool with default settings.
 func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
 	return pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, maxChunkPoolBytes)
+}
+
+// printableHead returns at most n first characters of b as a string, stopping at first non-printable ascii character.
+// Useful for logging the postings codec header.
+func printableHead(b []byte, n int) string {
+	sb := strings.Builder{}
+	for i := 0; i < n && i < len(b) && b[i] >= 32 && b[i] < 126; i++ {
+		sb.WriteByte(b[i])
+	}
+	return sb.String()
 }
