@@ -29,6 +29,8 @@ func (e Encoding) String() string {
 		return "none"
 	case EncXOR:
 		return "XOR"
+	case EncXORPartial:
+		return "XORPartial"
 	}
 	return "<unknown>"
 }
@@ -37,6 +39,7 @@ func (e Encoding) String() string {
 const (
 	EncNone Encoding = iota
 	EncXOR
+	EncXORPartial
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
@@ -160,6 +163,8 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
+	case EncXORPartial:
+		return NewXORPartialChunkFromWire(d)
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)
 }
