@@ -124,6 +124,11 @@ func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
 	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
 	stepOffset := r.GetStart() % r.GetStep()
 
+	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
+	if stepOffset == 0 {
+		return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval)
+	}
+
 	return fmt.Sprintf("%s:%s:%d:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
 }
 

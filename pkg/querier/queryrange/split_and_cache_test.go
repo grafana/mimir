@@ -482,24 +482,35 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	tests := map[string]struct {
 		splitEnabled        bool
 		cacheEnabled        bool
+		cacheUnaligned      bool
 		maxCacheFreshness   time.Duration
 		maxQueryParallelism int
 	}{
 		"default config": {
 			splitEnabled:        true,
 			cacheEnabled:        true,
+			cacheUnaligned:      false,
 			maxCacheFreshness:   time.Minute,
 			maxQueryParallelism: 14,
 		},
 		"reduced query parallelism": {
 			splitEnabled:        true,
 			cacheEnabled:        true,
+			cacheUnaligned:      false,
 			maxCacheFreshness:   time.Minute,
 			maxQueryParallelism: 1,
+		},
+		"cache unaligned requests": {
+			splitEnabled:        true,
+			cacheEnabled:        true,
+			cacheUnaligned:      true,
+			maxCacheFreshness:   time.Minute,
+			maxQueryParallelism: 14,
 		},
 		"increased max cache freshness": {
 			splitEnabled:        true,
 			cacheEnabled:        true,
+			cacheUnaligned:      true,
 			maxCacheFreshness:   time.Hour,
 			maxQueryParallelism: 14,
 		},
@@ -560,7 +571,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					testData.splitEnabled,
 					testData.cacheEnabled,
 					24*time.Hour,
-					false,
+					testData.cacheUnaligned,
 					mockLimits{
 						maxCacheFreshness:   testData.maxCacheFreshness,
 						maxQueryParallelism: testData.maxQueryParallelism,
