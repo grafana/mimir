@@ -107,6 +107,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
+	trimEnabled := true
 	sharded := hints != nil && hints.ShardCount > 0
 	p, err := q.index.PostingsForMatchers(sharded, ms...)
 	if err != nil {
@@ -122,13 +123,14 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		trimEnabled = !hints.TrimDisabled
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt)
+			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, trimEnabled)
 		}
 	}
 
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, trimEnabled)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -163,7 +165,8 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	trimEnabled := hints == nil || !hints.TrimDisabled
+	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, trimEnabled)
 }
 
 // PostingsForMatchers assembles a single postings iterator against the index reader
@@ -383,6 +386,7 @@ type blockBaseSeriesSet struct {
 	chunks     ChunkReader
 	tombstones tombstones.Reader
 	mint, maxt int64
+	trim       bool
 
 	currIterFn func() *populateWithDelGenericSeriesIterator
 	currLabels labels.Labels
@@ -436,12 +440,14 @@ func (b *blockBaseSeriesSet) Next() bool {
 				chks = append(chks, chk)
 			}
 
-			// If still not entirely deleted, check if trim is needed based on requested time range.
-			if chk.MinTime < b.mint {
-				trimFront = true
-			}
-			if chk.MaxTime > b.maxt {
-				trimBack = true
+			if b.trim {
+				// If still not entirely deleted, check if trim is needed based on requested time range.
+				if chk.MinTime < b.mint {
+					trimFront = true
+				}
+				if chk.MaxTime > b.maxt {
+					trimBack = true
+				}
 			}
 		}
 
@@ -538,9 +544,21 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 	// This happens when snapshotting the head block or just fetching chunks from TSDB.
 	//
 	// TODO think how to avoid the typecasting to verify when it is head block.
-	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
+	safeChunk, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
 	if len(p.bufIter.Intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
 		// If there are no overlap with deletion intervals AND it's NOT an "open" head chunk, we can take chunk as it is.
+		p.currDelIter = nil
+		return true
+	}
+
+	if len(p.bufIter.Intervals) == 0 && isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64 {
+		// TODO this logic is also used by compaction. To be on the safer side is better to enable it only when used by Select()
+		p.currChkMeta.Chunk, p.err = safeChunk.ToSafeChunk()
+		if p.err != nil {
+			p.err = errors.Wrapf(p.err, "cannot build safe chunk %d", p.currChkMeta.Ref)
+			return false
+		}
+
 		p.currDelIter = nil
 		return true
 	}
@@ -672,7 +690,7 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.SeriesSet {
+func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, trim bool) storage.SeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
 			index:      i,
@@ -681,6 +699,7 @@ func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p inde
 			p:          p,
 			mint:       mint,
 			maxt:       maxt,
+			trim:       trim,
 			bufLbls:    make(labels.Labels, 0, 10),
 		},
 	}
@@ -704,7 +723,7 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.ChunkSeriesSet {
+func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, trim bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
 			index:      i,
@@ -713,6 +732,7 @@ func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p
 			p:          p,
 			mint:       mint,
 			maxt:       maxt,
+			trim:       trim,
 			bufLbls:    make(labels.Labels, 0, 10),
 		},
 	}

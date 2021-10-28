@@ -381,6 +381,48 @@ func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	return it
 }
 
+// TODO test + doc
+// TODO doesn't work with isolationState (yet?)
+func (c *safeChunk) ToSafeChunk() (chunkenc.Chunk, error) {
+	c.s.Lock()
+	defer c.s.Unlock()
+
+	// TODO the following code is partially copied from memSeries.iterator()
+	chk, garbageCollect, err := c.s.chunk(c.cid, c.chunkDiskMapper)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if garbageCollect {
+			// Set this to nil so that Go GC can collect it after it has been used.
+			// This should be done always at the end.
+			chk.chunk = nil
+			c.s.memChunkPool.Put(chk)
+		}
+	}()
+
+	numSamples := chk.chunk.NumSamples()
+	if numSamples == 0 {
+		return chunkenc.NewXORChunk(), nil
+	}
+
+	if c.cid-c.s.firstChunkID < len(c.s.mmappedChunks) {
+		return chk.chunk, nil
+	}
+
+	// Serve the last 4 samples for the last chunk from the sample buffer
+	// as their compressed bytes may be mutated by added samples.
+	lastSamples := [4]chunkenc.Sample{
+		{T: c.s.sampleBuf[0].t, V: c.s.sampleBuf[0].v},
+		{T: c.s.sampleBuf[1].t, V: c.s.sampleBuf[1].v},
+		{T: c.s.sampleBuf[2].t, V: c.s.sampleBuf[2].v},
+		{T: c.s.sampleBuf[3].t, V: c.s.sampleBuf[3].v},
+	}
+
+	// TODO ensure c.Chunk is a chunkenc.XORChunk, otherwise error out because unsupported.
+	return chunkenc.NewXORPartialChunkFromXORChunk(c.Chunk.(*chunkenc.XORChunk), lastSamples), nil
+}
+
 // iterator returns a chunk iterator.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {

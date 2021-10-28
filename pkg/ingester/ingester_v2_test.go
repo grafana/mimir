@@ -2288,7 +2288,18 @@ func TestIngester_v2QueryStream(t *testing.T) {
 				// We expect 1 chunk.
 				require.Len(t, series.Chunks, 1)
 
-				data, err := chunkenc.FromData(chunkenc.EncXOR, series.Chunks[0].Data)
+				// Get encoding.
+				var enc chunkenc.Encoding
+				switch series.Chunks[0].Encoding {
+				case int32(encoding.PrometheusXorChunk):
+					enc = chunkenc.EncXOR
+				case int32(encoding.PrometheusXorChunkPartial):
+					enc = chunkenc.EncXORPartial
+				default:
+					t.Fatalf("unknown encoding %d", series.Chunks[0].Encoding)
+				}
+
+				data, err := chunkenc.FromData(enc, series.Chunks[0].Data)
 				require.NoError(t, err)
 
 				// We expect 1 sample with the same timestamp and value we've written.
@@ -2596,23 +2607,54 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 		require.NoError(b, err)
 	}
 
+	// Benchmark different ranges.
+	ranges := []struct {
+		name       string
+		start, end int64
+	}{
+		{
+			name:  "full data",
+			start: math.MinInt64,
+			end:   math.MaxInt64,
+		},
+		{
+			name:  "partial block",
+			start: 1,
+			end:   numBlockSamples / 3,
+		},
+		{
+			name:  "partial head",
+			start: numBlockSamples + 5,
+			end:   numBlockSamples + numHeadSamples - 5,
+		},
+		{
+			name:  "head + partial block",
+			start: numBlockSamples / 3,
+			end:   numBlockSamples + numHeadSamples,
+		},
+	}
+
 	b.Run("query samples", func(b *testing.B) {
 		streamType = QueryStreamSamples
 
-		for _, queryShardingEnabled := range []bool{false, true} {
-			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
-				benchmarkIngesterV2QueryStream(ctx, b, i, queryShardingEnabled, numShards)
-			})
+		for _, timeRange := range ranges {
+			for _, queryShardingEnabled := range []bool{false, true} {
+				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
+					benchmarkIngesterV2QueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
+				})
+			}
 		}
 	})
 
 	b.Run("query chunks", func(b *testing.B) {
 		streamType = QueryStreamChunks
 
-		for _, queryShardingEnabled := range []bool{false, true} {
-			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
-				benchmarkIngesterV2QueryStream(ctx, b, i, queryShardingEnabled, numShards)
-			})
+		for _, timeRange := range ranges {
+			for _, queryShardingEnabled := range []bool{false, true} {
+				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
+					benchmarkIngesterV2QueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
+				})
+			}
 		}
 	})
 }
@@ -2637,7 +2679,7 @@ func getStartedIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, regis
 	return ingester
 }
 
-func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, queryShardingEnabled bool, numShards int) {
+func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, start, end int64, queryShardingEnabled bool, numShards int) {
 	mockStream := &mockQueryStreamServer{ctx: ctx}
 
 	metricMatcher := &client.LabelMatcher{
@@ -2651,8 +2693,8 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 			// Query each shard.
 			for idx := 0; idx < numShards; idx++ {
 				req := &client.QueryRequest{
-					StartTimestampMs: math.MinInt64,
-					EndTimestampMs:   math.MaxInt64,
+					StartTimestampMs: start,
+					EndTimestampMs:   end,
 					Matchers: []*client.LabelMatcher{metricMatcher, {
 						Type:  client.EQUAL,
 						Name:  querysharding.ShardLabel,
@@ -2665,8 +2707,8 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 			}
 		} else {
 			req := &client.QueryRequest{
-				StartTimestampMs: math.MinInt64,
-				EndTimestampMs:   math.MaxInt64,
+				StartTimestampMs: start,
+				EndTimestampMs:   end,
 				Matchers:         []*client.LabelMatcher{metricMatcher},
 			}
 

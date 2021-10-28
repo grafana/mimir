@@ -59,6 +59,8 @@ const (
 	Bigchunk
 	// PrometheusXorChunk is a wrapper around Prometheus XOR-encoded chunk.
 	PrometheusXorChunk
+	// PrometheusXorChunkPartial is a wrapper around Prometheus XOR-encoded partial chunk.
+	PrometheusXorChunkPartial
 )
 
 type encoding struct {
@@ -89,6 +91,12 @@ var encodings = map[Encoding]encoding{
 		Name: "PrometheusXorChunk",
 		New: func() Chunk {
 			return newPrometheusXorChunk()
+		},
+	},
+	PrometheusXorChunkPartial: {
+		Name: "PrometheusXorChunkPartial",
+		New: func() Chunk {
+			return newPrometheusXorChunkPartial()
 		},
 	},
 }
