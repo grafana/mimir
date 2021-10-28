@@ -27,8 +27,6 @@ var cardinalityEnvLabelValues = []string{"prod", "staging", "dev"}
 var cardinalityJobLabelValues = []string{"distributor", "ingester", "store-gateway", "querier", "compactor"}
 
 func TestQuerierLabelNamesAndValues(t *testing.T) {
-	t.Skip("Flaky, see https://github.com/grafana/mimir/issues/426")
-
 	const numSeriesToPush = 1000
 
 	// Define response types.
@@ -173,16 +171,6 @@ func TestQuerierLabelNamesAndValues(t *testing.T) {
 			res, err := client.LabelNamesAndValues(tc.selector, tc.limit)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, res.StatusCode)
-
-			// Ensure all ingesters have been invoked.
-			ingesters := []*e2emimir.MimirService{ingester1, ingester2, ingester3}
-			for _, ing := range ingesters {
-				require.NoError(t, ing.WaitSumMetricsWithOptions(
-					e2e.Equals(1),
-					[]string{"cortex_request_duration_seconds"},
-					e2e.WithMetricCount,
-					e2e.WithLabelMatchers(labels.MustNewMatcher(labels.MatchEqual, "route", "/cortex.Ingester/LabelNamesAndValues"))))
-			}
 
 			// Test results.
 			var lbNamesAndValuesResp labelNamesAndValuesResponse
