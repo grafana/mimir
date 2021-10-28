@@ -1992,7 +1992,7 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 				continue
 			}
 
-			level.Warn(r.block.logger).Log("msg", "can't decode postings cache", "err", err, "key", fmt.Sprintf("%+v", key), "block", r.block.meta.ULID, "bytes_head", printableHead(b, 5))
+			level.Warn(r.block.logger).Log("msg", "can't decode cached postings", "err", err, "key", fmt.Sprintf("%+v", key), "block", r.block.meta.ULID, "bytes_head", printableHead(b, 5))
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
