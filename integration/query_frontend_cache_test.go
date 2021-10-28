@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/query_frontend_test.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
 // +build requires_docker
 
@@ -21,6 +18,14 @@ import (
 )
 
 func TestQueryFrontendUnalignedQuery(t *testing.T) {
+	runTestQueryFrontendUnalignedQuery(t, map[string]string{"-query-frontend.max-sharded-queries-limit-enabled": "false"})
+}
+
+func TestQueryFrontendUnalignedQueryNewSplitAndCacheMiddleware(t *testing.T) {
+	runTestQueryFrontendUnalignedQuery(t, map[string]string{"-query-frontend.max-sharded-queries-limit-enabled": "true"})
+}
+
+func runTestQueryFrontendUnalignedQuery(t *testing.T, extraFlags map[string]string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -43,6 +48,8 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 		"-frontend.max-cache-freshness":      "0", // Cache everything.
 		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 	})
+
+	flags = mergeFlags(flags, extraFlags)
 
 	// Start the query-frontend.
 	queryFrontendAligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-aligned", configFile, mergeFlags(flags, map[string]string{"-querier.align-querier-with-step": "true"}), "")
@@ -79,7 +86,7 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	const step = 1 * time.Minute
 
 	now := time.Now()
-	// Make sure that "now" is not step-aligned.
+	// We derive all other times in this test from "now", so make sure that "now" is not step-aligned.
 	if now.Truncate(step).Equal(now) {
 		now = now.Add(123 * time.Millisecond)
 	}
