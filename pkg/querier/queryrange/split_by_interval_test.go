@@ -25,6 +25,7 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const seconds = 1e3 // 1e3 milliseconds per second.
@@ -179,7 +180,7 @@ func TestSplitQueryByInterval(t *testing.T) {
 func timeToMillis(t *testing.T, input string) int64 {
 	r, err := time.Parse(time.RFC3339, input)
 	require.NoError(t, err)
-	return r.UnixMilli()
+	return util.TimeToMillis(r)
 }
 
 func TestSplitByDay(t *testing.T) {
