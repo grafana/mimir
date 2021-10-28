@@ -593,7 +593,7 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 }
 
 func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "get")
+	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "resultsCache.get")
 	defer log.Finish()
 
 	hashKey := cache.HashKey(key)

@@ -295,6 +295,8 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 		hashed := cache.HashKey(key)
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
+
+		spanLog.LogKV("key", key, "hashedKey", hashed)
 	}
 
 	founds, bufs, _ := s.cache.Fetch(ctx, hashedKeys)
