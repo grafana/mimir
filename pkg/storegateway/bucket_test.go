@@ -29,8 +29,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/tsdb/index"
-
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
@@ -47,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
