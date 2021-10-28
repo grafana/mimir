@@ -1189,6 +1189,10 @@ results_cache:
 # query ASTs. This feature is supported only by the blocks storage engine.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
+
+# Cache requests that are not step-aligned.
+# CLI flag: -query-frontend.cache-unaligned-requests
+[cache_unaligned_requests: <boolean> | default = false]
 ```
 
 ### `ruler_config`
