@@ -2,6 +2,10 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## unreleased
+
+* [ENHANCEMENT] Allow usage of HTTP_PROXY and HTTPS_PROXY. #216
+
 ## v0.10.4
 
 * [CHANGE] Update go image to v1.16.8. #213

@@ -72,7 +72,10 @@ func New(cfg Config) (*CortexClient, error) {
 	}
 
 	if tlsConfig != nil {
-		transport := &http.Transport{TLSClientConfig: tlsConfig}
+		transport := &http.Transport{
+			Proxy:           http.ProxyFromEnvironment,
+			TLSClientConfig: tlsConfig,
+		}
 		client = http.Client{Transport: transport}
 	}
 
