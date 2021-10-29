@@ -1232,7 +1232,7 @@ func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Contex
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
+func (c corruptedPostingsCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
