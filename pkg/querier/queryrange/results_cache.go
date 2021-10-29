@@ -121,8 +121,15 @@ type constSplitter time.Duration
 
 // GenerateCacheKey generates a cache key based on the userID, Request and interval.
 func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
-	currentInterval := r.GetStart() / int64(time.Duration(t)/time.Millisecond)
-	return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), r.GetStep(), currentInterval)
+	startInterval := r.GetStart() / time.Duration(t).Milliseconds()
+	stepOffset := r.GetStart() % r.GetStep()
+
+	// Use original format for step-aligned request, so that we can use existing cached results for such requests.
+	if stepOffset == 0 {
+		return fmt.Sprintf("%s:%s:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval)
+	}
+
+	return fmt.Sprintf("%s:%s:%d:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
 }
 
 // ShouldCacheFn checks whether the current request should go to cache
@@ -145,6 +152,8 @@ type resultsCache struct {
 	merger               Merger
 	cacheGenNumberLoader CacheGenNumberLoader
 	shouldCache          ShouldCacheFn
+
+	cacheUnalignedRequests bool
 }
 
 // NewResultsCacheMiddleware creates results cache middleware from config.
@@ -156,6 +165,7 @@ type resultsCache struct {
 func NewResultsCacheMiddleware(
 	logger log.Logger,
 	cfg ResultsCacheConfig,
+	cacheUnalignedRequests bool,
 	splitter CacheSplitter,
 	limits Limits,
 	merger Merger,
@@ -178,17 +188,18 @@ func NewResultsCacheMiddleware(
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &resultsCache{
-			logger:               logger,
-			cfg:                  cfg,
-			next:                 next,
-			cache:                c,
-			limits:               limits,
-			merger:               merger,
-			extractor:            extractor,
-			minCacheExtent:       defaultMinCacheExtent,
-			splitter:             splitter,
-			cacheGenNumberLoader: cacheGenNumberLoader,
-			shouldCache:          shouldCache,
+			logger:                 logger,
+			cfg:                    cfg,
+			next:                   next,
+			cache:                  c,
+			limits:                 limits,
+			merger:                 merger,
+			extractor:              extractor,
+			minCacheExtent:         defaultMinCacheExtent,
+			splitter:               splitter,
+			cacheGenNumberLoader:   cacheGenNumberLoader,
+			shouldCache:            shouldCache,
+			cacheUnalignedRequests: cacheUnalignedRequests,
 		}
 	}), c, nil
 }
@@ -219,9 +230,8 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 		return s.next.Do(ctx, r)
 	}
 
-	// If request is not cacheable, then don't reuse cached results in the first place. They may be incorrect
-	// for this request (eg. if request is not step-aligned, and we tried to reuse step-aligned results).
-	if !isRequestCachable(r, maxCacheTime, s.logger) {
+	// If request is not cacheable, then don't reuse cached results in the first place.
+	if !isRequestCachable(r, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
 		return s.next.Do(ctx, r)
 	}
 
@@ -244,10 +254,10 @@ func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
 }
 
 // isRequestCachable says whether the request is eligible for caching.
-func isRequestCachable(req Request, maxCacheTime int64, logger log.Logger) bool {
+func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) bool {
 	// We can run with step alignment disabled because Grafana does it already. Mimir automatically aligning start and end is not
 	// PromQL compatible. But this means we cannot cache queries that do not have their start and end aligned.
-	if !isRequestStepAligned(req) {
+	if !cacheUnalignedRequests && !isRequestStepAligned(req) {
 		return false
 	}
 
@@ -559,7 +569,21 @@ func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, 
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-		start = extent.End
+
+		// We want next request to start where extent ends, but we must make sure that
+		// next start also has the same offset into the step as original request had, ie.
+		// "start % req.Step" must be the same as "req.GetStart() % req.GetStep()".
+		// We do that by computing "adjustment". Go's % operator is a "remainder" operator
+		// and not "modulo" operator, which means it returns negative numbers in our case or zero
+		// (because request.GetStart <= extent.End), and we need to adjust it by one step forward.
+		// We don't do adjustments if extent.End is already on the same step-offset as request.Start,
+		// although technically we could. But existing unit tests expect existing behaviour.
+
+		adjust := (req.GetStart() - extent.End) % req.GetStep()
+		if adjust < 0 {
+			adjust += req.GetStep()
+		}
+		start = extent.End + adjust
 	}
 
 	// Lastly, make a request for any data missing at the end.

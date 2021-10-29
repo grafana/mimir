@@ -73,7 +73,7 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 	var samples []mimirpb.Sample
 	for i := start; i <= end; i += step {
 		samples = append(samples, mimirpb.Sample{
-			TimestampMs: int64(i),
+			TimestampMs: i,
 			Value:       float64(i),
 		})
 	}
@@ -119,6 +119,7 @@ func TestIsRequestCachable(t *testing.T) {
 		request                Request
 		cacheGenNumberToInject string
 		expected               bool
+		cacheStepUnaligned     bool
 	}{
 		// @ modifier on vector selectors.
 		{
@@ -220,14 +221,21 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "request that is NOT step aligned",
-			request:  &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
-			expected: false,
+			name:               "request that is NOT step aligned, with cacheStepUnaligned=false",
+			request:            &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			expected:           false,
+			cacheStepUnaligned: false,
+		},
+		{
+			name:               "request that is NOT step aligned",
+			request:            &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			expected:           true,
+			cacheStepUnaligned: true,
 		},
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ret := isRequestCachable(tc.request, maxCacheTime, log.NewNopLogger())
+				ret := isRequestCachable(tc.request, maxCacheTime, tc.cacheStepUnaligned, log.NewNopLogger())
 				require.Equal(t, tc.expected, ret)
 			})
 		}
@@ -404,6 +412,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(0, 100),
@@ -418,6 +427,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(110, 210),
@@ -426,6 +436,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   100,
+					Step:  10,
 				},
 			},
 		},
@@ -434,6 +445,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 100),
@@ -442,6 +454,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   50,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -453,6 +466,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   200,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 120),
@@ -462,6 +476,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 120,
 					End:   160,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -474,6 +489,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   160,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 120),
@@ -483,6 +499,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 120,
 					End:   160,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -494,6 +511,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 90),
@@ -502,6 +520,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 100,
 					End:   100,
+					Step:  10,
 				},
 			},
 		},
@@ -511,12 +530,38 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(100, 100),
 			},
 			expectedCachedResponse: []Response{
 				mkAPIResponse(100, 105, 10),
+			},
+		},
+
+		{
+			name: "Start time of all requests must have the same offset into the step.",
+			input: &PrometheusRequest{
+				Start: 123, // 123 % 33 = 24
+				End:   1000,
+				Step:  33,
+			},
+			prevCachedResponse: []Extent{
+				// 486 is equal to input.Start + N * input.Step (for integer N)
+				// 625 is not equal to input.Start + N * input.Step for any integer N.
+				mkExtentWithStep(486, 625, 33),
+			},
+			expectedCachedResponse: []Response{
+				mkAPIResponse(486, 625, 33),
+			},
+			expectedRequests: []Request{
+				&PrometheusRequest{Start: 123, End: 486, Step: 33},
+				&PrometheusRequest{
+					Start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
+					End:   1000, // until the end
+					Step:  33,   // unchanged
+				},
 			},
 		},
 	} {
@@ -528,6 +573,11 @@ func TestPartitionCacheExtents(t *testing.T) {
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
+
+			for _, req := range reqs {
+				assert.Equal(t, tc.input.GetStep(), req.GetStep())
+				assert.Equal(t, tc.input.GetStart()%tc.input.GetStep(), req.GetStart()%req.GetStep())
+			}
 		})
 	}
 }
@@ -750,6 +800,7 @@ func TestResultsCache(t *testing.T) {
 	rcm, _, err := NewResultsCacheMiddleware(
 		log.NewNopLogger(),
 		cfg,
+		false,
 		constSplitter(day),
 		mockLimits{},
 		PrometheusCodec,
@@ -790,6 +841,7 @@ func TestResultsCacheRecent(t *testing.T) {
 	rcm, _, err := NewResultsCacheMiddleware(
 		log.NewNopLogger(),
 		cfg,
+		false,
 		constSplitter(day),
 		mockLimits{maxCacheFreshness: 10 * time.Minute},
 		PrometheusCodec,
@@ -828,7 +880,9 @@ func TestResultsCache_Cacheability(t *testing.T) {
 	modelNow := (int64(model.Now()) / step) * step
 
 	for name, tc := range map[string]struct {
-		step int64
+		step           int64
+		cacheUnaligned bool
+		fillCache      bool
 
 		fakeLimits       Limits
 		Handler          HandlerFunc
@@ -836,6 +890,7 @@ func TestResultsCache_Cacheability(t *testing.T) {
 	}{
 		"cached response": {
 			step:             step,
+			fillCache:        true,
 			fakeLimits:       mockLimits{maxCacheFreshness: 5 * time.Second},
 			Handler:          nil,
 			expectedResponse: mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), step),
@@ -843,6 +898,7 @@ func TestResultsCache_Cacheability(t *testing.T) {
 		// should not lookup cache because per-tenant override will be applied
 		"too fresh": {
 			step:       step,
+			fillCache:  false,
 			fakeLimits: mockLimits{maxCacheFreshness: 10 * time.Minute},
 			Handler: HandlerFunc(func(_ context.Context, _ Request) (Response, error) {
 				return parsedResponse, nil
@@ -851,11 +907,30 @@ func TestResultsCache_Cacheability(t *testing.T) {
 		},
 		"not step-aligned": {
 			step:       step + 1,
+			fillCache:  false,
 			fakeLimits: mockLimits{maxCacheFreshness: 5 * time.Second},
 			Handler: HandlerFunc(func(_ context.Context, _ Request) (Response, error) {
 				return parsedResponse, nil
 			}),
 			expectedResponse: parsedResponse,
+		},
+		"not step-aligned, but caching allowed": {
+			step:             step + 1,
+			cacheUnaligned:   true,
+			fillCache:        true,
+			fakeLimits:       mockLimits{maxCacheFreshness: 5 * time.Second},
+			Handler:          nil,
+			expectedResponse: mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), step+1),
+		},
+		"not step-aligned, too fresh": {
+			step:           step + 1,
+			cacheUnaligned: true,
+			fillCache:      false,
+			fakeLimits:     mockLimits{maxCacheFreshness: 20 * time.Minute},
+			Handler: HandlerFunc(func(_ context.Context, _ Request) (Response, error) {
+				return mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), step+1), nil
+			}),
+			expectedResponse: mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), step+1),
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -867,6 +942,7 @@ func TestResultsCache_Cacheability(t *testing.T) {
 			rcm, _, err := NewResultsCacheMiddleware(
 				log.NewNopLogger(),
 				cfg,
+				tc.cacheUnaligned,
 				constSplitter(day),
 				fakeLimits,
 				PrometheusCodec,
@@ -891,9 +967,10 @@ func TestResultsCache_Cacheability(t *testing.T) {
 				Query: "sum(container_memory_rss) by (namespace)",
 			}
 
-			// fill cache
-			key := constSplitter(day).GenerateCacheKey("1", req)
-			rc.(*resultsCache).put(ctx, key, []Extent{mkExtentWithStep(modelNow-(600*1e3), modelNow, req.Step)})
+			if tc.fillCache {
+				key := constSplitter(day).GenerateCacheKey("1", req)
+				rc.(*resultsCache).put(ctx, key, []Extent{mkExtentWithStep(req.Start-100*req.Step, modelNow, req.Step)})
+			}
 
 			resp, err := rc.Do(ctx, req)
 			require.NoError(t, err)
@@ -911,6 +988,7 @@ func Test_resultsCache_MissingData(t *testing.T) {
 	rm, _, err := NewResultsCacheMiddleware(
 		log.NewNopLogger(),
 		cfg,
+		false,
 		constSplitter(day),
 		mockLimits{},
 		PrometheusCodec,
@@ -962,10 +1040,12 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 		{"<30m", &PrometheusRequest{Start: toMs(10 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:0"},
 		{"30m", &PrometheusRequest{Start: toMs(30 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:1"},
 		{"91m", &PrometheusRequest{Start: toMs(91 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:3"},
+		{"91m_5m", &PrometheusRequest{Start: toMs(91 * time.Minute), Step: 5 * time.Minute.Milliseconds(), Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:300000:3:60000"},
 		{"0", &PrometheusRequest{Start: 0, Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
 		{"<1d", &PrometheusRequest{Start: toMs(22 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
 		{"4d", &PrometheusRequest{Start: toMs(4 * 24 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:4"},
 		{"3d5h", &PrometheusRequest{Start: toMs(77 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:3"},
+		{"1111m", &PrometheusRequest{Start: 1111 * time.Minute.Milliseconds(), Step: 10 * time.Minute.Milliseconds(), Query: "foo{}"}, 1 * time.Hour, "fake:foo{}:600000:18:60000"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
@@ -1016,6 +1096,7 @@ func TestResultsCacheShouldCacheFunc(t *testing.T) {
 			rcm, _, err := NewResultsCacheMiddleware(
 				log.NewNopLogger(),
 				cfg,
+				false,
 				constSplitter(day),
 				mockLimits{maxCacheFreshness: 10 * time.Minute},
 				PrometheusCodec,

@@ -54,12 +54,13 @@ type splitAndCacheMiddleware struct {
 	splitInterval time.Duration
 
 	// Results caching.
-	cacheEnabled         bool
-	cache                cache.Cache
-	splitter             CacheSplitter
-	extractor            Extractor
-	cacheGenNumberLoader CacheGenNumberLoader
-	shouldCacheReq       ShouldCacheFn
+	cacheEnabled           bool
+	cacheUnalignedRequests bool
+	cache                  cache.Cache
+	splitter               CacheSplitter
+	extractor              Extractor
+	cacheGenNumberLoader   CacheGenNumberLoader
+	shouldCacheReq         ShouldCacheFn
 }
 
 // newSplitAndCacheMiddleware makes a new splitAndCacheMiddleware.
@@ -67,6 +68,7 @@ func newSplitAndCacheMiddleware(
 	splitEnabled bool,
 	cacheEnabled bool,
 	splitInterval time.Duration,
+	cacheUnalignedRequests bool,
 	limits Limits,
 	merger Merger,
 	cache cache.Cache,
@@ -80,19 +82,20 @@ func newSplitAndCacheMiddleware(
 
 	return MiddlewareFunc(func(next Handler) Handler {
 		return &splitAndCacheMiddleware{
-			splitEnabled:         splitEnabled,
-			cacheEnabled:         cacheEnabled,
-			next:                 next,
-			limits:               limits,
-			merger:               merger,
-			splitInterval:        splitInterval,
-			metrics:              metrics,
-			cache:                cache,
-			splitter:             splitter,
-			extractor:            extractor,
-			cacheGenNumberLoader: cacheGenNumberLoader,
-			shouldCacheReq:       shouldCacheReq,
-			logger:               logger,
+			splitEnabled:           splitEnabled,
+			cacheEnabled:           cacheEnabled,
+			cacheUnalignedRequests: cacheUnalignedRequests,
+			next:                   next,
+			limits:                 limits,
+			merger:                 merger,
+			splitInterval:          splitInterval,
+			metrics:                metrics,
+			cache:                  cache,
+			splitter:               splitter,
+			extractor:              extractor,
+			cacheGenNumberLoader:   cacheGenNumberLoader,
+			shouldCacheReq:         shouldCacheReq,
+			logger:                 logger,
 		}
 	})
 }
@@ -127,7 +130,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 		for _, splitReq := range splitReqs {
 			// Do not try to pick response from cache at all if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.logger) {
+			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
 				splitReq.downstreamRequests = []Request{splitReq.orig}
 				continue
 			}
@@ -201,7 +204,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 			}
 
 			// Skip caching if the request is not cachable.
-			if !isRequestCachable(splitReq.orig, maxCacheTime, s.logger) {
+			if !isRequestCachable(splitReq.orig, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
 				continue
 			}
 

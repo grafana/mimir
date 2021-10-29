@@ -47,6 +47,7 @@ type Config struct {
 	CacheResults           bool `yaml:"cache_results"`
 	MaxRetries             int  `yaml:"max_retries"`
 	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
+	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests"`
 
 	// TODO(pracucci): this flag is hidden because just used to progressively rollout to prod. Will be removed once
 	// the new middleware is definitive.
@@ -61,6 +62,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "Perform query parallelizations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
 	f.BoolVar(&cfg.MaxShardedQueriesLimitEnabled, "query-frontend.max-sharded-queries-limit-enabled", false, "If enabled the query-frontend uses a new implementation of split by interval and results cache")
+	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -189,6 +191,7 @@ func NewTripperware(
 				cfg.SplitQueriesByInterval > 0,
 				cfg.CacheResults,
 				cfg.SplitQueriesByInterval,
+				cfg.CacheUnalignedRequests,
 				limits,
 				codec,
 				c,
@@ -210,7 +213,7 @@ func NewTripperware(
 			shouldCache := func(r Request) bool {
 				return !r.GetOptions().CacheDisabled
 			}
-			queryCacheMiddleware, cache, err := NewResultsCacheMiddleware(log, cfg.ResultsCacheConfig, constSplitter(cfg.SplitQueriesByInterval), limits, codec, cacheExtractor, cacheGenNumberLoader, shouldCache, registerer)
+			queryCacheMiddleware, cache, err := NewResultsCacheMiddleware(log, cfg.ResultsCacheConfig, cfg.CacheUnalignedRequests, constSplitter(cfg.SplitQueriesByInterval), limits, codec, cacheExtractor, cacheGenNumberLoader, shouldCache, registerer)
 			if err != nil {
 				return nil, nil, err
 			}
