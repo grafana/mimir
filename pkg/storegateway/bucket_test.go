@@ -45,7 +45,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2875,12 +2874,4 @@ func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 		// modify it (cache is empty).
 		filterPostingsByCachedShardHash(ps, shard, cache)
 	}
-}
-
-func TestPrintableHead(t *testing.T) {
-	diffVarintBytes, err := diffVarintSnappyEncode(index.NewListPostings([]uint64{100, 200, 300}), 3)
-	require.NoError(t, err)
-
-	assert.Equal(t, "dvs", printableHead(diffVarintBytes, 5))
-	assert.Equal(t, "dv", printableHead(diffVarintBytes, 2))
 }
