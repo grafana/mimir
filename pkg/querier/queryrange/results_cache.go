@@ -574,7 +574,7 @@ func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, 
 		// next start also has the same offset into the step as original request had, ie.
 		// "start % req.Step" must be the same as "req.GetStart() % req.GetStep()".
 		// We do that by computing "adjustment". Go's % operator is a "remainder" operator
-		// and not "modulo" operator, which means it returns negative numbers in our case
+		// and not "modulo" operator, which means it returns negative numbers in our case or zero
 		// (because request.GetStart <= extent.End), and we need to adjust it by one step forward.
 		// We don't do adjustments if extent.End is already on the same step-offset as request.Start,
 		// although technically we could. But existing unit tests expect existing behaviour.
