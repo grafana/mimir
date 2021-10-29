@@ -569,7 +569,21 @@ func partitionCacheExtents(req Request, extents []Extent, minCacheExtent int64, 
 		}
 		// extract the overlap from the cached extent.
 		cachedResponses = append(cachedResponses, extractor.Extract(start, req.GetEnd(), res))
-		start = extent.End
+
+		// We want next request to start where extent ends, but we must make sure that
+		// next start also has the same offset into the step as original request had, ie.
+		// "start % req.Step" must be the same as "req.GetStart() % req.GetStep()".
+		// We do that by computing "adjustment". Go's % operator is a "remainder" operator
+		// and not "modulo" operator, which means it returns negative numbers in our case
+		// (because request.GetStart <= extent.End), and we need to adjust it by one step forward.
+		// We don't do adjustments if extent.End is already on the same step-offset as request.Start,
+		// although technically we could. But existing unit tests expect existing behaviour.
+
+		adjust := (req.GetStart() - extent.End) % req.GetStep()
+		if adjust < 0 {
+			adjust += req.GetStep()
+		}
+		start = extent.End + adjust
 	}
 
 	// Lastly, make a request for any data missing at the end.

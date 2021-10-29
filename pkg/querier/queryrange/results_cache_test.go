@@ -412,6 +412,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(0, 100),
@@ -426,6 +427,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(110, 210),
@@ -434,6 +436,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   100,
+					Step:  10,
 				},
 			},
 		},
@@ -442,6 +445,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 100),
@@ -450,6 +454,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   50,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -461,6 +466,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   200,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 120),
@@ -470,6 +476,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 120,
 					End:   160,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -482,6 +489,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   160,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 120),
@@ -491,6 +499,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 120,
 					End:   160,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -502,6 +511,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 90),
@@ -510,6 +520,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 100,
 					End:   100,
+					Step:  10,
 				},
 			},
 		},
@@ -519,12 +530,38 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(100, 100),
 			},
 			expectedCachedResponse: []Response{
 				mkAPIResponse(100, 105, 10),
+			},
+		},
+
+		{
+			name: "Start time of all requests must have the same offset into the step.",
+			input: &PrometheusRequest{
+				Start: 123, // 123 % 33 = 24
+				End:   1000,
+				Step:  33,
+			},
+			prevCachedResponse: []Extent{
+				// 486 is equal to input.Start + N * input.Step (for integer N)
+				// 625 is not equal to input.Start + N * input.Step for any integer N.
+				mkExtentWithStep(486, 625, 33),
+			},
+			expectedCachedResponse: []Response{
+				mkAPIResponse(486, 625, 33),
+			},
+			expectedRequests: []Request{
+				&PrometheusRequest{Start: 123, End: 486, Step: 33},
+				&PrometheusRequest{
+					Start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
+					End:   1000, // until the end
+					Step:  33,   // unchanged
+				},
 			},
 		},
 	} {
@@ -536,6 +573,11 @@ func TestPartitionCacheExtents(t *testing.T) {
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
+
+			for _, req := range reqs {
+				assert.Equal(t, tc.input.GetStep(), req.GetStep())
+				assert.Equal(t, tc.input.GetStart()%tc.input.GetStep(), req.GetStart()%req.GetStep())
+			}
 		})
 	}
 }
