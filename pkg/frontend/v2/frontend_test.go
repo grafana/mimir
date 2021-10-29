@@ -141,7 +141,6 @@ func TestFrontendRetryEnqueue(t *testing.T) {
 
 		return &schedulerpb.SchedulerToFrontend{Status: schedulerpb.OK}
 	})
-
 	_, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
 }

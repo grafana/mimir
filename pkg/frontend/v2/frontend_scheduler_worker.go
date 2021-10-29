@@ -11,15 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promauto"
-
-	"github.com/prometheus/client_golang/prometheus"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
 	"github.com/grafana/dskit/services"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/httpgrpc"
 	"google.golang.org/grpc"
 
@@ -27,6 +25,8 @@ import (
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/util"
 )
+
+const schedulerAddressLabel = "scheduler_address"
 
 type frontendSchedulerWorkers struct {
 	services.Service
@@ -57,7 +57,7 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
 			Help: "Total amount of requests enqueued by each query frontend worker (regardless of the result, labeled by scheduler address.",
-		}, []string{"scheduler_address"}),
+		}, []string{schedulerAddressLabel}),
 	}
 
 	w, err := util.NewDNSWatcher(cfg.SchedulerAddress, cfg.DNSLookupPeriod, f)
@@ -138,6 +138,7 @@ func (f *frontendSchedulerWorkers) AddressRemoved(address string) {
 	if w != nil {
 		w.stop()
 	}
+	f.enqueuedRequests.Delete(prometheus.Labels{schedulerAddressLabel: address})
 }
 
 // Get number of workers.
