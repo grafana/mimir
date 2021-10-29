@@ -35,6 +35,6 @@ func TestParseMetricsInBoard(t *testing.T) {
 	err = json.Unmarshal(buf, &board)
 	require.NoError(t, err)
 
-	parseMetricsInBoard(output, board)
+	analyse.ParseMetricsInBoard(output, board)
 	assert.Equal(t, dashboardMetrics, output.Dashboards[0].Metrics)
 }

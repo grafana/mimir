@@ -30,7 +30,7 @@ func (cmd *DashboardAnalyseCommand) run(k *kingpin.ParseContext) error {
 			fmt.Fprintf(os.Stderr, "%s for %s\n", err, file)
 			continue
 		}
-		parseMetricsInBoard(output, board)
+		analyse.ParseMetricsInBoard(output, board)
 	}
 
 	err := writeOut(output, cmd.outputFile)

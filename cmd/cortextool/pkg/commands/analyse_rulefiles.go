@@ -25,7 +25,7 @@ func (cmd *RuleFileAnalyseCommand) run(k *kingpin.ParseContext) error {
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := parseMetricsInRuleGroup(output, group, ns.Namespace)
+			err := analyse.ParseMetricsInRuleGroup(output, group, ns.Namespace)
 			if err != nil {
 				return err
 			}

@@ -52,7 +52,7 @@ func TestParseMetricsInRuleFile(t *testing.T) {
 
 	for _, ns := range nss {
 		for _, group := range ns.Groups {
-			err := parseMetricsInRuleGroup(output, group, ns.Namespace)
+			err := analyse.ParseMetricsInRuleGroup(output, group, ns.Namespace)
 			require.NoError(t, err)
 		}
 	}
