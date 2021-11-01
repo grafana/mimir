@@ -51,6 +51,7 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
+// alertmanagerClientsPool is a pool of alertmanager clients.
 type alertmanagerClientsPool struct {
 	pool *client.Pool
 }
