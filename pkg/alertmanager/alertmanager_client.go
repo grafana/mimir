@@ -145,6 +145,8 @@ func (c *alertmanagerClient) String() string {
 	return c.RemoteAddress()
 }
 
+// RemoteAddress implements the Client interface.
+// It returns the address of the alertmanager server which is unique for each client.
 func (c *alertmanagerClient) RemoteAddress() string {
 	return c.conn.Target()
 }
