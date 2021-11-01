@@ -103,6 +103,7 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	return &alertmanagerClientsPool{pool: client.NewPool("alertmanager", poolCfg, discovery, factory, clientsCount, logger)}
 }
 
+// GetClientFor returns the alertmanager client for the specified address, creating it if one did not already exist.
 func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 	c, err := f.pool.GetClientFor(addr)
 	if err != nil {
