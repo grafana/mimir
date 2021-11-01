@@ -56,7 +56,7 @@ type alertmanagerClientsPool struct {
 }
 
 func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
-	// We prefer sane defaults instead of exposing further config options.
+	// We prefer sensible defaults instead of exposing further config options.
 	grpcCfg := grpcclient.Config{
 		MaxRecvMsgSize:      16 * 1024 * 1024,
 		MaxSendMsgSize:      4 * 1024 * 1024,
