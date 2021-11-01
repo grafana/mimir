@@ -139,6 +139,7 @@ type alertmanagerClient struct {
 	conn *grpc.ClientConn
 }
 
+// Close closes the client's GRPC connection.
 func (c *alertmanagerClient) Close() error {
 	return c.conn.Close()
 }
