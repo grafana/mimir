@@ -59,12 +59,12 @@ type alertmanagerClientsPool struct {
 func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
 	// We prefer sensible defaults instead of exposing further config options.
 	grpcCfg := grpcclient.Config{
-		MaxRecvMsgSize:      16 * 1024 * 1024,
-		MaxSendMsgSize:      4 * 1024 * 1024,
-		GRPCCompression:     "",
-		RateLimit:           0,
-		RateLimitBurst:      0,
-		BackoffOnRatelimits: false,
+		MaxRecvMsgSize:      16 * 1024 * 1024, // 16MiB.
+		MaxSendMsgSize:      4 * 1024 * 1024,  // 4MiB.
+		GRPCCompression:     "",               // No compression.
+		RateLimit:           0,                // No rate limit.
+		RateLimitBurst:      0,                // No burst of rate limit.
+		BackoffOnRatelimits: false,            // No backoffs for rate limiting.
 		TLSEnabled:          amClientCfg.TLSEnabled,
 		TLS:                 amClientCfg.TLS,
 	}
