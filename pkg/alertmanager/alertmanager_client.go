@@ -111,6 +111,8 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 	return c.(Client), nil
 }
 
+// dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
+// and collects observations of request durations.
 func dialAlertmanagerClient(cfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
 	opts, err := cfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
