@@ -55,6 +55,7 @@ type alertmanagerClientsPool struct {
 	pool *client.Pool
 }
 
+// newAlertmanagerClientsPool creates a new pool of alertmanager clients.
 func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
 	// We prefer sensible defaults instead of exposing further config options.
 	grpcCfg := grpcclient.Config{
