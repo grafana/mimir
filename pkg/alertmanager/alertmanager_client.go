@@ -132,6 +132,7 @@ func dialAlertmanagerClient(cfg grpcclient.Config, addr string, requestDuration 
 	}, nil
 }
 
+// alertmanagerClient is a GRPC client of an alertmanager.
 type alertmanagerClient struct {
 	alertmanagerpb.AlertmanagerClient
 	grpc_health_v1.HealthClient
