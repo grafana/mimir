@@ -144,6 +144,8 @@ func (c *alertmanagerClient) Close() error {
 	return c.conn.Close()
 }
 
+// String implements the Stringer interface.
+// It returns the remote address of the alertmanager server which is unique for each client.
 func (c *alertmanagerClient) String() string {
 	return c.RemoteAddress()
 }
