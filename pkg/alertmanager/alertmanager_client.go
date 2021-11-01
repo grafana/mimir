@@ -70,8 +70,17 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	}
 
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_alertmanager_distributor_client_request_duration_seconds",
-		Help:    "Time spent executing requests from an alertmanager to another alertmanager.",
+		Name: "cortex_alertmanager_distributor_client_request_duration_seconds",
+		Help: "Time spent executing requests from an alertmanager to another alertmanager.",
+		// Buckets
+		// 1 0.008s  (8ms)
+		// 2 0.032s  (32ms)
+		// 3 0.128s  (128ms)
+		// 4 0.512s  (512ms)
+		// 5 2.048s  (2048ms)
+		// 6 8.192s  (8192ms)
+		// 7 32.768s (32768ms)
+		// 8 +Inf
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
