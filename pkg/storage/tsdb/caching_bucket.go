@@ -156,9 +156,9 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
 			var err error
-			attributesCache, err = storecache.WrapWithLRUCache(attributesCache, reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
+			attributesCache, err = storecache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
-				return nil, errors.Wrapf(err, "lru-metadata-cache")
+				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
 		}
 
