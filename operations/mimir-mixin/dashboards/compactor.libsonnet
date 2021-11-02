@@ -44,23 +44,23 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.row('')
       .addPanel(
-        $.panel('Compacted blocks / sec') +
-        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'blocks') +
+        $.panel('TSDB compactions / sec') +
+        $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'compactions') +
         { yaxes: $.yaxes('ops') } +
         $.panelDescription(
-          'Compacted blocks / sec',
+          'Compactions finished / sec',
           |||
-            Rate of blocks that are generated as a result of a compaction operation.
+            Rate of TSDB compactions. Single TSDB compaction takes one or more input blocks and produces one or more (during "split" phase) output blocks.
           |||
         ),
       )
       .addPanel(
-        $.panel('Per-block compaction duration') +
+        $.panel('TSDB compaction duration') +
         $.latencyPanel('prometheus_tsdb_compaction_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)) +
         $.panelDescription(
-          'Per-block compaction duration',
+          'TSDB compaction duration',
           |||
-            Display the amount of time that it has taken to generate a single compacted block.
+            Display the amount of time that it has taken to run a single TSDB compaction.
           |||
         ),
       )
