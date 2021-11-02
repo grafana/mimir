@@ -222,7 +222,17 @@
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
 
+      local indexMaxConcurrency = 100,
+      local chunksMaxConcurrency = 100,
+      local metaMaxConcurrency = 100,
       'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
+      'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': indexMaxConcurrency,
+      'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': chunksMaxConcurrency,
+      'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': metaMaxConcurrency,
+      'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections': indexMaxConcurrency,
+      'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': chunksMaxConcurrency,
+      'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': metaMaxConcurrency,
+
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
