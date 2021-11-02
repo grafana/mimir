@@ -48,7 +48,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('sum(rate(prometheus_tsdb_compactions_total{%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.compactor), 'compactions') +
         { yaxes: $.yaxes('ops') } +
         $.panelDescription(
-          'Compactions finished / sec',
+          'TSDB compactions / sec',
           |||
             Rate of TSDB compactions. Single TSDB compaction takes one or more input blocks and produces one or more (during "split" phase) output blocks.
           |||
