@@ -222,17 +222,21 @@
       'blocks-storage.bucket-store.index-header-lazy-loading-enabled': 'true',
       'blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout': '60m',
 
-      local indexMaxConcurrency = 100,
-      local chunksMaxConcurrency = 100,
-      local metaMaxConcurrency = 100,
       'blocks-storage.bucket-store.max-chunk-pool-bytes': 12 * 1024 * 1024 * 1024,
-      'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': indexMaxConcurrency,
-      'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': chunksMaxConcurrency,
-      'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': metaMaxConcurrency,
+
+      // We should keep a number of idle connections equal to the max "get" concurrency,
+      // in order to avoid re-opening connections continuously (this would be slower
+      // and fill up the conntrack table too).
+      //
+      // The downside of this approach is that we'll end up with an higher number of
+      // active connections to memcached, so we have to make sure connections limit
+      // set in memcached is high enough.
+      'blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency': 100,
+      'blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency': 100,
+      'blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency': 100,
       'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'],
-
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +
