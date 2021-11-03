@@ -17,6 +17,7 @@ require (
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/felixge/fgprof v0.9.1
 	github.com/fsouza/fake-gcs-server v1.7.0
+	github.com/go-kit/kit v0.12.0 // indirect
 	github.com/go-kit/log v0.2.0
 	github.com/go-openapi/strfmt v0.20.3
 	github.com/go-openapi/swag v0.19.15
@@ -28,8 +29,6 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20211015163529-3a65fbdcfc45
-	github.com/hashicorp/go-hclog v0.12.2 // indirect
-	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
@@ -56,7 +55,7 @@ require (
 	go.etcd.io/bbolt v1.3.6
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
-	golang.org/x/crypto v0.0.0-20210616213533-5ff15b29337e
+	golang.org/x/crypto v0.0.0-20210915214749-c084706c2272
 	golang.org/x/net v0.0.0-20211020060615-d418f374d309
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
