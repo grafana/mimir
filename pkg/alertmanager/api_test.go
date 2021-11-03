@@ -309,6 +309,26 @@ alertmanager_config: |
 			err: errors.Wrap(errOAuth2SecretFileNotAllowed, "error validating Alertmanager config"),
 		},
 		{
+			name: "Should return error if global OAuth2 TLS key_file is set",
+			cfg: `
+alertmanager_config: |
+  global:
+    http_config:
+      oauth2:
+        client_id: test
+        client_secret: secret
+        token_url: http://example.com
+        tls_config:
+          key_file: /secrets
+
+  route:
+    receiver: 'default-receiver'
+  receivers:
+    - name: default-receiver
+`,
+			err: errors.Wrap(errTLSFileNotAllowed, "error validating Alertmanager config"),
+		},
+		{
 			name: "Should return error if receiver's HTTP password_file is set",
 			cfg: `
 alertmanager_config: |
