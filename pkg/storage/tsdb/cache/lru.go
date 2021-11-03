@@ -4,7 +4,6 @@ package cache
 
 import (
 	"context"
-	"strings"
 	"sync"
 	"time"
 
@@ -17,12 +16,14 @@ import (
 type LRUCache struct {
 	c          cache.Cache
 	defaultTTL time.Duration
+	name       string
 
 	mtx sync.Mutex
 	lru *lru.LRU
 
 	requests prometheus.Counter
 	hits     prometheus.Counter
+	items    prometheus.GaugeFunc
 }
 
 type cacheItem struct {
@@ -36,28 +37,41 @@ type cacheItem struct {
 // The LRU cache will also remove items from the underlying cache if they are expired.
 // The LRU cache is limited in number of items using `lruSize`. This means this cache is not tailored for large items or items that have a big
 // variation in size.
-func WrapWithLRUCache(c cache.Cache, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (*LRUCache, error) {
-	cache := &LRUCache{
-		c:          c,
-		defaultTTL: defaultTTL,
-	}
+func WrapWithLRUCache(c cache.Cache, name string, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (*LRUCache, error) {
 	lru, err := lru.NewLRU(lruSize, nil)
 	if err != nil {
 		return nil, err
 	}
-	cache.lru = lru
-	cacheName := strings.ReplaceAll(cache.Name(), "-", "_")
-	cache.requests = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Namespace: "cortex",
-		Name:      "store_" + cacheName + "_cache_requests_total",
-		Help:      "Total number of requests to the cache.",
+
+	cache := &LRUCache{
+		c:          c,
+		lru:        lru,
+		name:       name,
+		defaultTTL: defaultTTL,
+
+		requests: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_cache_memory_requests_total",
+			Help:        "Total number of requests to the in-memory cache.",
+			ConstLabels: map[string]string{"name": name},
+		}),
+		hits: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_cache_memory_hits_total",
+			Help:        "Total number of requests to the in-memory cache that were a hit.",
+			ConstLabels: map[string]string{"name": name},
+		}),
+	}
+
+	cache.items = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name:        "cortex_cache_memory_items_count",
+		Help:        "Total number of items currently in the in-memory cache.",
+		ConstLabels: map[string]string{"name": name},
+	}, func() float64 {
+		cache.mtx.Lock()
+		defer cache.mtx.Unlock()
+
+		return float64(cache.lru.Len())
 	})
 
-	cache.hits = promauto.With(reg).NewCounter(prometheus.CounterOpts{
-		Namespace: "cortex",
-		Name:      "store_" + cacheName + "_cache_hits_total",
-		Help:      "Total number of requests to the cache that were a hit.",
-	})
 	return cache, nil
 }
 
@@ -119,5 +133,5 @@ func (l *LRUCache) Fetch(ctx context.Context, keys []string) (result map[string]
 }
 
 func (l *LRUCache) Name() string {
-	return "lru_" + l.c.Name()
+	return "in-memory-" + l.name
 }

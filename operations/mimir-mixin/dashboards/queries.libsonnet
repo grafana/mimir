@@ -293,6 +293,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel('Index-header lazy load duration') +
         $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
       )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.row('')
       .addPanel(
         $.panel('Series hash cache hit ratio') +
         $.queryPanel(|||
@@ -308,6 +312,15 @@ local utils = import 'mixin-utils/utils.libsonnet';
           sum(rate(thanos_store_index_cache_hits_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
           /
           sum(rate(thanos_store_index_cache_requests_total{item_type="ExpandedPostings",%s}[$__rate_interval]))
+        ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
+        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
+      )
+      .addPanel(
+        $.panel('Chunks attributes in-memory cache hit ratio') +
+        $.queryPanel(|||
+          sum(rate(cortex_cache_memory_hits_total{name="chunks-attributes-cache",%s}[$__rate_interval]))
+          /
+          sum(rate(cortex_cache_memory_requests_total{name="chunks-attributes-cache",%s}[$__rate_interval]))
         ||| % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'hit ratio') +
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
