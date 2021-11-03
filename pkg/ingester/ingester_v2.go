@@ -2424,6 +2424,7 @@ func getSelectHintsForShard(start, end int64, shard *querysharding.ShardSelector
 	}
 }
 
+// isOutOfBounds returns whether all the samples of the provided TimeSeries are out of bounds.
 func isOutOfBounds(ts *mimirpb.TimeSeries, minValidTime int64) bool {
 	for _, s := range ts.Samples {
 		if s.TimestampMs >= minValidTime {
