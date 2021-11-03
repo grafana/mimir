@@ -102,6 +102,7 @@
   * `cortex_cache_memory_requests_total`
   * `cortex_cache_memory_hits_total`
   * `cortex_cache_memory_items_count`
+* [ENHANCEMENT] Store-gateway: log index cache requests to tracing spans. #419
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16

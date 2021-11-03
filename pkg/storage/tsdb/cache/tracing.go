@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/oklog/ulid"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/cache"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -43,4 +45,55 @@ func (t TracingCache) Fetch(ctx context.Context, keys []string) (result map[stri
 
 func (t TracingCache) Name() string {
 	return t.c.Name()
+}
+
+type TracingIndexCache struct {
+	c      IndexCache
+	logger log.Logger
+}
+
+func NewTracingIndexCache(cache IndexCache, logger log.Logger) IndexCache {
+	return &TracingIndexCache{
+		c:      cache,
+		logger: logger,
+	}
+}
+
+func (t *TracingIndexCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
+	t.c.StorePostings(ctx, blockID, l, v)
+}
+
+func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+	hits, misses = t.c.FetchMultiPostings(ctx, blockID, keys)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log("msg", "cache_fetch_postings", "requested keys", len(keys), "cache hits", len(hits), "cache misses", len(misses))
+
+	return hits, misses
+}
+
+func (t *TracingIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id uint64, v []byte) {
+	t.c.StoreSeries(ctx, blockID, id, v)
+}
+
+func (t *TracingIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []uint64) (hits map[uint64][]byte, misses []uint64) {
+	hits, misses = t.c.FetchMultiSeries(ctx, blockID, ids)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log("msg", "cache_fetch_series", "requested series", len(ids), "cache hits", len(hits), "cache misses", len(misses))
+
+	return hits, misses
+}
+
+func (t *TracingIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
+	t.c.StoreExpandedPostings(ctx, blockID, key, v)
+}
+
+func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
+	data, found := t.c.FetchExpandedPostings(ctx, blockID, key)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log("msg", "cache_fetch_expanded_postings", "requested key", key, "found", found, "returned bytes", len(data))
+
+	return data, found
 }
