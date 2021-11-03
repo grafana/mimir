@@ -120,6 +120,7 @@ Mixin:
 * [ENHANCEMENT] Added "Cortex / Writes Networking" and "Cortex / Reads Networking" dashboards. #405
 * [ENHANCEMENT] Improved "Queue length" panel in "Cortex / Queries" dashboard. #408
 * [ENHANCEMENT] Add `CortexDistributorReachingInflightPushRequestLimit` alert and playbook. #401
+* [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
 
 ### Query-tee
 
