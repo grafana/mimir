@@ -159,6 +159,7 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 		log.NewNopLogger(),
 		func(context.Context) v1.RulesRetriever { return &DummyRulesRetriever{} },
 		0, 0, 0, // Remote read samples and concurrency limit.
+		false, // Not an agent.
 		regexp.MustCompile(".*"),
 		func() (v1.RuntimeInfo, error) { return v1.RuntimeInfo{}, errors.New("not implemented") },
 		&v1.PrometheusVersion{},
