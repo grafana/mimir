@@ -857,20 +857,19 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 			otlog.Int("numseries", len(req.Timeseries)))
 	}
 
-nextTimeSeries:
 	for _, ts := range req.Timeseries {
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
 		// Fast path in case we only have samples and they are all out of bounds.
 		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && isOutOfBounds(ts.TimeSeries, minAppendTime) {
-			failedSamplesCount++
-			sampleOutOfBoundsCount++
+			failedSamplesCount += len(ts.Samples)
+			sampleOutOfBoundsCount += len(ts.Samples)
 
 			updateFirstPartial(func() error {
 				return wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(ts.Samples[0].TimestampMs), ts.Labels)
 			})
-			continue nextTimeSeries
+			continue
 		}
 
 		// Look up a reference for this series.

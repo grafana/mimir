@@ -342,18 +342,24 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_active_series{user="test"} 1
 			`,
 		},
-		"should soft fail on sample out of bound": {
+		"should soft fail on all samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					mimirpb.API),
-				mimirpb.ToWriteRequest(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969 - (86400 * 1000)}},
-					nil,
-					mimirpb.API),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  metricLabelAdapters,
+								Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
+							},
+						},
+					},
+				},
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedIngested: model.Matrix{
@@ -365,7 +371,7 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 1
+				cortex_ingester_ingested_samples_failures_total 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -380,7 +386,60 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 1
+				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 2
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+		},
+		"should soft fail on some samples out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					mimirpb.API),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)},
+									{Value: 1, TimestampMs: 1575043969 - (86000 * 1000)},
+									{Value: 3, TimestampMs: 1575043969 + 1}},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total 2
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
