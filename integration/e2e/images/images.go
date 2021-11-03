@@ -12,7 +12,7 @@ var (
 	// These are variables so that they can be modified.
 
 	Memcached = "memcached:1.6.12"
-	Minio     = "minio/minio:RELEASE.2021-02-19T04-38-02Z"
+	Minio     = "minio/minio:RELEASE.2021-10-13T00-23-17Z"
 	Consul    = "consul:1.8.15"
 	ETCD      = "gcr.io/etcd-development/etcd:v3.4.13"
 )
