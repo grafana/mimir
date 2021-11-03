@@ -2,6 +2,7 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Ruler: The list endpoint (`/api/v1/rules`) now returns HTTP 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. #456
 * [CHANGE] Compactor: Removed support for block deletion marks migration. If you're upgrading from Cortex < 1.7.0 to Mimir, you should upgrade the compactor to Cortex >= 1.7.0 first, run it at least once and then upgrade to Mimir. #122
 * [CHANGE] Removed query sharding for the chunks storage. Query sharding is now only supported for blocks storage. #86 #119
 * [CHANGE] Renamed build image to us.gcr.io/kubernetes-dev/mimir-build-image. #40
