@@ -22,18 +22,28 @@ import (
 )
 
 func MockStorageBlock(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64) tsdb.BlockMeta {
+	m := MockStorageBlockWithExtLabels(t, bucket, userID, minT, maxT, nil)
+	return m.BlockMeta
+}
+
+func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64, externalLabels map[string]string) metadata.Meta {
 	// Generate a block ID whose timestamp matches the maxT (for simplicity we assume it
 	// has been compacted and shipped in zero time, even if not realistic).
 	id := ulid.MustNew(uint64(maxT), rand.Reader)
 
-	meta := tsdb.BlockMeta{
-		Version: 1,
-		ULID:    id,
-		MinTime: minT,
-		MaxTime: maxT,
-		Compaction: tsdb.BlockMetaCompaction{
-			Level:   1,
-			Sources: []ulid.ULID{id},
+	meta := metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			Version: 1,
+			ULID:    id,
+			MinTime: minT,
+			MaxTime: maxT,
+			Compaction: tsdb.BlockMetaCompaction{
+				Level:   1,
+				Sources: []ulid.ULID{id},
+			},
+		},
+		Thanos: metadata.Thanos{
+			Labels: externalLabels,
 		},
 	}
 

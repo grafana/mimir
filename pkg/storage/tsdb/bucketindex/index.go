@@ -24,8 +24,8 @@ const (
 	IndexFilename           = "bucket-index.json"
 	IndexCompressedFilename = IndexFilename + ".gz"
 	IndexVersion1           = 1
-
-	SegmentsFormatUnknown = ""
+	IndexVersion2           = 2 // Added CompactorShardID field.
+	SegmentsFormatUnknown   = ""
 
 	// SegmentsFormat1Based6Digits defined segments numbered with 6 digits numbers in a sequence starting from number 1
 	// eg. (000001, 000002, 000003).
@@ -88,6 +88,9 @@ type Block struct {
 	// UploadedAt is a unix timestamp (seconds precision) of when the block has been completed to be uploaded
 	// to the storage.
 	UploadedAt int64 `json:"uploaded_at"`
+
+	// Block's compactor shard ID, copied from tsdb.CompactorShardIDExternalLabel label.
+	CompactorShardID string `json:"compactor_shard_id,omitempty"`
 }
 
 // Within returns whether the block contains samples within the provided range.
@@ -143,11 +146,12 @@ func BlockFromThanosMeta(meta metadata.Meta) *Block {
 	segmentsFormat, segmentsNum := detectBlockSegmentsFormat(meta)
 
 	return &Block{
-		ID:             meta.ULID,
-		MinTime:        meta.MinTime,
-		MaxTime:        meta.MaxTime,
-		SegmentsFormat: segmentsFormat,
-		SegmentsNum:    segmentsNum,
+		ID:               meta.ULID,
+		MinTime:          meta.MinTime,
+		MaxTime:          meta.MaxTime,
+		SegmentsFormat:   segmentsFormat,
+		SegmentsNum:      segmentsNum,
+		CompactorShardID: meta.Thanos.Labels[mimir_tsdb.CompactorShardIDExternalLabel],
 	}
 }
 
