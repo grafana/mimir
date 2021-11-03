@@ -49,7 +49,7 @@ The `split-and-merge` compaction strategy is a more sophisticated compaction str
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` allows you to configure max number of concurrent compactions running in a single compactor replica (each compaction uses 1 CPU core).
 - **Horizontal scaling**<br />
-  When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across the available replicas.
+  When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across compactor replicas. Use the setting `compactor-tenant-shard-size` to control how many of the available replicas to spread compaction jobs across. If set to 0, compaction jobs will be spread across all available replicas.
 
 The `split-and-merge` is designed to overcome TSDB index limitations and avoid that compacted blocks can grow indefinitely for a very large tenant (at any compaction stage).
 
@@ -65,7 +65,7 @@ The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
-This strategy is suited for clusters with large tenants. The `N` number of split blocks is configurable on a per-tenant basis (`-compactor.split-and-merge-shards`) and can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards, in order to improve compaction parallelization and keep each per-shard compacted block size under control.
+This strategy is suited for clusters with large tenants. The `N` number of split blocks is configurable on a per-tenant basis (`-compactor.split-and-merge-shards`) and can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards, in order to improve compaction parallelization and keep each per-shard compacted block size under control. We currently recommend 1 shard per every 25 to 30 million active series in a tenant (e.g., for a tenant with 100 million active series, you'd want roughly 4 shards). Please note this recommendation may change because this feature is still experimental.
 
 When sharding is enabled, each compaction stage (both split and merge) planned by the compactor can be horizontally scaled. Non conflicting / overlapping jobs will be executed in parallel.
 
