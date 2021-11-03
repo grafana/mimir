@@ -829,8 +829,8 @@ github.com/grafana/dskit v0.0.0-20211015163529-3a65fbdcfc45 h1:MnEo2iaFbjxfkSVc1
 github.com/grafana/dskit v0.0.0-20211015163529-3a65fbdcfc45/go.mod h1:uPG2nyK4CtgNDmWv7qyzYcdI+S90kHHRWvHnBtEMBXM=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85 h1:xLuzPoOzdfNb/RF/IENCw+oLVdZB4G21VPhkHBgwSHY=
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85/go.mod h1:crI9WX6p0IhrqB+DqIUHulRW853PaNFf7o4UprV//3I=
-github.com/grafana/prometheus-private v0.0.0-20211103095416-46514c6b128b h1:4v1ZO4GkK7mN9GfU81ZNGDQMF0WJGwxLxQNE+Qdov+c=
-github.com/grafana/prometheus-private v0.0.0-20211103095416-46514c6b128b/go.mod h1:07FWuvRzfovrwH/yP4gxJesTNGOj1RWoBDIkgWfthjk=
+github.com/grafana/prometheus-private v0.0.0-20211103110224-c04bab8758f9 h1:K0LigGda87eZ62Du1tGl8EH1zfzzZ+RifGPujoqugf4=
+github.com/grafana/prometheus-private v0.0.0-20211103110224-c04bab8758f9/go.mod h1:07FWuvRzfovrwH/yP4gxJesTNGOj1RWoBDIkgWfthjk=
 github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7/go.mod h1:FecbI9+v66THATjSRHfNgh1IVFe/9kFxbXtjV0ctIMA=
 github.com/grpc-ecosystem/go-grpc-middleware v1.2.2 h1:FlFbCRLd5Jr4iYXZufAvgWN6Ao0JrI5chLINnUXDDr0=
 github.com/grpc-ecosystem/go-grpc-middleware v1.2.2/go.mod h1:EaizFBKfUKtMIF5iaDEhniwNedqGo9FuLFzppDr3uwI=
