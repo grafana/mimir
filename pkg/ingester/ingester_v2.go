@@ -862,7 +862,7 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		// has sorted labels once hit the ingester).
 
 		// Fast path in case we only have samples and they are all out of bounds.
-		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && isOutOfBounds(ts.TimeSeries, minAppendTime) {
+		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
 			failedSamplesCount += len(ts.Samples)
 			sampleOutOfBoundsCount += len(ts.Samples)
 
@@ -2424,13 +2424,12 @@ func getSelectHintsForShard(start, end int64, shard *querysharding.ShardSelector
 	}
 }
 
-// isOutOfBounds returns whether all the samples of the provided TimeSeries are out of bounds.
-func isOutOfBounds(ts *mimirpb.TimeSeries, minValidTime int64) bool {
-	for _, s := range ts.Samples {
+// allOutOfBounds returns whether all the provided samples are out of bounds.
+func allOutOfBounds(samples []mimirpb.Sample, minValidTime int64) bool {
+	for _, s := range samples {
 		if s.TimestampMs >= minValidTime {
 			return false
 		}
 	}
-
 	return true
 }
