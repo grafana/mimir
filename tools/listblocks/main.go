@@ -210,14 +210,27 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	}
 
 	sort.Slice(blocks, func(i, j int) bool {
+		// By min-time
 		if blocks[i].MinTime != blocks[j].MinTime {
 			return blocks[i].MinTime < blocks[j].MinTime
 		}
-		if blocks[i].MaxTime != blocks[j].MaxTime {
-			return blocks[i].MaxTime < blocks[j].MaxTime
+
+		// Duration
+		duri := blocks[i].MaxTime - blocks[i].MinTime
+		durj := blocks[j].MaxTime - blocks[j].MinTime
+		if duri != durj {
+			return duri < durj
 		}
 
-		// check block creation time instead
+		// Compactor shard
+		shardi := blocks[i].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		shardj := blocks[j].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+
+		if shardi != "" && shardj != "" && shardi != shardj {
+			return shardi < shardj
+		}
+
+		// ULID time.
 		return blocks[i].ULID.Time() < blocks[j].ULID.Time()
 	})
 
