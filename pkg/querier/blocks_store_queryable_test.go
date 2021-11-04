@@ -657,7 +657,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			// Assert on metrics (optional, only for test cases defining it).
 			if testData.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
+					"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query"))
 			}
 		})
 	}
@@ -671,6 +672,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 	)
 
 	var (
+		checkedMetrics = []string{"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query"}
+
 		block1  = ulid.MustNew(1, nil)
 		block2  = ulid.MustNew(2, nil)
 		block3  = ulid.MustNew(3, nil)
@@ -1106,7 +1109,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 					// Assert on metrics (optional, only for test cases defining it).
 					if testData.expectedMetrics != "" {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), checkedMetrics...))
 					}
 				}
 
@@ -1123,7 +1126,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 					// Assert on metrics (optional, only for test cases defining it).
 					if testData.expectedMetrics != "" {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), checkedMetrics...))
 					}
 				}
 			}
