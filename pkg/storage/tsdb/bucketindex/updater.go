@@ -51,8 +51,8 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	var oldBlocks []*Block
 	var oldBlockDeletionMarks []*BlockDeletionMark
 
-	// Read the old index, if provided.
-	if old != nil {
+	// Use the old index if provided, and it is using the latest version format.
+	if old != nil && old.Version == IndexVersion2 {
 		oldBlocks = old.Blocks
 		oldBlockDeletionMarks = old.BlockDeletionMarks
 	}
@@ -68,7 +68,7 @@ func (w *Updater) UpdateIndex(ctx context.Context, old *Index) (*Index, map[ulid
 	}
 
 	return &Index{
-		Version:            IndexVersion1,
+		Version:            IndexVersion2,
 		Blocks:             blocks,
 		BlockDeletionMarks: blockDeletionMarks,
 		UpdatedAt:          time.Now().Unix(),
