@@ -598,7 +598,7 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 			continue
 		}
 
-		if canBlockWithCompactorShardIdContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount) {
+		if canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount) {
 			ix++
 			continue
 		}
@@ -610,12 +610,12 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 	return blocks
 }
 
-// canBlockWithCompactorShardIdContainQueryShard returns false if block with given compactor shard ID can *definitely NOT*
+// canBlockWithCompactorShardIndexContainQueryShard returns false if block with given compactor shard ID can *definitely NOT*
 // contain series for given query shard. Returns true otherwise (we don't know if block *does* contain such series,
 // but we cannot rule it out).
 //
 // In other words, if this function returns false, block with given compactorShardID doesn't need to be searched for series from given query shard.
-func canBlockWithCompactorShardIdContainQueryShard(queryShardIndex, queryShardCount uint64, compactorShardIndex, compactorShardCount uint64) bool {
+func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount uint64) bool {
 	// If queryShardCount = compactorShardCount * K for integer K, then we know that series in queryShardIndex
 	// can only be in the block for which (queryShardIndex % compactorShardCount == compactorShardIndex).
 	//

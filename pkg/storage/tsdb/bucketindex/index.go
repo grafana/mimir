@@ -144,7 +144,7 @@ func (m *Block) String() string {
 		shard = "none"
 	}
 
-	return fmt.Sprintf("%s (min time: %s max time: %s, compactor shard: %s)", m.ID, minT.String(), maxT.String(), m.CompactorShardID)
+	return fmt.Sprintf("%s (min time: %s max time: %s, compactor shard: %s)", m.ID, minT.String(), maxT.String(), shard)
 }
 
 func BlockFromThanosMeta(meta metadata.Meta) *Block {

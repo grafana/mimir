@@ -1351,7 +1351,7 @@ func TestCanBlockWithCompactorShardIdContainQueryShard(t *testing.T) {
 				compactorShardIndex := seriesHash % compactorShards
 
 				// This must always be true when querying correct compactor shard.
-				if !canBlockWithCompactorShardIdContainQueryShard(queryShardIndex, queryShards, compactorShardIndex, compactorShards) {
+				if !canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShards, compactorShardIndex, compactorShards) {
 					t.Fatalf("series hash: %d, queryShards: %d, queryIndex: %d, compactorShards: %d, compactorIndex: %d", seriesHash, queryShards, queryShardIndex, compactorShards, compactorShardIndex)
 				}
 			}
