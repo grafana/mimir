@@ -216,6 +216,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.kvStoreRow('Store-gateway - Key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
+    )
+    .addRowIf(
       std.member($._config.storage_engine, 'chunks'),
       $.row('Memcached - Chunks storage - Index')
       .addPanel(

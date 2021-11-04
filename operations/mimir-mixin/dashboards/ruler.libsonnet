@@ -144,6 +144,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_ingester_client_request_duration_seconds', '{%s, operation="/cortex.Ingester/QueryStream"}' % $.jobMatcher('ruler'))
       )
     )
+    .addRow(
+      $.kvStoreRow('Ruler - Key-value store for rulers ring', 'ruler', 'ruler')
+    )
     .addRowIf(
       std.member($._config.storage_engine, 'chunks'),
       $.row('Ruler - Chunks storage - Index Cache')
