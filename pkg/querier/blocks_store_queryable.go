@@ -578,7 +578,7 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 	return fmt.Errorf("consistency check failed because some blocks were not queried: %s", strings.Join(convertULIDsToString(remainingBlocks), " "))
 }
 
-// This function removes blocks that can be safely ignored when using query sharding. We know that block can be safely
+// filterBlocksByShard removes blocks that can be safely ignored when using query sharding. We know that block can be safely
 // ignored, if it was compacted using split-and-merge compactor, and it has a valid compactor shard ID. We exploit the
 // fact that split-and-merge compactor and query-sharding use the same series-sharding algorithm.
 //

@@ -81,6 +81,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		expectedSeries    []seriesResult
 		expectedErr       error
 		expectedMetrics   string
+		queryShardID      string
 	}{
 		"no block in the storage matching the query time range": {
 			finderResult: nil,
@@ -592,6 +593,64 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0),
 			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunkBytesHit, 8)),
 		},
+		"blocks with non-matching shard are filtered out": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1, CompactorShardID: "1_of_4"},
+				{ID: block2, CompactorShardID: "2_of_4"},
+				{ID: block3, CompactorShardID: "3_of_4"},
+				{ID: block4, CompactorShardID: "4_of_4"},
+			},
+			queryShardID: "2_of_4",
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT, 1),
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT+1, 2),
+						mockHintsResponse(block2),
+					}}: {block2}, // Only block2 will be queried
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: labels.New(metricNameLabel),
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+		},
+		"all blocks are queried if shards don't match": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1, CompactorShardID: "1_of_4"},
+				{ID: block2, CompactorShardID: "2_of_4"},
+				{ID: block3, CompactorShardID: "3_of_4"},
+				{ID: block4, CompactorShardID: "4_of_4"},
+			},
+			queryShardID: "3_of_5",
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT, 1),
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT+1, 2),
+						mockHintsResponse(block1, block2, block3, block4),
+					}}: {block1, block2, block3, block4},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: labels.New(metricNameLabel),
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+		},
 	}
 
 	for testName, testData := range tests {
@@ -617,6 +676,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			matchers := []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
+			}
+			if testData.queryShardID != "" {
+				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, testData.queryShardID))
 			}
 
 			set := q.Select(true, nil, matchers...)
