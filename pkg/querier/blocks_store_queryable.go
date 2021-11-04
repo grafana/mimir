@@ -39,6 +39,7 @@ import (
 	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway"
@@ -102,8 +103,9 @@ type BlocksStoreLimits interface {
 }
 
 type blocksStoreQueryableMetrics struct {
-	storesHit prometheus.Histogram
-	refetches prometheus.Histogram
+	storesHit                   prometheus.Histogram
+	refetches                   prometheus.Histogram
+	blocksFilteredDueToSharding prometheus.Counter
 }
 
 func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
@@ -119,6 +121,10 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 			Name:      "querier_storegateway_refetches_per_query",
 			Help:      "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
 			Buckets:   []float64{0, 1, 2},
+		}),
+		blocksFilteredDueToSharding: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_sharded_blocks_filtered_out_total",
+			Help: "Blocks filtered out during sharded-query thanks to mismatching compactor sharding.",
 		}),
 	}
 }
@@ -354,7 +360,7 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, queryFunc)
+	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, nil, queryFunc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -389,7 +395,7 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, queryFunc)
+	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, nil, queryFunc)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -421,6 +427,11 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		resultMtx sync.Mutex
 	)
 
+	shard, _, err := sharding.ShardFromMatchers(matchers)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
 	queryFunc := func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error) {
 		seriesSets, queriedBlocks, warnings, numChunks, err := q.fetchSeriesFromStores(spanCtx, sp, clients, minT, maxT, matchers, convertedMatchers, maxChunksLimit, leftChunksLimit)
 		if err != nil {
@@ -442,7 +453,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		return queriedBlocks, nil
 	}
 
-	err := q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, queryFunc)
+	err = q.queryWithConsistencyCheck(spanCtx, spanLog, minT, maxT, shard, queryFunc)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -456,7 +467,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 		resWarnings)
 }
 
-func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logger log.Logger, minT, maxT int64,
+func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logger log.Logger, minT, maxT int64, shard *sharding.ShardSelector,
 	queryFunc func(clients map[BlocksStoreClient][]ulid.ULID, minT, maxT int64) ([]ulid.ULID, error)) error {
 	// If queryStoreAfter is enabled, we do manipulate the query maxt to query samples up until
 	// now - queryStoreAfter, because the most recent time range is covered by ingesters. This
@@ -488,6 +499,17 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 		q.metrics.storesHit.Observe(0)
 		level.Debug(logger).Log("msg", "no blocks found")
 		return nil
+	}
+
+	if shard != nil && shard.ShardCount > 0 {
+		level.Debug(logger).Log("msg", "filtering blocks due to sharding", "blocksBeforeFiltering", knownBlocks.String(), "shardID", shard.LabelValue())
+
+		before := len(knownBlocks)
+		knownBlocks = filterBlocksByShard(knownBlocks, shard.ShardIndex, shard.ShardCount)
+		after := len(knownBlocks)
+
+		level.Debug(logger).Log("msg", "result of filtering blocks", "before", before, "after", after, "filtered", before-after)
+		q.metrics.blocksFilteredDueToSharding.Add(float64(before - after))
 	}
 
 	level.Debug(logger).Log("msg", "found blocks to query", "expected", knownBlocks.String())
@@ -554,6 +576,73 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 	// We've not been able to query all expected blocks after all retries.
 	level.Warn(util_log.WithContext(ctx, logger)).Log("msg", "failed consistency check", "err", err)
 	return fmt.Errorf("consistency check failed because some blocks were not queried: %s", strings.Join(convertULIDsToString(remainingBlocks), " "))
+}
+
+// This function removes blocks that can be safely ignored when using query sharding. We know that block can be safely
+// ignored, if it was compacted using split-and-merge compactor, and it has a valid compactor shard ID. We exploit the
+// fact that split-and-merge compactor and query-sharding use the same series-sharding algorithm.
+//
+// This function modifies input slice.
+func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardCount uint64) bucketindex.Blocks {
+	for ix := 0; ix < len(blocks); {
+		b := blocks[ix]
+		if b.CompactorShardID == "" {
+			ix++
+			continue
+		}
+
+		compactorShardIndex, compactorShardCount, err := sharding.ParseShardIDLabelValue(b.CompactorShardID)
+		if err != nil {
+			// Cannot parse compactor shardID, we must search this block.
+			ix++
+			continue
+		}
+
+		if canBlockWithCompactorShardIdContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount) {
+			ix++
+			continue
+		}
+
+		// Series shard is NOT included in this block, we can remove this block.
+		blocks = append(blocks[:ix], blocks[ix+1:]...)
+	}
+
+	return blocks
+}
+
+// canBlockWithCompactorShardIdContainQueryShard returns false if block with given compactor shard ID can *definitely NOT*
+// contain series for given query shard. Returns true otherwise (we don't know if block *does* contain such series,
+// but we cannot rule it out).
+//
+// In other words, if this function returns false, block with given compactorShardID doesn't need to be searched for series from given query shard.
+func canBlockWithCompactorShardIdContainQueryShard(queryShardIndex, queryShardCount uint64, compactorShardIndex, compactorShardCount uint64) bool {
+	// If queryShardCount = compactorShardCount * K for integer K, then we know that series in queryShardIndex
+	// can only be in the block for which (queryShardIndex % compactorShardCount == compactorShardIndex).
+	//
+	// For example if queryShardCount = 8 and compactorShardCount = 4, then series that should be returned
+	// for queryShardIndex 5 can only be in block with compactorShardIndex = 1.
+	if queryShardCount >= compactorShardCount && queryShardCount%compactorShardCount == 0 {
+		wantedCompactorShardIndex := queryShardIndex % compactorShardCount
+
+		if compactorShardIndex != wantedCompactorShardIndex {
+			return false
+		}
+	}
+
+	// If compactorShardCount = queryShardCount * K for some integer K, then series in queryShardIndex
+	// can only be in K blocks for which queryShardIndex % compactorShardCount == compactorShardIndex.
+	//
+	// For example if queryShardCount = 4, and compactorShardCount = 8, then series that should be returned for
+	// queryShardIndex 3 can only be in blocks with compactorShardIndex 3 and 7.
+	if compactorShardCount >= queryShardCount && compactorShardCount%queryShardCount == 0 {
+		wantedQueryShardIndex := compactorShardIndex % queryShardCount
+
+		if queryShardIndex != wantedQueryShardIndex {
+			return false
+		}
+	}
+
+	return true
 }
 
 func (q *blocksStoreQuerier) fetchSeriesFromStores(

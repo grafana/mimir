@@ -7,8 +7,10 @@ package querier
 
 import (
 	"context"
+	crand "crypto/rand"
 	"fmt"
 	"io"
+	"math/rand"
 	"sort"
 	"strings"
 	"testing"
@@ -34,6 +36,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
@@ -1326,6 +1329,93 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 	assert.Equal(t, labelpb.ZLabelsToPromLabels(series2), matrix[1].Metric)
 	assert.Equal(t, series1Samples, matrix[0].Points)
 	assert.Equal(t, series2Samples, matrix[1].Points)
+}
+
+func TestCanBlockWithCompactorShardIdContainQueryShard(t *testing.T) {
+	const numSeries = 1000
+	const maxShards = 512
+
+	rand.Seed(time.Now().UnixNano())
+	hashes := make([]uint64, numSeries)
+	for ix := 0; ix < numSeries; ix++ {
+		hashes[ix] = rand.Uint64()
+	}
+
+	for compactorShards := uint64(1); compactorShards <= maxShards; compactorShards++ {
+		for queryShards := uint64(1); queryShards <= maxShards; queryShards++ {
+			for _, seriesHash := range hashes {
+				// Compute the query shard index for the given series.
+				queryShardIndex := seriesHash % queryShards
+
+				// Compute the compactor shard index where the series really is.
+				compactorShardIndex := seriesHash % compactorShards
+
+				// This must always be true when querying correct compactor shard.
+				if !canBlockWithCompactorShardIdContainQueryShard(queryShardIndex, queryShards, compactorShardIndex, compactorShards) {
+					t.Fatalf("series hash: %d, queryShards: %d, queryIndex: %d, compactorShards: %d, compactorIndex: %d", seriesHash, queryShards, queryShardIndex, compactorShards, compactorShardIndex)
+				}
+			}
+		}
+	}
+}
+
+func TestFilterBlocksByShard(t *testing.T) {
+	block1 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "1_of_4"}
+	block2 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "2_of_4"}
+	block3 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "3_of_4"}
+	block4 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "4_of_4"}
+
+	block5 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "1_of_4"}
+	block6 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "2_of_4"}
+	block7 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "3_of_4"}
+	block8 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "4_of_4"}
+
+	allBlocks := []*bucketindex.Block{block1, block2, block3, block4, block5, block6, block7, block8}
+
+	for name, testcase := range map[string]struct {
+		queryShardID   string
+		expectedBlocks bucketindex.Blocks
+	}{
+		"equal number of query shards": {
+			queryShardID:   "1_of_4",
+			expectedBlocks: bucketindex.Blocks{block1, block5},
+		},
+		"less query shards than compactor shards 1": {
+			queryShardID:   "1_of_2",
+			expectedBlocks: bucketindex.Blocks{block1, block3, block5, block7},
+		},
+		"less query shards than compactor shards 2": {
+			queryShardID:   "2_of_2",
+			expectedBlocks: bucketindex.Blocks{block2, block4, block6, block8},
+		},
+		"double the equal number of query shards 1": {
+			queryShardID:   "3_of_8",
+			expectedBlocks: bucketindex.Blocks{block3, block7},
+		},
+		"double the equal number of query shards 2": {
+			queryShardID:   "5_of_8",
+			expectedBlocks: bucketindex.Blocks{block1, block5},
+		},
+		"non-divisible number of shards (less than compactor shards)": {
+			queryShardID:   "3_of_7",
+			expectedBlocks: allBlocks,
+		},
+		"non-divisible number of shards (higher than compactor shards)": {
+			queryShardID:   "3_of_9",
+			expectedBlocks: allBlocks,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			queryShardIndex, queryShardCount, err := sharding.ParseShardIDLabelValue(testcase.queryShardID)
+			require.NoError(t, err)
+
+			blocksCopy := append([]*bucketindex.Block(nil), allBlocks...)
+
+			result := filterBlocksByShard(blocksCopy, queryShardIndex, queryShardCount)
+
+			require.Equal(t, testcase.expectedBlocks, result)
+		})
+	}
 }
 
 type blocksStoreSetMock struct {
