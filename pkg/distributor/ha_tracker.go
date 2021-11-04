@@ -433,7 +433,6 @@ func (c *haTracker) checkReplica(ctx context.Context, userID, cluster, replica s
 	}
 
 	err := c.updateKVStore(ctx, userID, cluster, replica, now)
-	c.kvCASCalls.WithLabelValues(userID, cluster).Inc()
 	if err != nil {
 		level.Error(c.logger).Log("msg", "failed to update KVStore - rejecting sample", "err", err)
 		return err
@@ -487,6 +486,7 @@ func (c *haTracker) updateKVStore(ctx context.Context, userID, cluster, replica 
 		}
 		return desc, true, nil
 	})
+	c.kvCASCalls.WithLabelValues(userID, cluster).Inc()
 	// If cache is currently empty, add the data we either stored or received from KVStore
 	if err == nil && desc != nil {
 		c.electedLock.Lock()
