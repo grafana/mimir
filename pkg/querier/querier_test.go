@@ -172,6 +172,94 @@ func TestQuerier(t *testing.T) {
 	}
 }
 
+// This test ensures the PromQL engine works correct if Select() function returns samples outside
+// the queried range because the underlying queryable doesn't trim chunks based on the query start/end time.
+func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
+	var (
+		logger     = log.NewNopLogger()
+		queryStart = mustParseTime("2021-11-01T06:00:00Z")
+		queryEnd   = mustParseTime("2021-11-01T06:05:00Z")
+		queryStep  = time.Minute
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	// Mock distributor to return chunks containing samples outside the queried range.
+	distributor := &mockDistributor{}
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		&client.QueryStreamResponse{
+			Chunkseries: []client.TimeSeriesChunk{
+				// Series with data points only before queryStart.
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToChunks(t, []mimirpb.Sample{
+						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+					}),
+				},
+				// Series with data points before and after queryStart, but before queryEnd.
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToChunks(t, []mimirpb.Sample{
+						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+						{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+						{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+						{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+						{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+						{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+						{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+						{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+						{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+						{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+					}),
+				},
+				// Series with data points after queryEnd.
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToChunks(t, []mimirpb.Sample{
+						{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+						{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+						{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+						{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+					}),
+				},
+			},
+		},
+		nil)
+
+	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+	require.NoError(t, err)
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		Logger:     logger,
+		MaxSamples: 1e6,
+		Timeout:    1 * time.Minute,
+	})
+
+	queryable, _, _ := New(cfg, overrides, distributor, nil, purger.NewTombstonesLoader(nil, nil), nil, logger)
+	query, err := engine.NewRangeQuery(queryable, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	r := query.Exec(ctx)
+	m, err := r.Matrix()
+	require.NoError(t, err)
+
+	require.Equal(t, 1, m.Len())
+	assert.Equal(t, []promql.Point{
+		{T: 1635746400000, V: 29},
+		{T: 1635746460000, V: 31},
+		{T: 1635746520000, V: 37},
+		{T: 1635746580000, V: 37},
+		{T: 1635746640000, V: 78},
+		{T: 1635746700000, V: 80},
+	}, m[0].Points)
+}
+
 func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) storage.Queryable {
 	dir, err := ioutil.TempDir("", "tsdb")
 	require.NoError(t, err)
@@ -1008,4 +1096,12 @@ func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func mustParseTime(input string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, input)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
 }

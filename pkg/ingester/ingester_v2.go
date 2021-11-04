@@ -1480,8 +1480,12 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 	}
 	defer q.Close()
 
+	var hints *storage.SelectHints
+	if shard != nil {
+		hints = configSelectHintsWithShard(initSelectHints(from, through), shard)
+	}
+
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	hints := getSelectHintsForShard(from, through, shard)
 	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
@@ -1550,8 +1554,13 @@ func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, 
 	}
 	defer q.Close()
 
+	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
+	// the requested from/through range. PromQL engine can handle it.
+	hints := initSelectHints(from, through)
+	hints = configSelectHintsWithShard(hints, shard)
+	hints = configSelectHintsWithDisabledTrimming(hints)
+
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	hints := getSelectHintsForShard(from, through, shard)
 	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
@@ -2410,18 +2419,25 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	return l
 }
 
-func getSelectHintsForShard(start, end int64, shard *querysharding.ShardSelector) *storage.SelectHints {
-	if shard == nil {
-		return nil
-	}
-
-	// If query sharding is enabled, we need to pass it along with hints.
+func initSelectHints(start, end int64) *storage.SelectHints {
 	return &storage.SelectHints{
-		Start:      start,
-		End:        end,
-		ShardIndex: shard.ShardIndex,
-		ShardCount: shard.ShardCount,
+		Start: start,
+		End:   end,
 	}
+}
+
+func configSelectHintsWithShard(hints *storage.SelectHints, shard *querysharding.ShardSelector) *storage.SelectHints {
+	if shard != nil {
+		// If query sharding is enabled, we need to pass it along with hints.
+		hints.ShardIndex = shard.ShardIndex
+		hints.ShardCount = shard.ShardCount
+	}
+	return hints
+}
+
+func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.SelectHints {
+	hints.DisableTrimming = true
+	return hints
 }
 
 // allOutOfBounds returns whether all the provided samples are out of bounds.
