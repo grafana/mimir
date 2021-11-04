@@ -9,7 +9,6 @@ import (
 	"html/template"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -72,17 +71,18 @@ func (h *haTracker) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	}
 
 	electedReplicas := []replica{}
-	for key, desc := range h.elected {
-		chunks := strings.SplitN(key, "/", 2)
-
-		electedReplicas = append(electedReplicas, replica{
-			UserID:       chunks[0],
-			Cluster:      chunks[1],
-			Replica:      desc.Replica,
-			ElectedAt:    timestamp.Time(desc.ReceivedAt),
-			UpdateTime:   time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
-			FailoverTime: time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
-		})
+	for userID, clusters := range h.clusters {
+		for cluster, entry := range clusters {
+			desc := &entry.elected
+			electedReplicas = append(electedReplicas, replica{
+				UserID:       userID,
+				Cluster:      cluster,
+				Replica:      desc.Replica,
+				ElectedAt:    timestamp.Time(desc.ReceivedAt),
+				UpdateTime:   time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.UpdateTimeout)),
+				FailoverTime: time.Until(timestamp.Time(desc.ReceivedAt).Add(h.cfg.FailoverTimeout)),
+			})
+		}
 	}
 	h.electedLock.RUnlock()
 

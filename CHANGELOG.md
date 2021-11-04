@@ -90,6 +90,7 @@
 * [ENHANCEMENT] Add tags to tracing span for distributor push with user, cluster and replica. #210
 * [ENHANCEMENT] Optimisations to distributor. #212 #217 #242
 * [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
+* [ENHANCEMENT] Distributor: reduce latency when HA-Tracking by doing KVStore updates in the background. #271
 * [ENHANCEMENT] Compactor: when sharding is enabled, skip already planned compaction jobs if the tenant doesn't belong to the compactor instance anymore. #303
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312
 * [ENHANCEMENT] Compactor: Blocks cleaner will ignore users that it no longer "owns" when sharding is enabled, and user ownership has changed since last scan. #325
