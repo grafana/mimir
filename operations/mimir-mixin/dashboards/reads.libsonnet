@@ -45,8 +45,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 route=~"(prometheus|api_prom)_api_v1_query"
               }[$__rate_interval]
             )
-          ) +
-          sum(
+            or
             rate(
               cortex_prometheus_rule_evaluations_total{
                 %(ruler)s
