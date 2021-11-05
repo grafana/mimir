@@ -49,7 +49,7 @@ The `split-and-merge` compaction strategy is a more sophisticated compaction str
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` allows you to configure max number of concurrent compactions running in a single compactor replica (each compaction uses 1 CPU core).
 - **Horizontal scaling**<br />
-  When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across compactor replicas. Use the setting `compactor-tenant-shard-size` to control how many of the available replicas to spread compaction jobs across. If set to 0, compaction jobs will be spread across all available replicas.
+  When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across compactor replicas. Use the CLI flag `-compactor.compactor-tenant-shard-size` (or its respective YAML config option) to control how many of the available replicas to spread compaction jobs across. If set to 0, compaction jobs will be spread across all available replicas.
 
 The `split-and-merge` is designed to overcome TSDB index limitations and avoid that compacted blocks can grow indefinitely for a very large tenant (at any compaction stage).
 
