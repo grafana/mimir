@@ -103,9 +103,12 @@ type BlocksStoreLimits interface {
 }
 
 type blocksStoreQueryableMetrics struct {
-	storesHit                   prometheus.Histogram
-	refetches                   prometheus.Histogram
-	blocksFilteredDueToSharding prometheus.Counter
+	storesHit prometheus.Histogram
+	refetches prometheus.Histogram
+
+	blocksFound                                       prometheus.Counter
+	blocksQueried                                     prometheus.Counter
+	blocksWithCompactorShardButIncompatibleQueryShard prometheus.Counter
 }
 
 func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQueryableMetrics {
@@ -122,9 +125,18 @@ func newBlocksStoreQueryableMetrics(reg prometheus.Registerer) *blocksStoreQuery
 			Help:      "Number of re-fetches attempted while querying store-gateway instances due to missing blocks.",
 			Buckets:   []float64{0, 1, 2},
 		}),
-		blocksFilteredDueToSharding: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_querier_sharded_blocks_filtered_out_total",
-			Help: "Blocks filtered out during sharded-query thanks to mismatching compactor sharding.",
+
+		blocksFound: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_blocks_found_total",
+			Help: "Number of blocks found based on query time range.",
+		}),
+		blocksQueried: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_blocks_queried_total",
+			Help: "Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.",
+		}),
+		blocksWithCompactorShardButIncompatibleQueryShard: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total",
+			Help: "Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.",
 		}),
 	}
 }
@@ -501,16 +513,20 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 		return nil
 	}
 
+	q.metrics.blocksFound.Add(float64(len(knownBlocks)))
+
 	if shard != nil && shard.ShardCount > 0 {
 		level.Debug(logger).Log("msg", "filtering blocks due to sharding", "blocksBeforeFiltering", knownBlocks.String(), "shardID", shard.LabelValue())
 
-		before := len(knownBlocks)
-		knownBlocks = filterBlocksByShard(knownBlocks, shard.ShardIndex, shard.ShardCount)
-		after := len(knownBlocks)
+		result, incompatibleBlocks := filterBlocksByShard(knownBlocks, shard.ShardIndex, shard.ShardCount)
 
-		level.Debug(logger).Log("msg", "result of filtering blocks", "before", before, "after", after, "filtered", before-after)
-		q.metrics.blocksFilteredDueToSharding.Add(float64(before - after))
+		level.Debug(logger).Log("msg", "result of filtering blocks", "before", len(knownBlocks), "after", len(result), "filtered", len(knownBlocks)-len(result), "incompatible", incompatibleBlocks)
+		q.metrics.blocksWithCompactorShardButIncompatibleQueryShard.Add(float64(incompatibleBlocks))
+
+		knownBlocks = result
 	}
+
+	q.metrics.blocksQueried.Add(float64(len(knownBlocks)))
 
 	level.Debug(logger).Log("msg", "found blocks to query", "expected", knownBlocks.String())
 
@@ -583,7 +599,10 @@ func (q *blocksStoreQuerier) queryWithConsistencyCheck(ctx context.Context, logg
 // fact that split-and-merge compactor and query-sharding use the same series-sharding algorithm.
 //
 // This function modifies input slice.
-func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardCount uint64) bucketindex.Blocks {
+//
+// This function also returns number of "incompatible" blocks -- blocks with compactor shard ID, but with compactor shard
+// and query shard being incompatible for optimization.
+func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardCount uint64) (_ bucketindex.Blocks, incompatibleBlocks int) {
 	for ix := 0; ix < len(blocks); {
 		b := blocks[ix]
 		if b.CompactorShardID == "" {
@@ -598,7 +617,12 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 			continue
 		}
 
-		if canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount) {
+		res, divisible := canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount)
+		if !divisible {
+			incompatibleBlocks++
+		}
+
+		if res {
 			ix++
 			continue
 		}
@@ -607,7 +631,7 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 		blocks = append(blocks[:ix], blocks[ix+1:]...)
 	}
 
-	return blocks
+	return blocks, incompatibleBlocks
 }
 
 // canBlockWithCompactorShardIndexContainQueryShard returns false if block with given compactor shard ID can *definitely NOT*
@@ -615,7 +639,9 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 // but we cannot rule it out).
 //
 // In other words, if this function returns false, block with given compactorShardID doesn't need to be searched for series from given query shard.
-func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount uint64) bool {
+//
+// In addition this function also returns whether query and compactor shard counts were divisible by each other (one way or the other).
+func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShardCount, compactorShardIndex, compactorShardCount uint64) (result bool, divisibleShardCounts bool) {
 	// If queryShardCount = compactorShardCount * K for integer K, then we know that series in queryShardIndex
 	// can only be in the block for which (queryShardIndex % compactorShardCount == compactorShardIndex).
 	//
@@ -624,9 +650,7 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 	if queryShardCount >= compactorShardCount && queryShardCount%compactorShardCount == 0 {
 		wantedCompactorShardIndex := queryShardIndex % compactorShardCount
 
-		if compactorShardIndex != wantedCompactorShardIndex {
-			return false
-		}
+		return compactorShardIndex == wantedCompactorShardIndex, true
 	}
 
 	// If compactorShardCount = queryShardCount * K for some integer K, then series in queryShardIndex
@@ -637,12 +661,10 @@ func canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShar
 	if compactorShardCount >= queryShardCount && compactorShardCount%queryShardCount == 0 {
 		wantedQueryShardIndex := compactorShardIndex % queryShardCount
 
-		if queryShardIndex != wantedQueryShardIndex {
-			return false
-		}
+		return queryShardIndex == wantedQueryShardIndex, true
 	}
 
-	return true
+	return true, false
 }
 
 func (q *blocksStoreQuerier) fetchSeriesFromStores(
