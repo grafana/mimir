@@ -250,12 +250,47 @@ func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog
 
 		if prevTotalShards != totalShards {
 			level.Debug(spanLog).Log(
-				"msg", "the number of shards have been adjusted to honor the max sharded queries limit",
+				"msg", "number of shards has been adjusted to honor the max sharded queries limit",
 				"updated total shards", totalShards,
 				"previous total shards", prevTotalShards,
 				"max sharded queries", maxShardedQueries,
 				"shardable legs", numShardableLegs,
 				"total queries", hints.TotalQueries)
+		}
+	}
+
+	// Adjust totalShards such that one of the following is true:
+	//
+	// 1) totalShards % compactorShards == 0
+	// 2) compactorShards % totalShards == 0
+	//
+	// This allows optimization with sharded blocks in querier to be activated.
+	//
+	// (Optimization is only activated when given *block* was sharded with correct compactor shards,
+	// but we can only adjust totalShards "globally", ie. for all queried blocks.)
+	compactorShardCount := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.CompactorSplitAndMergeShards)
+	if compactorShardCount > 0 {
+		prevTotalShards := totalShards
+
+		if totalShards > compactorShardCount {
+			totalShards = totalShards - (totalShards % compactorShardCount)
+		} else if totalShards < compactorShardCount {
+			// Adjust totalShards down to the nearest divisor of "compactor shards".
+			for totalShards > 0 && compactorShardCount%totalShards != 0 {
+				totalShards--
+			}
+
+			// If there was no divisor, just use original total shards.
+			if totalShards <= 1 {
+				totalShards = prevTotalShards
+			}
+		}
+
+		if prevTotalShards != totalShards {
+			level.Debug(spanLog).Log("msg", "number of shards has been adjusted to be compatible with compactor shards",
+				"previous total shards", prevTotalShards,
+				"updated total shards", totalShards,
+				"compactor shards", compactorShardCount)
 		}
 	}
 

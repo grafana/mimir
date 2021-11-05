@@ -591,6 +591,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 		totalShards       int
 		maxShardedQueries int
 		expectedShards    int
+		compactorShards   int
 	}{
 		"query is not shardable": {
 			query:             "metric",
@@ -627,6 +628,54 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 			maxShardedQueries: 64,
 			expectedShards:    3,
 		},
+		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   0,
+			expectedShards:    10,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   3,
+			expectedShards:    9,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   4,
+			expectedShards:    8,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   10,
+			expectedShards:    10,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   11,
+			expectedShards:    10, // cannot be adjusted to make 11 multiple or divisible, keep original.
+		},
+		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   14,
+			expectedShards:    7, // 7 divides 14
+		},
 		"query sharding is disabled": {
 			query:             "sum(metric)",
 			hints:             &Hints{TotalQueries: 1},
@@ -647,7 +696,11 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 				Hints: testData.hints,
 			}
 
-			limits := mockLimits{totalShards: testData.totalShards, maxShardedQueries: testData.maxShardedQueries}
+			limits := mockLimits{
+				totalShards:       testData.totalShards,
+				maxShardedQueries: testData.maxShardedQueries,
+				compactorShards:   testData.compactorShards,
+			}
 			shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
