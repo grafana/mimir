@@ -26,7 +26,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -368,7 +368,7 @@ type querierMock struct {
 }
 
 func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -415,7 +415,7 @@ func seriesMatches(series *promql.StorageSeries, matchers ...*labels.Matcher) bo
 	return true
 }
 
-func filterSeriesByShard(series []*promql.StorageSeries, shard *querysharding.ShardSelector) []*promql.StorageSeries {
+func filterSeriesByShard(series []*promql.StorageSeries, shard *sharding.ShardSelector) []*promql.StorageSeries {
 	if shard == nil {
 		return series
 	}

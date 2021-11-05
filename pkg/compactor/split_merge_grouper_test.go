@@ -3,13 +3,11 @@
 package compactor
 
 import (
-	"math/rand"
 	"testing"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 
@@ -791,39 +789,5 @@ func TestGroupBlocksByRange(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, groupBlocksByRange(testData.blocks, testData.timeRange))
 		})
-	}
-}
-
-func TestFormatAndParseShardId(t *testing.T) {
-	r := rand.New(rand.NewSource(0))
-
-	const maxTests = 1000
-	const maxShardCount = 10000
-
-	for i := 0; i < maxTests; i++ {
-		count := 1 + r.Intn(maxShardCount)
-		id := r.Intn(count)
-
-		require.True(t, id < count)
-
-		out := formatShardIDLabelValue(uint32(id), uint32(count))
-		nid, ncount, err := parseShardIDLabelValue(out)
-
-		require.NoError(t, err)
-		require.Equal(t, uint64(id), nid)
-		require.Equal(t, uint64(count), ncount)
-	}
-}
-
-func TestParseInvalidShardId(t *testing.T) {
-	for _, inp := range []string{
-		"invalid",
-		"0_of_10",
-		"11_of_10",
-		"-5_of_10",
-		"5_of_-10",
-	} {
-		_, _, err := parseShardIDLabelValue(inp)
-		require.Error(t, err)
 	}
 }

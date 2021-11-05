@@ -45,8 +45,8 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
@@ -1424,7 +1424,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 
 	// Check if query sharding is enabled for this query. If so, we need to remove the
 	// query sharding label from matchers and pass the shard info down the query execution path.
-	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return err
 	}
@@ -1473,7 +1473,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 	return nil
 }
 
-func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *querysharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.Querier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
@@ -1547,7 +1547,7 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 }
 
 // v2QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *querysharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.ChunkQuerier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
@@ -2426,7 +2426,7 @@ func initSelectHints(start, end int64) *storage.SelectHints {
 	}
 }
 
-func configSelectHintsWithShard(hints *storage.SelectHints, shard *querysharding.ShardSelector) *storage.SelectHints {
+func configSelectHintsWithShard(hints *storage.SelectHints, shard *sharding.ShardSelector) *storage.SelectHints {
 	if shard != nil {
 		// If query sharding is enabled, we need to pass it along with hints.
 		hints.ShardIndex = shard.ShardIndex

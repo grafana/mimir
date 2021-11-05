@@ -52,7 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -1713,7 +1713,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 			EndTimestampMs:   math.MaxInt64,
 			Matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
-				{Type: client.EQUAL, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+				{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 					ShardIndex: uint64(shardIndex),
 					ShardCount: uint64(numShards),
 				}.LabelValue()},
@@ -2291,7 +2291,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 						EndTimestampMs:   math.MaxInt64,
 						Matchers: []*client.LabelMatcher{
 							{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
-							{Type: client.EQUAL, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+							{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 								ShardIndex: uint64(shardIndex),
 								ShardCount: uint64(testData.numShards),
 							}.LabelValue()},
@@ -2749,8 +2749,8 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 					EndTimestampMs:   end,
 					Matchers: []*client.LabelMatcher{metricMatcher, {
 						Type:  client.EQUAL,
-						Name:  querysharding.ShardLabel,
-						Value: querysharding.ShardSelector{ShardIndex: uint64(idx), ShardCount: uint64(numShards)}.LabelValue(),
+						Name:  sharding.ShardLabel,
+						Value: sharding.ShardSelector{ShardIndex: uint64(idx), ShardCount: uint64(numShards)}.LabelValue(),
 					}},
 				}
 

@@ -13,6 +13,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -258,7 +259,7 @@ func (b *blockWithSuccessors) isFullyIncludedInSuccessors() bool {
 			return true
 		}
 
-		index, count, err := parseShardIDLabelValue(s.shardID)
+		index, count, err := sharding.ParseShardIDLabelValue(s.shardID)
 		// If we fail to parse shardID, we better not consider this block fully included in successors.
 		if err != nil {
 			return false

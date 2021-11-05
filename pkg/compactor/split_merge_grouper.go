@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strconv"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -16,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -220,7 +219,7 @@ func planSplitting(userID string, group blocksGroup, shardCount uint32) []*job {
 			jobs[shardID] = &job{
 				userID:  userID,
 				stage:   stageSplit,
-				shardID: formatShardIDLabelValue(shardID, shardCount),
+				shardID: sharding.FormatShardIDLabelValue(uint64(shardID), uint64(shardCount)),
 				blocksGroup: blocksGroup{
 					rangeStart: group.rangeStart,
 					rangeEnd:   group.rangeEnd,
@@ -338,35 +337,6 @@ func getMaxTime(blocks []*metadata.Meta) int64 {
 	}
 
 	return maxTime
-}
-
-// formatShardIDLabelValue expects 0-based shardID, but uses 1-based shard in the output string.
-func formatShardIDLabelValue(shardID, shardCount uint32) string {
-	return fmt.Sprintf("%d_of_%d", shardID+1, shardCount)
-}
-
-// Returns original (0-based) shard index and shard count parsed from formatted value.
-func parseShardIDLabelValue(val string) (index, shardCount uint64, _ error) {
-	// If we fail to parse shardID, we better not consider this block fully included in successors.
-	matches := strings.Split(val, "_")
-	if len(matches) != 3 || matches[1] != "of" {
-		return 0, 0, errors.Errorf("invalid shard ID: %q", val)
-	}
-
-	index, err := strconv.ParseUint(matches[0], 10, 64)
-	if err != nil {
-		return 0, 0, errors.Errorf("invalid shard ID: %q: %v", val, err)
-	}
-	count, err := strconv.ParseUint(matches[2], 10, 64)
-	if err != nil {
-		return 0, 0, errors.Errorf("invalid shard ID: %q: %v", val, err)
-	}
-
-	if index == 0 || count == 0 || index > count {
-		return 0, 0, errors.Errorf("invalid shard ID: %q", val)
-	}
-
-	return index - 1, count, nil
 }
 
 // defaultGroupKeyWithoutShardID returns the default group key excluding ShardIDLabelName
