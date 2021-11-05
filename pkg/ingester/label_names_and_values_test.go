@@ -7,8 +7,10 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb"
@@ -287,6 +289,112 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 	}
 }
 
+func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
+	cctx, cancel := context.WithCancel(context.Background())
+
+	// Server mock.
+	mockServer := mockLabelNamesAndValuesServer{context: cctx}
+	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
+
+	// Index reader mock.
+	existingLabels := make(map[string][]string, 100)
+	for i := 0; i < 100; i++ {
+		lbValues := make([]string, 0, 100)
+		for j := 0; j < 100; j++ {
+			lbValues = append(lbValues, strconv.Itoa(j))
+		}
+		existingLabels[strconv.Itoa(i)] = lbValues
+	}
+	idxOpDelay := time.Millisecond * 100
+
+	idxReader := &mockIndex{
+		existingLabels: existingLabels,
+		opDelay:        idxOpDelay,
+	}
+
+	doneCh := make(chan error, 1)
+	go func() {
+		err := labelNamesAndValues(
+			idxReader,
+			[]*labels.Matcher{},
+			1*1024*1024, // 1MB
+			server,
+			log.NewNopLogger(),
+		)
+		doneCh <- err // Signal request completion.
+	}()
+
+	cancel() // Cancel stream context.
+
+	// Assert labelNamesAndValues completion.
+	condFn := func() bool {
+		var err error
+		select {
+		case err = <-doneCh:
+			return err == context.Canceled
+		default:
+			return false
+		}
+	}
+	require.Eventuallyf(t, condFn, time.Second, idxOpDelay, "labelNamesAndValues was not completed after context cancellation")
+}
+
+func TestLabelValuesCardinality_ContextCancellation(t *testing.T) {
+	cctx, cancel := context.WithCancel(context.Background())
+
+	// Server mock.
+	mockServer := &mockLabelValuesCardinalityServer{context: cctx}
+	var server client.Ingester_LabelValuesCardinalityServer = mockServer
+
+	// Index reader mock.
+	existingLabels := make(map[string][]string, 100)
+	for i := 0; i < 100; i++ {
+		lbValues := make([]string, 0, 100)
+		for j := 0; j < 100; j++ {
+			lbValues = append(lbValues, strconv.Itoa(j))
+		}
+		existingLabels[strconv.Itoa(i)] = lbValues
+	}
+	idxOpDelay := time.Millisecond * 100
+
+	idxReader := &mockIndex{
+		existingLabels: existingLabels,
+		opDelay:        idxOpDelay,
+	}
+
+	// Posting mock.
+	postingsForMatchersFn := func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+		return &mockPostings{n: 100}, nil
+	}
+	doneCh := make(chan error, 1)
+	go func() {
+		err := labelValuesCardinality(
+			[]string{"__name__"},
+			nil,
+			idxReader,
+			postingsForMatchersFn,
+			1*1024*1024, // 1MB
+			server,
+			log.NewNopLogger(),
+		)
+		doneCh <- err // Signal request completion.
+	}()
+
+	cancel() // Cancel stream context.
+
+	// Assert labelValuesCardinality completion.
+	condFn := func() bool {
+		var err error
+		select {
+		case err = <-doneCh:
+			return err == context.Canceled
+		default:
+			return false
+		}
+	}
+	require.Eventually(t, condFn, time.Second, idxOpDelay, "labelValuesCardinality was not completed after context cancellation")
+}
+
 type mockPostings struct {
 	index.Postings
 	n int
@@ -304,9 +412,13 @@ func (m *mockPostings) Err() error { return nil }
 type mockIndex struct {
 	tsdb.IndexReader
 	existingLabels map[string][]string
+	opDelay        time.Duration
 }
 
 func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
+	if i.opDelay > 0 {
+		time.Sleep(i.opDelay)
+	}
 	var l []string
 	for k := range i.existingLabels {
 		l = append(l, k)
@@ -316,6 +428,9 @@ func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 }
 
 func (i mockIndex) LabelValues(name string, _ ...*labels.Matcher) ([]string, error) {
+	if i.opDelay > 0 {
+		time.Sleep(i.opDelay)
+	}
 	return i.existingLabels[name], nil
 }
 
