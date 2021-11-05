@@ -287,6 +287,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
       { fill: 0 }
     ),
 
+  kvStoreRow(title, jobName, kvName)::
+    super.row(title)
+    .addPanel(
+      $.panel('Requests / sec') +
+      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+    )
+    .addPanel(
+      $.panel('Latency') +
+      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+    ),
+
   goHeapInUsePanel(title, jobName)::
     $.panel(title) +
     $.queryPanel(

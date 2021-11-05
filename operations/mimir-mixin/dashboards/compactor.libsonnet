@@ -116,5 +116,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_compactor_meta_sync_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.compactor)),
       )
     )
-    .addRows($.getObjectStoreRows('Object Store', 'compactor')),
+    .addRows($.getObjectStoreRows('Object Store', 'compactor'))
+    .addRow(
+      $.kvStoreRow('Key-value store for compactors ring', 'compactor', '.+')
+    ),
 }

@@ -109,17 +109,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Key-value store for high-availability (HA) deduplication')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.distributor))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.distributor))
-      )
-    )
-    .addRow(
       $.row('Ingester')
       .addPanel(
         $.panel('Requests / sec') +
@@ -138,15 +127,13 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
     .addRow(
-      $.row('Key-value store for the ingesters ring')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_kv_request_duration_seconds_count{%s}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_kv_request_duration_seconds', $.jobSelector($._config.job_names.ingester))
-      )
+      $.kvStoreRow('Distributor - Key-value store for high-availability (HA) deduplication', 'distributor', 'distributor-hatracker')
+    )
+    .addRow(
+      $.kvStoreRow('Distributor - Key-value store for distributors ring', 'distributor', 'distributor-(lifecycler|ring)')
+    )
+    .addRow(
+      $.kvStoreRow('Ingester - Key-value store for the ingesters ring', 'ingester', 'ingester-.*')
     )
     .addRowIf(
       std.member($._config.storage_engine, 'chunks'),
