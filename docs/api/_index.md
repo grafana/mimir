@@ -212,6 +212,8 @@ Entrypoint for the [Prometheus remote write](https://prometheus.io/docs/promethe
 
 This API endpoint accepts an HTTP POST request with a body containing a request encoded with [Protocol Buffers](https://developers.google.com/protocol-buffers) and compressed with [Snappy](https://github.com/google/snappy). The definition of the protobuf message can be found in [`cortex.proto`](https://github.com/cortexproject/cortex/blob/master/pkg/cortexpb/cortex.proto#L12). The HTTP request should contain the header `X-Prometheus-Remote-Write-Version` set to `0.1.0`.
 
+Also it is possible to skip the label name validation when sending series by doing two things: Enable API's flag `api.skip-label-name-validation-header-enabled=true` and request must be sent with the header `X-Mimir-SkipLabelNameValidation: true`. This feature is useful to support the writes of downstream clients that have specific requirements.
+
 _For more information, please check out Prometheus [Remote storage integrations](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)._
 
 _Requires [authentication](#authentication)._
