@@ -31,7 +31,7 @@ var bufferPool = sync.Pool{
 	New: func() interface{} { return &bufHolder{buf: make([]byte, 256*1024)} },
 }
 
-const AllowSkipLabelNameValidationHeader = "X-Mimir-AllowSkipLabelNameValidation"
+const SkipLabelNameValidationHeader = "X-Mimir-SkipLabelNameValidation"
 
 // Handler is a http.Handler which accepts WriteRequests.
 func Handler(
@@ -70,11 +70,10 @@ func Handler(
 		}
 
 		if allowSkipLabelNameValidation {
-			req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(AllowSkipLabelNameValidationHeader) == "true"
+			req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
 		} else {
-			if r.Header.Get(AllowSkipLabelNameValidationHeader) != "" {
-				http.Error(w, "allow skip label name validation header was found but feature is not enabled '-api.allow-skip-label-name-validation-header-enabled", http.StatusBadRequest)
-				return
+			if r.Header.Get(SkipLabelNameValidationHeader) != "" {
+				level.Warn(logger).Log("msg", "allow skip label name validation header was found but feature is not enabled '-api.skip-label-name-validation-header-enabled")
 			}
 
 			req.SkipLabelNameValidation = false

@@ -81,21 +81,6 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			expectedStatusCode:                        http.StatusOK,
 		},
 		{
-			name:                         "config flag set to false and header present should reject the request",
-			allowSkipLabelNameValidation: false,
-			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, true)),
-			verifyReqHandler: func(ctx context.Context, request *mimirpb.WriteRequest, cleanup func()) (response *mimirpb.WriteResponse, err error) {
-				assert.Len(t, request.Timeseries, 1)
-				assert.Equal(t, "a-label", request.Timeseries[0].Labels[0].Name)
-				assert.Equal(t, "value", request.Timeseries[0].Labels[0].Value)
-				assert.Equal(t, mimirpb.RULE, request.Source)
-				assert.False(t, request.SkipLabelNameValidation)
-				cleanup()
-				return &mimirpb.WriteResponse{}, nil
-			},
-			expectedStatusCode: http.StatusBadRequest,
-		},
-		{
 			name:                         "config flag set to true but write request set to false means SkipLabelNameValidation is false",
 			allowSkipLabelNameValidation: true,
 			req:                          createRequest(t, createMimirWriteRequestProtobufWithNonSupportedLabelNames(t, false)),
@@ -147,7 +132,7 @@ func TestHandler_EnsureSkipLabelNameValidationBehaviour(t *testing.T) {
 			resp := httptest.NewRecorder()
 			handler := Handler(100000, nil, tc.allowSkipLabelNameValidation, tc.verifyReqHandler)
 			if !tc.includeAllowSkiplabelNameValidationHeader {
-				tc.req.Header.Set(AllowSkipLabelNameValidationHeader, "true")
+				tc.req.Header.Set(SkipLabelNameValidationHeader, "true")
 			}
 			handler.ServeHTTP(resp, tc.req)
 			assert.Equal(t, tc.expectedStatusCode, resp.Code)

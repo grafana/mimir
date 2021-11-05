@@ -72,5 +72,5 @@ func TestNewApiWithAllowSkipLabelNameValidationHeaderUnset(t *testing.T) {
 	api, err := New(cfg, serverCfg, &s, &FakeLogger{})
 	require.NoError(t, err)
 	require.NotNil(t, api)
-	require.False(t, api.cfg.AllowSkipLabelNameValidationHeader)
+	require.False(t, api.cfg.SkipLabelNameValidationHeader)
 }
