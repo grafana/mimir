@@ -1469,6 +1469,14 @@ func TestFilterBlocksByShard(t *testing.T) {
 			queryShardID:   "3_of_9",
 			expectedBlocks: allBlocks,
 		},
+		"query shard using shard count which isn't power of 2": {
+			queryShardID:   "5_of_12",
+			expectedBlocks: bucketindex.Blocks{block1, block5},
+		},
+		"query shard using shard count which isn't power of 2 (2nd test)": {
+			queryShardID:   "14_of_20",
+			expectedBlocks: bucketindex.Blocks{block2, block6},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			queryShardIndex, queryShardCount, err := sharding.ParseShardIDLabelValue(testcase.queryShardID)
