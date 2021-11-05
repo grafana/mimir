@@ -612,7 +612,7 @@ func filterBlocksByShard(blocks bucketindex.Blocks, queryShardIndex, queryShardC
 
 		compactorShardIndex, compactorShardCount, err := sharding.ParseShardIDLabelValue(b.CompactorShardID)
 		if err != nil {
-			// Cannot parse compactor shardID, we must search this block.
+			// Cannot parse compactor shardID, we must query this block.
 			ix++
 			continue
 		}
