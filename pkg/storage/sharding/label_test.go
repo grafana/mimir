@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querysharding
+package sharding
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -13,64 +14,59 @@ import (
 
 func TestParseShard(t *testing.T) {
 	tests := map[string]struct {
-		input  string
-		output ShardSelector
-		err    bool
+		input        string
+		index, count uint64
+		err          bool
 	}{
 		"should return error on invalid format": {
-			input:  "lsdjf",
-			output: ShardSelector{},
-			err:    true,
+			input: "lsdjf",
+			err:   true,
 		},
 		"should return error on invalid index (not an integer)": {
-			input:  "a_of_3",
-			output: ShardSelector{},
-			err:    true,
+			input: "a_of_3",
+			err:   true,
 		},
 		"should return error on invalid index (not positive)": {
-			input:  "-1_of_3",
-			output: ShardSelector{},
-			err:    true,
+			input: "-1_of_3",
+			err:   true,
+		},
+		"should return error on invalid count (not positive)": {
+			input: "-1_of_-3",
+			err:   true,
 		},
 		"should return error on invalid index (too large)": {
-			input:  "4_of_3",
-			output: ShardSelector{},
-			err:    true,
+			input: "4_of_3",
+			err:   true,
 		},
 		"should return error on invalid index (too small)": {
-			input:  "0_of_3",
-			output: ShardSelector{},
-			err:    true,
+			input: "0_of_3",
+			err:   true,
 		},
 		"should return error on invalid separator": {
-			input:  "1_out_3",
-			output: ShardSelector{},
-			err:    true,
+			input: "1_out_3",
+			err:   true,
 		},
-		"should succeed on valid first shard selector": {
+		"should succeed on valid first shard ID": {
 			input: "1_of_2",
-			output: ShardSelector{
-				ShardIndex: 0,
-				ShardCount: 2,
-			},
+			index: 0, // 0-based
+			count: 2,
 		},
 		"should succeed on valid last shard selector": {
 			input: "2_of_2",
-			output: ShardSelector{
-				ShardIndex: 1,
-				ShardCount: 2,
-			},
+			index: 1, // 0-based
+			count: 2,
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			shard, err := parseShard(testData.input)
+			index, count, err := ParseShardIDLabelValue(testData.input)
 			if testData.err {
-				require.NotNil(t, err)
+				require.Error(t, err)
 			} else {
-				require.Nil(t, err)
-				require.Equal(t, testData.output, shard)
+				require.NoError(t, err)
+				require.Equal(t, testData.index, index)
+				require.Equal(t, testData.count, count)
 			}
 		})
 	}
@@ -180,5 +176,26 @@ func TestShardFromMatchers(t *testing.T) {
 				require.Equal(t, c.idx, idx)
 			}
 		})
+	}
+}
+
+func TestFormatAndParseShardId(t *testing.T) {
+	r := rand.New(rand.NewSource(0))
+
+	const maxTests = 1000
+	const maxShardCount = 10000
+
+	for i := 0; i < maxTests; i++ {
+		count := 1 + r.Intn(maxShardCount)
+		id := r.Intn(count)
+
+		require.True(t, id < count)
+
+		out := FormatShardIDLabelValue(uint64(id), uint64(count))
+		nid, ncount, err := ParseShardIDLabelValue(out)
+
+		require.NoError(t, err)
+		require.Equal(t, uint64(id), nid)
+		require.Equal(t, uint64(count), ncount)
 	}
 }

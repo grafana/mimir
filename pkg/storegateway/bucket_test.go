@@ -62,7 +62,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
@@ -2475,7 +2475,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 
 			for n := 0; n < queriesPerWorker; n++ {
 				var reqMatchers []storepb.LabelMatcher
-				var shardSelector *querysharding.ShardSelector
+				var shardSelector *sharding.ShardSelector
 
 				if queryShardingEnabled {
 					// Each query touches the same series but a different shard.
@@ -2483,7 +2483,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 						{Type: storepb.LabelMatcher_RE, Name: "i", Value: ".+"},
 					}
 
-					shardSelector = &querysharding.ShardSelector{
+					shardSelector = &sharding.ShardSelector{
 						ShardIndex: uint64(n) % 20,
 						ShardCount: 20,
 					}
@@ -2732,37 +2732,37 @@ func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesC
 func TestFilterPostingsByCachedShardHash(t *testing.T) {
 	tests := map[string]struct {
 		inputPostings    []uint64
-		shard            *querysharding.ShardSelector
+		shard            *sharding.ShardSelector
 		cacheEntries     [][2]uint64 // List of cache entries where each entry is the pair [seriesID, hash]
 		expectedPostings []uint64
 	}{
 		"should be a noop if the cache is empty": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{},
 			expectedPostings: []uint64{0, 1, 2, 3, 4, 5},
 		},
 		"should filter postings at the beginning of the slice": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
 			expectedPostings: []uint64{1, 2, 3, 4, 5},
 		},
 		"should filter postings in the middle of the slice": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
 			expectedPostings: []uint64{0, 2, 3, 4, 5},
 		},
 		"should filter postings at the end of the slice": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{4, 4}, {5, 5}},
 			expectedPostings: []uint64{0, 1, 2, 3, 4},
 		},
 		"should filter postings when all postings are in the cache": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
 			expectedPostings: []uint64{0, 2, 4},
 		},
@@ -2783,7 +2783,7 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 
 func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
 	inputPostings := []uint64{0, 1, 2, 3, 4, 5}
-	shard := &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
+	shard := &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
 	cacheEntries := [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}
 
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
@@ -2801,7 +2801,7 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 	// and so all subsequent postings will be shifted.
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 	cache.Store(0, 0)
-	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
+	shard := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
 
 	// Create a long list of postings.
 	const numPostings = 10000
@@ -2826,7 +2826,7 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 	// This benchmark tests the case the output postings is equal to the input one.
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
-	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
+	shard := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
 
 	// Create a long list of postings.
 	const numPostings = 10000

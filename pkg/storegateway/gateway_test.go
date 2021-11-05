@@ -45,9 +45,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
@@ -952,7 +952,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		"should touch only series belonging to the specified shard": {
 			matchers: []storepb.LabelMatcher{
 				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
-				{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 					ShardIndex: 2,
 					ShardCount: 3,
 				}.LabelValue()},
@@ -1075,7 +1075,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 				MaxTime: math.MaxInt64,
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
-					{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+					{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 						ShardIndex: uint64(shardIndex),
 						ShardCount: uint64(shardCount),
 					}.LabelValue()},

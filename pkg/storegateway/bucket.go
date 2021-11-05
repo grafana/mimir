@@ -56,7 +56,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
@@ -612,7 +612,7 @@ func blockSeries(
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr *bucketChunkReader, // Chunk reader for block.
 	matchers []*labels.Matcher, // Series matchers.
-	shard *querysharding.ShardSelector, // Shard selector.
+	shard *sharding.ShardSelector, // Shard selector.
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
@@ -750,7 +750,7 @@ func blockSeries(
 // filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only
 // postings for which we have their series hash already in the cache; if a series is not in the cache,
 // postings will be kept in the output.
-func filterPostingsByCachedShardHash(ps []uint64, shard *querysharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []uint64, stats queryStats) {
+func filterPostingsByCachedShardHash(ps []uint64, shard *sharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []uint64, stats queryStats) {
 	writeIdx := 0
 	stats.seriesHashCacheRequests = len(ps)
 
@@ -906,7 +906,7 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 	req.MaxTime = s.limitMaxTime(req.MaxTime)
 
 	// Check if matchers include the query shard selector.
-	shardSelector, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	shardSelector, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return status.Error(codes.InvalidArgument, errors.Wrap(err, "parse query sharding label").Error())
 	}

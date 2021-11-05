@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-package querysharding
+package sharding
 
 import (
 	"fmt"
@@ -12,11 +12,8 @@ import (
 )
 
 const (
-	// ShardLabel is a reserved label referencing a shard.
+	// ShardLabel is a reserved label referencing a shard on read path.
 	ShardLabel = "__query_shard__"
-
-	// shardLabelFmt is the format of the ShardLabel value.
-	shardLabelFmt = "%d_of_%d"
 )
 
 // ShardSelector holds information about the configured query shard.
@@ -27,7 +24,7 @@ type ShardSelector struct {
 
 // LabelValue returns the label value to use to select this shard.
 func (shard ShardSelector) LabelValue() string {
-	return fmt.Sprintf(shardLabelFmt, shard.ShardIndex+1, shard.ShardCount)
+	return FormatShardIDLabelValue(shard.ShardIndex, shard.ShardCount)
 }
 
 // Label generates the ShardSelector as a label.
@@ -38,43 +35,23 @@ func (shard ShardSelector) Label() labels.Label {
 	}
 }
 
-// parseShard parses the input label value and extracts the shard information.
-func parseShard(input string) (parsed ShardSelector, err error) {
-	matches := strings.Split(input, "_")
-	if len(matches) != 3 || matches[1] != "of" {
-		return parsed, errors.Errorf("invalid query sharding label value: %s", input)
-	}
-
-	index, err := strconv.ParseUint(matches[0], 10, 64)
-	if err != nil {
-		return parsed, err
-	}
-	count, err := strconv.ParseUint(matches[2], 10, 64)
-	if err != nil {
-		return parsed, err
-	}
-
-	if index > count {
-		return parsed, errors.Errorf("query shards out of bounds: %d > %d", index, count)
-	}
-	if index <= 0 {
-		return parsed, errors.Errorf("query shards out of bounds: %d <= 0", index)
-	}
-	return ShardSelector{
-		ShardIndex: index - 1,
-		ShardCount: count,
-	}, err
+// Matcher converts ShardSelector to Matcher.
+func (shard ShardSelector) Matcher() *labels.Matcher {
+	return labels.MustNewMatcher(labels.MatchEqual, ShardLabel, shard.LabelValue())
 }
 
 // ShardFromMatchers extracts a ShardSelector and the index it was pulled from the matcher list.
 func ShardFromMatchers(matchers []*labels.Matcher) (shard *ShardSelector, idx int, err error) {
 	for i, matcher := range matchers {
 		if matcher.Name == ShardLabel && matcher.Type == labels.MatchEqual {
-			shard, err := parseShard(matcher.Value)
+			index, count, err := ParseShardIDLabelValue(matcher.Value)
 			if err != nil {
 				return nil, i, err
 			}
-			return &shard, i, nil
+			return &ShardSelector{
+				ShardIndex: index,
+				ShardCount: count,
+			}, i, nil
 		}
 	}
 	return nil, 0, nil
@@ -93,4 +70,33 @@ func RemoveShardFromMatchers(matchers []*labels.Matcher) (shard *ShardSelector, 
 	filtered = append(filtered, matchers[idx+1:]...)
 
 	return shard, filtered, nil
+}
+
+// FormatShardIDLabelValue expects 0-based shardID, but uses 1-based shard in the output string.
+func FormatShardIDLabelValue(shardID, shardCount uint64) string {
+	return fmt.Sprintf("%d_of_%d", shardID+1, shardCount)
+}
+
+// ParseShardIDLabelValue returns original (0-based) shard index and shard count parsed from formatted value.
+func ParseShardIDLabelValue(val string) (index, shardCount uint64, _ error) {
+	// If we fail to parse shardID, we better not consider this block fully included in successors.
+	matches := strings.Split(val, "_")
+	if len(matches) != 3 || matches[1] != "of" {
+		return 0, 0, errors.Errorf("invalid shard ID: %q", val)
+	}
+
+	index, err := strconv.ParseUint(matches[0], 10, 64)
+	if err != nil {
+		return 0, 0, errors.Errorf("invalid shard ID: %q: %v", val, err)
+	}
+	count, err := strconv.ParseUint(matches[2], 10, 64)
+	if err != nil {
+		return 0, 0, errors.Errorf("invalid shard ID: %q: %v", val, err)
+	}
+
+	if index == 0 || count == 0 || index > count {
+		return 0, 0, errors.Errorf("invalid shard ID: %q", val)
+	}
+
+	return index - 1, count, nil
 }
