@@ -72,10 +72,6 @@ func Handler(
 		if allowSkipLabelNameValidation {
 			req.SkipLabelNameValidation = req.SkipLabelNameValidation && r.Header.Get(SkipLabelNameValidationHeader) == "true"
 		} else {
-			if r.Header.Get(SkipLabelNameValidationHeader) != "" {
-				level.Warn(logger).Log("msg", "allow skip label name validation header was found but feature is not enabled '-api.skip-label-name-validation-header-enabled")
-			}
-
 			req.SkipLabelNameValidation = false
 		}
 
