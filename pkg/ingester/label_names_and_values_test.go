@@ -319,7 +319,6 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 			[]*labels.Matcher{},
 			1*1024*1024, // 1MB
 			server,
-			log.NewNopLogger(),
 		)
 		doneCh <- err // Signal request completion.
 	}()
@@ -375,7 +374,6 @@ func TestLabelValuesCardinality_ContextCancellation(t *testing.T) {
 			postingsForMatchersFn,
 			1*1024*1024, // 1MB
 			server,
-			log.NewNopLogger(),
 		)
 		doneCh <- err // Signal request completion.
 	}()
