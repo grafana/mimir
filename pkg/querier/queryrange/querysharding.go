@@ -269,7 +269,7 @@ func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog
 	// (Optimization is only activated when given *block* was sharded with correct compactor shards,
 	// but we can only adjust totalShards "globally", ie. for all queried blocks.)
 	compactorShardCount := validation.SmallestPositiveNonZeroIntPerTenant(tenantIDs, s.limit.CompactorSplitAndMergeShards)
-	if compactorShardCount > 0 {
+	if compactorShardCount > 1 {
 		prevTotalShards := totalShards
 
 		if totalShards > compactorShardCount {
