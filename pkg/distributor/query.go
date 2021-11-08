@@ -192,7 +192,7 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 	for _, result := range results {
 		r := result.(*ingester_client.ExemplarQueryResponse)
 		for _, ts := range r.Timeseries {
-			lbls := mimirpb.FromLabelAdaptersToLabels(ts.Labels).String()
+			lbls := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 			e, ok := exemplarResults[lbls]
 			if !ok {
 				exemplarResults[lbls] = ts
