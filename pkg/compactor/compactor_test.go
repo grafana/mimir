@@ -1024,7 +1024,11 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
 	cfg.ShardingRing.KVStore.Mock = ringStore
-	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bucketClient)
+
+	limits := newMockConfigProvider()
+	limits.splitAndMergeShards = map[string]int{"user-1": 4}
+
+	c, _, tsdbPlanner, logs, registry := prepareWithConfigProvider(t, cfg, bucketClient, limits)
 
 	// Mock the planner as if there's no compaction to do, in order to simplify tests.
 	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{}, nil).Run(func(args mock.Arguments) {
