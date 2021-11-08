@@ -216,10 +216,51 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 	var (
 		queryLimiter = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats     = stats.FromContext(ctx)
+		results      = make(chan *ingester_client.QueryStreamResponse)
+		// Note we can't signal goroutines to stop by closing 'results', because it has multiple concurrent senders.
+		stop        = make(chan struct{}) // Signal all background goroutines to stop.
+		doneReading = make(chan struct{}) // Signal that the reader has stopped.
 	)
 
-	// Fetch samples from multiple ingesters
-	results, err := replicationSet.Do(ctx, d.cfg.ExtraQueryDelay, func(ctx context.Context, ing *ring.InstanceDesc) (interface{}, error) {
+	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
+	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
+
+	// Start reading and accumulating responses. stopReading chan will
+	// be closed when all calls to ingesters have finished.
+	go func() {
+		defer close(doneReading)
+		for {
+			select {
+			case <-stop:
+				return
+			case response := <-results:
+				// Accumulate any chunk series
+				for _, series := range response.Chunkseries {
+					key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+					existing := hashToChunkseries[key]
+					existing.Labels = series.Labels
+					existing.Chunks = append(existing.Chunks, series.Chunks...)
+					hashToChunkseries[key] = existing
+				}
+
+				// Accumulate any time series
+				for _, series := range response.Timeseries {
+					key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
+					existing := hashToTimeSeries[key]
+					existing.Labels = series.Labels
+					if existing.Samples == nil {
+						existing.Samples = series.Samples
+					} else {
+						existing.Samples = mergeSamples(existing.Samples, series.Samples)
+					}
+					hashToTimeSeries[key] = existing
+				}
+			}
+		}
+	}()
+
+	// Fetch samples from multiple ingesters, and send them to the results chan
+	_, err := replicationSet.Do(ctx, d.cfg.ExtraQueryDelay, func(ctx context.Context, ing *ring.InstanceDesc) (interface{}, error) {
 		client, err := d.ingesterPool.GetClientFor(ing.Addr)
 		if err != nil {
 			return nil, err
@@ -233,7 +274,6 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		}
 		defer stream.CloseSend() //nolint:errcheck
 
-		result := &ingester_client.QueryStreamResponse{}
 		for {
 			resp, err := stream.Recv()
 			if err == io.EOF {
@@ -268,44 +308,24 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 				}
 			}
 
-			result.Chunkseries = append(result.Chunkseries, resp.Chunkseries...)
-			result.Timeseries = append(result.Timeseries, resp.Timeseries...)
+			// This goroutine could be left running after replicationSet.Do() returns,
+			// so check before writing to the results chan.
+			select {
+			case <-stop:
+				return nil, nil
+			case results <- resp:
+			}
 		}
-		return result, nil
+		return nil, nil
 	})
+	close(stop)
 	if err != nil {
 		return nil, err
 	}
 
-	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
-	hashToTimeSeries := map[string]mimirpb.TimeSeries{}
-
-	for _, result := range results {
-		response := result.(*ingester_client.QueryStreamResponse)
-
-		// Parse any chunk series
-		for _, series := range response.Chunkseries {
-			key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
-			existing := hashToChunkseries[key]
-			existing.Labels = series.Labels
-			existing.Chunks = append(existing.Chunks, series.Chunks...)
-			hashToChunkseries[key] = existing
-		}
-
-		// Parse any time series
-		for _, series := range response.Timeseries {
-			key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
-			existing := hashToTimeSeries[key]
-			existing.Labels = series.Labels
-			if existing.Samples == nil {
-				existing.Samples = series.Samples
-			} else {
-				existing.Samples = mergeSamples(existing.Samples, series.Samples)
-			}
-			hashToTimeSeries[key] = existing
-		}
-	}
-
+	// Wait for reading loop to finish.
+	<-doneReading
+	// Now turn the accumulated maps into slices.
 	resp := &ingester_client.QueryStreamResponse{
 		Chunkseries: make([]ingester_client.TimeSeriesChunk, 0, len(hashToChunkseries)),
 		Timeseries:  make([]mimirpb.TimeSeries, 0, len(hashToTimeSeries)),
