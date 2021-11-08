@@ -77,7 +77,11 @@ func assertServiceMetricsPrefixes(t *testing.T, serviceType ServiceType, service
 				break
 			}
 
-			assert.NotRegexp(t, "^"+prefix, metricLine, "service: %s endpoint: %s", service.Name(), service.HTTPEndpoint())
+			assert.Falsef(
+				t, strings.HasPrefix(metricLine, prefix),
+				"service: %s endpoint: %s prefix: %s metric: %s",
+				service.Name(), service.HTTPEndpoint(), prefix, metricLine,
+			)
 		}
 	}
 }
