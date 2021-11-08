@@ -8,9 +8,11 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/httpgrpc"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -45,7 +47,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 		}
 		response, err := d.LabelNamesAndValues(ctx, matchers)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondFromError(err, w)
 			return
 		}
 		cardinalityResponse := toLabelNamesCardinalityResponse(response, limit)
@@ -54,13 +56,17 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 }
 
 // LabelValuesCardinalityHandler creates handler for label values cardinality endpoint.
-func LabelValuesCardinalityHandler(distributor Distributor) http.Handler {
+func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.Overrides) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		// Guarantee request's context is for a single tenant id
-		_, err := tenant.TenantID(ctx)
+		tenantID, err := tenant.TenantID(ctx)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if !limits.CardinalityAnalysisEnabled(tenantID) {
+			http.Error(w, fmt.Sprintf("cardinality analysis is disabled for the tenant: %v", tenantID), http.StatusBadRequest)
 			return
 		}
 
@@ -72,7 +78,7 @@ func LabelValuesCardinalityHandler(distributor Distributor) http.Handler {
 
 		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondFromError(err, w)
 			return
 		}
 
@@ -171,6 +177,16 @@ func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 	}
 
 	return labelNames, nil
+}
+
+func respondFromError(err error, w http.ResponseWriter) {
+	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	if !ok {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(int(httpResp.Code))
+	w.Write(httpResp.Body) //nolint
 }
 
 // toLabelNamesCardinalityResponse converts ingester's response to LabelNamesCardinalityResponse

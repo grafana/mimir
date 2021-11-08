@@ -54,10 +54,11 @@ func (cfg *CacheBackend) Validate() error {
 type ChunksCacheConfig struct {
 	CacheBackend `yaml:",inline"`
 
-	SubrangeSize        int64         `yaml:"subrange_size"`
-	MaxGetRangeRequests int           `yaml:"max_get_range_requests"`
-	AttributesTTL       time.Duration `yaml:"attributes_ttl"`
-	SubrangeTTL         time.Duration `yaml:"subrange_ttl"`
+	SubrangeSize               int64         `yaml:"subrange_size"`
+	MaxGetRangeRequests        int           `yaml:"max_get_range_requests"`
+	AttributesTTL              time.Duration `yaml:"attributes_ttl"`
+	AttributesInMemoryMaxItems int           `yaml:"attributes_in_memory_max_items"`
+	SubrangeTTL                time.Duration `yaml:"subrange_ttl"`
 }
 
 func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
@@ -68,6 +69,7 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 	f.Int64Var(&cfg.SubrangeSize, prefix+"subrange-size", 16000, "Size of each subrange that bucket object is split into for better caching.")
 	f.IntVar(&cfg.MaxGetRangeRequests, prefix+"max-get-range-requests", 3, "Maximum number of sub-GetRange requests that a single GetRange request can be split into when fetching chunks. Zero or negative value = unlimited number of sub-requests.")
 	f.DurationVar(&cfg.AttributesTTL, prefix+"attributes-ttl", 168*time.Hour, "TTL for caching object attributes for chunks. If the metadata cache is configured, attributes will be stored under this cache backend, otherwise attributes are stored in the chunks cache backend.")
+	f.IntVar(&cfg.AttributesInMemoryMaxItems, prefix+"attributes-in-memory-max-items", 0, "Maximum number of object attribute items to keep in a first level in-memory LRU cache. Metadata will be stored and fetched in-memory before hitting the cache backend. 0 to disable the in-memory cache.")
 	f.DurationVar(&cfg.SubrangeTTL, prefix+"subrange-ttl", 24*time.Hour, "TTL for caching individual chunks subranges.")
 }
 
@@ -145,10 +147,22 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	if chunksCache != nil {
 		cachingConfigured = true
 		chunksCache = storecache.NewTracingCache(chunksCache, logger)
-		if metadataCache == nil {
-			metadataCache = chunksCache
+
+		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
+		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
+		attributesCache := chunksCache
+		if metadataCache != nil {
+			attributesCache = metadataCache
 		}
-		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, metadataCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
+		if chunksConfig.AttributesInMemoryMaxItems > 0 {
+			var err error
+			attributesCache, err = storecache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
+			if err != nil {
+				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
+			}
+		}
+
+		cfg.CacheGetRange("chunks", chunksCache, isTSDBChunkFile, chunksConfig.SubrangeSize, attributesCache, chunksConfig.AttributesTTL, chunksConfig.SubrangeTTL, chunksConfig.MaxGetRangeRequests)
 	}
 
 	if !cachingConfigured {

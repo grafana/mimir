@@ -71,7 +71,7 @@ How to **fix**:
   )
   >
   (
-    max by(user) (cortex_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
+    max by(user) (cortex_limits_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
     *
     scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
     *
@@ -81,6 +81,12 @@ How to **fix**:
 
   # Decomment the following to show only tenants beloging to a specific ingester's shard.
   # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
+  ```
+
+- Run the following **instant query** to find tenants that contribute the most to active series on a specific ingester:
+
+  ```
+  topk(10, sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>",pod="ingester-<id>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>",pod="ingester-<id>"}))
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
@@ -120,6 +126,33 @@ How to **fix**:
 
 1. Ensure shuffle-sharding is enabled in the Cortex cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
+
+### CortexDistributorReachingInflightPushRequestLimit
+
+This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of inflight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing inflight push requests will continue to succeed.
+
+In case of **emergency**:
+
+- If the actual number of inflight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
+- Increasing the limit will increase the number of inflight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Cortex / Writes Resources` dashboard
+
+How the limit is **configured**:
+
+- The limit can be configured either by the CLI flag (`-distributor.instance-limits.max-inflight-push-requests`) or in the config:
+  ```
+  distributor:
+    instance_limits:
+      max_inflight_push_requests: <int>
+  ```
+- These changes are applied with a distributor restart.
+- The configured limit can be queried via `cortex_distributor_instance_limits{limit="max_inflight_push_requests"})`
+
+How to **fix**:
+
+1. **Temporarily increase the limit**<br />
+   If the actual number of inflight push requests is very close to or already hit the limit.
+2. **Scale up distributors**<br />
+   Scaling up distributors will lower the number of inflight push requests per distributor.
 
 ### CortexRequestLatency
 
@@ -549,6 +582,10 @@ How to **investigate**:
     - Check the `Cortex / Slow Queries` dashboard to find slow queries
   - On multi-tenant Cortex cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Cortex cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Cortex return errors for that given user once the per-tenant queue is full.
+  - On multi-tenant Cortex clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
+  - On multi-tenant Cortex clusters with **query-sharding enabled** and **only a single tenant** being affected:
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Cortex / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
 
 ### CortexMemcachedRequestErrors
 
@@ -807,6 +844,33 @@ How to **investigate**:
 
 - Ensure Consul/Etcd is up and running.
 - Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
+
+### CortexReachingTCPConnectionsLimit
+
+This alert fires if a Cortex instance is configured with `-server.http-conn-limit` or `-server.grpc-conn-limit` and is reaching the limit.
+
+How it **works**:
+
+- A Cortex service could be configured with a limit of the max number of TCP connections accepted simultaneously on the HTTP and/or gRPC port.
+- If the limit is reached:
+  - New connections acceptance will put on hold or rejected. Exact behaviour depends on backlog parameter to `listen()` call and kernel settings.
+  - The **health check endpoint may fail** (eg. timeout).
+- The limit is typically set way higher than expected usage, so if limit is reached (or close to be) then it means there's a critical issue.
+
+How to **investigate**:
+
+- Limit reached in `cortex-gateway`:
+  - Check if it's caused by an **high latency on write path**:
+    - Check the distributors and ingesters latency in the `Cortex / Writes` dashboard
+    - An high latency on write path could lead our customers Prometheus / Agent to increase the number of shards nearly at the same time, leading to a significantly higher number of concurrent requests to the load balancer and thus cortex-gateway
+  - Check if it's caused by a **single tenant**:
+    - We don't have a metric tracking the active TCP connections or QPS per tenant
+    - As a proxy metric, you can check if the ingestion rate has significantly increased for any tenant (it's not a very accurate proxy metric for number of TCP connections so take it with a grain of salt):
+    ```
+    topk(10, sum by(user) (rate(cortex_distributor_samples_in_total{namespace="<namespace>"}[$__rate_interval])))
+    ```
+    - In case the surge of push requests is caused by a tenant sending old samples, you can enable `reject_old_samples` and set `reject_old_samples_max_age: 1h` for the tenant, in order to reject any sample older than 1 hour
+    - In case you need to quickly reject write path traffic from a single tenant, you can override its `ingestion_rate` and `ingestion_rate_burst` setting lower values (so that some/most of their traffic will be rejected)
 
 ## Cortex routes by path
 

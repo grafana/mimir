@@ -15,9 +15,8 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/querier/querysharding"
-
 	"github.com/grafana/mimir/pkg/querier/series"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 // genLabels will create a slice of labels where each label has an equal chance to occupy a value from [0,labelBuckets]. It returns a slice of length labelBuckets^len(labelSet)
@@ -93,7 +92,7 @@ func (q *MockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (s
 func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
-	shard, _, err := querysharding.ShardFromMatchers(matchers)
+	shard, _, err := sharding.ShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -152,7 +151,7 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 
 // ShardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels
 type ShardLabelSeries struct {
-	shard *querysharding.ShardSelector
+	shard *sharding.ShardSelector
 	name  string
 	storage.Series
 }

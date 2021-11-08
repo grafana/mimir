@@ -45,8 +45,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
                 route=~"(prometheus|api_prom)_api_v1_query"
               }[$__rate_interval]
             )
-          ) +
-          sum(
+            or
             rate(
               cortex_prometheus_rule_evaluations_total{
                 %(ruler)s
@@ -215,6 +214,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ) +
         { yaxes: $.yaxes('s') }
       )
+    )
+    .addRowIf(
+      std.member($._config.storage_engine, 'blocks'),
+      $.kvStoreRow('Store-gateway - Key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
     )
     .addRowIf(
       std.member($._config.storage_engine, 'chunks'),

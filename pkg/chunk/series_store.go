@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -133,7 +133,7 @@ func (c *seriesStore) Get(ctx context.Context, userID string, from, through mode
 	}
 
 	// inject artificial __query_shard__ labels if present in the query. GetChunkRefs guarantees any chunk refs match the shard.
-	shard, _, err := querysharding.ShardFromMatchers(allMatchers)
+	shard, _, err := sharding.ShardFromMatchers(allMatchers)
 	if err != nil {
 		return nil, err
 	}
@@ -516,7 +516,7 @@ func (c *seriesStore) calculateIndexEntries(ctx context.Context, from, through m
 	return result, missing, nil
 }
 
-func injectShardLabels(chunks []Chunk, shard querysharding.ShardSelector) {
+func injectShardLabels(chunks []Chunk, shard sharding.ShardSelector) {
 	for i, chunk := range chunks {
 		b := labels.NewBuilder(chunk.Metric)
 		l := shard.Label()

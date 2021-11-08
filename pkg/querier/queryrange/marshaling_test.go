@@ -95,3 +95,18 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 		},
 	}
 }
+
+func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples ...mimirpb.Sample) *PrometheusResponse {
+	return &PrometheusResponse{
+		Status: "success",
+		Data: PrometheusData{
+			ResultType: "matrix",
+			Result: []SampleStream{
+				{
+					Labels:  series,
+					Samples: samples,
+				},
+			},
+		},
+	}
+}

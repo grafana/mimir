@@ -32,6 +32,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/runutil"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
@@ -433,7 +434,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// Skip if it's an empty block.
 		if compID == (ulid.ULID{}) {
 			if job.UseSplitting() {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", formatShardIDLabelValue(uint32(shardID), job.SplittingShards()))
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", sharding.FormatShardIDLabelValue(uint64(shardID), uint64(job.SplittingShards())))
 			} else {
 				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
 			}
@@ -447,7 +448,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// When splitting is enabled, we need to inject the shard ID as external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
-			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = formatShardIDLabelValue(uint32(shardID), job.SplittingShards())
+			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(shardID), uint64(job.SplittingShards()))
 		}
 
 		newMeta, err := metadata.InjectThanos(jobLogger, bdir, metadata.Thanos{

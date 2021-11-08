@@ -7,8 +7,10 @@ package querier
 
 import (
 	"context"
+	crand "crypto/rand"
 	"fmt"
 	"io"
+	"math/rand"
 	"sort"
 	"strings"
 	"testing"
@@ -34,6 +36,7 @@ import (
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/storegateway/storegatewaypb"
 	"github.com/grafana/mimir/pkg/util"
@@ -78,6 +81,7 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 		expectedSeries    []seriesResult
 		expectedErr       error
 		expectedMetrics   string
+		queryShardID      string
 	}{
 		"no block in the storage matching the query time range": {
 			finderResult: nil,
@@ -287,6 +291,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_refetches_per_query_sum 0
 				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 2
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 2
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
 			`,
 		},
 		"a single store-gateway instance has some missing blocks (consistency check failed)": {
@@ -413,6 +427,16 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
 				cortex_querier_storegateway_refetches_per_query_sum 2
 				cortex_querier_storegateway_refetches_per_query_count 1
+
+				# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+				# TYPE cortex_querier_blocks_found_total counter
+				cortex_querier_blocks_found_total 4
+				# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+				# TYPE cortex_querier_blocks_queried_total counter
+				cortex_querier_blocks_queried_total 4
+				# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+				# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+				cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
 			`,
 		},
 		"max chunks per query limit greater then the number of chunks fetched": {
@@ -589,6 +613,140 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 			queryLimiter: limiter.NewQueryLimiter(0, 8, 0),
 			expectedErr:  validation.LimitError(fmt.Sprintf(limiter.ErrMaxChunkBytesHit, 8)),
 		},
+		"blocks with non-matching shard are filtered out": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1, CompactorShardID: "1_of_4"},
+				{ID: block2, CompactorShardID: "2_of_4"},
+				{ID: block3, CompactorShardID: "3_of_4"},
+				{ID: block4, CompactorShardID: "4_of_4"},
+			},
+			queryShardID: "2_of_4",
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT, 1),
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT+1, 2),
+						mockHintsResponse(block2),
+					}}: {block2}, // Only block2 will be queried
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: labels.New(metricNameLabel),
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+			expectedMetrics: `
+					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+					# TYPE cortex_querier_blocks_found_total counter
+					cortex_querier_blocks_found_total 4
+
+					# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+					# TYPE cortex_querier_blocks_queried_total counter
+					cortex_querier_blocks_queried_total 1
+
+					# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+					# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+					cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 0
+
+					# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+					# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+					cortex_querier_storegateway_instances_hit_per_query_sum 1
+					cortex_querier_storegateway_instances_hit_per_query_count 1
+					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+					# TYPE cortex_querier_storegateway_refetches_per_query histogram
+					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+					cortex_querier_storegateway_refetches_per_query_sum 0
+					cortex_querier_storegateway_refetches_per_query_count 1
+			`,
+		},
+		"all blocks are queried if shards don't match": {
+			finderResult: bucketindex.Blocks{
+				{ID: block1, CompactorShardID: "1_of_4"},
+				{ID: block2, CompactorShardID: "2_of_4"},
+				{ID: block3, CompactorShardID: "3_of_4"},
+				{ID: block4, CompactorShardID: "4_of_4"},
+			},
+			queryShardID: "3_of_5",
+			storeSetResponses: []interface{}{
+				map[BlocksStoreClient][]ulid.ULID{
+					&storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT, 1),
+						mockSeriesResponse(labels.Labels{metricNameLabel}, minT+1, 2),
+						mockHintsResponse(block1, block2, block3, block4),
+					}}: {block1, block2, block3, block4},
+				},
+			},
+			limits:       &blocksStoreLimitsMock{},
+			queryLimiter: noOpQueryLimiter,
+			expectedSeries: []seriesResult{
+				{
+					lbls: labels.New(metricNameLabel),
+					values: []valueResult{
+						{t: minT, v: 1},
+						{t: minT + 1, v: 2},
+					},
+				},
+			},
+			expectedMetrics: `
+					# HELP cortex_querier_blocks_found_total Number of blocks found based on query time range.
+					# TYPE cortex_querier_blocks_found_total counter
+					cortex_querier_blocks_found_total 4
+
+					# HELP cortex_querier_blocks_queried_total Number of blocks queried to satisfy query. Compared to blocks found, some blocks may have been filtered out thanks to query and compactor sharding.
+					# TYPE cortex_querier_blocks_queried_total counter
+					cortex_querier_blocks_queried_total 4
+
+					# HELP cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total Blocks that couldn't be checked for query and compactor sharding optimization due to incompatible shard counts.
+					# TYPE cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total counter
+					cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total 4
+
+					# HELP cortex_querier_storegateway_instances_hit_per_query Number of store-gateway instances hit for a single query.
+					# TYPE cortex_querier_storegateway_instances_hit_per_query histogram
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="0"} 0
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="1"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="2"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="3"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="4"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="5"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="6"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="7"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="8"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="9"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="10"} 1
+					cortex_querier_storegateway_instances_hit_per_query_bucket{le="+Inf"} 1
+					cortex_querier_storegateway_instances_hit_per_query_sum 1
+					cortex_querier_storegateway_instances_hit_per_query_count 1
+					# HELP cortex_querier_storegateway_refetches_per_query Number of re-fetches attempted while querying store-gateway instances due to missing blocks.
+					# TYPE cortex_querier_storegateway_refetches_per_query histogram
+					cortex_querier_storegateway_refetches_per_query_bucket{le="0"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="1"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="2"} 1
+					cortex_querier_storegateway_refetches_per_query_bucket{le="+Inf"} 1
+					cortex_querier_storegateway_refetches_per_query_sum 0
+					cortex_querier_storegateway_refetches_per_query_count 1
+			`,
+		},
 	}
 
 	for testName, testData := range tests {
@@ -614,6 +772,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			matchers := []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, metricName),
+			}
+			if testData.queryShardID != "" {
+				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, testData.queryShardID))
 			}
 
 			set := q.Select(true, nil, matchers...)
@@ -654,7 +815,9 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 
 			// Assert on metrics (optional, only for test cases defining it).
 			if testData.expectedMetrics != "" {
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics),
+					"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query",
+					"cortex_querier_blocks_found_total", "cortex_querier_blocks_queried_total", "cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total"))
 			}
 		})
 	}
@@ -668,6 +831,8 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 	)
 
 	var (
+		checkedMetrics = []string{"cortex_querier_storegateway_instances_hit_per_query", "cortex_querier_storegateway_refetches_per_query"}
+
 		block1  = ulid.MustNew(1, nil)
 		block2  = ulid.MustNew(2, nil)
 		block3  = ulid.MustNew(3, nil)
@@ -1103,7 +1268,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 					// Assert on metrics (optional, only for test cases defining it).
 					if testData.expectedMetrics != "" {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), checkedMetrics...))
 					}
 				}
 
@@ -1120,7 +1285,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 
 					// Assert on metrics (optional, only for test cases defining it).
 					if testData.expectedMetrics != "" {
-						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics)))
+						assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(testData.expectedMetrics), checkedMetrics...))
 					}
 				}
 			}
@@ -1326,6 +1491,106 @@ func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
 	assert.Equal(t, labelpb.ZLabelsToPromLabels(series2), matrix[1].Metric)
 	assert.Equal(t, series1Samples, matrix[0].Points)
 	assert.Equal(t, series2Samples, matrix[1].Points)
+}
+
+func TestCanBlockWithCompactorShardIdContainQueryShard(t *testing.T) {
+	const numSeries = 1000
+	const maxShards = 512
+
+	rand.Seed(time.Now().UnixNano())
+	hashes := make([]uint64, numSeries)
+	for ix := 0; ix < numSeries; ix++ {
+		hashes[ix] = rand.Uint64()
+	}
+
+	for compactorShards := uint64(1); compactorShards <= maxShards; compactorShards++ {
+		for queryShards := uint64(1); queryShards <= maxShards; queryShards++ {
+			for _, seriesHash := range hashes {
+				// Compute the query shard index for the given series.
+				queryShardIndex := seriesHash % queryShards
+
+				// Compute the compactor shard index where the series really is.
+				compactorShardIndex := seriesHash % compactorShards
+
+				// This must always be true when querying correct compactor shard.
+				res, _ := canBlockWithCompactorShardIndexContainQueryShard(queryShardIndex, queryShards, compactorShardIndex, compactorShards)
+				if !res {
+					t.Fatalf("series hash: %d, queryShards: %d, queryIndex: %d, compactorShards: %d, compactorIndex: %d", seriesHash, queryShards, queryShardIndex, compactorShards, compactorShardIndex)
+				}
+			}
+		}
+	}
+}
+
+func TestFilterBlocksByShard(t *testing.T) {
+	block1 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "1_of_4"}
+	block2 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "2_of_4"}
+	block3 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "3_of_4"}
+	block4 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 0, MaxTime: 100, CompactorShardID: "4_of_4"}
+
+	block5 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "1_of_4"}
+	block6 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "2_of_4"}
+	block7 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "3_of_4"}
+	block8 := &bucketindex.Block{ID: ulid.MustNew(ulid.Now(), crand.Reader), MinTime: 100, MaxTime: 200, CompactorShardID: "4_of_4"}
+
+	allBlocks := []*bucketindex.Block{block1, block2, block3, block4, block5, block6, block7, block8}
+
+	for name, testcase := range map[string]struct {
+		queryShardID       string
+		expectedBlocks     bucketindex.Blocks
+		incompatibleBlocks int
+	}{
+		"equal number of query shards": {
+			queryShardID:   "1_of_4",
+			expectedBlocks: bucketindex.Blocks{block1, block5},
+		},
+		"less query shards than compactor shards 1": {
+			queryShardID:   "1_of_2",
+			expectedBlocks: bucketindex.Blocks{block1, block3, block5, block7},
+		},
+		"less query shards than compactor shards 2": {
+			queryShardID:   "2_of_2",
+			expectedBlocks: bucketindex.Blocks{block2, block4, block6, block8},
+		},
+		"double the equal number of query shards 1": {
+			queryShardID:   "3_of_8",
+			expectedBlocks: bucketindex.Blocks{block3, block7},
+		},
+		"double the equal number of query shards 2": {
+			queryShardID:   "5_of_8",
+			expectedBlocks: bucketindex.Blocks{block1, block5},
+		},
+		"non-divisible number of shards (less than compactor shards)": {
+			queryShardID:       "3_of_7",
+			expectedBlocks:     allBlocks,
+			incompatibleBlocks: 8,
+		},
+		"non-divisible number of shards (higher than compactor shards)": {
+			queryShardID:       "3_of_9",
+			expectedBlocks:     allBlocks,
+			incompatibleBlocks: 8,
+		},
+		"query shard using shard count which isn't power of 2": {
+			queryShardID:   "5_of_12",
+			expectedBlocks: bucketindex.Blocks{block1, block5},
+		},
+		"query shard using shard count which isn't power of 2 (2nd test)": {
+			queryShardID:   "14_of_20",
+			expectedBlocks: bucketindex.Blocks{block2, block6},
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			queryShardIndex, queryShardCount, err := sharding.ParseShardIDLabelValue(testcase.queryShardID)
+			require.NoError(t, err)
+
+			blocksCopy := append([]*bucketindex.Block(nil), allBlocks...)
+
+			result, incompatible := filterBlocksByShard(blocksCopy, queryShardIndex, queryShardCount)
+
+			require.Equal(t, testcase.expectedBlocks, result)
+			require.Equal(t, testcase.incompatibleBlocks, incompatible)
+		})
+	}
 }
 
 type blocksStoreSetMock struct {

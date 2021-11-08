@@ -640,6 +640,12 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
       [attributes_ttl: <duration> | default = 168h]
 
+      # Maximum number of object attribute items to keep in a first level
+      # in-memory LRU cache. Metadata will be stored and fetched in-memory
+      # before hitting the cache backend. 0 to disable the in-memory cache.
+      # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
+      [attributes_in_memory_max_items: <int> | default = 0]
+
       # TTL for caching individual chunks subranges.
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
       [subrange_ttl: <duration> | default = 24h]

@@ -111,8 +111,13 @@ func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, regi
 func newMemcachedIndexCache(cfg MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
 	client, err := cacheutil.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), registerer)
 	if err != nil {
-		return nil, errors.Wrapf(err, "create index cache memcached client")
+		return nil, errors.Wrap(err, "create index cache memcached client")
 	}
 
-	return storecache.NewMemcachedIndexCache(logger, client, registerer)
+	cache, err := storecache.NewMemcachedIndexCache(logger, client, registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "create memcached-based index cache")
+	}
+
+	return storecache.NewTracingIndexCache(cache, logger), nil
 }

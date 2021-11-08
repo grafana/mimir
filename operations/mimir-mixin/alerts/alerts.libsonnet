@@ -272,7 +272,7 @@
       ],
     },
     {
-      name: 'cortex_ingester_instance_alerts',
+      name: 'cortex_instance_limits_alerts',
       rules: [
         {
           alert: 'CortexIngesterReachingSeriesLimit',
@@ -347,6 +347,41 @@
           annotations: {
             message: |||
               Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexReachingTCPConnectionsLimit',
+          expr: |||
+            cortex_tcp_connections / cortex_tcp_connections_limit > 0.8 and
+            cortex_tcp_connections_limit > 0
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Cortex instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
+            |||,
+          },
+        },
+        {
+          alert: 'CortexDistributorReachingInflightPushRequestLimit',
+          expr: |||
+            (
+                (cortex_distributor_inflight_push_requests / ignoring(limit) cortex_distributor_instance_limits{limit="max_inflight_push_requests"})
+                and ignoring (limit)
+                (cortex_distributor_instance_limits{limit="max_inflight_push_requests"} > 0)
+            ) > 0.8
+          |||,
+          'for': '5m',
+          labels: {
+            severity: 'critical',
+          },
+          annotations: {
+            message: |||
+              Distributor {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its inflight push request limit.
             |||,
           },
         },

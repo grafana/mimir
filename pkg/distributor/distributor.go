@@ -533,7 +533,15 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
-func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, cleanup func()) (*mimirpb.WriteResponse, error) {
+func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
+	// We will report *this* request in the error too.
+	inflight := d.inflightPushRequests.Inc()
+
+	// Decrement counter after all ingester calls have finished or been cancelled.
+	cleanup := func() {
+		callerCleanup()
+		d.inflightPushRequests.Dec()
+	}
 	cleanupInDefer := true
 	defer func() {
 		if cleanupInDefer {
@@ -549,10 +557,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	if span != nil {
 		span.SetTag("organization", userID)
 	}
-
-	// We will report *this* request in the error too.
-	inflight := d.inflightPushRequests.Inc()
-	defer d.inflightPushRequests.Dec()
 
 	if d.cfg.InstanceLimits.MaxInflightPushRequests > 0 && inflight > int64(d.cfg.InstanceLimits.MaxInflightPushRequests) {
 		return nil, errTooManyInflightPushRequests
@@ -891,7 +895,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 		return nil, err
 	}
 
-	req, err := ingester_client.ToLabelNamesCardinalityRequest(matchers)
+	req, err := toLabelNamesCardinalityRequest(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -920,6 +924,14 @@ type labelNamesAndValuesResponseMerger struct {
 	result           map[string]map[string]struct{}
 	sizeLimitBytes   int
 	currentSizeBytes int
+}
+
+func toLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesRequest, error) {
+	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	return &ingester_client.LabelNamesAndValuesRequest{Matchers: matchersProto}, nil
 }
 
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
@@ -992,7 +1004,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
 	if len(labelNames) > lbNamesLimit {
-		return 0, nil, fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
+		return 0, nil, httpgrpc.Errorf(http.StatusBadRequest, "label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
 	}
 
 	// Run labelValuesCardinality and UserStats methods in parallel
@@ -1032,7 +1044,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 		cardinalityMap: map[string]map[string]uint64{},
 	}
 
-	labelValuesReq, err := ingester_client.ToLabelValuesCardinalityRequest(labelNames, matchers)
+	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -1068,6 +1080,18 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	}
 
 	return cardinalityResponse, nil
+}
+
+func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityRequest, error) {
+	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	labelNamesStr := make([]string, 0, len(labelNames))
+	for _, labelName := range labelNames {
+		labelNamesStr = append(labelNamesStr, string(labelName))
+	}
+	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto}, nil
 }
 
 type labelValuesCardinalityConcurrentMap struct {

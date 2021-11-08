@@ -1193,6 +1193,10 @@ results_cache:
 # query ASTs. This feature is supported only by the blocks storage engine.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
+
+# Cache requests that are not step-aligned.
+# CLI flag: -query-frontend.cache-unaligned-requests
+[cache_unaligned_requests: <boolean> | default = false]
 ```
 
 ### `ruler_config`
@@ -4146,9 +4150,17 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant.
+# tenant. 0 to disable query sharding for tenant. Query sharding implementation
+# will adjust the number of query shards based on compactor shards used by
+# split-and-merge compaction strategy. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
+
+# The max number of sharded queries that can be run for a given received query.
+# 0 to disable limit.
+# CLI flag: -frontend.query-sharding-max-sharded-queries
+[query_sharding_max_sharded_queries: <int> | default = 128]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4201,7 +4213,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # only when split-and-merge compaction strategy is in use. 0 to disable
 # splitting but keep using the split-and-merge compaction strategy.
 # CLI flag: -compactor.split-and-merge-shards
-[compactor_split_and_merge_shards: <int> | default = 4]
+[compactor_split_and_merge_shards: <int> | default = 0]
 
 # Max number of compactors that can compact blocks for single tenant. Only used
 # when split-and-merge compaction strategy is in use. 0 to disable the limit and
@@ -4817,6 +4829,12 @@ bucket_store:
     # attributes are stored in the chunks cache backend.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
+
+    # Maximum number of object attribute items to keep in a first level
+    # in-memory LRU cache. Metadata will be stored and fetched in-memory before
+    # hitting the cache backend. 0 to disable the in-memory cache.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
+    [attributes_in_memory_max_items: <int> | default = 0]
 
     # TTL for caching individual chunks subranges.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl

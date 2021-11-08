@@ -171,6 +171,13 @@ func New(cfg Config) (*Server, error) {
 	}, []string{"protocol"})
 	prometheus.MustRegister(tcpConnections)
 
+	tcpConnectionsLimit := prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: cfg.MetricsNamespace,
+		Name:      "tcp_connections_limit",
+		Help:      "The max number of TCP connections that can be accepted (0 means no limit).",
+	}, []string{"protocol"})
+	prometheus.MustRegister(tcpConnectionsLimit)
+
 	network := cfg.HTTPListenNetwork
 	if network == "" {
 		network = DefaultNetwork
@@ -182,6 +189,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	httpListener = middleware.CountingListener(httpListener, tcpConnections.WithLabelValues("http"))
 
+	tcpConnectionsLimit.WithLabelValues("http").Set(float64(cfg.HTTPConnLimit))
 	if cfg.HTTPConnLimit > 0 {
 		httpListener = netutil.LimitListener(httpListener, cfg.HTTPConnLimit)
 	}
@@ -196,6 +204,7 @@ func New(cfg Config) (*Server, error) {
 	}
 	grpcListener = middleware.CountingListener(grpcListener, tcpConnections.WithLabelValues("grpc"))
 
+	tcpConnectionsLimit.WithLabelValues("grpc").Set(float64(cfg.GRPCConnLimit))
 	if cfg.GRPCConnLimit > 0 {
 		grpcListener = netutil.LimitListener(grpcListener, cfg.GRPCConnLimit)
 	}

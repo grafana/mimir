@@ -9,8 +9,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -224,6 +226,24 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				>
 				avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
+		},
+		"sum by (rate()) / 2 ^ 2": {
+			query: `
+			sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,
+			expectedShardedQueries: 1,
+		},
+		"sum by (rate()) / time() *2": {
+			query: `
+			sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate()) / vector(3) ^ month()": {
+			query:                  `sum(rate(metric_counter[1m])) / vector(3) ^ month()`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate(metric_counter[1m])) / vector(3) ^ vector(2) + sum(ln(metric_counter))": {
+			query:                  `sum(rate(metric_counter[1m])) / vector(3) ^ vector(2) + sum(ln(metric_counter))`,
+			expectedShardedQueries: 2,
 		},
 		"nested count()": {
 			query: `sum(
@@ -562,6 +582,151 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
 	// we expect 128 calls to the downstream handler and not the original 16.
 	downstream.AssertNumberOfCalls(t, "Do", 128)
+}
+
+func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
+	tests := map[string]struct {
+		query             string
+		hints             *Hints
+		totalShards       int
+		maxShardedQueries int
+		expectedShards    int
+		compactorShards   int
+	}{
+		"query is not shardable": {
+			query:             "metric",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    1,
+		},
+		"single splitted query, query has 1 shardable leg": {
+			query:             "sum(metric)",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    16,
+		},
+		"single splitted query, query has many shardable legs": {
+			query:             "sum(metric_1) + sum(metric_2) + sum(metric_3) + sum(metric_4)",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       16,
+			maxShardedQueries: 16,
+			expectedShards:    4,
+		},
+		"multiple splitted queries, query has 1 shardable leg": {
+			query:             "sum(metric)",
+			hints:             &Hints{TotalQueries: 10},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    6,
+		},
+		"multiple splitted queries, query has 2 shardable legs": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 10},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    3,
+		},
+		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   0,
+			expectedShards:    10,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   3,
+			expectedShards:    9,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   4,
+			expectedShards:    8,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   10,
+			expectedShards:    10,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   11,
+			expectedShards:    10, // cannot be adjusted to make 11 multiple or divisible, keep original.
+		},
+		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   14,
+			expectedShards:    7, // 7 divides 14
+		},
+		"query sharding is disabled": {
+			query:             "sum(metric)",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       0, // Disabled.
+			maxShardedQueries: 64,
+			expectedShards:    1,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: testData.query,
+				Hints: testData.hints,
+			}
+
+			limits := mockLimits{
+				totalShards:       testData.totalShards,
+				maxShardedQueries: testData.maxShardedQueries,
+				compactorShards:   testData.compactorShards,
+			}
+			shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, nil)
+
+			// Keep track of the unique number of shards queried to downstream.
+			uniqueShardsMx := sync.Mutex{}
+			uniqueShards := map[string]struct{}{}
+
+			downstream := &mockHandler{}
+			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+				Status: StatusSuccess, Data: PrometheusData{
+					ResultType: string(parser.ValueTypeVector),
+				},
+			}, nil).Run(func(args mock.Arguments) {
+				req := args[1].(Request)
+				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
+
+				uniqueShardsMx.Lock()
+				uniqueShards[reqShard] = struct{}{}
+				uniqueShardsMx.Unlock()
+			})
+
+			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.NoError(t, err)
+			assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+			assert.Equal(t, testData.expectedShards, len(uniqueShards))
+		})
+	}
 }
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {

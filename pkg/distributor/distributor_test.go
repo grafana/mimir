@@ -615,7 +615,12 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				d.ingestionRate.Tick()
 
 				if testData.expectedMetrics != "" {
-					assert.NoError(t, testutil.GatherAndCompare(regs[0], strings.NewReader(testData.expectedMetrics), testData.metricNames...))
+					// The number of inflight requests is decreased asynchronously once the request to the latest
+					// ingester is completed too. To avoid flaky tests, we poll the metrics because what we expect
+					// is that metrics reconcile to the expected ones.
+					test.Poll(t, 3*time.Second, nil, func() interface{} {
+						return testutil.GatherAndCompare(regs[0], strings.NewReader(testData.expectedMetrics), testData.metricNames...)
+					})
 				}
 			}
 		})
@@ -2184,12 +2189,15 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 	tests := map[string]struct {
 		labelNames              []model.LabelName
 		maxLabelNamesPerRequest int
-		expectedError           string
+		expectedHTTPGrpcError   error
 	}{
-		"should return an error if the maximum number of label names per request is reached": {
+		"should return a httpgrpc error if the maximum number of label names per request is reached": {
 			labelNames:              []model.LabelName{labels.MetricName, "status"},
 			maxLabelNamesPerRequest: 1,
-			expectedError:           "label values cardinality request label names limit (limit: 1 actual: 2) exceeded",
+			expectedHTTPGrpcError: httpgrpc.ErrorFromHTTPResponse(&httpgrpc.HTTPResponse{
+				Code: int32(400),
+				Body: []byte("label values cardinality request label names limit (limit: 1 actual: 2) exceeded"),
+			}),
 		},
 		"should succeed if the maximum number of label names per request is not reached": {
 			labelNames:              []model.LabelName{labels.MetricName},
@@ -2220,10 +2228,10 @@ func TestDistributor_LabelValuesCardinalityLimit(t *testing.T) {
 			}
 
 			_, _, err := ds[0].LabelValuesCardinality(ctx, testData.labelNames, []*labels.Matcher{})
-			if len(testData.expectedError) == 0 {
+			if testData.expectedHTTPGrpcError == nil {
 				require.NoError(t, err)
 			} else {
-				require.EqualError(t, err, testData.expectedError)
+				require.Equal(t, testData.expectedHTTPGrpcError, err)
 			}
 		})
 	}

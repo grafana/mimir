@@ -24,6 +24,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -61,8 +62,9 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/compactor"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -976,7 +978,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		b := &bucketBlock{
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onlabelValuesCalled: onlabelValuesCalled},
+			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onLabelValuesCalled: onlabelValuesCalled},
 			indexCache:        noopCache{},
 			bkt:               bkt,
 			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
@@ -1097,15 +1099,94 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		require.Nil(t, ress[5], "Sixth result should not have series")
 		require.ErrorIs(t, errs[5], expectedErr, "failed", "Sixth result should fail as 'failed'")
 	})
+
+	t.Run("cached", func(t *testing.T) {
+		labelValuesCalls := map[string]int{}
+		onLabelValuesCalled := func(name string) error {
+			labelValuesCalls[name]++
+			return nil
+		}
+		conf := []byte(strings.Join([]string{
+			"max_size: 1MB",
+			"max_item_size: 2KB",
+		}, "\n"))
+		cache, err := storecache.NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
+		require.NoError(t, err)
+
+		b := &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onLabelValuesCalled: onLabelValuesCalled},
+			indexCache:        cache,
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		// first call succeeds and caches value
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have called LabelValues once for label 'i'.")
+
+		// second call uses cached value, so it doesn't call LabelValues again
+		refs, err = b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 1}, labelValuesCalls, "Should have used cached value, so it shouldn't call LabelValues again for label 'i'.")
+
+		// different matcher on same label should not be cached
+		differentMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
+		refs, err = b.indexReader().ExpandedPostings(context.Background(), differentMatchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+		require.Equal(t, map[string]int{"i": 2}, labelValuesCalls, "Should have called LabelValues again for label 'i'.")
+	})
+
+	t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
+		b := &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: r,
+			indexCache:        corruptedExpandedPostingsCache{},
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+	})
+
+	t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
+		b := &bucketBlock{
+			logger:  log.NewNopLogger(),
+			metrics: NewBucketStoreMetrics(nil),
+			indexHeaderReader: &blockingLabelValuesIndexReader{onLabelValuesCalled: func(_ string) error {
+				return context.Canceled // alwaysFails
+			}},
+			indexCache:  cacheNotExpectingToStoreExpandedPostings{t: t},
+			bkt:         bkt,
+			meta:        &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.Error(t, err)
+	})
 }
 
 type blockingLabelValuesIndexReader struct {
 	indexheader.Reader
-	onlabelValuesCalled func(name string) error
+	onLabelValuesCalled func(name string) error
 }
 
 func (bir *blockingLabelValuesIndexReader) LabelValues(name string) ([]string, error) {
-	if err := bir.onlabelValuesCalled(name); err != nil {
+	if err := bir.onLabelValuesCalled(name); err != nil {
 		return nil, err
 	}
 	return bir.Reader.LabelValues(name)
@@ -1122,6 +1203,21 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 		close(w.waitingDone)
 	})
 	return w.Context.Done()
+}
+
+type corruptedExpandedPostingsCache struct{ noopCache }
+
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
+	return []byte(codecHeaderSnappy + "corrupted"), true
+}
+
+type cacheNotExpectingToStoreExpandedPostings struct {
+	noopCache
+	t *testing.T
+}
+
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey, v []byte) {
+	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
@@ -2379,7 +2475,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 
 			for n := 0; n < queriesPerWorker; n++ {
 				var reqMatchers []storepb.LabelMatcher
-				var shardSelector *querysharding.ShardSelector
+				var shardSelector *sharding.ShardSelector
 
 				if queryShardingEnabled {
 					// Each query touches the same series but a different shard.
@@ -2387,7 +2483,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 						{Type: storepb.LabelMatcher_RE, Name: "i", Value: ".+"},
 					}
 
-					shardSelector = &querysharding.ShardSelector{
+					shardSelector = &sharding.ShardSelector{
 						ShardIndex: uint64(n) % 20,
 						ShardCount: 20,
 					}
@@ -2636,37 +2732,37 @@ func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesC
 func TestFilterPostingsByCachedShardHash(t *testing.T) {
 	tests := map[string]struct {
 		inputPostings    []uint64
-		shard            *querysharding.ShardSelector
+		shard            *sharding.ShardSelector
 		cacheEntries     [][2]uint64 // List of cache entries where each entry is the pair [seriesID, hash]
 		expectedPostings []uint64
 	}{
 		"should be a noop if the cache is empty": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{},
 			expectedPostings: []uint64{0, 1, 2, 3, 4, 5},
 		},
 		"should filter postings at the beginning of the slice": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
 			expectedPostings: []uint64{1, 2, 3, 4, 5},
 		},
 		"should filter postings in the middle of the slice": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
 			expectedPostings: []uint64{0, 2, 3, 4, 5},
 		},
 		"should filter postings at the end of the slice": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{4, 4}, {5, 5}},
 			expectedPostings: []uint64{0, 1, 2, 3, 4},
 		},
 		"should filter postings when all postings are in the cache": {
 			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
-			shard:            &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
 			expectedPostings: []uint64{0, 2, 4},
 		},
@@ -2687,7 +2783,7 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 
 func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
 	inputPostings := []uint64{0, 1, 2, 3, 4, 5}
-	shard := &querysharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
+	shard := &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
 	cacheEntries := [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}
 
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
@@ -2705,7 +2801,7 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 	// and so all subsequent postings will be shifted.
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 	cache.Store(0, 0)
-	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
+	shard := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
 
 	// Create a long list of postings.
 	const numPostings = 10000
@@ -2730,7 +2826,7 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 	// This benchmark tests the case the output postings is equal to the input one.
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
-	shard := &querysharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
+	shard := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2}
 
 	// Create a long list of postings.
 	const numPostings = 10000

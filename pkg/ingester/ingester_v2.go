@@ -45,8 +45,8 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
@@ -840,6 +840,8 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		perUserSeriesLimitCount   = 0
 		perMetricSeriesLimitCount = 0
 
+		minAppendTime, minAppendTimeAvailable = db.Head().AppendableMinValidTime()
+
 		updateFirstPartial = func(errFn func() error) {
 			if firstPartialErr == nil {
 				firstPartialErr = errFn()
@@ -859,6 +861,17 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 		// The labels must be sorted (in our case, it's guaranteed a write request
 		// has sorted labels once hit the ingester).
 
+		// Fast path in case we only have samples and they are all out of bounds.
+		if minAppendTimeAvailable && len(ts.Samples) > 0 && len(ts.Exemplars) == 0 && allOutOfBounds(ts.Samples, minAppendTime) {
+			failedSamplesCount += len(ts.Samples)
+			sampleOutOfBoundsCount += len(ts.Samples)
+
+			updateFirstPartial(func() error {
+				return wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(ts.Samples[0].TimestampMs), ts.Labels)
+			})
+			continue
+		}
+
 		// Look up a reference for this series.
 		ref, copiedLabels := app.GetRef(mimirpb.FromLabelAdaptersToLabels(ts.Labels))
 
@@ -874,7 +887,6 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 					succeededSamplesCount++
 					continue
 				}
-
 			} else {
 				// Copy the label set because both TSDB and the active series tracker may retain it.
 				copiedLabels = mimirpb.FromLabelAdaptersToLabelsWithCopy(ts.Labels)
@@ -1014,16 +1026,17 @@ func (i *Ingester) v2Push(ctx context.Context, req *mimirpb.WriteRequest) (*mimi
 	if perMetricSeriesLimitCount > 0 {
 		validation.DiscardedSamples.WithLabelValues(perMetricSeriesLimit, userID).Add(float64(perMetricSeriesLimitCount))
 	}
+	if succeededSamplesCount > 0 {
+		i.ingestionRate.Add(int64(succeededSamplesCount))
 
-	i.ingestionRate.Add(int64(succeededSamplesCount))
-
-	switch req.Source {
-	case mimirpb.RULE:
-		db.ingestedRuleSamples.Add(int64(succeededSamplesCount))
-	case mimirpb.API:
-		fallthrough
-	default:
-		db.ingestedAPISamples.Add(int64(succeededSamplesCount))
+		switch req.Source {
+		case mimirpb.RULE:
+			db.ingestedRuleSamples.Add(int64(succeededSamplesCount))
+		case mimirpb.API:
+			fallthrough
+		default:
+			db.ingestedAPISamples.Add(int64(succeededSamplesCount))
+		}
 	}
 
 	if firstPartialErr != nil {
@@ -1411,7 +1424,7 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 
 	// Check if query sharding is enabled for this query. If so, we need to remove the
 	// query sharding label from matchers and pass the shard info down the query execution path.
-	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return err
 	}
@@ -1460,15 +1473,19 @@ func (i *Ingester) v2QueryStream(req *client.QueryRequest, stream client.Ingeste
 	return nil
 }
 
-func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *querysharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.Querier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer q.Close()
 
+	var hints *storage.SelectHints
+	if shard != nil {
+		hints = configSelectHintsWithShard(initSelectHints(from, through), shard)
+	}
+
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	hints := getSelectHintsForShard(from, through, shard)
 	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
@@ -1530,15 +1547,20 @@ func (i *Ingester) v2QueryStreamSamples(ctx context.Context, db *userTSDB, from,
 }
 
 // v2QueryStream streams metrics from a TSDB. This implements the client.IngesterServer interface
-func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *querysharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
+func (i *Ingester) v2QueryStreamChunks(ctx context.Context, db *userTSDB, from, through int64, matchers []*labels.Matcher, shard *sharding.ShardSelector, stream client.Ingester_QueryStreamServer) (numSeries, numSamples int, _ error) {
 	q, err := db.ChunkQuerier(ctx, from, through)
 	if err != nil {
 		return 0, 0, err
 	}
 	defer q.Close()
 
+	// Disable chunks trimming, so that we don't have to rewrite chunks which have samples outside
+	// the requested from/through range. PromQL engine can handle it.
+	hints := initSelectHints(from, through)
+	hints = configSelectHintsWithShard(hints, shard)
+	hints = configSelectHintsWithDisabledTrimming(hints)
+
 	// It's not required to return sorted series because series are sorted by the Mimir querier.
-	hints := getSelectHintsForShard(from, through, shard)
 	ss := q.Select(false, hints, matchers...)
 	if ss.Err() != nil {
 		return 0, 0, ss.Err()
@@ -2397,16 +2419,33 @@ func (i *Ingester) getInstanceLimits() *InstanceLimits {
 	return l
 }
 
-func getSelectHintsForShard(start, end int64, shard *querysharding.ShardSelector) *storage.SelectHints {
-	if shard == nil {
-		return nil
-	}
-
-	// If query sharding is enabled, we need to pass it along with hints.
+func initSelectHints(start, end int64) *storage.SelectHints {
 	return &storage.SelectHints{
-		Start:      start,
-		End:        end,
-		ShardIndex: shard.ShardIndex,
-		ShardCount: shard.ShardCount,
+		Start: start,
+		End:   end,
 	}
+}
+
+func configSelectHintsWithShard(hints *storage.SelectHints, shard *sharding.ShardSelector) *storage.SelectHints {
+	if shard != nil {
+		// If query sharding is enabled, we need to pass it along with hints.
+		hints.ShardIndex = shard.ShardIndex
+		hints.ShardCount = shard.ShardCount
+	}
+	return hints
+}
+
+func configSelectHintsWithDisabledTrimming(hints *storage.SelectHints) *storage.SelectHints {
+	hints.DisableTrimming = true
+	return hints
+}
+
+// allOutOfBounds returns whether all the provided samples are out of bounds.
+func allOutOfBounds(samples []mimirpb.Sample, minValidTime int64) bool {
+	for _, s := range samples {
+		if s.TimestampMs >= minValidTime {
+			return false
+		}
+	}
+	return true
 }
