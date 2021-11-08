@@ -74,6 +74,14 @@ api:
   # CLI flag: -api.response-compression-enabled
   [response_compression_enabled: <boolean> | default = false]
 
+  # Allows to skip label name validation via header on the http write path. Use
+  # with caution as it breaks PromQL. Allowing this for external clients allows
+  # any client to send invalid label names. After enabling it, requests with
+  # X-Mimir-SkipLabelNameValidation HTTP header set to true will not have label
+  # names validated.
+  # CLI flag: -api.skip-label-name-validation-header-enabled
+  [skip_label_name_validation_header_enabled: <boolean> | default = false]
+
   # HTTP URL path under which the Alertmanager ui and api will be served.
   # CLI flag: -http.alertmanager-http-prefix
   [alertmanager_http_prefix: <string> | default = "/alertmanager"]
