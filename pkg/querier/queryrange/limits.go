@@ -46,6 +46,12 @@ type Limits interface {
 	// QueryShardingMaxShardedQueries returns the max number of sharded queries that can
 	// be run for a given received query. 0 to disable limit.
 	QueryShardingMaxShardedQueries(userID string) int
+
+	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
+	// (used only when split-and-merge compaction strategy is enabled).
+	//
+	// This method is copied from compactor.ConfigProvider.
+	CompactorSplitAndMergeShards(userID string) int
 }
 
 type limitsMiddleware struct {
