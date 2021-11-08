@@ -217,8 +217,9 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 		queryLimiter = limiter.QueryLimiterFromContextWithFallback(ctx)
 		reqStats     = stats.FromContext(ctx)
 		results      = make(chan *ingester_client.QueryStreamResponse)
-		stop         = make(chan struct{})
-		doneReading  = make(chan struct{})
+		// Note we can't signal goroutines to stop by closing 'results', because it has multiple concurrent senders.
+		stop        = make(chan struct{}) // Signal all background goroutines to stop.
+		doneReading = make(chan struct{}) // Signal that the reader has stopped.
 	)
 
 	hashToChunkseries := map[string]ingester_client.TimeSeriesChunk{}
