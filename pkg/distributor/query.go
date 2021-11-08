@@ -384,16 +384,23 @@ func sameSamples(a, b []mimirpb.Sample) bool {
 	return true
 }
 
-// Build a slice of chunks, eliminating duplicates
+// Build a slice of chunks, eliminating duplicates.
+// This is O(N^2) but most of the time N is small.
 func accumulateChunks(a, b []ingester_client.Chunk) []ingester_client.Chunk {
-	for i := range a {
-		for j := 0; j < len(b); {
-			if a[i].Equal(b[j]) {
-				b = append(b[:j], b[j+1:]...) // remove element j from b, retaining order
-			} else {
-				j++
-			}
+	ret := a
+	for j := range b {
+		if !containsChunk(a, b[j]) {
+			ret = append(ret, b[j])
 		}
 	}
-	return append(a, b...)
+	return ret
+}
+
+func containsChunk(a []ingester_client.Chunk, b ingester_client.Chunk) bool {
+	for i := range a {
+		if a[i].Equal(b) {
+			return true
+		}
+	}
+	return false
 }
