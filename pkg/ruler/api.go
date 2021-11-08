@@ -406,7 +406,8 @@ func (a *API) ListRules(w http.ResponseWriter, req *http.Request) {
 
 	if len(rgs) == 0 {
 		level.Info(logger).Log("msg", "no rule groups found", "userID", userID)
-		http.Error(w, ErrNoRuleGroups.Error(), http.StatusNotFound)
+		// No rule groups, short-circuit and just return an empty map with HTTP 200
+		marshalAndSend(map[string]interface{}{}, w, logger)
 		return
 	}
 
