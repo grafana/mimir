@@ -239,7 +239,7 @@ func (d *Distributor) queryIngesterStream(ctx context.Context, replicationSet ri
 					key := ingester_client.LabelsToKeyString(mimirpb.FromLabelAdaptersToLabels(series.Labels))
 					existing := hashToChunkseries[key]
 					existing.Labels = series.Labels
-					existing.Chunks = append(existing.Chunks, series.Chunks...)
+					existing.Chunks = accumulateChunks(existing.Chunks, series.Chunks)
 					hashToChunkseries[key] = existing
 				}
 
@@ -382,4 +382,25 @@ func sameSamples(a, b []mimirpb.Sample) bool {
 		}
 	}
 	return true
+}
+
+// Build a slice of chunks, eliminating duplicates.
+// This is O(N^2) but most of the time N is small.
+func accumulateChunks(a, b []ingester_client.Chunk) []ingester_client.Chunk {
+	ret := a
+	for j := range b {
+		if !containsChunk(a, b[j]) {
+			ret = append(ret, b[j])
+		}
+	}
+	return ret
+}
+
+func containsChunk(a []ingester_client.Chunk, b ingester_client.Chunk) bool {
+	for i := range a {
+		if a[i].Equal(b) {
+			return true
+		}
+	}
+	return false
 }
