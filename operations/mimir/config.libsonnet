@@ -244,8 +244,7 @@
 
     ruler_enabled: false,
     ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, gcs, s3, local)',
-    ruler_s3_bucket_name: error 'you must specify the ruler S3 bucket name',
-    ruler_gcs_bucket_name: error 'must specify a GCS bucket name',
+    ruler_storage_bucket_name: error 'must specify the ruler storage bucket name',
 
     rulerClientConfig:
       {
@@ -253,11 +252,15 @@
       } +
       {
         gcs: {
-          'ruler-storage.gcs.bucket-name': $._config.ruler_gcs_bucket_name,
+          'ruler-storage.gcs.bucket-name': $._config.ruler_storage_bucket_name,
         },
         s3: {
           'ruler-storage.s3.region': $._config.aws_region,
-          'ruler-storage.s3.bucket-name': $._config.ruler_s3_bucket_name,
+          'ruler-storage.s3.bucket-name': $._config.ruler_storage_bucket_name,
+        },
+        azure: {
+          // TODO: Is this the correct flag??
+          'ruler-storage.gcs.bucket-name': $._config.ruler_storage_bucket_name,
         },
         'local': {
           'ruler-storage.local.directory': $._config.ruler_local_directory,
