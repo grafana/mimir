@@ -6,8 +6,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -297,14 +297,13 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
 
 	// Index reader mock.
-	existingLabels := make(map[string][]string, 100)
-	for i := 0; i < 100; i++ {
-		lbValues := make([]string, 0, 100)
-		for j := 0; j < 100; j++ {
-			lbValues = append(lbValues, strconv.Itoa(j))
-		}
-		existingLabels[strconv.Itoa(i)] = lbValues
+	existingLabels := make(map[string][]string)
+	lbValues := make([]string, 0, 100)
+	for j := 0; j < 100; j++ {
+		lbValues = append(lbValues, fmt.Sprintf("val-%d", j))
 	}
+	existingLabels["__name__"] = lbValues
+
 	idxOpDelay := time.Millisecond * 100
 
 	idxReader := &mockIndex{
@@ -326,16 +325,13 @@ func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
 	cancel() // Cancel stream context.
 
 	// Assert labelNamesAndValues completion.
-	condFn := func() bool {
-		var err error
-		select {
-		case err = <-doneCh:
-			return err == context.Canceled
-		default:
-			return false
-		}
+	select {
+	case err := <-doneCh:
+		require.ErrorIsf(t, err, context.Canceled, "labelNamesAndValues unexpected error: %s", err)
+
+	case <-time.After(time.Second):
+		require.Fail(t, "labelNamesAndValues was not completed after context cancellation")
 	}
-	require.Eventuallyf(t, condFn, time.Second, idxOpDelay, "labelNamesAndValues was not completed after context cancellation")
 }
 
 func TestLabelValuesCardinality_ContextCancellation(t *testing.T) {
@@ -346,14 +342,13 @@ func TestLabelValuesCardinality_ContextCancellation(t *testing.T) {
 	var server client.Ingester_LabelValuesCardinalityServer = mockServer
 
 	// Index reader mock.
-	existingLabels := make(map[string][]string, 100)
-	for i := 0; i < 100; i++ {
-		lbValues := make([]string, 0, 100)
-		for j := 0; j < 100; j++ {
-			lbValues = append(lbValues, strconv.Itoa(j))
-		}
-		existingLabels[strconv.Itoa(i)] = lbValues
+	existingLabels := make(map[string][]string)
+	lbValues := make([]string, 0, 100)
+	for j := 0; j < 100; j++ {
+		lbValues = append(lbValues, fmt.Sprintf("val-%d", j))
 	}
+	existingLabels["__name__"] = lbValues
+
 	idxOpDelay := time.Millisecond * 100
 
 	idxReader := &mockIndex{
@@ -381,16 +376,13 @@ func TestLabelValuesCardinality_ContextCancellation(t *testing.T) {
 	cancel() // Cancel stream context.
 
 	// Assert labelValuesCardinality completion.
-	condFn := func() bool {
-		var err error
-		select {
-		case err = <-doneCh:
-			return err == context.Canceled
-		default:
-			return false
-		}
+	select {
+	case err := <-doneCh:
+		require.ErrorIsf(t, err, context.Canceled, "labelValuesCardinality unexpected error: %s", err)
+
+	case <-time.After(time.Second):
+		require.Fail(t, "labelValuesCardinality was not completed after context cancellation")
 	}
-	require.Eventually(t, condFn, time.Second, idxOpDelay, "labelValuesCardinality was not completed after context cancellation")
 }
 
 type mockPostings struct {
