@@ -64,8 +64,9 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      # Note that we're running the 'race' target here which runs unit tests with the go data race detector
       - name: Run Tests
-        run: CASSANDRA_TEST_ADDRESSES=cassandra:9042 make BUILD_IN_CONTAINER=false test
+        run: CASSANDRA_TEST_ADDRESSES=cassandra:9042 make BUILD_IN_CONTAINER=false race
 
   build:
     runs-on: ubuntu-20.04
