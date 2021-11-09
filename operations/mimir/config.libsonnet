@@ -258,7 +258,11 @@
           'ruler-storage.s3.region': $._config.aws_region,
           'ruler-storage.s3.bucket-name': $._config.ruler_storage_bucket_name,
         },
-        azure: {},
+        azure: {
+          'ruler-storage.azure.container-name': '%(cluster)s-%(namespace)s-ruler' % $._config,
+          'ruler-storage.azure.account-name': '$(BLOCKS_STORAGE_AZURE_ACCOUNT_NAME)',
+          'ruler-storage.azure.account-key': '$(BLOCKS_STORAGE_AZURE_ACCOUNT_KEY)',
+        },
         'local': {
           'ruler-storage.local.directory': $._config.ruler_local_directory,
         },
