@@ -258,10 +258,7 @@
           'ruler-storage.s3.region': $._config.aws_region,
           'ruler-storage.s3.bucket-name': $._config.ruler_storage_bucket_name,
         },
-        azure: {
-          // TODO: Is this the correct flag??
-          'ruler-storage.gcs.bucket-name': $._config.ruler_storage_bucket_name,
-        },
+        azure: {},
         'local': {
           'ruler-storage.local.directory': $._config.ruler_local_directory,
         },
