@@ -936,6 +936,10 @@ func toLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*ingester_clien
 
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
 func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *ingester_client.LabelNamesAndValuesResponse {
+	// we need to acquire the lock to prevent concurrent read/write to the map because it might be a case that some ingesters responses are
+	// still being processed if replicationSet.Do() returned execution to this method when it decided that it got enough responses from the quorum of instances.
+	m.lock.Lock()
+	defer m.lock.Unlock()
 	responses := make([]*ingester_client.LabelValues, 0, len(m.result))
 	for name, values := range m.result {
 		labelValues := make([]string, 0, len(values))
@@ -1039,6 +1043,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 
 	// Make sure we get a successful response from all the ingesters
 	replicationSet.MaxErrors = 0
+	replicationSet.MaxUnavailableZones = 0
 
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
 		cardinalityMap: map[string]map[string]uint64{},
@@ -1061,25 +1066,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	if err != nil {
 		return nil, err
 	}
-
-	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(labelNames))
-
-	// Adjust label values' series count based on the ingester's replication factor
-	for labelName, labelValueSeriesCountMap := range cardinalityConcurrentMap.cardinalityMap {
-		for labelValue, seriesCount := range labelValueSeriesCountMap {
-			labelValueSeriesCountMap[labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
-		}
-		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
-			LabelName:        labelName,
-			LabelValueSeries: labelValueSeriesCountMap,
-		})
-	}
-
-	cardinalityResponse := &ingester_client.LabelValuesCardinalityResponse{
-		Items: cardinalityItems,
-	}
-
-	return cardinalityResponse, nil
+	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(d.ingestersRing.ReplicationFactor()), nil
 }
 
 func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityRequest, error) {
@@ -1138,6 +1125,31 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 			// Label name existent
 			cm.cardinalityMap[item.LabelName][labelValue] += seriesCount
 		}
+	}
+}
+
+// toLabelValuesCardinalityResponse adjust count of series to the replication factor and converts the map to `ingester_client.LabelValuesCardinalityResponse`.
+func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+	// we need to acquire the lock to prevent concurrent read/write to the map because it might be a case that some ingesters responses are
+	// still being processed if replicationSet.Do() returned execution to this method when it decided that it got enough responses from the quorum of instances.
+	cm.lock.Lock()
+	defer cm.lock.Unlock()
+
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMap))
+	// Adjust label values' series count based on the ingester's replication factor
+	for labelName, labelValueSeriesCountMap := range cm.cardinalityMap {
+		adjustedSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMap))
+		for labelValue, seriesCount := range labelValueSeriesCountMap {
+			adjustedSeriesCountMap[labelValue] = seriesCount / uint64(replicationFactor)
+		}
+		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
+			LabelName:        labelName,
+			LabelValueSeries: adjustedSeriesCountMap,
+		})
+	}
+
+	return &ingester_client.LabelValuesCardinalityResponse{
+		Items: cardinalityItems,
 	}
 }
 
@@ -1262,6 +1274,7 @@ func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
 
 	// Make sure we get a successful response from all of them.
 	replicationSet.MaxErrors = 0
+	replicationSet.MaxUnavailableZones = 0
 
 	req := &ingester_client.UserStatsRequest{}
 	resps, err := d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {

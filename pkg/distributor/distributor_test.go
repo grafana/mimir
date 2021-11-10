@@ -2012,24 +2012,28 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 		{labels.Labels{{Name: labels.MetricName, Value: "label_1"}, {Name: "status", Value: "500"}, {Name: "reason", Value: "broken"}}, 1, 110000},
 		{labels.Labels{{Name: labels.MetricName, Value: "label_1"}}, 2, 200000},
 	}
+	expectedLabelValues := []*client.LabelValues{
+		{
+			LabelName: labels.MetricName,
+			Values:    []string{"label_0", "label_1"},
+		},
+		{
+			LabelName: "reason",
+			Values:    []string{"broken"},
+		},
+		{
+			LabelName: "status",
+			Values:    []string{"200", "500"},
+		},
+	}
 	tests := map[string]struct {
-		expectedLabelValues []*client.LabelValues
+		zones              []string
+		zonesResponseDelay map[string]time.Duration
 	}{
-		"should group values of labels by label name and return only distinct label values": {
-			expectedLabelValues: []*client.LabelValues{
-				{
-					LabelName: labels.MetricName,
-					Values:    []string{"label_0", "label_1"},
-				},
-				{
-					LabelName: "reason",
-					Values:    []string{"broken"},
-				},
-				{
-					LabelName: "status",
-					Values:    []string{"200", "500"},
-				},
-			},
+		"should group values of labels by label name and return only distinct label values": {},
+		"should return the results even if only 2 zones returns the results": {
+			zones:              []string{"A", "B", "C"},
+			zonesResponseDelay: map[string]time.Duration{"C": 10 * time.Second},
 		},
 	}
 
@@ -2039,11 +2043,13 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 
 			// Create distributor
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:      12,
-				happyIngesters:    12,
-				numDistributors:   1,
-				shardByAllLabels:  true,
-				replicationFactor: 3,
+				numIngesters:       12,
+				happyIngesters:     12,
+				numDistributors:    1,
+				shardByAllLabels:   true,
+				replicationFactor:  3,
+				ingesterZones:      testData.zones,
+				zonesResponseDelay: testData.zonesResponseDelay,
 			})
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
@@ -2057,18 +2063,86 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 			}
 
 			// Assert on metric metadata
+			timeBeforeExecution := time.Now()
 			response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
 			require.NoError(t, err)
-			require.Len(t, response.Items, len(testData.expectedLabelValues))
+			if len(testData.zonesResponseDelay) > 0 {
+				executionDuration := time.Since(timeBeforeExecution)
+				require.Less(t, executionDuration, 5*time.Second, "Execution must be completed earlier than in 5 seconds")
+			}
+			require.Len(t, response.Items, len(expectedLabelValues))
 
 			//sort label values to make stable assertion
 			for _, item := range response.Items {
 				sort.Strings(item.Values)
 			}
-			assert.ElementsMatch(t, response.Items, testData.expectedLabelValues)
+			assert.ElementsMatch(t, response.Items, expectedLabelValues)
 
 		})
 	}
+}
+
+// must be run with `-race` flag (race detection).
+func TestDistributor_ExpectedNoRaceConditionOnLabelValuesCardinalityMethod(t *testing.T) {
+	ctx, ds := prepareForRaceConditionTest(t)
+
+	names := []model.LabelName{labels.MetricName}
+	response, err := ds[0].labelValuesCardinality(ctx, names, []*labels.Matcher{})
+	require.NoError(t, err)
+	require.Len(t, response.Items, 1)
+	// labelValuesCardinality must wait for all responses from all ingesters
+	require.Len(t, response.Items[0].LabelValueSeries, 10000)
+}
+
+// must be run with `-race` flag (race detection).
+func TestDistributor_ExpectedNoRaceConditionOnLabelNamesAndValuesMethod(t *testing.T) {
+	ctx, ds := prepareForRaceConditionTest(t)
+	response, err := ds[0].LabelNamesAndValues(ctx, []*labels.Matcher{})
+	require.NoError(t, err)
+	require.Len(t, response.Items, 1)
+	require.Equal(t, 10000, len(response.Items[0].Values))
+}
+
+func prepareForRaceConditionTest(t *testing.T) (context.Context, []*Distributor) {
+	ctx := user.InjectOrgID(context.Background(), "cardinality-user")
+
+	// Create distributor
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:      150,
+		happyIngesters:    150,
+		numDistributors:   1,
+		shardByAllLabels:  true,
+		replicationFactor: 3,
+		ingesterZones:     []string{"ZONE-A", "ZONE-B", "ZONE-C"},
+		zonesResponseDelay: map[string]time.Duration{
+			//ingesters from zones A and B will respond in 1 second but ingesters from zone C will respond in 2 seconds.
+			"ZONE-A": 1 * time.Second,
+			"ZONE-B": 1 * time.Second,
+			"ZONE-C": 2 * time.Second,
+		},
+	})
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
+	})
+
+	type Fixture struct {
+		lbls      labels.Labels
+		value     float64
+		timestamp int64
+	}
+	newFixtures := make([]Fixture, 0, 10000)
+	for i := 0; i < 10000; i++ {
+		newFixtures = append(newFixtures, Fixture{
+			labels.Labels{{Name: labels.MetricName, Value: "metric" + strconv.Itoa(i)}}, 1, int64(100000 + i)})
+	}
+
+	// Push fixtures
+	for _, series := range newFixtures {
+		req := mockWriteRequest(series.lbls, series.value, series.timestamp)
+		_, err := ds[0].Push(ctx, req)
+		require.NoError(t, err)
+	}
+	return ctx, ds
 }
 
 func TestDistributor_LabelValuesCardinality(t *testing.T) {
@@ -2092,6 +2166,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 		expectedResult            *client.LabelValuesCardinalityResponse
 		expectedIngesters         int
 		expectedSeriesCountTotal  uint64
+		ingesterZones             []string
 	}{
 		"should return an empty map if no label names": {
 			labelNames:                []model.LabelName{},
@@ -2113,6 +2188,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			},
 			expectedIngesters:        numIngesters,
 			expectedSeriesCountTotal: 100,
+			ingesterZones:            []string{"ZONE-A", "ZONE-B", "ZONE-c"},
 		},
 		"should return a map with the label values and series occurrences of all the label names": {
 			labelNames:                []model.LabelName{labels.MetricName, "status"},
@@ -2144,6 +2220,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 				numDistributors:           1,
 				replicationFactor:         replicationFactor,
 				ingestersSeriesCountTotal: testData.ingestersSeriesCountTotal,
+				ingesterZones:             testData.ingesterZones,
 			})
 
 			// Push fixtures
@@ -2170,7 +2247,7 @@ func TestDistributor_LabelValuesCardinality(t *testing.T) {
 			})
 
 			// Make sure all the ingesters have been queried
-			assert.Contains(t, []int{testData.expectedIngesters}, countMockIngestersCalls(ingesters, "LabelValuesCardinality"))
+			assert.Equal(t, testData.expectedIngesters, countMockIngestersCalls(ingesters, "LabelValuesCardinality"))
 		})
 	}
 }
@@ -2293,15 +2370,27 @@ type prepConfig struct {
 	replicationFactor            int
 	enableTracker                bool
 	ingestersSeriesCountTotal    uint64
+	ingesterZones                []string
+	zonesResponseDelay           map[string]time.Duration
 }
 
 func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*prometheus.Registry) {
 	ingesters := []mockIngester{}
 	for i := 0; i < cfg.happyIngesters; i++ {
+		zone := ""
+		if len(cfg.ingesterZones) > 0 {
+			zone = cfg.ingesterZones[i%len(cfg.ingesterZones)]
+		}
+		var responseDelay time.Duration
+		if len(cfg.zonesResponseDelay) > 0 {
+			responseDelay = cfg.zonesResponseDelay[zone]
+		}
 		ingesters = append(ingesters, mockIngester{
 			happy:            true,
 			queryDelay:       cfg.queryDelay,
 			seriesCountTotal: cfg.ingestersSeriesCountTotal,
+			zone:             zone,
+			responseDelay:    responseDelay,
 		})
 	}
 	for i := cfg.happyIngesters; i < cfg.numIngesters; i++ {
@@ -2318,7 +2407,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		addr := fmt.Sprintf("%d", i)
 		ingesterDescs[addr] = ring.InstanceDesc{
 			Addr:                addr,
-			Zone:                "",
+			Zone:                ingesters[i].zone,
 			State:               ring.ACTIVE,
 			Timestamp:           time.Now().Unix(),
 			RegisteredTimestamp: time.Now().Add(-2 * time.Hour).Unix(),
@@ -2349,8 +2438,9 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		KVStore: kv.Config{
 			Mock: kvStore,
 		},
-		HeartbeatTimeout:  60 * time.Minute,
-		ReplicationFactor: rf,
+		HeartbeatTimeout:     60 * time.Minute,
+		ReplicationFactor:    rf,
+		ZoneAwarenessEnabled: len(cfg.ingesterZones) > 0,
 	}, ring.IngesterRingKey, ring.IngesterRingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
@@ -2561,6 +2651,8 @@ type mockIngester struct {
 	queryDelay       time.Duration
 	calls            map[string]int
 	seriesCountTotal uint64
+	zone             string
+	responseDelay    time.Duration
 }
 
 func (i *mockIngester) series() map[uint32]*mimirpb.PreallocTimeseries {
@@ -2806,13 +2898,14 @@ func (i *mockIngester) LabelNamesAndValues(_ context.Context, _ *client.LabelNam
 		items = append(items, &client.LabelValues{LabelName: labelName, Values: values})
 	}
 	resp := &client.LabelNamesAndValuesResponse{Items: items}
-	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}}, nil
+	return &labelNamesAndValuesMockStream{responses: []*client.LabelNamesAndValuesResponse{resp}, responseDelay: i.responseDelay}, nil
 }
 
 type labelNamesAndValuesMockStream struct {
 	grpc.ClientStream
-	responses []*client.LabelNamesAndValuesResponse
-	i         int
+	responses     []*client.LabelNamesAndValuesResponse
+	i             int
+	responseDelay time.Duration
 }
 
 func (*labelNamesAndValuesMockStream) CloseSend() error {
@@ -2820,6 +2913,7 @@ func (*labelNamesAndValuesMockStream) CloseSend() error {
 }
 
 func (s *labelNamesAndValuesMockStream) Recv() (*client.LabelNamesAndValuesResponse, error) {
+	time.Sleep(s.responseDelay)
 	if s.i >= len(s.responses) {
 		return nil, io.EOF
 	}
