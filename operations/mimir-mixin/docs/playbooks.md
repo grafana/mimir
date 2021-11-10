@@ -1074,6 +1074,35 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 - `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
 - `Delete`: the volume will be automatically deleted
 
+### Recover accidentally deleted blocks (Google Cloud specific)
+
+_This playbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
+
+These are just example actions but should give you a fair idea on how you could go about doing this. Read https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1 before you proceed. Also, you have 1 week to restore the data so take a deep breath and make sure you get all the steps you're taking reviewed by another person.
+
+Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and put them all in a file, one block per line.
+
+For example, one time retention kicked in and deleted old blocks we did not want deleted. So, we listed all the NON deleted blocks via `gsutil ls $BUCKET/<userID>` and identified the earliest block (for example $EB_ID). Once it was identified, we listed ALL the blocks via `gsutil ls -l -a $BUCKET/<userID> > full-block-list`. This list consists of blocks that were deleted due to retention and also the temporary blocks created by ingesters and compactions (blocks >=2h and <24h in size). But because blocks are lexicographically sorted I could delete all the blocks after $EB_ID from the list to get the blocks deleted by retention. Sometimes you might need to identify the blocks deleted via logs, etc.
+
+Step 2: Once you have the `deleted-block-list`, you can now list all the objects you need to restore, because only objects can be restored and not prefixes:
+
+```
+while read block; do
+gsutil ls -a -r $block | grep "#" | grep -v deletion-mark.json | grep -v index.cache.json
+done < deleted-list > full-deleted-file-list
+```
+
+The above script will ignore the `deletion-mark.json` and `index.cache.json` which are not required.
+
+Step 3: Run the following script to restore all the deleted blocks / files:
+```
+while read file; do
+gsutil cp $file ${file%#*}
+done < full-deleted-list
+```
+
+We need to run the following command: `gsutil cp gs://ops-tools-cortex-ops-blocks/10428/01E111CX17BXFZD97AKSYKX0A5/chunks/000003#1581659109758552 gs://ops-tools-cortex-ops-blocks/10428/01E111CX17BXFZD97AKSYKX0A5/chunks/000003` to restore the file which is what the above script will do for each file. Sometimes there can be 1000s of files so the script might take a while to run.
+
 ## Log lines
 
 ### Log line containing 'sample with repeated timestamp but different value'
