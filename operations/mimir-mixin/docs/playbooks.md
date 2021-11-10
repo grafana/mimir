@@ -1078,7 +1078,7 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 _This playbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
 
-These are just example actions but should give you a fair idea on how you could go about doing this. Read https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1 before you proceed. Also, you have 1 week to restore the data so take a deep breath and make sure you get all the steps you're taking reviewed by another person.
+These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
 
 Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and put them all in a file, one block per line.
 
@@ -1100,8 +1100,6 @@ while read file; do
 gsutil cp $file ${file%#*}
 done < full-deleted-list
 ```
-
-We need to run the following command: `gsutil cp gs://ops-tools-cortex-ops-blocks/10428/01E111CX17BXFZD97AKSYKX0A5/chunks/000003#1581659109758552 gs://ops-tools-cortex-ops-blocks/10428/01E111CX17BXFZD97AKSYKX0A5/chunks/000003` to restore the file which is what the above script will do for each file. Sometimes there can be 1000s of files so the script might take a while to run.
 
 ## Log lines
 
