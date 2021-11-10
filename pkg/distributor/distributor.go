@@ -938,14 +938,15 @@ func toLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*ingester_clien
 func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *ingester_client.LabelNamesAndValuesResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map because it might be a case that some ingesters responses are
 	// still being processed if replicationSet.Do() returned execution to this method when it decided that it got enough responses from the quorum of instances.
-	m.lock.Lock()
-	defer m.lock.Unlock()
+	//m.lock.Lock()
+	//defer m.lock.Unlock()
 	responses := make([]*ingester_client.LabelValues, 0, len(m.result))
 	for name, values := range m.result {
 		labelValues := make([]string, 0, len(values))
 		for val := range values {
 			labelValues = append(labelValues, val)
 		}
+		m.result[name] = values
 		responses = append(responses, &ingester_client.LabelValues{
 			LabelName: name,
 			Values:    labelValues,
@@ -1043,7 +1044,7 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 
 	// Make sure we get a successful response from all the ingesters
 	replicationSet.MaxErrors = 0
-	replicationSet.MaxUnavailableZones = 0
+	//replicationSet.MaxUnavailableZones = 0
 
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
 		cardinalityMap: map[string]map[string]uint64{},
@@ -1132,8 +1133,8 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
 	// we need to acquire the lock to prevent concurrent read/write to the map because it might be a case that some ingesters responses are
 	// still being processed if replicationSet.Do() returned execution to this method when it decided that it got enough responses from the quorum of instances.
-	cm.lock.Lock()
-	defer cm.lock.Unlock()
+	//cm.lock.Lock()
+	//defer cm.lock.Unlock()
 
 	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMap))
 	// Adjust label values' series count based on the ingester's replication factor
