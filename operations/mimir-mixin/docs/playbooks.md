@@ -1080,9 +1080,7 @@ _This playbook assumes you've enabled versioning in your GCS bucket and the rete
 
 These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
 
-Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and put them all in a file, one block per line.
-
-For example, one time retention kicked in and deleted old blocks we did not want deleted. So, we listed all the NON deleted blocks via `gsutil ls $BUCKET/<userID>` and identified the earliest block (for example $EB_ID). Once it was identified, we listed ALL the blocks via `gsutil ls -l -a $BUCKET/<userID> > full-block-list`. This list consists of blocks that were deleted due to retention and also the temporary blocks created by ingesters and compactions (blocks >=2h and <24h in size). But because blocks are lexicographically sorted I could delete all the blocks after $EB_ID from the list to get the blocks deleted by retention. Sometimes you might need to identify the blocks deleted via logs, etc.
+Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and save the ones to restore in a file named `deleted-block-list` (one block per line).
 
 Step 2: Once you have the `deleted-block-list`, you can now list all the objects you need to restore, because only objects can be restored and not prefixes:
 
@@ -1092,9 +1090,10 @@ gsutil ls -a -r $block | grep "#" | grep -v deletion-mark.json | grep -v index.c
 done < deleted-list > full-deleted-file-list
 ```
 
-The above script will ignore the `deletion-mark.json` and `index.cache.json` which are not required.
+The above script will ignore the `deletion-mark.json` and `index.cache.json` which shouldn't be restored.
 
-Step 3: Run the following script to restore all the deleted blocks / files:
+Step 3: Run the following script to restore the objects:
+
 ```
 while read file; do
 gsutil cp $file ${file%#*}
