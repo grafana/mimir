@@ -96,7 +96,7 @@ func NewBuilder(cfg Config, scfg blocksconvert.SharedConfig, l log.Logger, reg p
 			Help: "Fetched chunks",
 		}),
 		fetchedChunksSize: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_blocksconvert_builder_fetched_chunks_bytes_total",
+			Name: "cortex_blocksconvert_builder_fetched_chunk_bytes_total",
 			Help: "Fetched chunks bytes",
 		}),
 		processedSeries: promauto.With(reg).NewCounter(prometheus.CounterOpts{
