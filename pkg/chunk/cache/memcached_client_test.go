@@ -11,18 +11,18 @@ import (
 	"github.com/bradfitz/gomemcache/memcache"
 )
 
-type mockMemcache struct {
+type mockMemcachedBasicClient struct {
 	sync.RWMutex
 	contents map[string][]byte
 }
 
-func newMockMemcache() *mockMemcache {
-	return &mockMemcache{
+func newMockMemcachedBasicClient() *mockMemcachedBasicClient {
+	return &mockMemcachedBasicClient{
 		contents: map[string][]byte{},
 	}
 }
 
-func (m *mockMemcache) GetMulti(keys []string) (map[string]*memcache.Item, error) {
+func (m *mockMemcachedBasicClient) GetMulti(keys []string) (map[string]*memcache.Item, error) {
 	m.RLock()
 	defer m.RUnlock()
 	result := map[string]*memcache.Item{}
@@ -36,7 +36,7 @@ func (m *mockMemcache) GetMulti(keys []string) (map[string]*memcache.Item, error
 	return result, nil
 }
 
-func (m *mockMemcache) Set(item *memcache.Item) error {
+func (m *mockMemcachedBasicClient) Set(item *memcache.Item) error {
 	m.Lock()
 	defer m.Unlock()
 	m.contents[item.Key] = item.Value

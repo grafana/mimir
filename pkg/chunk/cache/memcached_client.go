@@ -28,7 +28,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// MemcachedBasicClient interface exists for mocking MemcachedClient.
+// MemcachedBasicClient interface exists for mocking MemcachedClient's
+// usage by Memcached{}
 type MemcachedBasicClient interface {
 	GetMulti(keys []string) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
@@ -167,6 +168,80 @@ func NewMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Reg
 	return newClient
 }
 
+func (c *MemcachedClient) Add(item *memcache.Item) error {
+	// Skip hitting memcached at all if the item is bigger than the max allowed size.
+	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
+		c.skipped.Inc()
+		return nil
+	}
+
+	err := c.client.Add(item)
+	if err == nil {
+		return nil
+	}
+
+	// Inject the server address in order to have more information about which memcached
+	// backend server failed. This is a best effort.
+	addr, addrErr := c.serverList.PickServer(item.Key)
+	if addrErr != nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "server=%s", addr)
+}
+
+func (c *MemcachedClient) CompareAndSwap(item *memcache.Item) error {
+	err := c.client.CompareAndSwap(item)
+	if err == nil {
+		return nil
+	}
+
+	// Inject the server address in order to have more information about which memcached
+	// backend server failed. This is a best effort.
+	addr, addrErr := c.serverList.PickServer(item.Key)
+	if addrErr != nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "server=%s", addr)
+}
+
+func (c *MemcachedClient) Delete(key string) error {
+	err := c.client.Delete(key)
+	if err == nil {
+		return nil
+	}
+
+	// Inject the server address in order to have more information about which memcached
+	// backend server failed. This is a best effort.
+	addr, addrErr := c.serverList.PickServer(key)
+	if addrErr != nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "server=%s", addr)
+}
+
+func (c *MemcachedClient) Get(key string) (*memcache.Item, error) {
+	item, err := c.client.Get(key)
+	if err == nil {
+		return item, nil
+	}
+
+	// Inject the server address in order to have more information about which memcached
+	// backend server failed. This is a best effort.
+	addr, addrErr := c.serverList.PickServer(key)
+	if addrErr != nil {
+		return nil, err
+	}
+
+	return nil, errors.Wrapf(err, "server=%s", addr)
+}
+
+func (c *MemcachedClient) GetMulti(keys []string) (map[string]*memcache.Item, error) {
+	return c.client.GetMulti(keys)
+}
+
 func (c *MemcachedClient) Set(item *memcache.Item) error {
 	// Skip hitting memcached at all if the item is bigger than the max allowed size.
 	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
@@ -187,10 +262,6 @@ func (c *MemcachedClient) Set(item *memcache.Item) error {
 	}
 
 	return errors.Wrapf(err, "server=%s", addr)
-}
-
-func (c *MemcachedClient) GetMulti(keys []string) (map[string]*memcache.Item, error) {
-	return c.client.GetMulti(keys)
 }
 
 func (c *MemcachedClient) circuitBreakerStateChange(name string, from gobreaker.State, to gobreaker.State) {
