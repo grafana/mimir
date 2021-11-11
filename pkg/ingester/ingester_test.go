@@ -532,7 +532,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, blocksDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-		// Wait until it's ACTIVE
+		// Wait until it's healthy
 		test.Poll(t, time.Second, 1, func() interface{} {
 			return ing.lifecycler.HealthyInstancesCount()
 		})
@@ -655,7 +655,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, blocksDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-		// Wait until it's ACTIVE
+		// Wait until it's healthy
 		test.Poll(t, time.Second, 1, func() interface{} {
 			return ing.lifecycler.HealthyInstancesCount()
 		})

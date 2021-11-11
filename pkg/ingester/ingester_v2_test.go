@@ -1229,7 +1229,7 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -1294,7 +1294,7 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -1409,7 +1409,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -1678,7 +1678,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -2017,7 +2017,7 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -2124,7 +2124,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 	})
 
-	// Wait until it's ACTIVE.
+	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -2176,7 +2176,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE.
+	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -2376,7 +2376,7 @@ func TestIngester_v2QueryStreamManySamples(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE.
+	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -2473,7 +2473,7 @@ func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE.
+	// Wait until it's healthy.
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -2621,7 +2621,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 		require.NoError(b, services.StopAndAwaitTerminated(context.Background(), i))
 	})
 
-	// Wait until it's ACTIVE.
+	// Wait until it's healthy.
 	test.Poll(b, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3035,7 +3035,7 @@ func TestIngester_shipBlocks(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3078,7 +3078,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3130,7 +3130,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3167,7 +3167,7 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3209,7 +3209,7 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3262,7 +3262,7 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3309,7 +3309,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3546,7 +3546,7 @@ func TestIngester_flushing(t *testing.T) {
 				_ = services.StopAndAwaitTerminated(context.Background(), i)
 			})
 
-			// Wait until it's ACTIVE
+			// Wait until it's healthy
 			test.Poll(t, 1*time.Second, 1, func() interface{} {
 				return i.lifecycler.HealthyInstancesCount()
 			})
@@ -3573,7 +3573,7 @@ func TestIngester_ForFlush(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3641,7 +3641,7 @@ func Test_Ingester_v2UserStats(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3689,7 +3689,7 @@ func Test_Ingester_v2AllUserStats(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3751,7 +3751,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -3833,7 +3833,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -4045,7 +4045,7 @@ func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -4082,7 +4082,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -4183,7 +4183,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -4217,7 +4217,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
+	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
