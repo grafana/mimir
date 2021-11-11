@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin
 .DEFAULT_GOAL := all
 
 # Version number
@@ -119,6 +119,7 @@ pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
 all: $(UPTODATE_FILES)
 test: protos
+test-with-race: protos
 mod-check: protos
 lint: lint-packaging-scripts protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
@@ -143,7 +144,7 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
@@ -228,6 +229,9 @@ format:
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test:
+	go test -timeout 30m ./...
+
+test-with-race:
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
 cover:
