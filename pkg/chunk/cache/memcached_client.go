@@ -27,8 +27,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// MemcachedClient interface exists for mocking memcacheClient.
-type MemcachedClient interface {
+// GetterSetterMemcached interface exists for mocking memcacheClient.
+type GetterSetterMemcached interface {
 	GetMulti(keys []string) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 }
@@ -68,7 +68,7 @@ type UpdatedMemcachedClient struct {
 	logger log.Logger
 }
 
-// MemcachedClientConfig defines how a MemcachedClient should be constructed.
+// MemcachedClientConfig defines how a UpdatedMemcachedClient should be constructed.
 type MemcachedClientConfig struct {
 	Host           string        `yaml:"host"`
 	Service        string        `yaml:"service"`
