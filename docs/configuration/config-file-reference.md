@@ -4219,6 +4219,13 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
+# Number of groups that blocks for splitting should be grouped into. Each group
+# of blocks is then split separately. Number of output split shards is
+# controlled by -compactor.split-and-merge-shards. Only used when
+# split-and-merge compaction strategy is in used.
+# CLI flag: -compactor.split-groups
+[compactor_split_groups: <int> | default = 4]
+
 # Max number of compactors that can compact blocks for single tenant. Only used
 # when split-and-merge compaction strategy is in use. 0 to disable the limit and
 # use all compactors.

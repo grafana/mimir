@@ -107,6 +107,7 @@ type Limits struct {
 	// Compactor.
 	CompactorBlocksRetentionPeriod model.Duration `yaml:"compactor_blocks_retention_period" json:"compactor_blocks_retention_period"`
 	CompactorSplitAndMergeShards   int            `yaml:"compactor_split_and_merge_shards" json:"compactor_split_and_merge_shards"`
+	CompactorSplitGroups           int            `yaml:"compactor_split_groups" json:"compactor_split_groups"`
 	CompactorTenantShardSize       int            `yaml:"compactor_tenant_shard_size" json:"compactor_tenant_shard_size"`
 
 	// This config doesn't have a CLI flag registered here because they're registered in
@@ -192,6 +193,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 
 	f.Var(&l.CompactorBlocksRetentionPeriod, "compactor.blocks-retention-period", "Delete blocks containing samples older than the specified retention period. 0 to disable.")
 	f.IntVar(&l.CompactorSplitAndMergeShards, "compactor.split-and-merge-shards", 0, "The number of shards to use when splitting blocks. This config option is used only when split-and-merge compaction strategy is in use. 0 to disable splitting but keep using the split-and-merge compaction strategy.")
+	f.IntVar(&l.CompactorSplitGroups, "compactor.split-groups", 4, "Number of groups that blocks for splitting should be grouped into. Each group of blocks is then split separately. Number of output split shards is controlled by -compactor.split-and-merge-shards. Only used when split-and-merge compaction strategy is in used.")
 	f.IntVar(&l.CompactorTenantShardSize, "compactor.compactor-tenant-shard-size", 1, "Max number of compactors that can compact blocks for single tenant. Only used when split-and-merge compaction strategy is in use. 0 to disable the limit and use all compactors.")
 
 	// Store-gateway.
@@ -556,6 +558,11 @@ func (o *Overrides) CompactorBlocksRetentionPeriod(userID string) time.Duration 
 // CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 func (o *Overrides) CompactorSplitAndMergeShards(userID string) int {
 	return o.getOverridesForUser(userID).CompactorSplitAndMergeShards
+}
+
+// CompactorSplitGroupsCount returns the number of groups that blocks for splitting should be grouped into.
+func (o *Overrides) CompactorSplitGroups(userID string) int {
+	return o.getOverridesForUser(userID).CompactorSplitGroups
 }
 
 // MetricRelabelConfigs returns the metric relabel configs for a given user.

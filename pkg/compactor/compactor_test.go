@@ -1027,6 +1027,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 
 	limits := newMockConfigProvider()
 	limits.splitAndMergeShards = map[string]int{"user-1": 4}
+	limits.splitGroups = map[string]int{"user-1": 4}
 
 	c, _, tsdbPlanner, logs, registry := prepareWithConfigProvider(t, cfg, bucketClient, limits)
 
