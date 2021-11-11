@@ -138,6 +138,8 @@ dockers:
     - "--label=homepage=https://grafana.com"
 brews:
   -
+    ids:
+    - needed-for-homebrew
     tap:
       owner: grafana
       name: homebrew-grafana
