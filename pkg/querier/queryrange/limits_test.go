@@ -202,6 +202,7 @@ type mockLimits struct {
 	maxQueryParallelism int
 	maxShardedQueries   int
 	totalShards         int
+	compactorShards     int
 }
 
 func (m mockLimits) MaxQueryLookback(string) time.Duration {
@@ -229,6 +230,10 @@ func (m mockLimits) QueryShardingTotalShards(string) int {
 
 func (m mockLimits) QueryShardingMaxShardedQueries(string) int {
 	return m.maxShardedQueries
+}
+
+func (m mockLimits) CompactorSplitAndMergeShards(userID string) int {
+	return m.compactorShards
 }
 
 type mockHandler struct {

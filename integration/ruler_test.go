@@ -138,8 +138,9 @@ func TestRulerAPI(t *testing.T) {
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(0), "cortex_ruler_managers_total"))
 
 			// Check to ensure the rule groups are no longer active
-			_, err = c.GetRuleGroups()
-			require.Error(t, err)
+			groups, err := c.GetRuleGroups()
+			require.NoError(t, err)
+			require.Empty(t, groups)
 
 			// Ensure no service-specific metrics prefix is used by the wrong service.
 			assertServiceMetricsPrefixes(t, Ruler, ruler)

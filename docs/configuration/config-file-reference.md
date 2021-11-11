@@ -74,6 +74,14 @@ api:
   # CLI flag: -api.response-compression-enabled
   [response_compression_enabled: <boolean> | default = false]
 
+  # Allows to skip label name validation via header on the http write path. Use
+  # with caution as it breaks PromQL. Allowing this for external clients allows
+  # any client to send invalid label names. After enabling it, requests with
+  # X-Mimir-SkipLabelNameValidation HTTP header set to true will not have label
+  # names validated.
+  # CLI flag: -api.skip-label-name-validation-header-enabled
+  [skip_label_name_validation_header_enabled: <boolean> | default = false]
+
   # HTTP URL path under which the Alertmanager ui and api will be served.
   # CLI flag: -http.alertmanager-http-prefix
   [alertmanager_http_prefix: <string> | default = "/alertmanager"]
@@ -4146,7 +4154,10 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant.
+# tenant. 0 to disable query sharding for tenant. Query sharding implementation
+# will adjust the number of query shards based on compactor shards used by
+# split-and-merge compaction strategy. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
@@ -4206,7 +4217,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # only when split-and-merge compaction strategy is in use. 0 to disable
 # splitting but keep using the split-and-merge compaction strategy.
 # CLI flag: -compactor.split-and-merge-shards
-[compactor_split_and_merge_shards: <int> | default = 4]
+[compactor_split_and_merge_shards: <int> | default = 0]
 
 # Max number of compactors that can compact blocks for single tenant. Only used
 # when split-and-merge compaction strategy is in use. 0 to disable the limit and
