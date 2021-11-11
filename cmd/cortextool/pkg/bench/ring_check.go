@@ -9,13 +9,14 @@ import (
 	"time"
 
 	ingester_client "github.com/cortexproject/cortex/pkg/ingester/client"
-	"github.com/cortexproject/cortex/pkg/ring"
-	"github.com/cortexproject/cortex/pkg/ring/kv/codec"
-	"github.com/cortexproject/cortex/pkg/ring/kv/memberlist"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/grafana/dskit/kv/codec"
+	"github.com/grafana/dskit/kv/memberlist"
+	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/prompb"
+	"github.com/thanos-io/thanos/pkg/discovery/dns"
 )
 
 type RingCheckConfig struct {
@@ -27,7 +28,7 @@ type RingCheckConfig struct {
 
 func (cfg *RingCheckConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.BoolVar(&cfg.Enabled, prefix+"enabled", true, "enable ring check module")
-	cfg.MemberlistKV.RegisterFlags(f, prefix)
+	cfg.MemberlistKV.RegisterFlagsWithPrefix(f, prefix)
 	cfg.RingConfig.RegisterFlagsWithPrefix(prefix, f)
 
 	f.DurationVar(&cfg.CheckInterval, prefix+"check-interval", 5*time.Minute, "Interval at which the current ring will be compared with the configured workload")
@@ -53,15 +54,25 @@ func NewRingChecker(id string, instanceName string, cfg RingCheckConfig, workloa
 		logger:   logger,
 		workload: workload,
 	}
-	cfg.MemberlistKV.MetricsRegisterer = prometheus.DefaultRegisterer
+	reg := prometheus.DefaultRegisterer
+	cfg.MemberlistKV.MetricsRegisterer = reg
 	cfg.MemberlistKV.Codecs = []codec.Codec{
 		ring.GetCodec(),
 	}
-	r.MemberlistKV = memberlist.NewKVInitService(&cfg.MemberlistKV, logger)
+
+	dnsProviderReg := prometheus.WrapRegistererWithPrefix(
+		"cortex_",
+		prometheus.WrapRegistererWith(
+			prometheus.Labels{"name": "memberlist"},
+			reg,
+		),
+	)
+	dnsProvider := dns.NewProvider(logger, dnsProviderReg, dns.GolangResolverType)
+	r.MemberlistKV = memberlist.NewKVInitService(&cfg.MemberlistKV, logger, dnsProvider, reg)
 	cfg.RingConfig.KVStore.MemberlistKV = r.MemberlistKV.GetMemberlistKV
 
 	var err error
-	r.Ring, err = ring.New(cfg.RingConfig, "ingester", ring.IngesterRingKey, prometheus.DefaultRegisterer)
+	r.Ring, err = ring.New(cfg.RingConfig, "ingester", ring.IngesterRingKey, logger, reg)
 	if err != nil {
 		return nil, err
 	}

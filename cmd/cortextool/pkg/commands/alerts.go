@@ -17,6 +17,7 @@ import (
 
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	log "github.com/sirupsen/logrus"
@@ -203,7 +204,7 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 	}
 
 	// Use a different registerer than default so we don't get all the Cortex metrics, but include Go runtime metrics.
-	goStats := prometheus.NewGoCollector()
+	goStats := collectors.NewGoCollector()
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(nonDuplicateAlerts)
 	reg.MustRegister(goStats)

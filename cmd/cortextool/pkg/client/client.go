@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cortexproject/cortex/pkg/util/tls"
+	"github.com/grafana/dskit/crypto/tls"
 	"github.com/pkg/errors"
 	log "github.com/sirupsen/logrus"
 )

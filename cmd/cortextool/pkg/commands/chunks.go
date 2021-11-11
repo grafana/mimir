@@ -16,7 +16,7 @@ import (
 	"github.com/cortexproject/cortex/pkg/chunk/cassandra"
 	"github.com/cortexproject/cortex/pkg/chunk/gcp"
 	"github.com/cortexproject/cortex/pkg/cortex"
-	"github.com/cortexproject/cortex/pkg/util/flagext"
+	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
