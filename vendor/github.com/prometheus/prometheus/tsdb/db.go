@@ -84,6 +84,7 @@ func DefaultOptions() *Options {
 		WALCompression:            false,
 		StripeSize:                DefaultStripeSize,
 		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
+		HeadChunksMaxFileSize:     chunks.DefaultMaxHeadChunkFileSize,
 	}
 }
 
