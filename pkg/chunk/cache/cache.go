@@ -92,7 +92,7 @@ func New(cfg Config, reg prometheus.Registerer, logger log.Logger) (Cache, error
 			cfg.Memcache.Expiration = cfg.DefaultValidity
 		}
 
-		client := NewUpdatedMemcachedClient(cfg.MemcacheClient, cfg.Prefix, reg, logger)
+		client := NewMemcachedClient(cfg.MemcacheClient, cfg.Prefix, reg, logger)
 		cache := NewMemcached(cfg.Memcache, client, cfg.Prefix, reg, logger)
 
 		cacheName := cfg.Prefix + "memcache"

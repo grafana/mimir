@@ -38,9 +38,9 @@ type serverSelector interface {
 	SetServers(servers ...string) error
 }
 
-// UpdatedMemcachedClient is a memcache client that gets its server list from SRV
+// MemcachedClient is a memcache client that gets its server list from SRV
 // records, and periodically updates that ServerList.
-type UpdatedMemcachedClient struct {
+type MemcachedClient struct {
 	sync.Mutex
 	name string
 	*memcache.Client
@@ -68,7 +68,7 @@ type UpdatedMemcachedClient struct {
 	logger log.Logger
 }
 
-// MemcachedClientConfig defines how a UpdatedMemcachedClient should be constructed.
+// MemcachedClientConfig defines how a MemcachedClient should be constructed.
 type MemcachedClientConfig struct {
 	Host           string        `yaml:"host"`
 	Service        string        `yaml:"service"`
@@ -98,9 +98,9 @@ func (cfg *MemcachedClientConfig) RegisterFlagsWithPrefix(prefix, description st
 	f.IntVar(&cfg.MaxItemSize, prefix+"memcached.max-item-size", 0, description+"The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 }
 
-// NewUpdatedMemcachedClient creates a new UpdatedMemcacheClient that gets its server list
+// NewMemcachedClient creates a new MemcacheClient that gets its server list
 // from SRV and updates the server list on a regular basis.
-func NewUpdatedMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Registerer, logger log.Logger) *UpdatedMemcachedClient {
+func NewMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Registerer, logger log.Logger) *MemcachedClient {
 	var selector serverSelector
 	if cfg.ConsistentHash {
 		selector = &MemcachedJumpHashSelector{}
@@ -116,7 +116,7 @@ func NewUpdatedMemcachedClient(cfg MemcachedClientConfig, name string, r prometh
 		"name": name,
 	}, r))
 
-	newClient := &UpdatedMemcachedClient{
+	newClient := &MemcachedClient{
 		name:        name,
 		Client:      client,
 		serverList:  selector,
@@ -164,11 +164,11 @@ func NewUpdatedMemcachedClient(cfg MemcachedClientConfig, name string, r prometh
 	return newClient
 }
 
-func (c *UpdatedMemcachedClient) circuitBreakerStateChange(name string, from gobreaker.State, to gobreaker.State) {
+func (c *MemcachedClient) circuitBreakerStateChange(name string, from gobreaker.State, to gobreaker.State) {
 	level.Info(c.logger).Log("msg", "circuit-breaker state change", "name", name, "from-state", from, "to-state", to)
 }
 
-func (c *UpdatedMemcachedClient) dialViaCircuitBreaker(network, address string, timeout time.Duration) (net.Conn, error) {
+func (c *MemcachedClient) dialViaCircuitBreaker(network, address string, timeout time.Duration) (net.Conn, error) {
 	c.Lock()
 	cb := c.cbs[address]
 	if cb == nil {
@@ -195,12 +195,12 @@ func (c *UpdatedMemcachedClient) dialViaCircuitBreaker(network, address string, 
 }
 
 // Stop the memcache client.
-func (c *UpdatedMemcachedClient) Stop() {
+func (c *MemcachedClient) Stop() {
 	close(c.quit)
 	c.wait.Wait()
 }
 
-func (c *UpdatedMemcachedClient) Set(item *memcache.Item) error {
+func (c *MemcachedClient) Set(item *memcache.Item) error {
 	// Skip hitting memcached at all if the item is bigger than the max allowed size.
 	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
 		c.skipped.Inc()
@@ -222,7 +222,7 @@ func (c *UpdatedMemcachedClient) Set(item *memcache.Item) error {
 	return errors.Wrapf(err, "server=%s", addr)
 }
 
-func (c *UpdatedMemcachedClient) updateLoop(updateInterval time.Duration) {
+func (c *MemcachedClient) updateLoop(updateInterval time.Duration) {
 	defer c.wait.Done()
 	ticker := time.NewTicker(updateInterval)
 	for {
@@ -241,7 +241,7 @@ func (c *UpdatedMemcachedClient) updateLoop(updateInterval time.Duration) {
 
 // updateMemcacheServers sets a memcache server list from SRV records. SRV
 // priority & weight are ignored.
-func (c *UpdatedMemcachedClient) updateMemcacheServers() error {
+func (c *MemcachedClient) updateMemcacheServers() error {
 	var servers []string
 
 	if len(c.addresses) > 0 {
