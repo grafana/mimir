@@ -146,8 +146,8 @@ func TestIngesterChunksTransfer(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing1))
 
-	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return ing1.lifecycler.GetState()
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ing1.lifecycler.HealthyInstancesCount()
 	})
 
 	// Now write a sample to this ingester
@@ -179,8 +179,8 @@ func TestIngesterChunksTransfer(t *testing.T) {
 	// Now stop the first ingester, and wait for the second ingester to become ACTIVE.
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing1))
 
-	test.Poll(t, 10*time.Second, ring.ACTIVE, func() interface{} {
-		return ing2.lifecycler.GetState()
+	test.Poll(t, 10*time.Second, 1, func() interface{} {
+		return ing2.lifecycler.HealthyInstancesCount()
 	})
 
 	// And check the second ingester has the sample
@@ -328,8 +328,8 @@ func TestIngesterFlush(t *testing.T) {
 	// Start the ingester, and get it into ACTIVE state.
 	store, ing := newDefaultTestStore(t)
 
-	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return ing.lifecycler.GetState()
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
 	})
 
 	// Now write a sample to this ingester

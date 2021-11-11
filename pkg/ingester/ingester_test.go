@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -534,8 +533,8 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 		// Wait until it's ACTIVE
-		test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-			return ing.lifecycler.GetState()
+		test.Poll(t, time.Second, 1, func() interface{} {
+			return ing.lifecycler.HealthyInstancesCount()
 		})
 
 		return ing
@@ -657,8 +656,8 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 		// Wait until it's ACTIVE
-		test.Poll(t, time.Second, ring.ACTIVE, func() interface{} {
-			return ing.lifecycler.GetState()
+		test.Poll(t, time.Second, 1, func() interface{} {
+			return ing.lifecycler.HealthyInstancesCount()
 		})
 
 		return ing
@@ -1081,8 +1080,8 @@ func TestIngesterActiveSeries(t *testing.T) {
 			ctx := user.InjectOrgID(context.Background(), userID)
 
 			// Wait until the ingester is ACTIVE
-			test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-				return i.lifecycler.GetState()
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
 			})
 
 			// Push timeseries
