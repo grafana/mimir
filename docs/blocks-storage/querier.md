@@ -796,9 +796,15 @@ blocks_storage:
 
     # The write buffer size used by the head chunks mapper. Lower values reduce
     # memory utilisation on clusters with a large number of tenants at the cost
-    # of increased disk I/O operations.
+    # of increased disk I/O operations. The buffer size can't be larger than the
+    # head chunks max file size.
     # CLI flag: -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes
     [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
+
+    # The max size of head chunks file on disk. Once this size is reached, a new
+    # file is cut.
+    # CLI flag: -blocks-storage.tsdb.head-chunks-max-file-size-bytes
+    [head_chunks_max_file_size: <int> | default = 134217728]
 
     # The number of shards of series to use in TSDB (must be a power of 2).
     # Reducing this will decrease memory footprint, but can negatively impact

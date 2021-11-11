@@ -53,8 +53,8 @@ const (
 	SeriesRefSize = 8
 	// HeadChunkFileHeaderSize is the total size of the header for the head chunk file.
 	HeadChunkFileHeaderSize = SegmentHeaderSize
-	// MaxHeadChunkFileSize is the max size of a head chunk file.
-	MaxHeadChunkFileSize = 128 * 1024 * 1024 // 128 MiB.
+	// DefaultMaxHeadChunkFileSize is the default max size of a head chunk file.
+	DefaultMaxHeadChunkFileSize = 128 * 1024 * 1024 // 128 MiB.
 	// CRCSize is the size of crc32 sum on disk.
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
@@ -62,8 +62,6 @@ const (
 	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunksFormatVersionSize + MaxChunkLengthFieldSize + CRCSize
 	// MinWriteBufferSize is the minimum write buffer size allowed.
 	MinWriteBufferSize = 64 * 1024 // 64KB.
-	// MaxWriteBufferSize is the maximum write buffer size allowed.
-	MaxWriteBufferSize = 8 * 1024 * 1024 // 8 MiB.
 	// DefaultWriteBufferSize is the default write buffer size.
 	DefaultWriteBufferSize = 4 * 1024 * 1024 // 4 MiB.
 )
@@ -100,8 +98,9 @@ type ChunkDiskMapper struct {
 	curFileNumBytes atomic.Int64 // Bytes written in current open file.
 
 	/// Writer.
-	dir             *os.File
-	writeBufferSize int
+	dir                  *os.File
+	writeBufferSize      int
+	maxHeadChunkFileSize int
 
 	curFile         *os.File // File being written to.
 	curFileSequence int      // Index of current open file being appended to.
@@ -140,10 +139,10 @@ type mmappedChunkFile struct {
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*ChunkDiskMapper, error) {
+func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize, maxHeadChunkFileSize int) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
-	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
-		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
+	if writeBufferSize < MinWriteBufferSize || writeBufferSize > maxHeadChunkFileSize {
+		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, maxHeadChunkFileSize, writeBufferSize)
 	}
 	if writeBufferSize%1024 != 0 {
 		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
@@ -158,11 +157,12 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 	}
 
 	m := &ChunkDiskMapper{
-		dir:             dirFile,
-		pool:            pool,
-		writeBufferSize: writeBufferSize,
-		crc32:           newCRC32(),
-		chunkBuffer:     newChunkBuffer(),
+		dir:                  dirFile,
+		pool:                 pool,
+		writeBufferSize:      writeBufferSize,
+		maxHeadChunkFileSize: maxHeadChunkFileSize,
+		crc32:                newCRC32(),
+		chunkBuffer:          newChunkBuffer(),
 	}
 
 	if m.pool == nil {
@@ -355,7 +355,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 // Time retention: so that we can delete old chunks with some time guarantee in low load environments.
 func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int) bool {
 	return cdm.curFileSize() == 0 || // First head chunk file.
-		cdm.curFileSize()+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+		cdm.curFileSize()+int64(chunkSize+MaxHeadChunkMetaSize) > int64(cdm.maxHeadChunkFileSize) // Exceeds the max head chunk file size.
 }
 
 // CutNewFile creates a new m-mapped file.
@@ -373,7 +373,12 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		return err
 	}
 
-	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
+	preallocationSize := 0
+	if HeadChunkFilePreallocationEnabled {
+		preallocationSize = cdm.maxHeadChunkFileSize
+	}
+
+	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, int64(preallocationSize))
 	if err != nil {
 		return err
 	}
@@ -393,7 +398,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		cdm.readPathMtx.Unlock()
 	}
 
-	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), MaxHeadChunkFileSize)
+	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), cdm.maxHeadChunkFileSize)
 	if err != nil {
 		return err
 	}

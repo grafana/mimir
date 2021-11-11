@@ -125,6 +125,7 @@ type HeadOptions struct {
 	ChunkDirRoot         string
 	ChunkPool            chunkenc.Pool
 	ChunkWriteBufferSize int
+	ChunkMaxFileSize     int
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
@@ -140,6 +141,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkDirRoot:         "",
 		ChunkPool:            chunkenc.NewPool(),
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
+		ChunkMaxFileSize:     chunks.DefaultMaxHeadChunkFileSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 	}
@@ -208,6 +210,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		mmappedChunksDir(opts.ChunkDirRoot),
 		opts.ChunkPool,
 		opts.ChunkWriteBufferSize,
+		opts.ChunkMaxFileSize,
 	)
 	if err != nil {
 		return nil, err

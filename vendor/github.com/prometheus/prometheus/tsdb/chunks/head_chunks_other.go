@@ -16,6 +16,6 @@
 
 package chunks
 
-// HeadChunkFilePreallocationSize is the size to which the m-map file should be preallocated when a new file is cut.
+// HeadChunkFilePreallocationEnabled defined whether the m-map file should be preallocated when a new file is cut.
 // Windows needs pre-allocations while the other OS does not.
-var HeadChunkFilePreallocationSize int64
+var HeadChunkFilePreallocationEnabled = false
