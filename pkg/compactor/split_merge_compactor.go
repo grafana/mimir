@@ -16,6 +16,7 @@ func splitAndMergeGrouperFactory(ctx context.Context, cfg Config, cfgProvider Co
 		userID,
 		cfg.BlockRanges.ToMilliseconds(),
 		uint32(cfgProvider.CompactorSplitAndMergeShards(userID)),
+		uint32(cfgProvider.CompactorSplitGroups(userID)),
 		logger)
 }
 

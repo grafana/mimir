@@ -692,12 +692,14 @@ type mockConfigProvider struct {
 	userRetentionPeriods map[string]time.Duration
 	splitAndMergeShards  map[string]int
 	instancesShardSize   map[string]int
+	splitGroups          map[string]int
 }
 
 func newMockConfigProvider() *mockConfigProvider {
 	return &mockConfigProvider{
 		userRetentionPeriods: make(map[string]time.Duration),
 		splitAndMergeShards:  make(map[string]int),
+		splitGroups:          make(map[string]int),
 	}
 }
 
@@ -710,6 +712,13 @@ func (m *mockConfigProvider) CompactorBlocksRetentionPeriod(user string) time.Du
 
 func (m *mockConfigProvider) CompactorSplitAndMergeShards(user string) int {
 	if result, ok := m.splitAndMergeShards[user]; ok {
+		return result
+	}
+	return 0
+}
+
+func (m *mockConfigProvider) CompactorSplitGroups(user string) int {
+	if result, ok := m.splitGroups[user]; ok {
 		return result
 	}
 	return 0

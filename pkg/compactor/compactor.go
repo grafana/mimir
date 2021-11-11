@@ -181,6 +181,11 @@ type ConfigProvider interface {
 	// (used only when split-and-merge compaction strategy is enabled).
 	CompactorSplitAndMergeShards(userID string) int
 
+	// CompactorSplitGroupsCount returns the number of groups that blocks used for splitting should
+	// be grouped into. Different groups are then split by different jobs.
+	// Used only when split-and-merge compaction strategy is enabled.
+	CompactorSplitGroups(userID string) int
+
 	// CompactorTenantShardSize returns number of compactors that this user can use. Only used
 	// for split-and-merge compaction strategy. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
