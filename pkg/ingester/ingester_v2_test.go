@@ -625,7 +625,7 @@ func TestIngester_v2Push(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Wait until the ingester is ACTIVE
+			// Wait until the ingester is healthy
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 				return i.lifecycler.HealthyInstancesCount()
 			})
@@ -720,7 +720,7 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
+	// Wait until the ingester is healthy
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -802,7 +802,7 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
+	// Wait until the ingester is healthy
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})
@@ -872,7 +872,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
+	// Wait until the ingester is healthy
 	test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
 		return ingester.lifecycler.HealthyInstancesCount()
 	})
@@ -1170,7 +1170,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 					defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
 
-					// Wait until the ingester is ACTIVE
+					// Wait until the ingester is healthy
 					test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
 						return ingester.lifecycler.HealthyInstancesCount()
 					})
@@ -2713,7 +2713,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 
 func requireActiveIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
 	ingester := getStartedIngesterWithBlocksStorage(t, ingesterCfg, registerer)
-	// Wait until the ingester is ACTIVE
+	// Wait until the ingester is healthy
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 		return ingester.lifecycler.HealthyInstancesCount()
 	})
@@ -4370,7 +4370,7 @@ func TestIngester_v2PushInstanceLimits(t *testing.T) {
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-			// Wait until the ingester is ACTIVE
+			// Wait until the ingester is healthy
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 				return i.lifecycler.HealthyInstancesCount()
 			})
@@ -4469,7 +4469,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
+	// Wait until the ingester is healthy
 	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 		return i.lifecycler.HealthyInstancesCount()
 	})

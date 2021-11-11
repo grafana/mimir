@@ -1079,7 +1079,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Wait until the ingester is ACTIVE
+			// Wait until the ingester is healthy
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
 				return i.lifecycler.HealthyInstancesCount()
 			})
