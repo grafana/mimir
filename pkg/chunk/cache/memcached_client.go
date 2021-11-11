@@ -42,7 +42,7 @@ type serverSelector interface {
 // MemcachedClient is a memcache client that gets its server list from SRV
 // records, and periodically updates that ServerList.
 type MemcachedClient struct {
-	sync.Mutex
+	mu         sync.Mutex
 	name       string
 	client     *memcache.Client
 	serverList serverSelector
@@ -198,7 +198,7 @@ func (c *MemcachedClient) circuitBreakerStateChange(name string, from gobreaker.
 }
 
 func (c *MemcachedClient) dialViaCircuitBreaker(network, address string, timeout time.Duration) (net.Conn, error) {
-	c.Lock()
+	c.mu.Lock()
 	cb := c.cbs[address]
 	if cb == nil {
 		cb = gobreaker.NewCircuitBreaker(gobreaker.Settings{
@@ -212,7 +212,7 @@ func (c *MemcachedClient) dialViaCircuitBreaker(network, address string, timeout
 		})
 		c.cbs[address] = cb
 	}
-	c.Unlock()
+	c.mu.Unlock()
 
 	conn, err := cb.Execute(func() (interface{}, error) {
 		return net.DialTimeout(network, address, timeout)
@@ -272,7 +272,7 @@ func (c *MemcachedClient) updateMemcacheServers() error {
 	if len(servers) > 0 {
 		// Copy across circuit-breakers for current set of addresses, thus
 		// leaving behind any for servers we won't talk to again
-		c.Lock()
+		c.mu.Lock()
 		newCBs := make(map[string]*gobreaker.CircuitBreaker, len(servers))
 		for _, address := range servers {
 			if cb, exists := c.cbs[address]; exists {
@@ -280,7 +280,7 @@ func (c *MemcachedClient) updateMemcacheServers() error {
 			}
 		}
 		c.cbs = newCBs
-		c.Unlock()
+		c.mu.Unlock()
 	}
 
 	// ServerList deterministically maps keys to _index_ of the server list.
