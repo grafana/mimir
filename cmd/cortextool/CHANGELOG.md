@@ -2,6 +2,10 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## v0.10.6
+
+* [FEATURE] Rules check for Loki now supports `pattern`.
+
 ## v0.10.5
 
 * [ENHANCEMENT] Allow usage of HTTP_PROXY and HTTPS_PROXY. #216
