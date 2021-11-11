@@ -15,10 +15,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/pkg/errors"
+
 	"github.com/bradfitz/gomemcache/memcache"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/sony/gobreaker"
@@ -27,8 +28,8 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// GetterSetterMemcached interface exists for mocking memcacheClient.
-type GetterSetterMemcached interface {
+// MemcachedBasicClient interface exists for mocking MemcachedClient.
+type MemcachedBasicClient interface {
 	GetMulti(keys []string) (map[string]*memcache.Item, error)
 	Set(item *memcache.Item) error
 }
@@ -42,8 +43,8 @@ type serverSelector interface {
 // records, and periodically updates that ServerList.
 type MemcachedClient struct {
 	sync.Mutex
-	name string
-	*memcache.Client
+	name       string
+	client     *memcache.Client
 	serverList serverSelector
 
 	hostname string
@@ -67,6 +68,8 @@ type MemcachedClient struct {
 
 	logger log.Logger
 }
+
+var _ MemcachedBasicClient = &MemcachedClient{}
 
 // MemcachedClientConfig defines how a MemcachedClient should be constructed.
 type MemcachedClientConfig struct {
@@ -118,7 +121,7 @@ func NewMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Reg
 
 	newClient := &MemcachedClient{
 		name:        name,
-		Client:      client,
+		client:      client,
 		serverList:  selector,
 		hostname:    cfg.Host,
 		service:     cfg.Service,
@@ -146,7 +149,7 @@ func NewMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Reg
 		}),
 	}
 	if cfg.CBFailures > 0 {
-		newClient.Client.DialTimeout = newClient.dialViaCircuitBreaker
+		newClient.client.DialTimeout = newClient.dialViaCircuitBreaker
 	}
 
 	if len(cfg.Addresses) > 0 {
@@ -162,6 +165,32 @@ func NewMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Reg
 	newClient.wait.Add(1)
 	go newClient.updateLoop(cfg.UpdateInterval)
 	return newClient
+}
+
+func (c *MemcachedClient) Set(item *memcache.Item) error {
+	// Skip hitting memcached at all if the item is bigger than the max allowed size.
+	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
+		c.skipped.Inc()
+		return nil
+	}
+
+	err := c.client.Set(item)
+	if err == nil {
+		return nil
+	}
+
+	// Inject the server address in order to have more information about which memcached
+	// backend server failed. This is a best effort.
+	addr, addrErr := c.serverList.PickServer(item.Key)
+	if addrErr != nil {
+		return err
+	}
+
+	return errors.Wrapf(err, "server=%s", addr)
+}
+
+func (c *MemcachedClient) GetMulti(keys []string) (map[string]*memcache.Item, error) {
+	return c.client.GetMulti(keys)
 }
 
 func (c *MemcachedClient) circuitBreakerStateChange(name string, from gobreaker.State, to gobreaker.State) {
@@ -198,28 +227,6 @@ func (c *MemcachedClient) dialViaCircuitBreaker(network, address string, timeout
 func (c *MemcachedClient) Stop() {
 	close(c.quit)
 	c.wait.Wait()
-}
-
-func (c *MemcachedClient) Set(item *memcache.Item) error {
-	// Skip hitting memcached at all if the item is bigger than the max allowed size.
-	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
-		c.skipped.Inc()
-		return nil
-	}
-
-	err := c.Client.Set(item)
-	if err == nil {
-		return nil
-	}
-
-	// Inject the server address in order to have more information about which memcached
-	// backend server failed. This is a best effort.
-	addr, addrErr := c.serverList.PickServer(item.Key)
-	if addrErr != nil {
-		return err
-	}
-
-	return errors.Wrapf(err, "server=%s", addr)
 }
 
 func (c *MemcachedClient) updateLoop(updateInterval time.Duration) {

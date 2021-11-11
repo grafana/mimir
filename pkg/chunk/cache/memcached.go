@@ -43,7 +43,7 @@ func (cfg *MemcachedConfig) RegisterFlagsWithPrefix(prefix, description string, 
 // Memcached type caches chunks in memcached
 type Memcached struct {
 	cfg      MemcachedConfig
-	memcache GetterSetterMemcached
+	memcache MemcachedBasicClient
 	name     string
 
 	requestDuration *instr.HistogramCollector
@@ -55,7 +55,7 @@ type Memcached struct {
 }
 
 // NewMemcached makes a new Memcached.
-func NewMemcached(cfg MemcachedConfig, client GetterSetterMemcached, name string, reg prometheus.Registerer, logger log.Logger) *Memcached {
+func NewMemcached(cfg MemcachedConfig, client MemcachedBasicClient, name string, reg prometheus.Registerer, logger log.Logger) *Memcached {
 	c := &Memcached{
 		cfg:      cfg,
 		memcache: client,
