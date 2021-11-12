@@ -272,6 +272,7 @@ type headMetrics struct {
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
 	snapshotReplayErrorTotal prometheus.Counter // Will be either 0 or 1.
+	oooHistogram             prometheus.Histogram
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -369,6 +370,19 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		snapshotReplayErrorTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_snapshot_replay_error_total",
 			Help: "Total number snapshot replays that failed.",
+		}),
+		oooHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name: "prometheus_tsdb_sample_ooo_delta",
+			Help: "Delta in ms by which a sample is considered out of order.",
+			Buckets: []float64{
+				1000 * 60 * 10,      // 10 min
+				1000 * 60 * 30,      // 30 min
+				1000 * 60 * 60,      // 60 min
+				1000 * 60 * 60 * 2,  // 2h
+				1000 * 60 * 60 * 3,  // 3h
+				1000 * 60 * 60 * 6,  // 6h
+				1000 * 60 * 60 * 24, // 24h
+			},
 		}),
 	}
 

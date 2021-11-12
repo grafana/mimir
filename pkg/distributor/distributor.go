@@ -108,6 +108,7 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
+	sampleDelayHistogram             prometheus.Histogram
 	ingesterAppends                  *prometheus.CounterVec
 	ingesterAppendFailures           *prometheus.CounterVec
 	ingesterQueries                  *prometheus.CounterVec
@@ -296,6 +297,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "labels_per_sample",
 			Help:      "Number of labels per sample.",
 			Buckets:   []float64{5, 10, 15, 20, 25},
+		}),
+		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Namespace: "cortex",
+			Name:      "sample_delay",
+			Help:      "Number of ms by which a sample came in late wrt wallclock.",
+			Buckets: []float64{
+				1000 * 60 * 10,      // 10 min
+				1000 * 60 * 30,      // 30 min
+				1000 * 60 * 60,      // 60 min
+				1000 * 60 * 60 * 2,  // 2h
+				1000 * 60 * 60 * 3,  // 3h
+				1000 * 60 * 60 * 6,  // 6h
+				1000 * 60 * 60 * 24, // 24h
+			},
 		}),
 		ingesterAppends: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -508,7 +523,7 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 	}
 
 	for _, s := range ts.Samples {
-		if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
+		if err := validation.ValidateSample(d.sampleDelayHistogram, d.limits, userID, ts.Labels, s); err != nil {
 			return err
 		}
 	}
