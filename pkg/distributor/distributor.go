@@ -300,7 +300,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}),
 		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
-			Name:      "sample_delay",
+			Name:      "distributor_sample_delay",
 			Help:      "Number of ms by which a sample came in late wrt wallclock.",
 			Buckets: []float64{
 				1000 * 60 * 10,      // 10 min
