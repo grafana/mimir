@@ -2105,7 +2105,7 @@ func TestDistributor_LabelNamesAndValues_ExpectedAllPossibleLabelNamesAndValuesT
 	require.Equal(t, 10000, len(response.Items[0].Values))
 }
 
-func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []Series) (context.Context, []*Distributor) {
+func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (context.Context, []*Distributor) {
 	ctx := user.InjectOrgID(context.Background(), "cardinality-user")
 
 	// Create distributor
@@ -2136,16 +2136,16 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []Series) (cont
 	return ctx, ds
 }
 
-type Series struct {
+type series struct {
 	lbls      labels.Labels
 	value     float64
 	timestamp int64
 }
 
-func createSeries(count int) []Series {
-	fixtures := make([]Series, 0, count)
+func createSeries(count int) []series {
+	fixtures := make([]series, 0, count)
 	for i := 0; i < count; i++ {
-		fixtures = append(fixtures, Series{
+		fixtures = append(fixtures, series{
 			labels.Labels{{Name: labels.MetricName, Value: "metric" + strconv.Itoa(i)}}, 1, int64(100000 + i)})
 	}
 	return fixtures
