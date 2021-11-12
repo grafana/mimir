@@ -115,6 +115,7 @@
   * `cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total`
 * [ENHANCEMENT] Querier&Ruler: reduce cpu usage, latency and peak memory consumption. #459 #463
 * [ENHANCEMENT] Overrides Exporter: Add `max_fetched_chunks_per_query` limit to the default and per-tenant limits exported as metrics. #471
+* [ENHANCEMENT] Compactor (blocks cleaner): Delete blocks marked for deletion faster. #490
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
