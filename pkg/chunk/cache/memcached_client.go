@@ -169,73 +169,45 @@ func NewMemcachedClient(cfg MemcachedClientConfig, name string, r prometheus.Reg
 }
 
 func (c *MemcachedClient) Add(item *memcache.Item) error {
-	// Skip hitting memcached at all if the item is bigger than the max allowed size.
 	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
 		c.skipped.Inc()
-		return nil
+		return fmt.Errorf("the item size is bigger than the max allowed size %d > %d", len(item.Value), c.maxItemSize)
 	}
 
 	err := c.client.Add(item)
-	if err == nil {
-		return nil
+	if err != nil {
+		return c.wrapErrWithServer(item.Key, err)
 	}
-
-	// Inject the server address in order to have more information about which memcached
-	// backend server failed. This is a best effort.
-	addr, addrErr := c.serverList.PickServer(item.Key)
-	if addrErr != nil {
-		return err
-	}
-
-	return errors.Wrapf(err, "server=%s", addr)
+	return nil
 }
 
 func (c *MemcachedClient) CompareAndSwap(item *memcache.Item) error {
+	if c.maxItemSize > 0 && len(item.Value) > c.maxItemSize {
+		c.skipped.Inc()
+		return fmt.Errorf("the item size is bigger than the max allowed size %d > %d", len(item.Value), c.maxItemSize)
+	}
+
 	err := c.client.CompareAndSwap(item)
-	if err == nil {
-		return nil
+	if err != nil {
+		return c.wrapErrWithServer(item.Key, err)
 	}
-
-	// Inject the server address in order to have more information about which memcached
-	// backend server failed. This is a best effort.
-	addr, addrErr := c.serverList.PickServer(item.Key)
-	if addrErr != nil {
-		return err
-	}
-
-	return errors.Wrapf(err, "server=%s", addr)
+	return nil
 }
 
 func (c *MemcachedClient) Delete(key string) error {
 	err := c.client.Delete(key)
-	if err == nil {
-		return nil
+	if err != nil {
+		return c.wrapErrWithServer(key, err)
 	}
-
-	// Inject the server address in order to have more information about which memcached
-	// backend server failed. This is a best effort.
-	addr, addrErr := c.serverList.PickServer(key)
-	if addrErr != nil {
-		return err
-	}
-
-	return errors.Wrapf(err, "server=%s", addr)
+	return nil
 }
 
 func (c *MemcachedClient) Get(key string) (*memcache.Item, error) {
 	item, err := c.client.Get(key)
-	if err == nil {
-		return item, nil
+	if err != nil {
+		return nil, c.wrapErrWithServer(item.Key, err)
 	}
-
-	// Inject the server address in order to have more information about which memcached
-	// backend server failed. This is a best effort.
-	addr, addrErr := c.serverList.PickServer(key)
-	if addrErr != nil {
-		return nil, err
-	}
-
-	return nil, errors.Wrapf(err, "server=%s", addr)
+	return item, nil
 }
 
 func (c *MemcachedClient) GetMulti(keys []string) (map[string]*memcache.Item, error) {
@@ -250,13 +222,16 @@ func (c *MemcachedClient) Set(item *memcache.Item) error {
 	}
 
 	err := c.client.Set(item)
-	if err == nil {
-		return nil
+	if err != nil {
+		return c.wrapErrWithServer(item.Key, err)
 	}
+	return nil
+}
 
-	// Inject the server address in order to have more information about which memcached
-	// backend server failed. This is a best effort.
-	addr, addrErr := c.serverList.PickServer(item.Key)
+// wrapErrWithServer injects the server address in order to have more information about
+// which memcached backend server failed. This is a best effort.
+func (c *MemcachedClient) wrapErrWithServer(key string, err error) error {
+	addr, addrErr := c.serverList.PickServer(key)
 	if addrErr != nil {
 		return err
 	}
