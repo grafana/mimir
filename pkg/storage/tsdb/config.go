@@ -149,6 +149,7 @@ type TSDBConfig struct {
 	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency"`
 	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout"`
 	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes"`
+	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance"`
 	StripeSize                int           `yaml:"stripe_size"`
 	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled"`
 	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes"`
@@ -187,6 +188,7 @@ func (cfg *TSDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.HeadCompactionConcurrency, "blocks-storage.tsdb.head-compaction-concurrency", 5, "Maximum number of tenants concurrently compacting TSDB head into a new block")
 	f.DurationVar(&cfg.HeadCompactionIdleTimeout, "blocks-storage.tsdb.head-compaction-idle-timeout", 1*time.Hour, "If TSDB head is idle for this duration, it is compacted. Note that up to 25% jitter is added to the value to avoid ingesters compacting concurrently. 0 means disabled.")
 	f.IntVar(&cfg.HeadChunksWriteBufferSize, "blocks-storage.tsdb.head-chunks-write-buffer-size-bytes", chunks.DefaultWriteBufferSize, "The write buffer size used by the head chunks mapper. Lower values reduce memory utilisation on clusters with a large number of tenants at the cost of increased disk I/O operations.")
+	f.Float64Var(&cfg.HeadChunksEndTimeVariance, "blocks-storage.tsdb.head-chunks-end-time-variance", 0, "How much variance (as percentage between 0 and 1) should be applied to the chunk end time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 means no variance.")
 	f.IntVar(&cfg.StripeSize, "blocks-storage.tsdb.stripe-size", 16384, "The number of shards of series to use in TSDB (must be a power of 2). Reducing this will decrease memory footprint, but can negatively impact performance.")
 	f.BoolVar(&cfg.WALCompressionEnabled, "blocks-storage.tsdb.wal-compression-enabled", false, "True to enable TSDB WAL compression.")
 	f.IntVar(&cfg.WALSegmentSizeBytes, "blocks-storage.tsdb.wal-segment-size-bytes", wal.DefaultSegmentSize, "TSDB WAL segments files max size (bytes).")
