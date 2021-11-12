@@ -8,6 +8,7 @@ package compactor
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -27,6 +28,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
+	"github.com/grafana/mimir/pkg/util/math"
 )
 
 type BlocksCleanerConfig struct {
@@ -338,25 +340,7 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 		return err
 	}
 
-	// Delete blocks marked for deletion. We iterate over a copy of deletion marks because
-	// we'll need to manipulate the index (removing blocks which get deleted).
-	for _, mark := range idx.BlockDeletionMarks.Clone() {
-		if time.Since(mark.GetDeletionTime()).Seconds() <= c.cfg.DeletionDelay.Seconds() {
-			continue
-		}
-
-		if err := block.Delete(ctx, userLogger, userBucket, mark.ID); err != nil {
-			c.blocksFailedTotal.Inc()
-			level.Warn(userLogger).Log("msg", "failed to delete block marked for deletion", "block", mark.ID, "err", err)
-			continue
-		}
-
-		// Remove the block from the bucket index too.
-		idx.RemoveBlock(mark.ID)
-
-		c.blocksCleanedTotal.Inc()
-		level.Info(userLogger).Log("msg", "deleted block marked for deletion", "block", mark.ID)
-	}
+	c.deleteBlocksMarkedForDeletion(ctx, idx, userBucket, userLogger)
 
 	// Partial blocks with a deletion mark can be cleaned up. This is a best effort, so we don't return
 	// error if the cleanup of partial blocks fail.
@@ -375,6 +359,57 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	c.tenantBucketIndexLastUpdate.WithLabelValues(userID).SetToCurrentTime()
 
 	return nil
+}
+
+// Concurrently deletes blocks marked for deletion, and removes blocks from index.
+func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *bucketindex.Index, userBucket objstore.Bucket, userLogger log.Logger) {
+	blocksToDelete := make(chan ulid.ULID, len(idx.BlockDeletionMarks))
+
+	// Collect blocks marked for deletion into buffered channel.
+	for _, mark := range idx.BlockDeletionMarks {
+		if time.Since(mark.GetDeletionTime()).Seconds() <= c.cfg.DeletionDelay.Seconds() {
+			continue
+		}
+		blocksToDelete <- mark.ID
+	}
+
+	close(blocksToDelete)
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+
+	const deleteBlocksConcurrency = 16
+
+	// Delete blocks concurrently.
+	for ix := 0; ix < math.Min(deleteBlocksConcurrency, len(idx.BlockDeletionMarks)); ix++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for blockID := range blocksToDelete {
+				if ctx.Err() != nil {
+					return
+				}
+
+				if err := block.Delete(ctx, userLogger, userBucket, blockID); err != nil {
+					c.blocksFailedTotal.Inc()
+					level.Warn(userLogger).Log("msg", "failed to delete block marked for deletion", "block", blockID, "err", err)
+					continue
+				}
+
+				// Remove the block from the bucket index too.
+				mu.Lock()
+				idx.RemoveBlock(blockID)
+				mu.Unlock()
+
+				c.blocksCleanedTotal.Inc()
+				level.Info(userLogger).Log("msg", "deleted block marked for deletion", "block", blockID)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // cleanUserPartialBlocks delete partial blocks which are safe to be deleted. The provided partials map
