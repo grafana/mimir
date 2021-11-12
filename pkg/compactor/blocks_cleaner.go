@@ -382,8 +382,11 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 		wg sync.WaitGroup
 	)
 
+	// Precomputed to avoid race on idx.BlockDeletionMarks.
+	con := math.Min(deleteBlocksConcurrency, len(idx.BlockDeletionMarks))
+
 	// Delete blocks concurrently.
-	for ix := 0; ix < math.Min(deleteBlocksConcurrency, len(idx.BlockDeletionMarks)); ix++ {
+	for ix := 0; ix < con; ix++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -433,7 +436,9 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 		wg sync.WaitGroup
 	)
 
-	for ix := 0; ix < math.Min(deleteBlocksConcurrency, len(partials)); ix++ {
+	// Precomputed to avoid rance on partials map.
+	con := math.Min(deleteBlocksConcurrency, len(partials))
+	for ix := 0; ix < con; ix++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
