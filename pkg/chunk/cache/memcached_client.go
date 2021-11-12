@@ -42,7 +42,6 @@ type serverSelector interface {
 // MemcachedClient is a memcache client that gets its server list from SRV
 // records, and periodically updates that ServerList.
 type MemcachedClient struct {
-	mu         sync.Mutex
 	name       string
 	client     *memcache.Client
 	serverList serverSelector
@@ -53,7 +52,9 @@ type MemcachedClient struct {
 	addresses []string
 	provider  *dns.Provider
 
-	cbs        map[ /*address*/ string]*gobreaker.CircuitBreaker
+	mu  sync.Mutex
+	cbs map[ /*address*/ string]*gobreaker.CircuitBreaker
+
 	cbFailures uint
 	cbTimeout  time.Duration
 	cbInterval time.Duration
