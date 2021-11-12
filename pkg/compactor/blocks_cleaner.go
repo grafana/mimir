@@ -361,6 +361,8 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	return nil
 }
 
+const deleteBlocksConcurrency = 16
+
 // Concurrently deletes blocks marked for deletion, and removes blocks from index.
 func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *bucketindex.Index, userBucket objstore.Bucket, userLogger log.Logger) {
 	blocksToDelete := make(chan ulid.ULID, len(idx.BlockDeletionMarks))
@@ -379,8 +381,6 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 		mu sync.Mutex
 		wg sync.WaitGroup
 	)
-
-	const deleteBlocksConcurrency = 16
 
 	// Delete blocks concurrently.
 	for ix := 0; ix < math.Min(deleteBlocksConcurrency, len(idx.BlockDeletionMarks)); ix++ {
@@ -415,37 +415,64 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 // cleanUserPartialBlocks delete partial blocks which are safe to be deleted. The provided partials map
 // is updated accordingly.
 func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
+	// Collect all blocks with missing meta.json into buffered channel.
+	ch := make(chan ulid.ULID, len(partials))
+
 	for blockID, blockErr := range partials {
 		// We can safely delete only blocks which are partial because the meta.json is missing.
 		if !errors.Is(blockErr, bucketindex.ErrBlockMetaNotFound) {
 			continue
 		}
 
-		// We can safely delete only partial blocks with a deletion mark.
-		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
-		if errors.Is(err, metadata.ErrorMarkerNotFound) {
-			continue
-		}
-		if err != nil {
-			level.Warn(userLogger).Log("msg", "error reading partial block deletion mark", "block", blockID, "err", err)
-			continue
-		}
-
-		// Hard-delete partial blocks having a deletion mark, even if the deletion threshold has not
-		// been reached yet.
-		if err := block.Delete(ctx, userLogger, userBucket, blockID); err != nil {
-			c.blocksFailedTotal.Inc()
-			level.Warn(userLogger).Log("msg", "error deleting partial block marked for deletion", "block", blockID, "err", err)
-			continue
-		}
-
-		// Remove the block from the bucket index too.
-		idx.RemoveBlock(blockID)
-		delete(partials, blockID)
-
-		c.blocksCleanedTotal.Inc()
-		level.Info(userLogger).Log("msg", "deleted partial block marked for deletion", "block", blockID)
+		ch <- blockID
 	}
+	close(ch)
+
+	var (
+		mu sync.Mutex
+		wg sync.WaitGroup
+	)
+
+	for ix := 0; ix < math.Min(deleteBlocksConcurrency, len(idx.BlockDeletionMarks)); ix++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for blockID := range ch {
+				if ctx.Err() != nil {
+					return
+				}
+
+				// We can safely delete only partial blocks with a deletion mark.
+				err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})
+				if errors.Is(err, metadata.ErrorMarkerNotFound) {
+					continue
+				}
+				if err != nil {
+					level.Warn(userLogger).Log("msg", "error reading partial block deletion mark", "block", blockID, "err", err)
+					continue
+				}
+
+				// Hard-delete partial blocks having a deletion mark, even if the deletion threshold has not
+				// been reached yet.
+				if err := block.Delete(ctx, userLogger, userBucket, blockID); err != nil {
+					c.blocksFailedTotal.Inc()
+					level.Warn(userLogger).Log("msg", "error deleting partial block marked for deletion", "block", blockID, "err", err)
+					continue
+				}
+
+				// Remove the block from the bucket index too.
+				mu.Lock()
+				idx.RemoveBlock(blockID)
+				delete(partials, blockID)
+				mu.Unlock()
+
+				c.blocksCleanedTotal.Inc()
+				level.Info(userLogger).Log("msg", "deleted partial block marked for deletion", "block", blockID)
+			}
+		}()
+	}
+	wg.Wait()
 }
 
 // applyUserRetentionPeriod marks blocks for deletion which have aged past the retention period.
