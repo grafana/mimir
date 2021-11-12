@@ -383,6 +383,7 @@ type tsdbMetrics struct {
 	tsdbChunksCreatedTotal       *prometheus.Desc
 	tsdbChunksRemovedTotal       *prometheus.Desc
 	tsdbMmapChunkCorruptionTotal *prometheus.Desc
+	tsdbOOOHistogram             *prometheus.Desc
 
 	tsdbExemplarsTotal          *prometheus.Desc
 	tsdbExemplarsInStorage      *prometheus.Desc
@@ -506,6 +507,10 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 			"cortex_ingester_tsdb_mmap_chunk_corruptions_total",
 			"Total number of memory-mapped TSDB chunk corruptions.",
 			nil, nil),
+		tsdbOOOHistogram: prometheus.NewDesc(
+			"cortex_ingester_tsdb_sample_ooo_delta",
+			"Delta in ms by which a sample is considered out of order.",
+			nil, nil),
 		tsdbLoadedBlocks: prometheus.NewDesc(
 			"cortex_ingester_tsdb_blocks_loaded",
 			"Number of currently loaded data blocks",
@@ -607,6 +612,7 @@ func (sm *tsdbMetrics) Describe(out chan<- *prometheus.Desc) {
 	out <- sm.tsdbChunksCreatedTotal
 	out <- sm.tsdbChunksRemovedTotal
 	out <- sm.tsdbMmapChunkCorruptionTotal
+	out <- sm.tsdbOOOHistogram
 	out <- sm.tsdbLoadedBlocks
 	out <- sm.tsdbSymbolTableSize
 	out <- sm.tsdbReloads
@@ -656,6 +662,7 @@ func (sm *tsdbMetrics) Collect(out chan<- prometheus.Metric) {
 	data.SendSumOfCountersPerUser(out, sm.tsdbChunksCreatedTotal, "prometheus_tsdb_head_chunks_created_total")
 	data.SendSumOfCountersPerUser(out, sm.tsdbChunksRemovedTotal, "prometheus_tsdb_head_chunks_removed_total")
 	data.SendSumOfCounters(out, sm.tsdbMmapChunkCorruptionTotal, "prometheus_tsdb_mmap_chunk_corruptions_total")
+	data.SendSumOfHistograms(out, sm.tsdbOOOHistogram, "prometheus_tsdb_sample_ooo_delta")
 	data.SendSumOfGauges(out, sm.tsdbLoadedBlocks, "prometheus_tsdb_blocks_loaded")
 	data.SendSumOfGaugesPerUser(out, sm.tsdbSymbolTableSize, "prometheus_tsdb_symbol_table_size_bytes")
 	data.SendSumOfCounters(out, sm.tsdbReloads, "prometheus_tsdb_reloads_total")
