@@ -108,14 +108,8 @@ type SampleValidationConfig interface {
 
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
-func ValidateSample(sampleDelay prometheus.Histogram, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
+func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-	now := model.Now()
-
-	delta := now - model.Time(s.TimestampMs)
-	if delta > 0 {
-		sampleDelay.Observe(float64(delta))
-	}
 
 	if cfg.RejectOldSamples(userID) && model.Time(s.TimestampMs) < now.Add(-cfg.RejectOldSamplesMaxAge(userID)) {
 		DiscardedSamples.WithLabelValues(greaterThanMaxSampleAge, userID).Inc()

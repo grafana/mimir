@@ -523,7 +523,14 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 	}
 
 	for _, s := range ts.Samples {
-		if err := validation.ValidateSample(d.sampleDelayHistogram, d.limits, userID, ts.Labels, s); err != nil {
+
+		now := model.Now()
+		delta := now - model.Time(s.TimestampMs)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta))
+		}
+
+		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {
 			return err
 		}
 	}
