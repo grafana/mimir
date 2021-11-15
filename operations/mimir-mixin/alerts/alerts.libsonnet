@@ -248,7 +248,7 @@
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '5m',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
@@ -493,9 +493,9 @@
             )
             * on(%s) group_left max by(%s) (cortex_build_info)
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
-          'for': '15m',
+          'for': '30m',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
@@ -517,9 +517,9 @@
             )
             * on(%s) group_left max by(%s) (cortex_build_info)
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
-          'for': '15m',
+          'for': '30m',
           labels: {
-            severity: 'warning',
+            severity: 'critical',
           },
           annotations: {
             message: |||
