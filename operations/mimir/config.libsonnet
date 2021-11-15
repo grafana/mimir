@@ -245,6 +245,8 @@
     ruler_enabled: false,
     ruler_client_type: error 'you must specify a storage backend type for the ruler (azure, gcs, s3, local)',
     ruler_storage_bucket_name: error 'must specify the ruler storage bucket name',
+    ruler_storage_azure_account_name: error 'must specify the ruler storage Azure account name',
+    ruler_storage_azure_account_key: error 'must specify the ruler storage Azure account key',
 
     rulerClientConfig:
       {
@@ -258,7 +260,11 @@
           'ruler-storage.s3.region': $._config.aws_region,
           'ruler-storage.s3.bucket-name': $._config.ruler_storage_bucket_name,
         },
-        azure: {},
+        azure: {
+          'ruler-storage.azure.container-name': $._config.ruler_storage_bucket_name,
+          'ruler-storage.azure.account-name': $._config.ruler_storage_azure_account_name,
+          'ruler-storage.azure.account-key': $._config.ruler_storage_azure_account_key,
+        },
         'local': {
           'ruler-storage.local.directory': $._config.ruler_local_directory,
         },
