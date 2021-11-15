@@ -476,6 +476,7 @@
     query_scheduler_enabled: false,
 
     // Enables streaming of chunks from ingesters using blocks.
+    // Changing it will not cause new rollout of ingesters, as it gets passed to them via runtime-config.
     ingester_stream_chunks_when_using_blocks: true,
 
     // Ingester limits are put directly into runtime config, if not null. Available limits:
