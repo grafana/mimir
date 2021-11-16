@@ -7,6 +7,14 @@ package cache_test
 
 import (
 	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+
+	"github.com/go-kit/log"
+	"github.com/grafana/mimir/pkg/chunk/cache"
+	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/bradfitz/gomemcache/memcache"
 )
@@ -41,4 +49,19 @@ func (m *mockMemcachedBasicClient) Set(item *memcache.Item) error {
 	defer m.Unlock()
 	m.contents[item.Key] = item.Value
 	return nil
+}
+
+func TestMemcachedClient_Get_Error(t *testing.T) {
+	m := cache.NewMemcachedClient(
+		cache.MemcachedClientConfig{
+			UpdateInterval: time.Second,
+		},
+		"test",
+		prometheus.NewRegistry(),
+		log.NewNopLogger(),
+	)
+	t.Cleanup(m.Stop)
+	item, err := m.Get("foo")
+	assert.Error(t, err)
+	assert.Nil(t, item)
 }
