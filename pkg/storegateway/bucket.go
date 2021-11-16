@@ -657,7 +657,6 @@ func blockSeries(
 	tracing.DoWithSpan(ctx, "blockSeries() lookup series", func(ctx context.Context, span opentracing.Span) {
 		var (
 			symbolizedLset []symbolizedLabel
-			lset           labels.Labels
 			chks           []chunks.Meta
 		)
 		for _, id := range ps {
@@ -671,7 +670,8 @@ func blockSeries(
 				continue
 			}
 
-			if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
+			lset, err := indexr.LookupLabelsSymbols(symbolizedLset)
+			if err != nil {
 				lookupErr = errors.Wrap(err, "lookup labels symbols")
 				return
 			}
@@ -700,9 +700,7 @@ func blockSeries(
 			}
 
 			s := seriesEntry{}
-			// Make a copy of lset, since it's reused between iterations.
-			s.lset = make(labels.Labels, len(lset))
-			copy(s.lset, lset)
+			s.lset = lset
 
 			if !skipChunks {
 				// Schedule loading chunks.
@@ -2304,21 +2302,21 @@ func (r *bucketIndexReader) Close() error {
 	return nil
 }
 
-// LookupLabelsSymbols allows populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, lbls *labels.Labels) error {
-	*lbls = (*lbls)[:0]
-	for _, s := range symbolized {
+// LookupLabelsSymbols populates label set strings from symbolized label set.
+func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (labels.Labels, error) {
+	lbls := make(labels.Labels, len(symbolized))
+	for ix, s := range symbolized {
 		ln, err := r.dec.LookupSymbol(s.name)
 		if err != nil {
-			return errors.Wrap(err, "lookup label name")
+			return nil, errors.Wrap(err, "lookup label name")
 		}
 		lv, err := r.dec.LookupSymbol(s.value)
 		if err != nil {
-			return errors.Wrap(err, "lookup label value")
+			return nil, errors.Wrap(err, "lookup label value")
 		}
-		*lbls = append(*lbls, labels.Label{Name: ln, Value: lv})
+		lbls[ix] = labels.Label{Name: ln, Value: lv}
 	}
-	return nil
+	return lbls, nil
 }
 
 // decodeSeriesForTime decodes a series entry from the given byte slice decoding only chunk metas that are within given min and max time.
