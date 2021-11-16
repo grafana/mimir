@@ -205,7 +205,7 @@ func (c *MemcachedClient) Delete(key string) error {
 func (c *MemcachedClient) Get(key string) (*memcache.Item, error) {
 	item, err := c.client.Get(key)
 	if err != nil {
-		return nil, c.wrapErrWithServer(item.Key, err)
+		return nil, c.wrapErrWithServer(key, err)
 	}
 	return item, nil
 }
