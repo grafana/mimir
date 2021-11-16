@@ -10,13 +10,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/bradfitz/gomemcache/memcache"
+	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/bradfitz/gomemcache/memcache"
 )
 
 type mockMemcachedBasicClient struct {
