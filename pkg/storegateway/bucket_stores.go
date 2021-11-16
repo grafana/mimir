@@ -451,6 +451,9 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
 	}...)
+	if u.cfg.BucketStore.IgnoreBlocksWithin > 0 {
+		filters = append(filters, NewTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin))
+	}
 
 	modifiers := []block.MetadataModifier{
 		// Remove Mimir external labels so that they're not injected when querying blocks.

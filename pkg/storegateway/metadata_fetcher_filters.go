@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
@@ -79,5 +80,30 @@ func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, meta
 		}
 	}
 
+	return nil
+}
+
+const timeExcludedMeta = "time-excluded" // Matches block.timeExcludedMeta value.
+
+// TimeMetaFilter filters out blocks that contain the most recent data.
+type TimeMetaFilter struct {
+	limit time.Duration
+}
+
+func NewTimeMetaFilter(limit time.Duration) *TimeMetaFilter {
+	return &TimeMetaFilter{limit: limit}
+}
+
+func (f *TimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+	limitTime := timestamp.FromTime(time.Now().Add(-f.limit))
+
+	for id, m := range metas {
+		if m.MinTime < limitTime {
+			continue
+		}
+
+		synced.WithLabelValues(timeExcludedMeta).Inc()
+		delete(metas, id)
+	}
 	return nil
 }
