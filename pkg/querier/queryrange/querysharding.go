@@ -174,6 +174,8 @@ func mapEngineError(err error) error {
 		errorType = apierror.TypeTimeout
 	case promql.ErrStorage:
 		errorType = apierror.TypeInternal
+	case promql.ErrTooManySamples:
+		errorType = apierror.TypeExec
 	}
 
 	return apierror.New(errorType, err.Error())
