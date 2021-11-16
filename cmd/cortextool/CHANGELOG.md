@@ -2,6 +2,10 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## unreleased
+
+* [ENHANCEMENT] Benchtool: add `-bench.write.proxy-url` argument for configuring the Prometheus remote-write client with a HTTP proxy URL. #223
+
 ## v0.10.6
 
 * [FEATURE] Rules check for Loki now supports `pattern`.
