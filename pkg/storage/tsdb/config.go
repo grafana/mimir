@@ -149,7 +149,7 @@ type TSDBConfig struct {
 	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency"`
 	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout"`
 	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes"`
-	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance"`
+	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" doc:"hidden"`
 	StripeSize                int           `yaml:"stripe_size"`
 	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled"`
 	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes"`

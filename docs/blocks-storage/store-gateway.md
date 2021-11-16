@@ -853,12 +853,6 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes
     [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
 
-    # How much variance (as percentage between 0 and 1) should be applied to the
-    # chunk end time, to spread chunks writing across time. Doesn't apply to the
-    # last chunk of the chunk range. 0 means no variance.
-    # CLI flag: -blocks-storage.tsdb.head-chunks-end-time-variance
-    [head_chunks_end_time_variance: <float> | default = 0]
-
     # The number of shards of series to use in TSDB (must be a power of 2).
     # Reducing this will decrease memory footprint, but can negatively impact
     # performance.
