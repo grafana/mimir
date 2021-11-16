@@ -1476,9 +1476,8 @@ type memSeries struct {
 	chunkRange    int64
 	firstChunkID  int
 
-	// chunkEndTimeVariance is how much variance (in %, 0-1) should be applied to the chunk end
-	// time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range.
-	// 0 to disable variance.
+	// chunkEndTimeVariance is how much variance (between 0 and 1) should be applied to the chunk end time,
+	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	chunkEndTimeVariance float64
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.

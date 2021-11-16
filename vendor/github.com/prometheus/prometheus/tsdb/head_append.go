@@ -553,6 +553,9 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 }
 
 // addJitterToChunkEndTime return chunk's nextAt applying a jitter based on the provided expected variance.
+// The variance is applied to the estimated chunk duration (nextAt - chunkMinTime); the returned updated chunk
+// end time is guaranteed to be between "chunkDuration - (chunkDuration*(variance/2))" to
+// "chunkDuration + chunkDuration*(variance/2)", and never greater than maxNextAt.
 func addJitterToChunkEndTime(seriesHash uint64, chunkMinTime, nextAt, maxNextAt int64, variance float64) int64 {
 	if variance <= 0 {
 		return nextAt

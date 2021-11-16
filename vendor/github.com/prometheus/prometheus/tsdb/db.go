@@ -140,9 +140,8 @@ type Options struct {
 	// HeadChunksWriteBufferSize configures the write buffer size used by the head chunks mapper.
 	HeadChunksWriteBufferSize int
 
-	// HeadChunksEndTimeVariance is how much variance (in %, 0-1) should be applied to the chunk end
-	// time, to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range.
-	// 0 to disable variance.
+	// HeadChunksEndTimeVariance is how much variance (between 0 and 1) should be applied to the chunk end time,
+	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	HeadChunksEndTimeVariance float64
 
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
