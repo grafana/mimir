@@ -2,7 +2,7 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
-## unreleased
+## v0.10.7
 
 * [ENHANCEMENT] Benchtool: add `-bench.write.proxy-url` argument for configuring the Prometheus remote-write client with a HTTP proxy URL. #223
 * [ENHANCEMENT] Analyse: support Grafana 'timeseries' panel type for `cortextool analyse grafana` command. #224
