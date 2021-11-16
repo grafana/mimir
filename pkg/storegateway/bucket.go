@@ -657,12 +657,10 @@ func blockSeries(
 	tracing.DoWithSpan(ctx, "blockSeries() lookup series", func(ctx context.Context, span opentracing.Span) {
 		var (
 			symbolizedLset []symbolizedLabel
+			lset           labels.Labels
 			chks           []chunks.Meta
 		)
 		for _, id := range ps {
-			// Don't reuse lset between iterations, we would need to make a copy anyway.
-			var lset labels.Labels
-
 			ok, err := indexr.LoadSeriesForTime(id, &symbolizedLset, &chks, skipChunks, minTime, maxTime)
 			if err != nil {
 				lookupErr = errors.Wrap(err, "read series")
@@ -702,7 +700,9 @@ func blockSeries(
 			}
 
 			s := seriesEntry{}
-			s.lset = lset
+			// Make a copy of lset, since it's reused between iterations.
+			s.lset = make(labels.Labels, len(lset))
+			copy(s.lset, lset)
 
 			if !skipChunks {
 				// Schedule loading chunks.
