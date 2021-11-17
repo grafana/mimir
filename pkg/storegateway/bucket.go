@@ -699,8 +699,7 @@ func blockSeries(
 				return
 			}
 
-			s := seriesEntry{}
-			s.lset = lset
+			s := seriesEntry{lset: lset}
 
 			if !skipChunks {
 				// Schedule loading chunks.
