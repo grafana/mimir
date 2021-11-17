@@ -59,7 +59,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	// Create a metadata fetcher with filters.
 	filters := []block.MetadataFilter{
 		NewIgnoreDeletionMarkFilter(logger, bucket.NewUserBucketClient(userID, bkt, nil), 2*time.Hour, 1),
-		NewMinTimeMetaFilter(1 * time.Hour),
+		newMinTimeMetaFilter(1 * time.Hour),
 	}
 
 	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, NewNoShardingStrategy(), nil, logger, reg, filters, nil)

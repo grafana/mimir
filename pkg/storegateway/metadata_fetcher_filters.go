@@ -90,7 +90,7 @@ type minTimeMetaFilter struct {
 	limit time.Duration
 }
 
-func NewMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
+func newMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
 	return &minTimeMetaFilter{limit: limit}
 }
 
