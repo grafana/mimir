@@ -450,11 +450,6 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		// consistency check on the querier will fail.
 	}...)
 
-	modifiers := []block.MetadataModifier{
-		// External labels are no longer included in the results, so we don't need to remove them.
-		// No other modifiers are needed.
-	}
-
 	// Instantiate a different blocks metadata fetcher based on whether bucket index is enabled or not.
 	var fetcher block.MetadataFetcher
 	if u.cfg.BucketStore.BucketIndex.Enabled {
@@ -466,7 +461,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			u.logger,
 			fetcherReg,
 			filters,
-			modifiers)
+			nil,
+		) // No modifiers needed.
 	} else {
 		// Wrap the bucket reader to skip iterating the bucket at all if the user doesn't
 		// belong to the store-gateway shard. We need to run the BucketStore synching anyway
@@ -483,7 +479,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
 			fetcherReg,
 			filters,
-			modifiers,
+			nil, // No modifiers needed.
 		)
 		if err != nil {
 			return nil, err
