@@ -20,6 +20,12 @@
     // 2. Ensure ingester ID is preserved during rollouts
     unregister_ingesters_on_shutdown: true,
 
+    // Controls whether multiple pods for the same service can be scheduled on the same node.
+    cortex_distributor_allow_multiple_replicas_on_same_node: false,
+    cortex_ruler_allow_multiple_replicas_on_same_node: false,
+    cortex_querier_allow_multiple_replicas_on_same_node: false,
+    cortex_query_frontend_allow_multiple_replicas_on_same_node: false,
+
     // schema is used to generate the storage schema yaml file used by
     // the Cortex chunks storage:
     // - More information: https://github.com/cortexproject/cortex/pull/1072

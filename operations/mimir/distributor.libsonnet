@@ -56,7 +56,7 @@
 
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
-    $.util.antiAffinity +
+    (if $._config.cortex_distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
 
   local service = $.core.v1.service,
