@@ -135,7 +135,7 @@ func TestTimeMetaFilter(t *testing.T) {
 	expectedMetas[ulid4] = inputMetas[ulid4]
 
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced"}, []string{"state"})
-	f := NewTimeMetaFilter(limit)
+	f := NewMinTimeMetaFilter(limit)
 
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 

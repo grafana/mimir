@@ -85,16 +85,16 @@ func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, meta
 
 const timeExcludedMeta = "time-excluded" // Matches block.timeExcludedMeta value.
 
-// TimeMetaFilter filters out blocks that contain the most recent data.
-type TimeMetaFilter struct {
+// minTimeMetaFilter filters out blocks that contain the most recent data (based on block MinTime).
+type minTimeMetaFilter struct {
 	limit time.Duration
 }
 
-func NewTimeMetaFilter(limit time.Duration) *TimeMetaFilter {
-	return &TimeMetaFilter{limit: limit}
+func NewMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
+	return &minTimeMetaFilter{limit: limit}
 }
 
-func (f *TimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
 	limitTime := timestamp.FromTime(time.Now().Add(-f.limit))
 
 	for id, m := range metas {

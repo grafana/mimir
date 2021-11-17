@@ -452,7 +452,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 		// consistency check on the querier will fail.
 	}...)
 	if u.cfg.BucketStore.IgnoreBlocksWithin > 0 {
-		filters = append(filters, NewTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin))
+		filters = append(filters, NewMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin))
 	}
 
 	modifiers := []block.MetadataModifier{
