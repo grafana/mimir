@@ -608,7 +608,6 @@ func (s *bucketSeriesSet) Err() error {
 // blockSeries returns series matching given matchers, that have some data in given time range.
 func blockSeries(
 	ctx context.Context,
-	extLset labels.Labels, // External labels added to the returned series labels.
 	indexr *bucketIndexReader, // Index reader for block.
 	chunkr *bucketChunkReader, // Chunk reader for block.
 	matchers []*labels.Matcher, // Series matchers.
@@ -658,7 +657,6 @@ func blockSeries(
 	tracing.DoWithSpan(ctx, "blockSeries() lookup series", func(ctx context.Context, span opentracing.Span) {
 		var (
 			symbolizedLset []symbolizedLabel
-			lset           labels.Labels
 			chks           []chunks.Meta
 		)
 		for _, id := range ps {
@@ -672,7 +670,8 @@ func blockSeries(
 				continue
 			}
 
-			if err := indexr.LookupLabelsSymbols(symbolizedLset, &lset); err != nil {
+			lset, err := indexr.LookupLabelsSymbols(symbolizedLset)
+			if err != nil {
 				lookupErr = errors.Wrap(err, "lookup labels symbols")
 				return
 			}
@@ -700,8 +699,7 @@ func blockSeries(
 				return
 			}
 
-			s := seriesEntry{}
-			s.lset = labelpb.ExtendSortedLabels(lset, extLset)
+			s := seriesEntry{lset: lset}
 
 			if !skipChunks {
 				// Schedule loading chunks.
@@ -980,7 +978,6 @@ func (s *BucketStore) Series(req *storepb.SeriesRequest, srv storepb.Store_Serie
 			g.Go(func() error {
 				part, pstats, err := blockSeries(
 					gctx,
-					b.extLset,
 					indexr,
 					chunkr,
 					blockMatchers,
@@ -1171,24 +1168,14 @@ func (s *BucketStore) LabelNames(ctx context.Context, req *storepb.LabelNamesReq
 					return errors.Wrapf(err, "label names for block %s", b.meta.ULID)
 				}
 
-				// Add  a set for the external labels as well.
-				// We're not adding them directly to res because there could be duplicates.
-				// b.extLset is already sorted by label name, no need to sort it again.
-				extRes := make([]string, 0, len(b.extLset))
-				for _, l := range b.extLset {
-					extRes = append(extRes, l.Name)
-				}
-
-				result = strutil.MergeSlices(res, extRes)
+				result = res
 			} else {
-				seriesSet, _, err := blockSeries(gctx, b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(gctx, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
 
 				// Extract label names from all series. Many label names will be the same, so we need to deduplicate them.
-				// Note that label names will already include external labels (passed to blockSeries), so we don't need
-				// to add them again.
 				labelNames := map[string]struct{}{}
 				for seriesSet.Next() {
 					ls, _ := seriesSet.At()
@@ -1300,19 +1287,14 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 					return errors.Wrapf(err, "index header label values for block %s", b.meta.ULID)
 				}
 
-				// Add the external label value as well.
-				if extLabelValue := b.extLset.Get(req.Label); extLabelValue != "" {
-					res = strutil.MergeSlices(res, []string{extLabelValue})
-				}
 				result = res
 			} else {
-				seriesSet, _, err := blockSeries(gctx, b.extLset, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+				seriesSet, _, err := blockSeries(gctx, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
 				if err != nil {
 					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
 				}
 
 				// Extract given label's value from all series and deduplicate them.
-				// We don't need to deal with external labels, since they are already added by blockSeries.
 				values := map[string]struct{}{}
 				for seriesSet.Next() {
 					ls, _ := seriesSet.At()
@@ -1504,7 +1486,6 @@ type bucketBlock struct {
 	dir        string
 	indexCache storecache.IndexCache
 	chunkPool  pool.Bytes
-	extLset    labels.Labels
 
 	indexHeaderReader indexheader.Reader
 
@@ -1543,7 +1524,6 @@ func newBucketBlock(
 		partitioner:       p,
 		meta:              meta,
 		indexHeaderReader: indexHeadReader,
-		extLset:           labels.FromMap(meta.Thanos.Labels),
 		// Translate the block's labels and inject the block ID as a label
 		// to allow to match blocks also by ID.
 		relabelLabels: append(labels.FromMap(meta.Thanos.Labels), labels.Label{
@@ -1551,7 +1531,6 @@ func newBucketBlock(
 			Value: meta.ULID.String(),
 		}),
 	}
-	sort.Sort(b.extLset)
 	sort.Sort(b.relabelLabels)
 
 	// Get object handles for all chunk files (segment files) from meta.json, if available.
@@ -2322,21 +2301,21 @@ func (r *bucketIndexReader) Close() error {
 	return nil
 }
 
-// LookupLabelsSymbols allows populates label set strings from symbolized label set.
-func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel, lbls *labels.Labels) error {
-	*lbls = (*lbls)[:0]
-	for _, s := range symbolized {
+// LookupLabelsSymbols populates label set strings from symbolized label set.
+func (r *bucketIndexReader) LookupLabelsSymbols(symbolized []symbolizedLabel) (labels.Labels, error) {
+	lbls := make(labels.Labels, len(symbolized))
+	for ix, s := range symbolized {
 		ln, err := r.dec.LookupSymbol(s.name)
 		if err != nil {
-			return errors.Wrap(err, "lookup label name")
+			return nil, errors.Wrap(err, "lookup label name")
 		}
 		lv, err := r.dec.LookupSymbol(s.value)
 		if err != nil {
-			return errors.Wrap(err, "lookup label value")
+			return nil, errors.Wrap(err, "lookup label value")
 		}
-		*lbls = append(*lbls, labels.Label{Name: ln, Value: lv})
+		lbls[ix] = labels.Label{Name: ln, Value: lv}
 	}
-	return nil
+	return lbls, nil
 }
 
 // decodeSeriesForTime decodes a series entry from the given byte slice decoding only chunk metas that are within given min and max time.

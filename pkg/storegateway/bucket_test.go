@@ -2083,10 +2083,10 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		random   = rand.New(rand.NewSource(120))
 	)
 
-	extLset := labels.Labels{{Name: "ext1", Value: "1"}}
+	prependLabels := labels.Labels{{Name: "ext1", Value: "1"}}
 	// Inject the Thanos meta to each block in the storage.
 	thanosMeta := metadata.Thanos{
-		Labels:     extLset.Map(),
+		Labels:     prependLabels.Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}
@@ -2096,7 +2096,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		TSDBDir:          filepath.Join(tmpDir, "0"),
 		SamplesPerSeries: 1,
 		Series:           2,
-		PrependLabels:    extLset,
+		PrependLabels:    prependLabels,
 		Random:           random,
 	})
 	block1 := createBlockFromHead(t, bktDir, head)
@@ -2105,7 +2105,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		TSDBDir:          filepath.Join(tmpDir, "1"),
 		SamplesPerSeries: 1,
 		Series:           2,
-		PrependLabels:    extLset,
+		PrependLabels:    prependLabels,
 		Random:           random,
 	})
 	block2 := createBlockFromHead(t, bktDir, head2)
@@ -2512,7 +2512,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				indexReader := blk.indexReader()
 				chunkReader := blk.chunkReader(ctx)
 
-				seriesSet, _, err := blockSeries(context.Background(), nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
+				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
@@ -2589,9 +2589,14 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	app := h.Appender(context.Background())
 	for i := 0; i < opts.Series; i++ {
 		tsLabel := j*opts.Series*opts.SamplesPerSeries + i*opts.SamplesPerSeries
+
+		// Add "PrependLabels" to real series labels.
+		lbls := labels.NewBuilder(opts.PrependLabels)
+		lbls.Set("foo", "bar")
+		lbls.Set("i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix))
 		ref, err := app.Append(
 			0,
-			labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix)),
+			lbls.Labels(),
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)
@@ -2614,15 +2619,16 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	defer func() { assert.NoError(t, ir.Close()) }()
 
 	var (
-		lset       labels.Labels
 		chunkMetas []chunks.Meta
 		expected   = make([]*storepb.Series, 0, opts.Series)
 	)
 
 	all := allPostings(t, ir)
 	for all.Next() {
+		var lset labels.Labels
+
 		assert.NoError(t, ir.Series(all.At(), &lset, &chunkMetas))
-		expected = append(expected, &storepb.Series{Labels: labelpb.ZLabelsFromPromLabels(append(opts.PrependLabels.Copy(), lset...))})
+		expected = append(expected, &storepb.Series{Labels: labelpb.ZLabelsFromPromLabels(lset)})
 
 		if opts.SkipChunks {
 			continue
