@@ -1502,8 +1502,8 @@ github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae/go.mod h1:DD4vA1
 github.com/weaveworks/common v0.0.0-20210722103813-e649eff5ab4a/go.mod h1:YU9FvnS7kUnRt6HY10G+2qHkwzP3n3Vb1XsXDsJTSp8=
 github.com/weaveworks/common v0.0.0-20210901124008-1fa3f9fa874c/go.mod h1:YU9FvnS7kUnRt6HY10G+2qHkwzP3n3Vb1XsXDsJTSp8=
 github.com/weaveworks/common v0.0.0-20210913144402-035033b78a78/go.mod h1:YU9FvnS7kUnRt6HY10G+2qHkwzP3n3Vb1XsXDsJTSp8=
-github.com/weaveworks/common v0.0.0-20211025090655-ffcd684ef9ae h1:6bfJszypmVh6ViTaxvoB7ICYIwJ16DdBfBxNWt5lhnE=
-github.com/weaveworks/common v0.0.0-20211025090655-ffcd684ef9ae/go.mod h1:GWX2dQ7yjrgvqH0+d3kCJC5bsY8oOFwqjxFMHaRK4/k=
+github.com/weaveworks/common v0.0.0-20211109170639-0684aab3d884 h1:8xKd5YG67aKrYwyxXA55ox7AjCMqiMq4gWBVi+lkKLE=
+github.com/weaveworks/common v0.0.0-20211109170639-0684aab3d884/go.mod h1:GWX2dQ7yjrgvqH0+d3kCJC5bsY8oOFwqjxFMHaRK4/k=
 github.com/weaveworks/promrus v1.2.0 h1:jOLf6pe6/vss4qGHjXmGz4oDJQA+AOCqEL3FvvZGz7M=
 github.com/weaveworks/promrus v1.2.0/go.mod h1:SaE82+OJ91yqjrE1rsvBWVzNZKcHYFtMUyS1+Ogs/KA=
 github.com/willf/bitset v1.1.9/go.mod h1:RjeCKbqT1RxIR/KWY6phxZiaY1IyutSBfGjNPySAYV4=
