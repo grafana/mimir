@@ -575,35 +575,27 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 
 	// Clamp time range based on max query into future.
 	if maxQueryIntoFuture > 0 && endTime.After(now.Add(maxQueryIntoFuture)) {
-		origEndTime := endTime
-		endTime = now.Add(maxQueryIntoFuture)
-
-		// Make sure to log it in traces to ease debugging.
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-			"msg", "the end time of the query has been manipulated because of the 'max query into future' setting",
-			"original", util.FormatTimeModel(origEndTime),
-			"updated", util.FormatTimeModel(endTime))
-
-		if endTime.Before(startTime) {
-			return 0, 0, errEmptyTimeRange
-		}
+		manipulateTime(ctx, &endTime, now.Add(maxQueryIntoFuture), "end", "max query into future", logger)
 	}
 
 	// Clamp the time range based on the max query lookback.
 	if maxQueryLookback := limits.MaxQueryLookback(userID); maxQueryLookback > 0 && startTime.Before(now.Add(-maxQueryLookback)) {
-		origStartTime := startTime
-		startTime = now.Add(-maxQueryLookback)
+		manipulateTime(ctx, &startTime, now.Add(-maxQueryLookback), "start", "max query lookback", logger)
+	}
 
-		// Make sure to log it in traces to ease debugging.
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-			"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
-			"original", util.FormatTimeModel(origStartTime),
-			"updated", util.FormatTimeModel(startTime))
-
-		if endTime.Before(startTime) {
-			return 0, 0, errEmptyTimeRange
-		}
+	if endTime.Before(startTime) {
+		return 0, 0, errEmptyTimeRange
 	}
 
 	return int64(startTime), int64(endTime), nil
+}
+
+// Update a query time and log it in traces to ease debugging.
+func manipulateTime(ctx context.Context, t *model.Time, updated model.Time, kind, name string, logger log.Logger) {
+	origTime := *t
+	*t = updated
+	level.Debug(spanlogger.FromContext(ctx, logger)).Log(
+		"msg", "the "+kind+" time of the query has been manipulated because of the '"+name+"' setting",
+		"original", util.FormatTimeModel(origTime),
+		"updated", util.FormatTimeModel(*t))
 }
