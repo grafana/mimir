@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/block"
@@ -98,6 +99,7 @@ type BlocksStoreClient interface {
 type BlocksStoreLimits interface {
 	bucket.TenantConfigProvider
 
+	MaxLabelsQueryLength(userID string) time.Duration
 	MaxChunksPerQueryFromStore(userID string) int
 	StoreGatewayTenantShardSize(userID string) int
 }
@@ -351,6 +353,19 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 
 	minT, maxT := q.minT, q.maxT
 
+	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
+		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
+
+	{
+		// Clamp max time range.
+		startTime := model.Time(minT)
+		endTime := model.Time(maxT)
+		if maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
+			manipulateTime(spanCtx, &startTime, endTime.Add(-maxQueryLength), "start", "max label query length", spanLog)
+			minT = int64(startTime)
+		}
+	}
+
 	var (
 		resMtx            sync.Mutex
 		resNameSets       = [][]string{}
@@ -385,6 +400,19 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 	defer spanLog.Span.Finish()
 
 	minT, maxT := q.minT, q.maxT
+
+	level.Debug(spanLog).Log("start", util.TimeFromMillis(minT).UTC().String(), "end",
+		util.TimeFromMillis(maxT).UTC().String(), "matchers", util.MatchersStringer(matchers))
+
+	{
+		// Clamp max time range.
+		startTime := model.Time(minT)
+		endTime := model.Time(maxT)
+		if maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
+			manipulateTime(spanCtx, &startTime, endTime.Add(-maxQueryLength), "start", "max label query length", spanLog)
+			minT = int64(startTime)
+		}
+	}
 
 	var (
 		resValueSets = [][]string{}

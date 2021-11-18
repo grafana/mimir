@@ -1236,7 +1236,7 @@ func TestBlocksStoreQuerier_Labels(t *testing.T) {
 			// Splitting it because we need a new registry for names and values.
 			// And also the initial expectedErr checking needs to be done for both.
 			for _, testFunc := range []string{"LabelNames", "LabelValues"} {
-				ctx := context.Background()
+				ctx := user.InjectOrgID(context.Background(), "user-1")
 				reg := prometheus.NewPedanticRegistry()
 				stores := &blocksStoreSetMock{mockedResponses: testData.storeSetResponses}
 				finder := &blocksFinderMock{}
@@ -1367,6 +1367,79 @@ func TestBlocksStoreQuerier_SelectSortedShouldHonorQueryStoreAfter(t *testing.T)
 				assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
 				assert.InDelta(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3), float64(5*time.Second.Milliseconds()))
 			}
+		})
+	}
+}
+
+func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
+	const (
+		engineLookbackDelta = 5 * time.Minute
+		thirtyDays          = 30 * 24 * time.Hour
+		sevenDays           = 7 * 24 * time.Hour
+	)
+	now := time.Now()
+
+	tests := map[string]struct {
+		maxLabelsQueryLength time.Duration
+		queryMinT            int64
+		queryMaxT            int64
+		expectedMinT         int64
+		expectedMaxT         int64
+	}{
+		"should not manipulate query time range if maxLabelsQueryLength is disabled": {
+			maxLabelsQueryLength: 0,
+			queryMinT:            util.TimeToMillis(now.Add(-thirtyDays)),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-thirtyDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+		"should not manipulate query time range if maxLabelsQueryLength is enabled but query fits within": {
+			maxLabelsQueryLength: sevenDays,
+			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
+			queryMaxT:            util.TimeToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:         util.TimeToMillis(now.Add(-100 * time.Minute)),
+			expectedMaxT:         util.TimeToMillis(now.Add(-30 * time.Minute)),
+		},
+		"should manipulate query time range if maxLabelsQueryLength is enabled and query overlaps": {
+			maxLabelsQueryLength: sevenDays,
+			queryMinT:            util.TimeToMillis(now.Add(-thirtyDays)),
+			queryMaxT:            util.TimeToMillis(now),
+			expectedMinT:         util.TimeToMillis(now.Add(-sevenDays)),
+			expectedMaxT:         util.TimeToMillis(now),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			finder := &blocksFinderMock{}
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks(nil), map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
+
+			q := &blocksStoreQuerier{
+				ctx:         user.InjectOrgID(context.Background(), "user-1"),
+				minT:        testData.queryMinT,
+				maxT:        testData.queryMaxT,
+				userID:      "user-1",
+				finder:      finder,
+				stores:      &blocksStoreSetMock{},
+				consistency: NewBlocksConsistencyChecker(0, 0, log.NewNopLogger(), nil),
+				logger:      log.NewNopLogger(),
+				metrics:     newBlocksStoreQueryableMetrics(nil),
+				limits: &blocksStoreLimitsMock{
+					maxLabelsQueryLength: testData.maxLabelsQueryLength,
+				},
+			}
+
+			_, _, err := q.LabelNames()
+			require.NoError(t, err)
+			require.Len(t, finder.Calls, 1)
+			assert.Equal(t, testData.expectedMinT, finder.Calls[0].Arguments.Get(2))
+			assert.Equal(t, testData.expectedMaxT, finder.Calls[0].Arguments.Get(3))
+
+			_, _, err = q.LabelValues("foo")
+			require.Len(t, finder.Calls, 2)
+			require.NoError(t, err)
+			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
+			assert.Equal(t, testData.expectedMaxT, finder.Calls[1].Arguments.Get(3))
 		})
 	}
 }
@@ -1675,8 +1748,13 @@ func (m *storeGatewaySeriesClientMock) Recv() (*storepb.SeriesResponse, error) {
 }
 
 type blocksStoreLimitsMock struct {
+	maxLabelsQueryLength        time.Duration
 	maxChunksPerQuery           int
 	storeGatewayTenantShardSize int
+}
+
+func (m *blocksStoreLimitsMock) MaxLabelsQueryLength(_ string) time.Duration {
+	return m.maxLabelsQueryLength
 }
 
 func (m *blocksStoreLimitsMock) MaxChunksPerQueryFromStore(_ string) int {
