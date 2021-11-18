@@ -267,20 +267,23 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "querier.Select")
 	defer log.Span.Finish()
 
-	if sp != nil {
-		level.Debug(log).Log("start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
-			util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+	// Older Prometheus passes nil SelectHints if it is doing a 'series' operation,
+	// which needs only metadata.
+	// Recent versions of Prometheus pass in the hint but with Func set to "series".
+	// See: https://github.com/prometheus/prometheus/pull/8050
+	if sp == nil {
+		sp = &storage.SelectHints{
+			Func:  "series",
+			Start: q.mint,
+			End:   q.maxt,
+		}
 	}
 
-	// Kludge: Prometheus passes nil SelectHints if it is doing a 'series' operation,
-	// which needs only metadata. Here we expect that metadataQuerier querier will handle that.
-	// In Mimir it is not feasible to query entire history (with no mint/maxt), so we only ask ingesters and skip
-	// querying the long-term storage.
-	// Also, in the recent versions of Prometheus, we pass in the hint but with Func set to "series".
-	// See: https://github.com/prometheus/prometheus/pull/8050
-	if (sp == nil || sp.Func == "series") && !q.queryStoreForLabels {
-		// In this case, the query time range has already been validated when the querier has been
-		// created.
+	level.Debug(log).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
+		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+
+	if sp.Func == "series" && !q.queryStoreForLabels {
+		// Unless configured otherwise, we query just ingesters for "series" requests.
 		return q.metadataQuerier.Select(true, sp, matchers...)
 	}
 
