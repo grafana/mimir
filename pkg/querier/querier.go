@@ -307,9 +307,7 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
 
-	// Validate query time range. This validation should be done only for instant / range queries and
-	// NOT for metadata queries (series, labels) because the query-frontend doesn't support splitting
-	// of such queries.
+	// Validate query time range.
 	if maxQueryLength := q.limits.MaxQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
 		limitErr := validation.LimitError(fmt.Sprintf(validation.ErrQueryTooLong, endTime.Sub(startTime), maxQueryLength))
 		return storage.ErrSeriesSet(limitErr)
