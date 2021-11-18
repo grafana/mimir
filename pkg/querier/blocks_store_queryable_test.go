@@ -1441,6 +1441,13 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedMinT, finder.Calls[1].Arguments.Get(2))
 			assert.Equal(t, testData.expectedMaxT, finder.Calls[1].Arguments.Get(3))
+
+			sp := &storage.SelectHints{Func: "series", Start: q.minT, End: q.maxT}
+			set := q.selectSorted(sp)
+			require.Len(t, finder.Calls, 3)
+			require.NoError(t, set.Err())
+			assert.Equal(t, testData.expectedMinT, finder.Calls[2].Arguments.Get(2))
+			assert.Equal(t, testData.expectedMaxT, finder.Calls[2].Arguments.Get(3))
 		})
 	}
 }
