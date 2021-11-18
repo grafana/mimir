@@ -18,6 +18,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -43,12 +44,14 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	block1 := &bucketindex.Block{ID: ulid.MustNew(1, nil)}
 	block2 := &bucketindex.Block{ID: ulid.MustNew(2, nil)}
 	block3 := &bucketindex.Block{ID: ulid.MustNew(3, nil)}
+	block4 := &bucketindex.Block{ID: ulid.MustNew(4, nil), MinTime: timestamp.FromTime(now.Add(-30 * time.Minute))} // Has most-recent data, to be ignored by minTimeMetaFilter.
+
 	mark1 := &bucketindex.BlockDeletionMark{ID: block1.ID, DeletionTime: now.Add(-time.Hour).Unix()}     // Below the ignore delay threshold.
 	mark2 := &bucketindex.BlockDeletionMark{ID: block2.ID, DeletionTime: now.Add(-3 * time.Hour).Unix()} // Above the ignore delay threshold.
 
 	require.NoError(t, bucketindex.WriteIndex(ctx, bkt, userID, nil, &bucketindex.Index{
 		Version:            bucketindex.IndexVersion1,
-		Blocks:             bucketindex.Blocks{block1, block2, block3},
+		Blocks:             bucketindex.Blocks{block1, block2, block3, block4},
 		BlockDeletionMarks: bucketindex.BlockDeletionMarks{mark1, mark2},
 		UpdatedAt:          now.Unix(),
 	}))
@@ -56,6 +59,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 	// Create a metadata fetcher with filters.
 	filters := []block.MetadataFilter{
 		NewIgnoreDeletionMarkFilter(logger, bucket.NewUserBucketClient(userID, bkt, nil), 2*time.Hour, 1),
+		newMinTimeMetaFilter(1 * time.Hour),
 	}
 
 	fetcher := NewBucketIndexMetadataFetcher(userID, bkt, NewNoShardingStrategy(), nil, logger, reg, filters, nil)
@@ -90,6 +94,7 @@ func TestBucketIndexMetadataFetcher_Fetch(t *testing.T) {
 		blocks_meta_synced{state="no-bucket-index"} 0
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 1
 		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -141,6 +146,7 @@ func TestBucketIndexMetadataFetcher_Fetch_NoBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="no-bucket-index"} 1
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -195,6 +201,7 @@ func TestBucketIndexMetadataFetcher_Fetch_CorruptedBucketIndex(t *testing.T) {
 		blocks_meta_synced{state="no-bucket-index"} 0
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 
 		# HELP blocks_meta_syncs_total Total blocks metadata synchronization attempts
@@ -241,6 +248,7 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 		blocks_meta_synced{state="no-bucket-index"} 0
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 	`), "blocks_meta_synced"))
 
@@ -265,6 +273,7 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 		blocks_meta_synced{state="no-bucket-index"} 1
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 	`), "blocks_meta_synced"))
 
@@ -297,6 +306,7 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 		blocks_meta_synced{state="no-bucket-index"} 0
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 	`), "blocks_meta_synced"))
 
@@ -323,6 +333,7 @@ func TestBucketIndexMetadataFetcher_Fetch_ShouldResetGaugeMetrics(t *testing.T) 
 		blocks_meta_synced{state="no-bucket-index"} 0
 		blocks_meta_synced{state="no-meta-json"} 0
 		blocks_meta_synced{state="time-excluded"} 0
+		blocks_meta_synced{state="min-time-excluded"} 0
 		blocks_meta_synced{state="too-fresh"} 0
 	`), "blocks_meta_synced"))
 }

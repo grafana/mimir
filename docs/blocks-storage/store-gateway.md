@@ -784,6 +784,14 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
       [max_stale_period: <duration> | default = 1h]
 
+    # Blocks with minimum time within this duration are ignored, and not loaded
+    # by store-gateway. Useful when used together with
+    # -querier.query-store-after to prevent loading young blocks, because there
+    # are usually many of them (depending on number of ingesters) and they are
+    # not yet compacted. Negative values or 0 disable the filter.
+    # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
+    [ignore_blocks_within: <duration> | default = 0s]
+
     # Max size - in bytes - of a chunks pool, used to reduce memory allocations.
     # The pool is shared across all tenants. 0 to disable the limit.
     # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
