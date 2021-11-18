@@ -451,10 +451,7 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 	spanLog, spanCtx := spanlogger.NewWithLogger(q.ctx, q.logger, "blocksStoreQuerier.selectSorted")
 	defer spanLog.Span.Finish()
 
-	minT, maxT := q.minT, q.maxT
-	if sp != nil {
-		minT, maxT = sp.Start, sp.End
-	}
+	minT, maxT := sp.Start, sp.End
 
 	var (
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)

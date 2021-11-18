@@ -777,7 +777,8 @@ func TestBlocksStoreQuerier_Select(t *testing.T) {
 				matchers = append(matchers, labels.MustNewMatcher(labels.MatchEqual, sharding.ShardLabel, testData.queryShardID))
 			}
 
-			set := q.Select(true, nil, matchers...)
+			sp := &storage.SelectHints{Start: minT, End: maxT}
+			set := q.Select(true, sp, matchers...)
 			if testData.expectedErr != nil {
 				assert.EqualError(t, set.Err(), testData.expectedErr.Error())
 				assert.IsType(t, set.Err(), testData.expectedErr)
