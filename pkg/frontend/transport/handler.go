@@ -92,8 +92,8 @@ func NewHandler(cfg HandlerConfig, roundTripper http.RoundTripper, log log.Logge
 		}, []string{"user"})
 
 		h.queryBytes = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_query_fetched_chunks_bytes_total",
-			Help: "Size of all chunks fetched to execute a query in bytes.",
+			Name: "cortex_query_fetched_chunk_bytes_total",
+			Help: "Number of chunk bytes fetched to execute a query.",
 		}, []string{"user"})
 
 		h.queryChunks = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -215,7 +215,7 @@ func (f *Handler) reportQueryStats(r *http.Request, queryString url.Values, quer
 		"response_time", queryResponseTime,
 		"query_wall_time_seconds", wallTime.Seconds(),
 		"fetched_series_count", numSeries,
-		"fetched_chunks_bytes", numBytes,
+		"fetched_chunk_bytes", numBytes,
 		"fetched_chunks_count", numChunks,
 		"sharded_queries", stats.LoadShardedQueries(),
 	}, formatQueryString(queryString)...)
