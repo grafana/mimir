@@ -95,6 +95,10 @@ func newMinTimeMetaFilter(limit time.Duration) *minTimeMetaFilter {
 }
 
 func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+	if f.limit <= 0 {
+		return nil
+	}
+
 	limitTime := timestamp.FromTime(time.Now().Add(-f.limit))
 
 	for id, m := range metas {

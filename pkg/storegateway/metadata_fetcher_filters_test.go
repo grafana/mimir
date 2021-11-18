@@ -135,8 +135,14 @@ func TestTimeMetaFilter(t *testing.T) {
 	expectedMetas[ulid4] = inputMetas[ulid4]
 
 	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced"}, []string{"state"})
-	f := newMinTimeMetaFilter(limit)
 
+	// Test negative limit.
+	f := newMinTimeMetaFilter(-10 * time.Minute)
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
+	assert.Equal(t, inputMetas, inputMetas)
+	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(timeExcludedMeta)))
+
+	f = newMinTimeMetaFilter(limit)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 
 	assert.Equal(t, expectedMetas, inputMetas)

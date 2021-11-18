@@ -442,17 +442,16 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	fetcherReg := prometheus.NewRegistry()
 
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
-	filters := append([]block.MetadataFilter{NewShardingMetadataFilterAdapter(userID, u.shardingStrategy)}, []block.MetadataFilter{
+	filters := []block.MetadataFilter{
+		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
 		block.NewConsistencyDelayMetaFilter(userLogger, u.cfg.BucketStore.ConsistencyDelay, fetcherReg),
+		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
 		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
-	}...)
-	if u.cfg.BucketStore.IgnoreBlocksWithin > 0 {
-		filters = append(filters, newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin))
 	}
 
 	modifiers := []block.MetadataModifier{
