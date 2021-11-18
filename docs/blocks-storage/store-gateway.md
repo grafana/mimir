@@ -786,7 +786,9 @@ blocks_storage:
 
     # Blocks with minimum time within this duration are ignored, and not loaded
     # by store-gateway. Useful when used together with
-    # -querier.query-store-after to prevent loading young blocks.
+    # -querier.query-store-after to prevent loading young blocks, because there
+    # is usually many of them (depending on number of ingesters) and they are
+    # not yet compacted.
     # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
     [ignore_blocks_within: <duration> | default = 0s]
 
