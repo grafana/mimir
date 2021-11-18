@@ -83,7 +83,7 @@ func (f *IgnoreDeletionMarkFilter) FilterWithBucketIndex(_ context.Context, meta
 	return nil
 }
 
-const timeExcludedMeta = "time-excluded" // Matches block.timeExcludedMeta value.
+const minTimeExcludedMeta = "min-time-excluded"
 
 // minTimeMetaFilter filters out blocks that contain the most recent data (based on block MinTime).
 type minTimeMetaFilter struct {
@@ -106,7 +106,7 @@ func (f *minTimeMetaFilter) Filter(_ context.Context, metas map[ulid.ULID]*metad
 			continue
 		}
 
-		synced.WithLabelValues(timeExcludedMeta).Inc()
+		synced.WithLabelValues(minTimeExcludedMeta).Inc()
 		delete(metas, id)
 	}
 	return nil

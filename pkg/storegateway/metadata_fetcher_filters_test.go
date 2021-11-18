@@ -140,11 +140,11 @@ func TestTimeMetaFilter(t *testing.T) {
 	f := newMinTimeMetaFilter(-10 * time.Minute)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 	assert.Equal(t, inputMetas, inputMetas)
-	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(timeExcludedMeta)))
+	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 
 	f = newMinTimeMetaFilter(limit)
 	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
 
 	assert.Equal(t, expectedMetas, inputMetas)
-	assert.Equal(t, 2.0, promtest.ToFloat64(synced.WithLabelValues(timeExcludedMeta)))
+	assert.Equal(t, 2.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 }
