@@ -358,12 +358,9 @@ func (q *blocksStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 
 	{
 		// Clamp max time range.
-		startTime := model.Time(minT)
-		endTime := model.Time(maxT)
-		if maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
-			manipulateTime(spanCtx, &startTime, endTime.Add(-maxQueryLength), "start", "max label query length", spanLog)
-			minT = int64(startTime)
-		}
+		startTime, endTime := model.Time(minT), model.Time(maxT)
+		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
 	}
 
 	var (
@@ -406,12 +403,9 @@ func (q *blocksStoreQuerier) LabelValues(name string, matchers ...*labels.Matche
 
 	{
 		// Clamp max time range.
-		startTime := model.Time(minT)
-		endTime := model.Time(maxT)
-		if maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
-			manipulateTime(spanCtx, &startTime, endTime.Add(-maxQueryLength), "start", "max label query length", spanLog)
-			minT = int64(startTime)
-		}
+		startTime, endTime := model.Time(minT), model.Time(maxT)
+		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
 	}
 
 	var (
@@ -455,12 +449,9 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 
 	if sp.Func == "series" {
 		// Clamp max time range.
-		startTime := model.Time(minT)
-		endTime := model.Time(maxT)
-		if maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
-			manipulateTime(spanCtx, &startTime, endTime.Add(-maxQueryLength), "start", "max label query length", spanLog)
-			minT = int64(startTime)
-		}
+		startTime, endTime := model.Time(minT), model.Time(maxT)
+		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
+		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
 	}
 
 	var (

@@ -576,15 +576,10 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
 
-	// Clamp time range based on max query into future.
-	if maxQueryIntoFuture > 0 && endTime.After(now.Add(maxQueryIntoFuture)) {
-		manipulateTime(ctx, &endTime, now.Add(maxQueryIntoFuture), "end", "max query into future", logger)
-	}
+	endTime = clampTime(ctx, endTime, maxQueryIntoFuture, now.Add(maxQueryIntoFuture), false, "end", "max query into future", logger)
 
-	// Clamp the time range based on the max query lookback.
-	if maxQueryLookback := limits.MaxQueryLookback(userID); maxQueryLookback > 0 && startTime.Before(now.Add(-maxQueryLookback)) {
-		manipulateTime(ctx, &startTime, now.Add(-maxQueryLookback), "start", "max query lookback", logger)
-	}
+	maxQueryLookback := limits.MaxQueryLookback(userID)
+	startTime = clampTime(ctx, startTime, maxQueryLookback, now.Add(-maxQueryLookback), true, "start", "max query lookback", logger)
 
 	if endTime.Before(startTime) {
 		return 0, 0, errEmptyTimeRange
@@ -593,12 +588,14 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 	return int64(startTime), int64(endTime), nil
 }
 
-// Update a query time and log it in traces to ease debugging.
-func manipulateTime(ctx context.Context, t *model.Time, updated model.Time, kind, name string, logger log.Logger) {
-	origTime := *t
-	*t = updated
-	level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-		"msg", "the "+kind+" time of the query has been manipulated because of the '"+name+"' setting",
-		"original", util.FormatTimeModel(origTime),
-		"updated", util.FormatTimeModel(*t))
+// Ensure a time is within bounds, and log in traces to ease debugging.
+func clampTime(ctx context.Context, t model.Time, limit time.Duration, clamp model.Time, before bool, kind, name string, logger log.Logger) model.Time {
+	if limit > 0 && ((before && t.Before(clamp)) || (!before && t.After(clamp))) {
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
+			"msg", "the "+kind+" time of the query has been manipulated because of the '"+name+"' setting",
+			"original", util.FormatTimeModel(t),
+			"updated", util.FormatTimeModel(clamp))
+		t = clamp
+	}
+	return t
 }
