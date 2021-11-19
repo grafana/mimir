@@ -754,8 +754,6 @@ func NewBucketCompactor(
 
 // Compact runs compaction over bucket.
 func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
-	startTime := time.Now()
-
 	defer func() {
 		// Do not remove the compactDir if an error has occurred
 		// because potentially on the next run we would not have to download
@@ -919,7 +917,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			break
 		}
 	}
-	level.Info(c.logger).Log("msg", "compaction iterations done", "duration", time.Since(startTime))
+	level.Info(c.logger).Log("msg", "compaction iterations done")
 	return nil
 }
 
