@@ -416,11 +416,14 @@ func initQueryableForEngine(engine string, cfg Config, chunkStore chunk.Store, l
 }
 
 func (t *Mimir) tsdbIngesterConfig() {
-	t.Cfg.Ingester.BlocksStorageEnabled = t.Cfg.Storage.Engine == storage.StorageEngineBlocks
 	t.Cfg.Ingester.BlocksStorageConfig = t.Cfg.BlocksStorage
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
+	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
+		return nil, fmt.Errorf("ingesters do not support the '%s' store engine", t.Cfg.Storage.Engine)
+	}
+
 	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.DistributorShardingStrategy = t.Cfg.Distributor.ShardingStrategy
@@ -429,7 +432,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 	t.Cfg.Ingester.InstanceLimitsFn = ingesterInstanceLimits(t.RuntimeConfig)
 	t.tsdbIngesterConfig()
 
-	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Overrides, t.Store, prometheus.DefaultRegisterer, util_log.Logger)
+	t.Ingester, err = ingester.New(t.Cfg.Ingester, t.Cfg.IngesterClient, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -854,7 +857,7 @@ func (t *Mimir) setupModuleManager() error {
 		DistributorService:       {Ring, Overrides},
 		Store:                    {Overrides, DeleteRequestsStore},
 		Ingester:                 {IngesterService, API},
-		IngesterService:          {Overrides, Store, RuntimeConfig, MemberlistKV},
+		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Store, API},
 		Queryable:                {Overrides, DistributorService, Store, Ring, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation},

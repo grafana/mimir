@@ -46,12 +46,10 @@ func testSingleBinaryEnv(t *testing.T, tlsEnabled bool, flags map[string]string)
 	require.NoError(t, err)
 	defer s.Close()
 
-	// Start dependencies
-	dynamo := e2edb.NewDynamoDB()
-	// Look ma, no Consul!
-	require.NoError(t, s.StartAndWaitReady(dynamo))
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, bucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
 
-	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
 	var mimir1, mimir2, mimir3 *e2emimir.MimirService
 	if tlsEnabled {
 		var (
@@ -140,7 +138,7 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 	serv := e2emimir.NewSingleBinary(
 		name,
 		mergeFlags(
-			ChunksStorageFlags(),
+			BlocksStorageFlags(),
 			flags,
 			testFlags,
 			getTLSFlagsWithPrefix("memberlist", servername, servername == ""),
@@ -164,9 +162,9 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	dynamo := e2edb.NewDynamoDB()
-	require.NoError(t, s.StartAndWaitReady(dynamo))
-	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
+	// Start dependencies.
+	minio := e2edb.NewMinio(9000, bucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Scale up instances. These numbers seem enough to reliably reproduce some unwanted
 	// consequences of slow propagation, such as missing tombstones.

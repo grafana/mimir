@@ -66,7 +66,6 @@ func New(
 ) (*Flusher, error) {
 
 	// These are ignored by blocks-ingester, but that's fine.
-	ingesterConfig.WALConfig.Dir = cfg.WALDir
 	ingesterConfig.ConcurrentFlushes = cfg.ConcurrentFlushes
 	ingesterConfig.FlushOpTimeout = cfg.FlushOpTimeout
 
@@ -83,7 +82,7 @@ func New(
 }
 
 func (f *Flusher) running(ctx context.Context) error {
-	ing, err := ingester.NewForFlusher(f.ingesterConfig, f.chunkStore, f.limits, f.registerer, f.logger)
+	ing, err := ingester.NewForFlusher(f.ingesterConfig, f.limits, f.registerer, f.logger)
 	if err != nil {
 		return errors.Wrap(err, "create ingester")
 	}

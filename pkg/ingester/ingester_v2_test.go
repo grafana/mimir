@@ -60,7 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestIngester_v2Push(t *testing.T) {
+func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
@@ -632,7 +632,8 @@ func TestIngester_v2Push(t *testing.T) {
 
 			// Push timeseries
 			for idx, req := range testData.reqs {
-				_, err := i.v2Push(ctx, req)
+				// avoid reuse of the requests structs
+				_, err := i.PushWithCleanup(ctx, req, func() {})
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
@@ -645,7 +646,7 @@ func TestIngester_v2Push(t *testing.T) {
 
 			// Read back samples to see what has been really ingested
 			s := &stream{ctx: ctx}
-			err = i.v2QueryStream(&client.QueryRequest{
+			err = i.QueryStream(&client.QueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
@@ -660,7 +661,7 @@ func TestIngester_v2Push(t *testing.T) {
 			assert.Equal(t, testData.expectedIngested, res)
 
 			// Read back samples to see what has been really ingested
-			exemplarRes, err := i.v2QueryExemplars(ctx, &client.ExemplarQueryRequest{
+			exemplarRes, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers: []*client.LabelMatchers{
@@ -683,7 +684,7 @@ func TestIngester_v2Push(t *testing.T) {
 
 			// Update active series for metrics check.
 			if !testData.disableActiveSeries {
-				i.v2UpdateActiveSeries()
+				i.updateActiveSeries()
 			}
 
 			// Append additional metrics to assert on.
@@ -696,7 +697,7 @@ func TestIngester_v2Push(t *testing.T) {
 	}
 }
 
-func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
+func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
@@ -742,13 +743,13 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 
 		for _, req := range reqs {
 			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err := i.v2Push(ctx, req)
+			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
 	}
 
 	// Update active series for metrics check.
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -781,7 +782,7 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 }
 
-func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
+func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
@@ -824,7 +825,7 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 
 		for _, req := range reqs {
 			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err := i.v2Push(ctx, req)
+			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
 	}
@@ -833,7 +834,7 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Update active series for metrics check. This will remove inactive series.
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -854,12 +855,12 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 }
 
-func BenchmarkIngesterV2Push(b *testing.B) {
+func BenchmarkIngesterPush(b *testing.B) {
 	limits := defaultLimitsTestConfig()
-	benchmarkIngesterV2Push(b, limits, false)
+	benchmarkIngesterPush(b, limits, false)
 }
 
-func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpected bool) {
+func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpected bool) {
 	registry := prometheus.NewRegistry()
 	ctx := user.InjectOrgID(context.Background(), userID)
 
@@ -887,7 +888,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
 		nil,
 		mimirpb.API)
-	_, err = ingester.v2Push(ctx, currTimeReq)
+	_, err = ingester.Push(ctx, currTimeReq)
 	require.NoError(b, err)
 
 	const (
@@ -904,7 +905,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 			for i := range allSamples {
 				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
 			}
-			_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
+			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
 			if !errorsExpected {
 				require.NoError(b, err)
 			}
@@ -1211,7 +1212,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 	}
 }
 
-func Test_Ingester_v2LabelNames(t *testing.T) {
+func Test_Ingester_LabelNames(t *testing.T) {
 	series := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -1239,7 +1240,7 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -1247,7 +1248,7 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 		expected := []string{"__name__", "status", "route"}
 
 		// Get label names
-		res, err := i.v2LabelNames(ctx, &client.LabelNamesRequest{})
+		res, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
@@ -1264,13 +1265,13 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get label names
-		res, err := i.v2LabelNames(ctx, req)
+		res, err := i.LabelNames(ctx, req)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 }
 
-func Test_Ingester_v2LabelValues(t *testing.T) {
+func Test_Ingester_LabelValues(t *testing.T) {
 	series := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -1304,20 +1305,20 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
 	// Get label values
 	for labelName, expectedValues := range expected {
 		req := &client.LabelValuesRequest{LabelName: labelName}
-		res, err := i.v2LabelValues(ctx, req)
+		res, err := i.LabelValues(ctx, req)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
 }
 
-func Test_Ingester_v2Query(t *testing.T) {
+func Test_Ingester_Query(t *testing.T) {
 	series := []series{
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}, {Name: "route", Value: "get_user"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "route", Value: "get_user"}}, 1, 110000},
@@ -1419,7 +1420,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -1433,7 +1434,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 			}
 
 			s := stream{ctx: ctx}
-			err = i.v2QueryStream(req, &s)
+			err = i.QueryStream(req, &s)
 			require.NoError(t, err)
 
 			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -1649,7 +1650,7 @@ func pushSeriesToIngester(t testing.TB, series []series, i *Ingester) context.Co
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 	return ctx
@@ -1666,7 +1667,7 @@ func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse
 	return items
 }
 
-func TestIngester_v2Query_QuerySharding(t *testing.T) {
+func TestIngester_Query_QuerySharding(t *testing.T) {
 	const (
 		numSeries = 1000
 		numShards = 16
@@ -1695,7 +1696,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 		}
 
 		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 
 		// Compact the TSDB head once half of the series have been pushed.
@@ -1721,7 +1722,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 		}
 
 		s := stream{ctx: ctx}
-		err = i.v2QueryStream(req, &s)
+		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
 		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -1750,7 +1751,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 	}
 }
 
-func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+func TestIngester_Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -1762,7 +1763,7 @@ func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	req := &client.QueryRequest{}
 
 	s := stream{ctx: ctx}
-	err = i.v2QueryStream(req, &s)
+	err = i.QueryStream(req, &s)
 	require.NoError(t, err)
 
 	assert.Empty(t, s.responses)
@@ -1772,7 +1773,7 @@ func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_v2LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+func TestIngester_LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -1783,7 +1784,7 @@ func TestIngester_v2LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T)
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &client.LabelValuesRequest{}
 
-	res, err := i.v2LabelValues(ctx, req)
+	res, err := i.LabelValues(ctx, req)
 	require.NoError(t, err)
 	assert.Equal(t, &client.LabelValuesResponse{}, res)
 
@@ -1792,7 +1793,7 @@ func TestIngester_v2LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T)
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_v2LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -1803,7 +1804,7 @@ func TestIngester_v2LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &client.LabelNamesRequest{}
 
-	res, err := i.v2LabelNames(ctx, req)
+	res, err := i.LabelNames(ctx, req)
 	require.NoError(t, err)
 	assert.Equal(t, &client.LabelNamesResponse{}, res)
 
@@ -1812,7 +1813,7 @@ func TestIngester_v2LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) 
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_v2Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
+func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	// Configure the lifecycler to not immediately join the ring, to make sure
 	// the ingester will NOT be in the ACTIVE state when we'll push samples.
 	cfg := defaultIngesterTestConfig(t)
@@ -1829,7 +1830,7 @@ func TestIngester_v2Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, 0)
 
-	res, err := i.v2Push(ctx, req)
+	res, err := i.Push(ctx, req)
 	assert.EqualError(t, err, wrapWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error())
 	assert.Nil(t, res)
 
@@ -1899,7 +1900,7 @@ func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNot
 	}
 }
 
-func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
+func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 	fixtures := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -2027,7 +2028,7 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 
 	for _, series := range fixtures {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -2042,14 +2043,14 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 				MatchersSet:      testData.matchers,
 			}
 
-			res, err := i.v2MetricsForLabelMatchers(ctx, req)
+			res, err := i.MetricsForLabelMatchers(ctx, req)
 			require.NoError(t, err)
 			assert.ElementsMatch(t, testData.expected, res.Metric)
 		})
 	}
 }
 
-func Test_Ingester_v2MetricsForLabelMatchers_Deduplication(t *testing.T) {
+func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
 	const (
 		userID    = "test"
 		numSeries = 100000
@@ -2073,12 +2074,12 @@ func Test_Ingester_v2MetricsForLabelMatchers_Deduplication(t *testing.T) {
 		},
 	}
 
-	res, err := i.v2MetricsForLabelMatchers(ctx, req)
+	res, err := i.MetricsForLabelMatchers(ctx, req)
 	require.NoError(t, err)
 	require.Len(t, res.GetMetric(), numSeries)
 }
 
-func Benchmark_Ingester_v2MetricsForLabelMatchers(b *testing.B) {
+func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 	var (
 		userID              = "test"
 		numSeries           = 10000
@@ -2106,7 +2107,7 @@ func Benchmark_Ingester_v2MetricsForLabelMatchers(b *testing.B) {
 			}}},
 		}
 
-		res, err := i.v2MetricsForLabelMatchers(ctx, req)
+		res, err := i.MetricsForLabelMatchers(ctx, req)
 		require.NoError(b, err)
 		require.Len(b, res.GetMetric(), numSeries)
 	}
@@ -2153,7 +2154,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 
 			// Send metrics to the ingester.
 			req := mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)
-			_, err := i.v2Push(ctx, req)
+			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
 	}
@@ -2161,7 +2162,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 	return i
 }
 
-func TestIngester_v2QueryStream(t *testing.T) {
+func TestIngester_QueryStream(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 
@@ -2195,7 +2196,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 		}
 
 		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 
 		// Compact the TSDB head once half of the series have been pushed.
@@ -2369,7 +2370,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 	}
 }
 
-func TestIngester_v2QueryStreamManySamples(t *testing.T) {
+func TestIngester_QueryStreamManySamples(t *testing.T) {
 	// Create ingester.
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
@@ -2395,15 +2396,15 @@ func TestIngester_v2QueryStreamManySamples(t *testing.T) {
 	}
 
 	// 10k samples encode to around 140 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:10000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:10000]))
 	require.NoError(t, err)
 
 	// 100k samples encode to around 1.4 MiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
 	require.NoError(t, err)
 
 	// 50k samples encode to around 716 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:50000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:50000]))
 	require.NoError(t, err)
 
 	// Create a GRPC server used to query back the data.
@@ -2463,7 +2464,7 @@ func TestIngester_v2QueryStreamManySamples(t *testing.T) {
 	require.Equal(t, 10000+50000+samplesCount, totalSamples)
 }
 
-func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
+func TestIngester_QueryStreamManySamplesChunks(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 	cfg.StreamChunksWhenUsingBlocks = true
@@ -2492,15 +2493,15 @@ func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
 	}
 
 	// 100k samples in chunks use about 154 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:100000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:100000]))
 	require.NoError(t, err)
 
 	// 1M samples in chunks use about 1.51 MiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
 	require.NoError(t, err)
 
 	// 500k samples in chunks need 775 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:500000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:500000]))
 	require.NoError(t, err)
 
 	// Create a GRPC server used to query back the data.
@@ -2639,7 +2640,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
-		_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
+		_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
 		require.NoError(b, err)
 	}
 
@@ -2655,7 +2656,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
-		_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
+		_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
 		require.NoError(b, err)
 	}
 
@@ -2692,7 +2693,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 		for _, timeRange := range ranges {
 			for _, queryShardingEnabled := range []bool{false, true} {
 				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
-					benchmarkIngesterV2QueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
+					benchmarkIngesterQueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
 				})
 			}
 		}
@@ -2704,7 +2705,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 		for _, timeRange := range ranges {
 			for _, queryShardingEnabled := range []bool{false, true} {
 				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
-					benchmarkIngesterV2QueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
+					benchmarkIngesterQueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
 				})
 			}
 		}
@@ -2731,7 +2732,7 @@ func getStartedIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, regis
 	return ingester
 }
 
-func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, start, end int64, queryShardingEnabled bool, numShards int) {
+func benchmarkIngesterQueryStream(ctx context.Context, b *testing.B, i *Ingester, start, end int64, queryShardingEnabled bool, numShards int) {
 	mockStream := &mockQueryStreamServer{ctx: ctx}
 
 	metricMatcher := &client.LabelMatcher{
@@ -2754,7 +2755,7 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 					}},
 				}
 
-				err := i.v2QueryStream(req, mockStream)
+				err := i.QueryStream(req, mockStream)
 				require.NoError(b, err)
 			}
 		} else {
@@ -2764,7 +2765,7 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 				Matchers:         []*client.LabelMatcher{metricMatcher},
 			}
 
-			err := i.v2QueryStream(req, mockStream)
+			err := i.QueryStream(req, mockStream)
 			require.NoError(b, err)
 		}
 	}
@@ -2857,12 +2858,11 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 		return nil, err
 	}
 
-	ingesterCfg.BlocksStorageEnabled = true
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
 
-	ingester, err := NewV2(ingesterCfg, clientCfg, overrides, registerer, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, clientCfg, overrides, registerer, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -2870,7 +2870,7 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 	return ingester, nil
 }
 
-func TestIngester_v2OpenExistingTSDBOnStartup(t *testing.T) {
+func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -2998,7 +2998,6 @@ func TestIngester_v2OpenExistingTSDBOnStartup(t *testing.T) {
 			defer os.RemoveAll(tempDir)
 
 			ingesterCfg := defaultIngesterTestConfig(t)
-			ingesterCfg.BlocksStorageEnabled = true
 			ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
 			ingesterCfg.BlocksStorageConfig.TSDB.MaxTSDBOpeningConcurrencyOnStartup = testData.concurrency
 			ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
@@ -3007,7 +3006,7 @@ func TestIngester_v2OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := NewV2(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -3319,7 +3318,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 
 	{
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, sampleTimestamp)
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -3334,7 +3333,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	// Push another sample to the same metric and timestamp, with different value. We expect to get error.
 	{
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 1, sampleTimestamp)
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.Error(t, err)
 	}
 
@@ -3593,7 +3592,7 @@ func TestIngester_ForFlush(t *testing.T) {
 
 	// Restart ingester in "For Flusher" mode. We reuse the same config (esp. same dir)
 	reg = prometheus.NewPedanticRegistry()
-	i, err = NewV2ForFlusher(i.cfg, i.limits, reg, log.NewNopLogger())
+	i, err = NewForFlusher(i.cfg, i.limits, reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 
@@ -3624,7 +3623,7 @@ func mockUserShipper(t *testing.T, i *Ingester) *shipperMock {
 	return m
 }
 
-func Test_Ingester_v2UserStats(t *testing.T) {
+func Test_Ingester_UserStats(t *testing.T) {
 	series := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -3651,7 +3650,7 @@ func Test_Ingester_v2UserStats(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -3662,14 +3661,14 @@ func Test_Ingester_v2UserStats(t *testing.T) {
 	}
 
 	// Get label names
-	res, err := i.v2UserStats(ctx, &client.UserStatsRequest{})
+	res, err := i.UserStats(ctx, &client.UserStatsRequest{})
 	require.NoError(t, err)
 	assert.InDelta(t, 0.2, res.ApiIngestionRate, 0.0001)
 	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)
 	assert.Equal(t, uint64(3), res.NumSeries)
 }
 
-func Test_Ingester_v2AllUserStats(t *testing.T) {
+func Test_Ingester_AllUserStats(t *testing.T) {
 	series := []struct {
 		user      string
 		lbls      labels.Labels
@@ -3696,7 +3695,7 @@ func Test_Ingester_v2AllUserStats(t *testing.T) {
 	for _, series := range series {
 		ctx := user.InjectOrgID(context.Background(), series.user)
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -3707,7 +3706,7 @@ func Test_Ingester_v2AllUserStats(t *testing.T) {
 	}
 
 	// Get label names
-	res, err := i.v2AllUserStats(context.Background(), &client.UserStatsRequest{})
+	res, err := i.AllUserStats(context.Background(), &client.UserStatsRequest{})
 	require.NoError(t, err)
 
 	expect := []*client.UserIDStatsResponse{
@@ -3839,7 +3838,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
 
@@ -3874,13 +3873,13 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Wait until TSDB has been closed and removed.
 	test.Poll(t, 20*time.Second, 0, func() interface{} {
-		i.userStatesMtx.Lock()
-		defer i.userStatesMtx.Unlock()
+		i.stateMtx.Lock()
+		defer i.stateMtx.Unlock()
 		return len(i.TSDBState.dbs)
 	})
 
 	require.Greater(t, testutil.ToFloat64(i.TSDBState.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
@@ -3905,7 +3904,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Pushing another sample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	// User is back.
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
@@ -3947,14 +3946,14 @@ func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
 	req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: mimirpb.COUNTER})
-	_, err := i.v2Push(ctx, req)
+	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
 }
 
 func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, ts)
-	_, err := i.v2Push(ctx, req)
+	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
 }
 
@@ -4010,13 +4009,12 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	require.NoError(t, err)
 
 	ingesterCfg := defaultIngesterTestConfig(t)
-	ingesterCfg.BlocksStorageEnabled = true
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := NewV2(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
@@ -4041,9 +4039,6 @@ func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), i)
-	})
 
 	// Wait until it's healthy
 	test.Poll(t, 1*time.Second, 1, func() interface{} {
@@ -4097,7 +4092,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, j*chunkRangeMilliSec)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -4124,7 +4119,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, j*chunkRangeMilliSec)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 	require.Nil(t, db.Compact())
@@ -4152,7 +4147,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(6); j < 7; j++ {
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, j*chunkRangeMilliSec)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 	require.Nil(t, db.Compact())
@@ -4199,7 +4194,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	// Ingestion should fail with a 503.
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = i.v2Push(ctx, req)
+	_, err = i.Push(ctx, req)
 	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errors.New("forced compaction in progress"), userID).Error()), err)
 
 	// Ingestion is successful after a flush.
@@ -4264,7 +4259,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	`), "cortex_ingester_tsdb_compactions_total"))
 }
 
-func TestIngester_v2PushInstanceLimits(t *testing.T) {
+func TestIngester_PushInstanceLimits(t *testing.T) {
 	tests := map[string]struct {
 		limits          InstanceLimits
 		reqs            map[string][]*mimirpb.WriteRequest

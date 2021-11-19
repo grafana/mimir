@@ -39,6 +39,8 @@ func preCortex110Flags(flags map[string]string) map[string]string {
 }
 
 func TestBackwardCompatibilityWithChunksStorage(t *testing.T) {
+	// TODO: (remove-chunks) port this to use blocks storage engine or remove
+	t.Skip("chunks storage is no longer supported")
 	for previousImage, flagsFn := range previousVersionImages {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := ChunksStorageFlags()
