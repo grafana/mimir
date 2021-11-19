@@ -754,6 +754,8 @@ func NewBucketCompactor(
 
 // Compact runs compaction over bucket.
 func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
+	startTime := time.Now()
+
 	defer func() {
 		// Do not remove the compactDir if an error has occurred
 		// because potentially on the next run we would not have to download
@@ -917,18 +919,21 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			break
 		}
 	}
-	level.Info(c.logger).Log("msg", "compaction iterations done")
+	level.Info(c.logger).Log("msg", "compaction iterations done", "duration", time.Since(startTime))
 	return nil
 }
 
 func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 	for ix := 0; ix < len(jobs); {
+		j := jobs[ix]
 		// Skip any job which doesn't belong to this compactor instance.
-		if ok, err := c.ownJob(jobs[ix]); err != nil {
+		if ok, err := c.ownJob(j); err != nil {
 			return nil, errors.Wrap(err, "ownJob")
 		} else if !ok {
+			level.Debug(c.logger).Log("msg", "job filtered out", "job", j.Key(), "shardingKey", j.ShardingKey(), "hash", keyHash(j.ShardingKey()), "blocks", len(j.metasByMinTime))
 			jobs = append(jobs[:ix], jobs[ix+1:]...)
 		} else {
+			level.Debug(c.logger).Log("msg", "job kept", "job", j.Key(), "shardingKey", j.ShardingKey(), "hash", keyHash(j.ShardingKey()), "blocks", len(j.metasByMinTime))
 			ix++
 		}
 	}

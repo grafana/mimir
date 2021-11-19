@@ -872,14 +872,17 @@ func (s *splitAndMergeShardingStrategy) ownJob(job *Job) (bool, error) {
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, job.ShardingKey())
 }
 
-func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
-	// Hash the key.
+// keyHash returns hash of the key.
+func keyHash(key string) uint32 {
 	hasher := fnv.New32a()
 	_, _ = hasher.Write([]byte(key))
 	hash := hasher.Sum32()
+	return hash
+}
 
+func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
 	// Check whether this compactor instance owns the token.
-	rs, err := r.Get(hash, RingOp, nil, nil, nil)
+	rs, err := r.Get(keyHash(key), RingOp, nil, nil, nil)
 	if err != nil {
 		return false, err
 	}
