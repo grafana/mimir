@@ -270,7 +270,7 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
 			a.head.metrics.outOfOrderSamples.Inc()
-			a.head.metrics.oooHistogram.Observe(float64(delta) / 1e6)
+			a.head.metrics.oooHistogram.Observe(float64(delta) / 1e9)
 		}
 		return 0, err
 	}
@@ -453,7 +453,7 @@ func (a *headAppender) Commit() (err error) {
 
 		if !ok {
 			total--
-			a.head.metrics.oooHistogram.Observe(float64(delta) / 1e6)
+			a.head.metrics.oooHistogram.Observe(float64(delta) / 1e9)
 			a.head.metrics.outOfOrderSamples.Inc()
 		}
 		if chunkCreated {

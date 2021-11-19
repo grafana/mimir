@@ -301,15 +301,20 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "distributor_sample_delay",
-			Help:      "Number of ms by which a sample came in late wrt wallclock.",
+			Help:      "Number of seconds by which a sample came in late wrt wallclock.",
 			Buckets: []float64{
-				1000 * 60 * 10,      // 10 min
-				1000 * 60 * 30,      // 30 min
-				1000 * 60 * 60,      // 60 min
-				1000 * 60 * 60 * 2,  // 2h
-				1000 * 60 * 60 * 3,  // 3h
-				1000 * 60 * 60 * 6,  // 6h
-				1000 * 60 * 60 * 24, // 24h
+				30,           // 30s
+				60 * 1,       // 1 min
+				60 * 2,       // 2 min
+				60 * 4,       // 4 min
+				60 * 8,       // 8 min
+				60 * 10,      // 10 min
+				60 * 30,      // 30 min
+				60 * 60,      // 1h
+				60 * 60 * 2,  // 2h
+				60 * 60 * 3,  // 3h
+				60 * 60 * 6,  // 6h
+				60 * 60 * 24, // 24h
 			},
 		}),
 		ingesterAppends: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -527,7 +532,7 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 		now := model.Now()
 		delta := now - model.Time(s.TimestampMs)
 		if delta > 0 {
-			d.sampleDelayHistogram.Observe(float64(delta))
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
 		}
 
 		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {

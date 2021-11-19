@@ -509,7 +509,7 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 			nil, nil),
 		tsdbOOOHistogram: prometheus.NewDesc(
 			"cortex_ingester_tsdb_sample_ooo_delta",
-			"Delta in ms by which a sample is considered out of order.",
+			"Delta in seconds by which a sample is considered out of order.",
 			nil, nil),
 		tsdbLoadedBlocks: prometheus.NewDesc(
 			"cortex_ingester_tsdb_blocks_loaded",
