@@ -265,6 +265,7 @@
         s3: {
           'ruler-storage.s3.region': $._config.aws_region,
           'ruler-storage.s3.bucket-name': $._config.ruler_storage_bucket_name,
+          'ruler-storage.s3.endpoint': 's3.dualstack.%s.amazonaws.com' % $._config.aws_region,
         },
         azure: {
           'ruler-storage.azure.container-name': $._config.ruler_storage_bucket_name,
