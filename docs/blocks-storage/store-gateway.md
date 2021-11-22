@@ -894,6 +894,10 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
     [memory_snapshot_on_shutdown: <boolean> | default = false]
 
+    # Enables TSDB isolation feature. Disabling may improve performance.
+    # CLI flag: -blocks-storage.tsdb.isolation-enabled
+    [isolation_enabled: <boolean> | default = true]
+
     # Max size - in bytes - of the in-memory series hash cache. The cache is
     # shared across all tenants and it's used only when query sharding is
     # enabled.
