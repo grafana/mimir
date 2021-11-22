@@ -7,6 +7,7 @@ package util
 
 import (
 	"fmt"
+	"math"
 	"testing"
 	"time"
 
@@ -14,19 +15,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+const (
+	nanosecondsInMillisecond = int64(time.Millisecond / time.Nanosecond)
+)
+
 func TestTimeFromMillis(t *testing.T) {
 	var testExpr = []struct {
 		input    int64
 		expected time.Time
 	}{
-		{input: 1000, expected: time.Unix(1, 0)},
-		{input: 1500, expected: time.Unix(1, 500*nanosecondsInMillisecond)},
+		{input: 1000, expected: time.Unix(1, 0).UTC()},
+		{input: 1500, expected: time.Unix(1, 500*nanosecondsInMillisecond).UTC()},
 	}
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			res := TimeFromMillis(c.input)
 			require.Equal(t, c.expected, res)
+		})
+	}
+}
+
+func TestTimeRoundTrip(t *testing.T) {
+	refTime, _ := time.Parse(time.Layout, time.Layout)
+	var testExpr = []struct {
+		input time.Time
+	}{
+		{input: refTime},
+		{input: time.Unix(math.MinInt64/1000+62135596801, 0).UTC()},         // minTime from Prometheus API
+		{input: time.Unix(math.MaxInt64/1000-62135596801, 999999999).UTC()}, // maxTime from Prometheus API
+	}
+
+	for i, c := range testExpr {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			ms := TimeToMillis(c.input)
+			res := TimeFromMillis(ms)
+			require.Equal(t, c.input.UTC().Format(time.RFC3339), res.Format(time.RFC3339))
 		})
 	}
 }
