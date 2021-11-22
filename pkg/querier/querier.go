@@ -282,11 +282,6 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	level.Debug(log).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
 		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
 
-	if sp.Func == "series" && !q.queryStoreForLabels {
-		// Unless configured otherwise, we query just ingesters for "series" requests.
-		return q.metadataQuerier.Select(true, sp, matchers...)
-	}
-
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -301,11 +296,20 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	} else if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
+	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
+		maxQueryLength := q.limits.MaxLabelsQueryLength(userID)
+		startMs = int64(clampTime(ctx, model.Time(startMs), maxQueryLength, model.Time(endMs).Add(-maxQueryLength), true, "start", "max label query length", log))
+	}
 
 	// The time range may have been manipulated during the validation,
 	// so we make sure changes are reflected back to hints.
 	sp.Start = startMs
 	sp.End = endMs
+
+	if sp.Func == "series" && !q.queryStoreForLabels {
+		// Unless configured otherwise, we query just ingesters for "series" requests.
+		return q.metadataQuerier.Select(true, sp, matchers...)
+	}
 
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
