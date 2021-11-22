@@ -34,6 +34,7 @@ memcached {
     $.memcached {
       name: 'memcached-index-queries',
       max_item_size: '%dm' % [$._config.memcached_index_queries_max_item_size_mb],
+      connection_limit: 16384,
     }
   else {},
 
@@ -54,7 +55,7 @@ memcached {
       // Save memory by more tightly provisioning memcached chunks.
       memory_limit_mb: 6 * 1024,
       overprovision_factor: 1.05,
-      connection_limit: 4096,
+      connection_limit: 16384,
 
       local container = $.core.v1.container,
     }
@@ -65,7 +66,7 @@ memcached {
     $.memcached {
       name: 'memcached-metadata',
       max_item_size: '%dm' % [$._config.memcached_metadata_max_item_size_mb],
-      connection_limit: 4096,
+      connection_limit: 16384,
 
       // Metadata cache doesn't need much memory.
       memory_limit_mb: 512,

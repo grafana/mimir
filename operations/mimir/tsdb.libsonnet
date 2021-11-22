@@ -172,8 +172,9 @@
     container.withPorts($.compactor_ports) +
     container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
-    $.util.resourcesRequests('1', '6Gi') +
-    $.util.resourcesLimits($._config.cortex_compactor_max_concurrency, '6Gi') +
+    // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
+    $.util.resourcesRequests($._config.cortex_compactor_max_concurrency, '6Gi') +
+    $.util.resourcesLimits(null, '6Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,
 
