@@ -769,6 +769,82 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 	}
 }
 
+// Check that time range of /series is restricted by maxLabelsQueryLength.
+// LabelName and LabelValues are checked in TestBlocksStoreQuerier_MaxLabelsQueryRange(),
+// because the implementation of those makes it really hard to do in Querier.
+func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
+	const (
+		engineLookbackDelta = 5 * time.Minute
+		thirtyDays          = 30 * 24 * time.Hour
+	)
+
+	now := time.Now()
+
+	tests := map[string]struct {
+		maxLabelsQueryLength      model.Duration
+		queryStartTime            time.Time
+		queryEndTime              time.Time
+		expectedMetadataStartTime time.Time
+		expectedMetadataEndTime   time.Time
+	}{
+		"should manipulate series query on large time range over the limit": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            now.Add(-thirtyDays).Add(-100 * time.Hour),
+			queryEndTime:              now,
+			expectedMetadataStartTime: now.Add(-thirtyDays),
+			expectedMetadataEndTime:   now,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			cfg.QueryLabelNamesWithMatchers = true
+
+			limits := defaultLimitsConfig()
+			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
+			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			overrides, err := validation.NewOverrides(limits, nil)
+			require.NoError(t, err)
+
+			// We don't need to query any data for this test, so an empty store is fine.
+			chunkStore := &emptyChunkStore{}
+			queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}
+
+			t.Run("series", func(t *testing.T) {
+				distributor := &mockDistributor{}
+				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
+
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				require.NoError(t, err)
+
+				hints := &storage.SelectHints{
+					Start: util.TimeToMillis(testData.queryStartTime),
+					End:   util.TimeToMillis(testData.queryEndTime),
+					Func:  "series",
+				}
+				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+
+				set := q.Select(false, hints, matcher)
+				require.False(t, set.Next()) // Expected to be empty.
+				require.NoError(t, set.Err())
+
+				// Assert on the time range of the actual executed query (5s delta).
+				delta := float64(5000)
+				require.Len(t, distributor.Calls, 1)
+				assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+			})
+
+		})
+	}
+}
+
 // mockDistibutorFor duplicates the chunks in the mockChunkStore into the mockDistributor
 // so we can test everything is dedupe correctly.
 func mockDistibutorFor(t *testing.T, cs mockChunkStore, through model.Time) *mockDistributor {
