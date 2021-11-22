@@ -4133,6 +4133,13 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -querier.max-query-parallelism
 [max_query_parallelism: <int> | default = 14]
 
+# Limit the time range (end - start time) of series, label names and values
+# queries. This limit is enforced in the querier. If the requested time range is
+# outside the allowed range, the request will not fail but will be manipulated
+# to only query data within the allowed time range. 0 to disable.
+# CLI flag: -store.max-labels-query-length
+[max_labels_query_length: <duration> | default = 0s]
+
 # Cardinality limit for index queries. This limit is ignored when using blocks
 # storage. 0 to disable.
 # CLI flag: -store.cardinality-limit

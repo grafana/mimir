@@ -267,22 +267,20 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "querier.Select")
 	defer log.Span.Finish()
 
-	if sp != nil {
-		level.Debug(log).Log("start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
-			util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
+	// Older Prometheus passes nil SelectHints if it is doing a 'series' operation,
+	// which needs only metadata.
+	// Recent versions of Prometheus pass in the hint but with Func set to "series".
+	// See: https://github.com/prometheus/prometheus/pull/8050
+	if sp == nil {
+		sp = &storage.SelectHints{
+			Func:  "series",
+			Start: q.mint,
+			End:   q.maxt,
+		}
 	}
 
-	// Kludge: Prometheus passes nil SelectHints if it is doing a 'series' operation,
-	// which needs only metadata. Here we expect that metadataQuerier querier will handle that.
-	// In Mimir it is not feasible to query entire history (with no mint/maxt), so we only ask ingesters and skip
-	// querying the long-term storage.
-	// Also, in the recent versions of Prometheus, we pass in the hint but with Func set to "series".
-	// See: https://github.com/prometheus/prometheus/pull/8050
-	if (sp == nil || sp.Func == "series") && !q.queryStoreForLabels {
-		// In this case, the query time range has already been validated when the querier has been
-		// created.
-		return q.metadataQuerier.Select(true, sp, matchers...)
-	}
+	level.Debug(log).Log("hint.func", sp.Func, "start", util.TimeFromMillis(sp.Start).UTC().String(), "end",
+		util.TimeFromMillis(sp.End).UTC().String(), "step", sp.Step, "matchers", util.MatchersStringer(matchers))
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
@@ -298,18 +296,25 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	} else if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
+	if sp.Func == "series" { // Clamp max time range for series-only queries, before we check max length.
+		maxQueryLength := q.limits.MaxLabelsQueryLength(userID)
+		startMs = int64(clampTime(ctx, model.Time(startMs), maxQueryLength, model.Time(endMs).Add(-maxQueryLength), true, "start", "max label query length", log))
+	}
 
 	// The time range may have been manipulated during the validation,
 	// so we make sure changes are reflected back to hints.
 	sp.Start = startMs
 	sp.End = endMs
 
+	if sp.Func == "series" && !q.queryStoreForLabels {
+		// Unless configured otherwise, we query just ingesters for "series" requests.
+		return q.metadataQuerier.Select(true, sp, matchers...)
+	}
+
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
 
-	// Validate query time range. This validation should be done only for instant / range queries and
-	// NOT for metadata queries (series, labels) because the query-frontend doesn't support splitting
-	// of such queries.
+	// Validate query time range.
 	if maxQueryLength := q.limits.MaxQueryLength(userID); maxQueryLength > 0 && endTime.Sub(startTime) > maxQueryLength {
 		limitErr := validation.LimitError(fmt.Sprintf(validation.ErrQueryTooLong, endTime.Sub(startTime), maxQueryLength))
 		return storage.ErrSeriesSet(limitErr)
@@ -575,37 +580,26 @@ func validateQueryTimeRange(ctx context.Context, userID string, startMs, endMs i
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
 
-	// Clamp time range based on max query into future.
-	if maxQueryIntoFuture > 0 && endTime.After(now.Add(maxQueryIntoFuture)) {
-		origEndTime := endTime
-		endTime = now.Add(maxQueryIntoFuture)
+	endTime = clampTime(ctx, endTime, maxQueryIntoFuture, now.Add(maxQueryIntoFuture), false, "end", "max query into future", logger)
 
-		// Make sure to log it in traces to ease debugging.
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-			"msg", "the end time of the query has been manipulated because of the 'max query into future' setting",
-			"original", util.FormatTimeModel(origEndTime),
-			"updated", util.FormatTimeModel(endTime))
+	maxQueryLookback := limits.MaxQueryLookback(userID)
+	startTime = clampTime(ctx, startTime, maxQueryLookback, now.Add(-maxQueryLookback), true, "start", "max query lookback", logger)
 
-		if endTime.Before(startTime) {
-			return 0, 0, errEmptyTimeRange
-		}
-	}
-
-	// Clamp the time range based on the max query lookback.
-	if maxQueryLookback := limits.MaxQueryLookback(userID); maxQueryLookback > 0 && startTime.Before(now.Add(-maxQueryLookback)) {
-		origStartTime := startTime
-		startTime = now.Add(-maxQueryLookback)
-
-		// Make sure to log it in traces to ease debugging.
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
-			"msg", "the start time of the query has been manipulated because of the 'max query lookback' setting",
-			"original", util.FormatTimeModel(origStartTime),
-			"updated", util.FormatTimeModel(startTime))
-
-		if endTime.Before(startTime) {
-			return 0, 0, errEmptyTimeRange
-		}
+	if endTime.Before(startTime) {
+		return 0, 0, errEmptyTimeRange
 	}
 
 	return int64(startTime), int64(endTime), nil
+}
+
+// Ensure a time is within bounds, and log in traces to ease debugging.
+func clampTime(ctx context.Context, t model.Time, limit time.Duration, clamp model.Time, before bool, kind, name string, logger log.Logger) model.Time {
+	if limit > 0 && ((before && t.Before(clamp)) || (!before && t.After(clamp))) {
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log(
+			"msg", "the "+kind+" time of the query has been manipulated because of the '"+name+"' setting",
+			"original", util.FormatTimeModel(t),
+			"updated", util.FormatTimeModel(clamp))
+		t = clamp
+	}
+	return t
 }
