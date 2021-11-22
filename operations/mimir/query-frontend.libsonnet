@@ -17,7 +17,7 @@
       'querier.split-queries-by-interval': '24h',
 
       // Cache query results.
-      'querier.align-querier-with-step': true,
+      'querier.align-querier-with-step': false,
       'querier.cache-results': true,
       'frontend.memcached.hostname': 'memcached-frontend.%s.svc.cluster.local' % $._config.namespace,
       'frontend.memcached.service': 'memcached-client',
@@ -52,7 +52,9 @@
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
-    (if $._config.cortex_query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity),
+    (if $._config.cortex_query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
   query_frontend_deployment: self.newQueryFrontendDeployment('query-frontend', $.query_frontend_container),
 

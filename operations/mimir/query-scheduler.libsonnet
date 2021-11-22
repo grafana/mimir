@@ -25,7 +25,10 @@
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
     $.util.configVolumeMount('overrides', '/etc/cortex') +
-    $.util.antiAffinity,
+    $.util.antiAffinity +
+    // Do not run more query-schedulers than expected.
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
   query_scheduler_deployment: if !$._config.query_scheduler_enabled then {} else
     self.newQuerySchedulerDeployment('query-scheduler', $.query_scheduler_container),
