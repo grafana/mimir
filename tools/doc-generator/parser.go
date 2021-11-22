@@ -18,7 +18,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/weaveworks/common/logging"
 
 	"github.com/grafana/mimir/pkg/ingester"

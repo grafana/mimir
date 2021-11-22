@@ -11,7 +11,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/timestamp"
 
 	"github.com/grafana/mimir/pkg/util"
 )

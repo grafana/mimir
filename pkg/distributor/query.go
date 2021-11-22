@@ -15,7 +15,7 @@ import (
 	"github.com/grafana/dskit/ring"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/weaveworks/common/instrument"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"

@@ -13,7 +13,7 @@ import (
 	"strings"
 
 	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/crypto/blake2b"
 )
