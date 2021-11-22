@@ -42,7 +42,7 @@ func TestSeries(t *testing.T) {
 		l := labels.Labels{labels.Label{Name: generateString(r), Value: generateString(r)}}
 		series[l.String()] = testSeries{
 			l:       l,
-			cs:      []chunks.Meta{{Ref: r.Uint64(), MinTime: r.Int63(), MaxTime: r.Int63()}},
+			cs:      []chunks.Meta{{Ref: chunks.ChunkRef(r.Uint64()), MinTime: r.Int63(), MaxTime: r.Int63()}},
 			samples: r.Uint64(),
 			minTime: r.Int63(),
 			maxTime: r.Int63(),

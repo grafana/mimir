@@ -23,6 +23,7 @@ import (
 	"time"
 
 	otlog "github.com/opentracing/opentracing-go/log"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -157,9 +158,9 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []label
 	return map[labels.Label][]byte{}, keys
 }
 
-func (noopCache) StoreSeries(context.Context, ulid.ULID, uint64, []byte) {}
-func (noopCache) FetchMultiSeries(_ context.Context, _ ulid.ULID, ids []uint64) (map[uint64][]byte, []uint64) {
-	return map[uint64][]byte{}, ids
+func (noopCache) StoreSeries(context.Context, ulid.ULID, storage.SeriesRef, []byte) {}
+func (noopCache) FetchMultiSeries(_ context.Context, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
+	return map[storage.SeriesRef][]byte{}, ids
 }
 
 func (c noopCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey, v []byte) {
@@ -572,7 +573,7 @@ func (s *BucketStore) limitMaxTime(maxt int64) int64 {
 
 type seriesEntry struct {
 	lset labels.Labels
-	refs []uint64
+	refs []chunks.ChunkRef
 	chks []storepb.AggrChunk
 }
 
@@ -703,7 +704,7 @@ func blockSeries(
 
 			if !skipChunks {
 				// Schedule loading chunks.
-				s.refs = make([]uint64, 0, len(chks))
+				s.refs = make([]chunks.ChunkRef, 0, len(chks))
 				s.chks = make([]storepb.AggrChunk, 0, len(chks))
 				for j, meta := range chks {
 					// seriesEntry s is appended to res, but not at every outer loop iteration,
@@ -748,7 +749,7 @@ func blockSeries(
 // filterPostingsByCachedShardHash filters the input postings by the provided shard. It filters only
 // postings for which we have their series hash already in the cache; if a series is not in the cache,
 // postings will be kept in the output.
-func filterPostingsByCachedShardHash(ps []uint64, shard *sharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []uint64, stats queryStats) {
+func filterPostingsByCachedShardHash(ps []storage.SeriesRef, shard *sharding.ShardSelector, seriesHashCache *hashcache.BlockSeriesHashCache) (filteredPostings []storage.SeriesRef, stats queryStats) {
 	writeIdx := 0
 	stats.seriesHashCacheRequests = len(ps)
 
@@ -1650,7 +1651,7 @@ type bucketIndexReader struct {
 	stats *queryStats
 
 	mtx          sync.Mutex
-	loadedSeries map[uint64][]byte
+	loadedSeries map[storage.SeriesRef][]byte
 }
 
 func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
@@ -1660,7 +1661,7 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 			LookupSymbol: block.indexHeaderReader.LookupSymbol,
 		},
 		stats:        &queryStats{},
-		loadedSeries: map[uint64][]byte{},
+		loadedSeries: map[storage.SeriesRef][]byte{},
 	}
 	return r
 }
@@ -1674,7 +1675,7 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
-func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
+func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []storage.SeriesRef, returnErr error) {
 	var (
 		loaded bool
 		cached bool
@@ -1695,7 +1696,7 @@ func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.M
 
 // expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
 // The second return value indicates whether the returned data comes from the cache.
-type expandedPostingsPromise func(ctx context.Context) ([]uint64, bool, error)
+type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, bool, error)
 
 // expandedPostingsPromise provides a promise for the execution of expandedPostings method.
 // First call to this method will be blocking until the expandedPostings are calculated.
@@ -1706,13 +1707,13 @@ type expandedPostingsPromise func(ctx context.Context) ([]uint64, bool, error)
 // TODO: https://github.com/grafana/mimir/issues/331
 func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) (promise expandedPostingsPromise, loaded bool) {
 	var (
-		refs   []uint64
+		refs   []storage.SeriesRef
 		err    error
 		done   = make(chan struct{})
 		cached bool
 	)
 
-	promise = func(ctx context.Context) ([]uint64, bool, error) {
+	promise = func(ctx context.Context) ([]storage.SeriesRef, bool, error) {
 		select {
 		case <-ctx.Done():
 			return nil, false, ctx.Err()
@@ -1724,7 +1725,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		}
 
 		// We must make a copy of refs to return, because caller can modify the postings slice in place.
-		refsCopy := make([]uint64, len(refs))
+		refsCopy := make([]storage.SeriesRef, len(refs))
 		copy(refsCopy, refs)
 
 		return refsCopy, cached, nil
@@ -1752,7 +1753,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	return promise, false
 }
 
-func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, key storecache.LabelMatchersKey, refs []uint64) {
+func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, key storecache.LabelMatchersKey, refs []storage.SeriesRef) {
 	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
@@ -1761,7 +1762,7 @@ func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, key store
 	r.block.indexCache.StoreExpandedPostings(ctx, r.block.meta.ULID, key, data)
 }
 
-func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, key cache.LabelMatchersKey) ([]uint64, bool) {
+func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, key cache.LabelMatchersKey) ([]storage.SeriesRef, bool) {
 	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, r.block.meta.ULID, key)
 	if !ok {
 		return nil, false
@@ -1782,7 +1783,7 @@ func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, key
 }
 
 // expandedPostings is the main logic of ExpandedPostings, without the promise wrapper.
-func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []uint64, returnErr error) {
+func (r *bucketIndexReader) expandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []storage.SeriesRef, returnErr error) {
 	var (
 		postingGroups []*postingGroup
 		allRequested  = false
@@ -2137,7 +2138,7 @@ func resizePostings(b []byte) ([]byte, error) {
 // big endian numbers.
 type bigEndianPostings struct {
 	list []byte
-	cur  uint32
+	cur  storage.SeriesRef
 }
 
 // TODO(bwplotka): Expose those inside Prometheus.
@@ -2145,21 +2146,21 @@ func newBigEndianPostings(list []byte) *bigEndianPostings {
 	return &bigEndianPostings{list: list}
 }
 
-func (it *bigEndianPostings) At() uint64 {
-	return uint64(it.cur)
+func (it *bigEndianPostings) At() storage.SeriesRef {
+	return it.cur
 }
 
 func (it *bigEndianPostings) Next() bool {
 	if len(it.list) >= 4 {
-		it.cur = binary.BigEndian.Uint32(it.list)
+		it.cur = storage.SeriesRef(binary.BigEndian.Uint32(it.list))
 		it.list = it.list[4:]
 		return true
 	}
 	return false
 }
 
-func (it *bigEndianPostings) Seek(x uint64) bool {
-	if uint64(it.cur) >= x {
+func (it *bigEndianPostings) Seek(x storage.SeriesRef) bool {
+	if it.cur >= x {
 		return true
 	}
 
@@ -2170,7 +2171,7 @@ func (it *bigEndianPostings) Seek(x uint64) bool {
 	})
 	if i < num {
 		j := i * 4
-		it.cur = binary.BigEndian.Uint32(it.list[j:])
+		it.cur = storage.SeriesRef(binary.BigEndian.Uint32(it.list[j:]))
 		it.list = it.list[j+4:]
 		return true
 	}
@@ -2187,7 +2188,7 @@ func (it *bigEndianPostings) length() int {
 	return len(it.list) / 4
 }
 
-func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []uint64) error {
+func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []storage.SeriesRef) error {
 	span, ctx := tracing.StartSpan(ctx, "PreloadSeries()")
 	defer span.Finish()
 
@@ -2202,7 +2203,7 @@ func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []uint64) err
 	}
 
 	parts := r.block.partitioner.Partition(len(ids), func(i int) (start, end uint64) {
-		return ids[i], ids[i] + maxSeriesSize
+		return uint64(ids[i]), uint64(ids[i] + maxSeriesSize)
 	})
 	g, ctx := errgroup.WithContext(ctx)
 	for _, p := range parts {
@@ -2216,7 +2217,7 @@ func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []uint64) err
 	return g.Wait()
 }
 
-func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []uint64, refetch bool, start, end uint64) error {
+func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.SeriesRef, refetch bool, start, end uint64) error {
 	begin := time.Now()
 
 	b, err := r.block.readIndexRange(ctx, int64(start), int64(end-start))
@@ -2232,7 +2233,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []uint64, refetc
 	r.mtx.Unlock()
 
 	for i, id := range ids {
-		c := b[id-start:]
+		c := b[uint64(id)-start:]
 
 		l, n := binary.Uvarint(c)
 		if n < 1 {
@@ -2248,7 +2249,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []uint64, refetc
 			level.Warn(r.block.logger).Log("msg", "series size exceeded expected size; refetching", "id", id, "series length", n+int(l), "maxSeriesSize", maxSeriesSize)
 
 			// Fetch plus to get the size of next one if exists.
-			return r.loadSeries(ctx, ids[i:], true, id, id+uint64(n+int(l)+1))
+			return r.loadSeries(ctx, ids[i:], true, uint64(id), uint64(id)+uint64(n+int(l)+1))
 		}
 		c = c[n : n+int(l)]
 		r.mtx.Lock()
@@ -2284,7 +2285,7 @@ type symbolizedLabel struct {
 // LoadSeriesForTime returns false, when there are no series data for given time range.
 //
 // Error is returned on decoding error or if the reference does not resolve to a known series.
-func (r *bucketIndexReader) LoadSeriesForTime(ref uint64, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64) (ok bool, err error) {
+func (r *bucketIndexReader) LoadSeriesForTime(ref storage.SeriesRef, lset *[]symbolizedLabel, chks *[]chunks.Meta, skipChunks bool, mint, maxt int64) (ok bool, err error) {
 	b, ok := r.loadedSeries[ref]
 	if !ok {
 		return false, errors.Errorf("series %d not found", ref)
@@ -2365,7 +2366,7 @@ func decodeSeriesForTime(b []byte, lset *[]symbolizedLabel, chks *[]chunks.Meta,
 			}
 
 			*chks = append(*chks, chunks.Meta{
-				Ref:     uint64(ref),
+				Ref:     chunks.ChunkRef(ref),
 				MinTime: mint,
 				MaxTime: maxt,
 			})
@@ -2416,7 +2417,7 @@ func (r *bucketChunkReader) Close() error {
 
 // addLoad adds the chunk with id to the data set to be fetched.
 // Chunk will be fetched and saved to res[seriesEntry][chunk] upon r.load(res, <...>) call.
-func (r *bucketChunkReader) addLoad(id uint64, seriesEntry, chunk int) error {
+func (r *bucketChunkReader) addLoad(id chunks.ChunkRef, seriesEntry, chunk int) error {
 	var (
 		seq = int(id >> 32)
 		off = uint32(id)
