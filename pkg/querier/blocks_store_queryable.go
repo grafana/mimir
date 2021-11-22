@@ -447,13 +447,6 @@ func (q *blocksStoreQuerier) selectSorted(sp *storage.SelectHints, matchers ...*
 
 	minT, maxT := sp.Start, sp.End
 
-	if sp.Func == "series" {
-		// Clamp max time range.
-		startTime, endTime := model.Time(minT), model.Time(maxT)
-		maxQueryLength := q.limits.MaxLabelsQueryLength(q.userID)
-		minT = int64(clampTime(spanCtx, startTime, maxQueryLength, endTime.Add(-maxQueryLength), true, "start", "max label query length", spanLog))
-	}
-
 	var (
 		convertedMatchers = convertMatchersToLabelMatcher(matchers)
 		resSeriesSets     = []storage.SeriesSet(nil)
