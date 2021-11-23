@@ -131,6 +131,11 @@ func GenerateSeries(name string, ts time.Time, additionalLabels ...prompb.Label)
 	// Generate the series
 	series = append(series, prompb.TimeSeries{
 		Labels: lbls,
+		Exemplars: []prompb.Exemplar{
+			{Value: value, Timestamp: tsMillis, Labels: []prompb.Label{
+				{Name: "trace_id", Value: "1234"},
+			}},
+		},
 		Samples: []prompb.Sample{
 			{Value: value, Timestamp: tsMillis},
 		},
