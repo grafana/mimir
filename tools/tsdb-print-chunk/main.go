@@ -20,7 +20,7 @@ func main() {
 	args := os.Args
 
 	if len(args) < 3 {
-		fmt.Println("Usage:", args[0], "<block-dir> [chunkRef chunkRef ...]")
+		fmt.Println("Usage:", args[0], "<block-dir> chunkRef...")
 		return
 	}
 
