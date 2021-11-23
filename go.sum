@@ -847,6 +847,8 @@ github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85 h1:xLuzPoOzdfNb/RF/I
 github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85/go.mod h1:crI9WX6p0IhrqB+DqIUHulRW853PaNFf7o4UprV//3I=
 github.com/grafana/prometheus-private v0.0.0-20211122084108-4a368c74c62d h1:uAuBSvNGP86WbKO7RKfSNrTtPn1cvtooq2ZKp58XRig=
 github.com/grafana/prometheus-private v0.0.0-20211122084108-4a368c74c62d/go.mod h1:WRbjr502JVo2m2cyKP1XQ/x+cgnrxfAt0UcCL0oLd3Q=
+github.com/grafana/prometheus-private v0.0.0-20211123175150-8539b30da0a4 h1:aoHrV8Nz5YAtyb2LMoeH9kAe2pGo0d1DfiCVxkZyK4o=
+github.com/grafana/prometheus-private v0.0.0-20211123175150-8539b30da0a4/go.mod h1:+PnLxPsHrV70yvJYjBlRzwU5BskoRUyfOA1QmAypc4U=
 github.com/gregjones/httpcache v0.0.0-20180305231024-9cad4c3443a7/go.mod h1:FecbI9+v66THATjSRHfNgh1IVFe/9kFxbXtjV0ctIMA=
 github.com/grpc-ecosystem/go-grpc-middleware v1.2.2 h1:FlFbCRLd5Jr4iYXZufAvgWN6Ao0JrI5chLINnUXDDr0=
 github.com/grpc-ecosystem/go-grpc-middleware v1.2.2/go.mod h1:EaizFBKfUKtMIF5iaDEhniwNedqGo9FuLFzppDr3uwI=
