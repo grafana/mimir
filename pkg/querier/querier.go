@@ -36,6 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -45,7 +46,6 @@ type Config struct {
 	Iterators            bool          `yaml:"iterators"`
 	BatchIterators       bool          `yaml:"batch_iterators"`
 	QueryIngestersWithin time.Duration `yaml:"query_ingesters_within"`
-	QueryStoreForLabels  bool          `yaml:"query_store_for_labels_enabled"`
 
 	// QueryLabelNamesWithMatchers enables the usage of matchers in the LabelNames call.
 	// Can be enabled once this code is deployed on all ingesters, so they correctly read that request param.
@@ -81,7 +81,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.Iterators, "querier.iterators", false, "Use iterators to execute query, as opposed to fully materialising the series in memory.")
 	f.BoolVar(&cfg.BatchIterators, "querier.batch-iterators", true, "Use batch iterators to execute query, as opposed to fully materialising the series in memory.  Takes precedent over the -querier.iterators flag.")
 	f.DurationVar(&cfg.QueryIngestersWithin, "querier.query-ingesters-within", 0, "Maximum lookback beyond which queries are not sent to ingester. 0 means all queries are sent to ingester.")
-	f.BoolVar(&cfg.QueryStoreForLabels, "querier.query-store-for-labels-enabled", false, "Query long-term store for series, label values and label names APIs. Works only with blocks engine.")
+	flagext.DeprecatedFlag(f, "querier.query-store-for-labels-enabled", "This option is no longer used, and will be removed.", util_log.Logger)
 	f.BoolVar(&cfg.QueryLabelNamesWithMatchers, "querier.query-label-names-with-matchers-enabled", false, "True to enable queriers to use an optimized implementation which passes down to ingesters the label matchers when running the label names API. Can be enabled once all ingesters run a version >= the one where this option has been introduced.")
 	f.DurationVar(&cfg.MaxQueryIntoFuture, "querier.max-query-into-future", 10*time.Minute, "Maximum duration into the future you can query. 0 to disable.")
 	f.DurationVar(&cfg.QueryStoreAfter, "querier.query-store-after", 0, "The time after which a metric should be queried from storage and not just ingesters. 0 means all queries are sent to store. When running the blocks storage, if this option is enabled, the time range of the query sent to the store will be manipulated to ensure the query end is not more recent than 'now - query-store-after'.")
@@ -204,25 +204,21 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 		}
 
 		q := querier{
-			ctx:                 ctx,
-			mint:                mint,
-			maxt:                maxt,
-			chunkIterFn:         chunkIterFn,
-			tombstonesLoader:    tombstonesLoader,
-			limits:              limits,
-			maxQueryIntoFuture:  cfg.MaxQueryIntoFuture,
-			queryStoreForLabels: cfg.QueryStoreForLabels,
-			logger:              logger,
+			ctx:                ctx,
+			mint:               mint,
+			maxt:               maxt,
+			chunkIterFn:        chunkIterFn,
+			tombstonesLoader:   tombstonesLoader,
+			limits:             limits,
+			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
+			logger:             logger,
 		}
-
-		dqr, err := distributor.Querier(ctx, mint, maxt)
-		if err != nil {
-			return nil, err
-		}
-
-		q.metadataQuerier = dqr
 
 		if distributor.UseQueryable(now, mint, maxt) {
+			dqr, err := distributor.Querier(ctx, mint, maxt)
+			if err != nil {
+				return nil, err
+			}
 			q.queriers = append(q.queriers, dqr)
 		}
 
@@ -243,22 +239,18 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 	})
 }
 
+// querier implements storage.Querier, running requests across a set of queriers.
 type querier struct {
-	// used for labels and metadata queries
-	metadataQuerier storage.Querier
-
-	// used for selecting series
 	queriers []storage.Querier
 
 	chunkIterFn chunkIteratorFunc
 	ctx         context.Context
 	mint, maxt  int64
 
-	tombstonesLoader    *purger.TombstonesLoader
-	limits              *validation.Overrides
-	maxQueryIntoFuture  time.Duration
-	queryStoreForLabels bool
-	logger              log.Logger
+	tombstonesLoader   *purger.TombstonesLoader
+	limits             *validation.Overrides
+	maxQueryIntoFuture time.Duration
+	logger             log.Logger
 }
 
 // Select implements storage.Querier interface.
@@ -305,11 +297,6 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	// so we make sure changes are reflected back to hints.
 	sp.Start = startMs
 	sp.End = endMs
-
-	if sp.Func == "series" && !q.queryStoreForLabels {
-		// Unless configured otherwise, we query just ingesters for "series" requests.
-		return q.metadataQuerier.Select(true, sp, matchers...)
-	}
 
 	startTime := model.Time(startMs)
 	endTime := model.Time(endMs)
@@ -365,10 +352,6 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 
 // LabelsValue implements storage.Querier.
 func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if !q.queryStoreForLabels {
-		return q.metadataQuerier.LabelValues(name, matchers...)
-	}
-
 	if len(q.queriers) == 1 {
 		return q.queriers[0].LabelValues(name, matchers...)
 	}
@@ -409,10 +392,6 @@ func (q querier) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 }
 
 func (q querier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	if !q.queryStoreForLabels {
-		return q.metadataQuerier.LabelNames(matchers...)
-	}
-
 	if len(q.queriers) == 1 {
 		return q.queriers[0].LabelNames(matchers...)
 	}
