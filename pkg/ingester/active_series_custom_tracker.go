@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // ActiveSeriesCustomTrackersConfig configures the additional custom trackers for active series in the ingester.

@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/goleak"
 	"golang.org/x/crypto/blake2b"

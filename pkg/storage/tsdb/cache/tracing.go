@@ -8,7 +8,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/cache"
 
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -72,11 +73,11 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, blockID ulid
 	return hits, misses
 }
 
-func (t *TracingIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id uint64, v []byte) {
+func (t *TracingIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
 	t.c.StoreSeries(ctx, blockID, id, v)
 }
 
-func (t *TracingIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []uint64) (hits map[uint64][]byte, misses []uint64) {
+func (t *TracingIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	hits, misses = t.c.FetchMultiSeries(ctx, blockID, ids)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)

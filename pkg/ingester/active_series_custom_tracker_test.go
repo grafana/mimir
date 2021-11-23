@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 )
 
