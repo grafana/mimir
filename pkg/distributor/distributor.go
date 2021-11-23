@@ -527,9 +527,10 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 		return err
 	}
 
+	now := model.Now()
+
 	for _, s := range ts.Samples {
 
-		now := model.Now()
 		delta := now - model.Time(s.TimestampMs)
 		if delta > 0 {
 			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
