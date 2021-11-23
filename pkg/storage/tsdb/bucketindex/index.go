@@ -118,7 +118,8 @@ func (m *Block) ThanosMeta(userID string) *metadata.Meta {
 		Thanos: metadata.Thanos{
 			Version: metadata.ThanosVersion1,
 			Labels: map[string]string{
-				mimir_tsdb.TenantIDExternalLabel: userID,
+				mimir_tsdb.TenantIDExternalLabel:         userID,
+				mimir_tsdb.CompactorShardIDExternalLabel: m.CompactorShardID,
 			},
 			SegmentFiles: m.thanosMetaSegmentFiles(),
 		},

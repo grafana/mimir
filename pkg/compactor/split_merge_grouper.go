@@ -54,7 +54,7 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 		flatBlocks = append(flatBlocks, b)
 	}
 
-	for _, job := range planCompaction(g.userID, flatBlocks, g.ranges, g.shardCount, g.splitGroupsCount) {
+	for _, job := range PlanCompaction(g.userID, flatBlocks, g.ranges, g.shardCount, g.splitGroupsCount) {
 		// Sanity check: if splitting is disabled, we don't expect any job for the split stage.
 		if g.shardCount <= 0 && job.stage == stageSplit {
 			return nil, errors.Errorf("unexpected split stage job because splitting is disabled: %s", job.String())
@@ -98,10 +98,10 @@ func (g *SplitAndMergeGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res 
 	return res, nil
 }
 
-// planCompaction analyzes the input blocks and returns a list of compaction jobs that can be
+// PlanCompaction analyzes the input blocks and returns a list of compaction jobs that can be
 // run concurrently. Each returned job may belong either to this compactor instance or another one
 // in the cluster, so the caller should check if they belong to their instance before running them.
-func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shardCount, splitGroups uint32) (jobs []*job) {
+func PlanCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shardCount, splitGroups uint32) (jobs []*job) {
 	if len(blocks) == 0 || len(ranges) == 0 {
 		return nil
 	}

@@ -356,11 +356,11 @@ func newMultitenantCompactor(
 
 	switch compactorCfg.CompactionJobsOrder {
 	case CompactionOrderNewestFirst:
-		c.jobsOrder = sortJobsByNewestBlocksFirst
+		c.jobsOrder = SortJobsByNewestBlocksFirst
 	case CompactionOrderOldestFirst:
-		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirst
+		c.jobsOrder = SortJobsBySmallestRangeOldestBlocksFirst
 	case CompactionOrderOldestSplitFirst:
-		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning
+		c.jobsOrder = SortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning
 	default:
 		return nil, errors.New("unknown compaction jobs order")
 	}
@@ -878,10 +878,7 @@ func (s *splitAndMergeShardingStrategy) ownJob(job *Job) (bool, error) {
 }
 
 func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (bool, error) {
-	// Hash the key.
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(key))
-	hash := hasher.Sum32()
+	hash := HashShardingKey(key)
 
 	// Check whether this compactor instance owns the token.
 	rs, err := r.Get(hash, RingOp, nil, nil, nil)
@@ -894,6 +891,14 @@ func instanceOwnsTokenInRing(r ring.ReadRing, instanceAddr string, key string) (
 	}
 
 	return rs.Instances[0].Addr == instanceAddr, nil
+}
+
+func HashShardingKey(key string) uint32 {
+	// Hash the key.
+	hasher := fnv.New32a()
+	_, _ = hasher.Write([]byte(key))
+	hash := hasher.Sum32()
+	return hash
 }
 
 const compactorMetaPrefix = "compactor-meta-"

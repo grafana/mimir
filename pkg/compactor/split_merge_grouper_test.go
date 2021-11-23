@@ -544,7 +544,7 @@ func TestPlanCompaction(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.shardCount, testData.splitGroups)
+			actual := PlanCompaction(userID, testData.blocks, testData.ranges, testData.shardCount, testData.splitGroups)
 
 			// Print the actual jobs (useful for debugging if tests fail).
 			t.Logf("got %d jobs:", len(actual))

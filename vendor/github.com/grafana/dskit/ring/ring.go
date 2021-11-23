@@ -313,7 +313,13 @@ func (r *Ring) loop(ctx context.Context) error {
 	return nil
 }
 
-func (r *Ring) updateRingState(ringDesc *Desc) {
+func (r *Ring) updateRingState(rd *Desc) {
+	r.UpdateRingState(rd)
+}
+
+// Will update internal ring structure from supplied data. Useful when not running Ring as a service
+// that watches KV store, typically for testing purposes.
+func (r *Ring) UpdateRingState(ringDesc *Desc) {
 	r.mtx.RLock()
 	prevRing := r.ringDesc
 	r.mtx.RUnlock()
