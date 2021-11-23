@@ -71,13 +71,13 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			expectedMinT:         0,
 			expectedMaxT:         0,
 		},
-		"should not manipulate query time range if queryIngestersWithin is enabled and query max time is older, but the query is for /series": {
+		"should manipulate query time range if queryIngestersWithin is enabled and query max time is older, but the query is for /series": {
 			querySeries:          true,
 			queryIngestersWithin: time.Hour,
 			queryMinT:            util.TimeToMillis(now.Add(-100 * time.Minute)),
-			queryMaxT:            util.TimeToMillis(now.Add(-90 * time.Minute)),
-			expectedMinT:         util.TimeToMillis(now.Add(-100 * time.Minute)),
-			expectedMaxT:         util.TimeToMillis(now.Add(-90 * time.Minute)),
+			queryMaxT:            util.TimeToMillis(now.Add(-30 * time.Minute)),
+			expectedMinT:         util.TimeToMillis(now.Add(-60 * time.Minute)),
+			expectedMaxT:         util.TimeToMillis(now.Add(-30 * time.Minute)),
 		},
 	}
 
