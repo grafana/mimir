@@ -5263,9 +5263,10 @@ sharding_ring:
 # CLI flag: -compactor.compaction-strategy
 [compaction_strategy: <string> | default = "default"]
 
-# The sorting to use when deciding which compacton jobs should run first for a
+# The sorting to use when deciding which compaction jobs should run first for a
 # given tenant. Changing this setting is not supported by the default compaction
-# strategy. Supported values are: default, split-and-merge.
+# strategy. Supported values are: smallest-range-oldest-blocks-first,
+# newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```
