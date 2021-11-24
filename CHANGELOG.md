@@ -131,6 +131,7 @@
 * [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360 #499
 * [BUGFIX] Query-frontend: don't reuse cached results for queries that are not step-aligned. #424
 * [BUGFIX] Querier: fixed UserStats endpoint. When zone-aware replication is enabled, `MaxUnavailableZones` param is used instead of `MaxErrors`, so setting `MaxErrors = 0` doesn't make the Querier wait for all Ingesters responses. #474
+* [BUGFIX] Compactor: Fix `-compactor.compaction-jobs-order` flag help so it lists compaction orders instead of strategies. #521
 
 Mixin:
 
