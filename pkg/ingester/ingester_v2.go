@@ -72,9 +72,7 @@ const (
 	sampleOutOfBounds    = "sample-out-of-bounds"
 )
 
-var (
-	errExemplarRef = errors.New("exemplars not ingested because series not already present")
-)
+var errExemplarRef = errors.New("exemplars not ingested because series not already present")
 
 // Shipper interface is used to have an easy way to mock it in tests.
 type Shipper interface {
@@ -1745,8 +1743,9 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		MaxBlockDuration:               blockRanges[len(blockRanges)-1],
 		NoLockfile:                     true,
 		StripeSize:                     i.cfg.BlocksStorageConfig.TSDB.StripeSize,
-		HeadChunksWriteBufferSize:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
 		HeadChunksEndTimeVariance:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksEndTimeVariance,
+		HeadChunksWriteBufferSize:      i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteBufferSize,
+		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
 		WALCompression:                 i.cfg.BlocksStorageConfig.TSDB.WALCompressionEnabled,
 		WALSegmentSize:                 i.cfg.BlocksStorageConfig.TSDB.WALSegmentSizeBytes,
 		SeriesLifecycleCallback:        userDB,

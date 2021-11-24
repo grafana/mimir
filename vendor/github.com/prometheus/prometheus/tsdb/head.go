@@ -129,6 +129,7 @@ type HeadOptions struct {
 	ChunkPool            chunkenc.Pool
 	ChunkWriteBufferSize int
 	ChunkEndTimeVariance float64
+	ChunkWriteQueueSize  int
 
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
@@ -148,6 +149,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkPool:            chunkenc.NewPool(),
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		ChunkEndTimeVariance: 0,
+		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
@@ -214,9 +216,11 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	}
 
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
+		r,
 		mmappedChunksDir(opts.ChunkDirRoot),
 		opts.ChunkPool,
 		opts.ChunkWriteBufferSize,
+		opts.ChunkWriteQueueSize,
 	)
 	if err != nil {
 		return nil, err
@@ -282,7 +286,6 @@ type headMetrics struct {
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
 	snapshotReplayErrorTotal prometheus.Counter // Will be either 0 or 1.
-	oooHistogram             prometheus.Histogram
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -380,20 +383,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		snapshotReplayErrorTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_snapshot_replay_error_total",
 			Help: "Total number snapshot replays that failed.",
-		}),
-		oooHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Name: "prometheus_tsdb_sample_ooo_delta",
-			Help: "Delta in seconds by which a sample is considered out of order.",
-			Buckets: []float64{
-				// Note that mimir distributor only gives us a range of wallclock-12h to wallclock+15min
-				60 * 10,      // 10 min
-				60 * 30,      // 30 min
-				60 * 60,      // 60 min
-				60 * 60 * 2,  // 2h
-				60 * 60 * 3,  // 3h
-				60 * 60 * 6,  // 6h
-				60 * 60 * 12, // 12h
-			},
 		}),
 	}
 
@@ -633,7 +622,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, error) {
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef *chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
 		if maxt < h.minValidTime.Load() {
 			return nil
 		}
@@ -644,12 +633,13 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
 			}
 
-			slice = append(slice, &mmappedChunk{
-				ref:        chunkRef,
+			mc := &mmappedChunk{
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
-			})
+			}
+			mc.ref.Set(chunkRef.Load())
+			slice = append(slice, mc)
 			mmappedChunks[seriesRef] = slice
 			return nil
 		}
@@ -660,12 +650,13 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 
 		h.metrics.chunks.Inc()
 		h.metrics.chunksCreated.Inc()
-		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
-			ref:        chunkRef,
+		mc := &mmappedChunk{
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
-		})
+		}
+		mc.ref.Set(chunkRef.Load())
+		ms.mmappedChunks = append(ms.mmappedChunks, mc)
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
 			// The head chunk was completed and was m-mapped after taking the snapshot.
@@ -1220,6 +1211,7 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
+
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
