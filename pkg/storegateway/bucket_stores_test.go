@@ -27,6 +27,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -42,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -382,6 +385,118 @@ func testBucketStoresSeriesShouldCorrectlyQuerySeriesSpanningMultipleChunks(t *t
 			samples, err := readSamplesFromChunks(seriesSet[0].Chunks)
 			require.NoError(t, err)
 			assert.Equal(t, testData.expectedSamples, len(samples))
+		})
+	}
+}
+
+func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
+	const (
+		userID     = "user-1"
+		metricName = "test"
+	)
+
+	ctx := context.Background()
+	cfg := prepareStorageConfig(t)
+
+	// Generate a single block with 1 series and a lot of samples.
+	seriesWithOutOfOrderChunks := labels.Labels{labels.Label{Name: "case", Value: "out_of_order"}, labels.Label{Name: labels.MetricName, Value: metricName}}
+	seriesWithOverlappingChunks := labels.Labels{labels.Label{Name: "case", Value: "overlapping"}, labels.Label{Name: labels.MetricName, Value: metricName}}
+	specs := []*mimir_testutil.BlockSeriesSpec{
+		// Series with out of order chunks.
+		{
+			Labels: seriesWithOutOfOrderChunks,
+			Chunks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 11, v: 11}}),
+			},
+		},
+		// Series with out of order and overlapping chunks.
+		{
+			Labels: seriesWithOverlappingChunks,
+			Chunks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 20, v: 20}, sample{t: 21, v: 21}}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{t: 10, v: 10}, sample{t: 20, v: 20}}),
+			},
+		},
+	}
+
+	storageDir := t.TempDir()
+	_, err := mimir_testutil.GenerateBlockFromSpec(userID, filepath.Join(storageDir, userID), specs)
+	require.NoError(t, err)
+
+	bucket, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	reg := prometheus.NewPedanticRegistry()
+	stores, err := NewBucketStores(cfg, NewNoShardingStrategy(), bucket, defaultLimitsOverrides(t), mockLoggingLevel(), log.NewNopLogger(), reg)
+	require.NoError(t, err)
+	require.NoError(t, stores.InitialSync(ctx))
+
+	tests := map[string]struct {
+		minT                                int64
+		maxT                                int64
+		expectedSamplesForOutOfOrderChunks  []sample
+		expectedSamplesForOverlappingChunks []sample
+	}{
+		"query all samples": {
+			minT:                                math.MinInt64,
+			maxT:                                math.MaxInt64,
+			expectedSamplesForOutOfOrderChunks:  []sample{{t: 20, v: 20}, {t: 21, v: 21}, {t: 10, v: 10}, {t: 11, v: 11}},
+			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}, {t: 10, v: 10}, {t: 20, v: 20}},
+		},
+		"query samples from 1st chunk only": {
+			minT:                                21,
+			maxT:                                22, // Not included.
+			expectedSamplesForOutOfOrderChunks:  []sample{{t: 20, v: 20}, {t: 21, v: 21}},
+			expectedSamplesForOverlappingChunks: []sample{{t: 20, v: 20}, {t: 21, v: 21}},
+		},
+		"query samples from 2nd (out of order) chunk only": {
+			minT: 10,
+			maxT: 11, // Not included.
+			// The BucketStore assumes chunks are ordered and has an optimization to stop looking up chunks when
+			// the current chunk minTime > query maxTime.
+			expectedSamplesForOutOfOrderChunks:  nil,
+			expectedSamplesForOverlappingChunks: nil,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			seriesSet, warnings, err := querySeries(stores, userID, metricName, testData.minT, testData.maxT)
+			require.NoError(t, err)
+			assert.Empty(t, warnings)
+
+			expectedSeries := 0
+			if testData.expectedSamplesForOverlappingChunks != nil {
+				expectedSeries++
+			}
+			if testData.expectedSamplesForOverlappingChunks != nil {
+				expectedSeries++
+			}
+			require.Len(t, seriesSet, expectedSeries)
+
+			// Check returned samples.
+			nextSeriesIdx := 0
+
+			if testData.expectedSamplesForOutOfOrderChunks != nil {
+				assert.Equal(t, seriesWithOutOfOrderChunks, seriesSet[nextSeriesIdx].PromLabels())
+
+				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
+				require.NoError(t, err)
+				assert.Equal(t, testData.expectedSamplesForOutOfOrderChunks, samples)
+
+				nextSeriesIdx++
+			}
+
+			if testData.expectedSamplesForOverlappingChunks != nil {
+				assert.Equal(t, seriesWithOverlappingChunks, seriesSet[nextSeriesIdx].PromLabels())
+
+				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
+				require.NoError(t, err)
+				assert.Equal(t, testData.expectedSamplesForOverlappingChunks, samples)
+
+				nextSeriesIdx++
+			}
 		})
 	}
 }
