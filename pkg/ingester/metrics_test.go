@@ -181,6 +181,12 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
 
+			# HELP cortex_ingester_tsdb_sample_ooo_delta Delta in seconds by which a sample is considered out of order.
+			# TYPE cortex_ingester_tsdb_sample_ooo_delta histogram
+			cortex_ingester_tsdb_sample_ooo_delta_bucket{le="+Inf"} 0
+			cortex_ingester_tsdb_sample_ooo_delta_sum 0
+			cortex_ingester_tsdb_sample_ooo_delta_count 0
+
 			# HELP cortex_ingester_tsdb_reloads_failures_total Number of times the database failed to reloadBlocks block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_failures_total counter
 			cortex_ingester_tsdb_reloads_failures_total 21
@@ -390,6 +396,12 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_reloads_total Number of times the database reloaded block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
+
+			# HELP cortex_ingester_tsdb_sample_ooo_delta Delta in seconds by which a sample is considered out of order.
+			# TYPE cortex_ingester_tsdb_sample_ooo_delta histogram
+			cortex_ingester_tsdb_sample_ooo_delta_bucket{le="+Inf"} 0
+			cortex_ingester_tsdb_sample_ooo_delta_sum 0
+			cortex_ingester_tsdb_sample_ooo_delta_count 0
 
 			# HELP cortex_ingester_tsdb_reloads_failures_total Number of times the database failed to reloadBlocks block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_failures_total counter
