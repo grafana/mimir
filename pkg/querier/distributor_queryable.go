@@ -13,8 +13,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 
@@ -97,15 +97,8 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
 	defer log.Span.Finish()
 
-	// Kludge: Prometheus passes nil SelectParams if it is doing a 'series' operation,
-	// which needs only metadata. For this specific case we shouldn't apply the queryIngestersWithin
-	// time range manipulation, otherwise we'll end up returning no series at all for
-	// older time ranges (while in Mimir we do ignore the start/end and always return
-	// series in ingesters).
-	// Also, in the recent versions of Prometheus, we pass in the hint but with Func set to "series".
-	// See: https://github.com/prometheus/prometheus/pull/8050
-	if sp == nil || sp.Func == "series" {
-		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
+	if sp.Func == "series" {
+		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(sp.Start), model.Time(sp.End), matchers...)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}

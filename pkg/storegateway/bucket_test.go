@@ -37,8 +37,8 @@ import (
 	"github.com/leanovate/gopter/prop"
 	"github.com/oklog/ulid"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -895,12 +895,12 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	r := bucketIndexReader{
 		block:        b,
 		stats:        &queryStats{},
-		loadedSeries: map[uint64][]byte{},
+		loadedSeries: map[storage.SeriesRef][]byte{},
 	}
 
 	// Success with no refetches.
-	assert.NoError(t, r.loadSeries(context.TODO(), []uint64{2, 13, 24}, false, 2, 100))
-	assert.Equal(t, map[uint64][]byte{
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 100))
+	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
@@ -908,9 +908,9 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.Equal(t, float64(0), promtest.ToFloat64(s.seriesRefetches))
 
 	// Success with 2 refetches.
-	r.loadedSeries = map[uint64][]byte{}
-	assert.NoError(t, r.loadSeries(context.TODO(), []uint64{2, 13, 24}, false, 2, 15))
-	assert.Equal(t, map[uint64][]byte{
+	r.loadedSeries = map[storage.SeriesRef][]byte{}
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 2, 15))
+	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2:  []byte("aaaaaaaaaa"),
 		13: []byte("bbbbbbbbbb"),
 		24: []byte("cccccccccc"),
@@ -918,9 +918,9 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.Equal(t, float64(2), promtest.ToFloat64(s.seriesRefetches))
 
 	// Success with refetch on first element.
-	r.loadedSeries = map[uint64][]byte{}
-	assert.NoError(t, r.loadSeries(context.TODO(), []uint64{2}, false, 2, 5))
-	assert.Equal(t, map[uint64][]byte{
+	r.loadedSeries = map[storage.SeriesRef][]byte{}
+	assert.NoError(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2}, false, 2, 5))
+	assert.Equal(t, map[storage.SeriesRef][]byte{
 		2: []byte("aaaaaaaaaa"),
 	}, r.loadedSeries)
 	assert.Equal(t, float64(3), promtest.ToFloat64(s.seriesRefetches))
@@ -933,7 +933,7 @@ func TestReadIndexCache_LoadSeries(t *testing.T) {
 	assert.NoError(t, bkt.Upload(context.Background(), filepath.Join(b.meta.ULID.String(), block.IndexFilename), bytes.NewReader(buf.Get())))
 
 	// Fail, but no recursion at least.
-	assert.Error(t, r.loadSeries(context.TODO(), []uint64{2, 13, 24}, false, 1, 15))
+	assert.Error(t, r.loadSeries(context.TODO(), []storage.SeriesRef{2, 13, 24}, false, 1, 15))
 }
 
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
@@ -995,7 +995,7 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		//
 		// - calls 4 and 5 are called concurrently with a matcher that causes LabelValues to artificially fail, the error should be stored in the promise
 		var (
-			ress    [6][]uint64
+			ress    [6][]storage.SeriesRef
 			errs    [6]error
 			results sync.WaitGroup
 		)
@@ -2083,10 +2083,10 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		random   = rand.New(rand.NewSource(120))
 	)
 
-	extLset := labels.Labels{{Name: "ext1", Value: "1"}}
+	prependLabels := labels.Labels{{Name: "ext1", Value: "1"}}
 	// Inject the Thanos meta to each block in the storage.
 	thanosMeta := metadata.Thanos{
-		Labels:     extLset.Map(),
+		Labels:     prependLabels.Map(),
 		Downsample: metadata.ThanosDownsample{Resolution: 0},
 		Source:     metadata.TestSource,
 	}
@@ -2096,7 +2096,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		TSDBDir:          filepath.Join(tmpDir, "0"),
 		SamplesPerSeries: 1,
 		Series:           2,
-		PrependLabels:    extLset,
+		PrependLabels:    prependLabels,
 		Random:           random,
 	})
 	block1 := createBlockFromHead(t, bktDir, head)
@@ -2105,7 +2105,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 		TSDBDir:          filepath.Join(tmpDir, "1"),
 		SamplesPerSeries: 1,
 		Series:           2,
-		PrependLabels:    extLset,
+		PrependLabels:    prependLabels,
 		Random:           random,
 	})
 	block2 := createBlockFromHead(t, bktDir, head2)
@@ -2512,7 +2512,7 @@ func benchmarkBlockSeriesWithConcurrency(b *testing.B, concurrency int, blockMet
 				indexReader := blk.indexReader()
 				chunkReader := blk.chunkReader(ctx)
 
-				seriesSet, _, err := blockSeries(context.Background(), nil, indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
+				seriesSet, _, err := blockSeries(context.Background(), indexReader, chunkReader, matchers, shardSelector, seriesHashCache, chunksLimiter, seriesLimiter, req.SkipChunks, req.MinTime, req.MaxTime, req.Aggregates)
 				require.NoError(b, err)
 
 				// Ensure at least 1 series has been returned (as expected).
@@ -2589,9 +2589,14 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	app := h.Appender(context.Background())
 	for i := 0; i < opts.Series; i++ {
 		tsLabel := j*opts.Series*opts.SamplesPerSeries + i*opts.SamplesPerSeries
+
+		// Add "PrependLabels" to real series labels.
+		lbls := labels.NewBuilder(opts.PrependLabels)
+		lbls.Set("foo", "bar")
+		lbls.Set("i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix))
 		ref, err := app.Append(
 			0,
-			labels.FromStrings("foo", "bar", "i", fmt.Sprintf("%07d%s", tsLabel, labelLongSuffix)),
+			lbls.Labels(),
 			int64(tsLabel)*opts.ScrapeInterval.Milliseconds(),
 			opts.Random.Float64(),
 		)
@@ -2614,15 +2619,16 @@ func createHeadWithSeries(t testing.TB, j int, opts headGenOptions) (*tsdb.Head,
 	defer func() { assert.NoError(t, ir.Close()) }()
 
 	var (
-		lset       labels.Labels
 		chunkMetas []chunks.Meta
 		expected   = make([]*storepb.Series, 0, opts.Series)
 	)
 
 	all := allPostings(t, ir)
 	for all.Next() {
+		var lset labels.Labels
+
 		assert.NoError(t, ir.Series(all.At(), &lset, &chunkMetas))
-		expected = append(expected, &storepb.Series{Labels: labelpb.ZLabelsFromPromLabels(append(opts.PrependLabels.Copy(), lset...))})
+		expected = append(expected, &storepb.Series{Labels: labelpb.ZLabelsFromPromLabels(lset)})
 
 		if opts.SkipChunks {
 			continue
@@ -2731,40 +2737,40 @@ func runTestServerSeries(t test.TB, store storepb.StoreServer, cases ...*seriesC
 
 func TestFilterPostingsByCachedShardHash(t *testing.T) {
 	tests := map[string]struct {
-		inputPostings    []uint64
+		inputPostings    []storage.SeriesRef
 		shard            *sharding.ShardSelector
 		cacheEntries     [][2]uint64 // List of cache entries where each entry is the pair [seriesID, hash]
-		expectedPostings []uint64
+		expectedPostings []storage.SeriesRef
 	}{
 		"should be a noop if the cache is empty": {
-			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			inputPostings:    []storage.SeriesRef{0, 1, 2, 3, 4, 5},
 			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{},
-			expectedPostings: []uint64{0, 1, 2, 3, 4, 5},
+			expectedPostings: []storage.SeriesRef{0, 1, 2, 3, 4, 5},
 		},
 		"should filter postings at the beginning of the slice": {
-			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			inputPostings:    []storage.SeriesRef{0, 1, 2, 3, 4, 5},
 			shard:            &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
-			expectedPostings: []uint64{1, 2, 3, 4, 5},
+			expectedPostings: []storage.SeriesRef{1, 2, 3, 4, 5},
 		},
 		"should filter postings in the middle of the slice": {
-			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			inputPostings:    []storage.SeriesRef{0, 1, 2, 3, 4, 5},
 			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}},
-			expectedPostings: []uint64{0, 2, 3, 4, 5},
+			expectedPostings: []storage.SeriesRef{0, 2, 3, 4, 5},
 		},
 		"should filter postings at the end of the slice": {
-			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			inputPostings:    []storage.SeriesRef{0, 1, 2, 3, 4, 5},
 			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{4, 4}, {5, 5}},
-			expectedPostings: []uint64{0, 1, 2, 3, 4},
+			expectedPostings: []storage.SeriesRef{0, 1, 2, 3, 4},
 		},
 		"should filter postings when all postings are in the cache": {
-			inputPostings:    []uint64{0, 1, 2, 3, 4, 5},
+			inputPostings:    []storage.SeriesRef{0, 1, 2, 3, 4, 5},
 			shard:            &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
 			cacheEntries:     [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}},
-			expectedPostings: []uint64{0, 2, 4},
+			expectedPostings: []storage.SeriesRef{0, 2, 4},
 		},
 	}
 
@@ -2772,7 +2778,7 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 			for _, pair := range testData.cacheEntries {
-				cache.Store(pair[0], pair[1])
+				cache.Store(storage.SeriesRef(pair[0]), pair[1])
 			}
 
 			actualPostings, _ := filterPostingsByCachedShardHash(testData.inputPostings, testData.shard, cache)
@@ -2782,13 +2788,13 @@ func TestFilterPostingsByCachedShardHash(t *testing.T) {
 }
 
 func TestFilterPostingsByCachedShardHash_NoAllocations(t *testing.T) {
-	inputPostings := []uint64{0, 1, 2, 3, 4, 5}
+	inputPostings := []storage.SeriesRef{0, 1, 2, 3, 4, 5}
 	shard := &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2}
 	cacheEntries := [][2]uint64{{0, 0}, {1, 1}, {2, 2}, {3, 3}, {4, 4}, {5, 5}}
 
 	cache := hashcache.NewSeriesHashCache(1024 * 1024).GetBlockCache("test")
 	for _, pair := range cacheEntries {
-		cache.Store(pair[0], pair[1])
+		cache.Store(storage.SeriesRef(pair[0]), pair[1])
 	}
 
 	assert.Equal(t, float64(0), testing.AllocsPerRun(1, func() {
@@ -2805,12 +2811,12 @@ func BenchmarkFilterPostingsByCachedShardHash_AllPostingsShifted(b *testing.B) {
 
 	// Create a long list of postings.
 	const numPostings = 10000
-	originalPostings := make([]uint64, numPostings)
+	originalPostings := make([]storage.SeriesRef, numPostings)
 	for i := 0; i < numPostings; i++ {
-		originalPostings[i] = uint64(i)
+		originalPostings[i] = storage.SeriesRef(i)
 	}
 
-	inputPostings := make([]uint64, numPostings)
+	inputPostings := make([]storage.SeriesRef, numPostings)
 
 	b.ResetTimer()
 
@@ -2830,9 +2836,9 @@ func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 
 	// Create a long list of postings.
 	const numPostings = 10000
-	ps := make([]uint64, numPostings)
+	ps := make([]storage.SeriesRef, numPostings)
 	for i := 0; i < numPostings; i++ {
-		ps[i] = uint64(i)
+		ps[i] = storage.SeriesRef(i)
 	}
 
 	for n := 0; n < b.N; n++ {

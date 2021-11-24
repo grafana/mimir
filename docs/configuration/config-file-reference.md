@@ -4133,6 +4133,13 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -querier.max-query-parallelism
 [max_query_parallelism: <int> | default = 14]
 
+# Limit the time range (end - start time) of series, label names and values
+# queries. This limit is enforced in the querier. If the requested time range is
+# outside the allowed range, the request will not fail but will be manipulated
+# to only query data within the allowed time range. 0 to disable.
+# CLI flag: -store.max-labels-query-length
+[max_labels_query_length: <duration> | default = 0s]
+
 # Cardinality limit for index queries. This limit is ignored when using blocks
 # storage. 0 to disable.
 # CLI flag: -store.cardinality-limit
@@ -4985,6 +4992,14 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
     [max_stale_period: <duration> | default = 1h]
 
+  # Blocks with minimum time within this duration are ignored, and not loaded by
+  # store-gateway. Useful when used together with -querier.query-store-after to
+  # prevent loading young blocks, because there are usually many of them
+  # (depending on number of ingesters) and they are not yet compacted. Negative
+  # values or 0 disable the filter.
+  # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
+  [ignore_blocks_within: <duration> | default = 0s]
+
   # Max size - in bytes - of a chunks pool, used to reduce memory allocations.
   # The pool is shared across all tenants. 0 to disable the limit.
   # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
@@ -5083,6 +5098,10 @@ tsdb:
   # down.
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
   [memory_snapshot_on_shutdown: <boolean> | default = false]
+
+  # Enables TSDB isolation feature. Disabling may improve performance.
+  # CLI flag: -blocks-storage.tsdb.isolation-enabled
+  [isolation_enabled: <boolean> | default = true]
 
   # Max size - in bytes - of the in-memory series hash cache. The cache is
   # shared across all tenants and it's used only when query sharding is enabled.
@@ -5244,9 +5263,10 @@ sharding_ring:
 # CLI flag: -compactor.compaction-strategy
 [compaction_strategy: <string> | default = "default"]
 
-# The sorting to use when deciding which compacton jobs should run first for a
+# The sorting to use when deciding which compaction jobs should run first for a
 # given tenant. Changing this setting is not supported by the default compaction
-# strategy. Supported values are: default, split-and-merge.
+# strategy. Supported values are: smallest-range-oldest-blocks-first,
+# newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```

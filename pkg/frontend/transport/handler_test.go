@@ -88,7 +88,7 @@ func TestHandler_ServeHTTP(t *testing.T) {
 				reg,
 				"cortex_query_seconds_total",
 				"cortex_query_fetched_series_total",
-				"cortex_query_fetched_chunks_bytes_total",
+				"cortex_query_fetched_chunk_bytes_total",
 				"cortex_query_fetched_chunks_total",
 			)
 

@@ -20,8 +20,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -814,7 +814,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			name:             "downstream - sample limit",
 			engineDownstream: engineSampleLimit,
 			engineSharding:   engine,
-			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
+			expError:         apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:             "sharding - timeout",
@@ -822,12 +822,6 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			engineSharding:   engineTimeout,
 			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
 			queryable:        queryableSlow,
-		},
-		{
-			name:             "downstream - sample limit",
-			engineDownstream: engine,
-			engineSharding:   engineSampleLimit,
-			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:             "downstream - storage",

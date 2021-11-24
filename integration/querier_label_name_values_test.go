@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/test"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/require"
 

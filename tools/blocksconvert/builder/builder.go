@@ -22,7 +22,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -96,7 +96,7 @@ func NewBuilder(cfg Config, scfg blocksconvert.SharedConfig, l log.Logger, reg p
 			Help: "Fetched chunks",
 		}),
 		fetchedChunksSize: promauto.With(reg).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_blocksconvert_builder_fetched_chunks_bytes_total",
+			Name: "cortex_blocksconvert_builder_fetched_chunk_bytes_total",
 			Help: "Fetched chunks bytes",
 		}),
 		processedSeries: promauto.With(reg).NewCounter(prometheus.CounterOpts{

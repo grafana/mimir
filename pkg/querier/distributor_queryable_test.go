@@ -12,7 +12,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	maxt, mint = 0, 10
+	mint, maxt = 0, 10
 )
 
 func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) {
@@ -94,10 +94,9 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
-			// Select hints are not passed by Prometheus when querying /series.
-			var hints *storage.SelectHints
-			if !testData.querySeries {
-				hints = &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
+			hints := &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
+			if testData.querySeries {
+				hints.Func = "series"
 			}
 
 			seriesSet := querier.Select(true, hints)

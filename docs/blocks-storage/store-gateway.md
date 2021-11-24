@@ -784,6 +784,14 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
       [max_stale_period: <duration> | default = 1h]
 
+    # Blocks with minimum time within this duration are ignored, and not loaded
+    # by store-gateway. Useful when used together with
+    # -querier.query-store-after to prevent loading young blocks, because there
+    # are usually many of them (depending on number of ingesters) and they are
+    # not yet compacted. Negative values or 0 disable the filter.
+    # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
+    [ignore_blocks_within: <duration> | default = 0s]
+
     # Max size - in bytes - of a chunks pool, used to reduce memory allocations.
     # The pool is shared across all tenants. 0 to disable the limit.
     # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
@@ -885,6 +893,10 @@ blocks_storage:
     # down.
     # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
     [memory_snapshot_on_shutdown: <boolean> | default = false]
+
+    # Enables TSDB isolation feature. Disabling may improve performance.
+    # CLI flag: -blocks-storage.tsdb.isolation-enabled
+    [isolation_enabled: <boolean> | default = true]
 
     # Max size - in bytes - of the in-memory series hash cache. The cache is
     # shared across all tenants and it's used only when query sharding is

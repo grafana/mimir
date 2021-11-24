@@ -1074,6 +1074,32 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 - `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
 - `Delete`: the volume will be automatically deleted
 
+### Recover accidentally deleted blocks (Google Cloud specific)
+
+_This playbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
+
+These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
+
+Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and save the ones to restore in a file named `deleted-block-list` (one block per line).
+
+Step 2: Once you have the `deleted-block-list`, you can now list all the objects you need to restore, because only objects can be restored and not prefixes:
+
+```
+while read block; do
+gsutil ls -a -r $block | grep "#" | grep -v deletion-mark.json | grep -v index.cache.json
+done < deleted-list > full-deleted-file-list
+```
+
+The above script will ignore the `deletion-mark.json` and `index.cache.json` which shouldn't be restored.
+
+Step 3: Run the following script to restore the objects:
+
+```
+while read file; do
+gsutil cp $file ${file%#*}
+done < full-deleted-list
+```
+
 ## Log lines
 
 ### Log line containing 'sample with repeated timestamp but different value'

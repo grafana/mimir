@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/query_frontend_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -20,7 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -337,6 +338,7 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 		"-querier.cache-results":             "true",
 		"-querier.split-queries-by-interval": "24h",
 		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
+		"-querier.max-samples":               "2",   // Very low limit so that we can easily hit it.
 	})
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
@@ -347,21 +349,36 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 	// Start all other services.
+	distributor := e2emimir.NewDistributorWithConfigFile("distributor", consul.NetworkHTTPEndpoint(), configFile, flags, "")
 	ingester := e2emimir.NewIngesterWithConfigFile("ingester", consul.NetworkHTTPEndpoint(), configFile, flags, "")
 	querier := e2emimir.NewQuerierWithConfigFile("querier", consul.NetworkHTTPEndpoint(), configFile, flags, "")
 
-	require.NoError(t, s.StartAndWaitReady(querier, ingester))
+	require.NoError(t, s.StartAndWaitReady(distributor, querier, ingester))
 	require.NoError(t, s.WaitReady(queryFrontend))
 
+	// Wait until both the distributor and querier have updated the ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	now := time.Now()
+
+	// Push some series.
+	cWrite, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "fake")
+	require.NoError(t, err)
+
+	for i := 0; i < 10; i++ {
+		series, _ := generateSeries(fmt.Sprintf("series_%d", i), now)
+
+		res, err := cWrite.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
+	}
 
 	cQueryFrontend, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "fake")
 	require.NoError(t, err)
 
 	cQuerier, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "fake")
 	require.NoError(t, err)
-
-	now := time.Now()
 
 	for _, tc := range []struct {
 		name          string
@@ -438,6 +455,14 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 			},
 			expStatusCode: http.StatusBadRequest,
 			expBody:       `{"error":"invalid parameter \"start\": cannot parse \"depths-of-time\" to a valid timestamp", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "max samples limit hit",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`{__name__=~"series_.+"}`, now.Add(-time.Minute), now, time.Minute)
+			},
+			expStatusCode: http.StatusUnprocessableEntity,
+			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

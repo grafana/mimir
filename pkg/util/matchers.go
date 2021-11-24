@@ -8,7 +8,7 @@ package util
 import (
 	"strings"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // SplitFiltersAndMatchers splits empty matchers off, which are treated as filters, see #220
