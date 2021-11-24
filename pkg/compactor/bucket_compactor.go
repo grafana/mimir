@@ -753,7 +753,8 @@ func NewBucketCompactor(
 }
 
 // Compact runs compaction over bucket.
-func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
+// If maxCompactionTime is positive then after this time no more new compactions are started.
+func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Duration) (rerr error) {
 	defer func() {
 		// Do not remove the compactDir if an error has occurred
 		// because potentially on the next run we would not have to download
@@ -765,6 +766,11 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			level.Error(c.logger).Log("msg", "failed to remove compaction work directory", "path", c.compactDir, "err", err)
 		}
 	}()
+
+	var timeoutCh <-chan time.Time
+	if maxCompactionTime > 0 {
+		timeoutCh = time.After(maxCompactionTime)
+	}
 
 	// Loop over bucket and compact until there's no work left.
 	for {
@@ -887,6 +893,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 
 		level.Info(c.logger).Log("msg", "start of compactions")
 
+		maxCompactionTimeReached := false
 		// Send all jobs found during this pass to the compaction workers.
 		var jobErrs errutil.MultiError
 	jobLoop:
@@ -896,6 +903,10 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 				jobErrs.Add(jobErr)
 				break jobLoop
 			case jobChan <- g:
+			case <-timeoutCh:
+				maxCompactionTimeReached = true
+				level.Info(c.logger).Log("msg", "max compaction time reached, no more compactions will be started")
+				break jobLoop
 			}
 		}
 		close(jobChan)
@@ -913,7 +924,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			return jobErrs.Err()
 		}
 
-		if finishedAllJobs {
+		if maxCompactionTimeReached || finishedAllJobs {
 			break
 		}
 	}

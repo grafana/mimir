@@ -219,6 +219,12 @@ compactor:
   # CLI flag: -compactor.tenant-cleanup-delay
   [tenant_cleanup_delay: <duration> | default = 6h]
 
+  # Max time for starting compactions for a single tenant. After this time no
+  # new compactions for the tenant are started before next compaction cycle. 0 =
+  # disabled.
+  # CLI flag: -compactor.max-compaction-time
+  [max_compaction_time: <duration> | default = 0s]
+
   # Comma separated list of tenants that can be compacted. If specified, only
   # these tenants will be compacted by compactor, otherwise all tenants can be
   # compacted. Subject to sharding.
