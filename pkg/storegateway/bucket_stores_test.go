@@ -494,8 +494,6 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 				samples, err := readSamplesFromChunks(seriesSet[nextSeriesIdx].Chunks)
 				require.NoError(t, err)
 				assert.Equal(t, testData.expectedSamplesForOverlappingChunks, samples)
-
-				nextSeriesIdx++
 			}
 		})
 	}
