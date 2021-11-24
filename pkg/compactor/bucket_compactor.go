@@ -946,56 +946,58 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 	return jobs, nil
 }
 
-var _ block.MetadataFilter = &GatherNoCompactionMarkFilter{}
+var _ block.MetadataFilter = &NoCompactionMarkFilter{}
 
-// GatherNoCompactionMarkFilter is a block.Fetcher filter that passes all metas. While doing it, it gathers all no-compact-mark.json markers.
-// Not go routine safe.
-// TODO(bwplotka): Add unit test.
-type GatherNoCompactionMarkFilter struct {
-	logger             log.Logger
-	bkt                objstore.InstrumentedBucketReader
-	noCompactMarkedMap map[ulid.ULID]*metadata.NoCompactMark
-	concurrency        int
+// NoCompactionMarkFilter block.Fetcher filter that finds all blocks with no-compact marker file, and optionally
+// removes them from synced metas.
+type NoCompactionMarkFilter struct {
+	logger                log.Logger
+	bkt                   objstore.InstrumentedBucketReader
+	noCompactMarkedMap    map[ulid.ULID]*metadata.NoCompactMark
+	concurrency           int
+	removeNoCompactBlocks bool
 }
 
-// NewGatherNoCompactionMarkFilter creates GatherNoCompactionMarkFilter.
-func NewGatherNoCompactionMarkFilter(logger log.Logger, bkt objstore.InstrumentedBucketReader, concurrency int) *GatherNoCompactionMarkFilter {
-	return &GatherNoCompactionMarkFilter{
-		logger:      logger,
-		bkt:         bkt,
-		concurrency: concurrency,
+// NewNoCompactionMarkFilter creates NoCompactionMarkFilter.
+func NewNoCompactionMarkFilter(logger log.Logger, bkt objstore.InstrumentedBucketReader, concurrency int, removeNoCompactBlocks bool) *NoCompactionMarkFilter {
+	return &NoCompactionMarkFilter{
+		logger:                logger,
+		bkt:                   bkt,
+		concurrency:           concurrency,
+		removeNoCompactBlocks: removeNoCompactBlocks,
 	}
 }
 
 // NoCompactMarkedBlocks returns block ids that were marked for no compaction.
-func (f *GatherNoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]*metadata.NoCompactMark {
+func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]*metadata.NoCompactMark {
 	return f.noCompactMarkedMap
 }
 
-// Filter passes all metas, while gathering no compact markers.
-func (f *GatherNoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+// Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If removeNoCompactBlocks is true,
+// blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
+func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
 	f.noCompactMarkedMap = make(map[ulid.ULID]*metadata.NoCompactMark)
 
-	// Make a copy of block IDs to check, in order to avoid concurrency issues
-	// between the scheduler and workers.
-	blockIDs := make([]ulid.ULID, 0, len(metas))
+	// Buffer all blocks to check into channel.
+	ch := make(chan ulid.ULID, len(metas))
 	for id := range metas {
-		blockIDs = append(blockIDs, id)
+		ch <- id
 	}
+	close(ch)
 
-	var (
-		eg  errgroup.Group
-		ch  = make(chan ulid.ULID, f.concurrency)
-		mtx sync.Mutex
-	)
+	eg, gctx := errgroup.WithContext(ctx)
 
+	var mtx sync.Mutex // for accessing f.noCompactMarkedMap from goroutines.
 	for i := 0; i < f.concurrency; i++ {
 		eg.Go(func() error {
-			var lastErr error
 			for id := range ch {
+				if err := gctx.Err(); err != nil {
+					return err
+				}
+
 				m := &metadata.NoCompactMark{}
 				// TODO(bwplotka): Hook up bucket cache here + reset API so we don't introduce API calls .
-				if err := metadata.ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
+				if err := metadata.ReadMarker(gctx, f.logger, f.bkt, id.String(), m); err != nil {
 					if errors.Cause(err) == metadata.ErrorMarkerNotFound {
 						continue
 					}
@@ -1003,42 +1005,23 @@ func (f *GatherNoCompactionMarkFilter) Filter(ctx context.Context, metas map[uli
 						level.Warn(f.logger).Log("msg", "found partial no-compact-mark.json; if we will see it happening often for the same block, consider manually deleting no-compact-mark.json from the object storage", "block", id, "err", err)
 						continue
 					}
-					// Remember the last error and continue draining the channel.
-					lastErr = err
-					continue
+
+					return err
 				}
 
 				mtx.Lock()
 				f.noCompactMarkedMap[id] = m
+				if f.removeNoCompactBlocks {
+					delete(metas, id)
+				}
 				mtx.Unlock()
 				synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
 			}
-
-			return lastErr
+			return nil
 		})
 	}
 
-	// Workers scheduled, distribute blocks.
-	eg.Go(func() error {
-		defer close(ch)
-
-		for _, id := range blockIDs {
-			select {
-			case ch <- id:
-				// Nothing to do.
-			case <-ctx.Done():
-				return ctx.Err()
-			}
-		}
-
-		return nil
-	})
-
-	if err := eg.Wait(); err != nil {
-		return errors.Wrap(err, "filter blocks marked for no compaction")
-	}
-
-	return nil
+	return errors.Wrap(eg.Wait(), "filter blocks marked for no compaction")
 }
 
 func hasNonZeroULIDs(ids []ulid.ULID) bool {
