@@ -114,6 +114,7 @@ func TestDistributor_Push(t *testing.T) {
 	lastSeenTimestamp := "cortex_distributor_latest_seen_sample_timestamp_seconds"
 	distributorAppend := "cortex_distributor_ingester_appends_total"
 	distributorAppendFailure := "cortex_distributor_ingester_append_failures_total"
+	distributorSampleDelay := "cortex_distributor_sample_delay"
 	ctx := user.InjectOrgID(context.Background(), "user")
 
 	type samplesIn struct {
@@ -198,12 +199,12 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_latest_seen_sample_timestamp_seconds{user="user"} 123456789.024
 			`,
 		},
-		"A push to ingesters should report the correct metrics with no metadata": {
+		"A push to ingesters with an old sample should report the correct metrics with no metadata": {
 			numIngesters:     3,
 			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: 123456789000},
+			samples:          samplesIn{num: 1, startTimestampMs: time.Now().UnixMilli() - 80000},
 			metadata:         0,
-			metricNames:      []string{distributorAppend, distributorAppendFailure},
+			metricNames:      []string{distributorAppend, distributorAppendFailure, distributorSampleDelay},
 			expectedResponse: emptyResponse,
 			expectedMetrics: `
 				# HELP cortex_distributor_ingester_append_failures_total The total number of failed batch appends sent to ingesters.
@@ -214,14 +215,66 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_ingester_appends_total{ingester="0",type="samples"} 1
 				cortex_distributor_ingester_appends_total{ingester="1",type="samples"} 1
 				cortex_distributor_ingester_appends_total{ingester="2",type="samples"} 1
+				# HELP cortex_distributor_sample_delay Number of seconds by which a sample came in late wrt wallclock.
+				# TYPE cortex_distributor_sample_delay histogram
+				cortex_distributor_sample_delay_bucket{le="30"} 0
+				cortex_distributor_sample_delay_bucket{le="60"} 0
+				cortex_distributor_sample_delay_bucket{le="120"} 0
+				cortex_distributor_sample_delay_bucket{le="240"} 0
+				cortex_distributor_sample_delay_bucket{le="480"} 0
+				cortex_distributor_sample_delay_bucket{le="600"} 0
+				cortex_distributor_sample_delay_bucket{le="1800"} 0
+				cortex_distributor_sample_delay_bucket{le="3600"} 0
+				cortex_distributor_sample_delay_bucket{le="7200"} 0
+				cortex_distributor_sample_delay_bucket{le="10800"} 0
+				cortex_distributor_sample_delay_bucket{le="21600"} 0
+				cortex_distributor_sample_delay_bucket{le="86400"} 1
+				cortex_distributor_sample_delay_bucket{le="+Inf"} 1
+				cortex_distributor_sample_delay_sum 80.000
+				cortex_distributor_sample_delay_count 1
 			`,
 		},
-		"A push to ingesters should report the correct metrics with no samples": {
+		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
+			numIngesters:     3,
+			happyIngesters:   2,
+			samples:          samplesIn{num: 1, startTimestampMs: time.Now().UnixMilli()},
+			metadata:         0,
+			metricNames:      []string{distributorAppend, distributorAppendFailure, distributorSampleDelay},
+			expectedResponse: emptyResponse,
+			expectedMetrics: `
+				# HELP cortex_distributor_ingester_append_failures_total The total number of failed batch appends sent to ingesters.
+				# TYPE cortex_distributor_ingester_append_failures_total counter
+				cortex_distributor_ingester_append_failures_total{ingester="2",type="samples"} 1
+				# HELP cortex_distributor_ingester_appends_total The total number of batch appends sent to ingesters.
+				# TYPE cortex_distributor_ingester_appends_total counter
+				cortex_distributor_ingester_appends_total{ingester="0",type="samples"} 1
+				cortex_distributor_ingester_appends_total{ingester="1",type="samples"} 1
+				cortex_distributor_ingester_appends_total{ingester="2",type="samples"} 1
+				# HELP cortex_distributor_sample_delay Number of seconds by which a sample came in late wrt wallclock.
+				# TYPE cortex_distributor_sample_delay histogram
+				cortex_distributor_sample_delay_bucket{le="30"} 1
+				cortex_distributor_sample_delay_bucket{le="60"} 1
+				cortex_distributor_sample_delay_bucket{le="120"} 1
+				cortex_distributor_sample_delay_bucket{le="240"} 1
+				cortex_distributor_sample_delay_bucket{le="480"} 1
+				cortex_distributor_sample_delay_bucket{le="600"} 1
+				cortex_distributor_sample_delay_bucket{le="1800"} 1
+				cortex_distributor_sample_delay_bucket{le="3600"} 1
+				cortex_distributor_sample_delay_bucket{le="7200"} 1
+				cortex_distributor_sample_delay_bucket{le="10800"} 1
+				cortex_distributor_sample_delay_bucket{le="21600"} 1
+				cortex_distributor_sample_delay_bucket{le="86400"} 1
+				cortex_distributor_sample_delay_bucket{le="+Inf"} 1
+				cortex_distributor_sample_delay_sum 0
+				cortex_distributor_sample_delay_count 1
+			`,
+		},
+		"A push to ingesters without samples should report the correct metrics": {
 			numIngesters:     3,
 			happyIngesters:   2,
 			samples:          samplesIn{num: 0, startTimestampMs: 123456789000},
 			metadata:         1,
-			metricNames:      []string{distributorAppend, distributorAppendFailure},
+			metricNames:      []string{distributorAppend, distributorAppendFailure, distributorSampleDelay},
 			expectedResponse: emptyResponse,
 			expectedMetrics: `
 				# HELP cortex_distributor_ingester_append_failures_total The total number of failed batch appends sent to ingesters.
@@ -232,6 +285,23 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_ingester_appends_total{ingester="0",type="metadata"} 1
 				cortex_distributor_ingester_appends_total{ingester="1",type="metadata"} 1
 				cortex_distributor_ingester_appends_total{ingester="2",type="metadata"} 1
+				# HELP cortex_distributor_sample_delay Number of seconds by which a sample came in late wrt wallclock.
+				# TYPE cortex_distributor_sample_delay histogram
+				cortex_distributor_sample_delay_bucket{le="30"} 0
+				cortex_distributor_sample_delay_bucket{le="60"} 0
+				cortex_distributor_sample_delay_bucket{le="120"} 0
+				cortex_distributor_sample_delay_bucket{le="240"} 0
+				cortex_distributor_sample_delay_bucket{le="480"} 0
+				cortex_distributor_sample_delay_bucket{le="600"} 0
+				cortex_distributor_sample_delay_bucket{le="1800"} 0
+				cortex_distributor_sample_delay_bucket{le="3600"} 0
+				cortex_distributor_sample_delay_bucket{le="7200"} 0
+				cortex_distributor_sample_delay_bucket{le="10800"} 0
+				cortex_distributor_sample_delay_bucket{le="21600"} 0
+				cortex_distributor_sample_delay_bucket{le="86400"} 0
+				cortex_distributor_sample_delay_bucket{le="+Inf"} 0
+				cortex_distributor_sample_delay_sum 0
+				cortex_distributor_sample_delay_count 0
 			`,
 		},
 	} {
