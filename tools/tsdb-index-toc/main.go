@@ -5,7 +5,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"hash/crc32"
 	"log"
+	"unsafe"
 
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -35,7 +37,10 @@ func main() {
 
 	// Requires the full index to be correct.
 	if uint64(len(f.Bytes())) > toc.PostingsTable {
-		fmt.Println("Postings offset table:", uint64(len(f.Bytes()))-toc.PostingsTable)
+		// TOC is a simple struct so unsafe.Sizeof() works correctly.
+		tocLength := uint64(unsafe.Sizeof(index.TOC{})) + crc32.Size
+
+		fmt.Println("Postings offset table:", uint64(len(f.Bytes()))-toc.PostingsTable-tocLength)
 	} else {
 		fmt.Println("Postings offset table: N/A")
 	}
