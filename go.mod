@@ -10,7 +10,7 @@ require (
 	github.com/NYTimes/gziphandler v1.1.1
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a
 	github.com/alicebob/miniredis/v2 v2.14.3
-	github.com/aws/aws-sdk-go v1.42.8
+	github.com/aws/aws-sdk-go v1.42.10
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/dustin/go-humanize v1.0.0
@@ -203,7 +203,7 @@ replace github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915
 replace github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
 
 // Using a fork of Prometheus while we work on querysharding to avoid a dependency on the upstream.
-replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20211122084108-4a368c74c62d
+replace github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20211125083052-c3f7a82eeed5
 
 // Pin hashicorp depencencies since the Prometheus fork, go mod tries to update them.
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
