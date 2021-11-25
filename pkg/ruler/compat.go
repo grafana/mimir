@@ -209,18 +209,18 @@ func RecordAndReportRuleQueryMetrics(qf rules.QueryFunc, queryTime prometheus.Co
 	}
 }
 
-// This interface mimicks rules.Manager API. Interface is used to simplify tests.
+// RulesManager mimics rules.Manager API. Interface is used to simplify tests.
 type RulesManager interface {
-	// Starts rules manager. Blocks until Stop is called.
+	// Run rules manager. Blocks until Stop is called.
 	Run()
 
-	// Stops rules manager. (Unblocks Run.)
+	// Stop rules manager. (Unblocks Run.)
 	Stop()
 
-	// Updates rules manager state.
+	// Update rules manager state.
 	Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string) error
 
-	// Returns current rules groups.
+	// RuleGroups returns current rules groups.
 	RuleGroups() []*rules.Group
 }
 
@@ -265,10 +265,13 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 		}
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable:      NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:       q,
-			QueryFunc:       RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
-			Context:         user.InjectOrgID(ctx, userID),
+			Appendable: NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
+			Queryable:  q,
+			QueryFunc:  RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
+			Context:    user.InjectOrgID(ctx, userID),
+			FederatedContextFunc: func(g *rules.Group) context.Context {
+				return user.InjectOrgID(ctx, userID)
+			},
 			ExternalURL:     cfg.ExternalURL.URL,
 			NotifyFunc:      SendAlerts(notifier, cfg.ExternalURL.URL.String()),
 			Logger:          log.With(logger, "user", userID),
