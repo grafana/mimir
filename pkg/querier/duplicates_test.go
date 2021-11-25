@@ -7,11 +7,11 @@ package querier
 
 import (
 	"context"
-	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	jsoniter "github.com/json-iterator/go"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -107,6 +107,7 @@ func runPromQLAndGetJSONResult(t *testing.T, query string, ts mimirpb.TimeSeries
 	res := q.Exec(context.Background())
 	require.NoError(t, err)
 
+	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	out, err := json.Marshal(res)
 	require.NoError(t, err)
 
