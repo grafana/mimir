@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20211015163529-3a65fbdcfc45
+	github.com/grafana/dskit v0.0.0-20211021180445-3bd016e9d7f1
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
@@ -225,5 +225,4 @@ replace github.com/gogo/status => github.com/gogo/status v1.0.3
 // Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
-// replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211020205615-d2d53e575b48
-replace github.com/thanos-io/thanos v0.22.0 => github.com/pstibrany/thanos v0.19.0-rc.0.0.20211122083421-fd5b3b149b19
+replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211125080947-19dcc7902d24
