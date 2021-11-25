@@ -26,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -1446,249 +1445,129 @@ func TestBlocksStoreQuerier_MaxLabelsQueryRange(t *testing.T) {
 }
 
 func TestBlocksStoreQuerier_PromQLExecution(t *testing.T) {
-	block1 := ulid.MustNew(1, nil)
-	block2 := ulid.MustNew(2, nil)
-	series1 := []labelpb.ZLabel{{Name: "__name__", Value: "metric_1"}}
-	series2 := []labelpb.ZLabel{{Name: "__name__", Value: "metric_2"}}
+	// Prepare series fixtures.
+	series1 := labels.Labels{{Name: "__name__", Value: "metric_1"}}
+	series2 := labels.Labels{{Name: "__name__", Value: "metric_2"}}
+	series3 := labels.Labels{{Name: "__name__", Value: "metric_3_ooo"}}
+	series4 := labels.Labels{{Name: "__name__", Value: "metric_4_ooo_and_overlapping"}}
 
-	series1Samples := []promql.Point{
-		{T: 1589759955000, V: 1},
-		{T: 1589759970000, V: 1},
-		{T: 1589759985000, V: 1},
-		{T: 1589760000000, V: 1},
-		{T: 1589760015000, V: 1},
-		{T: 1589760030000, V: 1},
+	generateSeriesSamples := func(value float64) []promql.Point {
+		return []promql.Point{
+			{T: 1589759955000, V: value},
+			{T: 1589759970000, V: value},
+			{T: 1589759985000, V: value},
+			{T: 1589760000000, V: value},
+			{T: 1589760015000, V: value},
+			{T: 1589760030000, V: value},
+		}
 	}
 
-	series2Samples := []promql.Point{
-		{T: 1589759955000, V: 2},
-		{T: 1589759970000, V: 2},
-		{T: 1589759985000, V: 2},
-		{T: 1589760000000, V: 2},
-		{T: 1589760015000, V: 2},
-		{T: 1589760030000, V: 2},
-	}
+	series1Samples := generateSeriesSamples(1)
+	series2Samples := generateSeriesSamples(2)
+	series3Samples := generateSeriesSamples(3)
+	series4Samples := generateSeriesSamples(4)
+	queryStart := time.Unix(0, series1Samples[0].T*int64(time.Millisecond))
+	queryEnd := time.Unix(0, series1Samples[len(series1Samples)-1].T*int64(time.Millisecond))
 
-	// Mock the finder to simulate we need to query two blocks.
-	finder := &blocksFinderMock{
-		Service: services.NewIdleService(nil, nil),
-	}
-	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
-		{ID: block1},
-		{ID: block2},
-	}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
-
-	// Mock the store to simulate each block is queried from a different store-gateway.
-	gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
-		{
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series1,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series1Samples[:3]...), // First half.
-					},
-				},
+	tests := map[string]struct {
+		query                  string
+		storeGateway1Responses []*storepb.SeriesResponse
+		storeGateway2Responses []*storepb.SeriesResponse
+		expected               promql.Matrix
+	}{
+		"should query metrics with chunks in the right order": {
+			query: `{__name__=~"metric_(1|2)"}`,
+			storeGateway1Responses: []*storepb.SeriesResponse{
+				mockSeriesResponseWithSamples(series1, series1Samples[:3]...), // First half.
+				mockSeriesResponseWithSamples(series2, series2Samples[:3]...), // First half.
 			},
-		}, {
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series2,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series2Samples[:3]...),
-					},
-				},
+			storeGateway2Responses: []*storepb.SeriesResponse{
+				mockSeriesResponseWithSamples(series1, series1Samples[3:]...), // Second half.
+				mockSeriesResponseWithSamples(series2, series2Samples[3:]...), // Second half.
+			},
+			expected: promql.Matrix{
+				{Metric: series1, Points: series1Samples},
+				{Metric: series2, Points: series2Samples},
 			},
 		},
-		mockHintsResponse(block1),
-	}}
-
-	gateway2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: []*storepb.SeriesResponse{
-		{
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series1,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series1Samples[3:]...), // Second half.
-					},
-				},
+		"should query metrics with out-of-order chunks": {
+			query: `{__name__=~".*ooo.*"}`,
+			storeGateway1Responses: []*storepb.SeriesResponse{
+				mockSeriesResponseWithChunks(series3,
+					createAggrChunkWithSamples(series3Samples[2:4]...),
+					createAggrChunkWithSamples(series3Samples[0:2]...), // Out of order.
+				),
+				mockSeriesResponseWithChunks(series4,
+					createAggrChunkWithSamples(series4Samples[2:4]...),
+					createAggrChunkWithSamples(series4Samples[0:3]...), // Out of order and overlapping.
+				),
 			},
-		}, {
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series2,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series2Samples[3:]...),
-					},
-				},
+			storeGateway2Responses: []*storepb.SeriesResponse{
+				mockSeriesResponseWithSamples(series3, series3Samples[4:6]...),
+				mockSeriesResponseWithSamples(series4, series4Samples[4:6]...),
 			},
-		},
-		mockHintsResponse(block2),
-	}}
-
-	stores := &blocksStoreSetMock{
-		Service: services.NewIdleService(nil, nil),
-		mockedResponses: []interface{}{
-			map[BlocksStoreClient][]ulid.ULID{
-				gateway1: {block1},
-				gateway2: {block2},
+			expected: promql.Matrix{
+				{Metric: series3, Points: series3Samples},
+				{Metric: series4, Points: series4Samples},
 			},
 		},
 	}
 
-	// Instance the querier that will be executed to run the query.
-	logger := log.NewNopLogger()
-	queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, logger, nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
-	defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			block1 := ulid.MustNew(1, nil)
+			block2 := ulid.MustNew(2, nil)
 
-	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:     logger,
-		Timeout:    10 * time.Second,
-		MaxSamples: 1e6,
-	})
+			// Mock the finder to simulate we need to query two blocks.
+			finder := &blocksFinderMock{
+				Service: services.NewIdleService(nil, nil),
+			}
+			finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
+				{ID: block1},
+				{ID: block2},
+			}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
 
-	// Run a query.
-	q, err := engine.NewRangeQuery(queryable, `{__name__=~"metric.*"}`, time.Unix(1589759955, 0), time.Unix(1589760030, 0), 15*time.Second)
-	require.NoError(t, err)
+			// Mock the store-gateway response, to simulate the case each block is queried from a different gateway.
+			gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: append(testData.storeGateway1Responses, mockHintsResponse(block1))}
+			gateway2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: append(testData.storeGateway2Responses, mockHintsResponse(block2))}
 
-	ctx := user.InjectOrgID(context.Background(), "user-1")
-	res := q.Exec(ctx)
-	require.NoError(t, err)
-	require.NoError(t, res.Err)
-
-	matrix, err := res.Matrix()
-	require.NoError(t, err)
-	require.Len(t, matrix, 2)
-
-	assert.Equal(t, labelpb.ZLabelsToPromLabels(series1), matrix[0].Metric)
-	assert.Equal(t, labelpb.ZLabelsToPromLabels(series2), matrix[1].Metric)
-	assert.Equal(t, series1Samples, matrix[0].Points)
-	assert.Equal(t, series2Samples, matrix[1].Points)
-}
-
-func TestBlocksStoreQuerier_PromQLExecution_WithOutOfOrderChunks(t *testing.T) {
-	block1 := ulid.MustNew(1, nil)
-	block2 := ulid.MustNew(2, nil)
-	series1 := []labelpb.ZLabel{{Name: "__name__", Value: "metric_1"}}
-	series2 := []labelpb.ZLabel{{Name: "__name__", Value: "metric_2"}}
-
-	series1Samples := []promql.Point{
-		{T: 1589759955000, V: 1},
-		{T: 1589759970000, V: 1},
-		{T: 1589759985000, V: 1},
-		{T: 1589760000000, V: 1},
-		{T: 1589760015000, V: 1},
-		{T: 1589760030000, V: 1},
-	}
-
-	series2Samples := []promql.Point{
-		{T: 1589759955000, V: 2},
-		{T: 1589759970000, V: 2},
-		{T: 1589759985000, V: 2},
-		{T: 1589760000000, V: 2},
-		{T: 1589760015000, V: 2},
-		{T: 1589760030000, V: 2},
-	}
-
-	// Mock the finder to simulate we need to query two blocks.
-	finder := &blocksFinderMock{
-		Service: services.NewIdleService(nil, nil),
-	}
-	finder.On("GetBlocks", mock.Anything, "user-1", mock.Anything, mock.Anything).Return(bucketindex.Blocks{
-		{ID: block1},
-		{ID: block2},
-	}, map[ulid.ULID]*bucketindex.BlockDeletionMark(nil), error(nil))
-
-	// Mock the store to simulate each block is queried from a different store-gateway.
-	gateway1 := &storeGatewayClientMock{remoteAddr: "1.1.1.1", mockedSeriesResponses: []*storepb.SeriesResponse{
-		{
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series1,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series1Samples[2:4]...),
-						createAggrChunkWithSamples(series1Samples[0:2]...), // Out of order.
+			stores := &blocksStoreSetMock{
+				Service: services.NewIdleService(nil, nil),
+				mockedResponses: []interface{}{
+					map[BlocksStoreClient][]ulid.ULID{
+						gateway1: {block1},
+						gateway2: {block2},
 					},
 				},
-			},
-		}, {
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series2,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series2Samples[2:4]...),
-						createAggrChunkWithSamples(series2Samples[0:3]...), // Out of order and overlapping.
-					},
-				},
-			},
-		},
-		mockHintsResponse(block1),
-	}}
+			}
 
-	gateway2 := &storeGatewayClientMock{remoteAddr: "2.2.2.2", mockedSeriesResponses: []*storepb.SeriesResponse{
-		{
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series1,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series1Samples[4:6]...),
-					},
-				},
-			},
-		}, {
-			Result: &storepb.SeriesResponse_Series{
-				Series: &storepb.Series{
-					Labels: series2,
-					Chunks: []storepb.AggrChunk{
-						createAggrChunkWithSamples(series2Samples[4:6]...),
-					},
-				},
-			},
-		},
-		mockHintsResponse(block2),
-	}}
+			// Instantiate the querier that will be executed to run the query.
+			logger := log.NewNopLogger()
+			queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, logger, nil)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
+			defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
 
-	stores := &blocksStoreSetMock{
-		Service: services.NewIdleService(nil, nil),
-		mockedResponses: []interface{}{
-			map[BlocksStoreClient][]ulid.ULID{
-				gateway1: {block1},
-				gateway2: {block2},
-			},
-		},
+			engine := promql.NewEngine(promql.EngineOpts{
+				Logger:     logger,
+				Timeout:    10 * time.Second,
+				MaxSamples: 1e6,
+			})
+
+			// Query metrics.
+			q, err := engine.NewRangeQuery(queryable, testData.query, queryStart, queryEnd, 15*time.Second)
+			require.NoError(t, err)
+
+			ctx := user.InjectOrgID(context.Background(), "user-1")
+			res := q.Exec(ctx)
+			require.NoError(t, err)
+			require.NoError(t, res.Err)
+
+			matrix, err := res.Matrix()
+			require.NoError(t, err)
+			assert.Equal(t, testData.expected, matrix)
+		})
 	}
-
-	// Instance the querier that will be executed to run the query.
-	logger := log.NewNopLogger()
-	queryable, err := NewBlocksStoreQueryable(stores, finder, NewBlocksConsistencyChecker(0, 0, logger, nil), &blocksStoreLimitsMock{}, 0, logger, nil)
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), queryable))
-	defer services.StopAndAwaitTerminated(context.Background(), queryable) // nolint:errcheck
-
-	engine := promql.NewEngine(promql.EngineOpts{
-		Logger:     logger,
-		Timeout:    10 * time.Second,
-		MaxSamples: 1e6,
-	})
-
-	// Run a query.
-	q, err := engine.NewRangeQuery(queryable, `{__name__=~"metric.*"}`, time.Unix(1589759955, 0), time.Unix(1589760030, 0), 15*time.Second)
-	require.NoError(t, err)
-
-	ctx := user.InjectOrgID(context.Background(), "user-1")
-	res := q.Exec(ctx)
-	require.NoError(t, err)
-	require.NoError(t, res.Err)
-
-	matrix, err := res.Matrix()
-	require.NoError(t, err)
-	require.Len(t, matrix, 2)
-
-	assert.Equal(t, labelpb.ZLabelsToPromLabels(series1), matrix[0].Metric)
-	assert.Equal(t, labelpb.ZLabelsToPromLabels(series2), matrix[1].Metric)
-	assert.Equal(t, series1Samples, matrix[0].Points)
-	assert.Equal(t, series2Samples, matrix[1].Points)
 }
 
 func TestCanBlockWithCompactorShardIdContainQueryShard(t *testing.T) {
@@ -1903,22 +1782,19 @@ func (m *blocksStoreLimitsMock) S3SSEKMSEncryptionContext(_ string) string {
 }
 
 func mockSeriesResponse(lbls labels.Labels, timeMillis int64, value float64) *storepb.SeriesResponse {
-	// Generate a chunk containing a single value (for simplicity).
-	chunk := chunkenc.NewXORChunk()
-	appender, err := chunk.Appender()
-	if err != nil {
-		panic(err)
-	}
-	appender.Append(timeMillis, value)
-	chunkData := chunk.Bytes()
+	return mockSeriesResponseWithSamples(lbls, promql.Point{T: timeMillis, V: value})
+}
 
+func mockSeriesResponseWithSamples(lbls labels.Labels, samples ...promql.Point) *storepb.SeriesResponse {
+	return mockSeriesResponseWithChunks(lbls, createAggrChunkWithSamples(samples...))
+}
+
+func mockSeriesResponseWithChunks(lbls labels.Labels, chunks ...storepb.AggrChunk) *storepb.SeriesResponse {
 	return &storepb.SeriesResponse{
 		Result: &storepb.SeriesResponse_Series{
 			Series: &storepb.Series{
 				Labels: labelpb.ZLabelsFromPromLabels(lbls),
-				Chunks: []storepb.AggrChunk{
-					{MinTime: timeMillis, MaxTime: timeMillis, Raw: &storepb.Chunk{Type: storepb.Chunk_XOR, Data: chunkData}},
-				},
+				Chunks: chunks,
 			},
 		},
 	}

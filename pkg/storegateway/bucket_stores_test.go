@@ -467,7 +467,7 @@ func TestBucketStore_Series_ShouldQueryBlockWithOutOfOrderChunks(t *testing.T) {
 			assert.Empty(t, warnings)
 
 			expectedSeries := 0
-			if testData.expectedSamplesForOverlappingChunks != nil {
+			if testData.expectedSamplesForOutOfOrderChunks != nil {
 				expectedSeries++
 			}
 			if testData.expectedSamplesForOverlappingChunks != nil {
