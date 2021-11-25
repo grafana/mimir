@@ -5178,8 +5178,10 @@ The `compactor_config` configures the compactor for the blocks storage.
 [tenant_cleanup_delay: <duration> | default = 6h]
 
 # Max time for starting compactions for a single tenant. After this time no new
-# compactions for the tenant are started before next compaction cycle. 0 =
-# disabled.
+# compactions for the tenant are started before next compaction cycle. This can
+# help in multi-tenant environments to avoid single tenant using all compaction
+# time, but also in single-tenant environments to force new discovery of blocks
+# more often. 0 = disabled.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 0s]
 

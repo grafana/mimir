@@ -767,9 +767,9 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 		}
 	}()
 
-	var timeoutCh <-chan time.Time
+	var maxCompactionTimeChan <-chan time.Time
 	if maxCompactionTime > 0 {
-		timeoutCh = time.After(maxCompactionTime)
+		maxCompactionTimeChan = time.After(maxCompactionTime)
 	}
 
 	// Loop over bucket and compact until there's no work left.
@@ -903,7 +903,7 @@ func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Du
 				jobErrs.Add(jobErr)
 				break jobLoop
 			case jobChan <- g:
-			case <-timeoutCh:
+			case <-maxCompactionTimeChan:
 				maxCompactionTimeReached = true
 				level.Info(c.logger).Log("msg", "max compaction time reached, no more compactions will be started")
 				break jobLoop
