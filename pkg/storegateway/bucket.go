@@ -1960,9 +1960,9 @@ type postingPtr struct {
 	ptr   index.Range
 }
 
-// FetchPostings fill postings requested by posting groups.
+// FetchPostings fills postings requested by posting groups.
 // It returns one postings for each key, in the same order.
-// If postings for given key is not fetched, entry at given index will be nil.
+// If postings for given key is not fetched, entry at given index will be an ErrPostings
 func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label) ([]index.Postings, error) {
 	ps, err := r.fetchPostings(ctx, keys)
 	if err != nil {
@@ -1975,16 +1975,18 @@ func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Lab
 	if err != nil {
 		return nil, errors.Wrap(err, "get index version")
 	}
-	if version >= 2 {
-		for i := range ps {
+	for i := range ps {
+		ps[i] = checkNilPosting(keys[i], ps[i])
+		if version >= 2 {
 			ps[i] = paddedPostings{ps[i]}
 		}
 	}
 	return ps, nil
 }
 
-// fetchPostings is the version-unaware private implementation of FetchPostings
-// callers of this method may need to add padding to the results
+// fetchPostings is the version-unaware private implementation of FetchPostings.
+// callers of this method may need to add padding to the results.
+// If postings for given key is not fetched, entry at given index will be nil.
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label) ([]index.Postings, error) {
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
 	defer timer.ObserveDuration()
