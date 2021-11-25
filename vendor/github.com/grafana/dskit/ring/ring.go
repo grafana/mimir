@@ -198,7 +198,6 @@ type Ring struct {
 	totalTokensGauge        prometheus.Gauge
 	numTokensGaugeVec       *prometheus.GaugeVec
 	oldestTimestampGaugeVec *prometheus.GaugeVec
-	metricsUpdateCloser     chan struct{}
 
 	logger log.Logger
 }
@@ -264,7 +263,7 @@ func NewWithStoreClientAndStrategy(cfg Config, name, key string, store kv.Client
 		logger: logger,
 	}
 
-	r.Service = services.NewBasicService(r.starting, r.loop, r.stopping).WithName(fmt.Sprintf("%s ring client", name))
+	r.Service = services.NewBasicService(r.starting, r.loop, nil).WithName(fmt.Sprintf("%s ring client", name))
 	return r, nil
 }
 
@@ -281,11 +280,12 @@ func (r *Ring) starting(ctx context.Context) error {
 	} else {
 		level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
 	}
+	return nil
+}
 
-	// Update the ring metrics at start.
+func (r *Ring) loop(ctx context.Context) error {
+	// Update the ring metrics at start of the main loop.
 	r.updateRingMetrics()
-	// Use this channel to close the go routine to prevent leaks.
-	r.metricsUpdateCloser = make(chan struct{})
 	go func() {
 		// Start metrics update ticker to update the ring metrics.
 		ticker := time.NewTicker(10 * time.Second)
@@ -295,16 +295,12 @@ func (r *Ring) starting(ctx context.Context) error {
 			select {
 			case <-ticker.C:
 				r.updateRingMetrics()
-			case <-r.metricsUpdateCloser:
+			case <-ctx.Done():
 				return
 			}
 		}
 	}()
 
-	return nil
-}
-
-func (r *Ring) loop(ctx context.Context) error {
 	r.KVClient.WatchKey(ctx, r.key, func(value interface{}) bool {
 		if value == nil {
 			level.Info(r.logger).Log("msg", "ring doesn't exist in KV store yet")
@@ -314,14 +310,6 @@ func (r *Ring) loop(ctx context.Context) error {
 		r.updateRingState(value.(*Desc))
 		return true
 	})
-	return nil
-}
-
-func (r *Ring) stopping(_ error) error {
-	// Stop Metrics ticker.
-	if r.metricsUpdateCloser != nil {
-		close(r.metricsUpdateCloser)
-	}
 	return nil
 }
 
