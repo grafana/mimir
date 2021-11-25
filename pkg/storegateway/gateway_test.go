@@ -915,7 +915,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				samples, err := readSamplesFromChunks(actual.Chunks)
 				require.NoError(t, err)
 				assert.Equal(t, []sample{
-					{ts: minT + (step * int64(seriesID)), value: float64(seriesID)},
+					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
 				}, samples)
 			}
 		})
@@ -1346,8 +1346,8 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 
 			ts, v := it.At()
 			samples = append(samples, sample{
-				ts:    ts,
-				value: v,
+				t: ts,
+				v: v,
 			})
 		}
 
@@ -1360,8 +1360,16 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 }
 
 type sample struct {
-	ts    int64
-	value float64
+	t int64
+	v float64
+}
+
+func (s sample) T() int64 {
+	return s.t
+}
+
+func (s sample) V() float64 {
+	return s.v
 }
 
 func defaultLimitsConfig() validation.Limits {
