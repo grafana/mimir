@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+
 package main
 
 import (
@@ -24,6 +26,7 @@ func main() {
 		log.Fatalf(err.Error())
 	}
 
+	// See https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/index.md on the index format.
 	fmt.Println("Symbols table size:   ", toc.Series-toc.Symbols)
 	fmt.Println("Series size:          ", toc.LabelIndices-toc.Series)
 	fmt.Println("Label indices:        ", toc.Postings-toc.LabelIndices)
