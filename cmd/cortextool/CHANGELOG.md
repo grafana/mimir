@@ -2,6 +2,10 @@
 
 Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 
+## unreleased/master
+
+[FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). #215
+
 ## v0.10.7
 
 * [ENHANCEMENT] Benchtool: add `-bench.write.proxy-url` argument for configuring the Prometheus remote-write client with a HTTP proxy URL. #223
