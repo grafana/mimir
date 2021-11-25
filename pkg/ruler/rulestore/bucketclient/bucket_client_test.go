@@ -118,6 +118,7 @@ func TestLoadRules(t *testing.T) {
 			{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
 			{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
 			{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user", Interval: model.Duration(5 * time.Minute)}},
+			{user: "user3", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "third user", SourceTenants: []string{"tenant-1"}}},
 		}
 
 		for _, g := range groups {
@@ -130,7 +131,7 @@ func TestLoadRules(t *testing.T) {
 		// Before load, rules are not loaded
 		{
 			require.NoError(t, err)
-			require.Len(t, allGroupsMap, 2)
+			require.Len(t, allGroupsMap, 3)
 			require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 				{User: "user1", Namespace: "hello", Name: "first testGroup"},
 				{User: "user1", Namespace: "hello", Name: "second testGroup"},
@@ -147,7 +148,7 @@ func TestLoadRules(t *testing.T) {
 		// After load, rules are loaded.
 		{
 			require.NoError(t, err)
-			require.Len(t, allGroupsMap, 2)
+			require.Len(t, allGroupsMap, 3)
 
 			require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 				{User: "user1", Namespace: "hello", Name: "first testGroup", Interval: time.Minute, Rules: []*rulespb.RuleDesc{
@@ -163,6 +164,10 @@ func TestLoadRules(t *testing.T) {
 			require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
 				{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
 			}, allGroupsMap["user2"])
+
+			require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+				{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
+			}, allGroupsMap["user3"])
 		}
 
 		// Loading group with mismatched info fails.

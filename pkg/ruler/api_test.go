@@ -55,8 +55,9 @@ func TestRuler_rules(t *testing.T) {
 		Data: &RuleDiscovery{
 			RuleGroups: []*RuleGroup{
 				{
-					Name: "group1",
-					File: "namespace1",
+					Name:          "group1",
+					File:          "namespace1",
+					SourceTenants: []string{"tenant-1"},
 					Rules: []rule{
 						&recordingRule{
 							Name:   "UP_RULE",
@@ -112,8 +113,9 @@ func TestRuler_rules_special_characters(t *testing.T) {
 		Data: &RuleDiscovery{
 			RuleGroups: []*RuleGroup{
 				{
-					Name: ")(_+?/|group1+/?",
-					File: ")(_+?/|namespace1+/?",
+					Name:          ")(_+?/|group1+/?",
+					File:          ")(_+?/|namespace1+/?",
+					SourceTenants: []string{"tenant-1"},
 					Rules: []rule{
 						&recordingRule{
 							Name:   "UP_RULE",
@@ -286,7 +288,7 @@ func TestRuler_DeleteNamespace(t *testing.T) {
 
 	router.ServeHTTP(w, req)
 	require.Equal(t, http.StatusOK, w.Code)
-	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n    - record: UP_RULE\n      expr: up\n    - alert: UP_ALERT\n      expr: up < 1\n", w.Body.String())
+	require.Equal(t, "name: group1\ninterval: 1m\nrules:\n    - record: UP_RULE\n      expr: up\n    - alert: UP_ALERT\n      expr: up < 1\nsource_tenants:\n    - tenant-1\n", w.Body.String())
 
 	// Delete namespace1
 	req = requestFor(t, http.MethodDelete, "https://localhost:8080/api/v1/rules/namespace1", nil, "user1")
