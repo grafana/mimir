@@ -593,6 +593,61 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 	`), testedMetrics...))
 }
 
+func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionTime(t *testing.T) {
+	t.Parallel()
+
+	// By using two blocks with different labels, we get two compaction jobs. Only one of these jobs will be started,
+	// and since its planning will take longer than maxCompactionTime, we stop compactions early.
+	bucketClient := &bucket.ClientMock{}
+	bucketClient.MockIter("", []string{"user-1"}, nil)
+	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
+	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01FN3VCQV5X342W2ZKMQQXAZRX"}, nil)
+	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01DTVP434PA9VFXSW2JKB3392D", 1574776800000, 1574784000000, map[string]string{"A": "B"}), nil)
+	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FN3VCQV5X342W2ZKMQQXAZRX/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01FN3VCQV5X342W2ZKMQQXAZRX", 1637839280000, 1637842892000, map[string]string{"C": "D"}), nil)
+	bucketClient.MockGet("user-1/01FN3VCQV5X342W2ZKMQQXAZRX/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
+	bucketClient.MockIter("user-1/markers/", nil, nil)
+	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
+
+	cfg := prepareConfig()
+	cfg.MaxCompactionTime = 500 * time.Millisecond // Enough time to start one compaction. We will make it last longer than this.
+	cfg.CompactionConcurrency = 1
+
+	c, _, tsdbPlanner, logs, _ := prepare(t, cfg, bucketClient)
+
+	// Planner is called at the beginning of each job. We make it return no work, but only after delay.
+	plannerDelay := 2 * cfg.MaxCompactionTime
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).After(plannerDelay).Return([]*metadata.Meta{}, nil)
+
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Compactor doesn't wait for blocks cleaner to finish, but our test checks for cleaner metrics.
+	require.NoError(t, c.blocksCleaner.AwaitRunning(context.Background()))
+
+	// Wait until a run has completed. Since planner takes "2*cfg.MaxCompactionTime", we wait for twice as long.
+	test.Poll(t, 2*plannerDelay, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// Ensure a plan has been called only once.
+	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
+
+	assert.Equal(t, []string{
+		`level=info component=compactor msg="discovering users from bucket"`,
+		`level=info component=compactor msg="discovered users from bucket" users=1`,
+		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
+		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
+		`level=info component=compactor org_id=user-1 msg="start of GC"`,
+		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
+		`level=info component=compactor org_id=user-1 msg="max compaction time reached, no more compactions will be started"`,
+		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
+		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
+	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
+}
+
 func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing.T) {
 	t.Parallel()
 
@@ -1419,14 +1474,23 @@ func mockBlockMetaJSON(id string) string {
 }
 
 func mockBlockMetaJSONWithTimeRange(id string, mint, maxt int64) string {
-	meta := tsdb.BlockMeta{
-		Version: 1,
-		ULID:    ulid.MustParse(id),
-		MinTime: mint,
-		MaxTime: maxt,
-		Compaction: tsdb.BlockMetaCompaction{
-			Level:   1,
-			Sources: []ulid.ULID{ulid.MustParse(id)},
+	return mockBlockMetaJSONWithTimeRangeAndLabels(id, mint, maxt, nil)
+}
+
+func mockBlockMetaJSONWithTimeRangeAndLabels(id string, mint, maxt int64, lbls map[string]string) string {
+	meta := metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			Version: 1,
+			ULID:    ulid.MustParse(id),
+			MinTime: mint,
+			MaxTime: maxt,
+			Compaction: tsdb.BlockMetaCompaction{
+				Level:   1,
+				Sources: []ulid.ULID{ulid.MustParse(id)},
+			},
+		},
+		Thanos: metadata.Thanos{
+			Labels: lbls,
 		},
 	}
 
