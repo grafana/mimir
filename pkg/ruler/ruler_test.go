@@ -293,6 +293,7 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 	require.Equal(t, got.Group.Name, expected.Name)
 	require.Equal(t, got.Group.Namespace, expected.Namespace)
 	require.Len(t, expected.Rules, len(got.ActiveRules))
+	require.Len(t, expected.SourceTenants, len(got.Group.SourceTenants))
 	for i := range got.ActiveRules {
 		require.Equal(t, expected.Rules[i].Record, got.ActiveRules[i].Rule.Record)
 		require.Equal(t, expected.Rules[i].Alert, got.ActiveRules[i].Rule.Alert)
