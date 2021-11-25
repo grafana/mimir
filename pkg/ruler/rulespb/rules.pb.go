@@ -5,21 +5,19 @@ package rulespb
 
 import (
 	fmt "fmt"
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
+	types "github.com/gogo/protobuf/types"
+	_ "github.com/golang/protobuf/ptypes/duration"
+	_ "github.com/grafana/mimir/pkg/mimirpb"
+	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strings "strings"
 	time "time"
-
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	types "github.com/gogo/protobuf/types"
-	_ "github.com/golang/protobuf/ptypes/duration"
-
-	_ "github.com/grafana/mimir/pkg/mimirpb"
-	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
