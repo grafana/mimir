@@ -1247,16 +1247,6 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		}
 	}
 
-	// If we have series matchers, add <labelName> != "" matcher, to only select series that have given label name.
-	if len(reqSeriesMatchers) > 0 {
-		m, err := labels.NewMatcher(labels.MatchNotEqual, req.Label, "")
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-
-		reqSeriesMatchers = append(reqSeriesMatchers, m)
-	}
-
 	s.mtx.RLock()
 
 	var mtx sync.Mutex
@@ -1280,39 +1270,9 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label values")
 
-			var result []string
-			if len(reqSeriesMatchers) == 0 {
-				// Do it via index reader to have pending reader registered correctly.
-				res, err := indexr.block.indexHeaderReader.LabelValues(req.Label)
-				if err != nil {
-					return errors.Wrapf(err, "index header label values for block %s", b.meta.ULID)
-				}
-
-				result = res
-			} else {
-				seriesSet, _, err := blockSeries(gctx, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
-				if err != nil {
-					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
-				}
-
-				// Extract given label's value from all series and deduplicate them.
-				values := map[string]struct{}{}
-				for seriesSet.Next() {
-					ls, _ := seriesSet.At()
-					val := ls.Get(req.Label)
-					if val != "" { // Should never be empty since we added labelName!="" matcher to the list of matchers.
-						values[val] = struct{}{}
-					}
-				}
-				if seriesSet.Err() != nil {
-					return errors.Wrapf(seriesSet.Err(), "iterate series for block %s", b.meta.ULID)
-				}
-
-				result = make([]string, 0, len(values))
-				for n := range values {
-					result = append(result, n)
-				}
-				sort.Strings(result)
+			result, err := blockLabelValues(gctx, b, indexr, seriesLimiter, req, reqSeriesMatchers)
+			if err != nil {
+				return err
 			}
 
 			if len(result) > 0 {
@@ -1340,6 +1300,47 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		Values: strutil.MergeSlices(sets...),
 		Hints:  anyHints,
 	}, nil
+}
+
+func blockLabelValues(ctx context.Context, b *bucketBlock, indexr *bucketIndexReader, seriesLimiter SeriesLimiter, req *storepb.LabelValuesRequest, reqSeriesMatchers []*labels.Matcher) ([]string, error) {
+	if len(reqSeriesMatchers) == 0 {
+		// Do it via index reader to have pending reader registered correctly.
+		result, err := indexr.block.indexHeaderReader.LabelValues(req.Label)
+		return result, errors.Wrapf(err, "index header label values for block %s", b.meta.ULID)
+	}
+
+	// Since we have series matchers, add <labelName> != "" matcher, to only select series that have given label name.
+	m, err := labels.NewMatcher(labels.MatchNotEqual, req.Label, "")
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	reqSeriesMatchers = append(reqSeriesMatchers, m)
+
+	seriesSet, _, err := blockSeries(ctx, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
+	}
+
+	// Extract given label's value from all series and deduplicate them.
+	values := map[string]struct{}{}
+	for seriesSet.Next() {
+		ls, _ := seriesSet.At()
+		val := ls.Get(req.Label)
+		if val != "" { // Should never be empty since we added labelName!="" matcher to the list of matchers.
+			values[val] = struct{}{}
+		}
+	}
+	if seriesSet.Err() != nil {
+		return nil, errors.Wrapf(seriesSet.Err(), "iterate series for block %s", b.meta.ULID)
+	}
+
+	result := make([]string, 0, len(values))
+	for n := range values {
+		result = append(result, n)
+	}
+	sort.Strings(result)
+
+	return result, nil
 }
 
 // bucketBlockSet holds all blocks of an equal label set. It internally splits
