@@ -424,6 +424,7 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 }
 
 func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASingleTenant(t *testing.T) {
+	t.Parallel()
 
 	userID := "test-user"
 	bucketClient := &bucket.ClientMock{}
@@ -596,6 +597,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 }
 
 func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionTime(t *testing.T) {
+	t.Parallel()
 
 	// By using two blocks with different labels, we get two compaction jobs. Only one of these jobs will be started,
 	// and since its planning will take longer than maxCompactionTime, we stop compactions early.
@@ -771,7 +773,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *tes
 	cfg := prepareConfig()
 	cfg.DeletionDelay = 10 * time.Minute // Delete block after 10 minutes
 
-	// Mock the bucket to contain two users, each one with one block.
+	// Mock the bucket to contain one user with a block marked for no-compaction.
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)

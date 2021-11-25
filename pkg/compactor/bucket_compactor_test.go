@@ -231,11 +231,11 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block5: blockMeta(block5.String(), 500, 600, nil),
 			}
 
-			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, false)
+			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, true)
 			require.NoError(t, f.Filter(ctx, metas, synced))
 
 			require.Contains(t, metas, block1)
-			// block2 was removed from metas.
+			require.NotContains(t, metas, block2) // block2 was removed from metas.
 			require.Contains(t, metas, block4)
 			require.Contains(t, metas, block5)
 
@@ -257,7 +257,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			canceledCtx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, false)
+			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, true)
 			require.Error(t, f.Filter(canceledCtx, metas, synced))
 
 			require.Contains(t, metas, block1)
