@@ -674,10 +674,11 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 
 		groupDesc := &GroupStateDesc{
 			Group: &rulespb.RuleGroupDesc{
-				Name:      group.Name(),
-				Namespace: string(decodedNamespace),
-				Interval:  interval,
-				User:      userID,
+				Name:          group.Name(),
+				Namespace:     decodedNamespace,
+				Interval:      interval,
+				User:          userID,
+				SourceTenants: group.SourceTenants(),
 			},
 
 			EvaluationTimestamp: group.GetLastEvaluation(),

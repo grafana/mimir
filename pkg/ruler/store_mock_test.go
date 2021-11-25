@@ -27,9 +27,10 @@ var (
 	mockRulesNamespaces = map[string]rulespb.RuleGroupList{
 		"user1": {
 			&rulespb.RuleGroupDesc{
-				Name:      "group1",
-				Namespace: "namespace1",
-				User:      "user1",
+				Name:          "group1",
+				Namespace:     "namespace1",
+				User:          "user1",
+				SourceTenants: []string{"tenant-1"},
 				Rules: []*rulespb.RuleDesc{
 					{
 						Record: "UP_RULE",
@@ -63,9 +64,10 @@ var (
 	mockRules = map[string]rulespb.RuleGroupList{
 		"user1": {
 			&rulespb.RuleGroupDesc{
-				Name:      "group1",
-				Namespace: "namespace1",
-				User:      "user1",
+				Name:          "group1",
+				Namespace:     "namespace1",
+				User:          "user1",
+				SourceTenants: []string{"tenant-1"},
 				Rules: []*rulespb.RuleDesc{
 					{
 						Record: "UP_RULE",
@@ -98,9 +100,10 @@ var (
 	mockSpecialCharRules = map[string]rulespb.RuleGroupList{
 		"user1": {
 			&rulespb.RuleGroupDesc{
-				Name:      ")(_+?/|group1+/?",
-				Namespace: ")(_+?/|namespace1+/?",
-				User:      "user1",
+				Name:          ")(_+?/|group1+/?",
+				Namespace:     ")(_+?/|namespace1+/?",
+				User:          "user1",
+				SourceTenants: []string{"tenant-1"},
 				Rules: []*rulespb.RuleDesc{
 					{
 						Record: "UP_RULE",
@@ -164,10 +167,11 @@ func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, use
 		}
 
 		result = append(result, &rulespb.RuleGroupDesc{
-			Namespace: r.Namespace,
-			Name:      r.Name,
-			User:      userID,
-			Interval:  r.Interval,
+			Namespace:     r.Namespace,
+			Name:          r.Name,
+			User:          userID,
+			Interval:      r.Interval,
+			SourceTenants: r.SourceTenants,
 		})
 	}
 	return result, nil
