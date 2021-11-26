@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20211021180445-3bd016e9d7f1
+	github.com/grafana/dskit v0.0.0-20211126082719-84c6c63a1eb1
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
