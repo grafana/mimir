@@ -1367,6 +1367,72 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 	}
 }
 
+func TestDistributor_ExemplarValidation(t *testing.T) {
+	tests := map[string]struct {
+		latestTs          int64
+		req               *mimirpb.WriteRequest
+		expectedExemplars []int
+	}{
+		"valid exemplars": {
+			latestTs: 1000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
+			}},
+			expectedExemplars: []int{1, 1},
+		},
+		"one old, one new, separate series": {
+			latestTs: 601000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
+			}},
+			expectedExemplars: []int{0, 1},
+		},
+		"multi exemplars": {
+			latestTs: 601000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 601000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				}},
+			}},
+			expectedExemplars: []int{2},
+		},
+		"one old, one new, same series": {
+			latestTs: 601000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				}},
+			}},
+			expectedExemplars: []int{1},
+		},
+	}
+	ds, _, _ := prepare(t, prepConfig{
+		numIngesters:     2,
+		happyIngesters:   2,
+		numDistributors:  1,
+		shuffleShardSize: 1,
+	})
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			err := ds[0].validateSeries(tc.req.Timeseries[0], "user", false, tc.latestTs)
+			assert.NoError(t, err)
+			for i, c := range tc.expectedExemplars {
+				assert.Equal(t, c, len(tc.req.Timeseries[i].Exemplars), "Timeseries %d", i)
+			}
+		})
+	}
+}
+
 func BenchmarkDistributor_Push(b *testing.B) {
 	const (
 		numSeriesPerRequest = 1000
@@ -2602,16 +2668,19 @@ func makeWriteRequestHA(samples int, replica, cluster string) *mimirpb.WriteRequ
 func makeWriteRequestExemplar(seriesLabels []string, timestamp int64, exemplarLabels []string) *mimirpb.WriteRequest {
 	return &mimirpb.WriteRequest{
 		Timeseries: []mimirpb.PreallocTimeseries{
-			{
-				TimeSeries: &mimirpb.TimeSeries{
-					// Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-					Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
-					Exemplars: []mimirpb.Exemplar{
-						{
-							Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(exemplarLabels...)),
-							TimestampMs: timestamp,
-						},
-					},
+			makeExemplarTimeseries(seriesLabels, timestamp, exemplarLabels),
+		},
+	}
+}
+
+func makeExemplarTimeseries(seriesLabels []string, timestamp int64, exemplarLabels []string) mimirpb.PreallocTimeseries {
+	return mimirpb.PreallocTimeseries{
+		TimeSeries: &mimirpb.TimeSeries{
+			Labels: mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(seriesLabels...)),
+			Exemplars: []mimirpb.Exemplar{
+				{
+					Labels:      mimirpb.FromLabelsToLabelAdapters(labels.FromStrings(exemplarLabels...)),
+					TimestampMs: timestamp,
 				},
 			},
 		},
