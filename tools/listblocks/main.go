@@ -17,6 +17,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
@@ -41,6 +42,7 @@ type config struct {
 	showSources         bool
 	showParents         bool
 	showCompactionLevel bool
+	showBlockSize       bool
 	splitCount          int
 	minTime             flagext.Time
 	maxTime             flagext.Time
@@ -58,6 +60,7 @@ func main() {
 	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
 	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
 	flag.BoolVar(&cfg.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
+	flag.BoolVar(&cfg.showBlockSize, "show-block-size", false, "Show size of block based on details in meta.json, if available")
 	flag.IntVar(&cfg.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
 	flag.Var(&cfg.minTime, "min-time", "If set, only blocks with MinTime >= this value are printed")
 	flag.Var(&cfg.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
@@ -254,6 +257,9 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	if cfg.showCompactionLevel {
 		fmt.Fprintf(tabber, "Lvl\t")
 	}
+	if cfg.showBlockSize {
+		fmt.Fprintf(tabber, "Size\t")
+	}
 	if cfg.showLabels {
 		fmt.Fprintf(tabber, "Labels (excl. "+tsdb.TenantIDExternalLabel+")\t")
 	}
@@ -300,6 +306,10 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 			fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
 		}
 
+		if cfg.showBlockSize {
+			fmt.Fprintf(tabber, "%s\t", getFormattedBlockSize(b))
+		}
+
 		if cfg.showLabels {
 			if m := b.Thanos.Labels; m != nil {
 				fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels).WithoutLabels(tsdb.TenantIDExternalLabel))
@@ -324,4 +334,17 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 
 		fmt.Fprintln(tabber)
 	}
+}
+
+func getFormattedBlockSize(b *metadata.Meta) string {
+	if len(b.Thanos.Files) == 0 {
+		return ""
+	}
+
+	size := uint64(0)
+	for _, f := range b.Thanos.Files {
+		size += uint64(f.SizeBytes)
+	}
+
+	return humanize.IBytes(size)
 }
