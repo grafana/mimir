@@ -1184,7 +1184,10 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 	m.storeMu.Lock()
 	defer m.storeMu.Unlock()
 
-	curr := m.store[key].Clone()
+	// Note that we do not take a deep copy of curr.value here, it is modified in-place.
+	// This is safe because the entire function runs under the store lock; we do not return
+	// the full state anywhere as is done elsewhere (i.e. Get/WatchKey/CAS).
+	curr := m.store[key]
 	// if casVersion is 0, then there was no previous value, so we will just do normal merge, without localCAS flag set.
 	if casVersion > 0 && curr.version != casVersion {
 		return nil, 0, errVersionMismatch
@@ -1206,7 +1209,7 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 		m.storeRemovedTombstones.WithLabelValues(key).Add(float64(removed))
 
 		// Remove tombstones from change too. If change turns out to be empty after this,
-		// we don't need to change local value either!
+		// we don't need to gossip the change. However, the local value will be always be updated.
 		//
 		// Note that "result" and "change" may actually be the same Mergeable. That is why we
 		// call RemoveTombstones on "result" first, so that we get the correct metrics. Calling
@@ -1223,6 +1226,10 @@ func (m *KV) mergeValueForKey(key string, incomingValue Mergeable, casVersion ui
 		version: newVersion,
 		codecID: codec.CodecID(),
 	}
+
+	// The "changes" returned by Merge() can contain references to the "result"
+	// state. Therefore, make sure we clone it before releasing the lock.
+	change = change.Clone()
 
 	return change, newVersion, nil
 }
