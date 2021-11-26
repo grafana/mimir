@@ -103,11 +103,6 @@ var (
 			desc:       "The alertmanager_storage_config configures the alertmanager storage backend.",
 		},
 		{
-			name:       "table_manager_config",
-			structType: reflect.TypeOf(chunk.TableManagerConfig{}),
-			desc:       "The table_manager_config configures the table-manager.",
-		},
-		{
 			name:       "storage_config",
 			structType: reflect.TypeOf(storage.Config{}),
 			desc:       "The storage_config configures where the data is stored (chunks storage engine).",
