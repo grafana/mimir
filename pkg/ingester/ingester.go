@@ -349,12 +349,9 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 
 // MetricsMetadata returns all the metric metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
-	i.stateMtx.RLock()
 	if err := i.checkRunningOrStopping(); err != nil {
-		i.stateMtx.RUnlock()
 		return nil, err
 	}
-	i.stateMtx.RUnlock()
 
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
