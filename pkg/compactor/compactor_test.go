@@ -35,6 +35,8 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -43,7 +45,9 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -1901,3 +1905,67 @@ func stopServiceFn(t *testing.T, serv services.Service) func() {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), serv))
 	}
 }
+
+func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
+	// Generate a single block with out of order chunks.
+	specs := []*testutil.BlockSeriesSpec{
+		{
+			Labels: labels.Labels{labels.Label{Name: "case", Value: "out_of_order"}},
+			Chunks: []chunks.Meta{
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20), newSample(21, 21)}),
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10), newSample(11, 11)}),
+			},
+		},
+	}
+
+	const user = "user"
+
+	storageDir := t.TempDir()
+	meta, err := testutil.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	require.NoError(t, err)
+
+	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
+	require.NoError(t, err)
+
+	cfg := prepareConfig()
+	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
+
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{meta}, nil)
+
+	// Start the compactor
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
+
+	// Wait until a compaction run has been completed.
+	test.Poll(t, 10*time.Second, 1.0, func() interface{} {
+		return prom_testutil.ToFloat64(c.compactionRunsCompleted)
+	})
+
+	// Stop the compactor.
+	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
+
+	// Verify that compactor has found block with out of order chunks, and this block is now marked for no-compaction.
+	require.Contains(t, logs.String(), "level=info component=compactor org_id=user msg=\"block has been marked for no compaction\" block="+meta.ULID.String())
+
+	m := &metadata.NoCompactMark{}
+	require.NoError(t, metadata.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, meta.ULID.String()), m))
+	require.Equal(t, meta.ULID, m.ID)
+	require.NotZero(t, m.NoCompactTime)
+	require.Equal(t, metadata.NoCompactReason(metadata.OutOfOrderChunksNoCompactReason), m.Reason)
+
+	assert.NoError(t, prom_testutil.GatherAndCompare(registry, strings.NewReader(`
+		# HELP cortex_compactor_blocks_marked_for_no_compaction_total Total number of blocks that were marked for no-compaction.
+		# TYPE cortex_compactor_blocks_marked_for_no_compaction_total counter
+		cortex_compactor_blocks_marked_for_no_compaction_total{reason="block-index-out-of-order-chunk"} 1
+	`),
+		"cortex_compactor_blocks_marked_for_no_compaction_total",
+	))
+}
+
+type sample struct {
+	t int64
+	v float64
+}
+
+func newSample(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
+func (s sample) T() int64                          { return s.t }
+func (s sample) V() float64                        { return s.v }

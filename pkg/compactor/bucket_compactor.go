@@ -689,9 +689,12 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks p
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
 		}),
 		blocksMarkedForDeletion: blocksMarkedForDeletion,
-		// Do not track blocks marked for no-compact cause it's not supported by Mimir yet.
-		blocksMarkedForNoCompact: prometheus.NewCounter(prometheus.CounterOpts{}),
-		garbageCollectedBlocks:   garbageCollectedBlocks,
+		blocksMarkedForNoCompact: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_compactor_blocks_marked_for_no_compaction_total",
+			Help:        "Total number of blocks that were marked for no-compaction.",
+			ConstLabels: prometheus.Labels{"reason": metadata.OutOfOrderChunksNoCompactReason},
+		}),
+		garbageCollectedBlocks: garbageCollectedBlocks,
 	}
 }
 
