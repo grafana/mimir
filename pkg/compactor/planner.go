@@ -37,7 +37,7 @@ func NewTSDBBasedPlanner(logger log.Logger, ranges []int64) *TSDBBasedPlanner {
 
 // NewPlanner is a default Thanos planner with the same functionality as Prometheus' TSDB plus special handling of excluded blocks.
 // It's the same functionality just without accessing filesystem, and special handling of excluded blocks.
-func NewPlanner(logger log.Logger, ranges []int64, noCompBlocks *GatherNoCompactionMarkFilter) *TSDBBasedPlanner {
+func NewPlanner(logger log.Logger, ranges []int64, noCompBlocks *NoCompactionMarkFilter) *TSDBBasedPlanner {
 	return &TSDBBasedPlanner{logger: logger, ranges: ranges, noCompBlocksFunc: noCompBlocks.NoCompactMarkedBlocks}
 }
 

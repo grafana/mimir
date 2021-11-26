@@ -37,6 +37,7 @@ func TestUpdater_UpdateIndex(t *testing.T) {
 	// Generate the initial index.
 	bkt = BucketWithGlobalMarkers(bkt)
 	block1 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 10, 20, nil)
+	testutil.MockNoCompactMark(t, bkt, userID, block1.BlockMeta) // no-compact mark is ignored by bucket index updater.
 	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_5"})
 	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
 
@@ -82,6 +83,9 @@ func TestUpdater_UpdateIndex_ShouldSkipPartialBlocks(t *testing.T) {
 	block2 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 20, 30, map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "3_of_10"})
 	block3 := testutil.MockStorageBlockWithExtLabels(t, bkt, userID, 30, 40, nil)
 	block2Mark := testutil.MockStorageDeletionMark(t, bkt, userID, block2.BlockMeta)
+
+	// No compact marks are ignored by bucket index.
+	testutil.MockNoCompactMark(t, bkt, userID, block3.BlockMeta)
 
 	// Delete a block's meta.json to simulate a partial block.
 	require.NoError(t, bkt.Delete(ctx, path.Join(userID, block3.ULID.String(), metadata.MetaFilename)))
