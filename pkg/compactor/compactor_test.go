@@ -1097,11 +1097,14 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 	}
 
 	// Wait until a run has been completed on each compactor
-	for _, c := range compactors {
-		test.Poll(t, 10*time.Second, 1.0, func() interface{} {
-			return prom_testutil.ToFloat64(c.compactionRunsCompleted)
-		})
-	}
+	test.Poll(t, 30*time.Second, true, func() interface{} {
+		for _, c := range compactors {
+			if prom_testutil.ToFloat64(c.compactionRunsCompleted) < 1.0 {
+				return false
+			}
+		}
+		return true
+	})
 
 	// Ensure that each user has been compacted by the correct instance
 	for _, userID := range userIDs {
