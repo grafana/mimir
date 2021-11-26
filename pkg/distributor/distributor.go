@@ -522,12 +522,12 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 
 // Validates a single series from a write request.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
+func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, nowt time.Time) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
-	now := model.Now()
+	now := model.TimeFromUnixNano(nowt.UnixNano())
 
 	for _, s := range ts.Samples {
 
@@ -559,9 +559,18 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
+func (d *Distributor) PushWithTime(ctx context.Context, req *mimirpb.WriteRequest, now time.Time) (*mimirpb.WriteResponse, error) {
+	return d.pushWithCleanupAndTime(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) }, now)
+}
+
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
+	now := time.Now()
+	return d.pushWithCleanupAndTime(ctx, req, callerCleanup, now)
+}
+
+func (d *Distributor) pushWithCleanupAndTime(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func(), now time.Time) (*mimirpb.WriteResponse, error) {
 	// We will report *this* request in the error too.
 	inflight := d.inflightPushRequests.Inc()
 
@@ -596,7 +605,6 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	now := time.Now()
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
@@ -708,7 +716,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
+		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation, now)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.

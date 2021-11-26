@@ -117,6 +117,8 @@ func TestDistributor_Push(t *testing.T) {
 	distributorSampleDelay := "cortex_distributor_sample_delay"
 	ctx := user.InjectOrgID(context.Background(), "user")
 
+	now := time.Now()
+
 	type samplesIn struct {
 		num              int
 		startTimestampMs int64
@@ -202,7 +204,7 @@ func TestDistributor_Push(t *testing.T) {
 		"A push to ingesters with an old sample should report the correct metrics with no metadata": {
 			numIngesters:     3,
 			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: time.Now().UnixMilli() - 80000},
+			samples:          samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 80000*1000}, // 80k seconds old
 			metadata:         0,
 			metricNames:      []string{distributorAppend, distributorAppendFailure, distributorSampleDelay},
 			expectedResponse: emptyResponse,
@@ -230,14 +232,14 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_bucket{le="21600"} 0
 				cortex_distributor_sample_delay_bucket{le="86400"} 1
 				cortex_distributor_sample_delay_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_sum 80.000
+				cortex_distributor_sample_delay_sum 80000.000
 				cortex_distributor_sample_delay_count 1
 			`,
 		},
 		"A push to ingesters with a current sample should report the correct metrics with no metadata": {
 			numIngesters:     3,
 			happyIngesters:   2,
-			samples:          samplesIn{num: 1, startTimestampMs: time.Now().UnixMilli()},
+			samples:          samplesIn{num: 1, startTimestampMs: now.UnixMilli() - 1000}, // 1 second old
 			metadata:         0,
 			metricNames:      []string{distributorAppend, distributorAppendFailure, distributorSampleDelay},
 			expectedResponse: emptyResponse,
@@ -265,7 +267,7 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_bucket{le="21600"} 1
 				cortex_distributor_sample_delay_bucket{le="86400"} 1
 				cortex_distributor_sample_delay_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_sum 0
+				cortex_distributor_sample_delay_sum 1.000
 				cortex_distributor_sample_delay_count 1
 			`,
 		},
@@ -321,7 +323,7 @@ func TestDistributor_Push(t *testing.T) {
 				})
 
 				request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata)
-				response, err := ds[0].Push(ctx, request)
+				response, err := ds[0].PushWithTime(ctx, request, now)
 				assert.Equal(t, tc.expectedResponse, response)
 				assert.Equal(t, tc.expectedError, err)
 
