@@ -648,6 +648,9 @@ func (i *Ingester) stoppingV2ForFlusher(_ error) error {
 
 // runs when V2 ingester is stopping
 func (i *Ingester) stoppingV2(_ error) error {
+	// This will prevent us accepting any more samples
+	i.stopIncomingRequests()
+
 	// It's important to wait until shipper is finished,
 	// because the blocks transfer should start only once it's guaranteed
 	// there's no shipping on-going.
