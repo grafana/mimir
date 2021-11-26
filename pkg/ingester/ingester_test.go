@@ -8,10 +8,8 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
-	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -332,12 +330,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	limits.MaxLocalMetricsWithMetadataPerUser = 1
 
 	// create a data dir that survives an ingester restart
-	dataDir, err := ioutil.TempDir("", "ingester")
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dataDir))
-	})
+	dataDir := t.TempDir()
 
 	newIngester := func() *Ingester {
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, dataDir, nil)
@@ -377,7 +370,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
@@ -437,12 +430,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	limits.MaxLocalMetadataPerMetric = 1
 
 	// create a data dir that survives an ingester restart
-	dataDir, err := ioutil.TempDir("", "ingester")
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dataDir))
-	})
+	dataDir := t.TempDir()
 
 	newIngester := func() *Ingester {
 		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, dataDir, nil)
@@ -482,7 +470,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 
 	// Append only one series and one metadata first, expect no error.
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
 	testLimits := func() {
