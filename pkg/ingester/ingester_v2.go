@@ -403,7 +403,7 @@ func (u *userTSDB) shouldCloseTSDB(idleTimeout time.Duration) tsdbCloseCheckResu
 
 // TSDBState holds data structures used by the TSDB storage engine
 type TSDBState struct {
-	dbs    map[string]*userTSDB // tsdb sharded by userID. Protected by Ingester.stateMtx
+	dbs    map[string]*userTSDB // tsdb sharded by userID. Protected by Ingester.tsdbStateDBMtx
 	bucket objstore.Bucket
 
 	// Value used by shipper as external label.

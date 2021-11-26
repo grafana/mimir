@@ -68,8 +68,7 @@ func TestRulerAPI(t *testing.T) {
 				BlocksStorageFlags(),
 				RulerFlags(testCfg.legacyRuleStore),
 				map[string]string{
-					// Since we're not going to run any rule (our only rule is invalid), we don't need the
-					// store-gateway to be configured to a valid address.
+					// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
 					"-querier.store-gateway-addresses": "localhost:12345",
 				},
 			)
@@ -153,8 +152,7 @@ func TestRulerAPI(t *testing.T) {
 			require.Empty(t, groups)
 
 			// Ensure no service-specific metrics prefix is used by the wrong service.
-			// Note: The ruler is also always embedding a querier, hence the metrics we expect are the ones emitted by the querier.
-			assertServiceMetricsPrefixes(t, Querier, ruler)
+			assertServiceMetricsPrefixes(t, Ruler, ruler)
 		})
 	}
 }
@@ -453,8 +451,7 @@ func TestRulerAlertmanager(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(false),
 		map[string]string{
-			// Since we're not going to run any rule (our only rule is invalid), we don't need the
-			// store-gateway to be configured to a valid address.
+			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
 			"-querier.store-gateway-addresses": "localhost:12345",
 
 			// Connect the ruler to Alertmanagers
@@ -538,8 +535,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(false),
 		map[string]string{
-			// Since we're not going to run any rule (our only rule is invalid), we don't need the
-			// store-gateway to be configured to a valid address.
+			// set store-gateway to an invalid address, as there is no store-gateway ring configured this flag is mandatory.
 			"-querier.store-gateway-addresses": "localhost:12345",
 
 			// Connect the ruler to the Alertmanager

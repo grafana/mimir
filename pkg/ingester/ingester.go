@@ -142,7 +142,7 @@ type Ingester struct {
 	limiter            *Limiter
 	subservicesWatcher *services.FailureWatcher
 
-	// Prometheus block storage
+	// Mimir blocks storage.
 	tsdbStateDBMtx sync.RWMutex // protects TSDBState.db
 	TSDBState      TSDBState    // TODO: (remove-chunks) Integrate TSDBState into Ingester struct
 
