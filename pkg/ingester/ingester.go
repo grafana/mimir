@@ -19,7 +19,6 @@ import (
 	"github.com/gogo/status"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
-	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc/codes"
 
@@ -43,10 +42,6 @@ const (
 
 	// Period at which to attempt purging metadata from memory.
 	metadataPurgePeriod = 5 * time.Minute
-)
-
-var (
-	errIngesterStopping = errors.New("ingester stopping")
 )
 
 // Config for an Ingester.
@@ -174,12 +169,9 @@ type Ingester struct {
 	limiter            *Limiter
 	subservicesWatcher *services.FailureWatcher
 
-	stateMtx sync.RWMutex // protects TSDBState.db and stopped
-	stopped  bool         // protected by stateMtx
-
 	// Prometheus block storage
-	// TODO: (remove-chunks) Integrate TSDBState into Ingester struct
-	TSDBState TSDBState
+	tsdbStateDBMtx sync.RWMutex // protects TSDBState.db
+	TSDBState      TSDBState    // TODO: (remove-chunks) Integrate TSDBState into Ingester struct
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -213,17 +205,6 @@ func (i *Ingester) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
 	i.lifecycler.SetUnregisterOnShutdown(originalUnregister)
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// check that ingester has finished starting, i.e. it is in Running or Stopping state.
-// Why Stopping? Because ingester still runs, even when it is transferring data out in Stopping state.
-// Ingester handles this state on its own (via `stopped` flag).
-func (i *Ingester) checkRunningOrStopping() error {
-	s := i.State()
-	if s == services.Running || s == services.Stopping {
-		return nil
-	}
-	return status.Error(codes.Unavailable, s.String())
 }
 
 // Using block store, the ingester is only available when it is in a Running state. The ingester is not available
@@ -273,13 +254,6 @@ func (i *Ingester) pushMetadata(ctx context.Context, userID string, metadata []*
 	return ingestedMetadata
 }
 func (i *Ingester) appendMetadata(userID string, m *mimirpb.MetricMetadata) error {
-	i.stateMtx.RLock()
-	if i.stopped {
-		i.stateMtx.RUnlock()
-		return errIngesterStopping
-	}
-	i.stateMtx.RUnlock()
-
 	userMetadata := i.getOrCreateUserMetadata(userID)
 
 	return userMetadata.add(m.GetMetricFamilyName(), m)
@@ -349,7 +323,7 @@ func (i *Ingester) purgeUserMetricsMetadata() {
 
 // MetricsMetadata returns all the metric metadata of a user.
 func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetadataRequest) (*client.MetricsMetadataResponse, error) {
-	if err := i.checkRunningOrStopping(); err != nil {
+	if err := i.checkRunning(); err != nil {
 		return nil, err
 	}
 
@@ -370,7 +344,7 @@ func (i *Ingester) MetricsMetadata(ctx context.Context, req *client.MetricsMetad
 // CheckReady is the readiness handler used to indicate to k8s when the ingesters
 // are ready for the addition or removal of another ingester.
 func (i *Ingester) CheckReady(ctx context.Context) error {
-	if err := i.checkRunningOrStopping(); err != nil {
+	if err := i.checkRunning(); err != nil {
 		return fmt.Errorf("ingester not ready: %v", err)
 	}
 	return i.lifecycler.CheckReady(ctx)

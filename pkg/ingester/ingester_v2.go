@@ -708,12 +708,12 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 		case <-ingestionRateTicker.C:
 			i.ingestionRate.Tick()
 		case <-rateUpdateTicker.C:
-			i.stateMtx.RLock()
+			i.tsdbStateDBMtx.RLock()
 			for _, db := range i.TSDBState.dbs {
 				db.ingestedAPISamples.Tick()
 				db.ingestedRuleSamples.Tick()
 			}
-			i.stateMtx.RUnlock()
+			i.tsdbStateDBMtx.RUnlock()
 
 		case <-exemplarUpdateTicker.C:
 			i.applyExemplarsSettings()
@@ -807,14 +807,6 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	if err != nil {
 		return nil, err
 	}
-
-	// Ensure the ingester shutdown procedure hasn't started
-	i.stateMtx.RLock()
-	if i.stopped {
-		i.stateMtx.RUnlock()
-		return nil, errIngesterStopping
-	}
-	i.stateMtx.RUnlock()
 
 	if il != nil && il.MaxIngestionRate > 0 {
 		if rate := i.ingestionRate.Rate(); rate >= il.MaxIngestionRate {
@@ -1325,8 +1317,8 @@ func (i *Ingester) AllUserStats(ctx context.Context, req *client.UserStatsReques
 		return nil, err
 	}
 
-	i.stateMtx.RLock()
-	defer i.stateMtx.RUnlock()
+	i.tsdbStateDBMtx.RLock()
+	defer i.tsdbStateDBMtx.RUnlock()
 
 	users := i.TSDBState.dbs
 
@@ -1660,8 +1652,8 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {
-	i.stateMtx.RLock()
-	defer i.stateMtx.RUnlock()
+	i.tsdbStateDBMtx.RLock()
+	defer i.tsdbStateDBMtx.RUnlock()
 	db := i.TSDBState.dbs[userID]
 	return db
 }
@@ -1669,8 +1661,8 @@ func (i *Ingester) getTSDB(userID string) *userTSDB {
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
-	i.stateMtx.RLock()
-	defer i.stateMtx.RUnlock()
+	i.tsdbStateDBMtx.RLock()
+	defer i.tsdbStateDBMtx.RUnlock()
 
 	ids := make([]string, 0, len(i.TSDBState.dbs))
 	for userID := range i.TSDBState.dbs {
@@ -1686,8 +1678,8 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 		return db, nil
 	}
 
-	i.stateMtx.Lock()
-	defer i.stateMtx.Unlock()
+	i.tsdbStateDBMtx.Lock()
+	defer i.tsdbStateDBMtx.Unlock()
 
 	// Check again for DB in the event it was created in-between locks
 	var ok bool
@@ -1831,7 +1823,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 }
 
 func (i *Ingester) closeAllTSDB() {
-	i.stateMtx.Lock()
+	i.tsdbStateDBMtx.Lock()
 
 	wg := &sync.WaitGroup{}
 	wg.Add(len(i.TSDBState.dbs))
@@ -1852,9 +1844,9 @@ func (i *Ingester) closeAllTSDB() {
 			// set of open ones. This lock acquisition doesn't deadlock with the
 			// outer one, because the outer one is released as soon as all go
 			// routines are started.
-			i.stateMtx.Lock()
+			i.tsdbStateDBMtx.Lock()
 			delete(i.TSDBState.dbs, userID)
-			i.stateMtx.Unlock()
+			i.tsdbStateDBMtx.Unlock()
 
 			i.metrics.memUsers.Dec()
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
@@ -1865,7 +1857,7 @@ func (i *Ingester) closeAllTSDB() {
 	}
 
 	// Wait until all Close() completed
-	i.stateMtx.Unlock()
+	i.tsdbStateDBMtx.Unlock()
 	wg.Wait()
 }
 
@@ -1890,9 +1882,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				}
 
 				// Add the database to the map of user databases
-				i.stateMtx.Lock()
+				i.tsdbStateDBMtx.Lock()
 				i.TSDBState.dbs[userID] = db
-				i.stateMtx.Unlock()
+				i.tsdbStateDBMtx.Unlock()
 				i.metrics.memUsers.Inc()
 
 				i.TSDBState.walReplayTime.Observe(time.Since(startTime).Seconds())
@@ -1975,8 +1967,8 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 		return 0
 	}
 
-	i.stateMtx.RLock()
-	defer i.stateMtx.RUnlock()
+	i.tsdbStateDBMtx.RLock()
+	defer i.tsdbStateDBMtx.RUnlock()
 
 	count := uint64(0)
 	for _, db := range i.TSDBState.dbs {
@@ -1989,8 +1981,8 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 // getOldestUnshippedBlockMetric returns the unix timestamp of the oldest unshipped block or
 // 0 if all blocks have been shipped.
 func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
-	i.stateMtx.RLock()
-	defer i.stateMtx.RUnlock()
+	i.tsdbStateDBMtx.RLock()
+	defer i.tsdbStateDBMtx.RUnlock()
 
 	oldest := uint64(0)
 	for _, db := range i.TSDBState.dbs {
@@ -2247,9 +2239,9 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// If this happens now, the request will get reject as the push will not be able to acquire the lock as the tsdb will be
 	// in closed state
 	defer func() {
-		i.stateMtx.Lock()
+		i.tsdbStateDBMtx.Lock()
 		delete(i.TSDBState.dbs, userID)
-		i.stateMtx.Unlock()
+		i.tsdbStateDBMtx.Unlock()
 	}()
 
 	i.metrics.memUsers.Dec()

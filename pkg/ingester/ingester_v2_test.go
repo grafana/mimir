@@ -3873,8 +3873,8 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Wait until TSDB has been closed and removed.
 	test.Poll(t, 20*time.Second, 0, func() interface{} {
-		i.stateMtx.Lock()
-		defer i.stateMtx.Unlock()
+		i.tsdbStateDBMtx.Lock()
+		defer i.tsdbStateDBMtx.Unlock()
 		return len(i.TSDBState.dbs)
 	})
 
