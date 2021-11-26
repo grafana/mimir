@@ -3817,8 +3817,8 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	cfg.LifecyclerConfig.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Second // Required to enable shipping.
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Second
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
 
@@ -3873,7 +3873,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
     `), metricsToCheck...))
 
 	// Wait until TSDB has been closed and removed.
-	test.Poll(t, 10*time.Second, 0, func() interface{} {
+	test.Poll(t, 20*time.Second, 0, func() interface{} {
 		i.userStatesMtx.Lock()
 		defer i.userStatesMtx.Unlock()
 		return len(i.TSDBState.dbs)
