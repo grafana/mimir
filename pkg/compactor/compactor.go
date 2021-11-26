@@ -699,7 +699,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
-		true, // Do not skip blocks with out of order chunks.
+		true, // Skip blocks with out of order chunks, and mark them for no-compaction.
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.bucketCompactorMetrics,
