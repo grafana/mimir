@@ -269,7 +269,7 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 			Queryable:  q,
 			QueryFunc:  RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
 			Context:    user.InjectOrgID(ctx, userID),
-			FederatedContextFunc: func(g *rules.Group) context.Context {
+			GroupEvaluationContextFunc: func(ctx context.Context, g *rules.Group) context.Context {
 				return user.InjectOrgID(ctx, userID)
 			},
 			ExternalURL:     cfg.ExternalURL.URL,
