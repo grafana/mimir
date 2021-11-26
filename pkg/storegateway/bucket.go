@@ -24,6 +24,7 @@ import (
 
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/prometheus/storage"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -1500,7 +1501,7 @@ type bucketBlock struct {
 	// request hints' BlockMatchers.
 	relabelLabels labels.Labels
 
-	expandedPostingsPromises sync.Map
+	expandedPostingsPromises singleflight.Group // bucketBlock is used as a pointer so this doesn't need to be one
 }
 
 func newBucketBlock(
@@ -1675,82 +1676,73 @@ func newBucketIndexReader(block *bucketBlock) *bucketIndexReader {
 // Reminder: A posting is a reference (represented as a uint64) to a series reference, which in turn points to the first
 // chunk where the series contains the matching label-value pair for a given block of data. Postings can be fetched by
 // single label name=value.
+//
+// TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
+// TODO: https://github.com/grafana/mimir/issues/331
 func (r *bucketIndexReader) ExpandedPostings(ctx context.Context, ms []*labels.Matcher) (returnRefs []storage.SeriesRef, returnErr error) {
 	var (
-		loaded bool
+		shared bool
 		cached bool
 	)
 	span, ctx := tracing.StartSpan(ctx, "ExpandedPostings()")
 	defer func() {
-		span.LogKV("returned postings", len(returnRefs), "cached", cached, "promise_loaded", loaded)
+		span.LogKV("returned postings", len(returnRefs), "cached", cached, "shared", shared)
 		if returnErr != nil {
 			span.LogFields(otlog.Error(returnErr))
 		}
 		span.Finish()
 	}()
-	var promise expandedPostingsPromise
-	promise, loaded = r.expandedPostingsPromise(ctx, ms)
-	returnRefs, cached, returnErr = promise(ctx)
-	return returnRefs, returnErr
-}
-
-// expandedPostingsPromise is the promise returned by bucketIndexReader.expandedPostingsPromise.
-// The second return value indicates whether the returned data comes from the cache.
-type expandedPostingsPromise func(ctx context.Context) ([]storage.SeriesRef, bool, error)
-
-// expandedPostingsPromise provides a promise for the execution of expandedPostings method.
-// First call to this method will be blocking until the expandedPostings are calculated.
-// While first call is blocking, concurrent calls with same matchers will return a promise for the same results, without recalculating them.
-// The second value returned by this function is set to true when this call just loaded a promise created by another goroutine.
-// The promise returned by this function returns a bool value fromCache, set to true when data was loaded from cache.
-// TODO: if promise creator's context is canceled, the entire promise will fail, even if there are more callers waiting for the results
-// TODO: https://github.com/grafana/mimir/issues/331
-func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher) (promise expandedPostingsPromise, loaded bool) {
-	var (
-		refs   []storage.SeriesRef
-		err    error
-		done   = make(chan struct{})
-		cached bool
-	)
-
-	promise = func(ctx context.Context) ([]storage.SeriesRef, bool, error) {
-		select {
-		case <-ctx.Done():
-			return nil, false, ctx.Err()
-		case <-done:
-		}
-
-		if err != nil {
-			return nil, false, err
-		}
-
-		// We must make a copy of refs to return, because caller can modify the postings slice in place.
-		refsCopy := make([]storage.SeriesRef, len(refs))
-		copy(refsCopy, refs)
-
-		return refsCopy, cached, nil
-	}
 
 	key := cache.CanonicalLabelMatchersKey(ms)
+	ch := r.block.expandedPostingsPromises.DoChan(string(key), func() (interface{}, error) {
+		return r.expandedPostingsPromise(ctx, ms, key)
+	})
 
-	var loadedPromise interface{}
-	loadedPromise, loaded = r.block.expandedPostingsPromises.LoadOrStore(key, promise)
-	if loaded {
-		return loadedPromise.(expandedPostingsPromise), true
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case res := <-ch:
+		shared = res.Shared
+		if res.Err != nil {
+			return nil, res.Err
+		}
+		resp, ok := res.Val.(expandedPostingsPromiseResult)
+		if !ok {
+			return nil, fmt.Errorf("implementation error, expandedPostings returned unexpeted type %T", returnRefs)
+		}
+		cached = resp.cached
+
+		if res.Shared {
+			returnRefs = make([]storage.SeriesRef, len(resp.refs))
+			copy(returnRefs, resp.refs)
+		} else {
+			returnRefs = resp.refs
+		}
+
+		return returnRefs, nil
 	}
-	defer close(done)
-	defer r.block.expandedPostingsPromises.Delete(key)
+}
 
-	refs, cached = r.fetchCachedExpandedPostings(ctx, key)
+// expandedPostingsPromiseResult is the result of a successful expandedPostingsPromise call, with references retrieved,
+// and indicating whether they were retrieved from cache or not.
+type expandedPostingsPromiseResult struct {
+	refs   []storage.SeriesRef
+	cached bool
+}
+
+// expandedPostingsPromise tries to retrieve expanded postings from cache, and if not successful,
+// calls expandedPostings and caches the result.
+func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*labels.Matcher, key cache.LabelMatchersKey) (res expandedPostingsPromiseResult, err error) {
+	refs, cached := r.fetchCachedExpandedPostings(ctx, key)
 	if cached {
-		return promise, false
+		return expandedPostingsPromiseResult{refs: refs, cached: true}, nil
 	}
 	refs, err = r.expandedPostings(ctx, ms)
 	if err != nil {
-		return promise, false
+		return expandedPostingsPromiseResult{}, err
 	}
 	r.cacheExpandedPostings(ctx, key, refs)
-	return promise, false
+	return expandedPostingsPromiseResult{refs: refs, cached: false}, nil
 }
 
 func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, key storecache.LabelMatchersKey, refs []storage.SeriesRef) {
