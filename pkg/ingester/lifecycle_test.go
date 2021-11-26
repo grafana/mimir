@@ -38,9 +38,6 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg := Config{}
 	flagext.DefaultValues(&cfg)
 	flagext.DefaultValues(&cfg.BlocksStorageConfig)
-	cfg.FlushCheckPeriod = 99999 * time.Hour
-	cfg.MaxChunkIdle = 99999 * time.Hour
-	cfg.ConcurrentFlushes = 1
 	cfg.LifecyclerConfig.RingConfig.KVStore.Mock = consul
 	cfg.LifecyclerConfig.NumTokens = 1
 	cfg.LifecyclerConfig.ListenPort = 0

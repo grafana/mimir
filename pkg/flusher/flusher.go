@@ -65,10 +65,6 @@ func New(
 	logger log.Logger,
 ) (*Flusher, error) {
 
-	// These are ignored by blocks-ingester, but that's fine.
-	ingesterConfig.ConcurrentFlushes = cfg.ConcurrentFlushes
-	ingesterConfig.FlushOpTimeout = cfg.FlushOpTimeout
-
 	f := &Flusher{
 		cfg:            cfg,
 		ingesterConfig: ingesterConfig,
