@@ -48,8 +48,9 @@ const (
 	CompactionStrategyDefault    = "default"
 	CompactionStrategySplitMerge = "split-and-merge"
 
-	CompactionOrderOldestFirst = "smallest-range-oldest-blocks-first"
-	CompactionOrderNewestFirst = "newest-blocks-first"
+	CompactionOrderOldestFirst      = "smallest-range-oldest-blocks-first"
+	CompactionOrderNewestFirst      = "newest-blocks-first"
+	CompactionOrderOldestSplitFirst = "smallest-range-oldest-blocks-first-split-first"
 )
 
 var (
@@ -59,7 +60,7 @@ var (
 	RingOp                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
-	compactionOrders     = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst}
+	compactionOrders     = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst, CompactionOrderOldestSplitFirst}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -165,7 +166,7 @@ func (cfg *Config) Validate() error {
 		return errInvalidCompactionOrder
 	}
 
-	if cfg.CompactionStrategy == CompactionStrategyDefault && cfg.CompactionJobsOrder != CompactionOrderOldestFirst {
+	if cfg.CompactionStrategy == CompactionStrategyDefault && cfg.CompactionJobsOrder != CompactionOrderOldestFirst && cfg.CompactionJobsOrder != CompactionOrderOldestSplitFirst {
 		return fmt.Errorf(errUnsupportedCompactionOrder, cfg.CompactionStrategy, cfg.CompactionJobsOrder)
 	}
 
@@ -353,10 +354,15 @@ func newMultitenantCompactor(
 		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
 	}
 
-	if compactorCfg.CompactionJobsOrder == CompactionOrderNewestFirst {
+	switch compactorCfg.CompactionJobsOrder {
+	case CompactionOrderNewestFirst:
 		c.jobsOrder = sortJobsByNewestBlocksFirst
-	} else {
+	case CompactionOrderOldestFirst:
 		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirst
+	case CompactionOrderOldestSplitFirst:
+		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning
+	default:
+		return nil, errors.New("unknown compaction jobs order")
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
