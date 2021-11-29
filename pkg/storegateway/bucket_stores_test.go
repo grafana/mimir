@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -35,6 +37,7 @@ import (
 	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
+	filesystemstore "github.com/thanos-io/thanos/pkg/objstore/filesystem"
 	"github.com/thanos-io/thanos/pkg/store/labelpb"
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"github.com/weaveworks/common/logging"
@@ -44,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
@@ -735,4 +739,154 @@ func (f *failFirstGetBucket) Get(ctx context.Context, name string) (io.ReadClose
 	}
 
 	return f.Bucket.Get(ctx, name)
+}
+
+func BenchmarkBucketStoreLabelValues(tb *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	dir, err := ioutil.TempDir("", "bench-label-values")
+	assert.NoError(tb, err)
+	defer func() { assert.NoError(tb, os.RemoveAll(dir)) }()
+
+	bkt, err := filesystemstore.NewBucket(filepath.Join(dir, "bkt"))
+	assert.NoError(tb, err)
+	defer func() { assert.NoError(tb, bkt.Close()) }()
+
+	card := []int{1, 10, 100, 1000}
+	series := generateSeries(card)
+	tb.Logf("Total %d series generated", len(series))
+
+	s := prepareStoreWithTestBlocksForSeries(tb, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf, series)
+	mint, maxt := s.store.TimeRange()
+	assert.Equal(tb, s.minTime, mint)
+	assert.Equal(tb, s.maxTime, maxt)
+
+	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(s.logger, nil, storecache.InMemoryIndexCacheConfig{
+		MaxItemSize: 1e5,
+		MaxSize:     2e5,
+	})
+	assert.NoError(tb, err)
+
+	benchmarks := func(tb *testing.B) {
+		tb.Run("10-series-matched-with-10-label-values", func(tb *testing.B) {
+			ms, err := storepb.PromMatchersToMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "label_3", "0"),
+			)
+			require.NoError(tb, err)
+
+			req := &storepb.LabelValuesRequest{
+				Label:    "label_1",
+				Start:    timestamp.FromTime(minTime),
+				End:      timestamp.FromTime(maxTime),
+				Matchers: ms,
+			}
+			// warmup cache if any
+			resp, err := s.store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 10, len(resp.Values))
+
+			tb.ResetTimer()
+			for i := 0; i < tb.N; i++ {
+				resp, err := s.store.LabelValues(ctx, req)
+				require.NoError(tb, err)
+				assert.Equal(tb, 10, len(resp.Values))
+			}
+		})
+
+		tb.Run("1000-series-matched-with-1000-label-values", func(tb *testing.B) {
+			ms, err := storepb.PromMatchersToMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "label_1", "0"),
+				labels.MustNewMatcher(labels.MatchEqual, "label_2", "0"),
+			)
+			require.NoError(tb, err)
+
+			req := &storepb.LabelValuesRequest{
+				Label:    "label_3",
+				Start:    timestamp.FromTime(minTime),
+				End:      timestamp.FromTime(maxTime),
+				Matchers: ms,
+			}
+
+			// warmup cache if any
+			resp, err := s.store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 1000, len(resp.Values))
+
+			tb.ResetTimer()
+			for i := 0; i < tb.N; i++ {
+				resp, err := s.store.LabelValues(ctx, req)
+				require.NoError(tb, err)
+				assert.Equal(tb, 1000, len(resp.Values))
+			}
+		})
+
+		tb.Run("1_000_000-series-matched-with-10-label-values", func(tb *testing.B) {
+			ms, err := storepb.PromMatchersToMatchers(
+				labels.MustNewMatcher(labels.MatchEqual, "label_0", "0"), // matches all series
+			)
+			require.NoError(tb, err)
+
+			req := &storepb.LabelValuesRequest{
+				Label:    "label_1",
+				Start:    timestamp.FromTime(minTime),
+				End:      timestamp.FromTime(maxTime),
+				Matchers: ms,
+			}
+			// warmup cache if any
+			resp, err := s.store.LabelValues(ctx, req)
+			require.NoError(tb, err)
+			assert.Equal(tb, 10, len(resp.Values))
+
+			tb.ResetTimer()
+			for i := 0; i < tb.N; i++ {
+				resp, err := s.store.LabelValues(ctx, req)
+				require.NoError(tb, err)
+				assert.Equal(tb, 10, len(resp.Values))
+			}
+		})
+	}
+
+	tb.Run("no cache", func(tb *testing.B) {
+		s.cache.SwapWith(noopCache{})
+		benchmarks(tb)
+	})
+
+	tb.Run("inmemory cache", func(tb *testing.B) {
+		s.cache.SwapWith(indexCache)
+		benchmarks(tb)
+	})
+}
+
+// generateSeries generated series with len(card) labels, each one called label_n, \
+// with 0 <= n < len(card) and cardinality(label_n) = card[n]
+func generateSeries(card []int) []labels.Labels {
+	totalSeries := 1
+	for _, c := range card {
+		totalSeries *= c
+	}
+	series := make([]labels.Labels, 0, totalSeries)
+	current := make([]labels.Label, len(card))
+	for idx := range current {
+		current[idx].Name = "label_" + strconv.Itoa(idx)
+	}
+
+	var rec func(idx int)
+	rec = func(lvl int) {
+		if lvl == len(card) {
+			cp := make([]labels.Label, len(card))
+			copy(cp, current)
+			series = append(series, cp)
+			return
+		}
+
+		for i := 0; i < card[lvl]; i++ {
+			current[lvl].Value = strconv.Itoa(i)
+			rec(lvl + 1)
+		}
+	}
+	rec(0)
+
+	return series
 }
