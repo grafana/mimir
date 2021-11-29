@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,6 +34,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type ResolutionLevel int64
@@ -63,7 +64,7 @@ type Syncer struct {
 	blockSyncConcurrency     int
 	metrics                  *syncerMetrics
 	deduplicateBlocksFilter  DeduplicateFilter
-	ignoreDeletionMarkFilter *block.IgnoreDeletionMarkFilter
+	ignoreDeletionMarkFilter *IgnoreDeletionMarkFilter
 }
 
 type syncerMetrics struct {
@@ -99,7 +100,7 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion, garbag
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, ignoreDeletionMarkFilter *block.IgnoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, blockSyncConcurrency int) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, ignoreDeletionMarkFilter *IgnoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, blockSyncConcurrency int) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -954,68 +955,58 @@ var _ block.MetadataFilter = &NoCompactionMarkFilter{}
 // NoCompactionMarkFilter is a block.Fetcher filter that finds all blocks with no-compact marker files, and optionally
 // removes them from synced metas.
 type NoCompactionMarkFilter struct {
-	logger                log.Logger
 	bkt                   objstore.InstrumentedBucketReader
-	noCompactMarkedMap    map[ulid.ULID]*metadata.NoCompactMark
-	concurrency           int
+	noCompactMarkedMap    map[ulid.ULID]struct{}
 	removeNoCompactBlocks bool
 }
 
 // NewNoCompactionMarkFilter creates NoCompactionMarkFilter.
-func NewNoCompactionMarkFilter(logger log.Logger, bkt objstore.InstrumentedBucketReader, concurrency int, removeNoCompactBlocks bool) *NoCompactionMarkFilter {
+func NewNoCompactionMarkFilter(bkt objstore.InstrumentedBucketReader, removeNoCompactBlocks bool) *NoCompactionMarkFilter {
 	return &NoCompactionMarkFilter{
-		logger:                logger,
 		bkt:                   bkt,
-		concurrency:           concurrency,
 		removeNoCompactBlocks: removeNoCompactBlocks,
 	}
 }
 
 // NoCompactMarkedBlocks returns block ids that were marked for no compaction.
-func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]*metadata.NoCompactMark {
+func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} {
 	return f.noCompactMarkedMap
 }
 
 // Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
 // blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
 func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
-	f.noCompactMarkedMap = make(map[ulid.ULID]*metadata.NoCompactMark)
+	blocksWithNoCompactMarkers := map[ulid.ULID]struct{}{}
 
-	ids := make([]interface{}, 0, len(metas))
-	for id := range metas {
-		ids = append(ids, id)
-	}
-
-	var mtx sync.Mutex // for accessing f.noCompactMarkedMap and metas from goroutines.
-	err := concurrency.ForEach(ctx, ids, f.concurrency, func(ctx context.Context, job interface{}) error {
-		id := job.(ulid.ULID)
-		m := &metadata.NoCompactMark{}
-		// TODO(bwplotka): Hook up bucket cache here + reset API so we don't introduce API calls .
-		if err := metadata.ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
-			if errors.Cause(err) == metadata.ErrorMarkerNotFound {
-				return nil
-			}
-
-			if errors.Cause(err) == metadata.ErrorUnmarshalMarker {
-				level.Warn(f.logger).Log("msg", "found partial no-compact-mark.json; if we will see it happening often for the same block, consider manually deleting no-compact-mark.json from the object storage", "block", id, "err", err)
-				return nil
-			}
-
-			return err
+	// Find all no-compact markers in the storage.
+	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 
-		mtx.Lock()
-		f.noCompactMarkedMap[id] = m
-		if f.removeNoCompactBlocks {
-			delete(metas, id)
+		if blockID, ok := bucketindex.IsNoCompactMarkFilename(path.Base(name)); ok {
+			blocksWithNoCompactMarkers[blockID] = struct{}{}
 		}
-		mtx.Unlock()
-
-		synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
 		return nil
 	})
+	if err != nil {
+		return errors.Wrap(err, "list block no-compact marks")
+	}
 
-	return errors.Wrap(err, "filter blocks marked for no compaction")
+	noCompactMarkedMap := make(map[ulid.ULID]struct{})
+	for id, _ := range metas {
+		if _, ok := blocksWithNoCompactMarkers[id]; ok {
+			noCompactMarkedMap[id] = struct{}{}
+			synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
+
+			if f.removeNoCompactBlocks {
+				delete(metas, id)
+			}
+		}
+	}
+
+	f.noCompactMarkedMap = noCompactMarkedMap
+	return nil
 }
 
 func hasNonZeroULIDs(ids []ulid.ULID) bool {
@@ -1026,4 +1017,66 @@ func hasNonZeroULIDs(ids []ulid.ULID) bool {
 	}
 
 	return false
+}
+
+// IgnoreDeletionMarkFilter is a filter that filters out the blocks that are marked for deletion.
+// Compared to IgnoreDeletionMarkFilter filter from Thanos, this implementation doesn't use any deletion delay,
+// and only uses marker files under bucketindex.MarkersPathname.
+type IgnoreDeletionMarkFilter struct {
+	bkt objstore.InstrumentedBucketReader
+
+	mtx             sync.Mutex
+	deletionMarkMap map[ulid.ULID]struct{}
+}
+
+func NewIgnoreDeletionMarkFilter(bkt objstore.InstrumentedBucketReader) *IgnoreDeletionMarkFilter {
+	return &IgnoreDeletionMarkFilter{
+		bkt: bkt,
+	}
+}
+
+// DeletionMarkBlocks returns block ids that were marked for deletion.
+func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]struct{} {
+	f.mtx.Lock()
+	defer f.mtx.Unlock()
+
+	deletionMarkMap := make(map[ulid.ULID]struct{}, len(f.deletionMarkMap))
+	for id, meta := range f.deletionMarkMap {
+		deletionMarkMap[id] = meta
+	}
+
+	return deletionMarkMap
+}
+
+// Filter filters out blocks that are marked for deletion after a given delay.
+// It also returns the blocks that can be deleted since they were uploaded delay duration before current time.
+func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+	blocksWithDeletionMarkers := map[ulid.ULID]struct{}{}
+
+	// Find all markers in the storage.
+	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+		if blockID, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(name)); ok {
+			blocksWithDeletionMarkers[blockID] = struct{}{}
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrap(err, "list block deletion marks")
+	}
+
+	deletionMarkMap := make(map[ulid.ULID]struct{})
+
+	for id, _ := range metas {
+		if _, ok := blocksWithDeletionMarkers[id]; ok {
+			deletionMarkMap[id] = struct{}{}
+			synced.WithLabelValues(block.MarkedForDeletionMeta).Inc()
+			delete(metas, id)
+		}
+	}
+
+	f.mtx.Lock()
+	f.deletionMarkMap = deletionMarkMap
+	f.mtx.Unlock()
+
+	return nil
 }

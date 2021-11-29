@@ -645,7 +645,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// While fetching blocks, we filter out blocks that were marked for deletion by using IgnoreDeletionMarkFilter.
 	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
-	ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(ulogger, bucket, 0, c.compactorCfg.MetaSyncConcurrency)
+	ignoreDeletionMarkFilter := NewIgnoreDeletionMarkFilter(bucket)
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatches the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -659,7 +659,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		ignoreDeletionMarkFilter,
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
-		NewNoCompactionMarkFilter(ulogger, bucket, c.compactorCfg.MetaSyncConcurrency, true),
+		NewNoCompactionMarkFilter(bucket, true),
 	}
 
 	fetcher, err := block.NewMetaFetcher(

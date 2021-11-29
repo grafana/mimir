@@ -18,7 +18,7 @@ type TSDBBasedPlanner struct {
 
 	ranges []int64
 
-	noCompBlocksFunc func() map[ulid.ULID]*metadata.NoCompactMark
+	noCompBlocksFunc func() map[ulid.ULID]struct{}
 }
 
 var _ Planner = &TSDBBasedPlanner{}
@@ -29,8 +29,8 @@ func NewTSDBBasedPlanner(logger log.Logger, ranges []int64) *TSDBBasedPlanner {
 	return &TSDBBasedPlanner{
 		logger: logger,
 		ranges: ranges,
-		noCompBlocksFunc: func() map[ulid.ULID]*metadata.NoCompactMark {
-			return make(map[ulid.ULID]*metadata.NoCompactMark)
+		noCompBlocksFunc: func() map[ulid.ULID]struct{} {
+			return make(map[ulid.ULID]struct{})
 		},
 	}
 }
@@ -45,7 +45,7 @@ func (p *TSDBBasedPlanner) Plan(_ context.Context, metasByMinTime []*metadata.Me
 	return p.plan(p.noCompBlocksFunc(), metasByMinTime)
 }
 
-func (p *TSDBBasedPlanner) plan(noCompactMarked map[ulid.ULID]*metadata.NoCompactMark, metasByMinTime []*metadata.Meta) ([]*metadata.Meta, error) {
+func (p *TSDBBasedPlanner) plan(noCompactMarked map[ulid.ULID]struct{}, metasByMinTime []*metadata.Meta) ([]*metadata.Meta, error) {
 	notExcludedMetasByMinTime := make([]*metadata.Meta, 0, len(metasByMinTime))
 	for _, meta := range metasByMinTime {
 		if _, excluded := noCompactMarked[meta.ULID]; excluded {
@@ -88,7 +88,7 @@ func (p *TSDBBasedPlanner) plan(noCompactMarked map[ulid.ULID]*metadata.NoCompac
 // selectMetas returns the dir metas that should be compacted into a single new block.
 // If only a single block range is configured, the result is always nil.
 // Copied and adjusted from https://github.com/prometheus/prometheus/blob/3d8826a3d42566684283a9b7f7e812e412c24407/tsdb/compact.go#L229.
-func selectMetas(ranges []int64, noCompactMarked map[ulid.ULID]*metadata.NoCompactMark, metasByMinTime []*metadata.Meta) []*metadata.Meta {
+func selectMetas(ranges []int64, noCompactMarked map[ulid.ULID]struct{}, metasByMinTime []*metadata.Meta) []*metadata.Meta {
 	if len(ranges) < 2 || len(metasByMinTime) < 1 {
 		return nil
 	}

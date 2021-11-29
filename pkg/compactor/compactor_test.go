@@ -788,7 +788,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *tes
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", `{"id":"01DTVP434PA9VFXSW2JKB3392D","version":1,"details":"details","no_compact_time":1637757932,"reason":"reason"}`, nil)
 
-	bucketClient.MockIter("user-1/markers/", []string{}, nil)
+	bucketClient.MockIter("user-1/markers/", []string{"user-1/markers/01DTVP434PA9VFXSW2JKB3392D-no-compact-mark.json"}, nil)
 
 	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
