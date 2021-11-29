@@ -49,8 +49,8 @@ func TestRulerAPI(t *testing.T) {
 	var (
 		namespaceOne = "test_/encoded_+namespace/?"
 		namespaceTwo = "test_/encoded_+namespace/?/two"
+		ruleGroup    = createTestRuleGroup(t)
 	)
-	ruleGroup := createTestRuleGroup(t)
 
 	for testName, testCfg := range tests {
 		t.Run(testName, func(t *testing.T) {
@@ -696,6 +696,86 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 		// We should start getting "real" failures now.
 		require.NoError(t, ruler.WaitSumMetricsWithOptions(e2e.GreaterOrEqual(1), []string{"cortex_ruler_queries_failed_total"}))
 	})
+}
+
+// TODO dimitar clean up and add comments
+func TestRulerFederatedRules(t *testing.T) {
+	// This test pushes some metrics to tenants tenant-1 and tenant-2. It then creates a recording rule in tenant-3
+	// which aggregates the metrics from tenant-1 and tenant-2. The test asserts that the resulting timeseries from
+	// the rule indeed contained data from both tenants.
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, rulestoreBucketName)
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start mimir in single-binary mode
+	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
+	flags := map[string]string{
+		"-auth.enabled":              "true",
+		"-tenant-federation.enabled": "true", // TODO dimitar make federated rules independent of query federation
+	}
+	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, mergeFlags(RulerFlags(false), flags), "", 9009, 9095)
+
+	require.NoError(t, s.StartAndWaitReady(mimir))
+
+	// Create a client with the mimir address configured
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", mimir.HTTPEndpoint(), "tenant-1")
+	require.NoError(t, err)
+
+	// Create some federated rules in the ruler
+	namespace := "test_namespace"
+	// TODO dimitar explain the choice of query
+	ruleGroup := ruleGroupWithRule("ten", "sum:series_1", "sum(sum_over_time(series_1[1h]))")
+	ruleGroup.Interval = model.Duration(time.Second / 4)
+	ruleGroup.SourceTenants = []string{"tenant-1", "tenant-2"}
+	require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
+
+	// Wait until the user manager is created
+	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+
+	// Check to ensure the rules running in the ruler match what was set
+	rgs, err := c.GetRuleGroups()
+	retrievedNamespace, exists := rgs[namespace]
+	require.NoError(t, err)
+	require.True(t, exists)
+	require.Len(t, retrievedNamespace, 1)
+	require.Equal(t, retrievedNamespace[0].Name, ruleGroup.Name)
+
+	// Generate some series under different tenants
+	const numUsers = 2
+	sampleTime := time.Now()
+	tenantIDs := make([]string, numUsers)
+	pushedVectors := make([]model.Vector, numUsers)
+
+	for u := 0; u < numUsers; u++ {
+		tenantID := fmt.Sprintf("tenant-%d", 1+u)
+		tenantIDs[u] = tenantID
+		client, err := e2emimir.NewClient(mimir.HTTPEndpoint(), "", "", "", tenantID)
+		require.NoError(t, err)
+
+		var series []prompb.TimeSeries
+		series, pushedVectors[u] = generateSeries("series_1", sampleTime)
+
+		res, err := client.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
+	}
+
+	// Wait for at least one evaluation to happen
+	ruleEvaluationsRightAfterPush, err := mimir.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
+	require.NoError(t, err)
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Greater(10+ruleEvaluationsRightAfterPush[0]), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+
+	// Check that the resulting rule was indeed evaluated across both tenants
+	result, err := c.Query("sum:series_1", time.Now())
+	require.NoError(t, err)
+	require.Len(t, result, 1)
+	require.Len(t, result.(model.Vector), 1)
+	require.Equal(t, result.(model.Vector)[0].Value, pushedVectors[0][0].Value+pushedVectors[1][0].Value)
 }
 
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
