@@ -94,6 +94,7 @@ type Config struct {
 	CleanupConcurrency    int                     `yaml:"cleanup_concurrency"`
 	DeletionDelay         time.Duration           `yaml:"deletion_delay"`
 	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay"`
+	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time"`
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
@@ -131,6 +132,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data", "Data directory in which to cache blocks and process compactions")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
+	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", 0, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
@@ -643,11 +645,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	// While fetching blocks, we filter out blocks that were marked for deletion by using IgnoreDeletionMarkFilter.
 	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
-	ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(
-		ulogger,
-		bucket,
-		0,
-		c.compactorCfg.MetaSyncConcurrency)
+	ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(ulogger, bucket, 0, c.compactorCfg.MetaSyncConcurrency)
+	// Filters out duplicate blocks that can be formed from two or more overlapping
+	// blocks that fully submatches the source blocks of the older blocks.
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 
 	// List of filters to apply (order matters).
 	fetcherFilters := []block.MetadataFilter{
@@ -656,12 +657,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		NewLabelRemoverFilter([]string{mimir_tsdb.IngesterIDExternalLabel}),
 		block.NewConsistencyDelayMetaFilter(ulogger, c.compactorCfg.ConsistencyDelay, reg),
 		ignoreDeletionMarkFilter,
+		deduplicateBlocksFilter,
+		// removes blocks that should not be compacted due to being marked so.
+		NewNoCompactionMarkFilter(ulogger, bucket, c.compactorCfg.MetaSyncConcurrency, true),
 	}
-
-	// Filters out duplicate blocks that can be formed from two or more overlapping
-	// blocks that fully submatches the source blocks of the older blocks.
-	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-	fetcherFilters = append(fetcherFilters, deduplicateBlocksFilter)
 
 	fetcher, err := block.NewMetaFetcher(
 		ulogger,
@@ -700,7 +699,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
-		false, // Do not skip blocks with out of order chunks.
+		true, // Skip blocks with out of order chunks, and mark them for no-compaction.
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
 		c.bucketCompactorMetrics,
@@ -709,7 +708,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		return errors.Wrap(err, "failed to create bucket compactor")
 	}
 
-	if err := compactor.Compact(ctx); err != nil {
+	if err := compactor.Compact(ctx, c.compactorCfg.MaxCompactionTime); err != nil {
 		return errors.Wrap(err, "compaction")
 	}
 

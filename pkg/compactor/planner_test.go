@@ -459,7 +459,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 		1620,
 	}
 
-	g := &GatherNoCompactionMarkFilter{}
+	g := &NoCompactionMarkFilter{}
 	tsdbBasedPlanner := NewPlanner(log.NewNopLogger(), ranges, g)
 
 	for _, c := range []struct {

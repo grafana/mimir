@@ -29,10 +29,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
 
-const (
-	mint, maxt = 0, 10
-)
-
 func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) {
 	now := time.Now()
 
@@ -130,6 +126,8 @@ func TestDistributorQueryableFilter(t *testing.T) {
 }
 
 func TestIngesterStreaming(t *testing.T) {
+	const mint, maxt = 0, 10
+
 	// We need to make sure that there is atleast one chunk present,
 	// else no series will be selected.
 	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
@@ -258,6 +256,8 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 }
 
 func TestDistributorQuerier_LabelNames(t *testing.T) {
+	const mint, maxt = 0, 10
+
 	someMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 	labelNames := []string{"foo", "job"}
 

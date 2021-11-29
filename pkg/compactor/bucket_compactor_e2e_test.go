@@ -206,7 +206,7 @@ func TestGroupCompactE2E(t *testing.T) {
 
 		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(logger, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-		noCompactMarkerFilter := NewGatherNoCompactionMarkFilter(logger, objstore.WithNoopInstr(bkt), 2)
+		noCompactMarkerFilter := NewNoCompactionMarkFilter(logger, objstore.WithNoopInstr(bkt), 2, false)
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
@@ -229,7 +229,7 @@ func TestGroupCompactE2E(t *testing.T) {
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
-		require.NoError(t, bComp.Compact(ctx))
+		require.NoError(t, bComp.Compact(ctx, 0), 0)
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectedBlocks))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
@@ -329,7 +329,7 @@ func TestGroupCompactE2E(t *testing.T) {
 			},
 		})
 
-		require.NoError(t, bComp.Compact(ctx))
+		require.NoError(t, bComp.Compact(ctx, 0), 0)
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.garbageCollectedBlocks))
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))

@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"sync"
 	"time"
@@ -277,7 +276,7 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 		}
 
 		// read the rest to buffer -- this is the "packet" itself
-		buf, err := ioutil.ReadAll(conn)
+		buf, err := io.ReadAll(conn)
 		if err != nil {
 			t.receivedPacketsErrors.Inc()
 			level.Error(t.logger).Log("msg", "TCPTransport: error while reading packet data:", "err", err)

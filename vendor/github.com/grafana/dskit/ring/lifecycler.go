@@ -846,6 +846,7 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 	}
 
 	// Sleep so the shutdownDuration metric can be collected.
+	level.Info(i.logger).Log("msg", "lifecycler entering final sleep before shutdown", "final_sleep", i.cfg.FinalSleep)
 	time.Sleep(i.cfg.FinalSleep)
 }
 

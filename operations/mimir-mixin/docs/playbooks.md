@@ -438,6 +438,10 @@ How to **investigate**:
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
 
+### CortexCompactorSkippedBlocksWithOutOfOrderChunks
+
+This alert fires when compactor tries to compact a block, but finds that given block has out-of-order chunks. This indicates a bug in Prometheus TSDB library and should be investigated.
+
 #### Compactor is failing because of `not healthy index found`
 
 The compactor may fail to compact blocks due a corrupted block index found in one of the source blocks:
