@@ -10,6 +10,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/grafana/mimir/pkg/querier/tenantfederation"
+
+	"github.com/grafana/mimir/pkg/tenant"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -227,7 +231,8 @@ type RulesManager interface {
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
-func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engine *promql.Engine, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
+func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engine *promql.Engine,
+	overrides RulesLimits, reg prometheus.Registerer, logger log.Logger) ManagerFactory {
 	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
@@ -253,6 +258,7 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 		}, []string{"user"})
 	}
 
+	q = tenantfederation.NewQueryable(q, false, logger)
 	// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
 	// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
 	// Errors from PromQL are always "user" errors.
@@ -270,7 +276,10 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 			QueryFunc:  RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
 			Context:    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: func(ctx context.Context, g *rules.Group) context.Context {
-				return user.InjectOrgID(ctx, userID)
+				if len(g.SourceTenants()) == 0 {
+					return ctx
+				}
+				return user.InjectOrgID(ctx, tenant.JoinTenantIDs(g.SourceTenants()))
 			},
 			ExternalURL:     cfg.ExternalURL.URL,
 			NotifyFunc:      SendAlerts(notifier, cfg.ExternalURL.URL.String()),
