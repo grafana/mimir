@@ -34,3 +34,26 @@ func TestIsBlockDeletionMarkFilename(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, expected, actual)
 }
+
+func TestNoCompactMarkFilepath(t *testing.T) {
+	id := ulid.MustNew(1, nil)
+
+	assert.Equal(t, "markers/"+id.String()+"-no-compact-mark.json", NoCompactMarkFilepath(id))
+}
+
+func TestIsNoCompactMarkFilename(t *testing.T) {
+	expected := ulid.MustNew(1, nil)
+
+	_, ok := IsNoCompactMarkFilename("xxx")
+	assert.False(t, ok)
+
+	_, ok = IsNoCompactMarkFilename("xxx-no-compact-mark.json")
+	assert.False(t, ok)
+
+	_, ok = IsNoCompactMarkFilename("tenant-no-compact-mark.json")
+	assert.False(t, ok)
+
+	actual, ok := IsNoCompactMarkFilename(expected.String() + "-no-compact-mark.json")
+	assert.True(t, ok)
+	assert.Equal(t, expected, actual)
+}

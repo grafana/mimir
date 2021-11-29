@@ -8,6 +8,7 @@ package bucketindex
 import (
 	"bytes"
 	"context"
+	"path"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/storage/bucket"
@@ -23,27 +25,47 @@ import (
 )
 
 func TestGlobalMarkersBucket_Delete_ShouldSucceedIfDeletionMarkDoesNotExistInTheBlockButExistInTheGlobalLocation(t *testing.T) {
-	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
-
 	ctx := context.Background()
-	bkt = BucketWithGlobalMarkers(bkt)
 
 	// Create a mocked block deletion mark in the global location.
 	blockID := ulid.MustNew(1, nil)
-	globalPath := BlockDeletionMarkFilepath(blockID)
-	require.NoError(t, bkt.Upload(ctx, globalPath, strings.NewReader("{}")))
+	for _, globalPath := range []string{BlockDeletionMarkFilepath(blockID), NoCompactMarkFilepath(blockID)} {
+		bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+		bkt = BucketWithGlobalMarkers(bkt)
 
-	// Ensure it exists before deleting it.
-	ok, err := bkt.Exists(ctx, globalPath)
+		require.NoError(t, bkt.Upload(ctx, globalPath, strings.NewReader("{}")))
+
+		// Ensure it exists before deleting it.
+		ok, err := bkt.Exists(ctx, globalPath)
+		require.NoError(t, err)
+		require.True(t, ok)
+
+		require.NoError(t, bkt.Delete(ctx, globalPath))
+
+		// Ensure has been actually deleted.
+		ok, err = bkt.Exists(ctx, globalPath)
+		require.NoError(t, err)
+		require.False(t, ok)
+	}
+}
+
+func TestUploadToGlobalMarkerPath(t *testing.T) {
+	bkt, _ := mimir_testutil.PrepareFilesystemBucket(t)
+	bkt = BucketWithGlobalMarkers(bkt)
+
+	blockID := ulid.MustNew(1, nil)
+
+	// Verify that uploading deletion mark file uploads it to the global markers location too.
+	require.NoError(t, bkt.Upload(context.Background(), path.Join(blockID.String(), metadata.DeletionMarkFilename), strings.NewReader("mark file")))
+	ok, err := bkt.Exists(context.Background(), BlockDeletionMarkFilepath(blockID))
 	require.NoError(t, err)
 	require.True(t, ok)
 
-	require.NoError(t, bkt.Delete(ctx, globalPath))
-
-	// Ensure has been actually deleted.
-	ok, err = bkt.Exists(ctx, globalPath)
+	// Verify the same for no-compact mark.
+	require.NoError(t, bkt.Upload(context.Background(), path.Join(blockID.String(), metadata.NoCompactMarkFilename), strings.NewReader("mark file")))
+	ok, err = bkt.Exists(context.Background(), NoCompactMarkFilepath(blockID))
 	require.NoError(t, err)
-	require.False(t, ok)
+	require.True(t, ok)
 }
 
 func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
@@ -79,6 +101,45 @@ func TestGlobalMarkersBucket_isBlockDeletionMark(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			actualID, actualOk := b.isBlockDeletionMark(tc.name)
+			assert.Equal(t, tc.expectedOk, actualOk)
+			assert.Equal(t, tc.expectedID, actualID)
+		})
+	}
+}
+
+func TestGlobalMarkersBucket_isNoCompactMark(t *testing.T) {
+	block1 := ulid.MustNew(1, nil)
+
+	tests := []struct {
+		name       string
+		expectedOk bool
+		expectedID ulid.ULID
+	}{
+		{
+			name:       "",
+			expectedOk: false,
+		}, {
+			name:       "no-compact-mark.json",
+			expectedOk: false,
+		}, {
+			name:       block1.String() + "/index",
+			expectedOk: false,
+		}, {
+			name:       block1.String() + "/no-compact-mark.json",
+			expectedOk: true,
+			expectedID: block1,
+		}, {
+			name:       "/path/to/" + block1.String() + "/no-compact-mark.json",
+			expectedOk: true,
+			expectedID: block1,
+		},
+	}
+
+	b := BucketWithGlobalMarkers(nil).(*globalMarkersBucket)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			actualID, actualOk := b.isNoCompactMark(tc.name)
 			assert.Equal(t, tc.expectedOk, actualOk)
 			assert.Equal(t, tc.expectedID, actualID)
 		})
