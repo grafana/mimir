@@ -30,6 +30,33 @@ func SortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
 	return jobs
 }
 
+func SortJobsByOldestSplitJobsFirstSmallestRangeOldestBlocksNext(jobs []*Job) []*Job {
+	sort.SliceStable(jobs, func(i, j int) bool {
+		// Move split jobs to the front.
+		if jobs[i].UseSplitting() && !jobs[j].UseSplitting() {
+			return true
+		}
+
+		if !jobs[i].UseSplitting() && jobs[j].UseSplitting() {
+			return false
+		}
+
+		iLength := jobs[i].MaxTime() - jobs[i].MinTime()
+		jLength := jobs[j].MaxTime() - jobs[j].MinTime()
+
+		if iLength != jLength {
+			return iLength < jLength
+		}
+		if jobs[i].MinTime() != jobs[j].MinTime() {
+			return jobs[i].MinTime() < jobs[j].MinTime()
+		}
+
+		// Guarantee stable sort for tests.
+		return jobs[i].Key() < jobs[j].Key()
+	})
+	return jobs
+}
+
 // SortJobsByNewestBlocksFirst returns input jobs sorted by most recent time ranges first
 // (regardless of their compaction level). The rationale of this sorting is that in case the
 // compactor is lagging behind, we compact up to the largest range (eg. 24h) the most recent
