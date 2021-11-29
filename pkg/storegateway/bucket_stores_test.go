@@ -859,7 +859,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	})
 }
 
-// generateSeries generated series with len(card) labels, each one called label_n, \
+// generateSeries generated series with len(card) labels, each one called label_n,
 // with 0 <= n < len(card) and cardinality(label_n) = card[n]
 func generateSeries(card []int) []labels.Labels {
 	totalSeries := 1
