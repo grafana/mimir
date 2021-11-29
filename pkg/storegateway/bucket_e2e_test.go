@@ -105,10 +105,6 @@ type storeSuite struct {
 	logger log.Logger
 }
 
-func (s *storeSuite) cleanup(t testing.TB) {
-	assert.NoError(t, s.store.Close())
-}
-
 func prepareTestBlocks(t testing.TB, now time.Time, count int, dir string, bkt objstore.Bucket,
 	series []labels.Labels, extLset labels.Labels) (minTime, maxTime int64) {
 	ctx := context.Background()
@@ -215,6 +211,9 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		WithFilterConfig(filterConf),
 	)
 	assert.NoError(t, err)
+	t.Cleanup(func() {
+		assert.NoError(t, s.store.Close())
+	})
 
 	s.store = store
 
@@ -451,7 +450,6 @@ func TestBucketStore_e2e(t *testing.T) {
 		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
-		t.Cleanup(func() { s.cleanup(t) })
 
 		if ok := t.Run("no index cache", func(t *testing.T) {
 			s.cache.SwapWith(noopCache{})
@@ -507,7 +505,6 @@ func TestBucketStore_ManyParts_e2e(t *testing.T) {
 		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, true, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
-		t.Cleanup(func() { s.cleanup(t) })
 
 		indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(s.logger, nil, storecache.InMemoryIndexCacheConfig{
 			MaxItemSize: 1e5,
@@ -539,7 +536,6 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 		MinTime: minTimeDuration,
 		MaxTime: filterMaxTime,
 	})
-	t.Cleanup(func() { s.cleanup(t) })
 	assert.NoError(t, s.store.SyncBlocks(ctx))
 
 	mint, maxt := s.store.TimeRange()
@@ -618,7 +614,6 @@ func TestBucketStore_Series_ChunksLimiter_e2e(t *testing.T) {
 			defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 			s := prepareStoreWithTestBlocks(t, dir, bkt, false, newCustomChunksLimiterFactory(testData.maxChunksLimit, testData.code), newCustomSeriesLimiterFactory(testData.maxSeriesLimit, testData.code), emptyRelabelConfig, allowAllFilterConf)
-			t.Cleanup(func() { s.cleanup(t) })
 			assert.NoError(t, s.store.SyncBlocks(ctx))
 
 			req := &storepb.SeriesRequest{
@@ -656,7 +651,6 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
-		t.Cleanup(func() { s.cleanup(t) })
 		s.cache.SwapWith(noopCache{})
 
 		mint, maxt := s.store.TimeRange()
@@ -759,7 +753,6 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 		defer func() { assert.NoError(t, os.RemoveAll(dir)) }()
 
 		s := prepareStoreWithTestBlocks(t, dir, bkt, false, NewChunksLimiterFactory(0), NewSeriesLimiterFactory(0), emptyRelabelConfig, allowAllFilterConf)
-		t.Cleanup(func() { s.cleanup(t) })
 		s.cache.SwapWith(noopCache{})
 
 		mint, maxt := s.store.TimeRange()
