@@ -322,10 +322,14 @@ type Compactor interface {
 // runCompactionJob plans and runs a single compaction against the provided job. The compacted result
 // is uploaded into the bucket the blocks were retrieved from.
 func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
+	jobBeginTime := time.Now()
+
 	jobLogger := log.With(c.logger, "groupKey", job.Key())
 	subDir := filepath.Join(c.compactDir, job.Key())
 
 	defer func() {
+		level.Info(jobLogger).Log("msg", "compaction job finished", "success", rerr == nil, "duration", time.Since(jobBeginTime), "duration_ms", time.Since(jobBeginTime).Milliseconds())
+
 		// Leave the compact directory for inspection if it is a halt error
 		// or if it is not then so that possibly we would not have to download everything again.
 		if rerr != nil {
@@ -353,7 +357,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// with the min/max time between all blocks to compact.
 	jobLogger = log.With(jobLogger, "minTime", minTime(toCompact).String(), "maxTime", maxTime(toCompact).String())
 
-	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "plan", fmt.Sprintf("%v", toCompact))
+	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
 
 	// Once we have a plan we need to download the actual data.
 	begin := time.Now()
@@ -389,7 +393,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 		toCompactDirs = append(toCompactDirs, bdir)
 	}
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "plan", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
 
 	begin = time.Now()
 
@@ -420,6 +424,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
 
+	uploadBegin := time.Now()
+	uploadedBlocks := 0
+
 	for shardID, compID := range compIDs {
 		// Skip if it's an empty block.
 		if compID == (ulid.ULID{}) {
@@ -431,6 +438,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 			continue
 		}
+
+		uploadedBlocks++
 
 		bdir := filepath.Join(subDir, compID.String())
 		index := filepath.Join(bdir, block.IndexFilename)
@@ -468,6 +477,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds(), "external_labels", labels.FromMap(newLabels))
 	}
+
+	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadedBlocks, "duration", time.Since(uploadBegin), "duration_ms", time.Since(uploadBegin).Milliseconds())
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.

@@ -16,7 +16,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -525,12 +524,14 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-1 msg="start of GC"`,
 		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
+		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
 		`level=info component=compactor org_id=user-2 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-2 msg="start of GC"`,
 		`level=info component=compactor org_id=user-2 msg="start of compactions"`,
+		`level=info component=compactor org_id=user-2 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -652,6 +653,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 		`level=info component=compactor org_id=user-1 msg="start of GC"`,
 		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
 		`level=info component=compactor org_id=user-1 msg="max compaction time reached, no more compactions will be started"`,
+		`level=info component=compactor org_id=user-1 groupKey=0@12695595599644216241 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -985,12 +987,14 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-1 msg="start of GC"`,
 		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
+		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
 		`level=info component=compactor org_id=user-2 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-2 msg="start of GC"`,
 		`level=info component=compactor org_id=user-2 msg="start of compactions"`,
+		`level=info component=compactor org_id=user-2 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -1196,6 +1200,7 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 job="stage: split, range start: 1574863200000, range end: 1574870400000, shard: 1_of_4, blocks: 01DTVP434PA9VFXSW2JK000002 (min time: 2019-11-27 14:00:00 +0000 UTC, max time: 2019-11-27 16:00:00 +0000 UTC)"`,
 		// The ownership check is failing because, to keep this test simple, we've just switched
 		// the instance state to LEAVING and there are no other instances in the ring.
+		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921-split-4_of_4-1574776800000-1574784000000 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="skipped compaction because unable to check whether the job is owned by the compactor instance" groupKey=0@17241709254077376921-split-1_of_4-1574863200000-1574870400000 err="at least 1 live replicas required, could only find 0 - unhealthy instances: 1.2.3.4:0"`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
@@ -1395,7 +1400,6 @@ func removeIgnoredLogs(input []string) []string {
 	}
 
 	out := make([]string, 0, len(input))
-	durationRe := regexp.MustCompile(`\s?duration=\S+`)
 
 	for i := 0; i < len(input); i++ {
 		log := input[i]
@@ -1406,9 +1410,6 @@ func removeIgnoredLogs(input []string) []string {
 		if _, exists := ignoredLogStringsMap[log]; exists {
 			continue
 		}
-
-		// Remove any duration from logs.
-		log = durationRe.ReplaceAllString(log, "")
 
 		out = append(out, log)
 	}
@@ -1486,6 +1487,23 @@ type componentLogger struct {
 }
 
 func (c *componentLogger) Log(keyvals ...interface{}) error {
+	// Remove duration fields.
+	for ix := 0; ix+1 < len(keyvals); {
+		k := keyvals[ix]
+
+		ks, ok := k.(string)
+		if !ok {
+			ix += 2
+			continue
+		}
+
+		if ks == "duration" || ks == "duration_ms" {
+			keyvals = append(keyvals[:ix], keyvals[ix+2:]...)
+		} else {
+			ix += 2
+		}
+	}
+
 	for ix := 0; ix+1 < len(keyvals); ix += 2 {
 		k := keyvals[ix]
 		v := keyvals[ix+1]
