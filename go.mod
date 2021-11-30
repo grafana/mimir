@@ -226,3 +226,6 @@ replace github.com/gogo/status => github.com/gogo/status v1.0.3
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
 replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211125080947-19dcc7902d24
+
+// TODO Marco is investigating issues with memberlist.
+replace github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211130101153-764e6a5e8d55
