@@ -646,6 +646,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		if err != nil {
 			return errors.Wrap(err, "open chunk writer")
 		}
+		chunkw = newPreventDoubleCloseChunkWriter(chunkw) // We now close chunkWriter in populateBlock, but keep it in the closers here as well.
 
 		closers = append(closers, chunkw)
 
@@ -661,10 +662,12 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 
 		outBlocks[ix].chunkw = chunkw
 
-		indexw, err := index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
+		var indexw IndexWriter
+		indexw, err = index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
 		if err != nil {
 			return errors.Wrap(err, "open index writer")
 		}
+		indexw = newPreventDoubleCloseIndexWriter(indexw) // We now close indexWriter in populateBlock, but keep it in the closers here as well.
 		closers = append(closers, indexw)
 
 		outBlocks[ix].indexw = indexw
@@ -904,10 +907,11 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		}
 	}
 
-	var (
-		refs = make([]storage.SeriesRef, len(outBlocks))
-		chks []chunks.Meta
-	)
+	blockWriters := make([]*blockWriter, len(outBlocks))
+	for ix := range outBlocks {
+		blockWriters[ix] = newBlockWriter(c.chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw)
+		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
+	}
 
 	set := sets[0]
 	if len(sets) > 1 {
@@ -926,7 +930,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		s := set.At()
 
 		chksIter := s.Iterator()
-		chks = chks[:0]
+		var chks []chunks.Meta
 		for chksIter.Next() {
 			// We are not iterating in streaming way over chunk as it's more efficient to do bulk write for index and
 			// chunk file purposes.
@@ -948,28 +952,26 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 			obIx = s.Labels().Hash() % uint64(len(outBlocks))
 		}
 
-		if err := outBlocks[obIx].chunkw.WriteChunks(chks...); err != nil {
-			return errors.Wrap(err, "write chunks")
+		err := blockWriters[obIx].addSeries(s.Labels(), chks)
+		if err != nil {
+			return errors.Wrap(err, "adding series")
 		}
-		if err := outBlocks[obIx].indexw.AddSeries(refs[obIx], s.Labels(), chks...); err != nil {
-			return errors.Wrap(err, "add series")
-		}
-
-		outBlocks[obIx].meta.Stats.NumChunks += uint64(len(chks))
-		outBlocks[obIx].meta.Stats.NumSeries++
-		for _, chk := range chks {
-			outBlocks[obIx].meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
-		}
-
-		for _, chk := range chks {
-			if err := c.chunkPool.Put(chk.Chunk); err != nil {
-				return errors.Wrap(err, "put chunk")
-			}
-		}
-		refs[obIx]++
 	}
 	if set.Err() != nil {
 		return errors.Wrap(set.Err(), "iterate compaction set")
+	}
+
+	for ix := range blockWriters {
+		blockWriters[ix].closeAsync()
+	}
+
+	for ix := range blockWriters {
+		stats, err := blockWriters[ix].waitFinished()
+		if err != nil {
+			return errors.Wrap(err, "writing block")
+		}
+
+		outBlocks[ix].meta.Stats = stats
 	}
 
 	return nil
@@ -989,6 +991,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 	batchers := make([]*symbolsBatcher, len(outBlocks))
 	for ix := range outBlocks {
 		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir)
+		defer batchers[ix].close() // We must close the batcher to make sure to stop the goroutine.
 
 		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
 		// and if we only include symbols from series, we would skip it.
@@ -1023,16 +1026,23 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 	}
 
 	for ix := range outBlocks {
-		if err := c.ctx.Err(); err != nil {
-			return err
-		}
-
 		// Flush the batcher to write remaining symbols.
 		if err := batchers[ix].flushSymbols(true); err != nil {
 			return errors.Wrap(err, "flushing batcher")
 		}
+	}
 
-		it, err := newSymbolsIterator(batchers[ix].symbolFiles())
+	for ix := range outBlocks {
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
+
+		symbolFiles, err := batchers[ix].close()
+		if err != nil {
+			return errors.Wrap(err, "closing buffer")
+		}
+
+		it, err := newSymbolsIterator(symbolFiles)
 		if err != nil {
 			return errors.Wrap(err, "opening symbols iterator")
 		}
@@ -1064,7 +1074,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 
 		// Delete symbol files from symbolsBatcher. We don't need to perform the cleanup if populateSymbols
 		// or compaction fails, because in that case compactor already removes entire (temp) output block directory.
-		for _, fn := range batchers[ix].symbolFiles() {
+		for _, fn := range symbolFiles {
 			if err := os.Remove(fn); err != nil {
 				return errors.Wrap(err, "deleting symbols file")
 			}
