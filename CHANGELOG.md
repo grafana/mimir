@@ -1,4 +1,4 @@
-    # Changelog
+# Changelog
 
 ## Mimir - main / unreleased
 
