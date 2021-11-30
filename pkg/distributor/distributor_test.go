@@ -35,6 +35,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/httpgrpc"
+	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
@@ -117,7 +118,14 @@ func TestDistributor_Push(t *testing.T) {
 	distributorSampleDelay := "cortex_distributor_sample_delay"
 	ctx := user.InjectOrgID(context.Background(), "user")
 
-	now := time.Now()
+	now := mtime.Now()
+	originalNow := mtime.Now
+	t.Cleanup(func() {
+		mtime.Now = originalNow
+	})
+	mtime.Now = func() time.Time {
+		return now
+	}
 
 	type samplesIn struct {
 		num              int
@@ -232,7 +240,7 @@ func TestDistributor_Push(t *testing.T) {
 				cortex_distributor_sample_delay_bucket{le="21600"} 0
 				cortex_distributor_sample_delay_bucket{le="86400"} 1
 				cortex_distributor_sample_delay_bucket{le="+Inf"} 1
-				cortex_distributor_sample_delay_sum 80000.000
+				cortex_distributor_sample_delay_sum 80000
 				cortex_distributor_sample_delay_count 1
 			`,
 		},
@@ -323,7 +331,7 @@ func TestDistributor_Push(t *testing.T) {
 				})
 
 				request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata)
-				response, err := ds[0].PushWithTime(ctx, request, now)
+				response, err := ds[0].Push(ctx, request)
 				assert.Equal(t, tc.expectedResponse, response)
 				assert.Equal(t, tc.expectedError, err)
 

@@ -108,6 +108,7 @@ type SampleValidationConfig interface {
 
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
+// It uses the passed 'now' time to measure the relative time of the sample.
 func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 

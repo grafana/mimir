@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
+	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -522,6 +523,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 
 // Validates a single series from a write request.
 // The returned error may retain the series labels.
+// It uses the passed nowt time to observe the delay of sample timestamps.
 func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, nowt time.Time) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
@@ -559,18 +561,9 @@ func (d *Distributor) Push(ctx context.Context, req *mimirpb.WriteRequest) (*mim
 	return d.PushWithCleanup(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) })
 }
 
-func (d *Distributor) PushWithTime(ctx context.Context, req *mimirpb.WriteRequest, now time.Time) (*mimirpb.WriteResponse, error) {
-	return d.pushWithCleanupAndTime(ctx, req, func() { mimirpb.ReuseSlice(req.Timeseries) }, now)
-}
-
 // PushWithCleanup takes a WriteRequest and distributes it to ingesters using the ring.
 // Strings in `req` may be pointers into the gRPC buffer which will be reused, so must be copied if retained.
 func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func()) (*mimirpb.WriteResponse, error) {
-	now := time.Now()
-	return d.pushWithCleanupAndTime(ctx, req, callerCleanup, now)
-}
-
-func (d *Distributor) pushWithCleanupAndTime(ctx context.Context, req *mimirpb.WriteRequest, callerCleanup func(), now time.Time) (*mimirpb.WriteResponse, error) {
 	// We will report *this* request in the error too.
 	inflight := d.inflightPushRequests.Inc()
 
@@ -605,6 +598,7 @@ func (d *Distributor) pushWithCleanupAndTime(ctx context.Context, req *mimirpb.W
 		}
 	}
 
+	now := mtime.Now()
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
