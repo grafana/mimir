@@ -643,9 +643,9 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	ulogger := util_log.WithUserID(userID, c.logger)
 
-	// While fetching blocks, we filter out blocks that were marked for deletion by using IgnoreDeletionMarkFilter.
+	// While fetching blocks, we filter out blocks that were marked for deletion by using ExcludeMarkedForDeletionFilter.
 	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
-	ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(ulogger, bucket, 0, c.compactorCfg.MetaSyncConcurrency)
+	excludeMarkedForDeletionFilter := NewExcludeMarkedForDeletionFilter(bucket)
 	// Filters out duplicate blocks that can be formed from two or more overlapping
 	// blocks that fully submatches the source blocks of the older blocks.
 	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
@@ -656,10 +656,10 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		// honoring the shard ID if sharding was done in the past.
 		NewLabelRemoverFilter([]string{mimir_tsdb.IngesterIDExternalLabel}),
 		block.NewConsistencyDelayMetaFilter(ulogger, c.compactorCfg.ConsistencyDelay, reg),
-		ignoreDeletionMarkFilter,
+		excludeMarkedForDeletionFilter,
 		deduplicateBlocksFilter,
 		// removes blocks that should not be compacted due to being marked so.
-		NewNoCompactionMarkFilter(ulogger, bucket, c.compactorCfg.MetaSyncConcurrency, true),
+		NewNoCompactionMarkFilter(bucket, true),
 	}
 
 	fetcher, err := block.NewMetaFetcher(
@@ -681,7 +681,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		bucket,
 		fetcher,
 		deduplicateBlocksFilter,
-		ignoreDeletionMarkFilter,
+		excludeMarkedForDeletionFilter,
 		c.blocksMarkedForDeletion,
 		c.garbageCollectedBlocks,
 		c.compactorCfg.BlockSyncConcurrency,
