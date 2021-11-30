@@ -603,10 +603,7 @@ func TestMultitenantCompactor_ShouldSupportSplitAndMergeCompactor(t *testing.T) 
 				userBucket,
 				fetcherDir,
 				reg,
-				[]block.MetadataFilter{block.NewIgnoreDeletionMarkFilter(logger,
-					userBucket,
-					0,
-					block.FetcherConcurrency)},
+				[]block.MetadataFilter{NewIgnoreDeletionMarkFilter(userBucket)},
 				nil)
 			require.NoError(t, err)
 			metas, partials, err := fetcher.Fetch(ctx)
@@ -725,7 +722,7 @@ func TestMultitenantCompactor_ShouldSupportRollbackFromSplitAndMergeToDefaultCom
 			userBucket,
 			fetcherDir,
 			reg,
-			[]block.MetadataFilter{block.NewIgnoreDeletionMarkFilter(logger, userBucket, 0, block.FetcherConcurrency)},
+			[]block.MetadataFilter{NewIgnoreDeletionMarkFilter(userBucket)},
 			nil)
 		require.NoError(t, err)
 		metas, partials, err := fetcher.Fetch(ctx)
@@ -772,7 +769,7 @@ func TestMultitenantCompactor_ShouldSupportRollbackFromSplitAndMergeToDefaultCom
 			userBucket,
 			fetcherDir,
 			reg,
-			[]block.MetadataFilter{block.NewIgnoreDeletionMarkFilter(logger, userBucket, 0, block.FetcherConcurrency)},
+			[]block.MetadataFilter{NewIgnoreDeletionMarkFilter(userBucket)},
 			nil)
 		require.NoError(t, err)
 		metas, partials, err := fetcher.Fetch(ctx)

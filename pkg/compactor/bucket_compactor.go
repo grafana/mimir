@@ -969,6 +969,7 @@ func NewNoCompactionMarkFilter(bkt objstore.InstrumentedBucketReader, removeNoCo
 }
 
 // NoCompactMarkedBlocks returns block ids that were marked for no compaction.
+// It is safe to call this method only after Filter has finished, and it is also safe to manipulate the map between calls to Filter.
 func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} {
 	return f.noCompactMarkedMap
 }
@@ -976,7 +977,7 @@ func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} 
 // Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
 // blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
 func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
-	blocksWithNoCompactMarkers := map[ulid.ULID]struct{}{}
+	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
 	// Find all no-compact markers in the storage.
 	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
@@ -985,24 +986,21 @@ func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID
 		}
 
 		if blockID, ok := bucketindex.IsNoCompactMarkFilename(path.Base(name)); ok {
-			blocksWithNoCompactMarkers[blockID] = struct{}{}
+			_, exists := metas[blockID]
+			if exists {
+				noCompactMarkedMap[blockID] = struct{}{}
+				synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
+
+				if f.removeNoCompactBlocks {
+					delete(metas, blockID)
+				}
+			}
+
 		}
 		return nil
 	})
 	if err != nil {
 		return errors.Wrap(err, "list block no-compact marks")
-	}
-
-	noCompactMarkedMap := make(map[ulid.ULID]struct{})
-	for id, _ := range metas {
-		if _, ok := blocksWithNoCompactMarkers[id]; ok {
-			noCompactMarkedMap[id] = struct{}{}
-			synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
-
-			if f.removeNoCompactBlocks {
-				delete(metas, id)
-			}
-		}
 	}
 
 	f.noCompactMarkedMap = noCompactMarkedMap
@@ -1025,7 +1023,6 @@ func hasNonZeroULIDs(ids []ulid.ULID) bool {
 type IgnoreDeletionMarkFilter struct {
 	bkt objstore.InstrumentedBucketReader
 
-	mtx             sync.Mutex
 	deletionMarkMap map[ulid.ULID]struct{}
 }
 
@@ -1036,27 +1033,25 @@ func NewIgnoreDeletionMarkFilter(bkt objstore.InstrumentedBucketReader) *IgnoreD
 }
 
 // DeletionMarkBlocks returns block ids that were marked for deletion.
+// It is safe to call this method only after Filter has finished, and it is also safe to manipulate the map between calls to Filter.
 func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]struct{} {
-	f.mtx.Lock()
-	defer f.mtx.Unlock()
-
-	deletionMarkMap := make(map[ulid.ULID]struct{}, len(f.deletionMarkMap))
-	for id, meta := range f.deletionMarkMap {
-		deletionMarkMap[id] = meta
-	}
-
-	return deletionMarkMap
+	return f.deletionMarkMap
 }
 
-// Filter filters out blocks that are marked for deletion after a given delay.
-// It also returns the blocks that can be deleted since they were uploaded delay duration before current time.
+// Filter filters out blocks that are marked for deletion.
+// It also builds the map returned by DeletionMarkBlocks() method.
 func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
-	blocksWithDeletionMarkers := map[ulid.ULID]struct{}{}
+	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.
 	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
 		if blockID, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(name)); ok {
-			blocksWithDeletionMarkers[blockID] = struct{}{}
+			_, exists := metas[blockID]
+			if exists {
+				deletionMarkMap[blockID] = struct{}{}
+				synced.WithLabelValues(block.MarkedForDeletionMeta).Inc()
+				delete(metas, blockID)
+			}
 		}
 		return nil
 	})
@@ -1064,19 +1059,6 @@ func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.UL
 		return errors.Wrap(err, "list block deletion marks")
 	}
 
-	deletionMarkMap := make(map[ulid.ULID]struct{})
-
-	for id, _ := range metas {
-		if _, ok := blocksWithDeletionMarkers[id]; ok {
-			deletionMarkMap[id] = struct{}{}
-			synced.WithLabelValues(block.MarkedForDeletionMeta).Inc()
-			delete(metas, id)
-		}
-	}
-
-	f.mtx.Lock()
 	f.deletionMarkMap = deletionMarkMap
-	f.mtx.Unlock()
-
 	return nil
 }
