@@ -628,10 +628,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
+	var queryable prom_storage.Queryable
 	// TODO: Consider wrapping logger to differentiate from querier module logger
-	queryable, _, engine := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 
-	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, engine, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
+	if t.Cfg.Ruler.TenantFederation.Enabled {
+		queryable = tenantfederation.NewQueryable(queryable, false, util_log.Logger)
+	}
+
+	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, eng, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return nil, err
