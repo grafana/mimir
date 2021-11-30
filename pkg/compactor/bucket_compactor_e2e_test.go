@@ -46,8 +46,6 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-const fetcherConcurrency = 32
-
 func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
 		// Use bucket with global markers to make sure that our custom filters work correctly.
