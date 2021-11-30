@@ -31,6 +31,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -364,37 +365,49 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	begin := time.Now()
 
-	toCompactDirs := make([]string, 0, len(toCompact))
-	for _, meta := range toCompact {
+	toCompactDirs := make([]string, len(toCompact))
+	for ix := range toCompact {
+		toCompactDirs[ix] = filepath.Join(subDir, toCompact[ix].ULID.String())
+	}
+
+	err = concurrency.ForEach(ctx, convertSliceOfMetasToSliceOfInterfaces(toCompact), len(toCompact), func(ctx context.Context, job interface{}) error {
+		meta := job.(*metadata.Meta)
+
+		// Must be same as in toCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "download block %s", meta.ULID))
+			return retry(errors.Wrapf(err, "download block %s", meta.ULID))
 		}
 
 		// Ensure all input blocks are valid.
 		stats, err := block.GatherIndexHealthStats(jobLogger, filepath.Join(bdir, block.IndexFilename), meta.MinTime, meta.MaxTime)
 		if err != nil {
-			return false, nil, errors.Wrapf(err, "gather index issues for block %s", bdir)
+			return errors.Wrapf(err, "gather index issues for block %s", bdir)
 		}
 
 		if err := stats.CriticalErr(); err != nil {
-			return false, nil, halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
+			return halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
 		}
 
 		if err := stats.OutOfOrderChunksErr(); err != nil {
-			return false, nil, outOfOrderChunkError(errors.Wrapf(err, "blocks with out-of-order chunks are dropped from compaction:  %s", bdir), meta.ULID)
+			return outOfOrderChunkError(errors.Wrapf(err, "blocks with out-of-order chunks are dropped from compaction:  %s", bdir), meta.ULID)
 		}
 
 		if err := stats.Issue347OutsideChunksErr(); err != nil {
-			return false, nil, issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
+			return issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
 		}
 
 		if err := stats.PrometheusIssue5372Err(); err != nil {
-			return false, nil, errors.Wrapf(err, "block id %s", meta.ULID)
+			return errors.Wrapf(err, "block id %s", meta.ULID)
 		}
-		toCompactDirs = append(toCompactDirs, bdir)
+		return nil
+	})
+
+	if err != nil {
+		return false, nil, err
 	}
+
 	elapsed := time.Since(begin)
 	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
@@ -429,9 +442,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
-	uploadedBlocks := 0
+	uploadedBlocks := atomic.NewInt64(0)
 
-	for shardID, compID := range compIDs {
+	err = concurrency.ForEach(ctx, convertSliceOfUlidsToSliceOfInterfaces(compIDs), len(compIDs), func(ctx context.Context, j interface{}) error {
+		shardID := j.(ulidWithIndex).index
+		compID := j.(ulidWithIndex).ulid
+
 		// Skip if it's an empty block.
 		if compID == (ulid.ULID{}) {
 			if job.UseSplitting() {
@@ -439,11 +455,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			} else {
 				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
 			}
-
-			continue
+			return nil
 		}
 
-		uploadedBlocks++
+		uploadedBlocks.Inc()
 
 		bdir := filepath.Join(subDir, compID.String())
 		index := filepath.Join(bdir, block.IndexFilename)
@@ -461,26 +476,31 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
 		if err != nil {
-			return false, nil, errors.Wrapf(err, "failed to finalize the block %s", bdir)
+			return errors.Wrapf(err, "failed to finalize the block %s", bdir)
 		}
 
 		if err = os.Remove(filepath.Join(bdir, "tombstones")); err != nil {
-			return false, nil, errors.Wrap(err, "remove tombstones")
+			return errors.Wrap(err, "remove tombstones")
 		}
 
 		// Ensure the output block is valid.
 		if err := block.VerifyIndex(jobLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
-			return false, nil, halt(errors.Wrapf(err, "invalid result block %s", bdir))
+			return halt(errors.Wrapf(err, "invalid result block %s", bdir))
 		}
 
 		begin = time.Now()
 
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "upload of %s failed", compID))
+			return retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
 
 		elapsed = time.Since(begin)
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		return nil
+	})
+
+	if err != nil {
+		return false, nil, err
 	}
 
 	elapsed = time.Since(uploadBegin)
@@ -497,6 +517,27 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	return true, compIDs, nil
+}
+
+func convertSliceOfMetasToSliceOfInterfaces(input []*metadata.Meta) []interface{} {
+	result := make([]interface{}, len(input))
+	for ix := range input {
+		result[ix] = input[ix]
+	}
+	return result
+}
+
+func convertSliceOfUlidsToSliceOfInterfaces(input []ulid.ULID) []interface{} {
+	result := make([]interface{}, len(input))
+	for ix := range input {
+		result[ix] = ulidWithIndex{index: ix, ulid: input[ix]}
+	}
+	return result
+}
+
+type ulidWithIndex struct {
+	index int
+	ulid  ulid.ULID
 }
 
 // Issue347Error is a type wrapper for errors that should invoke repair process for broken block.
