@@ -698,28 +698,38 @@ func TestRulerFederatedRules(t *testing.T) {
 	defer s.Close()
 
 	// Start dependencies.
+	consul := e2edb.NewConsul()
 	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
-	require.NoError(t, s.StartAndWaitReady(minio))
-
-	// Start mimir in single-binary mode
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
 		RulerFlags(false),
 		map[string]string{
-			"-auth.enabled":              "true",
-			"-tenant-federation.enabled": "true", // TODO dimitar make federated rules independent of query federation
-		})
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
-	require.NoError(t, s.StartAndWaitReady(mimir))
+			"-auth.enabled":                   "true",
+			"-tenant-federation.enabled":      "true",
+			"-distributor.replication-factor": "1",
+			// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
+			"-querier.store-gateway-addresses": "localhost:12345",
+		},
+	)
+
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+
+	// Wait until both the distributor and ruler have updated the ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	// Generate some series under different tenants
 	sampleTime := time.Now()
 	var sumPushedSeries model.SampleValue
 
 	for _, tenantID := range tenantIDs {
-		client, err := e2emimir.NewClient(mimir.HTTPEndpoint(), "", "", "", tenantID)
+		client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 		require.NoError(t, err)
 
 		series, pushedVectors := generateSeries("metric", sampleTime)
@@ -732,7 +742,7 @@ func TestRulerFederatedRules(t *testing.T) {
 	}
 
 	// Create a client as tenant1
-	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", mimir.HTTPEndpoint(), tenant1)
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tenant1)
 	require.NoError(t, err)
 
 	// Create some federated rules under the same tenant
@@ -744,7 +754,7 @@ func TestRulerFederatedRules(t *testing.T) {
 	require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
 
 	// Wait until the user manager is created. This means the rule groups is loaded
-	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rules running in the ruler match what was set
 	rgs, err := c.GetRuleGroups()
@@ -755,9 +765,9 @@ func TestRulerFederatedRules(t *testing.T) {
 	require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, ruleGroup.SourceTenants)
 
 	// Wait for at least one evaluation
-	ruleEvaluationsRightAfterPush, err := mimir.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
+	ruleEvaluationsRightAfterPush, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
 	require.NoError(t, err)
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Greater(ruleEvaluationsRightAfterPush[0]), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(ruleEvaluationsRightAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
 
 	// Check that the resulting rule was indeed evaluated across both tenants
 	result, err := c.Query("sum:metric", time.Now())
