@@ -698,43 +698,65 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	})
 }
 
-// TODO dimitar clean up and add comments
 func TestRulerFederatedRules(t *testing.T) {
 	// This test pushes some metrics to tenants tenant-1 and tenant-2. It then creates a recording rule in tenant-3
 	// which aggregates the metrics from tenant-1 and tenant-2. The test asserts that the resulting timeseries from
 	// the rule indeed contained data from both tenants.
+
+	const tenant1, tenant2 = "tenant-1", "tenant-2"
+	tenantIDs := []string{tenant1, tenant2}
+
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
 	// Start dependencies.
-	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, rulestoreBucketName)
-	require.NoError(t, s.StartAndWaitReady(consul, minio))
+	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start mimir in single-binary mode
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
-	flags := map[string]string{
-		"-auth.enabled":              "true",
-		"-tenant-federation.enabled": "true", // TODO dimitar make federated rules independent of query federation
-	}
-	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, mergeFlags(RulerFlags(false), flags), "", 9009, 9095)
+	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		RulerFlags(false),
+		map[string]string{
+			"-auth.enabled":              "true",
+			"-tenant-federation.enabled": "true", // TODO dimitar make federated rules independent of query federation
+		})
+	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(mimir))
 
-	// Create a client with the mimir address configured
-	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", mimir.HTTPEndpoint(), "tenant-1")
+	// Generate some series under different tenants
+	sampleTime := time.Now()
+	var sumPushedSeries model.SampleValue
+
+	for _, tenantID := range tenantIDs {
+		client, err := e2emimir.NewClient(mimir.HTTPEndpoint(), "", "", "", tenantID)
+		require.NoError(t, err)
+
+		series, pushedVectors := generateSeries("metric", sampleTime)
+
+		res, err := client.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
+
+		sumPushedSeries += pushedVectors[0].Value
+	}
+
+	// Create a client as tenant1
+	c, err := e2emimir.NewClient(mimir.HTTPEndpoint(), mimir.HTTPEndpoint(), "", mimir.HTTPEndpoint(), tenant1)
 	require.NoError(t, err)
 
-	// Create some federated rules in the ruler
+	// Create some federated rules under the same tenant
 	namespace := "test_namespace"
-	// TODO dimitar explain the choice of query
-	ruleGroup := ruleGroupWithRule("ten", "sum:series_1", "sum(sum_over_time(series_1[1h]))")
+	// A query that should aggregate over all labels and over the past hour, so race conditions are unlikely
+	ruleGroup := ruleGroupWithRule("ten", "sum:metric", "sum(sum_over_time(metric[1h]))")
 	ruleGroup.Interval = model.Duration(time.Second / 4)
-	ruleGroup.SourceTenants = []string{"tenant-1", "tenant-2"}
+	ruleGroup.SourceTenants = tenantIDs
 	require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
 
-	// Wait until the user manager is created
+	// Wait until the user manager is created. This means the rule groups is loaded
 	require.NoError(t, mimir.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
 
 	// Check to ensure the rules running in the ruler match what was set
@@ -743,39 +765,18 @@ func TestRulerFederatedRules(t *testing.T) {
 	require.NoError(t, err)
 	require.True(t, exists)
 	require.Len(t, retrievedNamespace, 1)
-	require.Equal(t, retrievedNamespace[0].Name, ruleGroup.Name)
+	require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, ruleGroup.SourceTenants)
 
-	// Generate some series under different tenants
-	const numUsers = 2
-	sampleTime := time.Now()
-	tenantIDs := make([]string, numUsers)
-	pushedVectors := make([]model.Vector, numUsers)
-
-	for u := 0; u < numUsers; u++ {
-		tenantID := fmt.Sprintf("tenant-%d", 1+u)
-		tenantIDs[u] = tenantID
-		client, err := e2emimir.NewClient(mimir.HTTPEndpoint(), "", "", "", tenantID)
-		require.NoError(t, err)
-
-		var series []prompb.TimeSeries
-		series, pushedVectors[u] = generateSeries("series_1", sampleTime)
-
-		res, err := client.Push(series)
-		require.NoError(t, err)
-		require.Equal(t, 200, res.StatusCode)
-	}
-
-	// Wait for at least one evaluation to happen
+	// Wait for at least one evaluation
 	ruleEvaluationsRightAfterPush, err := mimir.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
 	require.NoError(t, err)
-	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Greater(10+ruleEvaluationsRightAfterPush[0]), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
+	require.NoError(t, mimir.WaitSumMetricsWithOptions(e2e.Greater(ruleEvaluationsRightAfterPush[0]), []string{"cortex_prometheus_rule_evaluations_total"}, e2e.WaitMissingMetrics))
 
 	// Check that the resulting rule was indeed evaluated across both tenants
-	result, err := c.Query("sum:series_1", time.Now())
+	result, err := c.Query("sum:metric", time.Now())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
-	require.Len(t, result.(model.Vector), 1)
-	require.Equal(t, result.(model.Vector)[0].Value, pushedVectors[0][0].Value+pushedVectors[1][0].Value)
+	require.InDelta(t, float64(result.(model.Vector)[0].Value), float64(sumPushedSeries), 0.0001)
 }
 
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
