@@ -48,6 +48,45 @@ func TestSortJobsBySmallestRangeOldestBlocksFirst(t *testing.T) {
 	}
 }
 
+func TestSortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning(t *testing.T) {
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	block3 := ulid.MustNew(3, nil)
+	block4 := ulid.MustNew(4, nil)
+	block5 := ulid.MustNew(5, nil)
+	block6 := ulid.MustNew(6, nil)
+
+	tests := map[string]struct {
+		input    []*Job
+		expected []*Job
+	}{
+		"should do nothing on empty input": {
+			input:    nil,
+			expected: nil,
+		},
+		"should sort jobs by smallest range, oldest blocks first": {
+			input: []*Job{
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block5, 40, 60), mockMetaWithMinMax(block6, 40, 80)}},
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: false},
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: true},
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block1, 10, 20), mockMetaWithMinMax(block2, 10, 20)}},
+			},
+			expected: []*Job{
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: true}, // Split job is first.
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block1, 10, 20), mockMetaWithMinMax(block2, 10, 20)}},
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: false},
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block5, 40, 60), mockMetaWithMinMax(block6, 40, 80)}},
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, sortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning(testData.input))
+		})
+	}
+}
+
 func TestSortJobsByNewestBlocksFirst(t *testing.T) {
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
