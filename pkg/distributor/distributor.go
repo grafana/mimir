@@ -301,7 +301,7 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 		}),
 		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
-			Name:      "distributor_sample_delay",
+			Name:      "distributor_sample_delay_seconds",
 			Help:      "Number of seconds by which a sample came in late wrt wallclock.",
 			Buckets: []float64{
 				30,           // 30s
@@ -524,7 +524,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Validates a single series from a write request.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, nowt time.Time) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -710,7 +710,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation, now)
+		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.

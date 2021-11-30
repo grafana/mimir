@@ -508,7 +508,7 @@ func newTSDBMetrics(r prometheus.Registerer) *tsdbMetrics {
 			"Total number of memory-mapped TSDB chunk corruptions.",
 			nil, nil),
 		tsdbOOOHistogram: prometheus.NewDesc(
-			"cortex_ingester_tsdb_sample_ooo_delta",
+			"cortex_ingester_tsdb_sample_out_of_order_delta_seconds",
 			"Delta in seconds by which a sample is considered out of order.",
 			nil, nil),
 		tsdbLoadedBlocks: prometheus.NewDesc(
