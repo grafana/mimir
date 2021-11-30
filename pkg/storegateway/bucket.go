@@ -1300,6 +1300,17 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}, nil
 }
 
+// blockLabelValues provides the values of the label with requested name,
+// optionally restricting the search to the series that match the matchers provided.
+// - First we fetch all possible values for this label from the index.
+//   - If no matchers were provided, we just return those values.
+// - Next we load the postings (references to series) for supplied matchers.
+// - Then we load the postings for each label-value fetched in the first step.
+// - Finally, we check if postings from each label-value intersect postings from matchers.
+//   - A non empty intersection means that a matched series has that value, so we add it to the result.
+//
+// Notice that when no matchers are provided, the list of matched postings is AllPostings,
+// so we could also intersect those with each label's postings being each one non empty and leading to the same result.
 func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName string, matchers []*labels.Matcher) ([]string, error) {
 	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName)
 	if err != nil {
@@ -1339,8 +1350,8 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 	return matched, nil
 }
 
-// bucketBlockSet holds all blocks of an equal label set. It internally splits
 // them up by downsampling resolution and allows querying.
+// bucketBlockSet holds all blocks of an equal label set. It internally splits
 type bucketBlockSet struct {
 	labels      labels.Labels
 	mtx         sync.RWMutex
