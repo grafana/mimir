@@ -10,8 +10,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/grafana/mimir/pkg/querier/tenantfederation"
-
 	"github.com/grafana/mimir/pkg/tenant"
 
 	"github.com/go-kit/log"
@@ -258,7 +256,6 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 		}, []string{"user"})
 	}
 
-	q = tenantfederation.NewQueryable(q, false, logger)
 	// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
 	// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
 	// Errors from PromQL are always "user" errors.

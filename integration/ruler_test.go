@@ -719,9 +719,9 @@ func TestRulerFederatedRules(t *testing.T) {
 		BlocksStorageFlags(),
 		RulerFlags(false),
 		map[string]string{
-			"-auth.enabled":                   "true",
-			"-tenant-federation.enabled":      "true",
-			"-distributor.replication-factor": "1",
+			"-ruler.tenant-federation.enabled": "true",
+			"-tenant-federation.enabled":       "true",
+			"-distributor.replication-factor":  "1",
 			// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
 			"-querier.store-gateway-addresses": "localhost:12345",
 		},
