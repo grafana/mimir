@@ -981,8 +981,8 @@ func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID
 
 	// Find all no-compact markers in the storage.
 	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
-		if ctx.Err() != nil {
-			return ctx.Err()
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
 		if blockID, ok := bucketindex.IsNoCompactMarkFilename(path.Base(name)); ok {
@@ -1045,6 +1045,10 @@ func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[u
 
 	// Find all markers in the storage.
 	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		if blockID, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(name)); ok {
 			_, exists := metas[blockID]
 			if exists {
