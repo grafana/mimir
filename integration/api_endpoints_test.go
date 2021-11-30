@@ -20,15 +20,35 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-func TestIndexAPIEndpoint(t *testing.T) {
+func newMimirSingleBinaryWithLocalFilesytemBucket(t *testing.T, name string, flags map[string]string) (*e2e.Scenario, *e2emimir.MimirService) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
-	defer s.Close()
 
 	// Start Mimir in single binary mode, reading the config from file.
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
-	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, nil, "", 9009, 9095)
+	if flags == nil {
+		flags = map[string]string{}
+	}
+
+	setFlagIfNotExistingAlready := func(key, value string) {
+		if _, ok := flags[key]; !ok {
+			flags[key] = value
+		}
+	}
+
+	setFlagIfNotExistingAlready("-blocks-storage.backend", "filesystem")
+	setFlagIfNotExistingAlready("-blocks-storage.filesystem.dir", "./bucket")
+
+	mimir := e2emimir.NewSingleBinaryWithConfigFile(name, mimirConfigFile, flags, "", 9009, 9095)
+
+	return s, mimir
+}
+
+func TestIndexAPIEndpoint(t *testing.T) {
+	// Start Mimir in single binary mode, reading the config from file
+	s, mimir1 := newMimirSingleBinaryWithLocalFilesytemBucket(t, "mimir-1", nil)
+	defer s.Close()
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 
 	// GET / should succeed
@@ -43,14 +63,9 @@ func TestIndexAPIEndpoint(t *testing.T) {
 }
 
 func TestConfigAPIEndpoint(t *testing.T) {
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
+	// Start Mimir in single binary mode, reading the config from file
+	s, mimir1 := newMimirSingleBinaryWithLocalFilesytemBucket(t, "mimir-1", nil)
 	defer s.Close()
-
-	// Start Mimir in single binary mode, reading the config from file.
-	require.NoError(t, copyFileToSharedDir(s, "docs/chunks-storage/single-process-config.yaml", mimirConfigFile))
-
-	mimir1 := e2emimir.NewSingleBinaryWithConfigFile("mimir-1", mimirConfigFile, nil, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(mimir1))
 
 	// Get config from /config API endpoint.

@@ -157,14 +157,12 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 		name,
 		image,
 		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":                        "ingester",
-			"-log.level":                     "warn",
-			"-ingester.final-sleep":          "0s",
-			"-ingester.join-after":           "0s",
-			"-ingester.min-ready-duration":   "0s",
-			"-ingester.concurrent-flushes":   "10",
-			"-ingester.max-transfer-retries": "10",
-			"-ingester.num-tokens":           "512",
+			"-target":                      "ingester",
+			"-log.level":                   "warn",
+			"-ingester.final-sleep":        "0s",
+			"-ingester.join-after":         "0s",
+			"-ingester.min-ready-duration": "0s",
+			"-ingester.num-tokens":         "512",
 			// Configure the ingesters ring backend
 			"-ring.store":      "consul",
 			"-consul.hostname": consulAddress,
@@ -320,12 +318,10 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 			// Distributor.
 			"-distributor.replication-factor": "1",
 			// Ingester.
-			"-ingester.final-sleep":          "0s",
-			"-ingester.join-after":           "0s",
-			"-ingester.min-ready-duration":   "0s",
-			"-ingester.concurrent-flushes":   "10",
-			"-ingester.max-transfer-retries": "10",
-			"-ingester.num-tokens":           "512",
+			"-ingester.final-sleep":        "0s",
+			"-ingester.join-after":         "0s",
+			"-ingester.min-ready-duration": "0s",
+			"-ingester.num-tokens":         "512",
 			// Startup quickly.
 			"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
 			"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
