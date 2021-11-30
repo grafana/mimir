@@ -465,7 +465,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 	for _, c := range []struct {
 		name           string
 		metas          []*metadata.Meta
-		noCompactMarks map[ulid.ULID]*metadata.NoCompactMark
+		noCompactMarks map[ulid.ULID]struct{}
 
 		expected []*metadata.Meta
 	}{
@@ -474,7 +474,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 			metas: []*metadata.Meta{
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(1, nil), MinTime: 0, MaxTime: 20}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(1, nil): {},
 			},
 		},
@@ -486,7 +486,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(3, nil), MinTime: 40, MaxTime: 60}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(4, nil), MinTime: 60, MaxTime: 80}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(1, nil): {},
 			},
 			expected: []*metadata.Meta{
@@ -502,7 +502,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(3, nil), MinTime: 40, MaxTime: 60}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(4, nil), MinTime: 60, MaxTime: 80}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(2, nil): {},
 			},
 		},
@@ -514,7 +514,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(3, nil), MinTime: 40, MaxTime: 60}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(4, nil), MinTime: 60, MaxTime: 80}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(4, nil): {},
 			},
 			expected: []*metadata.Meta{
@@ -531,7 +531,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(3, nil), MinTime: 40, MaxTime: 60}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(4, nil), MinTime: 60, MaxTime: 80}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(1, nil): {},
 				ulid.MustNew(4, nil): {},
 			},
@@ -548,7 +548,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(3, nil), MinTime: 40, MaxTime: 60}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(4, nil), MinTime: 60, MaxTime: 80}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(1, nil): {},
 				ulid.MustNew(2, nil): {},
 				ulid.MustNew(3, nil): {},
@@ -564,7 +564,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(4, nil), MinTime: 60, MaxTime: 80}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(5, nil), MinTime: 80, MaxTime: 100}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(2, nil): {},
 			},
 		},
@@ -577,7 +577,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(6, nil), MinTime: 120, MaxTime: 180}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(7, nil), MinTime: 720, MaxTime: 960}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(6, nil): {},
 			},
 			expected: []*metadata.Meta{
@@ -594,7 +594,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(6, nil), MinTime: 120, MaxTime: 180}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(7, nil), MinTime: 720, MaxTime: 960}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(4, nil): {},
 			},
 		},
@@ -607,7 +607,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				}}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(2, nil), MinTime: 540, MaxTime: 560}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(1, nil): {},
 			},
 		},
@@ -621,7 +621,7 @@ func TestTSDBBasedPlanner_PlanWithNoCompactMarks(t *testing.T) {
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(2, nil), MinTime: 19, MaxTime: 40}},
 				{BlockMeta: tsdb.BlockMeta{Version: 1, ULID: ulid.MustNew(3, nil), MinTime: 40, MaxTime: 60}},
 			},
-			noCompactMarks: map[ulid.ULID]*metadata.NoCompactMark{
+			noCompactMarks: map[ulid.ULID]struct{}{
 				ulid.MustNew(1, nil): {},
 			},
 		},

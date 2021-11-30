@@ -24,6 +24,8 @@ import (
 
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/errutil"
+
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 func TestHaltError(t *testing.T) {
@@ -192,7 +194,8 @@ func TestFilterOwnJobs(t *testing.T) {
 
 func TestNoCompactionMarkFilter(t *testing.T) {
 	ctx := context.Background()
-	bkt := objstore.NewInMemBucket()
+	// Use bucket with global markers to make sure that our custom filters work correctly.
+	bkt := bucketindex.BucketWithGlobalMarkers(objstore.NewInMemBucket())
 
 	block1 := ulid.MustParse("01DTVP434PA9VFXSW2JK000001") // No mark file.
 	block2 := ulid.MustParse("01DTVP434PA9VFXSW2JK000002") // Marked for no-compaction
@@ -205,11 +208,11 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			metas := map[ulid.ULID]*metadata.Meta{
 				block1: blockMeta(block1.String(), 100, 200, nil),
 				block2: blockMeta(block2.String(), 200, 300, nil), // Has no-compaction marker.
-				block4: blockMeta(block4.String(), 400, 500, nil), // Marker with invalid syntax is ignored.
+				block4: blockMeta(block4.String(), 400, 500, nil), // Invalid marker is still a marker, and block will be in NoCompactMarkedBlocks.
 				block5: blockMeta(block5.String(), 500, 600, nil),
 			}
 
-			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, false)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
 			require.NoError(t, f.Filter(ctx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -217,11 +220,11 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			require.Contains(t, metas, block4)
 			require.Contains(t, metas, block5)
 
-			require.Len(t, f.NoCompactMarkedBlocks(), 1)
-			require.Contains(t, f.NoCompactMarkedBlocks(), block2)
+			require.Len(t, f.NoCompactMarkedBlocks(), 2)
+			require.Contains(t, f.NoCompactMarkedBlocks(), block2, block4)
 
 			synced.Submit()
-			assert.Equal(t, 1.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
+			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
 		"filter with deletion enabled": func(t *testing.T, synced *extprom.TxGaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
@@ -231,19 +234,20 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 				block5: blockMeta(block5.String(), 500, 600, nil),
 			}
 
-			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
 			require.NoError(t, f.Filter(ctx, metas, synced))
 
 			require.Contains(t, metas, block1)
 			require.NotContains(t, metas, block2) // block2 was removed from metas.
-			require.Contains(t, metas, block4)
+			require.NotContains(t, metas, block4) // block4 has invalid marker, but we don't check for marker content.
 			require.Contains(t, metas, block5)
 
-			require.Len(t, f.NoCompactMarkedBlocks(), 1)
+			require.Len(t, f.NoCompactMarkedBlocks(), 2)
 			require.Contains(t, f.NoCompactMarkedBlocks(), block2)
+			require.Contains(t, f.NoCompactMarkedBlocks(), block4)
 
 			synced.Submit()
-			assert.Equal(t, 1.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
+			assert.Equal(t, 2.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
 		"filter with deletion enabled, but canceled context": func(t *testing.T, synced *extprom.TxGaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
@@ -257,7 +261,7 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			canceledCtx, cancel := context.WithCancel(context.Background())
 			cancel()
 
-			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
 			require.Error(t, f.Filter(canceledCtx, metas, synced))
 
 			require.Contains(t, metas, block1)
@@ -272,20 +276,16 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 		},
 		"filtering block with wrong marker version": func(t *testing.T, synced *extprom.TxGaugeVec) {
 			metas := map[ulid.ULID]*metadata.Meta{
-				block3: blockMeta(block3.String(), 300, 300, nil), // Has no-compaction marker.
+				block3: blockMeta(block3.String(), 300, 300, nil), // Has compaction marker with invalid version, but Filter doesn't check for that.
 			}
 
-			f := NewNoCompactionMarkFilter(log.NewNopLogger(), objstore.BucketWithMetrics("test", bkt, nil), 4, true)
+			f := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
 			err := f.Filter(ctx, metas, synced)
-
-			require.Error(t, err)
-			require.Contains(t, err.Error(), "unexpected no-compact-mark file version 100, expected 1")
-
-			require.Len(t, metas, 1)
-			require.Contains(t, metas, block3)
+			require.NoError(t, err)
+			require.Empty(t, metas)
 
 			synced.Submit()
-			assert.Equal(t, 0.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
+			assert.Equal(t, 1.0, testutil.ToFloat64(synced.WithLabelValues(block.MarkedForNoCompactionMeta)))
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
