@@ -608,36 +608,6 @@ instance_limits:
 The `ingester_config` configures the ingester.
 
 ```yaml
-# Configures the Write-Ahead Log (WAL) for the Mimir chunks storage. This config
-# is ignored when running the Mimir blocks storage.
-walconfig:
-  # Enable writing of ingested data into WAL.
-  # CLI flag: -ingester.wal-enabled
-  [wal_enabled: <boolean> | default = false]
-
-  # Enable checkpointing of in-memory chunks. It should always be true when
-  # using normally. Set it to false iff you are doing some small tests as there
-  # is no mechanism to delete the old WAL yet if checkpoint is disabled.
-  # CLI flag: -ingester.checkpoint-enabled
-  [checkpoint_enabled: <boolean> | default = true]
-
-  # Recover data from existing WAL irrespective of WAL enabled/disabled.
-  # CLI flag: -ingester.recover-from-wal
-  [recover_from_wal: <boolean> | default = false]
-
-  # Directory to store the WAL and/or recover from WAL.
-  # CLI flag: -ingester.wal-dir
-  [wal_dir: <string> | default = "wal"]
-
-  # Interval at which checkpoints should be created.
-  # CLI flag: -ingester.checkpoint-duration
-  [checkpoint_duration: <duration> | default = 30m]
-
-  # When WAL is enabled, should chunks be flushed to long-term storage on
-  # shutdown. Useful eg. for migration to blocks engine.
-  # CLI flag: -ingester.flush-on-shutdown-with-wal-enabled
-  [flush_on_shutdown_with_wal_enabled: <boolean> | default = false]
-
 lifecycler:
   ring:
     kvstore:
@@ -748,51 +718,6 @@ lifecycler:
   # slowed down.
   # CLI flag: -ingester.readiness-check-ring-health
   [readiness_check_ring_health: <boolean> | default = true]
-
-# Number of times to try and transfer chunks before falling back to flushing.
-# Negative value or zero disables hand-over. This feature is supported only by
-# the chunks storage.
-# CLI flag: -ingester.max-transfer-retries
-[max_transfer_retries: <int> | default = 10]
-
-# Period with which to attempt to flush chunks.
-# CLI flag: -ingester.flush-period
-[flush_period: <duration> | default = 1m]
-
-# Period chunks will remain in memory after flushing.
-# CLI flag: -ingester.retain-period
-[retain_period: <duration> | default = 5m]
-
-# Maximum chunk idle time before flushing.
-# CLI flag: -ingester.max-chunk-idle
-[max_chunk_idle_time: <duration> | default = 5m]
-
-# Maximum chunk idle time for chunks terminating in stale markers before
-# flushing. 0 disables it and a stale series is not flushed until the
-# max-chunk-idle timeout is reached.
-# CLI flag: -ingester.max-stale-chunk-idle
-[max_stale_chunk_idle_time: <duration> | default = 2m]
-
-# Timeout for individual flush operations.
-# CLI flag: -ingester.flush-op-timeout
-[flush_op_timeout: <duration> | default = 1m]
-
-# Maximum chunk age before flushing.
-# CLI flag: -ingester.max-chunk-age
-[max_chunk_age: <duration> | default = 12h]
-
-# Range of time to subtract from -ingester.max-chunk-age to spread out flushes
-# CLI flag: -ingester.chunk-age-jitter
-[chunk_age_jitter: <duration> | default = 0s]
-
-# Number of concurrent goroutines flushing to dynamodb.
-# CLI flag: -ingester.concurrent-flushes
-[concurrent_flushes: <int> | default = 50]
-
-# If true, spread series flushes across the whole period of
-# -ingester.max-chunk-age.
-# CLI flag: -ingester.spread-flushes
-[spread_flushes: <boolean> | default = true]
 
 # Period at which metadata we have not seen will remain in memory before being
 # deleted.
