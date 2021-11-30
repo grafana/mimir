@@ -991,7 +991,9 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 	batchers := make([]*symbolsBatcher, len(outBlocks))
 	for ix := range outBlocks {
 		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir)
-		defer batchers[ix].close() // We must close the batcher to make sure to stop the goroutine.
+		defer func() {
+			_, _ = batchers[ix].close() // We must close the batcher to make sure to stop the goroutine.
+		}()
 
 		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
 		// and if we only include symbols from series, we would skip it.

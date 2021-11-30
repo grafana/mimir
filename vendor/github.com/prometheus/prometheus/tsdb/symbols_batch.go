@@ -50,8 +50,11 @@ func newSymbolsBatcher(limit int, dir string) *symbolsBatcher {
 	return b
 }
 
-func (sw *symbolsBatcher) flusher() {
-	defer close(sw.flusherDone)
+func (sw *symbolsBatcher) flusher() (result flusherResult) {
+	defer func() {
+		sw.flusherDone <- result
+		close(sw.flusherDone)
+	}()
 
 	var symbolsFiles []string
 
@@ -69,18 +72,14 @@ func (sw *symbolsBatcher) flusher() {
 		symbolsFile := filepath.Join(sw.dir, fmt.Sprintf("symbols_%d", len(symbolsFiles)))
 		err := writeSymbolsToFile(symbolsFile, sortedSymbols)
 		if err != nil {
-			sw.flusherDone <- flusherResult{
-				err: err,
-			}
-			return
+			return flusherResult{err: err}
+
 		}
 
 		symbolsFiles = append(symbolsFiles, symbolsFile)
 	}
 
-	sw.flusherDone <- flusherResult{
-		symbolsFiles: symbolsFiles,
-	}
+	return flusherResult{symbolsFiles: symbolsFiles}
 }
 
 func (sw *symbolsBatcher) addSymbol(sym string) error {
