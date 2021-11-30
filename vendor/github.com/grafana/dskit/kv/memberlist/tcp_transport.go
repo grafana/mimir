@@ -115,7 +115,7 @@ func NewTCPTransport(config TCPTransportConfig, logger log.Logger) (*TCPTranspor
 	var ok bool
 	t := TCPTransport{
 		cfg:      config,
-		logger:   logger,
+		logger:   log.With(logger, "component", "memberlist TCPTransport"),
 		packetCh: make(chan *memberlist.Packet),
 		connCh:   make(chan net.Conn),
 	}
@@ -210,7 +210,7 @@ func (t *TCPTransport) tcpListen(tcpLn net.Listener) {
 				loopDelay = maxDelay
 			}
 
-			level.Error(t.logger).Log("msg", "TCPTransport: Error accepting TCP connection", "err", err)
+			level.Error(t.logger).Log("msg", "Error accepting TCP connection", "err", err)
 			time.Sleep(loopDelay)
 			continue
 		}
@@ -231,7 +231,7 @@ func (t *TCPTransport) debugLog() log.Logger {
 }
 
 func (t *TCPTransport) handleConnection(conn net.Conn) {
-	t.debugLog().Log("msg", "TCPTransport: New connection", "addr", conn.RemoteAddr())
+	t.debugLog().Log("msg", "New connection", "addr", conn.RemoteAddr())
 
 	closeConn := true
 	defer func() {
@@ -244,7 +244,7 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 	msgType := []byte{0}
 	_, err := io.ReadFull(conn, msgType)
 	if err != nil {
-		level.Error(t.logger).Log("msg", "TCPTransport: failed to read message type", "err", err)
+		level.Warn(t.logger).Log("msg", "failed to read message type", "err", err, "remote", conn.RemoteAddr())
 		return
 	}
 
@@ -259,19 +259,19 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 		t.receivedPackets.Inc()
 
 		// before reading packet, read the address
-		b := []byte{0}
-		_, err := io.ReadFull(conn, b)
+		addrLengthBuf := []byte{0}
+		_, err := io.ReadFull(conn, addrLengthBuf)
 		if err != nil {
 			t.receivedPacketsErrors.Inc()
-			level.Error(t.logger).Log("msg", "TCPTransport: error while reading address:", "err", err)
+			level.Warn(t.logger).Log("msg", "error while reading node address length from packet", "err", err, "remote", conn.RemoteAddr())
 			return
 		}
 
-		addrBuf := make([]byte, b[0])
+		addrBuf := make([]byte, addrLengthBuf[0])
 		_, err = io.ReadFull(conn, addrBuf)
 		if err != nil {
 			t.receivedPacketsErrors.Inc()
-			level.Error(t.logger).Log("msg", "TCPTransport: error while reading address:", "err", err)
+			level.Warn(t.logger).Log("msg", "error while reading node address from packet", "err", err, "remote", conn.RemoteAddr())
 			return
 		}
 
@@ -279,13 +279,13 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 		buf, err := io.ReadAll(conn)
 		if err != nil {
 			t.receivedPacketsErrors.Inc()
-			level.Error(t.logger).Log("msg", "TCPTransport: error while reading packet data:", "err", err)
+			level.Warn(t.logger).Log("msg", "error while reading packet data", "err", err, "remote", conn.RemoteAddr())
 			return
 		}
 
 		if len(buf) < md5.Size {
 			t.receivedPacketsErrors.Inc()
-			level.Error(t.logger).Log("msg", "TCPTransport: not enough data received", "length", len(buf))
+			level.Warn(t.logger).Log("msg", "not enough data received", "data_length", len(buf), "remote", conn.RemoteAddr())
 			return
 		}
 
@@ -296,10 +296,10 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 
 		if !bytes.Equal(receivedDigest, expectedDigest[:]) {
 			t.receivedPacketsErrors.Inc()
-			level.Warn(t.logger).Log("msg", "TCPTransport: packet digest mismatch", "expected", fmt.Sprintf("%x", expectedDigest), "received", fmt.Sprintf("%x", receivedDigest))
+			level.Warn(t.logger).Log("msg", "packet digest mismatch", "expected", fmt.Sprintf("%x", expectedDigest), "received", fmt.Sprintf("%x", receivedDigest), "data_length", len(buf), "remote", conn.RemoteAddr())
 		}
 
-		t.debugLog().Log("msg", "TCPTransport: Received packet", "addr", addr(addrBuf), "size", len(buf), "hash", fmt.Sprintf("%x", receivedDigest))
+		t.debugLog().Log("msg", "Received packet", "addr", addr(addrBuf), "size", len(buf), "hash", fmt.Sprintf("%x", receivedDigest))
 
 		t.receivedPacketsBytes.Add(float64(len(buf)))
 
@@ -310,7 +310,7 @@ func (t *TCPTransport) handleConnection(conn net.Conn) {
 		}
 	} else {
 		t.unknownConnections.Inc()
-		level.Error(t.logger).Log("msg", "TCPTransport: unknown message type", "msgType", msgType)
+		level.Error(t.logger).Log("msg", "unknown message type", "msgType", msgType, "remote", conn.RemoteAddr())
 	}
 }
 
@@ -414,7 +414,7 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	if err != nil {
 		t.sentPacketsErrors.Inc()
 
-		level.Warn(t.logger).Log("msg", "TCPTransport: WriteTo failed", "addr", addr, "err", err)
+		level.Warn(t.logger).Log("msg", "WriteTo failed", "addr", addr, "err", err)
 
 		// WriteTo is used to send "UDP" packets. Since we use TCP, we can detect more errors,
 		// but memberlist library doesn't seem to cope with that very well. That is why we return nil instead.
