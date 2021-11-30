@@ -487,9 +487,8 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 
 	// Start dependencies.
 	consul := e2edb.NewConsul()
-	dynamo := e2edb.NewDynamoDB()
 	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
-	require.NoError(t, s.StartAndWaitReady(consul, minio, dynamo))
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// set the ca
 	cert := ca.New("Ruler/Alertmanager Test")
