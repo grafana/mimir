@@ -55,16 +55,16 @@ type DeduplicateFilter interface {
 // Syncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
-	logger                   log.Logger
-	bkt                      objstore.Bucket
-	fetcher                  block.MetadataFetcher
-	mtx                      sync.Mutex
-	blocks                   map[ulid.ULID]*metadata.Meta
-	partial                  map[ulid.ULID]error
-	blockSyncConcurrency     int
-	metrics                  *syncerMetrics
-	deduplicateBlocksFilter  DeduplicateFilter
-	ignoreDeletionMarkFilter *IgnoreDeletionMarkFilter
+	logger                         log.Logger
+	bkt                            objstore.Bucket
+	fetcher                        block.MetadataFetcher
+	mtx                            sync.Mutex
+	blocks                         map[ulid.ULID]*metadata.Meta
+	partial                        map[ulid.ULID]error
+	blockSyncConcurrency           int
+	metrics                        *syncerMetrics
+	deduplicateBlocksFilter        DeduplicateFilter
+	excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter
 }
 
 type syncerMetrics struct {
@@ -100,19 +100,19 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion, garbag
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, ignoreDeletionMarkFilter *IgnoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, blockSyncConcurrency int) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, blockSyncConcurrency int) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Syncer{
-		logger:                   logger,
-		bkt:                      bkt,
-		fetcher:                  fetcher,
-		blocks:                   map[ulid.ULID]*metadata.Meta{},
-		metrics:                  newSyncerMetrics(reg, blocksMarkedForDeletion, garbageCollectedBlocks),
-		deduplicateBlocksFilter:  deduplicateBlocksFilter,
-		ignoreDeletionMarkFilter: ignoreDeletionMarkFilter,
-		blockSyncConcurrency:     blockSyncConcurrency,
+		logger:                         logger,
+		bkt:                            bkt,
+		fetcher:                        fetcher,
+		blocks:                         map[ulid.ULID]*metadata.Meta{},
+		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion, garbageCollectedBlocks),
+		deduplicateBlocksFilter:        deduplicateBlocksFilter,
+		excludeMarkedForDeletionFilter: excludeMarkedForDeletionFilter,
+		blockSyncConcurrency:           blockSyncConcurrency,
 	}, nil
 }
 
@@ -156,7 +156,7 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 	begin := time.Now()
 
 	// Ignore filter exists before deduplicate filter.
-	deletionMarkMap := s.ignoreDeletionMarkFilter.DeletionMarkBlocks()
+	deletionMarkMap := s.excludeMarkedForDeletionFilter.DeletionMarkBlocks()
 	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
 
 	// GarbageIDs contains the duplicateIDs, since these blocks can be replaced with other blocks.
@@ -1017,30 +1017,30 @@ func hasNonZeroULIDs(ids []ulid.ULID) bool {
 	return false
 }
 
-// IgnoreDeletionMarkFilter is a filter that filters out the blocks that are marked for deletion.
+// ExcludeMarkedForDeletionFilter is a filter that filters out the blocks that are marked for deletion.
 // Compared to IgnoreDeletionMarkFilter filter from Thanos, this implementation doesn't use any deletion delay,
 // and only uses marker files under bucketindex.MarkersPathname.
-type IgnoreDeletionMarkFilter struct {
+type ExcludeMarkedForDeletionFilter struct {
 	bkt objstore.InstrumentedBucketReader
 
 	deletionMarkMap map[ulid.ULID]struct{}
 }
 
-func NewIgnoreDeletionMarkFilter(bkt objstore.InstrumentedBucketReader) *IgnoreDeletionMarkFilter {
-	return &IgnoreDeletionMarkFilter{
+func NewExcludeMarkedForDeletionFilter(bkt objstore.InstrumentedBucketReader) *ExcludeMarkedForDeletionFilter {
+	return &ExcludeMarkedForDeletionFilter{
 		bkt: bkt,
 	}
 }
 
 // DeletionMarkBlocks returns block ids that were marked for deletion.
 // It is safe to call this method only after Filter has finished, and it is also safe to manipulate the map between calls to Filter.
-func (f *IgnoreDeletionMarkFilter) DeletionMarkBlocks() map[ulid.ULID]struct{} {
+func (f *ExcludeMarkedForDeletionFilter) DeletionMarkBlocks() map[ulid.ULID]struct{} {
 	return f.deletionMarkMap
 }
 
 // Filter filters out blocks that are marked for deletion.
 // It also builds the map returned by DeletionMarkBlocks() method.
-func (f *IgnoreDeletionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
 	deletionMarkMap := make(map[ulid.ULID]struct{})
 
 	// Find all markers in the storage.
