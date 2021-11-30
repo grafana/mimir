@@ -489,13 +489,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			return halt(errors.Wrapf(err, "invalid result block %s", bdir))
 		}
 
-		begin = time.Now()
+		begin := time.Now()
 
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
 			return retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
 
-		elapsed = time.Since(begin)
+		elapsed := time.Since(begin)
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
 		return nil
 	})
