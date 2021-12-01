@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -60,8 +61,12 @@ type TCPTransportConfig struct {
 	TLS        dstls.ClientConfig `yaml:",inline"`
 }
 
-// RegisterFlags registers flags.
-func (cfg *TCPTransportConfig) RegisterFlags(f *flag.FlagSet, prefix string) {
+func (cfg *TCPTransportConfig) RegisterFlags(f *flag.FlagSet) {
+	cfg.RegisterFlagsWithPrefix(f, "")
+}
+
+// RegisterFlagsWithPrefix registers flags with prefix.
+func (cfg *TCPTransportConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	// "Defaults to hostname" -- memberlist sets it to hostname by default.
 	f.Var(&cfg.BindAddrs, prefix+"memberlist.bind-addr", "IP address to listen on for gossip messages. Multiple addresses may be specified. Defaults to 0.0.0.0")
 	f.IntVar(&cfg.BindPort, prefix+"memberlist.bind-port", 7946, "Port to listen on for gossip messages.")
@@ -414,7 +419,13 @@ func (t *TCPTransport) WriteTo(b []byte, addr string) (time.Time, error) {
 	if err != nil {
 		t.sentPacketsErrors.Inc()
 
-		level.Warn(t.logger).Log("msg", "WriteTo failed", "addr", addr, "err", err)
+		logLevel := level.Warn(t.logger)
+		if strings.Contains(err.Error(), "connection refused") {
+			// The connection refused is a common error that could happen during normal operations when a node
+			// shutdown (or crash). It shouldn't be considered a warning condition on the sender side.
+			logLevel = t.debugLog()
+		}
+		logLevel.Log("msg", "WriteTo failed", "addr", addr, "err", err)
 
 		// WriteTo is used to send "UDP" packets. Since we use TCP, we can detect more errors,
 		// but memberlist library doesn't seem to cope with that very well. That is why we return nil instead.
@@ -439,16 +450,15 @@ func (t *TCPTransport) writeTo(b []byte, addr string) error {
 		}
 	}()
 
-	if t.cfg.PacketWriteTimeout > 0 {
-		deadline := time.Now().Add(t.cfg.PacketWriteTimeout)
-		err := c.SetDeadline(deadline)
-		if err != nil {
-			return fmt.Errorf("setting deadline: %v", err)
-		}
-	}
+	// Compute the digest *before* setting the deadline on the connection (so that the time
+	// it takes to compute the digest is not taken in account).
+	// We use md5 as quick and relatively short hash, not in cryptographic context.
+	// It's also used to detect if the whole packet has been received on the receiver side.
+	digest := md5.Sum(b)
 
-	buf := bytes.Buffer{}
-	buf.WriteByte(byte(packet))
+	// Prepare the header *before* setting the deadline on the connection.
+	headerBuf := bytes.Buffer{}
+	headerBuf.WriteByte(byte(packet))
 
 	// We need to send our address to the other side, otherwise other side can only see IP and port from TCP header.
 	// But that doesn't match our node address (new TCP connection has new random port), which confuses memberlist.
@@ -459,10 +469,18 @@ func (t *TCPTransport) writeTo(b []byte, addr string) error {
 		return fmt.Errorf("local address too long")
 	}
 
-	buf.WriteByte(byte(len(ourAddr)))
-	buf.WriteString(ourAddr)
+	headerBuf.WriteByte(byte(len(ourAddr)))
+	headerBuf.WriteString(ourAddr)
 
-	_, err = c.Write(buf.Bytes())
+	if t.cfg.PacketWriteTimeout > 0 {
+		deadline := time.Now().Add(t.cfg.PacketWriteTimeout)
+		err := c.SetDeadline(deadline)
+		if err != nil {
+			return fmt.Errorf("setting deadline: %v", err)
+		}
+	}
+
+	_, err = c.Write(headerBuf.Bytes())
 	if err != nil {
 		return fmt.Errorf("sending local address: %v", err)
 	}
@@ -475,9 +493,7 @@ func (t *TCPTransport) writeTo(b []byte, addr string) error {
 		return fmt.Errorf("sending data: short write")
 	}
 
-	// Append digest. We use md5 as quick and relatively short hash, not in cryptographic context.
-	// This helped to find some bugs, so let's keep it.
-	digest := md5.Sum(b)
+	// Append digest.
 	n, err = c.Write(digest[:])
 	if err != nil {
 		return fmt.Errorf("digest: %v", err)

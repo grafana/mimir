@@ -193,7 +193,7 @@ func (cfg *KVConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.AdvertiseAddr, prefix+"memberlist.advertise-addr", mlDefaults.AdvertiseAddr, "Gossip address to advertise to other members in the cluster. Used for NAT traversal.")
 	f.IntVar(&cfg.AdvertisePort, prefix+"memberlist.advertise-port", mlDefaults.AdvertisePort, "Gossip port to advertise to other members in the cluster. Used for NAT traversal.")
 
-	cfg.TCPTransport.RegisterFlags(f, prefix)
+	cfg.TCPTransport.RegisterFlagsWithPrefix(f, prefix)
 }
 
 func (cfg *KVConfig) RegisterFlags(f *flag.FlagSet) {
