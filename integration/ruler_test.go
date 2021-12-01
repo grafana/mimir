@@ -802,9 +802,8 @@ func ruleGroupWithRule(groupName string, ruleName string, expression string) rul
 	exprNode.SetString(expression)
 
 	return rulefmt.RuleGroup{
-		Name:          groupName,
-		Interval:      10,
-		SourceTenants: []string{"tenant-1"},
+		Name:     groupName,
+		Interval: 10,
 		Rules: []rulefmt.RuleNode{{
 			Record: recordNode,
 			Expr:   exprNode,
@@ -823,9 +822,8 @@ func createTestRuleGroup(t *testing.T) rulefmt.RuleGroup {
 	recordNode.SetString("test_rule")
 	exprNode.SetString("up")
 	return rulefmt.RuleGroup{
-		Name:          "test_encoded_+\"+group_name/?",
-		SourceTenants: []string{"tenant-1"},
-		Interval:      100,
+		Name:     "test_encoded_+\"+group_name/?",
+		Interval: 100,
 		Rules: []rulefmt.RuleNode{
 			{
 				Record: recordNode,
