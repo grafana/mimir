@@ -35,7 +35,7 @@ func NewMinio(port int, bktNames ...string) *e2e.HTTPService {
 		images.Minio,
 		// Create the "mimir" bucket before starting minio
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", strings.Join(commands, " && ")),
-		e2e.NewHTTPReadinessProbe(port, "/minio/health/ready", 200, 200),
+		e2e.NewHTTPReadinessProbe(port, "/minio/health/cluster", 200, 200),
 		port,
 	)
 	m.SetEnvVars(map[string]string{
