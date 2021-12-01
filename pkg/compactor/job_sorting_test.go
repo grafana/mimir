@@ -70,8 +70,10 @@ func TestSortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning(t *testing
 				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: false},
 				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: true},
 				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block1, 10, 20), mockMetaWithMinMax(block2, 10, 20)}},
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block4, 5, 50)}, useSplitting: true}, // Big splitting block. Should be sorted by minTime only.
 			},
 			expected: []*Job{
+				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block4, 5, 50)}, useSplitting: true},
 				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: true}, // Split job is first.
 				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block1, 10, 20), mockMetaWithMinMax(block2, 10, 20)}},
 				{metasByMinTime: []*metadata.Meta{mockMetaWithMinMax(block3, 10, 20), mockMetaWithMinMax(block4, 20, 30)}, useSplitting: false},

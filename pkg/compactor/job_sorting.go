@@ -41,12 +41,21 @@ func sortJobsBySmallestRangeOldestBlocksFirstMoveSplitToBeginning(jobs []*Job) [
 			return false
 		}
 
-		iLength := jobs[i].MaxTime() - jobs[i].MinTime()
-		jLength := jobs[j].MaxTime() - jobs[j].MinTime()
-
-		if iLength != jLength {
-			return iLength < jLength
+		// Don't check length for splitting jobs. We want to split oldest blocks first, no matter the length.
+		checkLength := true
+		if jobs[i].UseSplitting() && jobs[j].UseSplitting() {
+			checkLength = false
 		}
+
+		if checkLength {
+			iLength := jobs[i].MaxTime() - jobs[i].MinTime()
+			jLength := jobs[j].MaxTime() - jobs[j].MinTime()
+
+			if iLength != jLength {
+				return iLength < jLength
+			}
+		}
+
 		if jobs[i].MinTime() != jobs[j].MinTime() {
 			return jobs[i].MinTime() < jobs[j].MinTime()
 		}
