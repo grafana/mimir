@@ -354,9 +354,9 @@ func newMultitenantCompactor(
 	}
 
 	if compactorCfg.CompactionJobsOrder == CompactionOrderNewestFirst {
-		c.jobsOrder = sortJobsByNewestBlocksFirst
+		c.jobsOrder = SortJobsByNewestBlocksFirst
 	} else {
-		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirst
+		c.jobsOrder = SortJobsBySmallestRangeOldestBlocksFirst
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)

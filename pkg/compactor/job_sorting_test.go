@@ -43,7 +43,7 @@ func TestSortJobsBySmallestRangeOldestBlocksFirst(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, sortJobsBySmallestRangeOldestBlocksFirst(testData.input))
+			assert.Equal(t, testData.expected, SortJobsBySmallestRangeOldestBlocksFirst(testData.input))
 		})
 	}
 }
@@ -103,7 +103,7 @@ func TestSortJobsByNewestBlocksFirst(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actual := sortJobsByNewestBlocksFirst(testData.input)
+			actual := SortJobsByNewestBlocksFirst(testData.input)
 			assert.Equal(t, testData.expected, actual)
 
 			// Print for debugging.
