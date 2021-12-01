@@ -67,111 +67,23 @@ const (
 	MaxWriteBufferSize = 8 * 1024 * 1024 // 8 MiB.
 	// DefaultWriteBufferSize is the default write buffer size.
 	DefaultWriteBufferSize = 4 * 1024 * 1024 // 4 MiB.
-	DefaultWriteQueueSize  = 1000
+	// DefaultWriteQueueSize is the default size of the in-memory queue used before flushing chunks to the disk.
+	DefaultWriteQueueSize = 1000
 )
 
-// ChunkDiskMapperRef represents the location of a head chunk.
-// Head chunks might be in the chunk write queue or in the head chunk file, the first bit of the ChunkDiskMapperRef
-// indicates which of the two a chunk is currently in, the remaining bits are used to store the location of the chunk
-// either in the chunk write queue or in the chunk.
-// This type should never be copied, it should only be passed by reference.
-//
-// Bit range | Description
-// -----------------------
-// 0-1       | The first bit indicates whether this chunk is in the chunk write queue or in the head chunk file.
-//
-// If in the chunk write queue:
-//   1-63    | The index of the chunk inside the chunk write queue.
-//
-// If in the head chunk file:
-//   1-31    | The segment index of the head chunk file.
-//   32-63   | The byte offset in the head chunk file where the chunk starts.
-type ChunkDiskMapperRef atomic.Uint64
+// ChunkDiskMapperRef represents the location of a head chunk on disk.
+// The upper 4 bytes hold the index of the head chunk file and
+// the lower 4 bytes hold the byte offset in the head chunk file where the chunk starts.
+type ChunkDiskMapperRef uint64
 
-const (
-	// Define masks for the values stored in type ChunkDiskMapperRef.
-
-	// chunkDiskMapperRefIsInQueue is the mask for the bit which defines whether
-	// a chunk is in the chunk write queue or in the head chunk file.
-	chunkDiskMapperRefIsInQueue = uint64(0x8000000000000000)
-
-	// When in the chunk write queue this is the bitmask for the position in the queue.
-	chunkDiskMapperRefQueuePos = uint64(0x7FFFFFFFFFFFFFFF)
-
-	// When in the head chunk file these are the bitmasks for the segment index and chunk offset.
-	chunkDiskMapperRefSgmIndex = uint64(0x7FFFFFFF00000000)
-	chunkDiskMapperRefChkStart = uint64(0x00000000FFFFFFFF)
-)
-
-func (ref *ChunkDiskMapperRef) Load() uint64 {
-	return (*atomic.Uint64)(ref).Load()
+func newChunkDiskMapperRef(seq, offset uint64) ChunkDiskMapperRef {
+	return ChunkDiskMapperRef((seq << 32) | offset)
 }
 
-func (ref *ChunkDiskMapperRef) Set(val uint64) {
-	(*atomic.Uint64)(ref).Store(val)
-}
-
-func (ref *ChunkDiskMapperRef) SetPositionInFile(sgmIndex, chkStart uint64) {
-	ref.Set(ref.encodeIsInQueue(false) | ref.encodeSgmIndex(sgmIndex) | ref.encodeChkStart(chkStart))
-}
-
-func (ref *ChunkDiskMapperRef) GetPositionInFile() (uint64, uint64, bool) {
-	encodedVal := ref.Load()
-	if ref.decodeIsInQueue(encodedVal) {
-		// Chunk is in the chunk write queue.
-		return 0, 0, false
-	}
-
-	return ref.decodeSgmIndex(encodedVal), ref.decodeChkStart(encodedVal), true
-}
-
-func (ref *ChunkDiskMapperRef) SetPositionInQueue(qPos uint64) {
-	ref.Set(ref.encodeIsInQueue(true) | ref.encodeQueuePos(qPos))
-}
-
-func (ref *ChunkDiskMapperRef) GetPositionInQueue() (uint64, bool) {
-	encodedVal := ref.Load()
-	if !ref.decodeIsInQueue(encodedVal) {
-		// Chunk is in the head chunk file.
-		return 0, false
-	}
-
-	return ref.decodeQueuePos(encodedVal), true
-}
-
-func (ref *ChunkDiskMapperRef) encodeIsInQueue(val bool) uint64 {
-	if val {
-		return uint64(1) << 63
-	}
-	return 0
-}
-
-func (ref *ChunkDiskMapperRef) decodeIsInQueue(val uint64) bool {
-	return (val&chunkDiskMapperRefIsInQueue)>>63 == 1
-}
-
-func (ref *ChunkDiskMapperRef) encodeSgmIndex(val uint64) uint64 {
-	return (val << 32) & chunkDiskMapperRefSgmIndex
-}
-
-func (ref *ChunkDiskMapperRef) decodeSgmIndex(val uint64) uint64 {
-	return (val & chunkDiskMapperRefSgmIndex) >> 32
-}
-
-func (ref *ChunkDiskMapperRef) encodeChkStart(val uint64) uint64 {
-	return val & chunkDiskMapperRefChkStart
-}
-
-func (ref *ChunkDiskMapperRef) decodeChkStart(val uint64) uint64 {
-	return val & chunkDiskMapperRefChkStart
-}
-
-func (ref *ChunkDiskMapperRef) encodeQueuePos(val uint64) uint64 {
-	return val & chunkDiskMapperRefQueuePos
-}
-
-func (ref *ChunkDiskMapperRef) decodeQueuePos(val uint64) uint64 {
-	return val & chunkDiskMapperRefQueuePos
+func (ref ChunkDiskMapperRef) Unpack() (seq, offset int) {
+	seq = int(ref >> 32)
+	offset = int((ref << 32) >> 32)
+	return seq, offset
 }
 
 // CorruptionErr is an error that's returned when corruption is encountered.
@@ -185,18 +97,104 @@ func (e *CorruptionErr) Error() string {
 	return errors.Wrapf(e.Err, "corruption in head chunk file %s", segmentFile(e.Dir, e.FileIndex)).Error()
 }
 
+// chunkPos keeps track of the position in the head chunk files.
+// chunkPos is not thread-safe, a lock must be used to protect it.
+type chunkPos struct {
+	seq     uint64 // Index of chunk file.
+	offset  uint64 // Offset within chunk file.
+	cutFile bool   // When true then the next chunk will be written to a new file.
+
+	// dummyBuf is necessary because "binary.PutUvarint" requires that a buffer is passed into it,
+	// it's content is never read or used for anything.
+	dummyBuf [MaxChunkLengthFieldSize]byte
+}
+
+// chkRef takes a chunk and returns the chunk reference which will refer to it once it has been written.
+// chkRef also decides whether a new file should be cut, it returns the decision via the second return value.
+// The order of calling chkRef must be the order in which chunks are written to the disk.
+func (f *chunkPos) chkRef(chk chunkenc.Chunk) (chkRef ChunkDiskMapperRef, cutFile bool) {
+	chkLen := uint64(len(chk.Bytes()))
+	bytesToWrite := f.bytesToWriteForChunk(chkLen)
+
+	if f.shouldCutNewFile(chkLen) {
+		f.toNewFile()
+		cutFile = true
+	}
+
+	chkOffset := f.offset
+	f.offset += bytesToWrite
+
+	return newChunkDiskMapperRef(f.seq, chkOffset), cutFile
+}
+
+// advanceTonewFile updates the seq/offset position to point to the beginning of a new chunk file.
+func (f *chunkPos) toNewFile() {
+	f.seq++
+	f.offset = SegmentHeaderSize
+}
+
+// doCutFile triggers that the next chunk will be written in to a new file.
+func (f *chunkPos) doCutFile() {
+	f.cutFile = true
+}
+
+// setSeq sets the sequence number of the head chunk file.
+// Should only be used for initialization, after that the sequence number will be managed by chunkPos.
+func (f *chunkPos) setSeq(seq uint64) {
+	f.seq = seq
+}
+
+// shouldCutNewFile returns whether a new file should be cut based on the file size.
+// The read or write lock on chunkPos must be held when calling this.
+func (f *chunkPos) shouldCutNewFile(chunkSize uint64) bool {
+	if f.cutFile {
+		f.cutFile = false
+		return true
+	}
+
+	return f.offset == 0 || // First head chunk file.
+		f.offset+chunkSize+MaxHeadChunkMetaSize > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+}
+
+// bytesToWriteForChunk returns the number of bytes that will need to be written for the given chunk size,
+// including all meta data before and after the chunk data.
+func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
+	// headers
+	bytes := uint64(SeriesRefSize) + 2*uint64(MintMaxtSize) + uint64(ChunkEncodingSize)
+
+	// size of chunk length encoded as uvarint
+	bytes += f.sizeAsUVarInt(chkLen)
+
+	// chunk length
+	bytes += chkLen
+
+	// crc32
+	bytes += CRCSize
+
+	return bytes
+}
+
+// sizeAsUVarInt returns the number of bytes necessary to store the given uint64 when encoded as a uvarint.
+func (f *chunkPos) sizeAsUVarInt(x uint64) uint64 {
+	return uint64(binary.PutUvarint(f.dummyBuf[:], x))
+}
+
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
-	curFileNumBytes atomic.Int64 // Bytes written in current open file.
-
 	/// Writer.
 	dir             *os.File
 	writeBufferSize int
 
-	curFile         *os.File // File being written to.
-	curFileSequence int      // Index of current open file being appended to.
-	curFileMaxt     int64    // Used for the size retention.
+	curFile       *os.File      // File being written to.
+	curFileSeq    int           // Index of current open file being appended to.
+	curFileOffset atomic.Uint64 // Bytes written in current open file.
+	curFileMaxt   int64         // Used for the size retention.
+
+	// The values in evtlPos represent the file position which will eventually be
+	// reached once the content of the write queue has been fully processed.
+	evtlPos    chunkPos
+	evtlPosMtx sync.Mutex
 
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
@@ -215,8 +213,8 @@ type ChunkDiskMapper struct {
 	// from which chunks are served till they are flushed and are ready for m-mapping.
 	chunkBuffer *chunkBuffer
 
-	// If 'true', it indicated that the maxt of all the on-disk files were set
-	// after iterating through all the chunks in those files.
+	// Whether the maxt field is set for all mmapped chunk files tracked within the mmappedChunkFiles map.
+	// This is done after iterating through all the chunks in those files using the IterateAllChunks method.
 	fileMaxtSet bool
 
 	writeQueue *chunkWriteQueue
@@ -332,6 +330,8 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		}
 	}
 
+	cdm.evtlPos.setSeq(uint64(lastSeq))
+
 	return nil
 }
 
@@ -384,26 +384,33 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 // WriteChunk writes the chunk to the disk.
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
-func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref *ChunkDiskMapperRef, errHandler func(err error)) {
+func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef ChunkDiskMapperRef) {
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+
+	ref, cutFile := cdm.evtlPos.chkRef(chk)
 	if cdm.writeQueue == nil {
-		err := cdm.writeChunk(seriesRef, mint, maxt, chk, ref)
-		if err != nil {
-			errHandler(err)
+		err := cdm.writeChunk(seriesRef, mint, maxt, chk, ref, cutFile)
+		if callback != nil {
+			callback(err)
 		}
-		return
+		return ref
 	}
 
 	cdm.writeQueue.addJob(chunkWriteJob{
-		seriesRef:  seriesRef,
-		mint:       mint,
-		maxt:       maxt,
-		chk:        chk,
-		ref:        ref,
-		errHandler: errHandler,
+		cutFile:   cutFile,
+		seriesRef: seriesRef,
+		mint:      mint,
+		maxt:      maxt,
+		chk:       chk,
+		ref:       ref,
+		callback:  callback,
 	})
+
+	return ref
 }
 
-func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref *ChunkDiskMapperRef) (err error) {
+func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, ref ChunkDiskMapperRef, cutFile bool) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -411,8 +418,9 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 		return ErrChunkDiskMapperClosed
 	}
 
-	if cdm.shouldCutNewFile(len(chk.Bytes())) {
-		if err := cdm.cut(); err != nil {
+	if cutFile {
+		err := cdm.cutExpectRef(ref)
+		if err != nil {
 			return err
 		}
 	}
@@ -427,8 +435,6 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 
 	cdm.crc32.Reset()
 	bytesWritten := 0
-
-	sgmIndex, chkStart := uint64(cdm.curFileSequence), uint64(cdm.curFileSize())
 
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], uint64(seriesRef))
 	bytesWritten += SeriesRefSize
@@ -455,7 +461,6 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 		cdm.curFileMaxt = maxt
 	}
 
-	ref.SetPositionInFile(sgmIndex, chkStart)
 	cdm.chunkBuffer.put(ref, chk)
 
 	if len(chk.Bytes())+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
@@ -469,56 +474,70 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	return nil
 }
 
-// shouldCutNewFile returns whether a new file should be cut, based on time and size retention.
-// Size retention: because depending on the system architecture, there is a limit on how big of a file we can m-map.
-// Time retention: so that we can delete old chunks with some time guarantee in low load environments.
-func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int) bool {
-	return cdm.curFileSize() == 0 || // First head chunk file.
-		cdm.curFileSize()+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+// CutNewFile makes that a new file will be created the next time a chunk is written.
+func (cdm *ChunkDiskMapper) CutNewFile() error {
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+
+	cdm.evtlPos.doCutFile()
+
+	return nil
 }
 
-// CutNewFile creates a new m-mapped file.
-func (cdm *ChunkDiskMapper) CutNewFile() (returnErr error) {
-	cdm.writePathMtx.Lock()
-	defer cdm.writePathMtx.Unlock()
+// cutExpectRef creates a new m-mapped file.
+// The write lock should be held before calling this.
+// It ensures that the position in the new file matches the given chunk reference, if not then it errors.
+func (cdm *ChunkDiskMapper) cutExpectRef(chkRef ChunkDiskMapperRef) (err error) {
+	var seq, offset int
 
-	return cdm.cut()
+	seq, offset, err = cdm.cut()
+	if err != nil {
+		return
+	}
+
+	if expSeq, expOffset := chkRef.Unpack(); seq != expSeq || offset != expOffset {
+		return errors.Errorf("expected newly cut file to have sequence:offset %d:%d, got %d:%d", expSeq, expOffset, seq, offset)
+	}
+
+	return nil
 }
 
 // cut creates a new m-mapped file. The write lock should be held before calling this.
-func (cdm *ChunkDiskMapper) cut() (returnErr error) {
+// It returns the file sequence and the offset in that file to start writing chunks.
+func (cdm *ChunkDiskMapper) cut() (seq, offset int, err error) {
 	// Sync current tail to disk and close.
-	if err := cdm.finalizeCurFile(); err != nil {
-		return err
+	if err = cdm.finalizeCurFile(); err != nil {
+		return 0, 0, err
 	}
 
-	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
+	offset, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
+
 	defer func() {
 		// The file should not be closed if there is no error,
 		// its kept open in the ChunkDiskMapper.
-		if returnErr != nil {
-			returnErr = tsdb_errors.NewMulti(returnErr, newFile.Close()).Err()
+		if err != nil {
+			err = tsdb_errors.NewMulti(err, newFile.Close()).Err()
 		}
 	}()
 
-	cdm.curFileNumBytes.Store(int64(n))
+	cdm.curFileOffset.Store(uint64(offset))
 
 	if cdm.curFile != nil {
 		cdm.readPathMtx.Lock()
-		cdm.mmappedChunkFiles[cdm.curFileSequence].maxt = cdm.curFileMaxt
+		cdm.mmappedChunkFiles[cdm.curFileSeq].maxt = cdm.curFileMaxt
 		cdm.readPathMtx.Unlock()
 	}
 
 	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), MaxHeadChunkFileSize)
 	if err != nil {
-		return err
+		return 0, 0, err
 	}
 
 	cdm.readPathMtx.Lock()
-	cdm.curFileSequence = seq
+	cdm.curFileSeq = seq
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
 		cdm.chkWriter.Reset(newFile)
@@ -526,13 +545,13 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		cdm.chkWriter = bufio.NewWriterSize(newFile, cdm.writeBufferSize)
 	}
 
-	cdm.closers[cdm.curFileSequence] = mmapFile
-	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
+	cdm.closers[cdm.curFileSeq] = mmapFile
+	cdm.mmappedChunkFiles[cdm.curFileSeq] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
 	cdm.readPathMtx.Unlock()
 
 	cdm.curFileMaxt = 0
 
-	return nil
+	return seq, offset, nil
 }
 
 // finalizeCurFile writes all pending data to the current tail file,
@@ -555,7 +574,7 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.chkWriter.Write(b)
-	cdm.curFileNumBytes.Add(int64(n))
+	cdm.curFileOffset.Add(uint64(n))
 	return err
 }
 
@@ -582,7 +601,7 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 }
 
 // Chunk returns a chunk from a given reference.
-func (cdm *ChunkDiskMapper) Chunk(ref *ChunkDiskMapperRef) (chunkenc.Chunk, error) {
+func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error) {
 	cdm.readPathMtx.RLock()
 	// We hold this read lock for the entire duration because if Close()
 	// is called, the data in the byte slice will get corrupted as the mmapped
@@ -593,32 +612,21 @@ func (cdm *ChunkDiskMapper) Chunk(ref *ChunkDiskMapperRef) (chunkenc.Chunk, erro
 		return nil, ErrChunkDiskMapperClosed
 	}
 
-	sgmIndexUint64, chkStartUint64, ok := ref.GetPositionInFile()
-	if !ok {
-		// Chunk is not in the head chunk file so it must be in the chunk write queue, try to get it from there.
-		chunk := cdm.writeQueue.get(ref)
-		if chunk != nil {
-			return chunk, nil
-		}
-
-		// The chunk might have been written from the chunk write queue to the head chunk file in the meantime.
-		sgmIndexUint64, chkStartUint64, ok = ref.GetPositionInFile()
-		if !ok {
-			// If chunk is not in the head chunk file but it also wasn't found when we tried
-			// to get it from the chunk write queue then the reference must be corrupted.
-			return nil, errors.Errorf("chunk could not be retrieved from head chunk file nor chunk write queue")
-		}
-	}
-
-	sgmIndex, chkStart := int(sgmIndexUint64), int(chkStartUint64)
-
+	sgmIndex, chkStart := ref.Unpack()
 	// We skip the series ref and the mint/maxt beforehand.
 	chkStart += SeriesRefSize + (2 * MintMaxtSize)
 	chkCRC32 := newCRC32()
 
+	if cdm.writeQueue != nil {
+		chunk := cdm.writeQueue.get(ref)
+		if chunk != nil {
+			return chunk, nil
+		}
+	}
+
 	// If it is the current open file, then the chunks can be in the buffer too.
-	if sgmIndex == cdm.curFileSequence {
-		chunk := cdm.chunkBuffer.get(*ref)
+	if sgmIndex == cdm.curFileSeq {
+		chunk := cdm.chunkBuffer.get(ref)
 		if chunk != nil {
 			return chunk, nil
 		}
@@ -626,7 +634,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref *ChunkDiskMapperRef) (chunkenc.Chunk, erro
 
 	mmapFile, ok := cdm.mmappedChunkFiles[sgmIndex]
 	if !ok {
-		if sgmIndex > cdm.curFileSequence {
+		if sgmIndex > cdm.curFileSeq {
 			return nil, &CorruptionErr{
 				Dir:       cdm.dir.Name(),
 				FileIndex: -1,
@@ -714,9 +722,9 @@ func (cdm *ChunkDiskMapper) Chunk(ref *ChunkDiskMapperRef) (chunkenc.Chunk, erro
 
 // IterateAllChunks iterates all mmappedChunkFiles (in order of head chunk file name/number) and all the chunks within it
 // and runs the provided function with information about each chunk. It returns on the first error encountered.
-// NOTE: This method needs to be called at least once after creating ChunkDiskMapper to set the maxt of all the file.
-// NOTE: This method only iterates over chunks that have already been written to the disk, not those in the write queue.
-func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef *ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
+// NOTE: This method needs to be called at least once after creating ChunkDiskMapper
+// to set the maxt of all the file.
+func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -735,7 +743,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	for _, segID := range segIDs {
 		mmapFile := cdm.mmappedChunkFiles[segID]
 		fileEnd := mmapFile.byteSlice.Len()
-		if segID == cdm.curFileSequence {
+		if segID == cdm.curFileSeq {
 			fileEnd = int(cdm.curFileSize())
 		}
 		idx := HeadChunkFileHeaderSize
@@ -761,8 +769,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				}
 			}
 			chkCRC32.Reset()
-			chunkRef := &ChunkDiskMapperRef{}
-			chunkRef.SetPositionInFile(uint64(segID), uint64(idx))
+			chunkRef := newChunkDiskMapperRef(uint64(segID), uint64(idx))
 
 			startIdx := idx
 			seriesRef := HeadSeriesRef(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+SeriesRefSize)))
@@ -856,7 +863,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+		if seq == cdm.curFileSeq || cdm.mmappedChunkFiles[seq].maxt >= mint {
 			break
 		}
 		if cdm.mmappedChunkFiles[seq].maxt < mint {
@@ -868,6 +875,9 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	errs := tsdb_errors.NewMulti()
 	// Cut a new file only if the current file has some chunks.
 	if cdm.curFileSize() > HeadChunkFileHeaderSize {
+		// There is a known race condition here because between the check of curFileSize() and the call to CutNewFile()
+		// a new file could already be cut, this is acceptable because it will simply result in an empty file which
+		// won't do any harm.
 		errs.Add(cdm.CutNewFile())
 	}
 	errs.Add(cdm.deleteFiles(removedFiles))
@@ -923,13 +933,17 @@ func (cdm *ChunkDiskMapper) Size() (int64, error) {
 	return fileutil.DirSize(cdm.dir.Name())
 }
 
-func (cdm *ChunkDiskMapper) curFileSize() int64 {
-	return cdm.curFileNumBytes.Load()
+func (cdm *ChunkDiskMapper) curFileSize() uint64 {
+	return cdm.curFileOffset.Load()
 }
 
 // Close closes all the open files in ChunkDiskMapper.
 // It is not longer safe to access chunks from this struct after calling Close.
 func (cdm *ChunkDiskMapper) Close() error {
+	// Locking the eventual position lock blocks WriteChunk()
+	cdm.evtlPosMtx.Lock()
+	defer cdm.evtlPosMtx.Unlock()
+
 	if cdm.writeQueue != nil {
 		cdm.writeQueue.stop()
 	}
@@ -969,45 +983,39 @@ const inBufferShards = 128 // 128 is a randomly chosen number.
 
 // chunkBuffer is a thread safe lookup table for chunks by their ref.
 type chunkBuffer struct {
-	inBufferChunks     [inBufferShards]map[uint64]chunkenc.Chunk
+	inBufferChunks     [inBufferShards]map[ChunkDiskMapperRef]chunkenc.Chunk
 	inBufferChunksMtxs [inBufferShards]sync.RWMutex
 }
 
 func newChunkBuffer() *chunkBuffer {
 	cb := &chunkBuffer{}
 	for i := 0; i < inBufferShards; i++ {
-		cb.inBufferChunks[i] = make(map[uint64]chunkenc.Chunk)
+		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 	}
 	return cb
 }
 
-// put takes a reference and a chunk and puts it in the buffer.
-// The given reference must not be in the chunk write queue, ref.IsInQ() must be false.
-func (cb *chunkBuffer) put(ref *ChunkDiskMapperRef, chk chunkenc.Chunk) {
-	refVal := ref.Load()
-	shardIdx := refVal % inBufferShards
+func (cb *chunkBuffer) put(ref ChunkDiskMapperRef, chk chunkenc.Chunk) {
+	shardIdx := ref % inBufferShards
 
 	cb.inBufferChunksMtxs[shardIdx].Lock()
-	cb.inBufferChunks[shardIdx][refVal] = chk
+	cb.inBufferChunks[shardIdx][ref] = chk
 	cb.inBufferChunksMtxs[shardIdx].Unlock()
 }
 
-// get takes a chunk reference and retrieves it from the buffer.
-// The given reference must not be enqueued, ref.GetEndqueued() must be false.
 func (cb *chunkBuffer) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
-	refVal := ref.Load()
-	shardIdx := refVal % inBufferShards
+	shardIdx := ref % inBufferShards
 
 	cb.inBufferChunksMtxs[shardIdx].RLock()
 	defer cb.inBufferChunksMtxs[shardIdx].RUnlock()
 
-	return cb.inBufferChunks[shardIdx][refVal]
+	return cb.inBufferChunks[shardIdx][ref]
 }
 
 func (cb *chunkBuffer) clear() {
 	for i := 0; i < inBufferShards; i++ {
 		cb.inBufferChunksMtxs[i].Lock()
-		cb.inBufferChunks[i] = make(map[uint64]chunkenc.Chunk)
+		cb.inBufferChunks[i] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 		cb.inBufferChunksMtxs[i].Unlock()
 	}
 }

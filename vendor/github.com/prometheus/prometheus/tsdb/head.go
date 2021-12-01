@@ -622,7 +622,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, error) {
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef *chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
 		if maxt < h.minValidTime.Load() {
 			return nil
 		}
@@ -633,13 +633,12 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
 			}
 
-			mc := &mmappedChunk{
+			slice = append(slice, &mmappedChunk{
+				ref:        chunkRef,
 				minTime:    mint,
 				maxTime:    maxt,
 				numSamples: numSamples,
-			}
-			mc.ref.Set(chunkRef.Load())
-			slice = append(slice, mc)
+			})
 			mmappedChunks[seriesRef] = slice
 			return nil
 		}
@@ -650,13 +649,12 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 
 		h.metrics.chunks.Inc()
 		h.metrics.chunksCreated.Inc()
-		mc := &mmappedChunk{
+		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
+			ref:        chunkRef,
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
-		}
-		mc.ref.Set(chunkRef.Load())
-		ms.mmappedChunks = append(ms.mmappedChunks, mc)
+		})
 		h.updateMinMaxTime(mint, maxt)
 		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
 			// The head chunk was completed and was m-mapped after taking the snapshot.
@@ -1211,7 +1209,6 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
-
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if h.wal != nil {
 		errs.Add(h.wal.Close())

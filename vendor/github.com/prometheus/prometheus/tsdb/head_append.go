@@ -605,15 +605,13 @@ func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper
 		return
 	}
 
-	mappedChunk := &mmappedChunk{
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, handleChunkWriteError)
+	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+		ref:        chunkRef,
 		numSamples: uint16(s.headChunk.chunk.NumSamples()),
 		minTime:    s.headChunk.minTime,
 		maxTime:    s.headChunk.maxTime,
-	}
-
-	chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, &mappedChunk.ref, handleChunkWriteError)
-
-	s.mmappedChunks = append(s.mmappedChunks, mappedChunk)
+	})
 }
 
 func handleChunkWriteError(err error) {
