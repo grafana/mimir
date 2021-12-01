@@ -29,6 +29,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -907,9 +908,12 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		}
 	}
 
+	// Don't do more than 2 closings of chunk and index writers at once.
+	sema := semaphore.NewWeighted(2)
+
 	blockWriters := make([]*blockWriter, len(outBlocks))
 	for ix := range outBlocks {
-		blockWriters[ix] = newBlockWriter(c.chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw)
+		blockWriters[ix] = newBlockWriter(c.chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema)
 		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
 	}
 
@@ -988,12 +992,12 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		return errors.New("no output block")
 	}
 
+	flushers := newSymbolFlushers(4)
+	defer flushers.close() // Make sure to stop flushers before exiting to avoid leaking goroutines.
+
 	batchers := make([]*symbolsBatcher, len(outBlocks))
 	for ix := range outBlocks {
-		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir)
-		defer func() {
-			_, _ = batchers[ix].close() // We must close the batcher to make sure to stop the goroutine.
-		}()
+		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir, flushers)
 
 		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
 		// and if we only include symbols from series, we would skip it.
@@ -1034,15 +1038,17 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		}
 	}
 
+	err := flushers.close()
+	if err != nil {
+		return errors.Wrap(err, "closing flushers")
+	}
+
 	for ix := range outBlocks {
 		if err := c.ctx.Err(); err != nil {
 			return err
 		}
 
-		symbolFiles, err := batchers[ix].close()
-		if err != nil {
-			return errors.Wrap(err, "closing buffer")
-		}
+		symbolFiles := batchers[ix].getSymbolFiles()
 
 		it, err := newSymbolsIterator(symbolFiles)
 		if err != nil {

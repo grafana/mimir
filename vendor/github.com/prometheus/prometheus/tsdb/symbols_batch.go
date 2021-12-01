@@ -8,11 +8,101 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 
 	"github.com/golang/snappy"
 
 	"github.com/prometheus/prometheus/tsdb/errors"
 )
+
+type symbolFlushers struct {
+	jobs chan flusherJob
+	wg   sync.WaitGroup
+
+	closed bool
+
+	errMu sync.Mutex
+	err   error
+}
+
+func newSymbolFlushers(concurrency int) *symbolFlushers {
+	f := &symbolFlushers{
+		jobs: make(chan flusherJob),
+	}
+
+	for i := 0; i < concurrency; i++ {
+		f.wg.Add(1)
+		go f.loop()
+	}
+
+	return f
+}
+
+func (f *symbolFlushers) flushSymbols(outputFile string, symbols map[string]struct{}) error {
+	f.errMu.Lock()
+	err := f.err
+	f.errMu.Unlock()
+
+	// If there was any error previously, return it.
+	if err != nil {
+		return err
+	}
+
+	f.jobs <- flusherJob{
+		outputFile: outputFile,
+		symbols:    symbols,
+	}
+	return nil
+}
+
+func (f *symbolFlushers) loop() {
+	defer f.wg.Done()
+
+	for j := range f.jobs {
+		if len(j.symbols) == 0 {
+			continue
+		}
+
+		sortedSymbols := make([]string, 0, len(j.symbols))
+		for s := range j.symbols {
+			sortedSymbols = append(sortedSymbols, s)
+		}
+		sort.Strings(sortedSymbols)
+
+		err := writeSymbolsToFile(j.outputFile, sortedSymbols)
+		if err != nil {
+			f.errMu.Lock()
+			if f.err == nil {
+				f.err = err
+			}
+			f.errMu.Unlock()
+
+			break
+		}
+	}
+
+	for range f.jobs {
+		// drain the channel, don't do more flushing. only used when error occurs.
+	}
+}
+
+// Stops and waits until all flusher goroutines are finished.
+func (f *symbolFlushers) close() error {
+	if f.closed {
+		return f.err
+	}
+
+	f.closed = true
+	close(f.jobs)
+	f.wg.Wait()
+
+	return f.err
+}
+
+type flusherJob struct {
+	outputFile string
+	symbols    map[string]struct{}
+}
 
 // symbolsBatcher keeps buffer of symbols in memory. Once the buffer reaches the size limit (number of symbols),
 // batcher writes currently buffered symbols to file. At the end remaining symbols must be flushed. After writing
@@ -22,64 +112,21 @@ type symbolsBatcher struct {
 	dir   string
 	limit int
 
-	buffer map[string]struct{} // using map to deduplicate
+	symbolFiles []string
 
-	flushCh     chan map[string]struct{}
-	flusherDone chan flusherResult
-
-	flusherFinished bool
-	result          flusherResult
+	buffer   map[string]struct{} // using map to deduplicate
+	flushers *symbolFlushers
 }
 
-type flusherResult struct {
-	symbolsFiles []string // paths of symbol files that have been successfully written.
-	err          error
-}
-
-func newSymbolsBatcher(limit int, dir string) *symbolsBatcher {
+func newSymbolsBatcher(limit int, dir string, flushers *symbolFlushers) *symbolsBatcher {
 	b := &symbolsBatcher{
-		limit:       limit,
-		dir:         dir,
-		buffer:      make(map[string]struct{}, limit),
-		flushCh:     make(chan map[string]struct{}),
-		flusherDone: make(chan flusherResult, 1),
+		limit:    limit,
+		dir:      dir,
+		buffer:   make(map[string]struct{}, limit),
+		flushers: flushers,
 	}
-
-	go b.flusher()
 
 	return b
-}
-
-func (sw *symbolsBatcher) flusher() (result flusherResult) {
-	defer func() {
-		sw.flusherDone <- result
-		close(sw.flusherDone)
-	}()
-
-	var symbolsFiles []string
-
-	for buf := range sw.flushCh {
-		if len(buf) == 0 {
-			continue
-		}
-
-		sortedSymbols := make([]string, 0, len(buf))
-		for s := range buf {
-			sortedSymbols = append(sortedSymbols, s)
-		}
-		sort.Strings(sortedSymbols)
-
-		symbolsFile := filepath.Join(sw.dir, fmt.Sprintf("symbols_%d", len(symbolsFiles)))
-		err := writeSymbolsToFile(symbolsFile, sortedSymbols)
-		if err != nil {
-			return flusherResult{err: err}
-
-		}
-
-		symbolsFiles = append(symbolsFiles, symbolsFile)
-	}
-
-	return flusherResult{symbolsFiles: symbolsFiles}
 }
 
 func (sw *symbolsBatcher) addSymbol(sym string) error {
@@ -92,31 +139,16 @@ func (sw *symbolsBatcher) flushSymbols(force bool) error {
 		return nil
 	}
 
-	select {
-	case sw.flushCh <- sw.buffer:
-		sw.buffer = make(map[string]struct{}, sw.limit)
-		return nil
-	case r, ok := <-sw.flusherDone:
-		if ok {
-			sw.result = r
-		}
-		return fmt.Errorf("flusher is done")
-	}
+	symbolsFile := filepath.Join(sw.dir, fmt.Sprintf("symbols_%d", len(sw.symbolFiles)))
+	sw.symbolFiles = append(sw.symbolFiles, symbolsFile)
+
+	buf := sw.buffer
+	sw.buffer = make(map[string]struct{}, sw.limit)
+	return sw.flushers.flushSymbols(symbolsFile, buf)
 }
 
-func (sw *symbolsBatcher) close() ([]string, error) {
-	if !sw.flusherFinished {
-		sw.flusherFinished = true
-		close(sw.flushCh)
-
-		// Wait for flusher to finish.
-		r, ok := <-sw.flusherDone
-		if ok {
-			sw.result = r
-		}
-	}
-
-	return sw.result.symbolsFiles, sw.result.err
+func (sw *symbolsBatcher) getSymbolFiles() []string {
+	return sw.symbolFiles
 }
 
 func writeSymbolsToFile(filename string, symbols []string) error {
