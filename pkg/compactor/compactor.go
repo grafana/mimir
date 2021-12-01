@@ -51,7 +51,7 @@ const (
 
 var (
 	errInvalidBlockRanges         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
-	errInvalidCompactionOrder     = errors.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
+	errInvalidCompactionOrder     = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
 	errUnsupportedCompactionOrder = "the %s compaction strategy does not support %s order"
 	RingOp                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 

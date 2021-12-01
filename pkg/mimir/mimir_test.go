@@ -30,6 +30,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk/aws"
 	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ruler"
@@ -91,6 +92,7 @@ func TestMimir(t *testing.T) {
 				},
 			},
 		},
+		Compactor: compactor.Config{CompactionJobsOrder: compactor.CompactionOrderOldestFirst},
 
 		Target: []string{All, Compactor},
 	}
