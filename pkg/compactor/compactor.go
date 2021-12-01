@@ -351,7 +351,7 @@ func newMultitenantCompactor(
 
 	c.jobsOrder = GetJobsOrderFunction(compactorCfg.CompactionJobsOrder)
 	if c.jobsOrder == nil {
-		return nil, errors.New("unknown compaction jobs order")
+		return nil, errInvalidCompactionOrder
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
