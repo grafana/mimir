@@ -118,14 +118,11 @@ func TestDistributor_Push(t *testing.T) {
 	distributorSampleDelay := "cortex_distributor_sample_delay_seconds"
 	ctx := user.InjectOrgID(context.Background(), "user")
 
-	now := mtime.Now()
-	originalNow := mtime.Now
+	now := time.Now()
+	mtime.NowForce(now)
 	t.Cleanup(func() {
-		mtime.Now = originalNow
+		mtime.NowReset()
 	})
-	mtime.Now = func() time.Time {
-		return now
-	}
 
 	type samplesIn struct {
 		num              int
