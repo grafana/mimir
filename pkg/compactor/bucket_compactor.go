@@ -322,6 +322,14 @@ type Compactor interface {
 	CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error)
 }
 
+func downloadUploadConcurrency(jobs int) int {
+	const max = 16
+	if jobs < max {
+		return jobs
+	}
+	return max
+}
+
 // runCompactionJob plans and runs a single compaction against the provided job. The compacted result
 // is uploaded into the bucket the blocks were retrieved from.
 func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
@@ -364,17 +372,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
 
 	// Once we have a plan we need to download the actual data.
-	begin := time.Now()
+	downloadBegin := time.Now()
 
-	toCompactDirs := make([]string, len(toCompact))
-	for ix := range toCompact {
-		toCompactDirs[ix] = filepath.Join(subDir, toCompact[ix].ULID.String())
-	}
-
-	err = concurrency.ForEach(ctx, convertSliceOfMetasToSliceOfInterfaces(toCompact), len(toCompact), func(ctx context.Context, job interface{}) error {
+	err = concurrency.ForEach(ctx, convertBlocksToForEachJobs(toCompact), downloadUploadConcurrency(len(toCompact)), func(ctx context.Context, job interface{}) error {
 		meta := job.(*metadata.Meta)
 
-		// Must be same as in toCompactDirs.
+		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
@@ -404,30 +407,34 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 		return nil
 	})
-
 	if err != nil {
 		return false, nil, err
 	}
 
-	elapsed := time.Since(begin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	elapsed := time.Since(downloadBegin)
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
-	begin = time.Now()
+	blocksToCompactDirs := make([]string, len(toCompact))
+	for ix, meta := range toCompact {
+		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
+	}
+
+	compactionBegin := time.Now()
 
 	if job.UseSplitting() {
-		compIDs, err = c.comp.CompactWithSplitting(subDir, toCompactDirs, nil, uint64(job.SplittingShards()))
+		compIDs, err = c.comp.CompactWithSplitting(subDir, blocksToCompactDirs, nil, uint64(job.SplittingShards()))
 	} else {
 		var compID ulid.ULID
-		compID, err = c.comp.Compact(subDir, toCompactDirs, nil)
+		compID, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
-		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", toCompactDirs))
+		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs))
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
 		// Prometheus compactor found that the compacted block would have no samples.
-		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", toCompactDirs))
+		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", blocksToCompactDirs))
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
 				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -439,15 +446,15 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return true, nil, nil
 	}
 
-	elapsed = time.Since(begin)
-	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	elapsed = time.Since(compactionBegin)
+	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", blocksToCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
 
-	err = concurrency.ForEach(ctx, convertSliceOfUlidsToSliceOfInterfaces(compIDs), len(compIDs), func(ctx context.Context, j interface{}) error {
-		shardID := j.(ulidWithIndex).index
-		compID := j.(ulidWithIndex).ulid
+	err = concurrency.ForEach(ctx, convertCompactionResultToForEachJobs(compIDs), downloadUploadConcurrency(len(compIDs)), func(ctx context.Context, j interface{}) error {
+		shardID := j.(ulidWithShardIndex).shardIndex
+		compID := j.(ulidWithShardIndex).ulid
 
 		// Skip if it's an empty block.
 		if compID == (ulid.ULID{}) {
@@ -490,7 +497,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		begin := time.Now()
-
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
 			return retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
@@ -499,7 +505,6 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
 		return nil
 	})
-
 	if err != nil {
 		return false, nil, err
 	}
@@ -520,7 +525,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func convertSliceOfMetasToSliceOfInterfaces(input []*metadata.Meta) []interface{} {
+func convertBlocksToForEachJobs(input []*metadata.Meta) []interface{} {
 	result := make([]interface{}, len(input))
 	for ix := range input {
 		result[ix] = input[ix]
@@ -528,17 +533,17 @@ func convertSliceOfMetasToSliceOfInterfaces(input []*metadata.Meta) []interface{
 	return result
 }
 
-func convertSliceOfUlidsToSliceOfInterfaces(input []ulid.ULID) []interface{} {
+func convertCompactionResultToForEachJobs(input []ulid.ULID) []interface{} {
 	result := make([]interface{}, len(input))
 	for ix := range input {
-		result[ix] = ulidWithIndex{index: ix, ulid: input[ix]}
+		result[ix] = ulidWithShardIndex{shardIndex: ix, ulid: input[ix]}
 	}
 	return result
 }
 
-type ulidWithIndex struct {
-	index int
-	ulid  ulid.ULID
+type ulidWithShardIndex struct {
+	ulid       ulid.ULID
+	shardIndex int
 }
 
 // Issue347Error is a type wrapper for errors that should invoke repair process for broken block.
