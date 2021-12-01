@@ -734,7 +734,7 @@ type BucketCompactor struct {
 	concurrency                    int
 	skipBlocksWithOutOfOrderChunks bool
 	ownJob                         ownCompactionJobFunc
-	sortJobs                       jobsOrderFunc
+	sortJobs                       JobsOrderFunc
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -750,7 +750,7 @@ func NewBucketCompactor(
 	concurrency int,
 	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
-	sortJobs jobsOrderFunc,
+	sortJobs JobsOrderFunc,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
