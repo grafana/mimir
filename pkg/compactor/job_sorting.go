@@ -7,12 +7,11 @@ import (
 )
 
 const (
-	CompactionOrderOldestFirst                = "smallest-range-oldest-blocks-first"
-	CompactionOrderNewestFirst                = "newest-blocks-first"
-	CompactionOrderSplitFirstOldestBlocksNext = "split-first-smallest-range-oldest-blocks-next"
+	CompactionOrderOldestFirst = "smallest-range-oldest-blocks-first"
+	CompactionOrderNewestFirst = "newest-blocks-first"
 )
 
-var CompactionOrders = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst, CompactionOrderSplitFirstOldestBlocksNext}
+var CompactionOrders = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst}
 
 type JobsOrderFunc func(jobs []*Job) []*Job
 
@@ -23,8 +22,6 @@ func GetJobsOrderFunction(name string) JobsOrderFunc {
 		return sortJobsByNewestBlocksFirst
 	case CompactionOrderOldestFirst:
 		return sortJobsBySmallestRangeOldestBlocksFirst
-	case CompactionOrderSplitFirstOldestBlocksNext:
-		return sortJobsByOldestSplitJobsFirstSmallestRangeOldestBlocksNext
 	default:
 		return nil
 	}
@@ -33,40 +30,10 @@ func GetJobsOrderFunction(name string) JobsOrderFunc {
 // sortJobsBySmallestRangeOldestBlocksFirst returns input jobs sorted by smallest range, oldest min time first.
 // The rationale of this sorting is that we may want to favor smaller ranges first (ie. to deduplicate samples
 // sooner than later) and older ones are more likely to be "complete" (no missing block still to be uploaded).
-func sortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
-	sort.SliceStable(jobs, func(i, j int) bool {
-		return compareJobsByLengthAndMinTime(true, jobs[i], jobs[j])
-	})
-
-	return jobs
-}
-
-// compareJobsByLengthAndMinTime returns true if first job has shorter duration (only if checkLength is true),
-// or covers earlier minTime.
-func compareJobsByLengthAndMinTime(checkLength bool, a, b *Job) bool {
-	if checkLength {
-		iLength := a.MaxTime() - a.MinTime()
-		jLength := b.MaxTime() - b.MinTime()
-
-		if iLength != jLength {
-			return iLength < jLength
-		}
-	}
-
-	if a.MinTime() != b.MinTime() {
-		return a.MinTime() < b.MinTime()
-	}
-
-	// Guarantee stable sort for tests.
-	return a.Key() < b.Key()
-}
-
-// sortJobsByOldestSplitJobsFirstSmallestRangeOldestBlocksNext moves split jobs to the beginning,
-// from oldest splits to newer splits. Sorting of non-split jobs is the same as sortJobsBySmallestRangeOldestBlocksFirst.
-// Idea is to prioritize split jobs, because merge jobs are only generated if there are no split jobs in the
+// Split jobs are moved to the beginning of the output, because merge jobs are only generated if there are no split jobs in the
 // same time range, so finishing split jobs first unblocks more jobs and gives opportunity to more compactors
 // to work on them.
-func sortJobsByOldestSplitJobsFirstSmallestRangeOldestBlocksNext(jobs []*Job) []*Job {
+func sortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
 	sort.SliceStable(jobs, func(i, j int) bool {
 		// Move split jobs to the front.
 		if jobs[i].UseSplitting() && !jobs[j].UseSplitting() {
@@ -77,13 +44,29 @@ func sortJobsByOldestSplitJobsFirstSmallestRangeOldestBlocksNext(jobs []*Job) []
 			return false
 		}
 
+		checkLength := true
 		// Don't check length for splitting jobs. We want to the oldest split blocks to be first, no matter the length.
 		if jobs[i].UseSplitting() && jobs[j].UseSplitting() {
-			return compareJobsByLengthAndMinTime(false, jobs[i], jobs[j])
+			checkLength = false
 		}
 
-		return compareJobsByLengthAndMinTime(true, jobs[i], jobs[j])
+		if checkLength {
+			iLength := jobs[i].MaxTime() - jobs[i].MinTime()
+			jLength := jobs[j].MaxTime() - jobs[j].MinTime()
+
+			if iLength != jLength {
+				return iLength < jLength
+			}
+		}
+
+		if jobs[i].MinTime() != jobs[j].MinTime() {
+			return jobs[i].MinTime() < jobs[j].MinTime()
+		}
+
+		// Guarantee stable sort for tests.
+		return jobs[i].Key() < jobs[j].Key()
 	})
+
 	return jobs
 }
 

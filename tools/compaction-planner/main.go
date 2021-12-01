@@ -46,7 +46,7 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
-	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderSplitFirstOldestBlocksNext, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
+	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
 	flag.Parse()
 
 	if cfg.userID == "" {
