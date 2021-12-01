@@ -495,7 +495,7 @@
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '30m',
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: |||
@@ -519,7 +519,7 @@
           ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
           'for': '30m',
           labels: {
-            severity: 'critical',
+            severity: 'warning',
           },
           annotations: {
             message: |||
