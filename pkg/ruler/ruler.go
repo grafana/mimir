@@ -208,6 +208,13 @@ type MultiTenantManager interface {
 	ValidateRuleGroup(rulefmt.RuleGroup) []error
 }
 
+// Authorizer is the interface for authorizing rule groups after syncing them from storage.
+// It can be injected into the Ruler to prevent rule groups from running if they have insufficient privileges.
+type Authorizer interface {
+	// AuthorizeGroup should return an error if the passed group is not authorized to be evaluated
+	AuthorizeGroup(context.Context, *rulespb.RuleGroupDesc) error
+}
+
 // Ruler evaluates rules.
 //	+---------------------------------------------------------------+
 //	|                                                               |
@@ -254,6 +261,7 @@ type Ruler struct {
 	rulerSync       *prometheus.CounterVec
 
 	allowedTenants *util.AllowedTenants
+	authorizer     Authorizer
 
 	registry prometheus.Registerer
 	logger   log.Logger
@@ -504,8 +512,40 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
+	r.removeUnauthorizedGroups(ctx, configs)
+
 	// This will also delete local group files for users that are no longer in 'configs' map.
 	r.manager.SyncRuleGroups(ctx, configs)
+}
+
+func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[string]rulespb.RuleGroupList) {
+	if r.authorizer == nil {
+		return
+	}
+
+	for u, groups := range userGroups {
+		var toRemove map[*rulespb.RuleGroupDesc]struct{}
+
+		for _, g := range groups {
+			if err := r.authorizer.AuthorizeGroup(ctx, g); err != nil {
+				if toRemove == nil {
+					toRemove = make(map[*rulespb.RuleGroupDesc]struct{})
+				}
+				toRemove[g] = struct{}{}
+			}
+		}
+
+		if len(toRemove) > 0 {
+			amendedList := make(rulespb.RuleGroupList, 0, len(groups)-len(toRemove))
+			for _, g := range groups {
+				if _, shouldRemove := toRemove[g]; shouldRemove {
+					continue
+				}
+				amendedList = append(amendedList, g)
+			}
+			userGroups[u] = amendedList
+		}
+	}
 }
 
 func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
