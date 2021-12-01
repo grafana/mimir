@@ -27,7 +27,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana/dskit v0.0.0-20211126082719-84c6c63a1eb1
+	github.com/grafana/dskit v0.0.0-20211201095157-db0736af1b89
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
@@ -226,3 +226,7 @@ replace github.com/gogo/status => github.com/gogo/status v1.0.3
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
 replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211125080947-19dcc7902d24
+
+// Replace memberlist with our fork which includes some fixes that haven't been
+// merged upstream yet.
+replace github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
