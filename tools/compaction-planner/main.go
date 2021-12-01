@@ -31,7 +31,7 @@ func main() {
 	cfg := struct {
 		bucket      bucket.Config
 		userID      string
-		BlockRanges mimir_tsdb.DurationList
+		blockRanges mimir_tsdb.DurationList
 		shardCount  int
 		splitGroups int
 		sorting     string
@@ -40,8 +40,8 @@ func main() {
 
 	// Loads bucket index, and plans compaction for all loaded meta files.
 	cfg.bucket.RegisterFlags(flag.CommandLine)
-	cfg.BlockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
-	flag.Var(&cfg.BlockRanges, "block-ranges", "List of compaction time ranges.")
+	cfg.blockRanges = mimir_tsdb.DurationList{2 * time.Hour, 12 * time.Hour, 24 * time.Hour}
+	flag.Var(&cfg.blockRanges, "block-ranges", "List of compaction time ranges.")
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
@@ -104,7 +104,7 @@ func main() {
 
 	fmt.Fprintf(tabber, "Job No.\tStart Time\tEnd Time\tBlocks\tJob Key\n")
 
-	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.BlockRanges.ToMilliseconds(), uint32(cfg.shardCount), uint32(cfg.splitGroups), logger)
+	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.blockRanges.ToMilliseconds(), uint32(cfg.shardCount), uint32(cfg.splitGroups), logger)
 	jobs, err := grouper.Groups(metas)
 	if err != nil {
 		log.Fatalln("failed to plan compaction:", err)
