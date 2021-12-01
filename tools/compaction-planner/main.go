@@ -104,6 +104,9 @@ func main() {
 
 	grouper := compactor.NewSplitAndMergeGrouper(cfg.userID, cfg.BlockRanges.ToMilliseconds(), uint32(cfg.shardCount), uint32(cfg.splitGroups), logger)
 	jobs, err := grouper.Groups(metas)
+	if err != nil {
+		log.Fatalln("failed to plan compaction:", err)
+	}
 
 	switch cfg.sorting {
 	case compactor.CompactionOrderOldestFirst:
