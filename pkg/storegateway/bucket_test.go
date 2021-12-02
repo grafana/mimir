@@ -955,6 +955,24 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 
 	benchmarkExpandedPostings(tb, bkt, id, r, series)
 
+	t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
+		b := &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: r,
+			indexCache:        corruptedPostingsCache{},
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+
+		// cache provides undecodable values
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
+		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
+		require.NoError(t, err)
+		require.Equal(t, series, len(refs))
+	})
+
 	t.Run("promise", func(t *testing.T) {
 		expectedErr := fmt.Errorf("failed as expected")
 
@@ -1209,6 +1227,16 @@ type corruptedExpandedPostingsCache struct{ noopCache }
 
 func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
+}
+
+type corruptedPostingsCache struct{ noopCache }
+
+func (c corruptedPostingsCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
+	res := make(map[labels.Label][]byte)
+	for _, k := range keys {
+		res[k] = []byte("corrupted or unknown")
+	}
+	return res, nil
 }
 
 type cacheNotExpectingToStoreExpandedPostings struct {

@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -22,18 +23,17 @@ import (
 	"sync"
 	"time"
 
-	otlog "github.com/opentracing/opentracing-go/log"
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/runutil"
 	"github.com/oklog/ulid"
 	"github.com/opentracing/opentracing-go"
+	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -56,6 +56,8 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+
+	util_math "github.com/grafana/mimir/pkg/util/math"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -1987,12 +1989,19 @@ func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Lab
 			r.stats.postingsTouchedSizeSum += len(b)
 
 			l, err := r.decodePostings(b)
-			if err != nil {
-				return nil, errors.Wrap(err, "decode postings")
+			if err == nil {
+				output[ix] = l
+				continue
 			}
 
-			output[ix] = l
-			continue
+			level.Warn(r.block.logger).Log(
+				"msg", "can't decode cached postings",
+				"err", err,
+				"key", fmt.Sprintf("%+v", key),
+				"block", r.block.meta.ULID,
+				"bytes_len", len(b),
+				"bytes_head_hex", hex.EncodeToString(b[:util_math.Min(8, len(b))]),
+			)
 		}
 
 		// Cache miss; save pointer for actual posting in index stored in object store.
