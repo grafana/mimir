@@ -400,6 +400,13 @@ func (m *KV) buildMemberlistConfig() (*memberlist.Config, error) {
 	// Memberlist uses UDPBufferSize to figure out how many messages it can put into single "packet".
 	// As we don't use UDP for sending packets, we can use higher value here.
 	mlCfg.UDPBufferSize = 10 * 1024 * 1024
+
+	// For our use cases, we don't need a very fast detection of dead nodes. Since we use a TCP transport
+	// and we open a new TCP connection for each packet, we prefer to reduce the probe frequency and increase
+	// the timeout compared to defaults.
+	mlCfg.ProbeInterval = 5 * time.Second // Probe a random node every this interval. This setting is also the total timeout for the direct + indirect probes.
+	mlCfg.ProbeTimeout = 2 * time.Second  // Timeout for the direct probe.
+
 	return mlCfg, nil
 }
 

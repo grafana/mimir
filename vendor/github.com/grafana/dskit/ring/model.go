@@ -202,11 +202,15 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 	otherIngesterMap := other.Ingesters
 
 	var updated []string
+	tokensChanged := false
 
 	for name, oing := range otherIngesterMap {
 		ting := thisIngesterMap[name]
 		// ting.Timestamp will be 0, if there was no such ingester in our version
 		if oing.Timestamp > ting.Timestamp {
+			if !tokensEqual(ting.Tokens, oing.Tokens) {
+				tokensChanged = true
+			}
 			oing.Tokens = append([]uint32(nil), oing.Tokens...) // make a copy of tokens
 			thisIngesterMap[name] = oing
 			updated = append(updated, name)
@@ -241,7 +245,7 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 	}
 
 	// resolveConflicts allocates lot of memory, so if we can avoid it, do that.
-	if conflictingTokensExist(thisIngesterMap) {
+	if tokensChanged && conflictingTokensExist(thisIngesterMap) {
 		resolveConflicts(thisIngesterMap)
 	}
 
@@ -301,6 +305,19 @@ func normalizeIngestersMap(inputRing *Desc) {
 		// write updated value back to map
 		inputRing.Ingesters[n] = ing
 	}
+}
+
+// tokensEqual checks for equality of two slices. Assumes the slices are sorted.
+func tokensEqual(lhs, rhs []uint32) bool {
+	if len(lhs) != len(rhs) {
+		return false
+	}
+	for i := 0; i < len(lhs); i++ {
+		if lhs[i] != rhs[i] {
+			return false
+		}
+	}
+	return true
 }
 
 var tokenMapPool = sync.Pool{New: func() interface{} { return make(map[uint32]struct{}) }}
