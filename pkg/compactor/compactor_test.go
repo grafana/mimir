@@ -126,6 +126,18 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errors.Errorf(errUnsupportedCompactionOrder, CompactionStrategyDefault, CompactionOrderNewestFirst).Error(),
 		},
+		"should fail on invalid value of max-opening-blocks-concurrency": {
+			setup:    func(cfg *Config) { cfg.MaxOpeningBlocksConcurrency = 0 },
+			expected: errInvalidMaxOpeningBlocksConcurrency.Error(),
+		},
+		"should fail on invalid value of max-closing-blocks-concurrency": {
+			setup:    func(cfg *Config) { cfg.MaxClosingBlocksConcurrency = 0 },
+			expected: errInvalidMaxClosingBlocksConcurrency.Error(),
+		},
+		"should fail on invalid value of symbols-flushers-concurrency": {
+			setup:    func(cfg *Config) { cfg.SymbolsFlushersConcurrency = 0 },
+			expected: errInvalidSymbolFlushersConcurrency.Error(),
+		},
 	}
 
 	for testName, testData := range tests {

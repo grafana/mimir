@@ -50,10 +50,13 @@ const (
 )
 
 var (
-	errInvalidBlockRanges         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
-	errInvalidCompactionOrder     = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
-	errUnsupportedCompactionOrder = "the %s compaction strategy does not support %s order"
-	RingOp                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	errInvalidBlockRanges                 = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
+	errInvalidCompactionOrder             = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
+	errUnsupportedCompactionOrder         = "the %s compaction strategy does not support %s order"
+	errInvalidMaxOpeningBlocksConcurrency = fmt.Errorf("invalid max-opening-blocks-concurrency value, must be positive")
+	errInvalidMaxClosingBlocksConcurrency = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
+	errInvalidSymbolFlushersConcurrency   = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
+	RingOp                                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
 )
@@ -91,6 +94,11 @@ type Config struct {
 	DeletionDelay         time.Duration           `yaml:"deletion_delay"`
 	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay"`
 	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time"`
+
+	// Compactor concurrency options
+	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency"` // Number of goroutines opening blocks before compaction.
+	MaxClosingBlocksConcurrency int `yaml:"max_closing_blocks_concurrency"` // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
+	SymbolsFlushersConcurrency  int `yaml:"symbols_flushers_concurrency"`   // Number of symbols flushers used when doing split compaction.
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
@@ -140,6 +148,10 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant.")
+	// compactor concurrency options
+	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
+	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.")
+	f.IntVar(&cfg.SymbolsFlushersConcurrency, "compactor.symbols-flushers-concurrency", 1, "Number of symbols flushers used when doing split compaction.")
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
@@ -151,6 +163,16 @@ func (cfg *Config) Validate() error {
 		if cfg.BlockRanges[i]%cfg.BlockRanges[i-1] != 0 {
 			return errors.Errorf(errInvalidBlockRanges, cfg.BlockRanges[i].String(), cfg.BlockRanges[i-1].String())
 		}
+	}
+
+	if cfg.MaxOpeningBlocksConcurrency < 1 {
+		return errInvalidMaxOpeningBlocksConcurrency
+	}
+	if cfg.MaxClosingBlocksConcurrency < 1 {
+		return errInvalidMaxClosingBlocksConcurrency
+	}
+	if cfg.SymbolsFlushersConcurrency < 1 {
+		return errInvalidSymbolFlushersConcurrency
 	}
 
 	if !util.StringsContain(compactionStrategies, cfg.CompactionStrategy) {

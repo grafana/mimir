@@ -22,6 +22,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -29,6 +30,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -84,6 +87,8 @@ type LeveledCompactor struct {
 	ctx                      context.Context
 	maxBlockChunkSegmentSize int64
 	mergeFunc                storage.VerticalChunkSeriesMergeFunc
+
+	concurrencyOpts LeveledCompactorConcurrencyOptions
 }
 
 type compactorMetrics struct {
@@ -172,7 +177,27 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 		ctx:                      ctx,
 		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
 		mergeFunc:                mergeFunc,
+		concurrencyOpts:          DefaultLeveledCompactorConcurrencyOptions(),
 	}, nil
+}
+
+// LeveledCompactorConcurrencyOptions is a collection of concurrency options used by LeveledCompactor.
+type LeveledCompactorConcurrencyOptions struct {
+	MaxOpeningBlocks     int // Number of goroutines opening blocks before compaction.
+	MaxClosingBlocks     int // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
+	SymbolsFlushersCount int // Number of symbols flushers used when doing split compaction.
+}
+
+func DefaultLeveledCompactorConcurrencyOptions() LeveledCompactorConcurrencyOptions {
+	return LeveledCompactorConcurrencyOptions{
+		MaxClosingBlocks:     1,
+		SymbolsFlushersCount: 1,
+		MaxOpeningBlocks:     1,
+	}
+}
+
+func (c *LeveledCompactor) SetConcurrencyOptions(opts LeveledCompactorConcurrencyOptions) {
+	c.concurrencyOpts = opts
 }
 
 type dirMeta struct {
@@ -423,44 +448,27 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 		shardCount = 1
 	}
 
+	start := time.Now()
+
+	bs, blocksToClose, err := openBlocksForCompaction(dirs, open, c.logger, c.chunkPool, c.concurrencyOpts.MaxOpeningBlocks)
+	for _, b := range blocksToClose {
+		defer b.Close()
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
 	var (
 		blocks []BlockReader
-		bs     []*Block
 		metas  []*BlockMeta
 		uids   []string
 	)
-	start := time.Now()
-
-	for _, d := range dirs {
-		meta, _, err := readMetaFile(d)
-		if err != nil {
-			return nil, err
-		}
-
-		var b *Block
-
-		// Use already open blocks if we can, to avoid
-		// having the index data in memory twice.
-		for _, o := range open {
-			if meta.ULID == o.Meta().ULID {
-				b = o
-				break
-			}
-		}
-
-		if b == nil {
-			var err error
-			b, err = OpenBlock(c.logger, d, c.chunkPool)
-			if err != nil {
-				return nil, err
-			}
-			defer b.Close()
-		}
-
-		metas = append(metas, meta)
+	for _, b := range bs {
 		blocks = append(blocks, b)
-		bs = append(bs, b)
-		uids = append(uids, meta.ULID.String())
+		m := b.Meta()
+		metas = append(metas, &m)
+		uids = append(uids, b.meta.ULID.String())
 	}
 
 	outBlocks := make([]shardedBlock, shardCount)
@@ -646,6 +654,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		if err != nil {
 			return errors.Wrap(err, "open chunk writer")
 		}
+		chunkw = newPreventDoubleCloseChunkWriter(chunkw) // We now close chunkWriter in populateBlock, but keep it in the closers here as well.
 
 		closers = append(closers, chunkw)
 
@@ -661,10 +670,12 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 
 		outBlocks[ix].chunkw = chunkw
 
-		indexw, err := index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
+		var indexw IndexWriter
+		indexw, err = index.NewWriter(c.ctx, filepath.Join(tmp, indexFilename))
 		if err != nil {
 			return errors.Wrap(err, "open index writer")
 		}
+		indexw = newPreventDoubleCloseIndexWriter(indexw) // We now close indexWriter in populateBlock, but keep it in the closers here as well.
 		closers = append(closers, indexw)
 
 		outBlocks[ix].indexw = indexw
@@ -904,10 +915,14 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		}
 	}
 
-	var (
-		refs = make([]storage.SeriesRef, len(outBlocks))
-		chks []chunks.Meta
-	)
+	// Semaphore for number of blocks that can be closed at once.
+	sema := semaphore.NewWeighted(int64(c.concurrencyOpts.MaxClosingBlocks))
+
+	blockWriters := make([]*asyncBlockWriter, len(outBlocks))
+	for ix := range outBlocks {
+		blockWriters[ix] = newAsyncBlockWriter(c.chunkPool, outBlocks[ix].chunkw, outBlocks[ix].indexw, sema)
+		defer blockWriters[ix].closeAsync() // Make sure to close writer to stop goroutine.
+	}
 
 	set := sets[0]
 	if len(sets) > 1 {
@@ -926,7 +941,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		s := set.At()
 
 		chksIter := s.Iterator()
-		chks = chks[:0]
+		var chks []chunks.Meta
 		for chksIter.Next() {
 			// We are not iterating in streaming way over chunk as it's more efficient to do bulk write for index and
 			// chunk file purposes.
@@ -948,28 +963,26 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 			obIx = s.Labels().Hash() % uint64(len(outBlocks))
 		}
 
-		if err := outBlocks[obIx].chunkw.WriteChunks(chks...); err != nil {
-			return errors.Wrap(err, "write chunks")
+		err := blockWriters[obIx].addSeries(s.Labels(), chks)
+		if err != nil {
+			return errors.Wrap(err, "adding series")
 		}
-		if err := outBlocks[obIx].indexw.AddSeries(refs[obIx], s.Labels(), chks...); err != nil {
-			return errors.Wrap(err, "add series")
-		}
-
-		outBlocks[obIx].meta.Stats.NumChunks += uint64(len(chks))
-		outBlocks[obIx].meta.Stats.NumSeries++
-		for _, chk := range chks {
-			outBlocks[obIx].meta.Stats.NumSamples += uint64(chk.Chunk.NumSamples())
-		}
-
-		for _, chk := range chks {
-			if err := c.chunkPool.Put(chk.Chunk); err != nil {
-				return errors.Wrap(err, "put chunk")
-			}
-		}
-		refs[obIx]++
 	}
 	if set.Err() != nil {
 		return errors.Wrap(set.Err(), "iterate compaction set")
+	}
+
+	for ix := range blockWriters {
+		blockWriters[ix].closeAsync()
+	}
+
+	for ix := range blockWriters {
+		stats, err := blockWriters[ix].waitFinished()
+		if err != nil {
+			return errors.Wrap(err, "writing block")
+		}
+
+		outBlocks[ix].meta.Stats = stats
 	}
 
 	return nil
@@ -986,9 +999,12 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		return errors.New("no output block")
 	}
 
+	flushers := newSymbolFlushers(c.concurrencyOpts.SymbolsFlushersCount)
+	defer flushers.close() // Make sure to stop flushers before exiting to avoid leaking goroutines.
+
 	batchers := make([]*symbolsBatcher, len(outBlocks))
 	for ix := range outBlocks {
-		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir)
+		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir, flushers)
 
 		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
 		// and if we only include symbols from series, we would skip it.
@@ -1023,16 +1039,25 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 	}
 
 	for ix := range outBlocks {
-		if err := c.ctx.Err(); err != nil {
-			return err
-		}
-
 		// Flush the batcher to write remaining symbols.
 		if err := batchers[ix].flushSymbols(true); err != nil {
 			return errors.Wrap(err, "flushing batcher")
 		}
+	}
 
-		it, err := newSymbolsIterator(batchers[ix].symbolFiles())
+	err := flushers.close()
+	if err != nil {
+		return errors.Wrap(err, "closing flushers")
+	}
+
+	for ix := range outBlocks {
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
+
+		symbolFiles := batchers[ix].getSymbolFiles()
+
+		it, err := newSymbolsIterator(symbolFiles)
 		if err != nil {
 			return errors.Wrap(err, "opening symbols iterator")
 		}
@@ -1064,7 +1089,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 
 		// Delete symbol files from symbolsBatcher. We don't need to perform the cleanup if populateSymbols
 		// or compaction fails, because in that case compactor already removes entire (temp) output block directory.
-		for _, fn := range batchers[ix].symbolFiles() {
+		for _, fn := range symbolFiles {
 			if err := os.Remove(fn); err != nil {
 				return errors.Wrap(err, "deleting symbols file")
 			}
@@ -1072,4 +1097,90 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 	}
 
 	return nil
+}
+
+// Returns opened blocks, and blocks that should be closed (also returned in case of error).
+func openBlocksForCompaction(dirs []string, open []*Block, logger log.Logger, pool chunkenc.Pool, concurrency int) (blocks, blocksToClose []*Block, _ error) {
+	blocks = make([]*Block, 0, len(dirs))
+	blocksToClose = make([]*Block, 0, len(dirs))
+
+	toOpenCh := make(chan string, len(dirs))
+	for _, d := range dirs {
+		meta, _, err := readMetaFile(d)
+		if err != nil {
+			return nil, blocksToClose, err
+		}
+
+		var b *Block
+
+		// Use already open blocks if we can, to avoid
+		// having the index data in memory twice.
+		for _, o := range open {
+			if meta.ULID == o.Meta().ULID {
+				b = o
+				break
+			}
+		}
+
+		if b != nil {
+			blocks = append(blocks, b)
+		} else {
+			toOpenCh <- d
+		}
+	}
+	close(toOpenCh)
+
+	type openResult struct {
+		b   *Block
+		err error
+	}
+
+	openResultCh := make(chan openResult, len(toOpenCh))
+	// Signals to all opening goroutines that there was an error opening some block, and they can stop early.
+	// If openingError is true, at least one error is sent to openResultCh.
+	openingError := atomic.NewBool(false)
+
+	wg := sync.WaitGroup{}
+	if len(dirs) < concurrency {
+		concurrency = len(dirs)
+	}
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for d := range toOpenCh {
+				if openingError.Load() {
+					return
+				}
+
+				b, err := OpenBlock(logger, d, pool)
+				openResultCh <- openResult{b: b, err: err}
+
+				if err != nil {
+					openingError.Store(true)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// All writers to openResultCh have stopped, we can close the output channel, so we can range over it.
+	close(openResultCh)
+
+	var firstErr error
+	for or := range openResultCh {
+		if or.err != nil {
+			// Don't stop on error, but iterate over all opened blocks to collect blocksToClose.
+			if firstErr == nil {
+				firstErr = or.err
+			}
+		} else {
+			blocks = append(blocks, or.b)
+			blocksToClose = append(blocksToClose, or.b)
+		}
+	}
+
+	return blocks, blocksToClose, firstErr
 }
