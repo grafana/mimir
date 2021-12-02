@@ -124,7 +124,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
 	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", PartialUploadThresholdAge))
-	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 20, "Number of Go routines to use when syncing block index and chunks files from the long term storage.")
+	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data", "Data directory in which to cache blocks and process compactions")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
@@ -697,6 +697,7 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		true, // Skip blocks with out of order chunks, and mark them for no-compaction.
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
+		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {

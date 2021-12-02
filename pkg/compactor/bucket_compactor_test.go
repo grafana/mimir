@@ -181,7 +181,7 @@ func TestFilterOwnJobs(t *testing.T) {
 	m := NewBucketCompactorMetrics(prometheus.NewCounter(prometheus.CounterOpts{}), prometheus.NewCounter(prometheus.CounterOpts{}), nil)
 	for testName, testCase := range tests {
 		t.Run(testName, func(t *testing.T) {
-			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, m)
+			bc, err := NewBucketCompactor(log.NewNopLogger(), nil, nil, nil, nil, "", nil, 2, false, testCase.ownJob, nil, 4, m)
 			require.NoError(t, err)
 
 			res, err := bc.filterOwnJobs(jobsFn())
@@ -303,4 +303,14 @@ func TestNoCompactionMarkFilter(t *testing.T) {
 			testFn(t, synced)
 		})
 	}
+}
+
+func TestConvertCompactionResultToForEachJobs(t *testing.T) {
+	ulid1 := ulid.MustNew(1, nil)
+	ulid2 := ulid.MustNew(2, nil)
+
+	res := convertCompactionResultToForEachJobs([]ulid.ULID{{}, ulid1, {}, ulid2, {}}, true, log.NewNopLogger())
+	require.Len(t, res, 2)
+	require.Equal(t, ulidWithShardIndex{ulid: ulid1, shardIndex: 1}, res[0])
+	require.Equal(t, ulidWithShardIndex{ulid: ulid2, shardIndex: 3}, res[1])
 }

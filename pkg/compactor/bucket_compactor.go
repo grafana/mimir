@@ -322,14 +322,6 @@ type Compactor interface {
 	CompactWithSplitting(dest string, dirs []string, open []*tsdb.Block, shardCount uint64) (result []ulid.ULID, _ error)
 }
 
-func downloadUploadConcurrency(jobs int) int {
-	const max = 16
-	if jobs < max {
-		return jobs
-	}
-	return max
-}
-
 // runCompactionJob plans and runs a single compaction against the provided job. The compacted result
 // is uploaded into the bucket the blocks were retrieved from.
 func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
@@ -374,7 +366,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
-	err = concurrency.ForEach(ctx, convertBlocksToForEachJobs(toCompact), downloadUploadConcurrency(len(toCompact)), func(ctx context.Context, job interface{}) error {
+	err = concurrency.ForEach(ctx, convertBlocksToForEachJobs(toCompact), c.blockSyncConcurrency, func(ctx context.Context, job interface{}) error {
 		meta := job.(*metadata.Meta)
 
 		// Must be the same as in blocksToCompactDirs.
@@ -411,13 +403,13 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return false, nil, err
 	}
 
-	elapsed := time.Since(downloadBegin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
-
 	blocksToCompactDirs := make([]string, len(toCompact))
 	for ix, meta := range toCompact {
 		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
 	}
+
+	elapsed := time.Since(downloadBegin)
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(blocksToCompactDirs), "plan", fmt.Sprintf("%v", blocksToCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	compactionBegin := time.Now()
 
@@ -452,19 +444,9 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
 
-	err = concurrency.ForEach(ctx, convertCompactionResultToForEachJobs(compIDs), downloadUploadConcurrency(len(compIDs)), func(ctx context.Context, j interface{}) error {
+	err = concurrency.ForEach(ctx, convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger), c.blockSyncConcurrency, func(ctx context.Context, j interface{}) error {
 		shardID := j.(ulidWithShardIndex).shardIndex
 		compID := j.(ulidWithShardIndex).ulid
-
-		// Skip if it's an empty block.
-		if compID == (ulid.ULID{}) {
-			if job.UseSplitting() {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", sharding.FormatShardIDLabelValue(uint64(shardID), uint64(job.SplittingShards())))
-			} else {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
-			}
-			return nil
-		}
 
 		uploadedBlocks.Inc()
 
@@ -533,10 +515,23 @@ func convertBlocksToForEachJobs(input []*metadata.Meta) []interface{} {
 	return result
 }
 
-func convertCompactionResultToForEachJobs(input []ulid.ULID) []interface{} {
-	result := make([]interface{}, len(input))
-	for ix := range input {
-		result[ix] = ulidWithShardIndex{shardIndex: ix, ulid: input[ix]}
+// Converts ULIDs from compaction to interface{}, and also filters out empty ULIDs. When handling result of split
+// compactions, shard index is index in the slice returned by compaction.
+func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob bool, jobLogger log.Logger) []interface{} {
+	result := make([]interface{}, 0, len(compactedBlocks))
+
+	for ix, id := range compactedBlocks {
+		// Skip if it's an empty block.
+		if id == (ulid.ULID{}) {
+			if splitJob {
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", sharding.FormatShardIDLabelValue(uint64(ix), uint64(len(compactedBlocks))))
+			} else {
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
+			}
+			continue
+		}
+
+		result = append(result, ulidWithShardIndex{shardIndex: ix, ulid: id})
 	}
 	return result
 }
@@ -782,6 +777,7 @@ type BucketCompactor struct {
 	skipBlocksWithOutOfOrderChunks bool
 	ownJob                         ownCompactionJobFunc
 	sortJobs                       JobsOrderFunc
+	blockSyncConcurrency           int
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -798,6 +794,7 @@ func NewBucketCompactor(
 	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
+	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
@@ -815,6 +812,7 @@ func NewBucketCompactor(
 		skipBlocksWithOutOfOrderChunks: skipBlocksWithOutOfOrderChunks,
 		ownJob:                         ownJob,
 		sortJobs:                       sortJobs,
+		blockSyncConcurrency:           blockSyncConcurrency,
 		metrics:                        metrics,
 	}, nil
 }
