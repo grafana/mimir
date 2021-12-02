@@ -1338,12 +1338,12 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 
 	matched := make([]string, 0, len(allValues))
 	for i, value := range allValues {
-		intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
-		if intersection.Next() {
-			matched = append(matched, value)
-		}
-		if err := intersection.Err(); err != nil {
+		has, err := hasNonEmptyIntersection(p, fetchedPostings[i])
+		if err != nil {
 			return nil, errors.Wrapf(err, "intersecting value %q postings", value)
+		}
+		if has {
+			matched = append(matched, value)
 		}
 	}
 
@@ -2755,4 +2755,19 @@ func (p paddedPostings) Seek(v storage.SeriesRef) bool {
 
 func (p paddedPostings) At() storage.SeriesRef {
 	return p.Postings.At() * 16
+}
+
+func hasNonEmptyIntersection(ep []storage.SeriesRef, p index.Postings) (bool, error) {
+	idx := 0
+	for p.Next() {
+		pv := p.At()
+		idx += sort.Search(len(ep)-idx, func(i int) bool { return ep[i+idx] >= pv })
+		if idx >= len(ep) {
+			return false, nil
+		}
+		if ep[idx] == pv {
+			return true, nil
+		}
+	}
+	return false, p.Err()
 }

@@ -29,6 +29,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/tsdb/index"
+
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
@@ -2845,5 +2847,61 @@ func BenchmarkFilterPostingsByCachedShardHash_NoPostingsShifted(b *testing.B) {
 		// We reuse the same postings slice because we expect this test to not
 		// modify it (cache is empty).
 		filterPostingsByCachedShardHash(ps, shard, cache)
+	}
+}
+
+func TestHasNonEmptyIntersection(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		ep          []storage.SeriesRef
+		p           index.Postings
+		expectedHas bool
+		expectedErr bool
+	}{
+		{
+			name:        "empty expanded postings, empty postings",
+			ep:          nil,
+			p:           index.NewListPostings([]storage.SeriesRef{2, 7, 10, 12}),
+			expectedHas: false,
+			expectedErr: false,
+		},
+		{
+			name:        "empty expanded postings, non postings",
+			ep:          nil,
+			p:           index.EmptyPostings(),
+			expectedHas: false,
+			expectedErr: false,
+		},
+		{
+			name:        "empty expanded postings, err postings",
+			ep:          nil,
+			p:           index.ErrPostings(context.Canceled),
+			expectedHas: false,
+			expectedErr: true,
+		},
+		{
+			name:        "has intersection",
+			ep:          []storage.SeriesRef{1, 5, 10, 15},
+			p:           index.NewListPostings([]storage.SeriesRef{2, 7, 10, 12}),
+			expectedHas: true,
+			expectedErr: false,
+		},
+		{
+			name:        "no intersection",
+			ep:          []storage.SeriesRef{1, 5, 10, 15},
+			p:           index.NewListPostings([]storage.SeriesRef{2, 20}),
+			expectedHas: false,
+			expectedErr: false,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			has, err := hasNonEmptyIntersection(tc.ep, tc.p)
+			if tc.expectedErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.expectedHas, has)
+		})
 	}
 }
