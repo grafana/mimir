@@ -10,7 +10,6 @@ import (
 	"flag"
 	"fmt"
 	"net/http"
-	"os"
 	"time"
 
 	"github.com/go-kit/log/level"
@@ -74,7 +73,6 @@ const (
 	QueryFrontendTripperware string = "query-frontend-tripperware"
 	Store                    string = "store"
 	DeleteRequestsStore      string = "delete-requests-store"
-	TableManager             string = "table-manager"
 	RulerStorage             string = "ruler-storage"
 	Ruler                    string = "ruler"
 	AlertManager             string = "alertmanager"
@@ -565,61 +563,6 @@ func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
 	return nil, nil
 }
 
-func (t *Mimir) initTableManager() (services.Service, error) {
-	if t.Cfg.Storage.Engine == storage.StorageEngineBlocks {
-		return nil, nil // table manager isn't used in v2
-	}
-
-	err := t.Cfg.Schema.Load()
-	if err != nil {
-		return nil, err
-	}
-
-	// Assume the newest config is the one to use
-	lastConfig := &t.Cfg.Schema.Configs[len(t.Cfg.Schema.Configs)-1]
-
-	if (t.Cfg.TableManager.ChunkTables.WriteScale.Enabled ||
-		t.Cfg.TableManager.IndexTables.WriteScale.Enabled ||
-		t.Cfg.TableManager.ChunkTables.InactiveWriteScale.Enabled ||
-		t.Cfg.TableManager.IndexTables.InactiveWriteScale.Enabled ||
-		t.Cfg.TableManager.ChunkTables.ReadScale.Enabled ||
-		t.Cfg.TableManager.IndexTables.ReadScale.Enabled ||
-		t.Cfg.TableManager.ChunkTables.InactiveReadScale.Enabled ||
-		t.Cfg.TableManager.IndexTables.InactiveReadScale.Enabled) &&
-		t.Cfg.Storage.AWSStorageConfig.Metrics.URL == "" {
-		level.Error(util_log.Logger).Log("msg", "WriteScale is enabled but no Metrics URL has been provided")
-		os.Exit(1)
-	}
-
-	reg := prometheus.WrapRegistererWith(
-		prometheus.Labels{"component": "table-manager-store"}, prometheus.DefaultRegisterer)
-
-	tableClient, err := storage.NewTableClient(lastConfig.IndexType, t.Cfg.Storage, reg)
-	if err != nil {
-		return nil, err
-	}
-
-	bucketClient, err := storage.NewBucketClient(t.Cfg.Storage)
-	util_log.CheckFatal("initializing bucket client", err)
-
-	var extraTables []chunk.ExtraTables
-	if t.Cfg.PurgerConfig.Enable {
-		reg := prometheus.WrapRegistererWith(
-			prometheus.Labels{"component": "table-manager-" + DeleteRequestsStore}, prometheus.DefaultRegisterer)
-
-		deleteStoreTableClient, err := storage.NewTableClient(t.Cfg.Storage.DeleteStoreConfig.Store, t.Cfg.Storage, reg)
-		if err != nil {
-			return nil, err
-		}
-
-		extraTables = append(extraTables, chunk.ExtraTables{TableClient: deleteStoreTableClient, Tables: t.Cfg.Storage.DeleteStoreConfig.GetTables()})
-	}
-
-	t.TableManager, err = chunk.NewTableManager(t.Cfg.TableManager, t.Cfg.Schema, 12*time.Hour, tableClient,
-		bucketClient, extraTables, prometheus.DefaultRegisterer)
-	return t.TableManager, err
-}
-
 func (t *Mimir) initRulerStorage() (serv services.Service, err error) {
 	// if the ruler is not configured and we're in single binary then let's just log an error and continue.
 	// unfortunately there is no way to generate a "default" config and compare default against actual
@@ -832,7 +775,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(StoreQueryable, t.initStoreQueryables, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontendTripperware, t.initQueryFrontendTripperware, modules.UserInvisibleModule)
 	mm.RegisterModule(QueryFrontend, t.initQueryFrontend)
-	mm.RegisterModule(TableManager, t.initTableManager)
 	mm.RegisterModule(RulerStorage, t.initRulerStorage, modules.UserInvisibleModule)
 	mm.RegisterModule(Ruler, t.initRuler)
 	mm.RegisterModule(AlertManager, t.initAlertManager)
@@ -865,7 +807,6 @@ func (t *Mimir) setupModuleManager() error {
 		QueryFrontendTripperware: {API, Overrides, DeleteRequestsStore},
 		QueryFrontend:            {QueryFrontendTripperware},
 		QueryScheduler:           {API, Overrides},
-		TableManager:             {API},
 		Ruler:                    {DistributorService, Store, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
 		AlertManager:             {API, MemberlistKV, Overrides},
@@ -875,7 +816,7 @@ func (t *Mimir) setupModuleManager() error {
 		TenantDeletion:           {Store, API, Overrides},
 		Purger:                   {ChunksPurger, TenantDeletion},
 		TenantFederation:         {Queryable},
-		All:                      {QueryFrontend, Querier, Ingester, Distributor, TableManager, Purger, StoreGateway, Ruler},
+		All:                      {QueryFrontend, Querier, Ingester, Distributor, Purger, StoreGateway, Ruler},
 	}
 	for mod, targets := range deps {
 		if err := mm.AddDependency(mod, targets...); err != nil {

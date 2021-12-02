@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/asserts.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -24,7 +25,6 @@ const (
 	Querier
 	QueryFrontend
 	QueryScheduler
-	TableManager
 	AlertManager
 	Ruler
 	StoreGateway
@@ -39,7 +39,6 @@ var (
 		Querier:        {"!cortex_querier_storegateway", "!cortex_querier_blocks", "cortex_querier"}, // The metrics prefix cortex_querier_storegateway and cortex_querier_blocks may be used by other components so we ignore it.
 		QueryFrontend:  {"cortex_frontend", "cortex_query_frontend"},
 		QueryScheduler: {"cortex_query_scheduler"},
-		TableManager:   {},
 		AlertManager:   {"cortex_alertmanager"},
 		Ruler:          {},
 		StoreGateway:   {"!cortex_storegateway_client", "cortex_storegateway"}, // The metrics prefix cortex_storegateway_client may be used by other components so we ignore it.
