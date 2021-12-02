@@ -113,6 +113,8 @@ This ordering gives priority to smallest range, oldest blocks first.
 
 For example let's assume that you run the compactor with the compaction ranges `2h, 12h, 24h`. Compactor will compact 2h ranges first and among them it gives priority to oldest blocks. Once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
 
+When using `split-and-merge` compaction strategy all split jobs are moved to the front of the work queue, because finishing all split jobs in a given time range unblocks all merge jobs.
+
 ### `newest-blocks-first`
 
 This ordering gives priority to most recent time ranges first, regardless of their compaction level.

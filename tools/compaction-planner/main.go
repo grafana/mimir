@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -45,7 +46,7 @@ func main() {
 	flag.StringVar(&cfg.userID, "user", "", "User (tenant)")
 	flag.IntVar(&cfg.shardCount, "shard-count", 4, "Shard count")
 	flag.IntVar(&cfg.splitGroups, "split-groups", 4, "Split groups")
-	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderNewestFirst, "One of: "+compactor.CompactionOrderOldestFirst+", "+compactor.CompactionOrderNewestFirst+".")
+	flag.StringVar(&cfg.sorting, "sorting", compactor.CompactionOrderOldestFirst, "One of: "+strings.Join(compactor.CompactionOrders, ", ")+".")
 	flag.Parse()
 
 	if cfg.userID == "" {
@@ -110,13 +111,11 @@ func main() {
 		log.Fatalln("failed to plan compaction:", err)
 	}
 
-	switch cfg.sorting {
-	case compactor.CompactionOrderOldestFirst:
-		jobs = compactor.SortJobsBySmallestRangeOldestBlocksFirst(jobs)
-	case compactor.CompactionOrderNewestFirst:
-		jobs = compactor.SortJobsByNewestBlocksFirst(jobs)
-	default:
-		log.Println("unknown sorting, not sorting:", cfg.sorting)
+	fn := compactor.GetJobsOrderFunction(cfg.sorting)
+	if fn != nil {
+		jobs = fn(jobs)
+	} else {
+		log.Println("unknown sorting, jobs will be unsorted")
 	}
 
 	for ix, j := range jobs {

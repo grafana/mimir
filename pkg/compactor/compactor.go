@@ -47,19 +47,15 @@ const (
 
 	CompactionStrategyDefault    = "default"
 	CompactionStrategySplitMerge = "split-and-merge"
-
-	CompactionOrderOldestFirst = "smallest-range-oldest-blocks-first"
-	CompactionOrderNewestFirst = "newest-blocks-first"
 )
 
 var (
 	errInvalidBlockRanges         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
-	errInvalidCompactionOrder     = errors.Errorf("unsupported compaction order (supported values: %s)", strings.Join(compactionOrders, ", "))
+	errInvalidCompactionOrder     = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
 	errUnsupportedCompactionOrder = "the %s compaction strategy does not support %s order"
 	RingOp                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
-	compactionOrders     = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -139,7 +135,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard tenants across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
 	f.StringVar(&cfg.CompactionStrategy, "compactor.compaction-strategy", CompactionStrategyDefault, fmt.Sprintf("The compaction strategy to use. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
-	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(compactionOrders, ", ")))
+	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
@@ -161,7 +157,7 @@ func (cfg *Config) Validate() error {
 		return fmt.Errorf("unsupported compaction strategy (supported values: %s)", strings.Join(compactionStrategies, ", "))
 	}
 
-	if !util.StringsContain(compactionOrders, cfg.CompactionJobsOrder) {
+	if !util.StringsContain(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
 	}
 
@@ -227,7 +223,7 @@ type MultitenantCompactor struct {
 	ringSubservicesWatcher *services.FailureWatcher
 
 	shardingStrategy shardingStrategy
-	jobsOrder        jobsOrderFunc
+	jobsOrder        JobsOrderFunc
 
 	// Metrics.
 	compactionRunsStarted          prometheus.Counter
@@ -353,10 +349,9 @@ func newMultitenantCompactor(
 		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
 	}
 
-	if compactorCfg.CompactionJobsOrder == CompactionOrderNewestFirst {
-		c.jobsOrder = SortJobsByNewestBlocksFirst
-	} else {
-		c.jobsOrder = SortJobsBySmallestRangeOldestBlocksFirst
+	c.jobsOrder = GetJobsOrderFunction(compactorCfg.CompactionJobsOrder)
+	if c.jobsOrder == nil {
+		return nil, errInvalidCompactionOrder
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
