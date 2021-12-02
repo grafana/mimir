@@ -163,10 +163,10 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	return nil
 }
 
-// ExemplarTimestampOK returns true if the timestamp is OK.
+// ExemplarTimestampOK returns true if the timestamp is newer than minTS.
 // This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
-func ExemplarTimestampOK(userID string, maxAge int64, e mimirpb.Exemplar) bool {
-	if e.TimestampMs < maxAge {
+func ExemplarTimestampOK(userID string, minTS int64, e mimirpb.Exemplar) bool {
+	if e.TimestampMs < minTS {
 		DiscardedExemplars.WithLabelValues(exemplarTooOld, userID).Inc()
 		return false
 	}

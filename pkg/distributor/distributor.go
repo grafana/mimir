@@ -526,7 +526,7 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, maxExemplarAge int64) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -554,7 +554,7 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			// there never will be any.
 			return err
 		}
-		if !validation.ExemplarTimestampOK(userID, maxExemplarAge, e) {
+		if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
 			// Delete this exemplar by moving the last one on top and shortening the slice
 			last := len(ts.Exemplars) - 1
 			if i < last {
@@ -684,8 +684,11 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	}
 	// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
 	// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
-	// (If we didn't find any samples this will be MaxInt64, and we won't reject any exemplars.)
-	maxExemplarAge := earliestSampleTimestampMs - 300000
+	// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
+	var minExemplarTS int64
+	if earliestSampleTimestampMs != math.MaxInt64 {
+		minExemplarTS = earliestSampleTimestampMs - 300000
+	}
 
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
@@ -728,7 +731,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		// Note that validateSeries may drop some data in ts.
-		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, maxExemplarAge)
+		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.
