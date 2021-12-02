@@ -8,20 +8,13 @@ package ingester
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"math"
 	"math/rand"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,72 +28,10 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
-
-type testStore struct {
-	mtx sync.Mutex
-	// Chunks keyed by userID.
-	chunks map[string][]chunk.Chunk
-}
-
-func newTestStore(t testing.TB, cfg Config, clientConfig client.Config, limits validation.Limits, reg prometheus.Registerer) (*testStore, *Ingester) {
-	store := &testStore{
-		chunks: map[string][]chunk.Chunk{},
-	}
-	overrides, err := validation.NewOverrides(limits, nil)
-	require.NoError(t, err)
-
-	ing, err := New(cfg, clientConfig, overrides, store, reg, log.NewNopLogger())
-	require.NoError(t, err)
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
-
-	return store, ing
-}
-
-func newDefaultTestStore(t testing.TB) (*testStore, *Ingester) {
-	return newTestStore(t,
-		defaultIngesterTestConfig(t),
-		defaultClientTestConfig(),
-		defaultLimitsTestConfig(), nil)
-}
-
-func (s *testStore) Put(ctx context.Context, chunks []chunk.Chunk) error {
-	if len(chunks) == 0 {
-		return nil
-	}
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	for _, chunk := range chunks {
-		for _, v := range chunk.Metric {
-			if v.Value == "" {
-				return fmt.Errorf("Chunk has blank label %q", v.Name)
-			}
-		}
-	}
-	userID := chunks[0].UserID
-	s.chunks[userID] = append(s.chunks[userID], chunks...)
-	return nil
-}
-
-func (s *testStore) Stop() {}
-
-// check that the store is holding data equivalent to what we expect
-func (s *testStore) checkData(t *testing.T, userIDs []string, testData map[string]model.Matrix) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-	for _, userID := range userIDs {
-		res, err := chunk.ChunksToMatrix(context.Background(), s.chunks[userID], model.Time(0), model.Time(math.MaxInt64))
-		require.NoError(t, err)
-		sort.Sort(res)
-		assert.Equal(t, testData[userID], res)
-	}
-}
 
 func buildTestMatrix(numSeries int, samplesPerSeries int, offset int) model.Matrix {
 	m := make(model.Matrix, 0, numSeries)
@@ -218,75 +149,20 @@ func pushTestSamples(t testing.TB, ing *Ingester, numSeries, samplesPerSeries, o
 	return userIDs, testData
 }
 
-func retrieveTestSamples(t *testing.T, ing *Ingester, userIDs []string, testData map[string]model.Matrix) {
-	// Read samples back via ingester queries.
-	for _, userID := range userIDs {
-		ctx := user.InjectOrgID(context.Background(), userID)
-		res, _, err := runTestQuery(ctx, t, ing, labels.MatchRegexp, model.JobLabel, ".+")
-		require.NoError(t, err)
-		assert.Equal(t, testData[userID], res)
-	}
-}
-
-func TestIngesterAppend(t *testing.T) {
-	store, ing := newDefaultTestStore(t)
-	userIDs, testData := pushTestSamples(t, ing, 10, 1000, 0)
-	retrieveTestSamples(t, ing, userIDs, testData)
-
-	// Read samples back via chunk store.
-	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
-	store.checkData(t, userIDs, testData)
-}
-
-func TestIngesterMetadataAppend(t *testing.T) {
-	for _, tc := range []struct {
-		desc              string
-		numMetadata       int
-		metadataPerMetric int
-		expectedMetrics   int
-		expectedMetadata  int
-		err               error
-	}{
-		{"with no metadata", 0, 0, 0, 0, nil},
-		{"with one metadata per metric", 10, 1, 10, 10, nil},
-		{"with multiple metadata per metric", 10, 3, 10, 30, nil},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			limits := defaultLimitsTestConfig()
-			limits.MaxLocalMetadataPerMetric = 50
-			_, ing := newTestStore(t, defaultIngesterTestConfig(t), defaultClientTestConfig(), limits, nil)
-			userIDs, _ := pushTestMetadata(t, ing, tc.numMetadata, tc.metadataPerMetric)
-
-			for _, userID := range userIDs {
-				ctx := user.InjectOrgID(context.Background(), userID)
-				resp, err := ing.MetricsMetadata(ctx, nil)
-
-				if tc.err != nil {
-					require.Equal(t, tc.err, err)
-				} else {
-					require.NoError(t, err)
-					require.NotNil(t, resp)
-
-					metricTracker := map[string]bool{}
-					for _, m := range resp.Metadata {
-						_, ok := metricTracker[m.GetMetricFamilyName()]
-						if !ok {
-							metricTracker[m.GetMetricFamilyName()] = true
-						}
-					}
-
-					require.Equal(t, tc.expectedMetrics, len(metricTracker))
-					require.Equal(t, tc.expectedMetadata, len(resp.Metadata))
-				}
-			}
-		})
-	}
-}
-
 func TestIngesterPurgeMetadata(t *testing.T) {
 	cfg := defaultIngesterTestConfig(t)
 	cfg.MetadataRetainPeriod = 20 * time.Millisecond
-	_, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), nil)
+
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
+	})
+
 	userIDs, _ := pushTestMetadata(t, ing, 10, 3)
 
 	time.Sleep(40 * time.Millisecond)
@@ -304,7 +180,17 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 	reg := prometheus.NewPedanticRegistry()
 	cfg := defaultIngesterTestConfig(t)
 	cfg.MetadataRetainPeriod = 20 * time.Millisecond
-	_, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), reg)
+
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", reg)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	// wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
+	})
+
 	_, _ = pushTestMetadata(t, ing, 10, 3)
 
 	pushTestMetadata(t, ing, 10, 3)
@@ -348,7 +234,15 @@ func TestIngesterMetadataMetrics(t *testing.T) {
 }
 
 func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
-	_, ing := newDefaultTestStore(t)
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
+	})
 
 	userIDs, _ := pushTestSamples(t, ing, 10, 1000, 0)
 
@@ -372,61 +266,6 @@ func TestIngesterSendsOnlySeriesWithData(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing))
 }
 
-func TestIngesterIdleFlush(t *testing.T) {
-	// Create test ingester with short flush cycle
-	cfg := defaultIngesterTestConfig(t)
-	cfg.FlushCheckPeriod = 20 * time.Millisecond
-	cfg.MaxChunkIdle = 100 * time.Millisecond
-	cfg.RetainPeriod = 500 * time.Millisecond
-	store, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), nil)
-
-	userIDs, testData := pushTestSamples(t, ing, 4, 100, 0)
-
-	// wait beyond idle time so samples flush
-	time.Sleep(cfg.MaxChunkIdle * 2)
-
-	store.checkData(t, userIDs, testData)
-
-	// Check data is still retained by ingester
-	for _, userID := range userIDs {
-		ctx := user.InjectOrgID(context.Background(), userID)
-		res, _, err := runTestQuery(ctx, t, ing, labels.MatchRegexp, model.JobLabel, ".+")
-		require.NoError(t, err)
-		assert.Equal(t, testData[userID], res)
-	}
-
-	// now wait beyond retain time so chunks are removed from memory
-	time.Sleep(cfg.RetainPeriod)
-
-	// Check data has gone from ingester
-	for _, userID := range userIDs {
-		ctx := user.InjectOrgID(context.Background(), userID)
-		res, _, err := runTestQuery(ctx, t, ing, labels.MatchRegexp, model.JobLabel, ".+")
-		require.NoError(t, err)
-		assert.Equal(t, model.Matrix{}, res)
-	}
-}
-
-func TestIngesterSpreadFlush(t *testing.T) {
-	// Create test ingester with short flush cycle
-	cfg := defaultIngesterTestConfig(t)
-	cfg.SpreadFlushes = true
-	cfg.FlushCheckPeriod = 20 * time.Millisecond
-	store, ing := newTestStore(t, cfg, defaultClientTestConfig(), defaultLimitsTestConfig(), nil)
-
-	userIDs, testData := pushTestSamples(t, ing, 4, 100, 0)
-
-	// add another sample with timestamp at the end of the cycle to trigger
-	// head closes and get an extra chunk so we will flush the first one
-	_, _ = pushTestSamples(t, ing, 4, 1, int(cfg.MaxChunkAge.Seconds()-1)*1000)
-
-	// wait beyond flush time so first set of samples should be sent to store
-	time.Sleep(cfg.FlushCheckPeriod * 2)
-
-	// check the first set of samples has been sent to the store
-	store.checkData(t, userIDs, testData)
-}
-
 type stream struct {
 	grpc.ServerStream
 	ctx       context.Context
@@ -442,48 +281,32 @@ func (s *stream) Send(response *client.QueryStreamResponse) error {
 	return nil
 }
 
-func TestIngesterAppendOutOfOrderAndDuplicate(t *testing.T) {
-	_, ing := newDefaultTestStore(t)
-	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-	m := labelPairs{
-		{Name: model.MetricNameLabel, Value: "testmetric"},
-	}
-	ctx := context.Background()
-	err := ing.append(ctx, userID, m, 1, 0, mimirpb.API, nil)
-	require.NoError(t, err)
-
-	// Two times exactly the same sample (noop).
-	err = ing.append(ctx, userID, m, 1, 0, mimirpb.API, nil)
-	require.NoError(t, err)
-
-	// Earlier sample than previous one.
-	err = ing.append(ctx, userID, m, 0, 0, mimirpb.API, nil)
-	require.Contains(t, err.Error(), "sample timestamp out of order")
-	errResp, ok := err.(*validationError)
-	require.True(t, ok)
-	require.Equal(t, errResp.code, 400)
-
-	// Same timestamp as previous sample, but different value.
-	err = ing.append(ctx, userID, m, 1, 1, mimirpb.API, nil)
-	require.Contains(t, err.Error(), "sample with repeated timestamp but different value")
-	errResp, ok = err.(*validationError)
-	require.True(t, ok)
-	require.Equal(t, errResp.code, 400)
-}
-
 // Test that blank labels are removed by the ingester
-func TestIngesterAppendBlankLabel(t *testing.T) {
-	_, ing := newDefaultTestStore(t)
+func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), defaultLimitsTestConfig(), "", nil)
+	require.NoError(t, err)
+	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
-	lp := labelPairs{
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
+	})
+
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+	lbls := []labels.Labels{{
 		{Name: model.MetricNameLabel, Value: "testmetric"},
 		{Name: "foo", Value: ""},
 		{Name: "bar", Value: ""},
-	}
+	}}
+
 	ctx := user.InjectOrgID(context.Background(), userID)
-	err := ing.append(ctx, userID, lp, 1, 0, mimirpb.API, nil)
+	_, err = ing.Push(ctx, mimirpb.ToWriteRequest(
+		lbls,
+		[]mimirpb.Sample{{TimestampMs: 1, Value: 0}},
+		nil,
+		mimirpb.API,
+	))
 	require.NoError(t, err)
 
 	res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, labels.MetricName, "testmetric")
@@ -506,32 +329,14 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 	limits.MaxLocalSeriesPerUser = 1
 	limits.MaxLocalMetricsWithMetadataPerUser = 1
 
-	dir, err := ioutil.TempDir("", "limits")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	// create a data dir that survives an ingester restart
+	dataDir := t.TempDir()
 
-	chunksDir := filepath.Join(dir, "chunks")
-	blocksDir := filepath.Join(dir, "blocks")
-	require.NoError(t, os.Mkdir(chunksDir, os.ModePerm))
-	require.NoError(t, os.Mkdir(blocksDir, os.ModePerm))
-
-	chunksIngesterGenerator := func() *Ingester {
-		cfg := defaultIngesterTestConfig(t)
-		cfg.WALConfig.WALEnabled = true
-		cfg.WALConfig.Recover = true
-		cfg.WALConfig.Dir = chunksDir
-		cfg.WALConfig.CheckpointDuration = 100 * time.Minute
-
-		_, ing := newTestStore(t, cfg, defaultClientTestConfig(), limits, nil)
-		return ing
-	}
-
-	blocksIngesterGenerator := func() *Ingester {
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, blocksDir, nil)
+	newIngester := func() *Ingester {
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+
 		// Wait until it's healthy
 		test.Poll(t, time.Second, 1, func() interface{} {
 			return ing.lifecycler.HealthyInstancesCount()
@@ -540,87 +345,82 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 		return ing
 	}
 
-	tests := []string{"chunks", "blocks"}
-	for i, ingGenerator := range []func() *Ingester{chunksIngesterGenerator, blocksIngesterGenerator} {
-		t.Run(tests[i], func(t *testing.T) {
-			ing := ingGenerator()
+	ing := newIngester()
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
-			userID := "1"
-			// Series
-			labels1 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
-			sample1 := mimirpb.Sample{
-				TimestampMs: 0,
-				Value:       1,
-			}
-			sample2 := mimirpb.Sample{
-				TimestampMs: 1,
-				Value:       2,
-			}
-			labels3 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
-			sample3 := mimirpb.Sample{
-				TimestampMs: 1,
-				Value:       3,
-			}
-			// Metadata
-			metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
-			metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric2", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
-
-			// Append only one series and one metadata first, expect no error.
-			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
-			require.NoError(t, err)
-
-			testLimits := func() {
-				// Append to two series, expect series-exceeded error.
-				_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, mimirpb.API))
-				httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-				require.True(t, ok, "returned error is not an httpgrpc response")
-				assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
-				assert.Equal(t, wrapWithUser(makeLimitError(perUserSeriesLimit, ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
-
-				// Append two metadata, expect no error since metadata is a best effort approach.
-				_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
-				require.NoError(t, err)
-
-				// Read samples back via ingester queries.
-				res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, model.MetricNameLabel, "testmetric")
-				require.NoError(t, err)
-
-				expected := model.Matrix{
-					{
-						Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
-						Values: []model.SamplePair{
-							{
-								Timestamp: model.Time(sample1.TimestampMs),
-								Value:     model.SampleValue(sample1.Value),
-							},
-							{
-								Timestamp: model.Time(sample2.TimestampMs),
-								Value:     model.SampleValue(sample2.Value),
-							},
-						},
-					},
-				}
-
-				// Verify samples
-				require.Equal(t, expected, res)
-
-				// Verify metadata
-				m, err := ing.MetricsMetadata(ctx, nil)
-				require.NoError(t, err)
-				assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
-			}
-
-			testLimits()
-
-			// Limits should hold after restart.
-			services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-			ing = ingGenerator()
-			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-			testLimits()
-		})
+	userID := "1"
+	// Series
+	labels1 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	sample1 := mimirpb.Sample{
+		TimestampMs: 0,
+		Value:       1,
 	}
+	sample2 := mimirpb.Sample{
+		TimestampMs: 1,
+		Value:       2,
+	}
+	labels3 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	sample3 := mimirpb.Sample{
+		TimestampMs: 1,
+		Value:       3,
+	}
+	// Metadata
+	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+	metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric2", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
+
+	// Append only one series and one metadata first, expect no error.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
+	require.NoError(t, err)
+
+	testLimits := func() {
+		// Append to two series, expect series-exceeded error.
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, mimirpb.API))
+		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "returned error is not an httpgrpc response")
+		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
+		assert.Equal(t, wrapWithUser(makeLimitError(perUserSeriesLimit, ing.limiter.FormatError(userID, errMaxSeriesPerUserLimitExceeded)), userID).Error(), string(httpResp.Body))
+
+		// Append two metadata, expect no error since metadata is a best effort approach.
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
+		require.NoError(t, err)
+
+		// Read samples back via ingester queries.
+		res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, model.MetricNameLabel, "testmetric")
+		require.NoError(t, err)
+
+		expected := model.Matrix{
+			{
+				Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
+				Values: []model.SamplePair{
+					{
+						Timestamp: model.Time(sample1.TimestampMs),
+						Value:     model.SampleValue(sample1.Value),
+					},
+					{
+						Timestamp: model.Time(sample2.TimestampMs),
+						Value:     model.SampleValue(sample2.Value),
+					},
+				},
+			},
+		}
+
+		require.Equal(t, expected, res)
+
+		// Verify metadata
+		m, err := ing.MetricsMetadata(ctx, nil)
+		require.NoError(t, err)
+		assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
+	}
+
+	testLimits()
+
+	// Limits should hold after restart.
+	services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+	ing = newIngester()
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	testLimits()
 
 }
 
@@ -629,32 +429,14 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 	limits.MaxLocalSeriesPerMetric = 1
 	limits.MaxLocalMetadataPerMetric = 1
 
-	dir, err := ioutil.TempDir("", "limits")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	// create a data dir that survives an ingester restart
+	dataDir := t.TempDir()
 
-	chunksDir := filepath.Join(dir, "chunks")
-	blocksDir := filepath.Join(dir, "blocks")
-	require.NoError(t, os.Mkdir(chunksDir, os.ModePerm))
-	require.NoError(t, os.Mkdir(blocksDir, os.ModePerm))
-
-	chunksIngesterGenerator := func() *Ingester {
-		cfg := defaultIngesterTestConfig(t)
-		cfg.WALConfig.WALEnabled = true
-		cfg.WALConfig.Recover = true
-		cfg.WALConfig.Dir = chunksDir
-		cfg.WALConfig.CheckpointDuration = 100 * time.Minute
-
-		_, ing := newTestStore(t, cfg, defaultClientTestConfig(), limits, nil)
-		return ing
-	}
-
-	blocksIngesterGenerator := func() *Ingester {
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, blocksDir, nil)
+	newIngester := func() *Ingester {
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+
 		// Wait until it's healthy
 		test.Poll(t, time.Second, 1, func() interface{} {
 			return ing.lifecycler.HealthyInstancesCount()
@@ -663,249 +445,83 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 		return ing
 	}
 
-	tests := []string{"chunks", "blocks"}
-	for i, ingGenerator := range []func() *Ingester{chunksIngesterGenerator, blocksIngesterGenerator} {
-		t.Run(tests[i], func(t *testing.T) {
-			ing := ingGenerator()
-
-			userID := "1"
-			labels1 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
-			sample1 := mimirpb.Sample{
-				TimestampMs: 0,
-				Value:       1,
-			}
-			sample2 := mimirpb.Sample{
-				TimestampMs: 1,
-				Value:       2,
-			}
-			labels3 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
-			sample3 := mimirpb.Sample{
-				TimestampMs: 1,
-				Value:       3,
-			}
-
-			// Metadata
-			metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
-			metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
-
-			// Append only one series and one metadata first, expect no error.
-			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
-			require.NoError(t, err)
-
-			testLimits := func() {
-				// Append two series, expect series-exceeded error.
-				_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, mimirpb.API))
-				httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-				require.True(t, ok, "returned error is not an httpgrpc response")
-				assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
-				assert.Equal(t, wrapWithUser(makeMetricLimitError(perMetricSeriesLimit, labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
-
-				// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
-				_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
-				require.NoError(t, err)
-
-				// Read samples back via ingester queries.
-				res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, model.MetricNameLabel, "testmetric")
-				require.NoError(t, err)
-
-				// Verify Series
-				expected := model.Matrix{
-					{
-						Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
-						Values: []model.SamplePair{
-							{
-								Timestamp: model.Time(sample1.TimestampMs),
-								Value:     model.SampleValue(sample1.Value),
-							},
-							{
-								Timestamp: model.Time(sample2.TimestampMs),
-								Value:     model.SampleValue(sample2.Value),
-							},
-						},
-					},
-				}
-
-				assert.Equal(t, expected, res)
-
-				// Verify metadata
-				m, err := ing.MetricsMetadata(ctx, nil)
-				require.NoError(t, err)
-				assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
-			}
-
-			testLimits()
-
-			// Limits should hold after restart.
-			services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-			ing = ingGenerator()
-			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-			testLimits()
-		})
-	}
-}
-
-func TestIngesterValidation(t *testing.T) {
-	_, ing := newDefaultTestStore(t)
+	ing := newIngester()
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
 	userID := "1"
-	ctx := user.InjectOrgID(context.Background(), userID)
-	m := labelPairs{{Name: labels.MetricName, Value: "testmetric"}}
+	labels1 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}
+	sample1 := mimirpb.Sample{
+		TimestampMs: 0,
+		Value:       1,
+	}
+	sample2 := mimirpb.Sample{
+		TimestampMs: 1,
+		Value:       2,
+	}
+	labels3 := labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "biz"}}
+	sample3 := mimirpb.Sample{
+		TimestampMs: 1,
+		Value:       3,
+	}
 
-	// As a setup, let's append samples.
-	err := ing.append(context.Background(), userID, m, 1, 0, mimirpb.API, nil)
+	// Metadata
+	metadata1 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric", Type: mimirpb.COUNTER}
+	metadata2 := &mimirpb.MetricMetadata{MetricFamilyName: "testmetric", Help: "a help for testmetric2", Type: mimirpb.COUNTER}
+
+	// Append only one series and one metadata first, expect no error.
+	ctx := user.InjectOrgID(context.Background(), userID)
+	_, err := ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1}, []mimirpb.Sample{sample1}, []*mimirpb.MetricMetadata{metadata1}, mimirpb.API))
 	require.NoError(t, err)
 
-	for _, tc := range []struct {
-		desc    string
-		lbls    []labels.Labels
-		samples []mimirpb.Sample
-		err     error
-	}{
-		{
-			desc: "With multiple append failures, only return the first error.",
-			lbls: []labels.Labels{
-				{{Name: labels.MetricName, Value: "testmetric"}},
-				{{Name: labels.MetricName, Value: "testmetric"}},
+	testLimits := func() {
+		// Append two series, expect series-exceeded error.
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest([]labels.Labels{labels1, labels3}, []mimirpb.Sample{sample2, sample3}, nil, mimirpb.API))
+		httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+		require.True(t, ok, "returned error is not an httpgrpc response")
+		assert.Equal(t, http.StatusBadRequest, int(httpResp.Code))
+		assert.Equal(t, wrapWithUser(makeMetricLimitError(perMetricSeriesLimit, labels3, ing.limiter.FormatError(userID, errMaxSeriesPerMetricLimitExceeded)), userID).Error(), string(httpResp.Body))
+
+		// Append two metadata for the same metric. Drop the second one, and expect no error since metadata is a best effort approach.
+		_, err = ing.Push(ctx, mimirpb.ToWriteRequest(nil, nil, []*mimirpb.MetricMetadata{metadata1, metadata2}, mimirpb.API))
+		require.NoError(t, err)
+
+		// Read samples back via ingester queries.
+		res, _, err := runTestQuery(ctx, t, ing, labels.MatchEqual, model.MetricNameLabel, "testmetric")
+		require.NoError(t, err)
+
+		// Verify Series
+		expected := model.Matrix{
+			{
+				Metric: mimirpb.FromLabelAdaptersToMetric(mimirpb.FromLabelsToLabelAdapters(labels1)),
+				Values: []model.SamplePair{
+					{
+						Timestamp: model.Time(sample1.TimestampMs),
+						Value:     model.SampleValue(sample1.Value),
+					},
+					{
+						Timestamp: model.Time(sample2.TimestampMs),
+						Value:     model.SampleValue(sample2.Value),
+					},
+				},
 			},
-			samples: []mimirpb.Sample{
-				{TimestampMs: 0, Value: 0}, // earlier timestamp, out of order.
-				{TimestampMs: 1, Value: 2}, // same timestamp different value.
-			},
-			err: httpgrpc.Errorf(http.StatusBadRequest, `user=1: sample timestamp out of order; last timestamp: 0.001, incoming timestamp: 0 for series {__name__="testmetric"}`),
-		},
-	} {
-		t.Run(tc.desc, func(t *testing.T) {
-			_, err := ing.Push(ctx, mimirpb.ToWriteRequest(tc.lbls, tc.samples, nil, mimirpb.API))
-			require.Equal(t, tc.err, err)
-		})
+		}
+
+		assert.Equal(t, expected, res)
+
+		// Verify metadata
+		m, err := ing.MetricsMetadata(ctx, nil)
+		require.NoError(t, err)
+		assert.Equal(t, []*mimirpb.MetricMetadata{metadata1}, m.Metadata)
 	}
-}
 
-func TestIngesterLabelNames(t *testing.T) {
-	_, ing := newDefaultTestStore(t)
-	defer func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), ing)) }()
+	testLimits()
 
-	const (
-		userID           = "1"
-		numSeries        = 5
-		samplesPerSeries = 1
-	)
-	ctx := user.InjectOrgID(context.Background(), userID)
-
-	// Create test samples.
-	m := make(model.Matrix, 0)
-	for i := 0; i < numSeries; i++ {
-		ss := model.SampleStream{
-			Metric: model.Metric{
-				model.MetricNameLabel: model.LabelValue(fmt.Sprintf("testmetric_%d", i)),
-				model.JobLabel:        model.LabelValue(fmt.Sprintf("testjob%d", i%2)),
-			},
-			Values: make([]model.SamplePair, 0, samplesPerSeries),
-		}
-		// Each testmetric_N has extra label names [lbl_0, ..., lbl_N]
-		for j := 0; j <= i; j++ {
-			ss.Metric[model.LabelName(fmt.Sprintf("lbl_%d", j))] = "foo"
-		}
-		for j := 0; j < samplesPerSeries; j++ {
-			ss.Values = append(ss.Values, model.SamplePair{
-				Timestamp: model.Time(i + j),
-				Value:     model.SampleValue(i + j),
-			})
-		}
-		m = append(m, &ss)
-	}
-	sort.Sort(m)
-
-	// Append samples.
-	_, err := ing.Push(ctx, mimirpb.ToWriteRequest(matrixToLables(m), matrixToSamples(m), nil, mimirpb.API))
-	require.NoError(t, err)
-
-	t.Run("without matchers", func(t *testing.T) {
-		var matchers []*labels.Matcher
-		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
-		require.NoError(t, err)
-
-		resp, err := ing.LabelNames(ctx, req)
-		require.NoError(t, err)
-
-		assert.Equal(t, []string{"__name__", "job", "lbl_0", "lbl_1", "lbl_2", "lbl_3", "lbl_4"}, resp.LabelNames)
-	})
-
-	t.Run("with matchers", func(t *testing.T) {
-		matchers := []*labels.Matcher{
-			labels.MustNewMatcher(labels.MatchRegexp, model.MetricNameLabel, "testmetric_[0-3]"),
-		}
-		req, err := client.ToLabelNamesRequest(0, model.Latest, matchers)
-		require.NoError(t, err)
-
-		resp, err := ing.LabelNames(ctx, req)
-		require.NoError(t, err)
-
-		assert.Equal(t, []string{"__name__", "job", "lbl_0", "lbl_1", "lbl_2", "lbl_3"}, resp.LabelNames)
-	})
-}
-
-func BenchmarkIngesterSeriesCreationLocking(b *testing.B) {
-	for i := 1; i <= 32; i++ {
-		b.Run(strconv.Itoa(i), func(b *testing.B) {
-			for n := 0; n < b.N; n++ {
-				benchmarkIngesterSeriesCreationLocking(b, i)
-			}
-		})
-	}
-}
-
-func benchmarkIngesterSeriesCreationLocking(b *testing.B, parallelism int) {
-	_, ing := newDefaultTestStore(b)
+	// Limits should hold after restart.
+	services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+	ing = newIngester()
 	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
-	var (
-		wg     sync.WaitGroup
-		series = int(1e4)
-		ctx    = context.Background()
-	)
-	wg.Add(parallelism)
-	ctx = user.InjectOrgID(ctx, "1")
-	for i := 0; i < parallelism; i++ {
-		seriesPerGoroutine := series / parallelism
-		go func(from, through int) {
-			defer wg.Done()
-
-			for j := from; j < through; j++ {
-				_, err := ing.Push(ctx, &mimirpb.WriteRequest{
-					Timeseries: []mimirpb.PreallocTimeseries{
-						{
-							TimeSeries: &mimirpb.TimeSeries{
-								Labels: []mimirpb.LabelAdapter{
-									{Name: model.MetricNameLabel, Value: fmt.Sprintf("metric_%d", j)},
-								},
-								Samples: []mimirpb.Sample{
-									{TimestampMs: int64(j), Value: float64(j)},
-								},
-							},
-						},
-					},
-				})
-				require.NoError(b, err)
-			}
-
-		}(i*seriesPerGoroutine, (i+1)*seriesPerGoroutine)
-	}
-
-	wg.Wait()
-}
-
-func BenchmarkIngesterPush(b *testing.B) {
-	limits := defaultLimitsTestConfig()
-	benchmarkIngesterPush(b, limits, false)
-}
-
-func BenchmarkIngesterPushErrors(b *testing.B) {
-	limits := defaultLimitsTestConfig()
-	limits.MaxLocalSeriesPerMetric = 1
-	benchmarkIngesterPush(b, limits, true)
+	testLimits()
 }
 
 // Construct a set of realistic-looking samples, all with slightly different label sets
@@ -923,54 +539,19 @@ func benchmarkData(nSeries int) (allLabels []labels.Labels, allSamples []mimirpb
 	return
 }
 
-func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpected bool) {
-	cfg := defaultIngesterTestConfig(b)
-	clientCfg := defaultClientTestConfig()
-
-	const (
-		series  = 100
-		samples = 100
-	)
-
-	allLabels, allSamples := benchmarkData(series)
-	ctx := user.InjectOrgID(context.Background(), "1")
-
-	encodings := []struct {
-		name string
-		e    promchunk.Encoding
-	}{
-		{"DoubleDelta", promchunk.DoubleDelta},
-		{"Varbit", promchunk.Varbit},
-		{"Bigchunk", promchunk.Bigchunk},
-	}
-
-	for _, enc := range encodings {
-		b.Run(fmt.Sprintf("encoding=%s", enc.name), func(b *testing.B) {
-			b.ResetTimer()
-			for iter := 0; iter < b.N; iter++ {
-				_, ing := newTestStore(b, cfg, clientCfg, limits, nil)
-				// Bump the timestamp on each of our test samples each time round the loop
-				for j := 0; j < samples; j++ {
-					for i := range allSamples {
-						allSamples[i].TimestampMs = int64(j + 1)
-					}
-					_, err := ing.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
-					if !errorsExpected {
-						require.NoError(b, err)
-					}
-				}
-				_ = services.StopAndAwaitTerminated(context.Background(), ing)
-			}
-		})
-	}
-
-}
-
 func BenchmarkIngester_QueryStream(b *testing.B) {
 	cfg := defaultIngesterTestConfig(b)
-	clientCfg := defaultClientTestConfig()
-	limits := defaultLimitsTestConfig()
-	_, ing := newTestStore(b, cfg, clientCfg, limits, nil)
+
+	ing, err := prepareIngesterWithBlocksStorageAndLimits(b, cfg, defaultLimitsTestConfig(), "", nil)
+	require.NoError(b, err)
+	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ing))
+	defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+	// Wait until the ingester is healthy
+	test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+		return ing.lifecycler.HealthyInstancesCount()
+	})
+
 	ctx := user.InjectOrgID(context.Background(), "1")
 
 	const (
@@ -1012,12 +593,18 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 }
 
 func TestIngesterActiveSeries(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
-	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
+	metricLabelAdapters := []mimirpb.LabelAdapter{
+		{Name: labels.MetricName, Value: "test"},
+	}
+	metricLabels := []labels.Labels{
+		labels.Labels(mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)),
+	}
 	metricNames := []string{
 		"cortex_ingester_active_series",
 	}
 	userID := "test"
+
+	tsNow := time.Now().Unix() * 1000
 
 	tests := map[string]struct {
 		reqs                []*mimirpb.WriteRequest
@@ -1027,13 +614,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 		"should succeed on valid series and metadata": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+					metricLabels,
+					[]mimirpb.Sample{{Value: 1, TimestampMs: tsNow + 9}},
 					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					metricLabels,
+					[]mimirpb.Sample{{Value: 2, TimestampMs: tsNow + 10}},
 					nil,
 					mimirpb.API),
 			},
@@ -1047,13 +634,13 @@ func TestIngesterActiveSeries(t *testing.T) {
 			disableActiveSeries: true,
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: 9}},
+					metricLabels,
+					[]mimirpb.Sample{{Value: 1, TimestampMs: tsNow + 9}},
 					nil,
 					mimirpb.API),
 				mimirpb.ToWriteRequest(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 2, TimestampMs: 10}},
+					metricLabels,
+					[]mimirpb.Sample{{Value: 2, TimestampMs: tsNow + 10}},
 					nil,
 					mimirpb.API),
 			},
@@ -1070,35 +657,31 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 
-			_, i := newTestStore(t,
-				cfg,
-				defaultClientTestConfig(),
-				defaultLimitsTestConfig(), registry)
-
-			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
-
-			ctx := user.InjectOrgID(context.Background(), userID)
+			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
+			require.NoError(t, err)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
+			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
 			// Wait until the ingester is healthy
 			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
-				return i.lifecycler.HealthyInstancesCount()
+				return ing.lifecycler.HealthyInstancesCount()
 			})
+
+			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
+
+			ctx := user.InjectOrgID(context.Background(), userID)
 
 			// Push timeseries
 			for _, req := range testData.reqs {
-				_, err := i.Push(ctx, req)
+				_, err := ing.Push(ctx, req)
 				assert.NoError(t, err)
 			}
 
 			// Update active series for metrics check.
-			if !testData.disableActiveSeries {
-				i.userStatesMtx.Lock()
-				i.userStates.purgeAndUpdateActiveSeries(time.Now().Add(-i.cfg.ActiveSeriesMetricsIdleTimeout))
-				i.userStatesMtx.Unlock()
-			}
+			ing.updateActiveSeries()
 
 			// Check tracked Prometheus metrics
-			err := testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), metricNames...)
+			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), metricNames...)
 			assert.NoError(t, err)
 		})
 	}

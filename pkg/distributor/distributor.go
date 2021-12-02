@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
+	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -109,6 +110,7 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
+	sampleDelayHistogram             prometheus.Histogram
 	ingesterAppends                  *prometheus.CounterVec
 	ingesterAppendFailures           *prometheus.CounterVec
 	ingesterQueries                  *prometheus.CounterVec
@@ -297,6 +299,25 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "labels_per_sample",
 			Help:      "Number of labels per sample.",
 			Buckets:   []float64{5, 10, 15, 20, 25},
+		}),
+		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Namespace: "cortex",
+			Name:      "distributor_sample_delay_seconds",
+			Help:      "Number of seconds by which a sample came in late wrt wallclock.",
+			Buckets: []float64{
+				30,           // 30s
+				60 * 1,       // 1 min
+				60 * 2,       // 2 min
+				60 * 4,       // 4 min
+				60 * 8,       // 8 min
+				60 * 10,      // 10 min
+				60 * 30,      // 30 min
+				60 * 60,      // 1h
+				60 * 60 * 2,  // 2h
+				60 * 60 * 3,  // 3h
+				60 * 60 * 6,  // 6h
+				60 * 60 * 24, // 24h
+			},
 		}),
 		ingesterAppends: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -504,13 +525,22 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 // Validates a single series from a write request.
 // May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, maxExemplarAge int64) error {
+// It uses the passed nowt time to observe the delay of sample timestamps.
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, maxExemplarAge int64) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
+	now := model.TimeFromUnixNano(nowt.UnixNano())
+
 	for _, s := range ts.Samples {
-		if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
+
+		delta := now - model.Time(s.TimestampMs)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+		}
+
+		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {
 			return err
 		}
 	}
@@ -581,7 +611,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	now := time.Now()
+	now := mtime.Now()
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
@@ -698,7 +728,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
 		// Note that validateSeries may drop some data in ts.
-		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation, maxExemplarAge)
+		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, maxExemplarAge)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.

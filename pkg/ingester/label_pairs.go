@@ -47,20 +47,6 @@ func (a labelPairs) String() string {
 	return b.String()
 }
 
-// Remove any label where the value is "" - Prometheus 2+ will remove these
-// before sending, but other clients such as Prometheus 1.x might send us blanks.
-func (a *labelPairs) removeBlanks() {
-	for i := 0; i < len(*a); {
-		if len((*a)[i].Value) == 0 {
-			// Delete by swap with the value at the end of the slice
-			(*a)[i] = (*a)[len(*a)-1]
-			(*a) = (*a)[:len(*a)-1]
-			continue // go round and check the data that is now at position i
-		}
-		i++
-	}
-}
-
 func valueForName(s labels.Labels, name string) (string, bool) {
 	pos := sort.Search(len(s), func(i int) bool { return s[i].Name >= name })
 	if pos == len(s) || s[pos].Name != name {

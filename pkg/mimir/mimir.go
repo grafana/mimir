@@ -109,7 +109,6 @@ type Config struct {
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
 	QueryRange       queryrange.Config               `yaml:"query_range"`
-	TableManager     chunk.TableManagerConfig        `yaml:"table_manager"`
 	Encoding         encoding.Config                 `yaml:"-"` // No yaml for this, it only works with flags.
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
@@ -157,7 +156,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	c.Worker.RegisterFlags(f)
 	c.Frontend.RegisterFlags(f)
 	c.QueryRange.RegisterFlags(f)
-	c.TableManager.RegisterFlags(f)
 	c.Encoding.RegisterFlags(f)
 	c.BlocksStorage.RegisterFlags(f)
 	c.Compactor.RegisterFlags(f)
@@ -226,9 +224,6 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.QueryRange.Validate(); err != nil {
 		return errors.Wrap(err, "invalid query_range config")
-	}
-	if err := c.TableManager.Validate(); err != nil {
-		return errors.Wrap(err, "invalid table-manager config")
 	}
 	if err := c.StoreGateway.Validate(c.LimitsConfig); err != nil {
 		return errors.Wrap(err, "invalid store-gateway config")
@@ -321,7 +316,6 @@ type Mimir struct {
 	Store                    chunk.Store
 	DeletesStore             *purger.DeleteStore
 	Frontend                 *frontendv1.Frontend
-	TableManager             *chunk.TableManager
 	RuntimeConfig            *runtimeconfig.Manager
 	Purger                   *purger.Purger
 	TombstonesLoader         *purger.TombstonesLoader

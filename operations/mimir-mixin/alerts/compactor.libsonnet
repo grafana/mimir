@@ -90,6 +90,20 @@
             message: 'Cortex Compactor {{ $labels.instance }} in %(alert_aggregation_variables)s has not uploaded any block in the last 24 hours.' % $._config,
           },
         },
+        {
+          // Alert if compactor has tried to compact blocks with out-of-order chunks.
+          alert: 'CortexCompactorSkippedBlocksWithOutOfOrderChunks',
+          'for': '1m',
+          expr: |||
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/%(compactor)s", reason="block-index-out-of-order-chunk"}[5m]) > 0
+          ||| % $._config.job_names,
+          labels: {
+            severity: 'warning',
+          },
+          annotations: {
+            message: 'Cortex Compactor {{ $labels.instance }} in %(alert_aggregation_variables)s has found and ignored blocks with out of order chunks.' % $._config,
+          },
+        },
       ],
     },
   ],

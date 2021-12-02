@@ -59,8 +59,8 @@ func (s BlockSeriesSpecs) MaxTime() int64 {
 
 // GenerateBlockFromSpec generates a TSDB block with series and chunks provided by the input specs.
 // This utility is intended just to be used for testing. Do not use it for any production code.
-func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSpecs) (blockID ulid.ULID, returnErr error) {
-	blockID = ulid.MustNew(ulid.Now(), rand.Reader)
+func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSpecs) (_ *thanos_metadata.Meta, returnErr error) {
+	blockID := ulid.MustNew(ulid.Now(), rand.Reader)
 	blockDir := filepath.Join(storageDir, blockID.String())
 
 	// Ensure series labels are sorted.
@@ -91,7 +91,7 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 	// Write all chunks to segment files.
 	chunkw, err := chunks.NewWriter(filepath.Join(blockDir, "chunks"))
 	if err != nil {
-		return blockID, err
+		return nil, err
 	}
 
 	// Ensure the chunk writer is always closed (even on error).
@@ -109,24 +109,24 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 		// Ensure every chunk meta has chunk data.
 		for _, c := range series.Chunks {
 			if c.Chunk == nil {
-				return blockID, errors.Errorf("missing chunk data for series %s", series.Labels.String())
+				return nil, errors.Errorf("missing chunk data for series %s", series.Labels.String())
 			}
 		}
 
 		if err := chunkw.WriteChunks(series.Chunks...); err != nil {
-			return blockID, err
+			return nil, err
 		}
 	}
 
 	chunkwClosed = true
 	if err := chunkw.Close(); err != nil {
-		return blockID, nil
+		return nil, nil
 	}
 
 	// Write index.
 	indexw, err := index.NewWriter(context.Background(), filepath.Join(blockDir, "index"))
 	if err != nil {
-		return blockID, err
+		return nil, err
 	}
 
 	// Ensure the index writer is always closed (even on error).
@@ -142,20 +142,20 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 	// Add symbols.
 	for _, s := range symbols {
 		if err := indexw.AddSymbol(s); err != nil {
-			return blockID, err
+			return nil, err
 		}
 	}
 
 	// Add series.
 	for i, series := range specs {
 		if err := indexw.AddSeries(storage.SeriesRef(i), series.Labels, series.Chunks...); err != nil {
-			return blockID, err
+			return nil, err
 		}
 	}
 
 	indexwClosed = true
 	if err := indexw.Close(); err != nil {
-		return blockID, err
+		return nil, err
 	}
 
 	// Generate the meta.json file.
@@ -176,9 +176,5 @@ func GenerateBlockFromSpec(userID string, storageDir string, specs BlockSeriesSp
 		},
 	}
 
-	if err := meta.WriteToDir(log.NewNopLogger(), blockDir); err != nil {
-		return blockID, err
-	}
-
-	return blockID, nil
+	return meta, meta.WriteToDir(log.NewNopLogger(), blockDir)
 }

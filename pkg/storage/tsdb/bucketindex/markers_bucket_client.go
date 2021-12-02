@@ -34,8 +34,12 @@ func BucketWithGlobalMarkers(b objstore.Bucket) objstore.Bucket {
 
 // Upload implements objstore.Bucket.
 func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Reader) error {
-	blockID, ok := b.isBlockDeletionMark(name)
-	if !ok {
+	globalMarkPath := ""
+	if blockID, ok := b.isBlockDeletionMark(name); ok {
+		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+	} else if blockID, ok := b.isNoCompactMark(name); ok {
+		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
+	} else {
 		return b.parent.Upload(ctx, name, r)
 	}
 
@@ -51,7 +55,6 @@ func (b *globalMarkersBucket) Upload(ctx context.Context, name string, r io.Read
 	}
 
 	// Upload it to the global markers location too.
-	globalMarkPath := path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
 	return b.parent.Upload(ctx, globalMarkPath, bytes.NewBuffer(body))
 }
 
@@ -63,8 +66,14 @@ func (b *globalMarkersBucket) Delete(ctx context.Context, name string) error {
 	}
 
 	// Delete the marker in the global markers location too.
+	globalMarkPath := ""
 	if blockID, ok := b.isBlockDeletionMark(name); ok {
-		globalMarkPath := path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", BlockDeletionMarkFilepath(blockID)))
+	} else if blockID, ok := b.isNoCompactMark(name); ok {
+		globalMarkPath = path.Clean(path.Join(path.Dir(name), "../", NoCompactMarkFilepath(blockID)))
+	}
+
+	if globalMarkPath != "" {
 		if err := b.parent.Delete(ctx, globalMarkPath); err != nil {
 			if !b.parent.IsObjNotFoundErr(err) {
 				return err
@@ -138,7 +147,17 @@ func (b *globalMarkersBucket) isBlockDeletionMark(name string) (ulid.ULID, bool)
 		return ulid.ULID{}, false
 	}
 
-	// Parse the block ID in the path. If there's not block ID, then it's not the per-block
+	// Parse the block ID in the path. If there's no block ID, then it's not the per-block
 	// deletion mark.
+	return block.IsBlockDir(path.Dir(name))
+}
+
+func (b *globalMarkersBucket) isNoCompactMark(name string) (ulid.ULID, bool) {
+	if path.Base(name) != metadata.NoCompactMarkFilename {
+		return ulid.ULID{}, false
+	}
+
+	// Parse the block ID in the path. If there's no block ID, then it's not the per-block
+	// no-compact mark.
 	return block.IsBlockDir(path.Dir(name))
 }

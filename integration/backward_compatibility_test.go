@@ -23,6 +23,7 @@ import (
 var (
 	// If you change the image tag, remember to update it in the preloading done
 	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
+	//nolint:unused
 	previousVersionImages = map[string]func(map[string]string) map[string]string{
 		"quay.io/cortexproject/cortex:v1.8.0":  preCortex110Flags,
 		"quay.io/cortexproject/cortex:v1.9.0":  preCortex110Flags,
@@ -39,6 +40,8 @@ func preCortex110Flags(flags map[string]string) map[string]string {
 }
 
 func TestBackwardCompatibilityWithChunksStorage(t *testing.T) {
+	// TODO: (remove-chunks) port this to use blocks storage engine or remove
+	t.Skip("chunks storage is no longer supported")
 	for previousImage, flagsFn := range previousVersionImages {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := ChunksStorageFlags()
@@ -52,6 +55,8 @@ func TestBackwardCompatibilityWithChunksStorage(t *testing.T) {
 }
 
 func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
+	// TODO: (remove-chunks) port this to use blocks storage engine or remove
+	t.Skip("chunks storage is no longer supported")
 	for previousImage, flagsFn := range previousVersionImages {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := ChunksStorageFlags()

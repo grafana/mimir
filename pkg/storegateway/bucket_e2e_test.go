@@ -211,7 +211,9 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		WithFilterConfig(filterConf),
 	)
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, store.Close()) }()
+	t.Cleanup(func() {
+		assert.NoError(t, s.store.Close())
+	})
 
 	s.store = store
 

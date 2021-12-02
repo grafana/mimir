@@ -42,12 +42,15 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
-)
 
-const fetcherConcurrency = 32
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+)
 
 func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -112,7 +115,7 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, nil, 48*time.Hour, fetcherConcurrency)
+		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(nil)
 		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks, 1)
 		require.NoError(t, err)
 
@@ -122,7 +125,10 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 		var rem []ulid.ULID
 		err = bkt.Iter(ctx, "", func(n string) error {
-			id := ulid.MustParse(n[:len(n)-1])
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
 			deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
 
 			exists, err := bkt.Exists(ctx, deletionMarkFile)
@@ -161,6 +167,9 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 func TestGroupCompactE2E(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -204,9 +213,9 @@ func TestGroupCompactE2E(t *testing.T) {
 
 		reg := prometheus.NewRegistry()
 
-		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(logger, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
+		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(objstore.WithNoopInstr(bkt))
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-		noCompactMarkerFilter := NewGatherNoCompactionMarkFilter(logger, objstore.WithNoopInstr(bkt), 2)
+		noCompactMarkerFilter := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
@@ -466,6 +475,9 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 	logger := log.NewLogfmtLogger(os.Stderr)
 
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -502,7 +514,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
+		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(objstore.WithNoopInstr(bkt))
 
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
@@ -546,7 +558,10 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 func listBlocksMarkedForDeletion(ctx context.Context, bkt objstore.Bucket) ([]ulid.ULID, error) {
 	var rem []ulid.ULID
 	err := bkt.Iter(ctx, "", func(n string) error {
-		id := ulid.MustParse(n[:len(n)-1])
+		id, ok := block.IsBlockDir(n)
+		if !ok {
+			return nil
+		}
 		deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
 
 		exists, err := bkt.Exists(ctx, deletionMarkFile)
