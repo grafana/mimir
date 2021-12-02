@@ -123,7 +123,7 @@ func (s *Syncer) SyncMetas(ctx context.Context) error {
 
 	metas, partial, err := s.fetcher.Fetch(ctx)
 	if err != nil {
-		return retry(err)
+		return err
 	}
 	s.blocks = metas
 	s.partial = partial
@@ -182,7 +182,7 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 		cancel()
 		if err != nil {
 			s.metrics.garbageCollectionFailures.Inc()
-			return retry(errors.Wrapf(err, "mark block %s for deletion", id))
+			return errors.Wrapf(err, "mark block %s for deletion", id)
 		}
 
 		// Immediately update our in-memory state so no further call to SyncMetas is needed
@@ -371,7 +371,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
-			return retry(errors.Wrapf(err, "download block %s", meta.ULID))
+			return errors.Wrapf(err, "download block %s", meta.ULID)
 		}
 
 		// Ensure all input blocks are valid.
@@ -381,7 +381,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		if err := stats.CriticalErr(); err != nil {
-			return halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
+			return errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels)
 		}
 
 		if err := stats.OutOfOrderChunksErr(); err != nil {
@@ -419,7 +419,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
-		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs))
+		return false, nil, errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs)
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
@@ -473,12 +473,12 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		// Ensure the output block is valid.
 		if err := block.VerifyIndex(jobLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
-			return halt(errors.Wrapf(err, "invalid result block %s", bdir))
+			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
-			return retry(errors.Wrapf(err, "upload of %s failed", compID))
+			return errors.Wrapf(err, "upload of %s failed", compID)
 		}
 
 		elapsed := time.Since(begin)
@@ -497,7 +497,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
 		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "mark old block for deletion from bucket"))
+			return false, nil, errors.Wrapf(err, "mark old block for deletion from bucket")
 		}
 		c.metrics.garbageCollectedBlocks.Inc()
 	}
@@ -580,68 +580,6 @@ func IsOutOfOrderChunkError(err error) bool {
 	return ok
 }
 
-// HaltError is a type wrapper for errors that should halt any further progress on compactions.
-type HaltError struct {
-	err error
-}
-
-func halt(err error) HaltError {
-	return HaltError{err: err}
-}
-
-func (e HaltError) Error() string {
-	return e.err.Error()
-}
-
-// IsHaltError returns true if the base error is a HaltError.
-// If a multierror is passed, any halt error will return true.
-func IsHaltError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(HaltError); ok {
-				return true
-			}
-		}
-		return false
-	}
-
-	_, ok := errors.Cause(err).(HaltError)
-	return ok
-}
-
-// RetryError is a type wrapper for errors that should trigger warning log and retry whole compaction loop, but aborting
-// current compaction further progress.
-type RetryError struct {
-	err error
-}
-
-func retry(err error) error {
-	if IsHaltError(err) {
-		return err
-	}
-	return RetryError{err: err}
-}
-
-func (e RetryError) Error() string {
-	return e.err.Error()
-}
-
-// IsRetryError returns true if the base error is a RetryError.
-// If a multierror is passed, all errors must be retriable.
-func IsRetryError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(RetryError); !ok {
-				return false
-			}
-		}
-		return true
-	}
-
-	_, ok := errors.Cause(err).(RetryError)
-	return ok
-}
-
 // RepairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
 func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, issue347Err error) error {
 	ie, ok := errors.Cause(issue347Err).(Issue347Error)
@@ -664,7 +602,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 
 	bdir := filepath.Join(tmpdir, ie.id.String())
 	if err := block.Download(ctx, logger, bkt, ie.id, bdir); err != nil {
-		return retry(errors.Wrapf(err, "download block %s", ie.id))
+		return errors.Wrapf(err, "download block %s", ie.id)
 	}
 
 	meta, err := metadata.ReadFromDir(bdir)
@@ -684,7 +622,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
 	if err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), metadata.NoneFunc); err != nil {
-		return retry(errors.Wrapf(err, "upload of %s failed", resid))
+		return errors.Wrapf(err, "upload of %s failed", resid)
 	}
 
 	level.Info(logger).Log("msg", "deleting broken block", "id", ie.id)

@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
@@ -23,70 +22,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/errutil"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
-
-func TestHaltError(t *testing.T) {
-	err := errors.New("test")
-	assert.True(t, !IsHaltError(err), "halt error")
-
-	err = halt(errors.New("test"))
-	assert.True(t, IsHaltError(err), "not a halt error")
-
-	err = errors.Wrap(halt(errors.New("test")), "something")
-	assert.True(t, IsHaltError(err), "not a halt error")
-
-	err = errors.Wrap(errors.Wrap(halt(errors.New("test")), "something"), "something2")
-	assert.True(t, IsHaltError(err), "not a halt error")
-}
-
-func TestHaltMultiError(t *testing.T) {
-	haltErr := halt(errors.New("halt error"))
-	nonHaltErr := errors.New("not a halt error")
-
-	errs := errutil.MultiError{nonHaltErr}
-	assert.True(t, !IsHaltError(errs.Err()), "should not be a halt error")
-
-	errs.Add(haltErr)
-	assert.True(t, IsHaltError(errs.Err()), "if any halt errors are present this should return true")
-	assert.True(t, IsHaltError(errors.Wrap(errs.Err(), "wrap")), "halt error with wrap")
-
-}
-
-func TestRetryMultiError(t *testing.T) {
-	retryErr := retry(errors.New("retry error"))
-	nonRetryErr := errors.New("not a retry error")
-
-	errs := errutil.MultiError{nonRetryErr}
-	assert.True(t, !IsRetryError(errs.Err()), "should not be a retry error")
-
-	errs = errutil.MultiError{retryErr}
-	assert.True(t, IsRetryError(errs.Err()), "if all errors are retriable this should return true")
-
-	assert.True(t, IsRetryError(errors.Wrap(errs.Err(), "wrap")), "retry error with wrap")
-
-	errs = errutil.MultiError{nonRetryErr, retryErr}
-	assert.True(t, !IsRetryError(errs.Err()), "mixed errors should return false")
-}
-
-func TestRetryError(t *testing.T) {
-	err := errors.New("test")
-	assert.True(t, !IsRetryError(err), "retry error")
-
-	err = retry(errors.New("test"))
-	assert.True(t, IsRetryError(err), "not a retry error")
-
-	err = errors.Wrap(retry(errors.New("test")), "something")
-	assert.True(t, IsRetryError(err), "not a retry error")
-
-	err = errors.Wrap(errors.Wrap(retry(errors.New("test")), "something"), "something2")
-	assert.True(t, IsRetryError(err), "not a retry error")
-
-	err = errors.Wrap(retry(errors.Wrap(halt(errors.New("test")), "something")), "something2")
-	assert.True(t, IsHaltError(err), "not a halt error. Retry should not hide halt error")
-}
 
 func TestGroupKey(t *testing.T) {
 	for _, tcase := range []struct {
