@@ -1249,22 +1249,10 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		}
 	}
 
-	// If we have series matchers, add <labelName> != "" matcher, to only select series that have given label name.
-	if len(reqSeriesMatchers) > 0 {
-		m, err := labels.NewMatcher(labels.MatchNotEqual, req.Label, "")
-		if err != nil {
-			return nil, status.Error(codes.InvalidArgument, err.Error())
-		}
-
-		reqSeriesMatchers = append(reqSeriesMatchers, m)
-	}
-
 	s.mtx.RLock()
 
 	var mtx sync.Mutex
 	var sets [][]string
-	seriesLimiter := s.seriesLimiterFactory(s.metrics.queriesDropped.WithLabelValues("series"))
-
 	for _, b := range s.blocks {
 		b := b
 
@@ -1282,39 +1270,9 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 		g.Go(func() error {
 			defer runutil.CloseWithLogOnErr(s.logger, indexr, "label values")
 
-			var result []string
-			if len(reqSeriesMatchers) == 0 {
-				// Do it via index reader to have pending reader registered correctly.
-				res, err := indexr.block.indexHeaderReader.LabelValues(req.Label)
-				if err != nil {
-					return errors.Wrapf(err, "index header label values for block %s", b.meta.ULID)
-				}
-
-				result = res
-			} else {
-				seriesSet, _, err := blockSeries(gctx, indexr, nil, reqSeriesMatchers, nil, nil, nil, seriesLimiter, true, req.Start, req.End, nil)
-				if err != nil {
-					return errors.Wrapf(err, "fetch series for block %s", b.meta.ULID)
-				}
-
-				// Extract given label's value from all series and deduplicate them.
-				values := map[string]struct{}{}
-				for seriesSet.Next() {
-					ls, _ := seriesSet.At()
-					val := ls.Get(req.Label)
-					if val != "" { // Should never be empty since we added labelName!="" matcher to the list of matchers.
-						values[val] = struct{}{}
-					}
-				}
-				if seriesSet.Err() != nil {
-					return errors.Wrapf(seriesSet.Err(), "iterate series for block %s", b.meta.ULID)
-				}
-
-				result = make([]string, 0, len(values))
-				for n := range values {
-					result = append(result, n)
-				}
-				sort.Strings(result)
+			result, err := blockLabelValues(gctx, indexr, req.Label, reqSeriesMatchers)
+			if err != nil {
+				return errors.Wrapf(err, "block %s", b.meta.ULID)
 			}
 
 			if len(result) > 0 {
@@ -1344,8 +1302,58 @@ func (s *BucketStore) LabelValues(ctx context.Context, req *storepb.LabelValuesR
 	}, nil
 }
 
-// bucketBlockSet holds all blocks of an equal label set. It internally splits
+// blockLabelValues provides the values of the label with requested name,
+// optionally restricting the search to the series that match the matchers provided.
+// - First we fetch all possible values for this label from the index.
+//   - If no matchers were provided, we just return those values.
+// - Next we load the postings (references to series) for supplied matchers.
+// - Then we load the postings for each label-value fetched in the first step.
+// - Finally, we check if postings from each label-value intersect postings from matchers.
+//   - A non empty intersection means that a matched series has that value, so we add it to the result.
+//
+// Notice that when no matchers are provided, the list of matched postings is AllPostings,
+// so we could also intersect those with each label's postings being each one non empty and leading to the same result.
+func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName string, matchers []*labels.Matcher) ([]string, error) {
+	allValues, err := indexr.block.indexHeaderReader.LabelValues(labelName)
+	if err != nil {
+		return nil, errors.Wrap(err, "index header label values")
+	}
+
+	if len(matchers) == 0 {
+		return allValues, nil
+	}
+
+	p, err := indexr.ExpandedPostings(ctx, matchers)
+	if err != nil {
+		return nil, errors.Wrap(err, "expanded postings")
+	}
+
+	keys := make([]labels.Label, len(allValues))
+	for i, value := range allValues {
+		keys[i] = labels.Label{Name: labelName, Value: value}
+	}
+
+	fetchedPostings, err := indexr.FetchPostings(ctx, keys)
+	if err != nil {
+		return nil, errors.Wrap(err, "get postings")
+	}
+
+	matched := make([]string, 0, len(allValues))
+	for i, value := range allValues {
+		intersection := index.Intersect(index.NewListPostings(p), fetchedPostings[i])
+		if intersection.Next() {
+			matched = append(matched, value)
+		}
+		if err := intersection.Err(); err != nil {
+			return nil, errors.Wrapf(err, "intersecting value %q postings", value)
+		}
+	}
+
+	return matched, nil
+}
+
 // them up by downsampling resolution and allows querying.
+// bucketBlockSet holds all blocks of an equal label set. It internally splits
 type bucketBlockSet struct {
 	labels      labels.Labels
 	mtx         sync.RWMutex
@@ -1965,8 +1973,32 @@ type postingPtr struct {
 	ptr   index.Range
 }
 
-// fetchPostings fill postings requested by posting groups.
+// FetchPostings fills postings requested by posting groups.
 // It returns one postings for each key, in the same order.
+// If postings for given key is not fetched, entry at given index will be an ErrPostings
+func (r *bucketIndexReader) FetchPostings(ctx context.Context, keys []labels.Label) ([]index.Postings, error) {
+	ps, err := r.fetchPostings(ctx, keys)
+	if err != nil {
+		return nil, err
+	}
+
+	// As of version two all series entries are 16 byte padded. All references
+	// we get have to account for that to get the correct offset.
+	version, err := r.block.indexHeaderReader.IndexVersion()
+	if err != nil {
+		return nil, errors.Wrap(err, "get index version")
+	}
+	for i := range ps {
+		ps[i] = checkNilPosting(keys[i], ps[i])
+		if version >= 2 {
+			ps[i] = paddedPostings{ps[i]}
+		}
+	}
+	return ps, nil
+}
+
+// fetchPostings is the version-unaware private implementation of FetchPostings.
+// callers of this method may need to add padding to the results.
 // If postings for given key is not fetched, entry at given index will be nil.
 func (r *bucketIndexReader) fetchPostings(ctx context.Context, keys []labels.Label) ([]index.Postings, error) {
 	timer := prometheus.NewTimer(r.block.metrics.postingsFetchDuration)
@@ -2712,4 +2744,24 @@ func (s queryStats) merge(o *queryStats) *queryStats {
 // NewDefaultChunkBytesPool returns a chunk bytes pool with default settings.
 func NewDefaultChunkBytesPool(maxChunkPoolBytes uint64) (pool.Bytes, error) {
 	return pool.NewBucketedBytes(chunkBytesPoolMinSize, chunkBytesPoolMaxSize, 2, maxChunkPoolBytes)
+}
+
+// paddedPostings adds the v2 index padding to postings without expanding them
+type paddedPostings struct {
+	index.Postings
+}
+
+func (p paddedPostings) Seek(v storage.SeriesRef) bool {
+	unpadded := v / 16
+	if unpadded*16 != v {
+		// if someone is looking for 17 (they shouldn't but who knows)
+		// then we don't want stop seeking at 16 ((v/16) * 16), so we'll look for the next number
+		// this is semantically correct
+		unpadded++
+	}
+	return p.Postings.Seek(unpadded)
+}
+
+func (p paddedPostings) At() storage.SeriesRef {
+	return p.Postings.At() * 16
 }
