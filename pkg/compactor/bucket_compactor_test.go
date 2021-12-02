@@ -12,7 +12,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/prometheus/tsdb"
@@ -23,56 +22,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/errutil"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
-
-// isRetryError returns true if the base error is a RetryError.
-// If a multierror is passed, all errors must be retriable.
-func isRetryError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(RetryError); !ok {
-				return false
-			}
-		}
-		return true
-	}
-
-	_, ok := errors.Cause(err).(RetryError)
-	return ok
-}
-
-func TestRetryMultiError(t *testing.T) {
-	retryErr := retry(errors.New("retry error"))
-	nonRetryErr := errors.New("not a retry error")
-
-	errs := errutil.MultiError{nonRetryErr}
-	assert.True(t, !isRetryError(errs.Err()), "should not be a retry error")
-
-	errs = errutil.MultiError{retryErr}
-	assert.True(t, isRetryError(errs.Err()), "if all errors are retriable this should return true")
-
-	assert.True(t, isRetryError(errors.Wrap(errs.Err(), "wrap")), "retry error with wrap")
-
-	errs = errutil.MultiError{nonRetryErr, retryErr}
-	assert.True(t, !isRetryError(errs.Err()), "mixed errors should return false")
-}
-
-func TestRetryError(t *testing.T) {
-	err := errors.New("test")
-	assert.True(t, !isRetryError(err), "retry error")
-
-	err = retry(errors.New("test"))
-	assert.True(t, isRetryError(err), "not a retry error")
-
-	err = errors.Wrap(retry(errors.New("test")), "something")
-	assert.True(t, isRetryError(err), "not a retry error")
-
-	err = errors.Wrap(errors.Wrap(retry(errors.New("test")), "something"), "something2")
-	assert.True(t, isRetryError(err), "not a retry error")
-}
 
 func TestGroupKey(t *testing.T) {
 	for _, tcase := range []struct {
