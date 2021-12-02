@@ -4709,10 +4709,10 @@ The `compactor_config` configures the compactor for the blocks storage.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of duration> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-# Number of Go routines to use when syncing block index and chunks files from
-# the long term storage.
+# Number of Go routines to use when downloading blocks for compaction and
+# uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
-[block_sync_concurrency: <int> | default = 20]
+[block_sync_concurrency: <int> | default = 8]
 
 # Number of Go routines to use when syncing block meta files from the long term
 # storage.

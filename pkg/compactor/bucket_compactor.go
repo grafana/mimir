@@ -18,6 +18,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,6 +32,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
+	"go.uber.org/atomic"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
@@ -362,58 +364,69 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
 
 	// Once we have a plan we need to download the actual data.
-	begin := time.Now()
+	downloadBegin := time.Now()
 
-	toCompactDirs := make([]string, 0, len(toCompact))
-	for _, meta := range toCompact {
+	err = concurrency.ForEach(ctx, convertBlocksToForEachJobs(toCompact), c.blockSyncConcurrency, func(ctx context.Context, job interface{}) error {
+		meta := job.(*metadata.Meta)
+
+		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "download block %s", meta.ULID))
+			return retry(errors.Wrapf(err, "download block %s", meta.ULID))
 		}
 
 		// Ensure all input blocks are valid.
 		stats, err := block.GatherIndexHealthStats(jobLogger, filepath.Join(bdir, block.IndexFilename), meta.MinTime, meta.MaxTime)
 		if err != nil {
-			return false, nil, errors.Wrapf(err, "gather index issues for block %s", bdir)
+			return errors.Wrapf(err, "gather index issues for block %s", bdir)
 		}
 
 		if err := stats.CriticalErr(); err != nil {
-			return false, nil, halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
+			return halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
 		}
 
 		if err := stats.OutOfOrderChunksErr(); err != nil {
-			return false, nil, outOfOrderChunkError(errors.Wrapf(err, "blocks with out-of-order chunks are dropped from compaction:  %s", bdir), meta.ULID)
+			return outOfOrderChunkError(errors.Wrapf(err, "blocks with out-of-order chunks are dropped from compaction:  %s", bdir), meta.ULID)
 		}
 
 		if err := stats.Issue347OutsideChunksErr(); err != nil {
-			return false, nil, issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
+			return issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
 		}
 
 		if err := stats.PrometheusIssue5372Err(); err != nil {
-			return false, nil, errors.Wrapf(err, "block id %s", meta.ULID)
+			return errors.Wrapf(err, "block id %s", meta.ULID)
 		}
-		toCompactDirs = append(toCompactDirs, bdir)
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
 	}
-	elapsed := time.Since(begin)
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
-	begin = time.Now()
+	blocksToCompactDirs := make([]string, len(toCompact))
+	for ix, meta := range toCompact {
+		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
+	}
+
+	elapsed := time.Since(downloadBegin)
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(blocksToCompactDirs), "plan", fmt.Sprintf("%v", blocksToCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+
+	compactionBegin := time.Now()
 
 	if job.UseSplitting() {
-		compIDs, err = c.comp.CompactWithSplitting(subDir, toCompactDirs, nil, uint64(job.SplittingShards()))
+		compIDs, err = c.comp.CompactWithSplitting(subDir, blocksToCompactDirs, nil, uint64(job.SplittingShards()))
 	} else {
 		var compID ulid.ULID
-		compID, err = c.comp.Compact(subDir, toCompactDirs, nil)
+		compID, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
-		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", toCompactDirs))
+		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs))
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
 		// Prometheus compactor found that the compacted block would have no samples.
-		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", toCompactDirs))
+		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", blocksToCompactDirs))
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
 				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -425,25 +438,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return true, nil, nil
 	}
 
-	elapsed = time.Since(begin)
-	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+	elapsed = time.Since(compactionBegin)
+	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", blocksToCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	uploadBegin := time.Now()
-	uploadedBlocks := 0
+	uploadedBlocks := atomic.NewInt64(0)
 
-	for shardID, compID := range compIDs {
-		// Skip if it's an empty block.
-		if compID == (ulid.ULID{}) {
-			if job.UseSplitting() {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", sharding.FormatShardIDLabelValue(uint64(shardID), uint64(job.SplittingShards())))
-			} else {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
-			}
+	err = concurrency.ForEach(ctx, convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger), c.blockSyncConcurrency, func(ctx context.Context, j interface{}) error {
+		shardID := j.(ulidWithShardIndex).shardIndex
+		compID := j.(ulidWithShardIndex).ulid
 
-			continue
-		}
-
-		uploadedBlocks++
+		uploadedBlocks.Inc()
 
 		bdir := filepath.Join(subDir, compID.String())
 		index := filepath.Join(bdir, block.IndexFilename)
@@ -461,26 +466,29 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
 		if err != nil {
-			return false, nil, errors.Wrapf(err, "failed to finalize the block %s", bdir)
+			return errors.Wrapf(err, "failed to finalize the block %s", bdir)
 		}
 
 		if err = os.Remove(filepath.Join(bdir, "tombstones")); err != nil {
-			return false, nil, errors.Wrap(err, "remove tombstones")
+			return errors.Wrap(err, "remove tombstones")
 		}
 
 		// Ensure the output block is valid.
 		if err := block.VerifyIndex(jobLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
-			return false, nil, halt(errors.Wrapf(err, "invalid result block %s", bdir))
+			return halt(errors.Wrapf(err, "invalid result block %s", bdir))
 		}
 
-		begin = time.Now()
-
+		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "upload of %s failed", compID))
+			return retry(errors.Wrapf(err, "upload of %s failed", compID))
 		}
 
-		elapsed = time.Since(begin)
+		elapsed := time.Since(begin)
 		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
 	}
 
 	elapsed = time.Since(uploadBegin)
@@ -497,6 +505,40 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	}
 
 	return true, compIDs, nil
+}
+
+func convertBlocksToForEachJobs(input []*metadata.Meta) []interface{} {
+	result := make([]interface{}, len(input))
+	for ix := range input {
+		result[ix] = input[ix]
+	}
+	return result
+}
+
+// Converts ULIDs from compaction to interface{}, and also filters out empty ULIDs. When handling result of split
+// compactions, shard index is index in the slice returned by compaction.
+func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob bool, jobLogger log.Logger) []interface{} {
+	result := make([]interface{}, 0, len(compactedBlocks))
+
+	for ix, id := range compactedBlocks {
+		// Skip if it's an empty block.
+		if id == (ulid.ULID{}) {
+			if splitJob {
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", sharding.FormatShardIDLabelValue(uint64(ix), uint64(len(compactedBlocks))))
+			} else {
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
+			}
+			continue
+		}
+
+		result = append(result, ulidWithShardIndex{shardIndex: ix, ulid: id})
+	}
+	return result
+}
+
+type ulidWithShardIndex struct {
+	ulid       ulid.ULID
+	shardIndex int
 }
 
 // Issue347Error is a type wrapper for errors that should invoke repair process for broken block.
@@ -735,6 +777,7 @@ type BucketCompactor struct {
 	skipBlocksWithOutOfOrderChunks bool
 	ownJob                         ownCompactionJobFunc
 	sortJobs                       JobsOrderFunc
+	blockSyncConcurrency           int
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -751,6 +794,7 @@ func NewBucketCompactor(
 	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
 	sortJobs JobsOrderFunc,
+	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
@@ -768,6 +812,7 @@ func NewBucketCompactor(
 		skipBlocksWithOutOfOrderChunks: skipBlocksWithOutOfOrderChunks,
 		ownJob:                         ownJob,
 		sortJobs:                       sortJobs,
+		blockSyncConcurrency:           blockSyncConcurrency,
 		metrics:                        metrics,
 	}, nil
 }
