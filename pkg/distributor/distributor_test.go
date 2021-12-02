@@ -1446,41 +1446,37 @@ func TestDistributor_Push_ExemplarValidation(t *testing.T) {
 
 func TestDistributor_ExemplarValidation(t *testing.T) {
 	tests := map[string]struct {
-		latestTs          int64
+		minExemplarTS     int64
 		req               *mimirpb.WriteRequest
-		expectedExemplars []int
+		expectedExemplars []mimirpb.PreallocTimeseries
 	}{
 		"valid exemplars": {
-			latestTs: 1000,
+			minExemplarTS: 0,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
 			}},
-			expectedExemplars: []int{1, 1},
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test1"}, 1000, []string{"foo", "bar"}),
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test2"}, 1000, []string{"foo", "bar"}),
+			},
 		},
 		"one old, one new, separate series": {
-			latestTs: 601000,
+			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 1000, []string{"foo", "bar"}),
 				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
 			}},
-			expectedExemplars: []int{0, 1},
+			expectedExemplars: []mimirpb.PreallocTimeseries{
+				{TimeSeries: &mimirpb.TimeSeries{
+					Labels:    []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{},
+				}},
+				makeExemplarTimeseries([]string{model.MetricNameLabel, "test"}, 601000, []string{"foo", "bar"}),
+			},
 		},
 		"multi exemplars": {
-			latestTs: 601000,
-			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{
-				TimeSeries: &mimirpb.TimeSeries{
-					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
-					Exemplars: []mimirpb.Exemplar{
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 601000},
-						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
-					},
-				}},
-			}},
-			expectedExemplars: []int{2},
-		},
-		"one old, one new, same series": {
-			latestTs: 601000,
+			minExemplarTS: 300000,
 			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{
 				TimeSeries: &mimirpb.TimeSeries{
 					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
@@ -1490,23 +1486,45 @@ func TestDistributor_ExemplarValidation(t *testing.T) {
 					},
 				}},
 			}},
-			expectedExemplars: []int{1},
+			expectedExemplars: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				}},
+			},
+		},
+		"one old, one new, same series": {
+			minExemplarTS: 300000,
+			req: &mimirpb.WriteRequest{Timeseries: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar1"}}, TimestampMs: 1000},
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				}},
+			}},
+			expectedExemplars: []mimirpb.PreallocTimeseries{{
+				TimeSeries: &mimirpb.TimeSeries{
+					Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "test"}},
+					Exemplars: []mimirpb.Exemplar{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar2"}}, TimestampMs: 601000},
+					},
+				}},
+			},
 		},
 	}
 	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:     2,
-		happyIngesters:   2,
-		numDistributors:  1,
-		shuffleShardSize: 1,
+		numDistributors: 1,
 	})
 	now := mtime.Now()
 	for testName, tc := range tests {
 		t.Run(testName, func(t *testing.T) {
-			err := ds[0].validateSeries(now, tc.req.Timeseries[0], "user", false, tc.latestTs)
+			err := ds[0].validateSeries(now, tc.req.Timeseries[0], "user", false, tc.minExemplarTS)
 			assert.NoError(t, err)
-			for i, c := range tc.expectedExemplars {
-				assert.Equal(t, c, len(tc.req.Timeseries[i].Exemplars), "Timeseries %d", i)
-			}
+			assert.Equal(t, tc.expectedExemplars, tc.req.Timeseries)
 		})
 	}
 }
