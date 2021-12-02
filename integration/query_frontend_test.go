@@ -334,11 +334,22 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 
 	configFile, flags := cfg.setup(t, s)
 
+	// Write overrides file enabling query-sharding for tenant query-sharding
+	runtimeConfig := "runtime-config.yaml"
+	require.NoError(t, writeFileToSharedDir(s, runtimeConfig, []byte(`
+overrides:
+  query-sharding:
+    query_sharding_total_shards: 8
+`)))
+
 	flags = mergeFlags(flags, map[string]string{
 		"-querier.cache-results":             "true",
 		"-querier.split-queries-by-interval": "24h",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-querier.max-samples":               "2",   // Very low limit so that we can easily hit it.
+		"-querier.max-samples":               "2", // Very low limit so that we can easily hit it.
+
+		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
+		"-frontend.query-sharding-total-shards":         "0",                                                  // Disable query-sharding by default
+		"-runtime-config.file":                          filepath.Join(e2e.ContainerSharedDir, runtimeConfig), // Read per tenant runtime config
 	})
 	consul := e2edb.NewConsul()
 	require.NoError(t, s.StartAndWaitReady(consul))
@@ -365,6 +376,8 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 	// Push some series.
 	cWrite, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "fake")
 	require.NoError(t, err)
+	cWriteWithQuerySharding, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "query-sharding")
+	require.NoError(t, err)
 
 	for i := 0; i < 10; i++ {
 		series, _ := generateSeries(fmt.Sprintf("series_%d", i), now)
@@ -372,9 +385,16 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 		res, err := cWrite.Push(series)
 		require.NoError(t, err)
 		require.Equal(t, 200, res.StatusCode)
+
+		res, err = cWriteWithQuerySharding.Push(series)
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
 	}
 
 	cQueryFrontend, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "fake")
+	require.NoError(t, err)
+
+	cQueryFrontendWithQuerySharding, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "query-sharding")
 	require.NoError(t, err)
 
 	cQuerier, err := e2emimir.NewClient("", querier.HTTPEndpoint(), "", "", "fake")
@@ -464,6 +484,30 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 			expStatusCode: http.StatusUnprocessableEntity,
 			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
 		},
+		{
+			name: "range query with range vector",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`(sum(rate(up[1m])))[5m:]`, now.Add(-time.Hour), now, time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"invalid expression type \"range vector\" for range query, must be Scalar or instant Vector", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "error when negative offset is unsupported",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`count_over_time(up[1m] offset -1m)`, now.Add(-time.Hour), now, time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error": "negative offset is disabled, use --enable-feature=promql-negative-offset to enable it", "errorType":"bad_data", "status":"error"}`,
+		},
+		{
+			name: "error when at-modifier is unsupported",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`http_requests_total @ start()`, now.Add(-time.Minute), now, time.Minute)
+			},
+			expStatusCode: http.StatusBadRequest,
+			expBody:       `{"error":"@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it", "errorType":"bad_data", "status":"error"}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			resp, body, err := tc.query(cQuerier)
@@ -475,6 +519,11 @@ func TestQueryFrontendErrorMessageParity(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend returns unexpected statusCode")
 			assert.JSONEq(t, tc.expBody, string(body), "query-frontend returns unexpected body")
+
+			resp, body, err = tc.query(cQueryFrontendWithQuerySharding)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expStatusCode, resp.StatusCode, "query-frontend with query-sharding returns unexpected statusCode")
+			assert.JSONEq(t, tc.expBody, string(body), "query-frontend with query-sharding returns unexpected body")
 		})
 	}
 
