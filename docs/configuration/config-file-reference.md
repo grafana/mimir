@@ -4772,6 +4772,20 @@ The `compactor_config` configures the compactor for the blocks storage.
 # CLI flag: -compactor.max-compaction-time
 [max_compaction_time: <duration> | default = 0s]
 
+# Number of goroutines opening blocks before compaction.
+# CLI flag: -compactor.max-opening-blocks-concurrency
+[max_opening_blocks_concurrency: <int> | default = 1]
+
+# Max number of blocks that can be closed concurrently during split compaction.
+# Note that closing of newly compacted block uses a lot of memory for writing
+# index.
+# CLI flag: -compactor.max-closing-blocks-concurrency
+[max_closing_blocks_concurrency: <int> | default = 1]
+
+# Number of symbols flushers used when doing split compaction.
+# CLI flag: -compactor.symbols-flushers-concurrency
+[symbols_flushers_concurrency: <int> | default = 1]
+
 # Comma separated list of tenants that can be compacted. If specified, only
 # these tenants will be compacted by compactor, otherwise all tenants can be
 # compacted. Subject to sharding.

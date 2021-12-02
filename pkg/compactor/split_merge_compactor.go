@@ -27,6 +27,13 @@ func splitAndMergeCompactorFactory(ctx context.Context, cfg Config, logger log.L
 		return nil, nil, err
 	}
 
+	opts := tsdb.DefaultLeveledCompactorConcurrencyOptions()
+	opts.MaxOpeningBlocks = cfg.MaxOpeningBlocksConcurrency
+	opts.MaxClosingBlocks = cfg.MaxClosingBlocksConcurrency
+	opts.SymbolsFlushersCount = cfg.SymbolsFlushersConcurrency
+
+	compactor.SetConcurrencyOptions(opts)
+
 	planner := NewSplitAndMergePlanner(cfg.BlockRanges.ToMilliseconds())
 	return compactor, planner, nil
 }
