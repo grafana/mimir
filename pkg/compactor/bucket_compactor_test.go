@@ -28,31 +28,20 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func TestHaltError(t *testing.T) {
-	err := errors.New("test")
-	assert.True(t, !IsHaltError(err), "halt error")
+// isRetryError returns true if the base error is a RetryError.
+// If a multierror is passed, all errors must be retriable.
+func isRetryError(err error) bool {
+	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
+		for _, err := range multiErr {
+			if _, ok := errors.Cause(err).(RetryError); !ok {
+				return false
+			}
+		}
+		return true
+	}
 
-	err = halt(errors.New("test"))
-	assert.True(t, IsHaltError(err), "not a halt error")
-
-	err = errors.Wrap(halt(errors.New("test")), "something")
-	assert.True(t, IsHaltError(err), "not a halt error")
-
-	err = errors.Wrap(errors.Wrap(halt(errors.New("test")), "something"), "something2")
-	assert.True(t, IsHaltError(err), "not a halt error")
-}
-
-func TestHaltMultiError(t *testing.T) {
-	haltErr := halt(errors.New("halt error"))
-	nonHaltErr := errors.New("not a halt error")
-
-	errs := errutil.MultiError{nonHaltErr}
-	assert.True(t, !IsHaltError(errs.Err()), "should not be a halt error")
-
-	errs.Add(haltErr)
-	assert.True(t, IsHaltError(errs.Err()), "if any halt errors are present this should return true")
-	assert.True(t, IsHaltError(errors.Wrap(errs.Err(), "wrap")), "halt error with wrap")
-
+	_, ok := errors.Cause(err).(RetryError)
+	return ok
 }
 
 func TestRetryMultiError(t *testing.T) {
@@ -60,32 +49,29 @@ func TestRetryMultiError(t *testing.T) {
 	nonRetryErr := errors.New("not a retry error")
 
 	errs := errutil.MultiError{nonRetryErr}
-	assert.True(t, !IsRetryError(errs.Err()), "should not be a retry error")
+	assert.True(t, !isRetryError(errs.Err()), "should not be a retry error")
 
 	errs = errutil.MultiError{retryErr}
-	assert.True(t, IsRetryError(errs.Err()), "if all errors are retriable this should return true")
+	assert.True(t, isRetryError(errs.Err()), "if all errors are retriable this should return true")
 
-	assert.True(t, IsRetryError(errors.Wrap(errs.Err(), "wrap")), "retry error with wrap")
+	assert.True(t, isRetryError(errors.Wrap(errs.Err(), "wrap")), "retry error with wrap")
 
 	errs = errutil.MultiError{nonRetryErr, retryErr}
-	assert.True(t, !IsRetryError(errs.Err()), "mixed errors should return false")
+	assert.True(t, !isRetryError(errs.Err()), "mixed errors should return false")
 }
 
 func TestRetryError(t *testing.T) {
 	err := errors.New("test")
-	assert.True(t, !IsRetryError(err), "retry error")
+	assert.True(t, !isRetryError(err), "retry error")
 
 	err = retry(errors.New("test"))
-	assert.True(t, IsRetryError(err), "not a retry error")
+	assert.True(t, isRetryError(err), "not a retry error")
 
 	err = errors.Wrap(retry(errors.New("test")), "something")
-	assert.True(t, IsRetryError(err), "not a retry error")
+	assert.True(t, isRetryError(err), "not a retry error")
 
 	err = errors.Wrap(errors.Wrap(retry(errors.New("test")), "something"), "something2")
-	assert.True(t, IsRetryError(err), "not a retry error")
-
-	err = errors.Wrap(retry(errors.Wrap(halt(errors.New("test")), "something")), "something2")
-	assert.True(t, IsHaltError(err), "not a halt error. Retry should not hide halt error")
+	assert.True(t, isRetryError(err), "not a retry error")
 }
 
 func TestGroupKey(t *testing.T) {

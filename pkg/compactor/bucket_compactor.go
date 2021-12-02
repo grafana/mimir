@@ -381,7 +381,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		}
 
 		if err := stats.CriticalErr(); err != nil {
-			return halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
+			return errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels)
 		}
 
 		if err := stats.OutOfOrderChunksErr(); err != nil {
@@ -419,7 +419,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
-		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs))
+		return false, nil, errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs)
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
@@ -473,7 +473,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		// Ensure the output block is valid.
 		if err := block.VerifyIndex(jobLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
-			return halt(errors.Wrapf(err, "invalid result block %s", bdir))
+			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
 		begin := time.Now()
@@ -580,35 +580,6 @@ func IsOutOfOrderChunkError(err error) bool {
 	return ok
 }
 
-// HaltError is a type wrapper for errors that should halt any further progress on compactions.
-type HaltError struct {
-	err error
-}
-
-func halt(err error) HaltError {
-	return HaltError{err: err}
-}
-
-func (e HaltError) Error() string {
-	return e.err.Error()
-}
-
-// IsHaltError returns true if the base error is a HaltError.
-// If a multierror is passed, any halt error will return true.
-func IsHaltError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(HaltError); ok {
-				return true
-			}
-		}
-		return false
-	}
-
-	_, ok := errors.Cause(err).(HaltError)
-	return ok
-}
-
 // RetryError is a type wrapper for errors that should trigger warning log and retry whole compaction loop, but aborting
 // current compaction further progress.
 type RetryError struct {
@@ -616,30 +587,11 @@ type RetryError struct {
 }
 
 func retry(err error) error {
-	if IsHaltError(err) {
-		return err
-	}
 	return RetryError{err: err}
 }
 
 func (e RetryError) Error() string {
 	return e.err.Error()
-}
-
-// IsRetryError returns true if the base error is a RetryError.
-// If a multierror is passed, all errors must be retriable.
-func IsRetryError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(RetryError); !ok {
-				return false
-			}
-		}
-		return true
-	}
-
-	_, ok := errors.Cause(err).(RetryError)
-	return ok
 }
 
 // RepairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
