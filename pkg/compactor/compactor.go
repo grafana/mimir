@@ -679,7 +679,6 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		excludeMarkedForDeletionFilter,
 		c.blocksMarkedForDeletion,
 		c.garbageCollectedBlocks,
-		c.compactorCfg.BlockSyncConcurrency,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create syncer")
