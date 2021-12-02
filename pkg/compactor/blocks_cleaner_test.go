@@ -20,7 +20,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
@@ -186,7 +185,7 @@ func testBlocksCleanerWithOptions(t *testing.T, options testBlocksCleanerOptions
 		assert.ElementsMatch(t, tc.expectedMarks, idx.BlockDeletionMarks.GetULIDs())
 	}
 
-	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 		# TYPE cortex_bucket_blocks_count gauge
 		cortex_bucket_blocks_count{user="user-1"} 2
@@ -351,7 +350,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 	cleaner := NewBlocksCleaner(cfg, bucketClient, tsdb.AllUsers, cfgProvider, logger, reg)
 	require.NoError(t, cleaner.cleanUsers(ctx))
 
-	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 		# TYPE cortex_bucket_blocks_count gauge
 		cortex_bucket_blocks_count{user="user-1"} 2
@@ -379,7 +378,7 @@ func TestBlocksCleaner_ShouldRemoveMetricsForTenantsNotBelongingAnymoreToTheShar
 
 	require.NoError(t, cleaner.cleanUsers(ctx))
 
-	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 		# TYPE cortex_bucket_blocks_count gauge
 		cortex_bucket_blocks_count{user="user-1"} 3
@@ -434,7 +433,7 @@ func TestBlocksCleaner_ShouldNotCleanupUserThatDoesntBelongToShardAnymore(t *tes
 	require.ElementsMatch(t, []string{"user-1", "user-2"}, cleaner.lastOwnedUsers)
 
 	// But there are no metrics for any user, because we did not in fact clean them.
-	assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+	assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 		# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 		# TYPE cortex_bucket_blocks_count gauge
 	`),
@@ -547,7 +546,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 		assertBlockExists("user-2", block3, true)
 		assertBlockExists("user-2", block4, true)
 
-		assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 			# TYPE cortex_bucket_blocks_count gauge
 			cortex_bucket_blocks_count{user="user-1"} 2
@@ -588,7 +587,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 		assertBlockExists("user-2", block3, true)
 		assertBlockExists("user-2", block4, true)
 
-		assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 			# TYPE cortex_bucket_blocks_count gauge
 			cortex_bucket_blocks_count{user="user-1"} 2
@@ -626,7 +625,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 		assertBlockExists("user-2", block3, true)
 		assertBlockExists("user-2", block4, true)
 
-		assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 			# TYPE cortex_bucket_blocks_count gauge
 			cortex_bucket_blocks_count{user="user-1"} 1
@@ -655,7 +654,7 @@ func TestBlocksCleaner_ShouldRemoveBlocksOutsideRetentionPeriod(t *testing.T) {
 		assertBlockExists("user-2", block3, false)
 		assertBlockExists("user-2", block4, false)
 
-		assert.NoError(t, prom_testutil.GatherAndCompare(reg, strings.NewReader(`
+		assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
 			# HELP cortex_bucket_blocks_count Total number of blocks in the bucket. Includes blocks marked for deletion, but not partial blocks.
 			# TYPE cortex_bucket_blocks_count gauge
 			cortex_bucket_blocks_count{user="user-1"} 1
