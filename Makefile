@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin push-multiarch-mimir
 .DEFAULT_GOAL := all
 
 # Version number
@@ -49,6 +49,18 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
+
+# This target compiles mimir in amd64 and arm64 then builds and pushes a multiarch image
+push-multiarch-mimir:
+	@echo
+	# Build image for each platform separately... it tends to generate fewer errors.
+	GOOS=linux GOARCH=amd64 $(MAKE) cmd/mimir/mimir
+	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) cmd/mimir
+	GOOS=linux GOARCH=arm64 $(MAKE) cmd/mimir/mimir
+	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) cmd/mimir
+	# This command will run the same build as above, but it will reuse existing platform-specific images,
+	# put them together and push to registry.
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 fetch-build-image:
