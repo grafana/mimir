@@ -50,7 +50,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
 
-
+# This target compiles mimir in amd64 and arm64 then builds and pushes a multiarch image
 push-multiarch-mimir:
 	@echo
 	# Build image for each platform separately... it tends to generate fewer errors.
@@ -61,7 +61,6 @@ push-multiarch-mimir:
 	# This command will run the same build as above, but it will reuse existing platform-specific images,
 	# put them together and push to registry.
 	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
-
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 fetch-build-image:
