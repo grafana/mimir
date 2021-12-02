@@ -33,7 +33,7 @@ func TestCacheKey_string(t *testing.T) {
 		expected string
 	}{
 		"should stringify postings cache key": {
-			key: cacheKey{uid, cacheKeyPostings(labels.Label{Name: "foo", Value: "bar"})},
+			key: cacheKeyPostings{uid, labels.Label{Name: "foo", Value: "bar"}},
 			expected: func() string {
 				hash := blake2b.Sum256([]byte("foo:bar"))
 				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
@@ -42,7 +42,7 @@ func TestCacheKey_string(t *testing.T) {
 			}(),
 		},
 		"should stringify series cache key": {
-			key:      cacheKey{uid, cacheKeySeriesForRef(12345)},
+			key:      cacheKeySeriesForRef{uid, 12345},
 			expected: fmt.Sprintf("S:%s:12345", uid.String()),
 		},
 	}
@@ -67,14 +67,14 @@ func TestCacheKey_string_ShouldGuaranteeReasonablyShortKeyLength(t *testing.T) {
 		"should guarantee reasonably short key length for postings": {
 			expectedLen: 72,
 			keys: []cacheKey{
-				{uid, cacheKeyPostings(labels.Label{Name: "a", Value: "b"})},
-				{uid, cacheKeyPostings(labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)})},
+				cacheKeyPostings{uid, labels.Label{Name: "a", Value: "b"}},
+				cacheKeyPostings{uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}},
 			},
 		},
 		"should guarantee reasonably short key length for series": {
 			expectedLen: 49,
 			keys: []cacheKey{
-				{uid, cacheKeySeriesForRef(math.MaxUint64)},
+				cacheKeySeriesForRef{uid, math.MaxUint64},
 			},
 		},
 	}
@@ -90,7 +90,7 @@ func TestCacheKey_string_ShouldGuaranteeReasonablyShortKeyLength(t *testing.T) {
 
 func BenchmarkCacheKey_string_Postings(b *testing.B) {
 	uid := ulid.MustNew(1, nil)
-	key := cacheKey{uid, cacheKeyPostings(labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)})}
+	key := cacheKeyPostings{uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -100,7 +100,7 @@ func BenchmarkCacheKey_string_Postings(b *testing.B) {
 
 func BenchmarkCacheKey_string_Series(b *testing.B) {
 	uid := ulid.MustNew(1, nil)
-	key := cacheKey{uid, cacheKeySeriesForRef(math.MaxUint64)}
+	key := cacheKeySeriesForRef{uid, math.MaxUint64}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

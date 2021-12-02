@@ -187,13 +187,14 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 }
 
 func (c *InMemoryIndexCache) onEvict(key, val interface{}) {
-	k := key.(cacheKey).keyType()
+	k := key.(cacheKey)
+	typ := k.typ()
 	entrySize := sliceHeaderSize + uint64(len(val.([]byte)))
 
-	c.evicted.WithLabelValues(string(k)).Inc()
-	c.current.WithLabelValues(string(k)).Dec()
-	c.currentSize.WithLabelValues(string(k)).Sub(float64(entrySize))
-	c.totalCurrentSize.WithLabelValues(string(k)).Sub(float64(entrySize + key.(cacheKey).size()))
+	c.evicted.WithLabelValues(typ).Inc()
+	c.current.WithLabelValues(typ).Dec()
+	c.currentSize.WithLabelValues(typ).Sub(float64(entrySize))
+	c.totalCurrentSize.WithLabelValues(typ).Sub(float64(entrySize + k.size()))
 
 	c.curSize -= entrySize
 }
@@ -288,15 +289,15 @@ func copyString(s string) string {
 	return string(b)
 }
 
-// copyToKey is required as underlying strings might be mmaped.
-func copyToKey(l labels.Label) cacheKeyPostings {
-	return cacheKeyPostings(labels.Label{Value: copyString(l.Value), Name: copyString(l.Name)})
+// copyLabel is required as underlying strings might be mmaped.
+func copyLabel(l labels.Label) labels.Label {
+	return labels.Label{Value: copyString(l.Value), Name: copyString(l.Name)}
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
 func (c *InMemoryIndexCache) StorePostings(_ context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(cacheTypePostings, cacheKey{block: blockID, key: copyToKey(l)}, v)
+	c.set(cacheTypePostings, cacheKeyPostings{block: blockID, label: copyLabel(l)}, v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
@@ -305,7 +306,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 	hits = map[labels.Label][]byte{}
 
 	for _, key := range keys {
-		if b, ok := c.get(cacheTypePostings, cacheKey{blockID, cacheKeyPostings(key)}); ok {
+		if b, ok := c.get(cacheTypePostings, cacheKeyPostings{blockID, key}); ok {
 			hits[key] = b
 			continue
 		}
@@ -319,7 +320,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
 func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(cacheTypeSeriesForRef, cacheKey{blockID, cacheKeySeriesForRef(id)}, v)
+	c.set(cacheTypeSeriesForRef, cacheKeySeriesForRef{blockID, id}, v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
@@ -328,7 +329,7 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, blockID 
 	hits = map[storage.SeriesRef][]byte{}
 
 	for _, id := range ids {
-		if b, ok := c.get(cacheTypeSeriesForRef, cacheKey{blockID, cacheKeySeriesForRef(id)}); ok {
+		if b, ok := c.get(cacheTypeSeriesForRef, cacheKeySeriesForRef{blockID, id}); ok {
 			hits[id] = b
 			continue
 		}
@@ -341,10 +342,10 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, blockID 
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	c.set(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)}, v)
+	c.set(cacheTypeExpandedPostings, cacheKeyExpandedPostings{blockID, key}, v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
-	return c.get(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)})
+	return c.get(cacheTypeExpandedPostings, cacheKeyExpandedPostings{blockID, key})
 }

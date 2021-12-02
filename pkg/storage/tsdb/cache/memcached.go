@@ -66,7 +66,7 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *MemcachedIndexCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	key := cacheKey{blockID, cacheKeyPostings(l)}.string()
+	key := cacheKeyPostings{blockID, l}.string()
 
 	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
 		level.Error(c.logger).Log("msg", "failed to cache postings in memcached", "err", err)
@@ -83,7 +83,7 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 	keysMapping := map[labels.Label]string{}
 
 	for _, lbl := range lbls {
-		key := cacheKey{blockID, cacheKeyPostings(lbl)}.string()
+		key := cacheKeyPostings{blockID, lbl}.string()
 
 		keys = append(keys, key)
 		keysMapping[lbl] = key
@@ -126,7 +126,7 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	key := cacheKey{blockID, cacheKeySeriesForRef(id)}.string()
+	key := cacheKeySeriesForRef{blockID, id}.string()
 
 	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
 		level.Error(c.logger).Log("msg", "failed to cache series in memcached", "err", err)
@@ -143,7 +143,7 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, block
 	keysMapping := map[storage.SeriesRef]string{}
 
 	for _, id := range ids {
-		key := cacheKey{blockID, cacheKeySeriesForRef(id)}.string()
+		key := cacheKeySeriesForRef{blockID, id}.string()
 
 		keys = append(keys, key)
 		keysMapping[id] = key
@@ -184,7 +184,7 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, block
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
+	key := cacheKeyExpandedPostings{blockID, lmKey}.string()
 
 	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
 		level.Error(c.logger).Log("msg", "failed to cache expanded postings in memcached", "err", err)
@@ -193,7 +193,7 @@ func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
-	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
+	key := cacheKeyExpandedPostings{blockID, lmKey}.string()
 	results := c.memcached.GetMulti(ctx, []string{key})
 	c.requests.WithLabelValues(cacheTypeExpandedPostings).Inc()
 	data, ok := results[key]
