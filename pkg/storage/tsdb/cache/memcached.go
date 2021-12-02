@@ -46,7 +46,7 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 		Help: "Total number of items requests to the cache.",
 	}, []string{"item_type"})
 	c.requests.WithLabelValues(cacheTypePostings)
-	c.requests.WithLabelValues(cacheTypeSeries)
+	c.requests.WithLabelValues(cacheTypeSeriesForRef)
 	c.requests.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -54,7 +54,7 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 		Help: "Total number of items requests to the cache that were a hit.",
 	}, []string{"item_type"})
 	c.hits.WithLabelValues(cacheTypePostings)
-	c.hits.WithLabelValues(cacheTypeSeries)
+	c.hits.WithLabelValues(cacheTypeSeriesForRef)
 	c.hits.WithLabelValues(cacheTypeExpandedPostings)
 
 	level.Info(logger).Log("msg", "created memcached index cache")
@@ -122,35 +122,35 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 	return hits, misses
 }
 
-// StoreSeries sets the series identified by the ulid and id to the value v.
+// StoreSeriesForRef sets the series identified by the ulid and id to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	key := cacheKey{blockID, cacheKeySeries(id)}.string()
+func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	key := cacheKey{blockID, cacheKeySeriesForRef(id)}.string()
 
 	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
 		level.Error(c.logger).Log("msg", "failed to cache series in memcached", "err", err)
 	}
 }
 
-// FetchMultiSeries fetches multiple series - each identified by ID - from the cache
+// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
 	keysMapping := map[storage.SeriesRef]string{}
 
 	for _, id := range ids {
-		key := cacheKey{blockID, cacheKeySeries(id)}.string()
+		key := cacheKey{blockID, cacheKeySeriesForRef(id)}.string()
 
 		keys = append(keys, key)
 		keysMapping[id] = key
 	}
 
 	// Fetch the keys from memcached in a single request.
-	c.requests.WithLabelValues(cacheTypeSeries).Add(float64(len(ids)))
+	c.requests.WithLabelValues(cacheTypeSeriesForRef).Add(float64(len(ids)))
 	results := c.memcached.GetMulti(ctx, keys)
 	if len(results) == 0 {
 		return nil, ids
@@ -178,7 +178,7 @@ func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid
 		hits[id] = value
 	}
 
-	c.hits.WithLabelValues(cacheTypeSeries).Add(float64(len(hits)))
+	c.hits.WithLabelValues(cacheTypeSeriesForRef).Add(float64(len(hits)))
 	return hits, misses
 }
 

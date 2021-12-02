@@ -97,7 +97,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Total number of items that were evicted from the index cache.",
 	}, []string{"item_type"})
 	c.evicted.WithLabelValues(cacheTypePostings)
-	c.evicted.WithLabelValues(cacheTypeSeries)
+	c.evicted.WithLabelValues(cacheTypeSeriesForRef)
 	c.evicted.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.added = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -105,7 +105,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Total number of items that were added to the index cache.",
 	}, []string{"item_type"})
 	c.added.WithLabelValues(cacheTypePostings)
-	c.added.WithLabelValues(cacheTypeSeries)
+	c.added.WithLabelValues(cacheTypeSeriesForRef)
 	c.added.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -113,7 +113,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Total number of requests to the cache.",
 	}, []string{"item_type"})
 	c.requests.WithLabelValues(cacheTypePostings)
-	c.requests.WithLabelValues(cacheTypeSeries)
+	c.requests.WithLabelValues(cacheTypeSeriesForRef)
 	c.requests.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.overflow = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -121,7 +121,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Total number of items that could not be added to the cache due to being too big.",
 	}, []string{"item_type"})
 	c.overflow.WithLabelValues(cacheTypePostings)
-	c.overflow.WithLabelValues(cacheTypeSeries)
+	c.overflow.WithLabelValues(cacheTypeSeriesForRef)
 	c.overflow.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
@@ -129,7 +129,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Total number of requests to the cache that were a hit.",
 	}, []string{"item_type"})
 	c.hits.WithLabelValues(cacheTypePostings)
-	c.hits.WithLabelValues(cacheTypeSeries)
+	c.hits.WithLabelValues(cacheTypeSeriesForRef)
 	c.hits.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.current = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
@@ -137,7 +137,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Current number of items in the index cache.",
 	}, []string{"item_type"})
 	c.current.WithLabelValues(cacheTypePostings)
-	c.current.WithLabelValues(cacheTypeSeries)
+	c.current.WithLabelValues(cacheTypeSeriesForRef)
 	c.current.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.currentSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
@@ -145,7 +145,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Current byte size of items in the index cache.",
 	}, []string{"item_type"})
 	c.currentSize.WithLabelValues(cacheTypePostings)
-	c.currentSize.WithLabelValues(cacheTypeSeries)
+	c.currentSize.WithLabelValues(cacheTypeSeriesForRef)
 	c.currentSize.WithLabelValues(cacheTypeExpandedPostings)
 
 	c.totalCurrentSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
@@ -153,7 +153,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Help: "Current byte size of items (both value and key) in the index cache.",
 	}, []string{"item_type"})
 	c.totalCurrentSize.WithLabelValues(cacheTypePostings)
-	c.totalCurrentSize.WithLabelValues(cacheTypeSeries)
+	c.totalCurrentSize.WithLabelValues(cacheTypeSeriesForRef)
 	c.totalCurrentSize.WithLabelValues(cacheTypeExpandedPostings)
 
 	_ = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
@@ -316,19 +316,19 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 	return hits, misses
 }
 
-// StoreSeries sets the series identified by the ulid and id to the value v,
+// StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StoreSeries(_ context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(cacheTypeSeries, cacheKey{blockID, cacheKeySeries(id)}, v)
+func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.set(cacheTypeSeriesForRef, cacheKey{blockID, cacheKeySeriesForRef(id)}, v)
 }
 
-// FetchMultiSeries fetches multiple series - each identified by ID - from the cache
+// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
-func (c *InMemoryIndexCache) FetchMultiSeries(_ context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	hits = map[storage.SeriesRef][]byte{}
 
 	for _, id := range ids {
-		if b, ok := c.get(cacheTypeSeries, cacheKey{blockID, cacheKeySeries(id)}); ok {
+		if b, ok := c.get(cacheTypeSeriesForRef, cacheKey{blockID, cacheKeySeriesForRef(id)}); ok {
 			hits[id] = b
 			continue
 		}

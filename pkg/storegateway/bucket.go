@@ -160,8 +160,8 @@ func (noopCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []label
 	return map[labels.Label][]byte{}, keys
 }
 
-func (noopCache) StoreSeries(context.Context, ulid.ULID, storage.SeriesRef, []byte) {}
-func (noopCache) FetchMultiSeries(_ context.Context, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
+func (noopCache) StoreSeriesForRef(context.Context, ulid.ULID, storage.SeriesRef, []byte) {}
+func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
 	return map[storage.SeriesRef][]byte{}, ids
 }
 
@@ -2238,7 +2238,7 @@ func (r *bucketIndexReader) PreloadSeries(ctx context.Context, ids []storage.Ser
 
 	// Load series from cache, overwriting the list of ids to preload
 	// with the missing ones.
-	fromCache, ids := r.block.indexCache.FetchMultiSeries(ctx, r.block.meta.ULID, ids)
+	fromCache, ids := r.block.indexCache.FetchMultiSeriesForRefs(ctx, r.block.meta.ULID, ids)
 	for id, b := range fromCache {
 		r.loadedSeries[id] = b
 	}
@@ -2295,7 +2295,7 @@ func (r *bucketIndexReader) loadSeries(ctx context.Context, ids []storage.Series
 		c = c[n : n+int(l)]
 		r.mtx.Lock()
 		r.loadedSeries[id] = c
-		r.block.indexCache.StoreSeries(ctx, r.block.meta.ULID, id, c)
+		r.block.indexCache.StoreSeriesForRef(ctx, r.block.meta.ULID, id, c)
 		r.mtx.Unlock()
 	}
 	return nil

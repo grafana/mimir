@@ -42,7 +42,7 @@ func TestCacheKey_string(t *testing.T) {
 			}(),
 		},
 		"should stringify series cache key": {
-			key:      cacheKey{uid, cacheKeySeries(12345)},
+			key:      cacheKey{uid, cacheKeySeriesForRef(12345)},
 			expected: fmt.Sprintf("S:%s:12345", uid.String()),
 		},
 	}
@@ -74,7 +74,7 @@ func TestCacheKey_string_ShouldGuaranteeReasonablyShortKeyLength(t *testing.T) {
 		"should guarantee reasonably short key length for series": {
 			expectedLen: 49,
 			keys: []cacheKey{
-				{uid, cacheKeySeries(math.MaxUint64)},
+				{uid, cacheKeySeriesForRef(math.MaxUint64)},
 			},
 		},
 	}
@@ -100,7 +100,7 @@ func BenchmarkCacheKey_string_Postings(b *testing.B) {
 
 func BenchmarkCacheKey_string_Series(b *testing.B) {
 	uid := ulid.MustNew(1, nil)
-	key := cacheKey{uid, cacheKeySeries(math.MaxUint64)}
+	key := cacheKey{uid, cacheKeySeriesForRef(math.MaxUint64)}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

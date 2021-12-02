@@ -20,7 +20,7 @@ import (
 
 const (
 	cacheTypePostings         string = "Postings"
-	cacheTypeSeries           string = "Series"
+	cacheTypeSeriesForRef     string = "SeriesForRef"
 	cacheTypeExpandedPostings string = "ExpandedPostings"
 
 	sliceHeaderSize = 16
@@ -37,12 +37,12 @@ type IndexCache interface {
 	// and returns a map containing cache hits, along with a list of missing keys.
 	FetchMultiPostings(ctx context.Context, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label)
 
-	// StoreSeries stores a single series.
-	StoreSeries(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte)
+	// StoreSeriesForRef stores a single series.
+	StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte)
 
-	// FetchMultiSeries fetches multiple series - each identified by ID - from the cache
+	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
-	FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
+	FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
 
 	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec.
 	StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte)
@@ -60,8 +60,8 @@ func (c cacheKey) keyType() string {
 	switch c.key.(type) {
 	case cacheKeyPostings:
 		return cacheTypePostings
-	case cacheKeySeries:
-		return cacheTypeSeries
+	case cacheKeySeriesForRef:
+		return cacheTypeSeriesForRef
 	case cacheKeyExpandedPostings:
 		return cacheTypeExpandedPostings
 	}
@@ -76,7 +76,7 @@ func (c cacheKey) size() uint64 {
 	case cacheKeyExpandedPostings:
 		// ULID + string header + number of key.
 		return ulidSize + sliceHeaderSize + uint64(len(k))
-	case cacheKeySeries:
+	case cacheKeySeriesForRef:
 		return ulidSize + 8 // ULID + uint64.
 	}
 	return 0
@@ -93,7 +93,7 @@ func (c cacheKey) string() string {
 	case cacheKeyExpandedPostings:
 		hash := blake2b.Sum256([]byte(key))
 		return "E:" + c.block.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
-	case cacheKeySeries:
+	case cacheKeySeriesForRef:
 		return "S:" + c.block.String() + ":" + strconv.FormatUint(uint64(key), 10)
 	default:
 		return ""
@@ -102,7 +102,7 @@ func (c cacheKey) string() string {
 
 type (
 	cacheKeyPostings         labels.Label
-	cacheKeySeries           uint64
+	cacheKeySeriesForRef     uint64
 	cacheKeyExpandedPostings LabelMatchersKey
 )
 
