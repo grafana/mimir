@@ -5,12 +5,12 @@
 
 package images
 
-// If you change the image tag, remember to update it in the preloading done
-// by GitHub actions (see .github/workflows/*).
-
-// These are variables so that they can be modified.
-
 var (
+	// If you change the image tag, remember to update it in the preloading done
+	// by GitHub actions (see .github/workflows/*).
+
+	// These are variables so that they can be modified.
+
 	Memcached        = "memcached:1.6.12"
 	Minio            = "minio/minio:RELEASE.2021-02-19T04-38-02Z"
 	Consul           = "consul:1.8.15"

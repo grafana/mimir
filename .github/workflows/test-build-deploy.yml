@@ -132,16 +132,16 @@ jobs:
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
         run: |
-          docker pull minio/minio:RELEASE.2019-12-30T05-45-39Z
-          docker pull amazon/dynamodb-local:1.11.477
-          docker pull consul:1.8.4
-          docker pull gcr.io/etcd-development/etcd:v3.4.7
+          docker pull minio/minio:RELEASE.2021-02-19T04-38-02Z
+          docker pull amazon/dynamodb-local:1.17.0
+          docker pull consul:1.8.15
+          docker pull gcr.io/etcd-development/etcd:v3.4.13
           docker pull quay.io/cortexproject/cortex:v1.8.0
           docker pull quay.io/cortexproject/cortex:v1.9.0
           docker pull quay.io/cortexproject/cortex:v1.10.0
           docker pull shopify/bigtable-emulator:0.1.0
           docker pull rinscy/cassandra:3.11.0
-          docker pull memcached:1.6.1
+          docker pull memcached:1.6.12
           docker pull bouncestorage/swift-aio:55ba4331
       - name: Integration Tests
         run: |
