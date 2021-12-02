@@ -143,7 +143,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		time.Duration(r.GetStep())*time.Millisecond,
 	)
 	if err != nil {
-		return nil, err
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
 
 	res := qry.Exec(ctx)
