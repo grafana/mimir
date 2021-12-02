@@ -63,7 +63,6 @@ type Syncer struct {
 	mtx                            sync.Mutex
 	blocks                         map[ulid.ULID]*metadata.Meta
 	partial                        map[ulid.ULID]error
-	blockSyncConcurrency           int
 	metrics                        *syncerMetrics
 	deduplicateBlocksFilter        DeduplicateFilter
 	excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter
@@ -102,7 +101,7 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion, garbag
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, blockSyncConcurrency int) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -114,7 +113,6 @@ func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bu
 		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion, garbageCollectedBlocks),
 		deduplicateBlocksFilter:        deduplicateBlocksFilter,
 		excludeMarkedForDeletionFilter: excludeMarkedForDeletionFilter,
-		blockSyncConcurrency:           blockSyncConcurrency,
 	}, nil
 }
 
