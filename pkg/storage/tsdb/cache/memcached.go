@@ -61,7 +61,7 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 // set stores a value for the given key in memcached.
 func (c *MemcachedIndexCache) set(ctx context.Context, key cacheKey, val []byte) {
 	if err := c.memcached.SetAsync(ctx, key.string(), val, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache in memcached", "typ", key.typ(), "err", err)
+		level.Error(c.logger).Log("msg", "failed to cache in memcached", "type", key.typ(), "err", err)
 	}
 }
 
