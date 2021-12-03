@@ -62,15 +62,30 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 	return c, nil
 }
 
+// set stores a value for the given key in memcached.
+func (c *MemcachedIndexCache) set(ctx context.Context, key cacheKey, val []byte) {
+	if err := c.memcached.SetAsync(ctx, key.string(), val, memcachedDefaultTTL); err != nil {
+		level.Error(c.logger).Log("msg", "failed to cache in memcached", "typ", key.typ(), "err", err)
+	}
+}
+
+// get retrieves a single value from memcached, returned bool value indicates whether the value was found or not.
+func (c *MemcachedIndexCache) get(ctx context.Context, key cacheKey) ([]byte, bool) {
+	k := key.string()
+	c.requests.WithLabelValues(key.typ()).Inc()
+	results := c.memcached.GetMulti(ctx, []string{k})
+	data, ok := results[k]
+	if ok {
+		c.hits.WithLabelValues(key.typ()).Inc()
+	}
+	return data, ok
+}
+
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *MemcachedIndexCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	key := cacheKeyPostings{blockID, l}.string()
-
-	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache postings in memcached", "err", err)
-	}
+	c.set(ctx, cacheKeyPostings{blockID, l}, v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
@@ -126,11 +141,7 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	key := cacheKeySeriesForRef{blockID, id}.string()
-
-	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache series in memcached", "err", err)
-	}
+	c.set(ctx, cacheKeySeriesForRef{blockID, id}, v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
@@ -184,21 +195,10 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, block
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	key := cacheKeyExpandedPostings{blockID, lmKey}.string()
-
-	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache expanded postings in memcached", "err", err)
-	}
+	c.set(ctx, cacheKeyExpandedPostings{blockID, lmKey}, v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
-	key := cacheKeyExpandedPostings{blockID, lmKey}.string()
-	results := c.memcached.GetMulti(ctx, []string{key})
-	c.requests.WithLabelValues(cacheTypeExpandedPostings).Inc()
-	data, ok := results[key]
-	if ok {
-		c.hits.WithLabelValues(cacheTypeExpandedPostings).Inc()
-	}
-	return data, ok
+	return c.get(ctx, cacheKeyExpandedPostings{blockID, lmKey})
 }
