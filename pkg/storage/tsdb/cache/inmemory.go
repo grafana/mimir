@@ -199,7 +199,8 @@ func (c *InMemoryIndexCache) onEvict(key, val interface{}) {
 	c.curSize -= entrySize
 }
 
-func (c *InMemoryIndexCache) get(typ string, key cacheKey) ([]byte, bool) {
+func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
+	typ := key.typ()
 	c.requests.WithLabelValues(typ).Inc()
 
 	c.mtx.Lock()
@@ -213,7 +214,8 @@ func (c *InMemoryIndexCache) get(typ string, key cacheKey) ([]byte, bool) {
 	return v.([]byte), true
 }
 
-func (c *InMemoryIndexCache) set(typ string, key cacheKey, val []byte) {
+func (c *InMemoryIndexCache) set(key cacheKey, val []byte) {
+	typ := key.typ()
 	size := sliceHeaderSize + uint64(len(val))
 
 	c.mtx.Lock()
@@ -297,7 +299,7 @@ func copyLabel(l labels.Label) labels.Label {
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
 func (c *InMemoryIndexCache) StorePostings(_ context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(cacheTypePostings, cacheKeyPostings{block: blockID, label: copyLabel(l)}, v)
+	c.set(cacheKeyPostings{block: blockID, label: copyLabel(l)}, v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
@@ -306,7 +308,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 	hits = map[labels.Label][]byte{}
 
 	for _, key := range keys {
-		if b, ok := c.get(cacheTypePostings, cacheKeyPostings{blockID, key}); ok {
+		if b, ok := c.get(cacheKeyPostings{blockID, key}); ok {
 			hits[key] = b
 			continue
 		}
@@ -320,7 +322,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
 func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(cacheTypeSeriesForRef, cacheKeySeriesForRef{blockID, id}, v)
+	c.set(cacheKeySeriesForRef{blockID, id}, v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
@@ -329,7 +331,7 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, blockID 
 	hits = map[storage.SeriesRef][]byte{}
 
 	for _, id := range ids {
-		if b, ok := c.get(cacheTypeSeriesForRef, cacheKeySeriesForRef{blockID, id}); ok {
+		if b, ok := c.get(cacheKeySeriesForRef{blockID, id}); ok {
 			hits[id] = b
 			continue
 		}
@@ -342,10 +344,10 @@ func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, blockID 
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	c.set(cacheTypeExpandedPostings, cacheKeyExpandedPostings{blockID, key}, v)
+	c.set(cacheKeyExpandedPostings{blockID, key}, v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
-	return c.get(cacheTypeExpandedPostings, cacheKeyExpandedPostings{blockID, key})
+	return c.get(cacheKeyExpandedPostings{blockID, key})
 }
