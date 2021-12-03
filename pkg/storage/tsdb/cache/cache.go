@@ -14,12 +14,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 const (
 	cacheTypePostings         = "Postings"
 	cacheTypeSeriesForRef     = "SeriesForRef"
 	cacheTypeExpandedPostings = "ExpandedPostings"
+	cacheTypeSeries           = "Series"
+	cacheTypeLabelNames       = "LabelNames"
+	cacheTypeLabelValues      = "LabelValues"
 )
 
 const (
@@ -32,6 +37,9 @@ var (
 		cacheTypePostings,
 		cacheTypeSeriesForRef,
 		cacheTypeExpandedPostings,
+		cacheTypeSeries,
+		cacheTypeLabelNames,
+		cacheTypeLabelValues,
 	}
 )
 
@@ -56,6 +64,21 @@ type IndexCache interface {
 
 	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
 	FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
+
+	// StoreSeries stores the result of a Series() call.
+	StoreSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
+	// FetchSeries fetches the result of a Series() call.
+	FetchSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
+
+	// StoreLabelNames stores the result of a LabelNames() call.
+	StoreLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
+	// FetchLabelNames fetches the result of a LabelNames() call.
+	FetchLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool)
+
+	// StoreLabelValues stores the result of a LabelValues() call.
+	StoreLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
+	// FetchLabelValues fetches the result of a LabelValues() call.
+	FetchLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice
@@ -110,4 +133,11 @@ func initLabelValuesForAllCacheTypes(vec *prometheus.MetricVec) {
 			panic(err)
 		}
 	}
+}
+
+func shardKey(shard *sharding.ShardSelector) string {
+	if shard == nil {
+		return "all"
+	}
+	return shard.LabelValue()
 }

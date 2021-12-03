@@ -172,6 +172,24 @@ func (c noopCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID,
 	return nil, false
 }
 
+func (noopCache) StoreSeries(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey, _ *sharding.ShardSelector, v []byte) {
+}
+func (noopCache) FetchSeries(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
+	return nil, false
+}
+
+func (noopCache) StoreLabelNames(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey, v []byte) {
+}
+func (noopCache) FetchLabelNames(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
+}
+
+func (noopCache) StoreLabelValues(_ context.Context, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey, v []byte) {
+}
+func (noopCache) FetchLabelValues(_ context.Context, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
+}
+
 // BucketStoreOption are functions that configure BucketStore.
 type BucketStoreOption func(s *BucketStore)
 

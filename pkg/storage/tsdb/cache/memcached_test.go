@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
-
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
@@ -23,6 +21,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/blake2b"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
@@ -110,8 +111,10 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
 			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
+			for _, typ := range remove(allCacheTypes, cacheTypePostings) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
 		})
 	}
 }
@@ -199,8 +202,10 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
 			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
+			for _, typ := range remove(allCacheTypes, cacheTypeSeriesForRef) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
 		})
 	}
 }
@@ -281,10 +286,277 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 			}
 			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeExpandedPostings)))
 			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeExpandedPostings)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
+			for _, typ := range remove(allCacheTypes, cacheTypeExpandedPostings) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
+		})
+	}
+}
+
+func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
+	t.Parallel()
+
+	// Init some data to conveniently define test cases later one.
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	matchers2 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "baz", "boo")}
+	value1 := []byte{1}
+	value2 := []byte{2}
+	value3 := []byte{3}
+	shard1 := (*sharding.ShardSelector)(nil)
+	shard2 := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}
+
+	tests := map[string]struct {
+		setup        []mockedSeries
+		mockedErr    error
+		fetchBlockID ulid.ULID
+		fetchKey     LabelMatchersKey
+		fetchShard   *sharding.ShardSelector
+		expectedData []byte
+		expectedOk   bool
+	}{
+		"should return no hit on empty cache": {
+			setup:        []mockedSeries{},
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			fetchShard:   shard1,
+			expectedData: nil,
+			expectedOk:   false,
+		},
+		"should return no miss on hit": {
+			setup: []mockedSeries{
+				{block: block1, matchers: matchers1, shard: shard1, value: value1},
+				{block: block1, matchers: matchers1, shard: shard2, value: value2}, // different shard
+				{block: block1, matchers: matchers2, shard: shard1, value: value2}, // different matchers
+				{block: block2, matchers: matchers1, shard: shard1, value: value3}, // different block
+			},
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			fetchShard:   shard1,
+			expectedData: value1,
+			expectedOk:   true,
+		},
+		"should return no hit on memcached error": {
+			setup: []mockedSeries{
+				{block: block1, matchers: matchers1, shard: shard1, value: value1},
+				{block: block1, matchers: matchers2, shard: shard1, value: value2},
+				{block: block2, matchers: matchers1, shard: shard1, value: value3},
+			},
+			mockedErr:    context.DeadlineExceeded,
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			fetchShard:   shard1,
+			expectedData: nil,
+			expectedOk:   false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			memcached := newMockedMemcachedClient(testData.mockedErr)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			assert.NoError(t, err)
+
+			// Store the postings expected before running the test.
+			ctx := context.Background()
+			for _, p := range testData.setup {
+				c.StoreSeries(ctx, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
+			}
+
+			// Fetch postings from cached and assert on it.
+			data, ok := c.FetchSeries(ctx, testData.fetchBlockID, testData.fetchKey, testData.fetchShard)
+			assert.Equal(t, testData.expectedData, data)
+			assert.Equal(t, testData.expectedOk, ok)
+
+			// Assert on metrics.
+			expectedHits := 0.0
+			if testData.expectedOk {
+				expectedHits = 1.0
+			}
+			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			for _, typ := range remove(allCacheTypes, cacheTypeSeries) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
+		})
+	}
+}
+
+func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
+	t.Parallel()
+
+	// Init some data to conveniently define test cases later one.
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	matchers2 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "baz", "boo")}
+	value1 := []byte{1}
+	value2 := []byte{2}
+	value3 := []byte{3}
+
+	tests := map[string]struct {
+		setup        []mockedLabelNames
+		mockedErr    error
+		fetchBlockID ulid.ULID
+		fetchKey     LabelMatchersKey
+		expectedData []byte
+		expectedOk   bool
+	}{
+		"should return no hit on empty cache": {
+			setup:        []mockedLabelNames{},
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			expectedData: nil,
+			expectedOk:   false,
+		},
+		"should return no miss on hit": {
+			setup: []mockedLabelNames{
+				{block: block1, matchers: matchers1, value: value1},
+				{block: block1, matchers: matchers2, value: value2},
+				{block: block2, matchers: matchers1, value: value3},
+			},
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			expectedData: value1,
+			expectedOk:   true,
+		},
+		"should return no hit on memcached error": {
+			setup: []mockedLabelNames{
+				{block: block1, matchers: matchers1, value: value1},
+				{block: block1, matchers: matchers2, value: value2},
+				{block: block2, matchers: matchers1, value: value3},
+			},
+			mockedErr:    context.DeadlineExceeded,
+			fetchBlockID: block1,
+			fetchKey:     CanonicalLabelMatchersKey(matchers1),
+			expectedData: nil,
+			expectedOk:   false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			memcached := newMockedMemcachedClient(testData.mockedErr)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			assert.NoError(t, err)
+
+			// Store the postings expected before running the test.
+			ctx := context.Background()
+			for _, p := range testData.setup {
+				c.StoreLabelNames(ctx, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+			}
+
+			// Fetch postings from cached and assert on it.
+			data, ok := c.FetchLabelNames(ctx, testData.fetchBlockID, testData.fetchKey)
+			assert.Equal(t, testData.expectedData, data)
+			assert.Equal(t, testData.expectedOk, ok)
+
+			// Assert on metrics.
+			expectedHits := 0.0
+			if testData.expectedOk {
+				expectedHits = 1.0
+			}
+			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeLabelNames)))
+			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeLabelNames)))
+			for _, typ := range remove(allCacheTypes, cacheTypeLabelNames) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
+		})
+	}
+}
+
+func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
+	t.Parallel()
+
+	// Init some data to conveniently define test cases later one.
+	block1 := ulid.MustNew(1, nil)
+	block2 := ulid.MustNew(2, nil)
+	labelName1 := "one"
+	labelName2 := "two"
+	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
+	matchers2 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "baz", "boo")}
+	value1 := []byte{1}
+	value2 := []byte{2}
+	value3 := []byte{3}
+
+	tests := map[string]struct {
+		setup          []mockedLabelValues
+		mockedErr      error
+		fetchBlockID   ulid.ULID
+		fetchLabelName string
+		fetchKey       LabelMatchersKey
+		expectedData   []byte
+		expectedOk     bool
+	}{
+		"should return no hit on empty cache": {
+			setup:          []mockedLabelValues{},
+			fetchBlockID:   block1,
+			fetchLabelName: labelName1,
+			fetchKey:       CanonicalLabelMatchersKey(matchers1),
+			expectedData:   nil,
+			expectedOk:     false,
+		},
+		"should return no miss on hit": {
+			setup: []mockedLabelValues{
+				{block: block1, labelName: labelName1, matchers: matchers1, value: value1},
+				{block: block1, labelName: labelName2, matchers: matchers2, value: value2},
+				{block: block2, labelName: labelName1, matchers: matchers1, value: value3},
+				{block: block2, labelName: labelName1, matchers: matchers2, value: value3},
+			},
+			fetchBlockID:   block1,
+			fetchLabelName: labelName1,
+			fetchKey:       CanonicalLabelMatchersKey(matchers1),
+			expectedData:   value1,
+			expectedOk:     true,
+		},
+		"should return no hit on memcached error": {
+			setup: []mockedLabelValues{
+				{block: block1, labelName: labelName1, matchers: matchers1, value: value1},
+				{block: block1, labelName: labelName2, matchers: matchers2, value: value2},
+				{block: block2, labelName: labelName1, matchers: matchers1, value: value3},
+				{block: block2, labelName: labelName1, matchers: matchers2, value: value3},
+			},
+			mockedErr:      context.DeadlineExceeded,
+			fetchBlockID:   block1,
+			fetchLabelName: labelName1,
+			fetchKey:       CanonicalLabelMatchersKey(matchers1),
+			expectedData:   nil,
+			expectedOk:     false,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			memcached := newMockedMemcachedClient(testData.mockedErr)
+			c, err := NewMemcachedIndexCache(log.NewNopLogger(), memcached, nil)
+			assert.NoError(t, err)
+
+			// Store the postings expected before running the test.
+			ctx := context.Background()
+			for _, p := range testData.setup {
+				c.StoreLabelValues(ctx, p.block, p.labelName, CanonicalLabelMatchersKey(p.matchers), p.value)
+			}
+
+			// Fetch postings from cached and assert on it.
+			data, ok := c.FetchLabelValues(ctx, testData.fetchBlockID, testData.fetchLabelName, testData.fetchKey)
+			assert.Equal(t, testData.expectedData, data)
+			assert.Equal(t, testData.expectedOk, ok)
+
+			// Assert on metrics.
+			expectedHits := 0.0
+			if testData.expectedOk {
+				expectedHits = 1.0
+			}
+			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeLabelValues)))
+			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeLabelValues)))
+			for _, typ := range remove(allCacheTypes, cacheTypeLabelValues) {
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(typ)))
+				assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(typ)))
+			}
 		})
 	}
 }
@@ -396,6 +668,26 @@ type mockedExpandedPostings struct {
 	value    []byte
 }
 
+type mockedLabelNames struct {
+	block    ulid.ULID
+	matchers []*labels.Matcher
+	value    []byte
+}
+
+type mockedSeries struct {
+	block    ulid.ULID
+	matchers []*labels.Matcher
+	shard    *sharding.ShardSelector
+	value    []byte
+}
+
+type mockedLabelValues struct {
+	block     ulid.ULID
+	labelName string
+	matchers  []*labels.Matcher
+	value     []byte
+}
+
 type mockedMemcachedClient struct {
 	cache             map[string][]byte
 	mockedGetMultiErr error
@@ -432,4 +724,15 @@ func (c *mockedMemcachedClient) SetAsync(ctx context.Context, key string, value 
 
 func (c *mockedMemcachedClient) Stop() {
 	// Nothing to do.
+}
+
+// remove a string from a slice of strings
+func remove(slice []string, needle string) []string {
+	res := make([]string, 0, len(slice))
+	for _, s := range slice {
+		if s != needle {
+			res = append(res, s)
+		}
+	}
+	return res
 }

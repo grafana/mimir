@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/model"
 	"gopkg.in/yaml.v2"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 var DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
@@ -336,6 +338,36 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ul
 	return c.get(cacheKeyExpandedPostings{blockID, key})
 }
 
+// StoreSeries stores the result of a Series() call.
+func (c *InMemoryIndexCache) StoreSeries(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	c.set(cacheKeySeries{blockID, matchersKey, shardKey(shard)}, v)
+}
+
+// FetchSeries fetches the result of a Series() call.
+func (c *InMemoryIndexCache) FetchSeries(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+	return c.get(cacheKeySeries{blockID, matchersKey, shardKey(shard)})
+}
+
+// StoreLabelNames stores the result of a LabelNames() call.
+func (c *InMemoryIndexCache) StoreLabelNames(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheKeyLabelNames{blockID, matchersKey}, v)
+}
+
+// FetchLabelNames fetches the result of a LabelNames() call.
+func (c *InMemoryIndexCache) FetchLabelNames(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(cacheKeyLabelNames{blockID, matchersKey})
+}
+
+// StoreLabelValues stores the result of a LabelValues() call.
+func (c *InMemoryIndexCache) StoreLabelValues(_ context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheKeyLabelValues{blockID, labelName, matchersKey}, v)
+}
+
+// FetchLabelValues fetches the result of a LabelValues() call.
+func (c *InMemoryIndexCache) FetchLabelValues(_ context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(cacheKeyLabelValues{blockID, labelName, matchersKey})
+}
+
 // cacheKey is used by in-memory representation to store cached data.
 // The implementations of cacheKey should be hashable, as they will be used as keys for *lru.LRU cache
 type cacheKey interface {
@@ -380,4 +412,45 @@ func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPosting
 
 func (c cacheKeyExpandedPostings) size() uint64 {
 	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey))
+}
+
+type cacheKeySeries struct {
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+	shard       string
+}
+
+func (c cacheKeySeries) typ() string {
+	return cacheTypeSeries
+}
+
+func (c cacheKeySeries) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey)) + sliceHeaderSize + uint64(len(c.shard))
+}
+
+type cacheKeyLabelNames struct {
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+}
+
+func (c cacheKeyLabelNames) typ() string {
+	return cacheTypeLabelNames
+}
+
+func (c cacheKeyLabelNames) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey))
+}
+
+type cacheKeyLabelValues struct {
+	block       ulid.ULID
+	labelName   string
+	matchersKey LabelMatchersKey
+}
+
+func (c cacheKeyLabelValues) typ() string {
+	return cacheTypeLabelValues
+}
+
+func (c cacheKeyLabelValues) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.labelName)) + sliceHeaderSize + uint64(len(c.matchersKey))
 }
