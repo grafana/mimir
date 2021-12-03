@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/oklog/ulid"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"golang.org/x/crypto/blake2b"
@@ -26,7 +27,14 @@ const (
 	sliceHeaderSize = 16
 )
 
-var ulidSize = uint64(len(ulid.ULID{}))
+var (
+	ulidSize      = uint64(len(ulid.ULID{}))
+	allCacheTypes = []string{
+		cacheTypePostings,
+		cacheTypeSeriesForRef,
+		cacheTypeExpandedPostings,
+	}
+)
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
@@ -95,6 +103,15 @@ func (c sortedLabelMatchers) Less(i, j int) bool {
 
 func (c sortedLabelMatchers) Len() int      { return len(c) }
 func (c sortedLabelMatchers) Swap(i, j int) { c[i], c[j] = c[j], c[i] }
+
+func initLabelValuesForAllCacheTypes(vec *prometheus.MetricVec) {
+	for _, typ := range allCacheTypes {
+		_, err := vec.GetMetricWithLabelValues(typ)
+		if err != nil {
+			panic(err)
+		}
+	}
+}
 
 type cacheKey interface {
 	string() string

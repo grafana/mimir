@@ -45,17 +45,13 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 		Name: "thanos_store_index_cache_requests_total",
 		Help: "Total number of items requests to the cache.",
 	}, []string{"item_type"})
-	c.requests.WithLabelValues(cacheTypePostings)
-	c.requests.WithLabelValues(cacheTypeSeriesForRef)
-	c.requests.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.requests.MetricVec)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_hits_total",
 		Help: "Total number of items requests to the cache that were a hit.",
 	}, []string{"item_type"})
-	c.hits.WithLabelValues(cacheTypePostings)
-	c.hits.WithLabelValues(cacheTypeSeriesForRef)
-	c.hits.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.hits.MetricVec)
 
 	level.Info(logger).Log("msg", "created memcached index cache")
 
