@@ -62,6 +62,9 @@ type distributorQueryable struct {
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, d.logger, "distributorQueryable.Querier")
+	defer spanlog.Finish()
+
 	return &distributorQuerier{
 		logger:               d.logger,
 		distributor:          d.distributor,
@@ -94,8 +97,8 @@ type distributorQuerier struct {
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
 func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
-	defer log.Span.Finish()
+	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
+	defer spanlog.Finish()
 
 	if sp.Func == "series" {
 		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(sp.Start), model.Time(sp.End), matchers...)
@@ -117,11 +120,11 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 		minT = math.Max64(minT, util.TimeToMillis(now.Add(-q.queryIngestersWithin)))
 
 		if origMinT != minT {
-			level.Debug(log).Log("msg", "the min time of the query to ingesters has been manipulated", "original", origMinT, "updated", minT)
+			level.Debug(spanlog).Log("msg", "the min time of the query to ingesters has been manipulated", "original", origMinT, "updated", minT)
 		}
 
 		if minT > maxT {
-			level.Debug(log).Log("msg", "empty query time range after min time manipulation")
+			level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
 			return storage.EmptySeriesSet()
 		}
 	}
@@ -234,30 +237,39 @@ func (q *distributorQuerier) Close() error {
 
 type distributorExemplarQueryable struct {
 	distributor Distributor
+	logger      log.Logger
 }
 
-func newDistributorExemplarQueryable(d Distributor) storage.ExemplarQueryable {
+func newDistributorExemplarQueryable(d Distributor, logger log.Logger) storage.ExemplarQueryable {
 	return &distributorExemplarQueryable{
 		distributor: d,
+		logger:      logger,
 	}
 }
 
 func (d distributorExemplarQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	spanlog, ctx := spanlogger.NewWithLogger(ctx, d.logger, "distributorExemplarQueryable.ExemplarQuerier")
+	defer spanlog.Finish()
+
 	return &distributorExemplarQuerier{
 		distributor: d.distributor,
 		ctx:         ctx,
+		logger:      d.logger,
 	}, nil
 }
 
 type distributorExemplarQuerier struct {
 	distributor Distributor
 	ctx         context.Context
+	logger      log.Logger
 }
 
 // Select querys for exemplars, prometheus' storage.ExemplarQuerier's Select function takes the time range as two int64 values.
 func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	allResults, err := q.distributor.QueryExemplars(q.ctx, model.Time(start), model.Time(end), matchers...)
+	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
+	defer spanlog.Finish()
 
+	allResults, err := q.distributor.QueryExemplars(ctx, model.Time(start), model.Time(end), matchers...)
 	if err != nil {
 		return nil, err
 	}
