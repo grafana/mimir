@@ -39,27 +39,23 @@ func preCortex110Flags(flags map[string]string) map[string]string {
 	})
 }
 
-func TestBackwardCompatibilityWithChunksStorage(t *testing.T) {
-	// TODO: (remove-chunks) port this to use blocks storage engine or remove
-	t.Skip("chunks storage is no longer supported")
+func TestBackwardCompatibility(t *testing.T) {
 	for previousImage, flagsFn := range previousVersionImages {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
-			flags := ChunksStorageFlags()
+			flags := BlocksStorageFlags()
 			if flagsFn != nil {
 				flags = flagsFn(flags)
 			}
 
-			runBackwardCompatibilityTestWithChunksStorage(t, previousImage, flags)
+			runBackwardCompatibilityTest(t, previousImage, flags)
 		})
 	}
 }
 
 func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
-	// TODO: (remove-chunks) port this to use blocks storage engine or remove
-	t.Skip("chunks storage is no longer supported")
 	for previousImage, flagsFn := range previousVersionImages {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
-			flags := ChunksStorageFlags()
+			flags := BlocksStorageFlags()
 			if flagsFn != nil {
 				flags = flagsFn(flags)
 			}
@@ -69,31 +65,34 @@ func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
 	}
 }
 
-func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage string, flagsForOldImage map[string]string) {
+func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOldImage map[string]string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
 
+	flagTSDBPath := map[string]string{
+		"-blocks-storage.tsdb.dir": e2e.ContainerSharedDir + "/tsdb-shared",
+	}
+
+	flagsNew := mergeFlags(
+		BlocksStorageFlags(),
+		flagTSDBPath,
+	)
+
+	flagsForOldImage = mergeFlags(
+		flagsForOldImage,
+		flagTSDBPath,
+	)
+
 	// Start dependencies.
-	dynamo := e2edb.NewDynamoDB()
 	consul := e2edb.NewConsul()
-	require.NoError(t, s.StartAndWaitReady(dynamo, consul))
-
-	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
-
-	// Start Mimir table-manager (running on current version since the backward compatibility
-	// test is about testing a rolling update of other services).
-	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
-	require.NoError(t, s.StartAndWaitReady(tableManager))
-
-	// Wait until the first table-manager sync has completed, so that we're
-	// sure the tables have been created.
-	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
+	minio := e2edb.NewMinio(9000, flagsNew["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
-	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForOldImage, previousImage)
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), ChunksStorageFlags(), "")
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester1))
+	ingester := e2emimir.NewIngester("ingester-old", consul.NetworkHTTPEndpoint(), flagsForOldImage, previousImage)
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), BlocksStorageFlags(), "")
+	assert.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
 	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
@@ -109,21 +108,21 @@ func runBackwardCompatibilityTestWithChunksStorage(t *testing.T, previousImage s
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	ingester2 := e2emimir.NewIngester("ingester-2", consul.NetworkHTTPEndpoint(), mergeFlags(ChunksStorageFlags(), map[string]string{
-		"-ingester.join-after": "10s",
-	}), "")
-	// Start ingester-2 on new version, to ensure the transfer is backward compatible.
-	require.NoError(t, s.Start(ingester2))
+	// Stop ingester on old version
+	require.NoError(t, s.Stop(ingester))
 
-	// Stop ingester-1. This function will return once the ingester-1 is successfully
-	// stopped, which means the transfer to ingester-2 is completed.
-	require.NoError(t, s.Stop(ingester1))
+	ingester = e2emimir.NewIngester("ingester-new", consul.NetworkHTTPEndpoint(), flagsNew, "")
+	require.NoError(t, s.StartAndWaitReady(ingester))
 
-	checkQueries(t, consul,
+	// Wait until the distributor has updated the ring.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	checkQueries(t,
+		consul,
 		expectedVector,
 		previousImage,
 		flagsForOldImage,
-		ChunksStorageFlags(),
+		BlocksStorageFlags(),
 		now,
 		s,
 		1,
@@ -136,25 +135,14 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, err)
 	defer s.Close()
 
-	// Start dependencies.
-	dynamo := e2edb.NewDynamoDB()
-	consul := e2edb.NewConsul()
-	require.NoError(t, s.StartAndWaitReady(dynamo, consul))
-
-	flagsForNewImage := mergeFlags(ChunksStorageFlags(), map[string]string{
+	flagsForNewImage := mergeFlags(BlocksStorageFlags(), map[string]string{
 		"-distributor.replication-factor": "3",
 	})
 
-	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
-
-	// Start Mimir table-manager (running on current version since the backward compatibility
-	// test is about testing a rolling update of other services).
-	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
-	require.NoError(t, s.StartAndWaitReady(tableManager))
-
-	// Wait until the first table-manager sync has completed, so that we're
-	// sure the tables have been created.
-	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, flagsForNewImage["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
 
 	// Start other Mimir components (ingester running on previous version).
 	ingester1 := e2emimir.NewIngester("ingester-1", consul.NetworkHTTPEndpoint(), flagsForPreviousImage, previousImage)
