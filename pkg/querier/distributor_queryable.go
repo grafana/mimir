@@ -263,11 +263,12 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
 	defer spanlog.Finish()
 
-	startTime := model.Time(start)
-	endTime := model.Time(end)
-
-	level.Debug(spanlog).Log("start", startTime, "end", endTime, "matchers", matchers)
-	allResults, err := q.distributor.QueryExemplars(ctx, startTime, endTime, matchers...)
+	level.Debug(spanlog).Log(
+		"start", util.TimeFromMillis(start).UTC().String(),
+		"end", util.TimeFromMillis(end).UTC().String(),
+		"matchers", util.MultiMatchersStringer(matchers),
+	)
+	allResults, err := q.distributor.QueryExemplars(ctx, model.Time(start), model.Time(end), matchers...)
 	if err != nil {
 		return nil, err
 	}
