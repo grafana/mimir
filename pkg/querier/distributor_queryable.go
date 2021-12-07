@@ -62,9 +62,6 @@ type distributorQueryable struct {
 }
 
 func (d distributorQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, d.logger, "distributorQueryable.Querier")
-	defer spanlog.Finish()
-
 	return &distributorQuerier{
 		logger:               d.logger,
 		distributor:          d.distributor,
@@ -248,9 +245,6 @@ func newDistributorExemplarQueryable(d Distributor, logger log.Logger) storage.E
 }
 
 func (d distributorExemplarQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
-	spanlog, ctx := spanlogger.NewWithLogger(ctx, d.logger, "distributorExemplarQueryable.ExemplarQuerier")
-	defer spanlog.Finish()
-
 	return &distributorExemplarQuerier{
 		distributor: d.distributor,
 		ctx:         ctx,
@@ -269,17 +263,26 @@ func (q *distributorExemplarQuerier) Select(start, end int64, matchers ...[]*lab
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorExemplarQuerier.Select")
 	defer spanlog.Finish()
 
-	allResults, err := q.distributor.QueryExemplars(ctx, model.Time(start), model.Time(end), matchers...)
+	startTime := model.Time(start)
+	endTime := model.Time(end)
+
+	level.Debug(spanlog).Log("start", startTime, "end", endTime, "matchers", matchers)
+	allResults, err := q.distributor.QueryExemplars(ctx, startTime, endTime, matchers...)
 	if err != nil {
 		return nil, err
 	}
 
+	var numExemplars int
 	var e exemplar.QueryResult
 	ret := make([]exemplar.QueryResult, len(allResults.Timeseries))
 	for i, ts := range allResults.Timeseries {
 		e.SeriesLabels = mimirpb.FromLabelAdaptersToLabels(ts.Labels)
 		e.Exemplars = mimirpb.FromExemplarProtosToExemplars(ts.Exemplars)
 		ret[i] = e
+
+		numExemplars += len(e.Exemplars)
 	}
+
+	level.Debug(spanlog).Log("numSeries", len(ret), "numExemplars", numExemplars)
 	return ret, nil
 }
