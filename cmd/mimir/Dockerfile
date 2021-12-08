@@ -5,7 +5,7 @@
 
 FROM       alpine:3.13
 RUN        apk add --no-cache ca-certificates
-# Expose TARGETOS and TARGETARCH variables. These are suppored by Docker when using BuildKit, but must be "enabled" using ARG.
+# Expose TARGETOS and TARGETARCH variables. These are supported by Docker when using BuildKit, but must be "enabled" using ARG.
 ARG        TARGETOS
 ARG        TARGETARCH
 ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
