@@ -197,9 +197,11 @@ func mergeExemplarQueryResponses(results []interface{}) *ingester_client.Exempla
 			if !ok {
 				exemplarResults[lbls] = ts
 				keys = append(keys, lbls)
+			} else {
+				// Merge in any missing values from another ingesters exemplars for this series.
+				ts.Exemplars = mergeExemplarSets(e.Exemplars, ts.Exemplars)
+				exemplarResults[lbls] = ts
 			}
-			// Merge in any missing values from another ingesters exemplars for this series.
-			e.Exemplars = mergeExemplarSets(e.Exemplars, ts.Exemplars)
 		}
 	}
 
