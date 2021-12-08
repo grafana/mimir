@@ -86,10 +86,9 @@ func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) 
 			end = r.GetEnd()
 		}
 
-		// If step isn't too big, and adding another step saves us one extra request, do it.
-		// For bigger steps, we don't do this, so that we still benefit from running split subrequests
-		// concurrently.
-		if r.GetStep() < interval.Milliseconds()/2 && end+r.GetStep() == r.GetEnd() {
+		// If step isn't too big, and adding another step saves us one extra request,
+		// then extend the current request to cover the extra step too.
+		if end+r.GetStep() == r.GetEnd() && r.GetStep() <= 5*time.Minute.Milliseconds() {
 			end = r.GetEnd()
 		}
 
