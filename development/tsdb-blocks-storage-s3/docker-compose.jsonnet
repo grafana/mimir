@@ -162,7 +162,7 @@ std.manifestYamlDoc({
       'sh',
       '-c',
       (if $._config.sleep_seconds > 0 then 'sleep %d && ' % [$._config.sleep_seconds] else '') +
-      (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- '
+      (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options
        else 'exec ./mimir ') +
       '-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d %(extraArguments)s' % options,
     ],
