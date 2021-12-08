@@ -163,6 +163,7 @@
 * [BUGFIX] Querier: fixed UserStats endpoint. When zone-aware replication is enabled, `MaxUnavailableZones` param is used instead of `MaxErrors`, so setting `MaxErrors = 0` doesn't make the Querier wait for all Ingesters responses. #474
 * [BUGFIX] Ingester: fix out-of-order chunks in TSDB head in-memory series after WAL replay in case some samples were appended to TSDB WAL before series. #530
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
+* [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
 
 Mixin:
 
