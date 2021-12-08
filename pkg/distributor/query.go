@@ -183,7 +183,10 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 		return nil, err
 	}
 
-	// Merge results from replication set.
+	return mergeExemplarQueryResponses(results), nil
+}
+
+func mergeExemplarQueryResponses(results []interface{}) *ingester_client.ExemplarQueryResponse {
 	var keys []string
 	exemplarResults := make(map[string]mimirpb.TimeSeries)
 	for _, result := range results {
@@ -208,7 +211,7 @@ func (d *Distributor) queryIngestersExemplars(ctx context.Context, replicationSe
 		result[i] = exemplarResults[k]
 	}
 
-	return &ingester_client.ExemplarQueryResponse{Timeseries: result}, nil
+	return &ingester_client.ExemplarQueryResponse{Timeseries: result}
 }
 
 // queryIngesterStream queries the ingesters using the new streaming API.
