@@ -133,48 +133,50 @@ func TestTripperware_Metrics(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			reg := prometheus.NewPedanticRegistry()
-			tw, _, err := NewTripperware(Config{},
-				log.NewNopLogger(),
-				mockLimits{},
-				PrometheusCodec,
-				nil,
-				storage.StorageEngineBlocks,
-				promql.EngineOpts{
-					Logger:     log.NewNopLogger(),
-					Reg:        nil,
-					MaxSamples: 1000,
-					Timeout:    time.Minute,
-				},
-				reg,
-				nil,
-			)
-			require.NoError(t, err)
+		for _, aligningEnabled := range []bool{false, true} {
+			t.Run(testName+", align enabled:"+strconv.FormatBool(aligningEnabled), func(t *testing.T) {
+				reg := prometheus.NewPedanticRegistry()
+				tw, _, err := NewTripperware(Config{AlignQueriesWithStep: aligningEnabled},
+					log.NewNopLogger(),
+					mockLimits{},
+					PrometheusCodec,
+					nil,
+					storage.StorageEngineBlocks,
+					promql.EngineOpts{
+						Logger:     log.NewNopLogger(),
+						Reg:        nil,
+						MaxSamples: 1000,
+						Timeout:    time.Minute,
+					},
+					reg,
+					nil,
+				)
+				require.NoError(t, err)
 
-			req, err := http.NewRequest("GET", testData.path, http.NoBody)
-			require.NoError(t, err)
+				req, err := http.NewRequest("GET", testData.path, http.NoBody)
+				require.NoError(t, err)
 
-			ctx := user.InjectOrgID(context.Background(), "user-1")
-			req = req.WithContext(ctx)
-			require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
+				ctx := user.InjectOrgID(context.Background(), "user-1")
+				req = req.WithContext(ctx)
+				require.NoError(t, user.InjectOrgIDIntoHTTPRequest(ctx, req))
 
-			resp, err := tw(downstream).RoundTrip(req)
-			require.NoError(t, err)
-			require.Equal(t, 200, resp.StatusCode)
+				resp, err := tw(downstream).RoundTrip(req)
+				require.NoError(t, err)
+				require.Equal(t, 200, resp.StatusCode)
 
-			body, err := ioutil.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, `{"status":"","data":{"resultType":"","result":null}}`, string(body))
+				body, err := ioutil.ReadAll(resp.Body)
+				require.NoError(t, err)
+				require.Equal(t, `{"status":"","data":{"resultType":"","result":null}}`, string(body))
 
-			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.
 				# TYPE cortex_query_frontend_non_step_aligned_queries_total counter
 				cortex_query_frontend_non_step_aligned_queries_total %d
 			`, testData.expectedNotAlignedCount)),
-				"cortex_query_frontend_non_step_aligned_queries_total",
-			))
-		})
+					"cortex_query_frontend_non_step_aligned_queries_total",
+				))
+			})
+		}
 	}
 }
 
