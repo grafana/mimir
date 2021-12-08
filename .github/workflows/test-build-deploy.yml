@@ -42,6 +42,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
         run: make BUILD_IN_CONTAINER=false check-license
+      - name: Check Docker-Compose YAML
+        run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
 
   test:
     runs-on: ubuntu-20.04

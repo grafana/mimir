@@ -6,7 +6,7 @@
 
 set -e
 
-SCRIPT_DIR=$(cd `dirname $0` && pwd)
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 
 # -gcflags "all=-N -l" disables optimizations that allow for better run with combination with Delve debugger.
 # GOARCH is not changed.

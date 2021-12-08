@@ -371,6 +371,9 @@ build-mixin: check-mixin-jb
 format-mixin:
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
+check-tsdb-blocks-storage-s3-docker-compose-yaml:
+	cd development/tsdb-blocks-storage-s3 && make check
+
 web-serve:
 	cd website && hugo --config config.toml --minify -v server
 
