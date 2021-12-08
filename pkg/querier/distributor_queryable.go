@@ -102,7 +102,7 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
 	// optimization is particularly important for the blocks storage where the blocks retention in the
 	// ingesters could be way higher than queryIngestersWithin.
-	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "ingester min", "query ingesters within", spanlog))
+	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", spanlog))
 
 	if minT > maxT {
 		level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
@@ -174,8 +174,14 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	startT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "ingester min", "query ingesters within", q.logger)
-	lvs, err := q.distributor.LabelValuesForLabelName(q.ctx, startT, model.Time(q.maxt), model.LabelName(name), matchers...)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", q.logger)
+
+	if minT > model.Time(q.maxt) {
+		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+		return nil, nil, nil
+	}
+
+	lvs, err := q.distributor.LabelValuesForLabelName(q.ctx, minT, model.Time(q.maxt), model.LabelName(name), matchers...)
 
 	return lvs, nil, err
 }
@@ -184,13 +190,18 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer log.Span.Finish()
 
-	startT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "ingester min", "query ingesters within", log)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", log)
+
+	if minT > model.Time(q.maxt) {
+		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+		return nil, nil, nil
+	}
 
 	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
 		return q.legacyLabelNamesWithMatchersThroughMetricsCall(ctx, matchers...)
 	}
 
-	ln, err := q.distributor.LabelNames(ctx, startT, model.Time(q.maxt), matchers...)
+	ln, err := q.distributor.LabelNames(ctx, minT, model.Time(q.maxt), matchers...)
 	return ln, nil, err
 }
 
