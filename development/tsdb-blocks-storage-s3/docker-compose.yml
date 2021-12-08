@@ -245,28 +245,6 @@
       - "8004:8004"
     "volumes":
       - "./config:/mimir/config"
-  "querier-with-scheduler":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8013 -server.grpc-listen-port=9013 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
-    "depends_on":
-      - "consul"
-      - "minio"
-    "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=querier-with-scheduler"
-    "image": "mimir"
-    "ports":
-      - "8013:8013"
-    "volumes":
-      - "./config:/mimir/config"
   "query-frontend":
     "build":
       "context": "."
@@ -287,50 +265,6 @@
     "image": "mimir"
     "ports":
       - "8007:8007"
-    "volumes":
-      - "./config:/mimir/config"
-  "query-frontend-with-scheduler":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8012 -server.grpc-listen-port=9012 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"
-    "depends_on":
-      - "consul"
-      - "minio"
-    "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=query-frontend-with-scheduler"
-    "image": "mimir"
-    "ports":
-      - "8012:8012"
-    "volumes":
-      - "./config:/mimir/config"
-  "query-scheduler":
-    "build":
-      "context": "."
-      "dockerfile": "dev.dockerfile"
-    "command":
-      - "sh"
-      - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -store.max-query-length=8760h"
-    "depends_on":
-      - "consul"
-      - "minio"
-    "environment":
-      - "JAEGER_AGENT_HOST=jaeger"
-      - "JAEGER_AGENT_PORT=6831"
-      - "JAEGER_SAMPLER_PARAM=1"
-      - "JAEGER_SAMPLER_TYPE=const"
-      - "JAEGER_TAGS=app=query-scheduler"
-    "image": "mimir"
-    "ports":
-      - "8011:8011"
     "volumes":
       - "./config:/mimir/config"
   "ruler-1":

@@ -1,20 +1,42 @@
 std.manifestYamlDoc({
-  version: '3.4',  // docker-compose YAML output version.
-
   _config:: {
     // If true, Mimir services are run under Delve debugger, that can be attached to via remote-debugging session.
     // Note that Delve doesn't forward signals to the Mimir process, so Mimir components don't shutdown cleanly.
     debug: false,
+
+    // How long should Mimir docker containers sleep before Mimir is started.
+    sleep_seconds: 3,
+
+    // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
+    use_query_scheduler: false,
   },
 
-  services: self.mimirServices + self.commonServices,
+  // We explicitely list all important services here, so that it's easy to disable them by commenting out.
+  services:
+    self.distributor +
+    self.ingesters +
+    self.read_components +  // Querier, Frontend and query-scheduler, if enabled.
+    self.store_gateways +
+    self.compactor +
+    self.rulers(2) +
+    self.alertmanagers(3) +
+    self.purger +
+    self.consul +
+    self.minio +
+    self.prometheus +
+    self.grafana_agent +
+    self.memcached +
+    self.jaeger +
+    {},
 
-  mimirServices:: {
+  distributor:: {
     distributor: mimirService({
       target: 'distributor',
       httpPort: 8001,
     }),
+  },
 
+  ingesters:: {
     'ingester-1': mimirService({
       target: 'ingester',
       httpPort: 8002,
@@ -28,50 +50,64 @@ std.manifestYamlDoc({
       jaegerApp: 'ingester-2',
       extraVolumes: ['.data-ingester-2:/tmp/mimir-tsdb-ingester:delegated'],
     }),
+  },
 
-    querier: mimirService({
-      target: 'querier',
-      httpPort: 8004,
-    }),
+  read_components::
+    {
+      querier: mimirService({
+        target: 'querier',
+        httpPort: 8004,
+        extraArguments:
+          // Use of scheduler is activated by `-querier.scheduler-address` option and setting -querier.frontend-address option to nothing.
+          if $._config.use_query_scheduler then '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=' else '',
+      }),
 
+      'query-frontend': mimirService({
+        target: 'query-frontend',
+        httpPort: 8007,
+        jaegerApp: 'query-frontend',
+        extraArguments:
+          '-store.max-query-length=8760h' +
+          // Use of scheduler is activated by `-frontend.scheduler-address` option.
+          (if $._config.use_query_scheduler then ' -frontend.scheduler-address=query-scheduler:9011' else ''),
+      }),
+    } + (
+      if $._config.use_query_scheduler then {
+        'query-scheduler': mimirService({
+          target: 'query-scheduler',
+          httpPort: 8011,
+          extraArguments: '-store.max-query-length=8760h',
+        }),
+      } else {}
+    ),
+
+  compactor:: {
     compactor: mimirService({
       target: 'compactor',
       httpPort: 8006,
     }),
+  },
 
-    'query-frontend': mimirService({
-      target: 'query-frontend',
-      httpPort: 8007,
-      extraArguments: '-store.max-query-length=8760h',
-    }),
+  rulers(count):: if count <= 0 then {} else {
+    ['ruler-%d' % id]: mimirService({
+      target: 'ruler',
+      httpPort: 8020 + id,
+      jaegerApp: 'ruler-%d' % id,
+    })
+    for id in std.range(1, count)
+  },
 
-    'query-scheduler': mimirService({
-      target: 'query-scheduler',
-      httpPort: 8011,
-      extraArguments: '-store.max-query-length=8760h',
-    }),
+  alertmanagers(count):: if count <= 0 then {} else {
+    ['alertmanager-%d' % id]: mimirService({
+      target: 'alertmanager',
+      httpPort: 8030 + id,
+      extraArguments: '-alertmanager.web.external-url=http://localhost:%d/alertmanager' % (8030 + id),
+      jaegerApp: 'alertmanager-%d' % id,
+    })
+    for id in std.range(1, count)
+  },
 
-    // This frontend uses query-scheduler, activated by `-frontend.scheduler-address` option.
-    'query-frontend-with-scheduler': mimirService({
-      target: 'query-frontend',
-      httpPort: 8012,
-      jaegerApp: 'query-frontend-with-scheduler',
-      extraArguments: '-store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011',
-    }),
-
-    // This querier is connecting to query-scheduler, instead of query-frontend. This is achieved by setting -querier.scheduler-address="..."
-    'querier-with-scheduler': mimirService({
-      target: 'querier',
-      httpPort: 8013,
-      jaegerApp: 'querier-with-scheduler',
-      extraArguments: '-querier.scheduler-address=query-scheduler:9011 -querier.frontend-address=',
-    }),
-
-    purger: mimirService({
-      target: 'purger',
-      httpPort: 8014,
-    }),
-
+  store_gateways:: {
     'store-gateway-1': mimirService({
       target: 'store-gateway',
       httpPort: 8008,
@@ -83,36 +119,12 @@ std.manifestYamlDoc({
       httpPort: 8009,
       jaegerApp: 'store-gateway-2',
     }),
+  },
 
-    'alertmanager-1': mimirService({
-      target: 'alertmanager',
-      httpPort: 8031,
-      extraArguments: '-alertmanager.web.external-url=http://localhost:8031/alertmanager',
-      jaegerApp: 'alertmanager-1',
-    }),
-    'alertmanager-2': mimirService({
-      target: 'alertmanager',
-      httpPort: 8032,
-      extraArguments: '-alertmanager.web.external-url=http://localhost:8032/alertmanager',
-      jaegerApp: 'alertmanager-2',
-    }),
-    'alertmanager-3': mimirService({
-      target: 'alertmanager',
-      httpPort: 8033,
-      extraArguments: '-alertmanager.web.external-url=http://localhost:8033/alertmanager',
-      jaegerApp: 'alertmanager-3',
-    }),
-
-    'ruler-1': mimirService({
-      target: 'ruler',
-      httpPort: 8021,
-      jaegerApp: 'ruler-1',
-    }),
-
-    'ruler-2': mimirService({
-      target: 'ruler',
-      httpPort: 8022,
-      jaegerApp: 'ruler-2',
+  purger:: {
+    purger: mimirService({
+      target: 'purger',
+      httpPort: 8014,
     }),
   },
 
@@ -149,10 +161,10 @@ std.manifestYamlDoc({
     command: [
       'sh',
       '-c',
-      if $._config.debug then
-        'sleep 3 && exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- -config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d %(extraArguments)s' % options
-      else
-        'sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d %(extraArguments)s' % options,
+      (if $._config.sleep_seconds > 0 then 'sleep %d && ' % [$._config.sleep_seconds] else '') +
+      (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- '
+       else 'exec ./mimir ') +
+      '-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d %(extraArguments)s' % options,
     ],
     environment: [
       '%s=%s' % [key, options.env[key]]
@@ -168,13 +180,16 @@ std.manifestYamlDoc({
     volumes: ['./config:/mimir/config'] + options.extraVolumes,
   },
 
-  commonServices:: {
+  // Other services used by Mimir.
+  consul:: {
     consul: {
       image: 'consul',
       command: ['agent', '-dev', '-client=0.0.0.0', '-log-level=info'],
       ports: ['8500:8500'],
     },
+  },
 
+  minio:: {
     minio: {
       image: 'minio/minio',
       command: ['server', '/data'],
@@ -182,11 +197,15 @@ std.manifestYamlDoc({
       ports: ['9000:9000'],
       volumes: ['.data-minio:/data:delegated'],
     },
+  },
 
+  memcached:: {
     memcached: {
       image: 'memcached:1.6',
     },
+  },
 
+  prometheus:: {
     prometheus: {
       image: 'prom/prometheus:v2.27.1',
       command: [
@@ -196,7 +215,9 @@ std.manifestYamlDoc({
       volumes: ['./config:/etc/prometheus'],
       ports: ['9090:9090'],
     },
+  },
 
+  grafana_agent:: {
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
@@ -205,12 +226,17 @@ std.manifestYamlDoc({
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
     },
+  },
 
+  jaeger:: {
     jaeger: {
       image: 'jaegertracing/all-in-one',
       ports: ['16686:16686', '14268'],
     },
   },
+
+  // docker-compose YAML output version.
+  version: '3.4',
 
   // "true" option for std.manifestYamlDoc indents arrays in objects.
 }, true)

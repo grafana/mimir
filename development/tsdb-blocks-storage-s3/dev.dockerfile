@@ -1,6 +1,6 @@
-FROM golang:1.16
+FROM golang:1.17
 ENV CGO_ENABLED=0
-RUN go get github.com/go-delve/delve/cmd/dlv
+RUN go install github.com/go-delve/delve/cmd/dlv@v1.7.3
 
 FROM alpine:3.13
 
