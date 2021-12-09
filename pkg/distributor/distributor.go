@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	math "math"
 	"net/http"
 	"sort"
 	"strings"
@@ -522,9 +523,10 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 }
 
 // Validates a single series from a write request.
+// May alter timeseries data in-place.
 // The returned error may retain the series labels.
 // It uses the passed nowt time to observe the delay of sample timestamps.
-func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
@@ -543,7 +545,8 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 		}
 	}
 
-	for _, e := range ts.Exemplars {
+	for i := 0; i < len(ts.Exemplars); {
+		e := ts.Exemplars[i]
 		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
@@ -551,6 +554,16 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 			// there never will be any.
 			return err
 		}
+		if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
+			// Delete this exemplar by moving the last one on top and shortening the slice
+			last := len(ts.Exemplars) - 1
+			if i < last {
+				ts.Exemplars[i] = ts.Exemplars[last]
+			}
+			ts.Exemplars = ts.Exemplars[:last]
+			continue
+		}
+		i++
 	}
 
 	return nil
@@ -657,22 +670,29 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	latestSampleTimestampMs := int64(0)
-	defer func() {
-		// Update this metric even in case of errors.
-		if latestSampleTimestampMs > 0 {
-			d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+	// Find the earliest and latest samples in the batch.
+	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
+	for _, ts := range req.Timeseries {
+		for _, s := range ts.Samples {
+			earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
+			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
 		}
-	}()
+	}
+	// Update this metric even in case of errors.
+	if latestSampleTimestampMs > 0 {
+		d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+	}
+	// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
+	// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
+	// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
+	var minExemplarTS int64
+	if earliestSampleTimestampMs != math.MaxInt64 {
+		minExemplarTS = earliestSampleTimestampMs - 300000
+	}
 
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
-		// Use timestamp of latest sample in the series. If samples for series are not ordered, metric for user may be wrong.
-		if len(ts.Samples) > 0 {
-			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, ts.Samples[len(ts.Samples)-1].TimestampMs)
-		}
-
 		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
 			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
 			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
@@ -710,7 +730,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation)
+		// Note that validateSeries may drop some data in ts.
+		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.

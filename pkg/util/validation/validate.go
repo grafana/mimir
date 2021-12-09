@@ -53,6 +53,7 @@ const (
 	exemplarLabelsMissing    = "exemplar_labels_missing"
 	exemplarLabelsTooLong    = "exemplar_labels_too_long"
 	exemplarTimestampInvalid = "exemplar_timestamp_invalid"
+	exemplarTooOld           = "exemplar_too_old"
 
 	// RateLimited is one of the values for the reason to discard samples.
 	// Declared here to avoid duplication in ingester and distributor.
@@ -160,6 +161,16 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	}
 
 	return nil
+}
+
+// ExemplarTimestampOK returns true if the timestamp is newer than minTS.
+// This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
+func ExemplarTimestampOK(userID string, minTS int64, e mimirpb.Exemplar) bool {
+	if e.TimestampMs < minTS {
+		DiscardedExemplars.WithLabelValues(exemplarTooOld, userID).Inc()
+		return false
+	}
+	return true
 }
 
 // LabelValidationConfig helps with getting required config to validate labels.
