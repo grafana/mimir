@@ -1710,7 +1710,7 @@ azure:
   # CLI flag: -ruler-storage.azure.container-name
   [container_name: <string> | default = ""]
 
-  # Azure storage hostname suffix without schema. The account name will be
+  # Azure storage endpoint suffix without schema. The account name will be
   # prefixed to this value to create the FQDN
   # CLI flag: -ruler-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = "blob.core.windows.net"]
@@ -1719,8 +1719,9 @@ azure:
   # CLI flag: -ruler-storage.azure.max-retries
   [max_retries: <int> | default = 20]
 
-  # URL to use instead of https://<storage-account-name>.<endpoint-suffix> for
-  # obtaining ServicePrincipalToken from MSI
+  # If set, this URL is used instead of
+  # https://<storage-account-name>.<endpoint-suffix> for obtaining
+  # ServicePrincipalToken from MSI
   # CLI flag: -ruler-storage.azure.msi-resource
   [msi_resource: <string> | default = ""]
 
@@ -2253,7 +2254,7 @@ azure:
   # CLI flag: -alertmanager-storage.azure.container-name
   [container_name: <string> | default = ""]
 
-  # Azure storage hostname suffix without schema. The account name will be
+  # Azure storage endpoint suffix without schema. The account name will be
   # prefixed to this value to create the FQDN
   # CLI flag: -alertmanager-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = "blob.core.windows.net"]
@@ -2262,8 +2263,9 @@ azure:
   # CLI flag: -alertmanager-storage.azure.max-retries
   [max_retries: <int> | default = 20]
 
-  # URL to use instead of https://<storage-account-name>.<endpoint-suffix> for
-  # obtaining ServicePrincipalToken from MSI
+  # If set, this URL is used instead of
+  # https://<storage-account-name>.<endpoint-suffix> for obtaining
+  # ServicePrincipalToken from MSI
   # CLI flag: -alertmanager-storage.azure.msi-resource
   [msi_resource: <string> | default = ""]
 
@@ -4209,7 +4211,7 @@ azure:
   # CLI flag: -blocks-storage.azure.container-name
   [container_name: <string> | default = ""]
 
-  # Azure storage hostname suffix without schema. The account name will be
+  # Azure storage endpoint suffix without schema. The account name will be
   # prefixed to this value to create the FQDN
   # CLI flag: -blocks-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = "blob.core.windows.net"]
@@ -4218,8 +4220,9 @@ azure:
   # CLI flag: -blocks-storage.azure.max-retries
   [max_retries: <int> | default = 20]
 
-  # URL to use instead of https://<storage-account-name>.<endpoint-suffix> for
-  # obtaining ServicePrincipalToken from MSI
+  # If set, this URL is used instead of
+  # https://<storage-account-name>.<endpoint-suffix> for obtaining
+  # ServicePrincipalToken from MSI
   # CLI flag: -blocks-storage.azure.msi-resource
   [msi_resource: <string> | default = ""]
 
