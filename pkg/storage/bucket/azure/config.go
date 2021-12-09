@@ -32,8 +32,8 @@ func (cfg *Config) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet) {
 	f.StringVar(&cfg.StorageAccountName, prefix+"azure.account-name", "", "Azure storage account name")
 	f.Var(&cfg.StorageAccountKey, prefix+"azure.account-key", "Azure storage account key")
 	f.StringVar(&cfg.ContainerName, prefix+"azure.container-name", "", "Azure storage container name")
-	f.StringVar(&cfg.Endpoint, prefix+"azure.endpoint-suffix", "blob.core.windows.net", "Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN")
+	f.StringVar(&cfg.Endpoint, prefix+"azure.endpoint-suffix", "", "Azure storage endpoint suffix without schema. The account name will be prefixed to this value to create the FQDN. If set to empty string, default endpoint suffix is used.")
 	f.IntVar(&cfg.MaxRetries, prefix+"azure.max-retries", 20, "Number of retries for recoverable errors")
-	f.StringVar(&cfg.MSIResource, prefix+"azure.msi-resource", "", "If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI")
+	f.StringVar(&cfg.MSIResource, prefix+"azure.msi-resource", "", "If set, this URL is used instead of https://<storage-account-name>.<endpoint-suffix> for obtaining ServicePrincipalToken from MSI.")
 	f.StringVar(&cfg.UserAssignedID, prefix+"azure.user-assigned-id", "", "User assigned identity. If empty, then System assigned identity is used.")
 }

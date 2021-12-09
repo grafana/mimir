@@ -396,9 +396,10 @@ blocks_storage:
     [container_name: <string> | default = ""]
 
     # Azure storage endpoint suffix without schema. The account name will be
-    # prefixed to this value to create the FQDN
+    # prefixed to this value to create the FQDN. If set to empty string, default
+    # endpoint suffix is used.
     # CLI flag: -blocks-storage.azure.endpoint-suffix
-    [endpoint_suffix: <string> | default = "blob.core.windows.net"]
+    [endpoint_suffix: <string> | default = ""]
 
     # Number of retries for recoverable errors
     # CLI flag: -blocks-storage.azure.max-retries
@@ -406,7 +407,7 @@ blocks_storage:
 
     # If set, this URL is used instead of
     # https://<storage-account-name>.<endpoint-suffix> for obtaining
-    # ServicePrincipalToken from MSI
+    # ServicePrincipalToken from MSI.
     # CLI flag: -blocks-storage.azure.msi-resource
     [msi_resource: <string> | default = ""]
 
