@@ -13,13 +13,16 @@ import (
 )
 
 func NewBucketClient(cfg Config, name string, logger log.Logger) (objstore.Bucket, error) {
-	bucketConfig := azure.Config{
-		StorageAccountName: cfg.StorageAccountName,
-		StorageAccountKey:  cfg.StorageAccountKey.Value,
-		ContainerName:      cfg.ContainerName,
-		Endpoint:           cfg.Endpoint,
-		MaxRetries:         cfg.MaxRetries,
-	}
+	// Start with default config to make sure that all parameters are set to sensible values, especially
+	// HTTP Config field.
+	bucketConfig := azure.DefaultConfig
+	bucketConfig.StorageAccountName = cfg.StorageAccountName
+	bucketConfig.StorageAccountKey = cfg.StorageAccountKey.Value
+	bucketConfig.ContainerName = cfg.ContainerName
+	bucketConfig.Endpoint = cfg.Endpoint
+	bucketConfig.MaxRetries = cfg.MaxRetries
+	bucketConfig.MSIResource = cfg.MSIResource
+	bucketConfig.UserAssignedID = cfg.UserAssignedID
 
 	// Thanos currently doesn't support passing the config as is, but expects a YAML,
 	// so we're going to serialize it.
