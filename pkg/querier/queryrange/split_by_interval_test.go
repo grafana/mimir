@@ -6,23 +6,13 @@
 package queryrange
 
 import (
-	"context"
 	"fmt"
-	"io/ioutil"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
-	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/util"
@@ -234,61 +224,6 @@ func timeToMillis(t *testing.T, input string) int64 {
 	return util.TimeToMillis(r)
 }
 
-func TestSplitByDay(t *testing.T) {
-	mergedResponse, err := PrometheusCodec.MergeResponse(parsedResponse, parsedResponse)
-	require.NoError(t, err)
-
-	mergedHTTPResponse, err := PrometheusCodec.EncodeResponse(context.Background(), mergedResponse)
-	require.NoError(t, err)
-
-	mergedHTTPResponseBody, err := ioutil.ReadAll(mergedHTTPResponse.Body)
-	require.NoError(t, err)
-
-	for i, tc := range []struct {
-		path, expectedBody string
-		expectedQueryCount int32
-	}{
-		{query, string(mergedHTTPResponseBody), 2},
-	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var actualCount atomic.Int32
-			s := httptest.NewServer(
-				middleware.AuthenticateUser.Wrap(
-					http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						actualCount.Inc()
-						_, _ = w.Write([]byte(responseBody))
-					}),
-				),
-			)
-			defer s.Close()
-
-			u, err := url.Parse(s.URL)
-			require.NoError(t, err)
-
-			interval := func(_ Request) time.Duration { return 24 * time.Hour }
-			roundtripper := NewRoundTripper(singleHostRoundTripper{
-				host: u.Host,
-				next: http.DefaultTransport,
-			}, PrometheusCodec, log.NewNopLogger(), NewLimitsMiddleware(mockLimits{}, log.NewNopLogger()), SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, nil))
-
-			req, err := http.NewRequest("GET", tc.path, http.NoBody)
-			require.NoError(t, err)
-
-			ctx := user.InjectOrgID(context.Background(), "1")
-			req = req.WithContext(ctx)
-
-			resp, err := roundtripper.RoundTrip(req)
-			require.NoError(t, err)
-			require.Equal(t, 200, resp.StatusCode)
-
-			bs, err := ioutil.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedBody, string(bs))
-			require.Equal(t, tc.expectedQueryCount, actualCount.Load())
-		})
-	}
-}
-
 func Test_evaluateAtModifier(t *testing.T) {
 	const (
 		start, end = int64(1546300800), int64(1646300800)
@@ -344,13 +279,4 @@ func Test_evaluateAtModifier(t *testing.T) {
 			require.Equal(t, expectedExpr.String(), out)
 		})
 	}
-}
-
-func TestSplitByInterval_WrapMultipleTimes(t *testing.T) {
-	interval := func(_ Request) time.Duration { return 24 * time.Hour }
-	m := SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, prometheus.NewRegistry())
-	require.NotPanics(t, func() {
-		m.Wrap(mockHandlerWith(nil, nil))
-		m.Wrap(mockHandlerWith(nil, nil))
-	})
 }

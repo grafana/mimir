@@ -922,6 +922,29 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 	})
 }
 
+func TestSplitAndCacheMiddleware_WrapMultipleTimes(t *testing.T) {
+	m := newSplitAndCacheMiddleware(
+		false,
+		true,
+		24*time.Hour,
+		false,
+		mockLimits{},
+		PrometheusCodec,
+		cache.NewMockCache(),
+		constSplitter(day),
+		PrometheusResponseExtractor{},
+		nil,
+		resultsCacheAlwaysEnabled,
+		log.NewNopLogger(),
+		prometheus.NewPedanticRegistry(),
+	)
+
+	require.NotPanics(t, func() {
+		m.Wrap(mockHandlerWith(nil, nil))
+		m.Wrap(mockHandlerWith(nil, nil))
+	})
+}
+
 func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 	tests := map[string]struct {
 		input    splitRequests
