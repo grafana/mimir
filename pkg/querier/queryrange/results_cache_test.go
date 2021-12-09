@@ -13,58 +13,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-)
-
-const (
-	query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
-	responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
-)
-
-var (
-	parsedRequest = &PrometheusRequest{
-		Path:  "/api/v1/query_range",
-		Start: 1536673680 * 1e3,
-		End:   1536716880 * 1e3,
-		Step:  120 * 1e3,
-		Query: "sum(container_memory_rss) by (namespace)",
-	}
-	noCacheRequest = &PrometheusRequest{
-		Path:    "/api/v1/query_range",
-		Start:   1536673680 * 1e3,
-		End:     1536716898 * 1e3,
-		Step:    120 * 1e3,
-		Query:   "sum(container_memory_rss) by (namespace)",
-		Options: Options{CacheDisabled: true},
-	}
-	respHeaders = []*PrometheusResponseHeader{
-		{
-			Name:   "Content-Type",
-			Values: []string{"application/json"},
-		},
-	}
-	parsedResponse = &PrometheusResponse{
-		Status: "success",
-		Data: PrometheusData{
-			ResultType: model.ValMatrix.String(),
-			Result: []SampleStream{
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "foo", Value: "bar"},
-					},
-					Samples: []mimirpb.Sample{
-						{Value: 137, TimestampMs: 1536673680000},
-						{Value: 137, TimestampMs: 1536673780000},
-					},
-				},
-			},
-		},
-	}
 )
 
 func mkAPIResponse(start, end, step int64) *PrometheusResponse {
