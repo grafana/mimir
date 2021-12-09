@@ -168,7 +168,7 @@
 Mixin:
 
 * [CHANGE] Raised `CortexKVStoreFailure` alert severity from warning to critical. #493
-* [CHANGE] Increase `CortexRolloutStuck` alert "for" duration from 15m to 30m. #493
+* [CHANGE] Increase `CortexRolloutStuck` alert "for" duration from 15m to 30m. #493 #573
 * [ENHANCEMENT] Added `CortexReachingTCPConnectionsLimit` alert. #403
 * [ENHANCEMENT] Added "Cortex / Writes Networking" and "Cortex / Reads Networking" dashboards. #405
 * [ENHANCEMENT] Improved "Queue length" panel in "Cortex / Queries" dashboard. #408

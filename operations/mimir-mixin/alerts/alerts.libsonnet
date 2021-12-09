@@ -4,6 +4,12 @@
     assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
     '(' + std.join('|', strings) + ')',
 
+  local groupDeploymentByRolloutGroup(metricName) =
+    'sum without(deployment) (label_replace(%s, "rollout_group", "$1", "deployment", "(.*?)(?:-zone-[a-z])?"))' % metricName,
+
+  local groupStatefulSetByRolloutGroup(metricName) =
+    'sum without(statefulset) (label_replace(%s, "rollout_group", "$1", "statefulset", "(.*?)(?:-zone-[a-z])?"))' % metricName,
+
   groups+: [
     {
       name: 'cortex_alerts',
@@ -476,30 +482,36 @@
           expr: |||
             (
               max without (revision) (
-                kube_statefulset_status_current_revision
+                %(kube_statefulset_status_current_revision)s
                   unless
-                kube_statefulset_status_update_revision
+                %(kube_statefulset_status_update_revision)s
               )
                 *
               (
-                kube_statefulset_replicas
+                %(kube_statefulset_replicas)s
                   !=
-                kube_statefulset_status_replicas_updated
+                %(kube_statefulset_status_replicas_updated)s
               )
-            )  and (
-              changes(kube_statefulset_status_replicas_updated[15m])
+            ) and (
+              changes(%(kube_statefulset_status_replicas_updated)s[15m:1m])
                 ==
               0
             )
-            * on(%s) group_left max by(%s) (cortex_build_info)
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+            * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+          ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
+            kube_statefulset_status_current_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_current_revision'),
+            kube_statefulset_status_update_revision: groupStatefulSetByRolloutGroup('kube_statefulset_status_update_revision'),
+            kube_statefulset_replicas: groupStatefulSetByRolloutGroup('kube_statefulset_replicas'),
+            kube_statefulset_status_replicas_updated: groupStatefulSetByRolloutGroup('kube_statefulset_status_replicas_updated'),
+          },
           'for': '30m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              The {{ $labels.statefulset }} rollout is stuck in %(alert_aggregation_variables)s.
+              The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
             ||| % $._config,
           },
         },
@@ -507,23 +519,27 @@
           alert: 'CortexRolloutStuck',
           expr: |||
             (
-              kube_deployment_spec_replicas
+              %(kube_deployment_spec_replicas)s
                 !=
-              kube_deployment_status_replicas_updated
+              %(kube_deployment_status_replicas_updated)s
             ) and (
-              changes(kube_deployment_status_replicas_updated[15m])
+              changes(%(kube_deployment_status_replicas_updated)s[15m:1m])
                 ==
               0
             )
-            * on(%s) group_left max by(%s) (cortex_build_info)
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
+            * on(%(aggregation_labels)s) group_left max by(%(aggregation_labels)s) (cortex_build_info)
+          ||| % {
+            aggregation_labels: $._config.alert_aggregation_labels,
+            kube_deployment_spec_replicas: groupDeploymentByRolloutGroup('kube_deployment_spec_replicas'),
+            kube_deployment_status_replicas_updated: groupDeploymentByRolloutGroup('kube_deployment_status_replicas_updated'),
+          },
           'for': '30m',
           labels: {
             severity: 'warning',
           },
           annotations: {
             message: |||
-              The {{ $labels.deployment }} rollout is stuck in %(alert_aggregation_variables)s.
+              The {{ $labels.rollout_group }} rollout is stuck in %(alert_aggregation_variables)s.
             ||| % $._config,
           },
         },
