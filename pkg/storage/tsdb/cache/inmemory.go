@@ -337,7 +337,7 @@ func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ul
 }
 
 // cacheKey is used by in-memory representation to store cached data.
-// The implementations of cacheKey should be hasheable, as they will be used as keys for *lru.LRU cache
+// The implementations of cacheKey should be hashable, as they will be used as keys for *lru.LRU cache
 type cacheKey interface {
 	// typ is used as label for metrics.
 	typ() string
