@@ -18,14 +18,6 @@ import (
 )
 
 func TestQueryFrontendUnalignedQuery(t *testing.T) {
-	runTestQueryFrontendUnalignedQuery(t, map[string]string{"-query-frontend.max-sharded-queries-limit-enabled": "false"})
-}
-
-func TestQueryFrontendUnalignedQueryNewSplitAndCacheMiddleware(t *testing.T) {
-	runTestQueryFrontendUnalignedQuery(t, map[string]string{"-query-frontend.max-sharded-queries-limit-enabled": "true"})
-}
-
-func runTestQueryFrontendUnalignedQuery(t *testing.T, extraFlags map[string]string) {
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
 	defer s.Close()
@@ -48,8 +40,6 @@ func runTestQueryFrontendUnalignedQuery(t *testing.T, extraFlags map[string]stri
 		"-frontend.max-cache-freshness":      "0", // Cache everything.
 		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 	})
-
-	flags = mergeFlags(flags, extraFlags)
 
 	// Start the query-frontend.
 	queryFrontendAligned := e2emimir.NewQueryFrontendWithConfigFile("query-frontend-aligned", configFile, mergeFlags(flags, map[string]string{"-querier.align-querier-with-step": "true"}), "")

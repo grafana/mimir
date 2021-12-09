@@ -15,25 +15,19 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/protobuf/types"
 	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/uber/jaeger-client-go"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/tenant"
 	util_log "github.com/grafana/mimir/pkg/util/log"
-	"github.com/grafana/mimir/pkg/util/spanlogger"
-	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 var (
@@ -138,120 +132,6 @@ type ShouldCacheFn func(r Request) bool
 
 // resultsCacheAlwaysEnabled is a ShouldCacheFn function always returning true.
 var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
-
-type resultsCache struct {
-	logger   log.Logger
-	cfg      ResultsCacheConfig
-	next     Handler
-	cache    cache.Cache
-	limits   Limits
-	splitter CacheSplitter
-
-	extractor            Extractor
-	minCacheExtent       int64 // discard any cache extent smaller than this
-	merger               Merger
-	cacheGenNumberLoader CacheGenNumberLoader
-	shouldCache          ShouldCacheFn
-
-	cacheUnalignedRequests bool
-}
-
-// NewResultsCacheMiddleware creates results cache middleware from config.
-// The middleware cache result using a unique cache key for a given request (step,query,user) and interval.
-// The cache assumes that each request length (end-start) is below or equal the interval.
-// Each request starting from within the same interval will hit the same cache entry.
-// If the cache doesn't have the entire duration of the request cached, it will query the uncached parts and append them to the cache entries.
-// see `generateKey`.
-func NewResultsCacheMiddleware(
-	logger log.Logger,
-	cfg ResultsCacheConfig,
-	cacheUnalignedRequests bool,
-	splitter CacheSplitter,
-	limits Limits,
-	merger Merger,
-	extractor Extractor,
-	cacheGenNumberLoader CacheGenNumberLoader,
-	shouldCache ShouldCacheFn,
-	reg prometheus.Registerer,
-) (Middleware, cache.Cache, error) {
-	c, err := cache.New(cfg.CacheConfig, reg, logger)
-	if err != nil {
-		return nil, nil, err
-	}
-	if cfg.Compression == "snappy" {
-		c = cache.NewSnappy(c, logger)
-	}
-
-	if cacheGenNumberLoader != nil {
-		c = cache.NewCacheGenNumMiddleware(c)
-	}
-
-	return MiddlewareFunc(func(next Handler) Handler {
-		return &resultsCache{
-			logger:                 logger,
-			cfg:                    cfg,
-			next:                   next,
-			cache:                  c,
-			limits:                 limits,
-			merger:                 merger,
-			extractor:              extractor,
-			minCacheExtent:         defaultMinCacheExtent,
-			splitter:               splitter,
-			cacheGenNumberLoader:   cacheGenNumberLoader,
-			shouldCache:            shouldCache,
-			cacheUnalignedRequests: cacheUnalignedRequests,
-		}
-	}), c, nil
-}
-
-func (s resultsCache) Do(ctx context.Context, r Request) (Response, error) {
-	tenantIDs, err := tenant.TenantIDs(ctx)
-	if err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-
-	if s.shouldCache != nil && !s.shouldCache(r) {
-		return s.next.Do(ctx, r)
-	}
-
-	if s.cacheGenNumberLoader != nil {
-		ctx = cache.InjectCacheGenNumber(ctx, s.cacheGenNumberLoader.GetResultsCacheGenNumber(tenantIDs))
-	}
-
-	var (
-		key      = s.splitter.GenerateCacheKey(tenant.JoinTenantIDs(tenantIDs), r)
-		extents  []Extent
-		response Response
-	)
-
-	maxCacheFreshness := validation.MaxDurationPerTenant(tenantIDs, s.limits.MaxCacheFreshness)
-	maxCacheTime := int64(model.Now().Add(-maxCacheFreshness))
-	if r.GetStart() > maxCacheTime {
-		return s.next.Do(ctx, r)
-	}
-
-	// If request is not cacheable, then don't reuse cached results in the first place.
-	if !isRequestCachable(r, maxCacheTime, s.cacheUnalignedRequests, s.logger) {
-		return s.next.Do(ctx, r)
-	}
-
-	cached, ok := s.get(ctx, key)
-	if ok {
-		response, extents, err = s.handleHit(ctx, r, cached, maxCacheTime)
-	} else {
-		response, extents, err = s.handleMiss(ctx, r, maxCacheTime)
-	}
-
-	if err == nil && len(extents) > 0 {
-		extents, err := filterRecentCacheExtents(r, maxCacheFreshness, s.extractor, extents)
-		if err != nil {
-			return nil, err
-		}
-		s.put(ctx, key, extents)
-	}
-
-	return response, err
-}
 
 // isRequestCachable says whether the request is eligible for caching.
 func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests bool, logger log.Logger) bool {
@@ -367,71 +247,6 @@ func getHeaderValuesWithName(r Response, headerName string) (headerValues []stri
 	}
 
 	return
-}
-
-func (s resultsCache) handleMiss(ctx context.Context, r Request, maxCacheTime int64) (Response, []Extent, error) {
-	response, err := s.next.Do(ctx, r)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if !isResponseCachable(ctx, response, s.cacheGenNumberLoader, s.logger) {
-		return response, []Extent{}, nil
-	}
-
-	extent, err := toExtent(ctx, r, s.extractor.ResponseWithoutHeaders(response))
-	if err != nil {
-		return nil, nil, err
-	}
-
-	extents := []Extent{
-		extent,
-	}
-	return response, extents, nil
-}
-
-func (s resultsCache) handleHit(ctx context.Context, r Request, extents []Extent, maxCacheTime int64) (Response, []Extent, error) {
-	var (
-		reqResps []RequestResponse
-		err      error
-	)
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "handleHit")
-	defer log.Finish()
-
-	requests, responses, err := partitionCacheExtents(r, extents, s.minCacheExtent, s.extractor)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(requests) == 0 {
-		response, err := s.merger.MergeResponse(responses...)
-		// No downstream requests so no need to write back to the cache.
-		return response, nil, err
-	}
-
-	reqResps, err = DoRequests(ctx, s.next, requests, s.limits, false)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	for _, reqResp := range reqResps {
-		responses = append(responses, reqResp.Response)
-		if !isResponseCachable(ctx, reqResp.Response, s.cacheGenNumberLoader, s.logger) {
-			continue
-		}
-		extent, err := toExtent(ctx, reqResp.Request, s.extractor.ResponseWithoutHeaders(reqResp.Response))
-		if err != nil {
-			return nil, nil, err
-		}
-		extents = append(extents, extent)
-	}
-
-	mergedExtents, err := mergeCacheExtentsForRequest(ctx, r, s.merger, extents)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	response, err := s.merger.MergeResponse(responses...)
-	return response, mergedExtents, err
 }
 
 // mergeCacheExtentsForRequest merges the provided cache extents for the input request and returns merged extents.
@@ -620,58 +435,6 @@ func filterRecentCacheExtents(req Request, maxCacheFreshness time.Duration, extr
 		}
 	}
 	return extents, nil
-}
-
-func (s resultsCache) get(ctx context.Context, key string) ([]Extent, bool) {
-	log, ctx := spanlogger.NewWithLogger(ctx, s.logger, "resultsCache.get")
-	defer log.Finish()
-
-	hashKey := cache.HashKey(key)
-
-	level.Debug(log).Log("msg", "fetching cached result", "key", key, "hashKey", hashKey)
-
-	found, bufs, _ := s.cache.Fetch(ctx, []string{hashKey})
-	if len(found) != 1 {
-		level.Debug(log).Log("msg", "no cached result found")
-		return nil, false
-	}
-
-	var resp CachedResponse
-
-	level.Debug(log).Log("msg", "got cached result", "bytes", len(bufs[0]))
-
-	if err := proto.Unmarshal(bufs[0], &resp); err != nil {
-		level.Error(log).Log("msg", "error unmarshalling cached value", "err", err)
-		log.Error(err)
-		return nil, false
-	}
-
-	if resp.Key != key {
-		return nil, false
-	}
-
-	// Refreshes the cache if it contains an old proto schema.
-	for _, e := range resp.Extents {
-		if e.Response == nil {
-			return nil, false
-		}
-	}
-
-	level.Debug(log).Log("msg", "found cached extents", "extents", len(resp.Extents))
-	return resp.Extents, true
-}
-
-func (s resultsCache) put(ctx context.Context, key string, extents []Extent) {
-	buf, err := proto.Marshal(&CachedResponse{
-		Key:     key,
-		Extents: extents,
-	})
-	if err != nil {
-		level.Error(s.logger).Log("msg", "error marshalling cached value", "err", err)
-		return
-	}
-
-	s.cache.Store(ctx, []string{cache.HashKey(key)}, [][]byte{buf})
 }
 
 func jaegerTraceID(ctx context.Context) string {

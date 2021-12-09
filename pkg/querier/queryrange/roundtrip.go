@@ -48,10 +48,6 @@ type Config struct {
 	MaxRetries             int  `yaml:"max_retries"`
 	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
 	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests"`
-
-	// TODO(pracucci): this flag is hidden because just used to progressively rollout to prod. Will be removed once
-	// the new middleware is definitive.
-	MaxShardedQueriesLimitEnabled bool `yaml:"max_sharded_queries_limit_enabled" doc:"hidden"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -61,7 +57,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "Perform query parallelizations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
-	f.BoolVar(&cfg.MaxShardedQueriesLimitEnabled, "query-frontend.max-sharded-queries-limit-enabled", false, "If enabled the query-frontend uses a new implementation of split by interval and results cache")
 	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
@@ -166,64 +161,43 @@ func NewTripperware(
 
 	var c cache.Cache
 
-	// TODO(pracucci): this is temporary while gaining confidence on the new split+cache middleware. The final goal
-	// is to always use it and remove support for the old ones (other branch of the "if").
-	if cfg.MaxShardedQueriesLimitEnabled {
-		// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
-		if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
-			// Init the cache client.
-			if cfg.CacheResults {
-				var err error
-
-				c, err = cache.New(cfg.ResultsCacheConfig.CacheConfig, registerer, log)
-				if err != nil {
-					return nil, nil, err
-				}
-				if cfg.ResultsCacheConfig.Compression == "snappy" {
-					c = cache.NewSnappy(c, log)
-				}
-				if cacheGenNumberLoader != nil {
-					c = cache.NewCacheGenNumMiddleware(c)
-				}
-			}
-
-			shouldCache := func(r Request) bool {
-				return !r.GetOptions().CacheDisabled
-			}
-
-			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
-				cfg.SplitQueriesByInterval > 0,
-				cfg.CacheResults,
-				cfg.SplitQueriesByInterval,
-				cfg.CacheUnalignedRequests,
-				limits,
-				codec,
-				c,
-				constSplitter(cfg.SplitQueriesByInterval),
-				cacheExtractor,
-				cacheGenNumberLoader,
-				shouldCache,
-				log,
-				registerer,
-			))
-		}
-	} else {
-		if cfg.SplitQueriesByInterval != 0 {
-			staticIntervalFn := func(_ Request) time.Duration { return cfg.SplitQueriesByInterval }
-			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval", metrics, log), SplitByIntervalMiddleware(staticIntervalFn, limits, codec, registerer))
-		}
-
+	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
+	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
+		// Init the cache client.
 		if cfg.CacheResults {
-			shouldCache := func(r Request) bool {
-				return !r.GetOptions().CacheDisabled
-			}
-			queryCacheMiddleware, cache, err := NewResultsCacheMiddleware(log, cfg.ResultsCacheConfig, cfg.CacheUnalignedRequests, constSplitter(cfg.SplitQueriesByInterval), limits, codec, cacheExtractor, cacheGenNumberLoader, shouldCache, registerer)
+			var err error
+
+			c, err = cache.New(cfg.ResultsCacheConfig.CacheConfig, registerer, log)
 			if err != nil {
 				return nil, nil, err
 			}
-			c = cache
-			queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("results_cache", metrics, log), queryCacheMiddleware)
+			if cfg.ResultsCacheConfig.Compression == "snappy" {
+				c = cache.NewSnappy(c, log)
+			}
+			if cacheGenNumberLoader != nil {
+				c = cache.NewCacheGenNumMiddleware(c)
+			}
 		}
+
+		shouldCache := func(r Request) bool {
+			return !r.GetOptions().CacheDisabled
+		}
+
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
+			cfg.SplitQueriesByInterval > 0,
+			cfg.CacheResults,
+			cfg.SplitQueriesByInterval,
+			cfg.CacheUnalignedRequests,
+			limits,
+			codec,
+			c,
+			constSplitter(cfg.SplitQueriesByInterval),
+			cacheExtractor,
+			cacheGenNumberLoader,
+			shouldCache,
+			log,
+			registerer,
+		))
 	}
 
 	if cfg.ShardedQueries {
