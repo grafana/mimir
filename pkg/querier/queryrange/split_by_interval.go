@@ -80,13 +80,21 @@ func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) 
 		return nil, err
 	}
 	var reqs []Request
-	for start := r.GetStart(); start < r.GetEnd(); start = nextIntervalBoundary(start, r.GetStep(), interval) + r.GetStep() {
+	for start := r.GetStart(); start <= r.GetEnd(); {
 		end := nextIntervalBoundary(start, r.GetStep(), interval)
-		if end+r.GetStep() >= r.GetEnd() {
+		if end > r.GetEnd() {
+			end = r.GetEnd()
+		}
+
+		// If step isn't too big, and adding another step saves us one extra request,
+		// then extend the current request to cover the extra step too.
+		if end+r.GetStep() == r.GetEnd() && r.GetStep() <= 5*time.Minute.Milliseconds() {
 			end = r.GetEnd()
 		}
 
 		reqs = append(reqs, r.WithQuery(query).WithStartEnd(start, end))
+
+		start = end + r.GetStep()
 	}
 	return reqs, nil
 }
@@ -116,8 +124,8 @@ func evaluateAtModifierFunction(query string, start, end int64) (string, error) 
 
 // Round up to the step before the next interval boundary.
 func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
-	msPerInterval := int64(interval / time.Millisecond)
-	startOfNextInterval := ((t / msPerInterval) + 1) * msPerInterval
+	intervalMillis := interval.Milliseconds()
+	startOfNextInterval := ((t / intervalMillis) + 1) * intervalMillis
 	// ensure that target is a multiple of steps away from the start time
 	target := startOfNextInterval - ((startOfNextInterval - t) % step)
 	if target == startOfNextInterval {
