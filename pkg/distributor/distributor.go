@@ -698,6 +698,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		// different tokens, which is bad.
 		// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
 		// later in the validation phase, we ignore them here.
+		// 3) At query time, we expect series stored in ingesters have sorted labels.
 		sortLabelsIfNeeded(ts.Labels)
 
 		// Generate the sharding token based on the series labels without the HA replica
