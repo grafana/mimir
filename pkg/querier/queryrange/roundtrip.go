@@ -156,7 +156,8 @@ func NewTripperware(
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
 	queryRangeMiddleware := []Middleware{
-		newQueryStatsMiddleware(registerer), // Track query range statistics.
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		newQueryStatsMiddleware(registerer),
 		NewLimitsMiddleware(limits, log),
 	}
 	if cfg.AlignQueriesWithStep {
