@@ -57,6 +57,19 @@ var (
 	defaultIsolationDisabled = false
 )
 
+// chunkDiskMapper is a temporary interface while we transition from
+// 0 size queue to queue based chunk disk mapper.
+type chunkDiskMapper interface {
+	CutNewFile() (returnErr error)
+	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error)
+	Truncate(mint int64) error
+	DeleteCorrupted(originalErr error) error
+	Size() (int64, error)
+	Close() error
+	Chunk(ref chunks.ChunkDiskMapperRef) (chunkenc.Chunk, error)
+	WriteChunk(seriesRef chunks.HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef chunks.ChunkDiskMapperRef)
+}
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	chunkRange               atomic.Int64
@@ -97,7 +110,7 @@ type Head struct {
 	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
-	chunkDiskMapper *chunks.ChunkDiskMapper
+	chunkDiskMapper chunkDiskMapper
 
 	chunkSnapshotMtx sync.Mutex
 
@@ -129,6 +142,7 @@ type HeadOptions struct {
 	ChunkPool            chunkenc.Pool
 	ChunkWriteBufferSize int
 	ChunkEndTimeVariance float64
+	ChunkWriteQueueSize  int
 
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
@@ -148,6 +162,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkPool:            chunkenc.NewPool(),
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		ChunkEndTimeVariance: 0,
+		ChunkWriteQueueSize:  chunks.DefaultWriteQueueSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
@@ -213,11 +228,21 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.ChunkPool = chunkenc.NewPool()
 	}
 
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
-		mmappedChunksDir(opts.ChunkDirRoot),
-		opts.ChunkPool,
-		opts.ChunkWriteBufferSize,
-	)
+	if opts.ChunkWriteQueueSize > 0 {
+		h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
+			r,
+			mmappedChunksDir(opts.ChunkDirRoot),
+			opts.ChunkPool,
+			opts.ChunkWriteBufferSize,
+			opts.ChunkWriteQueueSize,
+		)
+	} else {
+		h.chunkDiskMapper, err = chunks.NewOldChunkDiskMapper(
+			mmappedChunksDir(opts.ChunkDirRoot),
+			opts.ChunkPool,
+			opts.ChunkWriteBufferSize,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -495,7 +520,9 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
-	defer h.postings.EnsureOrder()
+	defer func() {
+		h.postings.EnsureOrder()
+	}()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 	defer func() {
 		// Loading of m-mapped chunks and snapshot can make the mint of the Head
@@ -708,17 +735,18 @@ func (h *Head) ApplyConfig(cfg *config.Config) error {
 	}
 
 	// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
-	// to decide if it should pass exemplars along to it's exemplar storage, so we
+	// to decide if it should pass exemplars along to its exemplar storage, so we
 	// need to update opts.MaxExemplars here.
 	prevSize := h.opts.MaxExemplars.Load()
 	h.opts.MaxExemplars.Store(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
+	newSize := h.opts.MaxExemplars.Load()
 
-	if prevSize == h.opts.MaxExemplars.Load() {
+	if prevSize == newSize {
 		return nil
 	}
 
-	migrated := h.exemplars.(*CircularExemplarStorage).Resize(h.opts.MaxExemplars.Load())
-	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", h.opts.MaxExemplars, "migrated", migrated)
+	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
+	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 	return nil
 }
 
