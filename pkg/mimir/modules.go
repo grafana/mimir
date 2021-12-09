@@ -90,7 +90,7 @@ const (
 func newDefaultConfig() *Config {
 	defaultConfig := &Config{}
 	defaultFS := flag.NewFlagSet("", flag.PanicOnError)
-	defaultConfig.RegisterFlags(defaultFS)
+	defaultConfig.RegisterFlags(defaultFS, util_log.Logger)
 	return defaultConfig
 }
 

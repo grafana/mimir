@@ -40,6 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storegateway"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -315,7 +316,7 @@ func main() {
 	// the memory address of the CLI flag variables and match them with
 	// the config struct fields address.
 	cfg := &mimir.Config{}
-	flags := parseFlags(cfg)
+	flags := parseFlags(cfg, util_log.Logger)
 
 	// Parse the config, mapping each config field with the related CLI flag.
 	blocks, err := parseConfig(nil, cfg, flags)

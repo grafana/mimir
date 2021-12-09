@@ -76,7 +76,7 @@ func main() {
 
 	// This sets default values from flags to the config.
 	// It needs to be called before parsing the config file!
-	flagext.RegisterFlags(&cfg)
+	flagext.RegisterFlagsWithLogger(util_log.Logger, &cfg)
 
 	if configFile != "" {
 		if err := LoadConfig(configFile, expandENV, &cfg); err != nil {

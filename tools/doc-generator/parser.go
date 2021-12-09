@@ -15,6 +15,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -77,9 +78,9 @@ type rootBlock struct {
 	structType reflect.Type
 }
 
-func parseFlags(cfg flagext.Registerer) map[uintptr]*flag.Flag {
+func parseFlags(cfg flagext.RegistererWithLogger, logger log.Logger) map[uintptr]*flag.Flag {
 	fs := flag.NewFlagSet("", flag.PanicOnError)
-	cfg.RegisterFlags(fs)
+	cfg.RegisterFlags(fs, logger)
 
 	flags := map[uintptr]*flag.Flag{}
 	fs.VisitAll(func(f *flag.Flag) {

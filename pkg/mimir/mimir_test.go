@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -213,7 +214,7 @@ func TestFlagDefaults(t *testing.T) {
 	c := Config{}
 
 	f := flag.NewFlagSet("test", flag.PanicOnError)
-	c.RegisterFlags(f)
+	c.RegisterFlags(f, log.NewNopLogger())
 
 	buf := bytes.Buffer{}
 
