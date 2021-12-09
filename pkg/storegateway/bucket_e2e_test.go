@@ -81,12 +81,12 @@ func (c *swappableCache) FetchMultiPostings(ctx context.Context, blockID ulid.UL
 	return c.ptr.FetchMultiPostings(ctx, blockID, keys)
 }
 
-func (c *swappableCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.ptr.StoreSeries(ctx, blockID, id, v)
+func (c *swappableCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.ptr.StoreSeriesForRef(ctx, blockID, id, v)
 }
 
-func (c *swappableCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
-	return c.ptr.FetchMultiSeries(ctx, blockID, ids)
+func (c *swappableCache) FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
+	return c.ptr.FetchMultiSeriesForRefs(ctx, blockID, ids)
 }
 
 func (c *swappableCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {

@@ -7,7 +7,11 @@ package cache
 
 import (
 	"context"
+	"encoding/base64"
+	"strconv"
 	"time"
+
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -45,32 +49,42 @@ func NewMemcachedIndexCache(logger log.Logger, memcached cacheutil.MemcachedClie
 		Name: "thanos_store_index_cache_requests_total",
 		Help: "Total number of items requests to the cache.",
 	}, []string{"item_type"})
-	c.requests.WithLabelValues(cacheTypePostings)
-	c.requests.WithLabelValues(cacheTypeSeries)
-	c.requests.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.requests.MetricVec)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_hits_total",
 		Help: "Total number of items requests to the cache that were a hit.",
 	}, []string{"item_type"})
-	c.hits.WithLabelValues(cacheTypePostings)
-	c.hits.WithLabelValues(cacheTypeSeries)
-	c.hits.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.hits.MetricVec)
 
 	level.Info(logger).Log("msg", "created memcached index cache")
 
 	return c, nil
 }
 
+// set stores a value for the given key in memcached.
+func (c *MemcachedIndexCache) set(ctx context.Context, typ string, key string, val []byte) {
+	if err := c.memcached.SetAsync(ctx, key, val, memcachedDefaultTTL); err != nil {
+		level.Error(c.logger).Log("msg", "failed to cache in memcached", "type", typ, "err", err)
+	}
+}
+
+// get retrieves a single value from memcached, returned bool value indicates whether the value was found or not.
+func (c *MemcachedIndexCache) get(ctx context.Context, typ string, key string) ([]byte, bool) {
+	c.requests.WithLabelValues(typ).Inc()
+	results := c.memcached.GetMulti(ctx, []string{key})
+	data, ok := results[key]
+	if ok {
+		c.hits.WithLabelValues(typ).Inc()
+	}
+	return data, ok
+}
+
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
 func (c *MemcachedIndexCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	key := cacheKey{blockID, cacheKeyPostings(l)}.string()
-
-	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache postings in memcached", "err", err)
-	}
+	c.set(ctx, cacheTypePostings, postingsCacheKey(blockID, l), v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
@@ -83,7 +97,7 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 	keysMapping := map[labels.Label]string{}
 
 	for _, lbl := range lbls {
-		key := cacheKey{blockID, cacheKeyPostings(lbl)}.string()
+		key := postingsCacheKey(blockID, lbl)
 
 		keys = append(keys, key)
 		keysMapping[lbl] = key
@@ -122,35 +136,38 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 	return hits, misses
 }
 
-// StoreSeries sets the series identified by the ulid and id to the value v.
-// The function enqueues the request and returns immediately: the entry will be
-// asynchronously stored in the cache.
-func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	key := cacheKey{blockID, cacheKeySeries(id)}.string()
-
-	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache series in memcached", "err", err)
-	}
+func postingsCacheKey(blockID ulid.ULID, l labels.Label) string {
+	// Use cryptographically hash functions to avoid hash collisions
+	// which would end up in wrong query results.
+	lblHash := blake2b.Sum256([]byte(l.Name + ":" + l.Value))
+	return "P:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
 }
 
-// FetchMultiSeries fetches multiple series - each identified by ID - from the cache
+// StoreSeriesForRef sets the series identified by the ulid and id to the value v.
+// The function enqueues the request and returns immediately: the entry will be
+// asynchronously stored in the cache.
+func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.set(ctx, cacheTypeSeriesForRef, seriesForRefCacheKey(blockID, id), v)
+}
+
+// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
 	keysMapping := map[storage.SeriesRef]string{}
 
 	for _, id := range ids {
-		key := cacheKey{blockID, cacheKeySeries(id)}.string()
+		key := seriesForRefCacheKey(blockID, id)
 
 		keys = append(keys, key)
 		keysMapping[id] = key
 	}
 
 	// Fetch the keys from memcached in a single request.
-	c.requests.WithLabelValues(cacheTypeSeries).Add(float64(len(ids)))
+	c.requests.WithLabelValues(cacheTypeSeriesForRef).Add(float64(len(ids)))
 	results := c.memcached.GetMulti(ctx, keys)
 	if len(results) == 0 {
 		return nil, ids
@@ -163,7 +180,7 @@ func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid
 	for _, id := range ids {
 		key, ok := keysMapping[id]
 		if !ok {
-			level.Error(c.logger).Log("msg", "keys mapping inconsistency found in memcached index cache client", "type", "series", "id", id)
+			_ = level.Error(c.logger).Log("msg", "keys mapping inconsistency found in memcached index cache client", "type", "series", "id", id)
 			continue
 		}
 
@@ -178,27 +195,25 @@ func (c *MemcachedIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid
 		hits[id] = value
 	}
 
-	c.hits.WithLabelValues(cacheTypeSeries).Add(float64(len(hits)))
+	c.hits.WithLabelValues(cacheTypeSeriesForRef).Add(float64(len(hits)))
 	return hits, misses
+}
+
+func seriesForRefCacheKey(blockID ulid.ULID, id storage.SeriesRef) string {
+	return "S:" + blockID.String() + ":" + strconv.FormatUint(uint64(id), 10)
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
-
-	if err := c.memcached.SetAsync(ctx, key, v, memcachedDefaultTTL); err != nil {
-		level.Error(c.logger).Log("msg", "failed to cache expanded postings in memcached", "err", err)
-	}
+	c.set(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(blockID, lmKey), v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
-	key := cacheKey{blockID, cacheKeyExpandedPostings(lmKey)}.string()
-	results := c.memcached.GetMulti(ctx, []string{key})
-	c.requests.WithLabelValues(cacheTypeExpandedPostings).Inc()
-	data, ok := results[key]
-	if ok {
-		c.hits.WithLabelValues(cacheTypeExpandedPostings).Inc()
-	}
-	return data, ok
+	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(blockID, lmKey))
+}
+
+func expandedPostingsCacheKey(blockID ulid.ULID, lmKey LabelMatchersKey) string {
+	hash := blake2b.Sum256([]byte(lmKey))
+	return "E:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }

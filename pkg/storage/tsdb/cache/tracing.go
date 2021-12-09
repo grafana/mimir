@@ -73,15 +73,15 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, blockID ulid
 	return hits, misses
 }
 
-func (t *TracingIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	t.c.StoreSeries(ctx, blockID, id, v)
+func (t *TracingIndexCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	t.c.StoreSeriesForRef(ctx, blockID, id, v)
 }
 
-func (t *TracingIndexCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
-	hits, misses = t.c.FetchMultiSeries(ctx, blockID, ids)
+func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+	hits, misses = t.c.FetchMultiSeriesForRefs(ctx, blockID, ids)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_series", "requested series", len(ids), "cache hits", len(hits), "cache misses", len(misses))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_series_for_ref", "requested series", len(ids), "cache hits", len(hits), "cache misses", len(misses))
 
 	return hits, misses
 }

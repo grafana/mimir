@@ -7,8 +7,14 @@ package cache
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"math"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -104,13 +110,13 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 			// Assert on metrics.
 			assert.Equal(t, float64(len(testData.fetchLabels)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
 			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
 		})
 	}
 }
 
-func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
+func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
@@ -121,7 +127,7 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 	value3 := []byte{3}
 
 	tests := map[string]struct {
-		setup          []mockedSeries
+		setup          []mockedSeriesForRef
 		mockedErr      error
 		fetchBlockID   ulid.ULID
 		fetchIds       []storage.SeriesRef
@@ -129,14 +135,14 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 		expectedMisses []storage.SeriesRef
 	}{
 		"should return no hits on empty cache": {
-			setup:          []mockedSeries{},
+			setup:          []mockedSeriesForRef{},
 			fetchBlockID:   block1,
 			fetchIds:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
 			expectedMisses: []storage.SeriesRef{1, 2},
 		},
 		"should return no misses on 100% hit ratio": {
-			setup: []mockedSeries{
+			setup: []mockedSeriesForRef{
 				{block: block1, id: 1, value: value1},
 				{block: block1, id: 2, value: value2},
 				{block: block2, id: 1, value: value3},
@@ -150,7 +156,7 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 			expectedMisses: nil,
 		},
 		"should return hits and misses on partial hits": {
-			setup: []mockedSeries{
+			setup: []mockedSeriesForRef{
 				{block: block1, id: 1, value: value1},
 				{block: block2, id: 1, value: value3},
 			},
@@ -160,7 +166,7 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 			expectedMisses: []storage.SeriesRef{2},
 		},
 		"should return no hits on memcached error": {
-			setup: []mockedSeries{
+			setup: []mockedSeriesForRef{
 				{block: block1, id: 1, value: value1},
 				{block: block1, id: 2, value: value2},
 				{block: block2, id: 1, value: value3},
@@ -182,17 +188,17 @@ func TestMemcachedIndexCache_FetchMultiSeries(t *testing.T) {
 			// Store the series expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeries(ctx, p.block, p.id, p.value)
+				c.StoreSeriesForRef(ctx, p.block, p.id, p.value)
 			}
 
 			// Fetch series from cached and assert on it.
-			hits, misses := c.FetchMultiSeries(ctx, testData.fetchBlockID, testData.fetchIds)
+			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchBlockID, testData.fetchIds)
 			assert.Equal(t, testData.expectedHits, hits)
 			assert.Equal(t, testData.expectedMisses, misses)
 
 			// Assert on metrics.
-			assert.Equal(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
-			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, float64(len(testData.fetchIds)), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
+			assert.Equal(t, float64(len(testData.expectedHits)), prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
 			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
 			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
 		})
@@ -275,12 +281,101 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 			}
 			assert.Equal(t, float64(1), prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeExpandedPostings)))
 			assert.Equal(t, expectedHits, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeExpandedPostings)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeries)))
-			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeries)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypeSeriesForRef)))
+			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypeSeriesForRef)))
 			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.requests.WithLabelValues(cacheTypePostings)))
 			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
 		})
 	}
+}
+
+func TestStringCacheKeys_Values(t *testing.T) {
+	t.Parallel()
+
+	uid := ulid.MustNew(1, nil)
+
+	tests := map[string]struct {
+		key      string
+		expected string
+	}{
+		"should stringify postings cache key": {
+			key: postingsCacheKey(uid, labels.Label{Name: "foo", Value: "bar"}),
+			expected: func() string {
+				hash := blake2b.Sum256([]byte("foo:bar"))
+				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
+
+				return fmt.Sprintf("P:%s:%s", uid.String(), encodedHash)
+			}(),
+		},
+		"should stringify series cache key": {
+			key:      seriesForRefCacheKey(uid, 12345),
+			expected: fmt.Sprintf("S:%s:12345", uid.String()),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actual := testData.key
+			assert.Equal(t, testData.expected, actual)
+		})
+	}
+}
+
+func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) {
+	t.Parallel()
+
+	uid := ulid.MustNew(1, nil)
+
+	tests := map[string]struct {
+		keys        []string
+		expectedLen int
+	}{
+		"should guarantee reasonably short key length for postings": {
+			expectedLen: 72,
+			keys: []string{
+				postingsCacheKey(uid, labels.Label{Name: "a", Value: "b"}),
+				postingsCacheKey(uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
+			},
+		},
+		"should guarantee reasonably short key length for series": {
+			expectedLen: 49,
+			keys: []string{
+				seriesForRefCacheKey(uid, math.MaxUint64),
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, key := range testData.keys {
+				assert.Equal(t, testData.expectedLen, len(key))
+			}
+		})
+	}
+}
+
+func BenchmarkStringCacheKeys(b *testing.B) {
+	uid := ulid.MustNew(1, nil)
+	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
+	lmKey := CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")})
+
+	b.Run("postings", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			postingsCacheKey(uid, lbl)
+		}
+	})
+
+	b.Run("series ref", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			seriesForRefCacheKey(uid, math.MaxUint64)
+		}
+	})
+
+	b.Run("expanded postings", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			expandedPostingsCacheKey(uid, lmKey)
+		}
+	})
 }
 
 type mockedPostings struct {
@@ -289,7 +384,7 @@ type mockedPostings struct {
 	value []byte
 }
 
-type mockedSeries struct {
+type mockedSeriesForRef struct {
 	block ulid.ULID
 	id    storage.SeriesRef
 	value []byte
