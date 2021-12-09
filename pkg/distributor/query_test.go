@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/require"
@@ -187,5 +188,35 @@ func TestMergeExemplars(t *testing.T) {
 				require.Equal(t, c.expected, e.Timeseries)
 			}
 		})
+	}
+}
+
+func makeExemplarQueryResponse(numSeries int) *ingester_client.ExemplarQueryResponse {
+	now := time.Now()
+	ts := make([]mimirpb.TimeSeries, numSeries)
+	for i := 0; i < numSeries; i++ {
+		lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
+		for i := 0; i < 10; i++ {
+			lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
+		}
+		ts[i].Labels = mimirpb.FromLabelsToLabelAdapters(lbls.Labels())
+		ts[i].Exemplars = []mimirpb.Exemplar{{
+			Labels:      []mimirpb.LabelAdapter{{Name: "traceid", Value: "trace1"}},
+			Value:       float64(i),
+			TimestampMs: now.Add(time.Hour).UnixNano() / int64(time.Millisecond),
+		}}
+	}
+
+	return &ingester_client.ExemplarQueryResponse{Timeseries: ts}
+}
+
+func BenchmarkMergeExemplars(b *testing.B) {
+	input := makeExemplarQueryResponse(1000)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		// Merge input with itself three times
+		mergeExemplarQueryResponses([]interface{}{input, input, input})
 	}
 }
