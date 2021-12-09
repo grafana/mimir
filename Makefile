@@ -7,7 +7,12 @@
 
 # Version number
 VERSION=$(shell cat "./VERSION" 2> /dev/null)
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
 GOPROXY_VALUE=$(shell go env GOPROXY)
+
+# Suffix added to the name of built binary (via exes target)
+BINARY_SUFFIX ?= ""
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
@@ -50,17 +55,17 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
 
-# This target compiles mimir in amd64 and arm64 then builds and pushes a multiarch image
+# This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
+# Images are first built for each platform separately, as building both at once used to fail more often.
 push-multiarch-mimir:
 	@echo
-	# Build image for each platform separately... it tends to generate fewer errors.
-	GOOS=linux GOARCH=amd64 $(MAKE) cmd/mimir/mimir
-	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) cmd/mimir
-	GOOS=linux GOARCH=arm64 $(MAKE) cmd/mimir/mimir
-	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) cmd/mimir
+	$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 cmd/mimir/mimir
+	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true cmd/mimir
+	$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 cmd/mimir/mimir
+	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true cmd/mimir
 	# This command will run the same build as above, but it will reuse existing platform-specific images,
 	# put them together and push to registry.
-	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 fetch-build-image:
@@ -161,14 +166,14 @@ exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race
 	@mkdir -p $(shell pwd)/.cache
 	@echo
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
 else
 
 exes: $(EXES)
 
 $(EXES):
-	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: $(PROTO_GOS)
 
