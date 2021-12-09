@@ -128,7 +128,7 @@
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312
 * [ENHANCEMENT] Compactor: Blocks cleaner will ignore users that it no longer "owns" when sharding is enabled, and user ownership has changed since last scan. #325
 * [ENHANCEMENT] Querier / store-gateway: optimized regex matchers. #319 #334 #355
-* [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_non_step_aligned_queries_total` to track the total number of range queries with start/end not aligned to step. #347 #357
+* [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_non_step_aligned_queries_total` to track the total number of range queries with start/end not aligned to step. #347 #357 #582
 * [ENHANCEMENT] Compactor: added `-compactor.compaction-jobs-order` support to configure which compaction jobs should run first for a given tenant (in case there are multiple ones). Supported values are: `smallest-range-oldest-blocks-first` (default), `newest-blocks-first` (not supported by `default` compaction strategy). #364
 * [ENHANCEMENT] Add option (`-querier.label-values-max-cardinality-label-names-per-request`) to configure the maximum number of label names allowed to be queried in a single `<prefix>/api/v1/cardinality/label_values` API call. #332
 * [ENHANCEMENT] Make distributor inflight push requests count include background calls to ingester. #398

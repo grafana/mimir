@@ -155,7 +155,11 @@ func NewTripperware(
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
-	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
+	queryRangeMiddleware := []Middleware{
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		newQueryStatsMiddleware(registerer),
+		NewLimitsMiddleware(limits, log),
+	}
 	if cfg.AlignQueriesWithStep {
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), StepAlignMiddleware)
 	}
@@ -248,9 +252,6 @@ func NewTripperware(
 	if cfg.MaxRetries > 0 {
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
 	}
-
-	// Track query range statistics.
-	queryRangeMiddleware = append(queryRangeMiddleware, newQueryStatsMiddleware(registerer))
 
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 	_ = activeUsers.StartAsync(context.Background())
