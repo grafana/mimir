@@ -8,7 +8,7 @@ std.manifestYamlDoc({
     sleep_seconds: 3,
 
     // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
-    use_query_scheduler: false,
+    use_query_scheduler: true,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.

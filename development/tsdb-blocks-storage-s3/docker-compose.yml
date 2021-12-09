@@ -230,7 +230,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
     "depends_on":
       - "consul"
       - "minio"
@@ -252,7 +252,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -store.max-query-length=8760h"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"
     "depends_on":
       - "consul"
       - "minio"
@@ -265,6 +265,28 @@
     "image": "mimir"
     "ports":
       - "8007:8007"
+    "volumes":
+      - "./config:/mimir/config"
+  "query-scheduler":
+    "build":
+      "context": "."
+      "dockerfile": "dev.dockerfile"
+    "command":
+      - "sh"
+      - "-c"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -store.max-query-length=8760h"
+    "depends_on":
+      - "consul"
+      - "minio"
+    "environment":
+      - "JAEGER_AGENT_HOST=jaeger"
+      - "JAEGER_AGENT_PORT=6831"
+      - "JAEGER_SAMPLER_PARAM=1"
+      - "JAEGER_SAMPLER_TYPE=const"
+      - "JAEGER_TAGS=app=query-scheduler"
+    "image": "mimir"
+    "ports":
+      - "8011:8011"
     "volumes":
       - "./config:/mimir/config"
   "ruler-1":
