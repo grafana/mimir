@@ -335,3 +335,49 @@ func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, blockID ul
 func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
 	return c.get(cacheKeyExpandedPostings{blockID, key})
 }
+
+// cacheKey is used by in-memory representation to store cached data.
+// The implementations of cacheKey should be hasheable, as they will be used as keys for *lru.LRU cache
+type cacheKey interface {
+	// typ is used as label for metrics.
+	typ() string
+	// size is used to keep track of the cache size, it represents the footprint of the cache key in memory.
+	size() uint64
+}
+
+// cacheKeyPostings implements cacheKey and is used to reference a postings cache entry in the inmemory cache.
+type cacheKeyPostings struct {
+	block ulid.ULID
+	label labels.Label
+}
+
+func (c cacheKeyPostings) typ() string { return cacheTypePostings }
+
+func (c cacheKeyPostings) size() uint64 {
+	// ULID + 2 slice headers + number of chars in value and name.
+	return ulidSize + 2*sliceHeaderSize + uint64(len(c.label.Value)+len(c.label.Name))
+}
+
+// cacheKeyPostings implements cacheKey and is used to reference a seriesRef cache entry in the inmemory cache.
+type cacheKeySeriesForRef struct {
+	block ulid.ULID
+	ref   storage.SeriesRef
+}
+
+func (c cacheKeySeriesForRef) typ() string { return cacheTypeSeriesForRef }
+
+func (c cacheKeySeriesForRef) size() uint64 {
+	return ulidSize + 8 // ULID + uint64.
+}
+
+// cacheKeyPostings implements cacheKey and is used to reference an expanded postings cache entry in the inmemory cache.
+type cacheKeyExpandedPostings struct {
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+}
+
+func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPostings }
+
+func (c cacheKeyExpandedPostings) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey))
+}

@@ -7,8 +7,14 @@ package cache
 
 import (
 	"context"
+	"encoding/base64"
+	"fmt"
+	"math"
+	"strings"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/blake2b"
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
@@ -281,6 +287,95 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 			assert.Equal(t, 0.0, prom_testutil.ToFloat64(c.hits.WithLabelValues(cacheTypePostings)))
 		})
 	}
+}
+
+func TestStringCacheKeys_Values(t *testing.T) {
+	t.Parallel()
+
+	uid := ulid.MustNew(1, nil)
+
+	tests := map[string]struct {
+		key      string
+		expected string
+	}{
+		"should stringify postings cache key": {
+			key: postingsCacheKey(uid, labels.Label{Name: "foo", Value: "bar"}),
+			expected: func() string {
+				hash := blake2b.Sum256([]byte("foo:bar"))
+				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
+
+				return fmt.Sprintf("P:%s:%s", uid.String(), encodedHash)
+			}(),
+		},
+		"should stringify series cache key": {
+			key:      seriesForRefCacheKey(uid, 12345),
+			expected: fmt.Sprintf("S:%s:12345", uid.String()),
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			actual := testData.key
+			assert.Equal(t, testData.expected, actual)
+		})
+	}
+}
+
+func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) {
+	t.Parallel()
+
+	uid := ulid.MustNew(1, nil)
+
+	tests := map[string]struct {
+		keys        []string
+		expectedLen int
+	}{
+		"should guarantee reasonably short key length for postings": {
+			expectedLen: 72,
+			keys: []string{
+				postingsCacheKey(uid, labels.Label{Name: "a", Value: "b"}),
+				postingsCacheKey(uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
+			},
+		},
+		"should guarantee reasonably short key length for series": {
+			expectedLen: 49,
+			keys: []string{
+				seriesForRefCacheKey(uid, math.MaxUint64),
+			},
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			for _, key := range testData.keys {
+				assert.Equal(t, testData.expectedLen, len(key))
+			}
+		})
+	}
+}
+
+func BenchmarkStringCacheKeys(b *testing.B) {
+	uid := ulid.MustNew(1, nil)
+	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
+	lmKey := CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")})
+
+	b.Run("postings", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			postingsCacheKey(uid, lbl)
+		}
+	})
+
+	b.Run("series ref", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			seriesForRefCacheKey(uid, math.MaxUint64)
+		}
+	})
+
+	b.Run("expanded postings", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			expandedPostingsCacheKey(uid, lmKey)
+		}
+	})
 }
 
 type mockedPostings struct {

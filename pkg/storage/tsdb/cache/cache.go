@@ -7,23 +7,22 @@ package cache
 
 import (
 	"context"
-	"encoding/base64"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"golang.org/x/crypto/blake2b"
 )
 
 const (
-	cacheTypePostings         string = "Postings"
-	cacheTypeSeriesForRef     string = "SeriesForRef"
-	cacheTypeExpandedPostings string = "ExpandedPostings"
+	cacheTypePostings         = "Postings"
+	cacheTypeSeriesForRef     = "SeriesForRef"
+	cacheTypeExpandedPostings = "ExpandedPostings"
+)
 
+const (
 	sliceHeaderSize = 16
 )
 
@@ -111,66 +110,4 @@ func initLabelValuesForAllCacheTypes(vec *prometheus.MetricVec) {
 			panic(err)
 		}
 	}
-}
-
-type cacheKey interface {
-	string() string
-	typ() string
-	size() uint64
-}
-
-type cacheKeyPostings struct {
-	block ulid.ULID
-	label labels.Label
-}
-
-func (c cacheKeyPostings) string() string {
-	// Use cryptographically hash functions to avoid hash collisions
-	// which would end up in wrong query results.
-	lblHash := blake2b.Sum256([]byte(c.label.Name + ":" + c.label.Value))
-	return "P:" + c.block.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
-}
-
-func (c cacheKeyPostings) typ() string {
-	return cacheTypePostings
-}
-
-func (c cacheKeyPostings) size() uint64 {
-	// ULID + 2 slice headers + number of chars in value and name.
-	return ulidSize + 2*sliceHeaderSize + uint64(len(c.label.Value)+len(c.label.Name))
-}
-
-type cacheKeySeriesForRef struct {
-	block ulid.ULID
-	ref   storage.SeriesRef
-}
-
-func (c cacheKeySeriesForRef) string() string {
-	return "S:" + c.block.String() + ":" + strconv.FormatUint(uint64(c.ref), 10)
-}
-
-func (c cacheKeySeriesForRef) typ() string {
-	return cacheTypeSeriesForRef
-}
-
-func (c cacheKeySeriesForRef) size() uint64 {
-	return ulidSize + 8 // ULID + uint64.
-}
-
-type cacheKeyExpandedPostings struct {
-	block       ulid.ULID
-	matchersKey LabelMatchersKey
-}
-
-func (c cacheKeyExpandedPostings) string() string {
-	hash := blake2b.Sum256([]byte(c.matchersKey))
-	return "E:" + c.block.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
-}
-
-func (c cacheKeyExpandedPostings) typ() string {
-	return cacheTypeExpandedPostings
-}
-
-func (c cacheKeyExpandedPostings) size() uint64 {
-	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey))
 }
