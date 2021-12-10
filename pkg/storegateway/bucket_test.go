@@ -940,31 +940,15 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 500
 
-	tmpDir, err := ioutil.TempDir("", "test-expanded-postings")
-	assert.NoError(tb, err)
-	defer func() { assert.NoError(tb, os.RemoveAll(tmpDir)) }()
+	newTestBucketBlock := prepareTestBlock(tb, series, "test-expanded-postings")
 
-	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
-	assert.NoError(tb, err)
-	defer func() { assert.NoError(tb, bkt.Close()) }()
-
-	id := uploadTestBlock(tb, tmpDir, bkt, series)
-
-	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
-	assert.NoError(tb, err)
-
-	benchmarkExpandedPostings(tb, bkt, id, r, series)
+	t.Run("happy cases", func(t *testing.T) {
+		benchmarkExpandedPostings(test.NewTB(t), newTestBucketBlock, series)
+	})
 
 	t.Run("corrupted or undecodable postings cache doesn't fail", func(t *testing.T) {
-		b := &bucketBlock{
-			logger:            log.NewNopLogger(),
-			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: r,
-			indexCache:        corruptedPostingsCache{},
-			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		}
+		b := newTestBucketBlock()
+		b.indexCache = corruptedPostingsCache{}
 
 		// cache provides undecodable values
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
@@ -993,14 +977,10 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 			return nil
 		}
 
-		b := &bucketBlock{
-			logger:            log.NewNopLogger(),
-			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onLabelValuesCalled: onlabelValuesCalled},
-			indexCache:        noopCache{},
-			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedLabelValuesIndexReader{
+			Reader:              b.indexHeaderReader,
+			onLabelValuesCalled: onlabelValuesCalled,
 		}
 
 		// we're building a scenario where:
@@ -1131,15 +1111,12 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 		cache, err := storecache.NewInMemoryIndexCache(log.NewNopLogger(), nil, conf)
 		require.NoError(t, err)
 
-		b := &bucketBlock{
-			logger:            log.NewNopLogger(),
-			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: &blockingLabelValuesIndexReader{Reader: r, onLabelValuesCalled: onLabelValuesCalled},
-			indexCache:        cache,
-			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedLabelValuesIndexReader{
+			Reader:              b.indexHeaderReader,
+			onLabelValuesCalled: onLabelValuesCalled,
 		}
+		b.indexCache = cache
 
 		// first call succeeds and caches value
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
@@ -1163,15 +1140,8 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 
 	t.Run("corrupt cached expanded postings don't make request fail", func(t *testing.T) {
-		b := &bucketBlock{
-			logger:            log.NewNopLogger(),
-			metrics:           NewBucketStoreMetrics(nil),
-			indexHeaderReader: r,
-			indexCache:        corruptedExpandedPostingsCache{},
-			bkt:               bkt,
-			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-		}
+		b := newTestBucketBlock()
+		b.indexCache = corruptedExpandedPostingsCache{}
 
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
 		refs, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
@@ -1180,17 +1150,14 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 
 	t.Run("expandedPostings returning error is not cached", func(t *testing.T) {
-		b := &bucketBlock{
-			logger:  log.NewNopLogger(),
-			metrics: NewBucketStoreMetrics(nil),
-			indexHeaderReader: &blockingLabelValuesIndexReader{onLabelValuesCalled: func(_ string) error {
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedLabelValuesIndexReader{
+			Reader: b.indexHeaderReader,
+			onLabelValuesCalled: func(_ string) error {
 				return context.Canceled // alwaysFails
-			}},
-			indexCache:  cacheNotExpectingToStoreExpandedPostings{t: t},
-			bkt:         bkt,
-			meta:        &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-			partitioner: newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+			},
 		}
+		b.indexCache = cacheNotExpectingToStoreExpandedPostings{t: t}
 
 		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "i", "^.+$")}
 		_, err := b.indexReader().ExpandedPostings(context.Background(), matchers)
@@ -1198,12 +1165,12 @@ func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	})
 }
 
-type blockingLabelValuesIndexReader struct {
+type interceptedLabelValuesIndexReader struct {
 	indexheader.Reader
 	onLabelValuesCalled func(name string) error
 }
 
-func (bir *blockingLabelValuesIndexReader) LabelValues(name string) ([]string, error) {
+func (bir *interceptedLabelValuesIndexReader) LabelValues(name string) ([]string, error) {
 	if err := bir.onLabelValuesCalled(name); err != nil {
 		return nil, err
 	}
@@ -1250,20 +1217,40 @@ func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx cont
 
 func BenchmarkBucketIndexReader_ExpandedPostings(b *testing.B) {
 	tb := test.NewTB(b)
+	const series = 50e5
+	newTestBucketBlock := prepareTestBlock(tb, series, "bench-expanded-postings")
+	benchmarkExpandedPostings(test.NewTB(b), newTestBucketBlock, series)
+}
 
-	tmpDir, err := ioutil.TempDir("", "bench-expanded-postings")
+func prepareTestBlock(tb test.TB, series int, dirPattern string) func() *bucketBlock {
+	tmpDir, err := ioutil.TempDir("", dirPattern)
 	assert.NoError(tb, err)
-	defer func() { assert.NoError(tb, os.RemoveAll(tmpDir)) }()
+	tb.Cleanup(func() {
+		assert.NoError(tb, os.RemoveAll(tmpDir))
+	})
 
 	bkt, err := filesystem.NewBucket(filepath.Join(tmpDir, "bkt"))
 	assert.NoError(tb, err)
-	defer func() { assert.NoError(tb, bkt.Close()) }()
 
-	id := uploadTestBlock(tb, tmpDir, bkt, 50e5)
+	tb.Cleanup(func() {
+		assert.NoError(tb, bkt.Close())
+	})
+
+	id := uploadTestBlock(tb, tmpDir, bkt, series)
 	r, err := indexheader.NewBinaryReader(context.Background(), log.NewNopLogger(), bkt, tmpDir, id, mimir_tsdb.DefaultPostingOffsetInMemorySampling)
-	assert.NoError(tb, err)
+	require.NoError(tb, err)
 
-	benchmarkExpandedPostings(tb, bkt, id, r, 50e5)
+	return func() *bucketBlock {
+		return &bucketBlock{
+			logger:            log.NewNopLogger(),
+			metrics:           NewBucketStoreMetrics(nil),
+			indexHeaderReader: r,
+			indexCache:        noopCache{},
+			bkt:               bkt,
+			meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
+			partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
+		}
+	}
 }
 
 func uploadTestBlock(t testing.TB, tmpDir string, bkt objstore.Bucket, series int) ulid.ULID {
@@ -1332,9 +1319,7 @@ func createBlockFromHead(t testing.TB, dir string, head *tsdb.Head) ulid.ULID {
 // but with postings results check when run as test.
 func benchmarkExpandedPostings(
 	t test.TB,
-	bkt objstore.BucketReader,
-	id ulid.ULID,
-	r indexheader.Reader,
+	newTestBucketBlock func() *bucketBlock,
 	series int,
 ) {
 	ctx := context.Background()
@@ -1384,17 +1369,7 @@ func benchmarkExpandedPostings(
 
 	for _, c := range cases {
 		t.Run(c.name, func(t test.TB) {
-			b := &bucketBlock{
-				logger:            log.NewNopLogger(),
-				metrics:           NewBucketStoreMetrics(nil),
-				indexHeaderReader: r,
-				indexCache:        noopCache{},
-				bkt:               bkt,
-				meta:              &metadata.Meta{BlockMeta: tsdb.BlockMeta{ULID: id}},
-				partitioner:       newGapBasedPartitioner(mimir_tsdb.DefaultPartitionerMaxGapSize, nil),
-			}
-
-			indexr := newBucketIndexReader(b)
+			indexr := newBucketIndexReader(newTestBucketBlock())
 
 			t.ResetTimer()
 			for i := 0; i < t.N(); i++ {
