@@ -35,7 +35,7 @@ func GetExtraArgs() []string {
 	// Get extra args from the MIMIR_EXTRA_ARGS env variable
 	// falling back to an empty list
 	if os.Getenv("MIMIR_EXTRA_ARGS") != "" {
-		return strings.Split(os.Getenv("MIMIR_EXTRA_ARGS"), " ")
+		return []string{os.Getenv("MIMIR_EXTRA_ARGS")}
 	}
 
 	return []string{}
