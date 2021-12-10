@@ -2774,6 +2774,113 @@ func BenchmarkDownsampledBlockSeries(b *testing.B) {
 	}
 }
 
+func TestBlockSeries_Cache(t *testing.T) {
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), 100, "test-block-series-cache")
+
+	t.Run("does not update cache on error", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:              b.indexHeaderReader,
+			onLabelValuesCalled: func(_ string) error { return context.DeadlineExceeded },
+		}
+		b.indexCache = cacheNotExpectingToStoreSeries{t: t}
+
+		sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+
+		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
+		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
+		_, _, err := blockSeries(context.Background(), b.indexReader(), nil, matchers, nil, nil, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, nil, log.NewNopLogger())
+		require.Error(t, err)
+	})
+
+	t.Run("caches series", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCache(t)
+
+		sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+		shc := hashcache.NewSeriesHashCache(1 << 20).GetBlockCache(b.meta.ULID.String())
+
+		testCases := []struct {
+			matchers         []*labels.Matcher
+			shard            *sharding.ShardSelector
+			expectedLabelSet []labels.Labels
+		}{
+			// no shard
+			{
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "i", "0"+labelLongSuffix),
+					labels.MustNewMatcher(labels.MatchRegexp, "n", "0.*"),
+					labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*"),
+				},
+				shard: nil,
+				expectedLabelSet: []labels.Labels{
+					labels.FromStrings("i", "0"+labelLongSuffix, "n", "0"+labelLongSuffix, "j", "foo", "p", "foo"),
+				},
+			},
+			// shard 1_of_2
+			{
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "i", "0"+labelLongSuffix),
+					labels.MustNewMatcher(labels.MatchRegexp, "n", "0a.*"),
+				},
+				shard: &sharding.ShardSelector{ShardIndex: 0, ShardCount: 2},
+				expectedLabelSet: []labels.Labels{
+					labels.FromStrings("i", "0"+labelLongSuffix, "n", "0"+labelLongSuffix, "j", "bar", "q", "foo"),
+				},
+			},
+			// shard 1_of_2
+			{
+				matchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "i", "0"+labelLongSuffix),
+					labels.MustNewMatcher(labels.MatchRegexp, "n", "0a.*"),
+				},
+				shard: &sharding.ShardSelector{ShardIndex: 1, ShardCount: 2},
+				expectedLabelSet: []labels.Labels{
+					labels.FromStrings("i", "0"+labelLongSuffix, "n", "0"+labelLongSuffix, "j", "foo", "p", "foo"),
+				},
+			},
+		}
+
+		indexr := b.indexReader()
+		for i, tc := range testCases {
+			ss, _, err := blockSeries(context.Background(), indexr, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, nil, log.NewNopLogger())
+			require.NoError(t, err, "Unexpected error for test case %d", i)
+			lset := lsetFromSeriesSet(t, ss)
+			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
+		}
+
+		// Cache should be filled by now.
+		// We break the LookupSymbol so we know for sure we'll be using the cache in the next calls.
+		indexr.dec.LookupSymbol = nil
+		for i, tc := range testCases {
+			ss, _, err := blockSeries(context.Background(), indexr, nil, tc.matchers, tc.shard, shc, nil, sl, true, b.meta.MinTime, b.meta.MaxTime, nil, log.NewNopLogger())
+			require.NoError(t, err, "Unexpected error for test case %d", i)
+			lset := lsetFromSeriesSet(t, ss)
+			require.Equalf(t, tc.expectedLabelSet, lset, "Wrong label set for test case %d", i)
+		}
+	})
+}
+
+func lsetFromSeriesSet(t *testing.T, ss storepb.SeriesSet) []labels.Labels {
+	var lset []labels.Labels
+	for ss.Next() {
+		ls, _ := ss.At()
+		lset = append(lset, ls)
+	}
+	require.NoError(t, ss.Err())
+	return lset
+}
+
+type cacheNotExpectingToStoreSeries struct {
+	noopCache
+	t *testing.T
+}
+
+func (c cacheNotExpectingToStoreSeries) StoreSeries(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
+	c.t.Fatalf("StoreSeries should not be called")
+}
+
 type headGenOptions struct {
 	TSDBDir                  string
 	SamplesPerSeries, Series int
