@@ -894,6 +894,12 @@ blocks_storage:
     # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
     [memory_snapshot_on_shutdown: <boolean> | default = false]
 
+    # The size of the write queue used by the head chunks mapper. Lower values
+    # reduce memory utilisation at the cost of potentially higher ingest
+    # latency. 0 disables the use of the chunk write queue.
+    # CLI flag: -blocks-storage.tsdb.head-chunk-write-queue-size
+    [head_chunks_write_queue_size: <int> | default = 0]
+
     # Enables TSDB isolation feature. Disabling may improve performance.
     # CLI flag: -blocks-storage.tsdb.isolation-enabled
     [isolation_enabled: <boolean> | default = true]
