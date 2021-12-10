@@ -897,7 +897,7 @@ blocks_storage:
     # The size of the write queue used by the head chunks mapper. Lower values
     # reduce memory utilisation at the cost of potentially higher ingest
     # latency. 0 disables the use of the chunk write queue.
-    # CLI flag: -blocks-storage.tsdb.head-chunk-write-queue-size
+    # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
     [head_chunks_write_queue_size: <int> | default = 0]
 
     # Enables TSDB isolation feature. Disabling may improve performance.
