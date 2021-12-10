@@ -104,6 +104,8 @@
 * [FEATURE] Compactor: Added `-compactor.max-compaction-time` to control how long can compaction for a single tenant take. If compactions for a tenant take longer, no new compactions are started in the same compaction cycle. Running compactions are not stopped however, and may take much longer. #523
 * [FEATURE] Compactor: When compactor finds blocks with out-of-order chunks, it will mark them for no-compaction. Blocks marked for no-compaction are ignored in future compactions too. Added metric `cortex_compactor_blocks_marked_for_no_compaction_total` to track number of blocks marked for no-compaction. Added `CortexCompactorSkippedBlocksWithOutOfOrderChunks` alert based on new metric. Markers are only checked from `<tenant>/markers` location, but uploaded to the block directory too. #520 #535 #550
 * [FEATURE] Compactor: multiple blocks are now downloaded and uploaded at once, which can shorten compaction process. #552
+* [FEATURE] Ingester: Added `-blocks-storage.tsdb.head-chunks-write-queue-size` flag, which allows setting the size of the queue used by the TSDB before m-mapping chunks. #591
+  * Added `cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total` metric to track different operations of this queue.
 * [ENHANCEMENT] Add a flag (`--proxy.compare-use-relative-error`) in the query-tee to compare floating point values using relative error. #208
 * [ENHANCEMENT] Add a flag (`--proxy.compare-skip-recent-samples`) in the query-tee to skip comparing recent samples. By default samples not older than 1 minute are skipped. #234
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_limit_overrides` metric: #21

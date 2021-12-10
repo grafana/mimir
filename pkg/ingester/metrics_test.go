@@ -173,6 +173,12 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="get"} 30
+
 			# HELP cortex_ingester_tsdb_blocks_loaded Number of currently loaded data blocks
 			# TYPE cortex_ingester_tsdb_blocks_loaded gauge
 			cortex_ingester_tsdb_blocks_loaded 15
@@ -395,6 +401,12 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="get"} 30
+
 			# HELP cortex_ingester_tsdb_blocks_loaded Number of currently loaded data blocks
 			# TYPE cortex_ingester_tsdb_blocks_loaded gauge
 			cortex_ingester_tsdb_blocks_loaded 10
@@ -612,6 +624,14 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of memory-mapped chunk corruptions.",
 	})
 	mmapChunkCorruptionTotal.Add(26 * base)
+
+	mmapChunkQueueOperationsTotal := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_chunk_write_queue_operations_total",
+		Help: "Number of operations on the chunk_write_queue.",
+	}, []string{"operation"})
+	mmapChunkQueueOperationsTotal.WithLabelValues("add").Add(50)
+	mmapChunkQueueOperationsTotal.WithLabelValues("get").Add(10)
+	mmapChunkQueueOperationsTotal.WithLabelValues("complete").Add(40)
 
 	tsdbOOOHistogram := promauto.With(r).NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_sample_ooo_delta",
