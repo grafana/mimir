@@ -1053,6 +1053,107 @@ func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(_ context.Context, _
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
+func TestBlockLabelValues(t *testing.T) {
+	const series = 500
+
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series, "test-block-label-values")
+
+	t.Run("happy case with no matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"bar", "foo"}, names)
+	})
+
+	t.Run("index reader error with no matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:              b.indexHeaderReader,
+			onLabelValuesCalled: func(name string) error { return context.DeadlineExceeded },
+		}
+		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
+
+		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		require.Error(t, err)
+	})
+
+	t.Run("happy case cached with no matchers", func(t *testing.T) {
+		expectedCalls := 1
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader: b.indexHeaderReader,
+			onLabelValuesCalled: func(name string) error {
+				expectedCalls--
+				if expectedCalls < 0 {
+					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
+				}
+				return nil
+			},
+		}
+		b.indexCache = newInMemoryIndexCache(t)
+
+		names, err := blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"bar", "foo"}, names)
+
+		// hit the cache now
+		names, err = blockLabelValues(context.Background(), b.indexReader(), "j", nil, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"bar", "foo"}, names)
+	})
+
+	t.Run("error with matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexHeaderReader = &interceptedIndexReader{
+			Reader:              b.indexHeaderReader,
+			onLabelValuesCalled: func(_ string) error { return context.DeadlineExceeded },
+		}
+		b.indexCache = cacheNotExpectingToStoreLabelValues{t: t}
+
+		// This test relies on the fact that p~=foo.* has to call LabelValues(p) when doing ExpandedPostings().
+		// We make that call fail in order to make the entire LabelValues(p~=foo.*) call fail.
+		matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "p", "foo.*")}
+		_, err := blockLabelValues(context.Background(), b.indexReader(), "j", matchers, log.NewNopLogger())
+		require.Error(t, err)
+	})
+
+	t.Run("happy case cached with matchers", func(t *testing.T) {
+		b := newTestBucketBlock()
+		b.indexCache = newInMemoryIndexCache(t)
+
+		pFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "p", "foo")}
+		values, err := blockLabelValues(context.Background(), b.indexReader(), "j", pFooMatchers, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+
+		qFooMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "q", "foo")}
+		values, err = blockLabelValues(context.Background(), b.indexReader(), "j", qFooMatchers, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"bar"}, values)
+
+		// we remove the indexHeaderReader to ensure that results come from a cache
+		// if this panics, then we know that it's trying to read actual values
+		indexrWithoutHeaderReader := b.indexReader()
+		indexrWithoutHeaderReader.block.indexHeaderReader = nil
+
+		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", pFooMatchers, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"foo"}, values)
+		values, err = blockLabelValues(context.Background(), indexrWithoutHeaderReader, "j", qFooMatchers, log.NewNopLogger())
+		require.NoError(t, err)
+		require.Equal(t, []string{"bar"}, values)
+	})
+}
+
+type cacheNotExpectingToStoreLabelValues struct {
+	noopCache
+	t *testing.T
+}
+
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(_ context.Context, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey, _ []byte) {
+	c.t.Fatalf("StoreLabelValues should not be called")
+}
+
 func TestBucketIndexReader_ExpandedPostings(t *testing.T) {
 	tb := test.NewTB(t)
 	const series = 500
