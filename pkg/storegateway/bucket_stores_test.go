@@ -853,10 +853,20 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 		benchmarks(tb)
 	})
 
-	tb.Run("inmemory cache", func(tb *testing.B) {
-		s.cache.SwapWith(indexCache)
+	tb.Run("inmemory cache (without label values cache)", func(tb *testing.B) {
+		s.cache.SwapWith(indexCacheMissingLabelValues{indexCache})
 		benchmarks(tb)
 	})
+}
+
+// indexCacheMissingLabelValues wraps an IndexCache returning a miss on all FetchLabelValues calls,
+// making it useful to benchmark the LabelValues calls (it still caches the underlying postings calls)
+type indexCacheMissingLabelValues struct {
+	storecache.IndexCache
+}
+
+func (indexCacheMissingLabelValues) FetchLabelValues(_ context.Context, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey) ([]byte, bool) {
+	return nil, false
 }
 
 // generateSeries generated series with len(card) labels, each one called label_n,
