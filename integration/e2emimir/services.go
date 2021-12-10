@@ -30,6 +30,17 @@ func GetDefaultImage() string {
 	return "us.gcr.io/kubernetes-dev/mimir:latest"
 }
 
+// GetExtraArgs returns the extra args to pass to the Docker command used to run Mimir.
+func GetExtraArgs() []string {
+	// Get extra args from the MIMIR_EXTRA_ARGS env variable
+	// falling back to an empty list
+	if os.Getenv("MIMIR_EXTRA_ARGS") != "" {
+		return strings.Split(os.Getenv("MIMIR_EXTRA_ARGS"), " ")
+	}
+
+	return []string{}
+}
+
 func NewDistributor(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewDistributorWithConfigFile(name, consulAddress, "", flags, image)
 }
@@ -47,21 +58,21 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":                         "distributor",
-			"-log.level":                      "warn",
-			"-auth.enabled":                   "true",
-			"-distributor.replication-factor": "1",
-			// Configure the ingesters ring backend
-			"-ring.store":      "consul",
-			"-consul.hostname": consulAddress,
-		}, flags))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(
+			e2e.MergeFlags(map[string]string{
+				"-target":                         "distributor",
+				"-log.level":                      "warn",
+				"-auth.enabled":                   "true",
+				"-distributor.replication-factor": "1",
+				// Configure the ingesters ring backend
+				"-ring.store":      "consul",
+				"-consul.hostname": consulAddress,
+			}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
 	)
 }
-
 func NewQuerier(name string, consulAddress string, flags map[string]string, image string) *MimirService {
 	return NewQuerierWithConfigFile(name, consulAddress, "", flags, image)
 }
@@ -79,7 +90,7 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                         "querier",
 			"-log.level":                      "warn",
 			"-distributor.replication-factor": "1",
@@ -98,7 +109,7 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 			"-store-gateway.sharding-ring.store":              "consul",
 			"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
 			"-store-gateway.sharding-ring.replication-factor": "1",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -122,7 +133,7 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "store-gateway",
 			"-log.level": "warn",
 			// Store-gateway ring backend.
@@ -133,7 +144,7 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 			// Startup quickly.
 			"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
 			"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -156,7 +167,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                      "ingester",
 			"-log.level":                   "warn",
 			"-ingester.final-sleep":        "0s",
@@ -166,7 +177,7 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 			// Configure the ingesters ring backend
 			"-ring.store":      "consul",
 			"-consul.hostname": consulAddress,
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -197,10 +208,10 @@ func NewTableManagerWithConfigFile(name, configFile string, flags map[string]str
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "table-manager",
 			"-log.level": "warn",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -224,12 +235,12 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "query-frontend",
 			"-log.level": "warn",
 			// Quickly detect query-scheduler when running it.
 			"-frontend.scheduler-dns-lookup-period": "1s",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -253,10 +264,10 @@ func NewQuerySchedulerWithConfigFile(name, configFile string, flags map[string]s
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "query-scheduler",
 			"-log.level": "warn",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -280,7 +291,7 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "compactor",
 			"-log.level": "warn",
 			// Store-gateway ring backend.
@@ -290,7 +301,7 @@ func NewCompactorWithConfigFile(name, consulAddress, configFile string, flags ma
 			// Startup quickly.
 			"-compactor.ring.wait-stability-min-duration": "0",
 			"-compactor.ring.wait-stability-max-duration": "0",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -306,7 +317,7 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":       "all",
 			"-log.level":    "warn",
 			"-auth.enabled": "true",
@@ -325,7 +336,7 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 			// Startup quickly.
 			"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
 			"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -342,12 +353,12 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			// Do not pass any extra default flags because the config should be drive by the config file.
 			"-target":      "all",
 			"-log.level":   "warn",
 			"-config.file": filepath.Join(e2e.ContainerSharedDir, configFile),
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -364,11 +375,11 @@ func NewAlertmanager(name string, flags map[string]string, image string) *MimirS
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                               "alertmanager",
 			"-log.level":                            "warn",
 			"-experimental.alertmanager.enable-api": "true",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -384,11 +395,11 @@ func NewAlertmanagerWithTLS(name string, flags map[string]string, image string) 
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                               "alertmanager",
 			"-log.level":                            "warn",
 			"-experimental.alertmanager.enable-api": "true",
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewTCPReadinessProbe(httpPort),
 		httpPort,
 		grpcPort,
@@ -404,13 +415,13 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":    "ruler",
 			"-log.level": "warn",
 			// Configure the ingesters ring backend
 			"-ring.store":      "consul",
 			"-consul.hostname": consulAddress,
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -434,12 +445,12 @@ func NewPurgerWithConfigFile(name, configFile string, flags map[string]string, i
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, e2e.BuildArgs(e2e.MergeFlags(map[string]string{
+		e2e.NewCommandWithoutEntrypoint(binaryName, append(GetExtraArgs(), e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                   "purger",
 			"-log.level":                "warn",
 			"-purger.object-store-type": "filesystem",
 			"-local.chunk-directory":    e2e.ContainerSharedDir,
-		}, flags))...),
+		}, flags))...)...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
