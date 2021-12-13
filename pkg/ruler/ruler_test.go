@@ -278,30 +278,59 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 	}
 }
 
-func TestRuler_AuthorizeRuleGroups(t *testing.T) {
-	cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
-	defer cleanup()
+func TestRuler_Authorizer(t *testing.T) {
 
-	r, rCleanup := buildRuler(t, cfg, nil)
-	// Treat only user2's groups as authorized
-	r.authorizer = newMockAuthorizer(mockRules["user2"]...)
+	t.Run("happy flow", func(t *testing.T) {
+		cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
+		t.Cleanup(cleanup)
 
-	// Start the ruler and prep cleanup
-	defer rCleanup()
-	require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+		r, rCleanup := buildRuler(t, cfg, nil)
+		// Treat only user2's groups as authorized
+		r.authorizer = newMockAuthorizer(nil, mockRules["user2"])
 
-	r.syncRules(context.Background(), rulerSyncReasonInitial)
+		// Start the ruler and prep cleanup
+		t.Cleanup(rCleanup)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+		defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-	// user1 shouldn't have any groups because we didn't mark them as authorized
-	loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), "user1"))
-	require.NoError(t, err)
-	require.Empty(t, loadedGroups)
+		r.syncRules(context.Background(), rulerSyncReasonInitial)
 
-	// user2 should have all their groups loaded
-	loadedGroups, err = r.GetRules(user.InjectOrgID(context.Background(), "user2"))
-	require.NoError(t, err)
-	require.Len(t, loadedGroups, len(mockRules["user2"]))
+		// user1 shouldn't have any groups because we didn't mark them as authorized
+		loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), "user1"))
+		require.NoError(t, err)
+		require.Empty(t, loadedGroups)
+
+		// user2 should have all their groups loaded
+		loadedGroups, err = r.GetRules(user.InjectOrgID(context.Background(), "user2"))
+		require.NoError(t, err)
+		require.Len(t, loadedGroups, len(mockRules["user2"]))
+	})
+
+	t.Run("group is treated as non-authorized when authorizer returns an error", func(t *testing.T) {
+		cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
+		t.Cleanup(cleanup)
+
+		r, rCleanup := buildRuler(t, cfg, nil)
+		// Treat all groups as authorized, but return an error
+		r.authorizer = newMockAuthorizer(fmt.Errorf("oops"), mockRules["user2"], mockRules["user1"])
+
+		// Start the ruler and prep cleanup
+		t.Cleanup(rCleanup)
+		require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+		defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+
+		r.syncRules(context.Background(), rulerSyncReasonInitial)
+
+		// user1 shouldn't have any groups because authorizer returned an error
+		loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), "user1"))
+		require.NoError(t, err)
+		require.Empty(t, loadedGroups)
+
+		// user2 shouldn't have any groups because authorizer returned an error
+		loadedGroups, err = r.GetRules(user.InjectOrgID(context.Background(), "user2"))
+		require.NoError(t, err)
+		require.Empty(t, loadedGroups)
+	})
 }
 
 func TestGetRules(t *testing.T) {
