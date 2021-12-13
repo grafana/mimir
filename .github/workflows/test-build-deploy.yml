@@ -111,12 +111,10 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Image
+      - name: Build Images
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
-          touch mimir-build-image/.uptodate
-          touch ./cmd/mimir/.uptodate
-          make BUILD_IN_CONTAINER=false
+          make list-images-to-build | grep -v -E '/mimir-build-image/|/cmd/mimir/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
 
   integration:
     needs: build-mimir
