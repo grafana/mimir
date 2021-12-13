@@ -792,7 +792,7 @@ func fetchCachedSeries(ctx context.Context, indexCache cache.IndexCache, blockID
 	}
 	var entry seriesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Info(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode series cache", "err", err)
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
@@ -822,7 +822,7 @@ func storeCachedSeries(ctx context.Context, indexCache cache.IndexCache, blockID
 	}
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
-		level.Info(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
+		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode series for caching", "err", err)
 		return
 	}
 	indexCache.StoreSeries(ctx, blockID, entry.MatchersKey, shard, data)
@@ -1334,7 +1334,7 @@ func fetchCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, blo
 	}
 	var entry labelNamesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Info(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label values cache", "err", err)
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label values cache", "err", err)
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
@@ -1352,7 +1352,7 @@ func storeCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, blo
 	}
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
-		level.Info(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
+		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
 		return
 	}
 	indexCache.StoreLabelNames(ctx, blockID, entry.MatchersKey, data)
@@ -1507,7 +1507,7 @@ func fetchCachedLabelValues(ctx context.Context, indexCache cache.IndexCache, bl
 	}
 	var entry labelValuesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Info(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label values cache", "err", err)
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label values cache", "err", err)
 		return nil, false
 	}
 	if entry.LabelName != labelName {
@@ -1530,7 +1530,7 @@ func storeCachedLabelValues(ctx context.Context, indexCache cache.IndexCache, bl
 	}
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
-		level.Info(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
+		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
 		return
 	}
 	indexCache.StoreLabelValues(ctx, blockID, labelName, entry.MatchersKey, data)
