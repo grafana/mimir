@@ -38,8 +38,6 @@ import (
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
-	"github.com/grafana/mimir/pkg/querier/batch"
-	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
@@ -62,15 +60,6 @@ type query struct {
 }
 
 var (
-	testcases = []struct {
-		name string
-		f    chunkIteratorFunc
-	}{
-		{"matrixes", mergeChunks},
-		{"iterators", iterators.NewChunkMergeIterator},
-		{"batches", batch.NewChunkMergeIterator},
-	}
-
 	encodings = []struct {
 		name string
 		e    promchunk.Encoding
