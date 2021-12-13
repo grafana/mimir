@@ -167,7 +167,7 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 	}
 }
 
-func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler) *Ruler {
+func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, opts ...ConfigOption) *Ruler {
 	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
 
 	reg := prometheus.NewRegistry()
@@ -183,6 +183,7 @@ func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddr
 		storage,
 		overrides,
 		newMockClientsPool(cfg, logger, reg, rulerAddrMap),
+		opts...,
 	)
 	require.NoError(t, err)
 	return ruler
@@ -284,9 +285,9 @@ func TestRuler_Authorizer(t *testing.T) {
 		cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 		t.Cleanup(cleanup)
 
-		r, rCleanup := buildRuler(t, cfg, nil)
 		// Treat only user2's groups as authorized
-		r.authorizer = newMockAuthorizer(nil, mockRules["user2"])
+		authorizer := newMockAuthorizer(nil, mockRules["user2"])
+		r, rCleanup := buildRuler(t, cfg, nil, WithRuleGroupAuthorizer(authorizer))
 
 		// Start the ruler and prep cleanup
 		t.Cleanup(rCleanup)
@@ -310,9 +311,9 @@ func TestRuler_Authorizer(t *testing.T) {
 		cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
 		t.Cleanup(cleanup)
 
-		r, rCleanup := buildRuler(t, cfg, nil)
 		// Treat all groups as authorized, but return an error
-		r.authorizer = newMockAuthorizer(fmt.Errorf("oops"), mockRules["user2"], mockRules["user1"])
+		authorizer := newMockAuthorizer(fmt.Errorf("oops"), mockRules["user2"], mockRules["user1"])
+		r, rCleanup := buildRuler(t, cfg, nil, WithRuleGroupAuthorizer(authorizer))
 
 		// Start the ruler and prep cleanup
 		t.Cleanup(rCleanup)
