@@ -106,6 +106,13 @@ jobs:
   integration:
     needs: build
     runs-on: ubuntu-20.04
+    strategy:
+      # Do not abort other groups when one fails.
+      fail-fast: false
+      # Split tests into 4 groups.
+      matrix:
+        test_group_id:    [0, 1, 2, 3]
+        test_group_total: [4]
     steps:
       - name: Upgrade golang
         uses: actions/setup-go@v2
@@ -151,5 +158,5 @@ jobs:
           export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
           export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
           echo "Running integration tests with image: $MIMIR_IMAGE"
-          echo "Running integration tests with Go version: $(go version)"
-          go test -tags=requires_docker -timeout 2400s -v -count=1 ./integration/...
+          echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
