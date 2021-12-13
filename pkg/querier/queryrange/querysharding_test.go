@@ -126,7 +126,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 1,
 		},
 		"sum(rate()) with no effective grouping because all groups have 1 series": {
-			query:                  `sum by(unique) (rate(metric_counter[1m]))`,
+			query:                  `sum by(unique) (rate(metric_counter{group_1="0"}[1m]))`,
 			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() grouping only 'by' le": {
@@ -142,7 +142,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() with no effective grouping because all groups have 1 series": {
-			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket[1m])))`,
+			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket{group_1="0"}[1m])))`,
 			expectedShardedQueries: 1,
 		},
 		"min() no grouping": {
@@ -355,7 +355,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 0,
 		},
 		"histogram_quantile without aggregation": {
-			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket[1m]))`,
+			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket{group_1="0"}[1m]))`,
 			expectedShardedQueries: 0,
 		},
 		`subqueries with non parallelizable function in children`: {
@@ -428,64 +428,68 @@ func TestQueryShardingCorrectness(t *testing.T) {
 	})
 
 	for testName, testData := range tests {
-		for _, numShards := range []int{2, 4, 8, 16} {
-			t.Run(fmt.Sprintf("%s (shards: %d)", testName, numShards), func(t *testing.T) {
-				req := &PrometheusRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: testData.query,
-				}
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 
-				reg := prometheus.NewPedanticRegistry()
-				engine := newEngine()
-				shardingware := NewQueryShardingMiddleware(
-					log.NewNopLogger(),
-					engine,
-					mockLimits{totalShards: numShards},
-					reg,
-				)
-				downstream := &downstreamHandler{
-					engine:    engine,
-					queryable: queryable,
-				}
+			req := &PrometheusRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: testData.query,
+			}
 
-				// Run the query without sharding.
-				expectedRes, err := downstream.Do(context.Background(), req)
-				require.Nil(t, err)
+			engine := newEngine()
+			downstream := &downstreamHandler{
+				engine:    engine,
+				queryable: queryable,
+			}
 
-				// Ensure the query produces some results.
-				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+			// Run the query without sharding.
+			expectedRes, err := downstream.Do(context.Background(), req)
+			require.Nil(t, err)
 
-				// Ensure the query produces some results which are not NaN.
-				foundValidSamples := false
-			outer:
-				for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
-					for _, sample := range stream.Samples {
-						if !math.IsNaN(sample.Value) {
-							foundValidSamples = true
-							break outer
-						}
+			// Ensure the query produces some results.
+			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+
+			// Ensure the query produces some results which are not NaN.
+			foundValidSamples := false
+		outer:
+			for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
+				for _, sample := range stream.Samples {
+					if !math.IsNaN(sample.Value) {
+						foundValidSamples = true
+						break outer
 					}
 				}
-				require.True(t, foundValidSamples, "the query returns some not NaN samples")
+			}
+			require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
-				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-				require.Nil(t, err)
+			for _, numShards := range []int{2, 4, 8, 16} {
+				t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+					reg := prometheus.NewPedanticRegistry()
+					shardingware := NewQueryShardingMiddleware(
+						log.NewNopLogger(),
+						engine,
+						mockLimits{totalShards: numShards},
+						reg,
+					)
 
-				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-				// if you rerun the same query twice).
-				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+					// Run the query with sharding.
+					shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+					require.Nil(t, err)
 
-				// Ensure the query has been sharded/not sharded as expected.
-				expectedSharded := 0
-				if testData.expectedShardedQueries > 0 {
-					expectedSharded = 1
-				}
+					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+					// if you rerun the same query twice).
+					approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
 
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					// Ensure the query has been sharded/not sharded as expected.
+					expectedSharded := 0
+					if testData.expectedShardedQueries > 0 {
+						expectedSharded = 1
+					}
+
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
 					cortex_frontend_query_sharding_rewrites_attempted_total 1
@@ -498,11 +502,12 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					# TYPE cortex_frontend_sharded_queries_total counter
 					cortex_frontend_sharded_queries_total %d
 				`, expectedSharded, testData.expectedShardedQueries*numShards)),
-					"cortex_frontend_query_sharding_rewrites_attempted_total",
-					"cortex_frontend_query_sharding_rewrites_succeeded_total",
-					"cortex_frontend_sharded_queries_total"))
-			})
-		}
+						"cortex_frontend_query_sharding_rewrites_attempted_total",
+						"cortex_frontend_query_sharding_rewrites_succeeded_total",
+						"cortex_frontend_sharded_queries_total"))
+				})
+			}
+		})
 	}
 }
 
