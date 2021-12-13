@@ -259,8 +259,9 @@ type Ruler struct {
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
 
-	ringCheckErrors prometheus.Counter
-	rulerSync       *prometheus.CounterVec
+	ringCheckErrors               prometheus.Counter
+	rulerSync                     *prometheus.CounterVec
+	syncFailedGroupAuthorizations *prometheus.CounterVec
 
 	allowedTenants *util.AllowedTenants
 	authorizer     RuleGroupAuthorizer
@@ -302,6 +303,11 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 			Name: "cortex_ruler_sync_rules_total",
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
+
+		syncFailedGroupAuthorizations: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
+			Name: "cortex_ruler_sync_groups_authr_failed_total",
+			Help: "Total number of skipped rule groups during sync due to RuleGroupAuthorizer not authorizing them.",
+		}, []string{"user"}),
 	}
 
 	if len(cfg.EnabledTenants) > 0 {
@@ -537,16 +543,22 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 		return
 	}
 
-	for u, groups := range userGroups {
+	for userID, groups := range userGroups {
 		var toRemove map[*rulespb.RuleGroupDesc]struct{}
 
 		for _, g := range groups {
 			isAuthorized, err := r.authorizer.IsAuthorized(ctx, g)
 			switch {
 			case err != nil:
-				level.Error(r.logger).Log("msg", "unable to authorize rule group; will skip it instead", "err", err)
+				level.Error(r.logger).Log("msg", "unable to authorize rule group; will skip it instead",
+					"err", err,
+					"user", userID,
+					"namespace", g.GetNamespace(),
+					"name", g.GetName(),
+				)
 				fallthrough
 			case !isAuthorized:
+				r.syncFailedGroupAuthorizations.WithLabelValues(userID).Inc()
 				if toRemove == nil {
 					toRemove = make(map[*rulespb.RuleGroupDesc]struct{})
 				}
@@ -562,7 +574,7 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 				}
 				amendedList = append(amendedList, g)
 			}
-			userGroups[u] = amendedList
+			userGroups[userID] = amendedList
 		}
 	}
 }
