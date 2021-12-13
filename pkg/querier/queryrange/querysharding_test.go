@@ -381,25 +381,25 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 		}
 
-		series = append(series, newSeries(newTestCounterLabels(seriesID), start.Add(-lookbackDelta), end, gen))
+		series = append(series, newSeries(newTestCounterLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
 		seriesID++
 	}
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and has NO stale marker.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		start.Add(-lookbackDelta), end.Add(-5*time.Minute), factor(2)))
+		start.Add(-lookbackDelta), end.Add(-5*time.Minute), step, factor(2)))
 	seriesID++
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and HAS a stale marker at the end.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		start.Add(-lookbackDelta), end.Add(-5*time.Minute), stale(end.Add(-6*time.Minute), end.Add(-4*time.Minute), factor(2))))
+		start.Add(-lookbackDelta), end.Add(-5*time.Minute), step, stale(end.Add(-6*time.Minute), end.Add(-4*time.Minute), factor(2))))
 	seriesID++
 
 	// Add a special series whose data points start later than the start of the queried time range.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		start.Add(5*time.Minute), end, factor(2)))
+		start.Add(5*time.Minute), end, step, factor(2)))
 	seriesID++
 
 	// Add histogram series.
@@ -413,7 +413,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			}
 
 			series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
-				start.Add(-lookbackDelta), end, gen))
+				start.Add(-lookbackDelta), end, step, gen))
 		}
 
 		// Increase the series ID after all per-bucket series have been created.
@@ -784,7 +784,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		queryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return &querierMock{
 				series: []*promql.StorageSeries{
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, factor(5)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
 				},
 			}, nil
 		})
