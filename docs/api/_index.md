@@ -768,7 +768,7 @@ Request body:
 ```yaml
 name: <string>
 interval: <duration;optional>
-source_tenants: 
+source_tenants:
   - <string>
 rules:
   - record: <string>
