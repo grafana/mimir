@@ -148,7 +148,7 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
 		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 0
 	`, f.cfg.SchedulerAddress)
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewReader([]byte(expectedMetrics)), "cortex_query_frontend_workers_enqueued_requests_total"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
 	resp, err := f.RoundTripGRPC(user.InjectOrgID(context.Background(), userID), &httpgrpc.HTTPRequest{})
 	require.NoError(t, err)
