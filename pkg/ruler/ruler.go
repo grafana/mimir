@@ -209,11 +209,13 @@ type MultiTenantManager interface {
 	ValidateRuleGroup(rulefmt.RuleGroup) []error
 }
 
-// Authorizer is the interface for authorizing rule groups after syncing them from storage.
+// RuleGroupAuthorizer is the interface for authorizing rule groups after syncing them from storage.
 // It can be injected into the Ruler to prevent rule groups from running if they have insufficient privileges.
-type Authorizer interface {
-	// AuthorizeGroup should return an error if the passed group is not authorized to be evaluated
-	AuthorizeGroup(context.Context, *rulespb.RuleGroupDesc) error
+type RuleGroupAuthorizer interface {
+	// IsAuthorized should return whether the passed rule group is authorized to be evaluated.
+	// If false or a non-nil error is returned, the rule group is not going to be evaluated.
+	// This method will be called again with the same rule group in the next Config.PollInterval
+	IsAuthorized(context.Context, *rulespb.RuleGroupDesc) (bool, error)
 }
 
 // Ruler evaluates rules.
@@ -262,7 +264,7 @@ type Ruler struct {
 	rulerSync       *prometheus.CounterVec
 
 	allowedTenants *util.AllowedTenants
-	authorizer     Authorizer
+	authorizer     RuleGroupAuthorizer
 
 	registry prometheus.Registerer
 	logger   log.Logger
@@ -528,7 +530,12 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 		var toRemove map[*rulespb.RuleGroupDesc]struct{}
 
 		for _, g := range groups {
-			if err := r.authorizer.AuthorizeGroup(ctx, g); err != nil {
+			isAuthorized, err := r.authorizer.IsAuthorized(ctx, g)
+			switch {
+			case err != nil:
+				level.Error(r.logger).Log("msg", "unable to authorize rule group; will skip it instead", "err", err)
+				fallthrough
+			case !isAuthorized:
 				if toRemove == nil {
 					toRemove = make(map[*rulespb.RuleGroupDesc]struct{})
 				}
