@@ -2773,6 +2773,21 @@ func BenchmarkDownsampledBlockSeries(b *testing.B) {
 	}
 }
 
+func TestBlockSeries_skipChunks_ignoresMintMaxt(t *testing.T) {
+	const series = 100
+	newTestBucketBlock := prepareTestBlock(test.NewTB(t), series, "test-block-series-skipchunks-mint-maxt-override")
+	b := newTestBucketBlock()
+
+	mint, maxt := int64(0), int64(0)
+	skipChunks := true
+
+	sl := NewLimiter(math.MaxUint64, prometheus.NewCounter(prometheus.CounterOpts{Name: "test"}))
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "i", "")}
+	ss, _, err := blockSeries(context.Background(), b.indexReader(), nil, matchers, nil, nil, nil, sl, skipChunks, mint, maxt, nil, log.NewNopLogger())
+	require.NoError(t, err)
+	require.True(t, ss.Next(), "Result set should have series because when skipChunks=true, mint/maxt should be ignored")
+}
+
 func TestBlockSeries_Cache(t *testing.T) {
 	newTestBucketBlock := prepareTestBlock(test.NewTB(t), 100, "test-block-series-cache")
 

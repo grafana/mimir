@@ -627,6 +627,8 @@ func (s *bucketSeriesSet) Err() error {
 }
 
 // blockSeries returns series matching given matchers, that have some data in given time range.
+// If skipChunks is provided, then provided minTime and maxTime are ignored and search is performed over the entire
+// block to make the result cacheable.
 func blockSeries(
 	ctx context.Context,
 	indexr *bucketIndexReader, // Index reader for block.
@@ -636,8 +638,8 @@ func blockSeries(
 	seriesHashCache *hashcache.BlockSeriesHashCache, // Block-specific series hash cache (used only if shard selector is specified).
 	chunksLimiter ChunksLimiter, // Rate limiter for loading chunks.
 	seriesLimiter SeriesLimiter, // Rate limiter for loading series.
-	skipChunks bool, // If true, chunks are not loaded.
-	minTime, maxTime int64, // Series must have data in this time range to be returned.
+	skipChunks bool, // If true, chunks are not loaded and minTime/maxTime are ignored.
+	minTime, maxTime int64, // Series must have data in this time range to be returned (ignored if skipChunks=true).
 	loadAggregates []storepb.Aggr, // List of aggregates to load when loading chunks.
 	logger log.Logger,
 ) (storepb.SeriesSet, *queryStats, error) {
@@ -646,8 +648,12 @@ func blockSeries(
 	defer span.Finish()
 
 	if skipChunks {
+		span.LogKV("msg", "manipulating mint/maxt to cover the entire block as skipChunks=true")
+		minTime, maxTime = indexr.block.meta.MinTime, indexr.block.meta.MaxTime
+
 		res, ok := fetchCachedSeries(ctx, indexr.block.indexCache, indexr.block.meta.ULID, matchers, shard, logger)
 		if ok {
+			span.LogKV("msg", "using cached result", "len", len(res))
 			return newBucketSeriesSet(res), &queryStats{}, nil
 		}
 	}
@@ -1289,7 +1295,7 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 		return names, nil
 	}
 
-	// we ignore request's min/max time and query the entire block to make the result cachable
+	// We ignore request's min/max time and query the entire block to make the result cacheable.
 	minTime, maxTime := indexr.block.meta.MinTime, indexr.block.meta.MaxTime
 	seriesSet, _, err := blockSeries(ctx, indexr, nil, matchers, nil, nil, nil, seriesLimiter, true, minTime, maxTime, nil, logger)
 	if err != nil {
