@@ -52,13 +52,6 @@ jobs:
       credentials:
         username: _json_key
         password: ${{ secrets.gcr_json_key }}
-    services:
-      cassandra:
-        image: cassandra:3.11
-        env:
-          JVM_OPTS: "-Xms1024M -Xmx1024M"
-        ports:
-        - 9042:9042
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
@@ -68,7 +61,7 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       # Note that we're running the 'test-with-race' target here which runs unit tests with the go data race detector
       - name: Run Tests
-        run: CASSANDRA_TEST_ADDRESSES=cassandra:9042 make BUILD_IN_CONTAINER=false test-with-race
+        run: make BUILD_IN_CONTAINER=false test-with-race
 
   build:
     runs-on: ubuntu-20.04

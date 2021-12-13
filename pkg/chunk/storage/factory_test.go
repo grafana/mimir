@@ -10,7 +10,6 @@ import (
 	"os"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
@@ -18,7 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/cassandra"
 	"github.com/grafana/mimir/pkg/chunk/local"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -160,45 +158,6 @@ func TestCustomIndexClient(t *testing.T) {
 		}
 		unregisterAllCustomIndexStores()
 	}
-}
-
-func TestCassandraInMultipleSchemas(t *testing.T) {
-	addresses := os.Getenv("CASSANDRA_TEST_ADDRESSES")
-	if addresses == "" {
-		return
-	}
-
-	// cassandra config
-	var cassandraCfg cassandra.Config
-	flagext.DefaultValues(&cassandraCfg)
-	cassandraCfg.Addresses = addresses
-	cassandraCfg.Keyspace = "test"
-	cassandraCfg.Consistency = "QUORUM"
-	cassandraCfg.ReplicationFactor = 1
-
-	// build schema with cassandra in multiple periodic configs
-	schemaCfg := chunk.DefaultSchemaConfig("cassandra", "v1", model.Now().Add(-7*24*time.Hour))
-	newSchemaCfg := schemaCfg.Configs[0]
-	newSchemaCfg.Schema = "v2"
-	newSchemaCfg.From = chunk.DayTime{Time: model.Now()}
-
-	schemaCfg.Configs = append(schemaCfg.Configs, newSchemaCfg)
-
-	var (
-		cfg         Config
-		storeConfig chunk.StoreConfig
-		defaults    validation.Limits
-	)
-	flagext.DefaultValues(&cfg, &storeConfig, &defaults)
-	cfg.CassandraStorageConfig = cassandraCfg
-
-	limits, err := validation.NewOverrides(defaults, nil)
-	require.NoError(t, err)
-
-	store, err := NewStore(cfg, storeConfig, schemaCfg, limits, nil, nil, log.NewNopLogger())
-	require.NoError(t, err)
-
-	store.Stop()
 }
 
 // useful for cleaning up state after tests
