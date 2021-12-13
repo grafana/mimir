@@ -1334,11 +1334,11 @@ func fetchCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, blo
 	}
 	var entry labelNamesCacheEntry
 	if err := decodeSnappyGob(data, &entry); err != nil {
-		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label values cache", "err", err)
+		level.Warn(spanlogger.FromContext(ctx, logger)).Log("msg", "can't decode label name cache", "err", err)
 		return nil, false
 	}
 	if entry.MatchersKey != matchersKey {
-		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label values entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
+		level.Debug(spanlogger.FromContext(ctx, logger)).Log("msg", "cached label names entry key doesn't match, possible collision", "cached_key", entry.MatchersKey, "requested_key", matchersKey)
 		return nil, false
 	}
 
@@ -1352,7 +1352,7 @@ func storeCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, blo
 	}
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
-		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label values for caching", "err", err)
+		level.Error(spanlogger.FromContext(ctx, logger)).Log("msg", "can't encode label names for caching", "err", err)
 		return
 	}
 	indexCache.StoreLabelNames(ctx, blockID, entry.MatchersKey, data)
