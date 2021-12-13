@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -534,38 +535,75 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 		},
 	}
 
+	ctx := user.InjectOrgID(context.Background(), "1")
+
+	// Randomise the seed but log it in case we need to reproduce the test on failure.
+	seed := time.Now().UnixNano()
+	rand.Seed(seed)
+	t.Log("random generator seed:", seed)
+
+	// The mocked storage contains samples within the following min/max time.
+	minTime := parseTimeRFC3339(t, "2021-10-13T00:00:00Z")
+	maxTime := parseTimeRFC3339(t, "2021-10-15T23:09:09Z")
+	step := 2 * time.Minute
+
+	// Generate series.
+	series := make([]*promql.StorageSeries, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		series = append(series, newSeries(newTestCounterLabels(i), minTime, maxTime, step, factor(float64(i))))
+	}
+
+	// Create a queryable on the fixtures.
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return &querierMock{
+			series: series,
+		}, nil
+	})
+
+	// Create a downstream handler serving range queries based on the provided queryable.
+	downstream := &downstreamHandler{
+		engine:    newEngine(),
+		queryable: queryable,
+	}
+
+	// Generate some random requests.
+	reqs := make([]interface{}, 0, numQueries)
+	for q := 0; q < numQueries; q++ {
+		// Generate a random time range within min/max time.
+		startTime := minTime.Add(time.Duration(rand.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
+		endTime := startTime.Add(time.Duration(rand.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
+
+		reqs = append(reqs, &PrometheusRequest{
+			Id:    int64(q),
+			Path:  "/api/v1/query_range",
+			Start: startTime.Unix() * 1000,
+			End:   endTime.Unix() * 1000,
+			Step:  120 * 1000,
+			Query: fmt.Sprintf(`sum by(group_2) (rate({__name__=~".+"}[%s]))`, (2 * step).String()),
+		})
+	}
+
+	// Run the query without the split and cache middleware and store it as expected result.
+	expectedResMx := sync.Mutex{}
+	expectedRes := make(map[int64]Response, len(reqs))
+	require.NoError(t, concurrency.ForEach(ctx, reqs, len(reqs), func(ctx context.Context, job interface{}) error {
+		req := job.(Request)
+		res, err := downstream.Do(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		expectedResMx.Lock()
+		expectedRes[req.GetId()] = res
+		expectedResMx.Unlock()
+
+		return nil
+	}))
+
 	for testName, testData := range tests {
 		for _, maxConcurrency := range []int{1, numQueries} {
 			t.Run(fmt.Sprintf("%s (concurrency: %d)", testName, maxConcurrency), func(t *testing.T) {
-				// Randomise the seed but log it in case we need to reproduce the test on failure.
-				seed := time.Now().UnixNano()
-				rand.Seed(seed)
-				t.Log("random generator seed:", seed)
-
-				// The mocked storage contains samples within the following min/max time.
-				minTime := parseTimeRFC3339(t, "2021-10-13T00:00:00Z")
-				maxTime := parseTimeRFC3339(t, "2021-10-15T23:09:09Z")
-
-				// Generate series.
-				series := make([]*promql.StorageSeries, 0, numSeries)
-				for i := 0; i < numSeries; i++ {
-					series = append(series, newSeries(newTestCounterLabels(i), minTime, maxTime, factor(float64(i))))
-				}
-
-				// Create a queryable on the fixtures.
-				queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-					return &querierMock{
-						series: series,
-					}, nil
-				})
-
-				// Create a downstream handler serving range queries based on the provided queryable.
-				downstream := &downstreamHandler{
-					engine:    newEngine(),
-					queryable: queryable,
-				}
-
-				ctx := user.InjectOrgID(context.Background(), "1")
+				t.Parallel()
 
 				mw := newSplitAndCacheMiddleware(
 					testData.splitEnabled,
@@ -586,33 +624,13 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 					prometheus.NewPedanticRegistry(),
 				).Wrap(downstream)
 
-				// Generate some random requests.
-				reqs := make([]interface{}, 0, numQueries)
-				for q := 0; q < numQueries; q++ {
-					// Generate a random time range within min/max time.
-					startTime := minTime.Add(time.Duration(rand.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
-					endTime := startTime.Add(time.Duration(rand.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
-
-					reqs = append(reqs, &PrometheusRequest{
-						Path:  "/api/v1/query_range",
-						Start: startTime.Unix() * 1000,
-						End:   endTime.Unix() * 1000,
-						Step:  120 * 1000,
-						Query: `sum by(group_2) (rate({__name__=~".+"}[2m]))`,
-					})
-				}
-
 				// Run requests honoring concurrency.
 				require.NoError(t, concurrency.ForEach(ctx, reqs, maxConcurrency, func(ctx context.Context, job interface{}) error {
 					req := job.(Request)
 
-					// Run the query with and without the split and cache middleware. We expect the same results.
-					expected, err := downstream.Do(ctx, req)
-					require.NoError(t, err)
-
 					actual, err := mw.Do(ctx, req)
 					require.NoError(t, err)
-					require.Equal(t, expected, actual)
+					require.Equal(t, expectedRes[req.GetId()], actual)
 
 					return nil
 				}))
