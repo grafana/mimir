@@ -744,7 +744,7 @@ and `tenant-c` will be applied. If any of these limits is exceeded, the whole ev
 will be saved. The same "no partial results" guarantee applies to queries failing for other reasons (e.g. ingester
 unavailability).
 
-__Considerations:__ Federated rule groups allow data from multiple source tenants to be pulled into a single destination tenant.
+**Considerations:** Federated rule groups allow data from multiple source tenants to be pulled into a single destination tenant.
 Consequently, tenants with read privileges over the destination tenant's data
 via [cross-tenant query federation](../proposals/cross-tenant-query-federation.md) will have the same privileges over
 the federated rule group's results. For example, `tenant-a` has a federated rule group that aggregates over `tenant-b`'s
