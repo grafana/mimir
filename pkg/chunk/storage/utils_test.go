@@ -12,7 +12,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/aws"
-	"github.com/grafana/mimir/pkg/chunk/cassandra"
 	"github.com/grafana/mimir/pkg/chunk/gcp"
 	"github.com/grafana/mimir/pkg/chunk/local"
 	"github.com/grafana/mimir/pkg/chunk/testutils"
@@ -30,7 +29,6 @@ func forAllFixtures(t *testing.T, storageClientTest storageClientTest) {
 	fixtures = append(fixtures, aws.Fixtures...)
 	fixtures = append(fixtures, gcp.Fixtures...)
 	fixtures = append(fixtures, local.Fixtures...)
-	fixtures = append(fixtures, cassandra.Fixtures()...)
 	fixtures = append(fixtures, Fixtures...)
 
 	for _, fixture := range fixtures {
