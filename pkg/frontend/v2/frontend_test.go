@@ -160,12 +160,12 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
 		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 1
 	`, f.cfg.SchedulerAddress)
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewReader([]byte(expectedMetrics)), "cortex_query_frontend_workers_enqueued_requests_total"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 
 	// Manually remove the address, check that label is removed.
 	f.schedulerWorkers.AddressRemoved(f.cfg.SchedulerAddress)
 	expectedMetrics = ``
-	require.NoError(t, testutil.GatherAndCompare(reg, bytes.NewReader([]byte(expectedMetrics)), "cortex_query_frontend_workers_enqueued_requests_total"))
+	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(expectedMetrics), "cortex_query_frontend_workers_enqueued_requests_total"))
 }
 
 func TestFrontendRetryEnqueue(t *testing.T) {
