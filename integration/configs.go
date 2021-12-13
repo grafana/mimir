@@ -18,24 +18,19 @@ import (
 	e2edb "github.com/grafana/mimir/integration/e2e/db"
 )
 
-type storeConfig struct {
-	From, IndexStore string
-}
-
 const (
-	userID                = "e2e-user"
-	defaultNetworkName    = "e2e-mimir-test"
-	bucketName            = "mimir"
-	rulestoreBucketName   = "mimir-rules"
-	alertsBucketName      = "mimir-alerts"
-	mimirConfigFile       = "config.yaml"
-	mimirSchemaConfigFile = "schema.yaml"
-	blocksStorageEngine   = "blocks"
-	clientCertFile        = "certs/client.crt"
-	clientKeyFile         = "certs/client.key"
-	caCertFile            = "certs/root.crt"
-	serverCertFile        = "certs/server.crt"
-	serverKeyFile         = "certs/server.key"
+	userID              = "e2e-user"
+	defaultNetworkName  = "e2e-mimir-test"
+	bucketName          = "mimir"
+	rulestoreBucketName = "mimir-rules"
+	alertsBucketName    = "mimir-alerts"
+	mimirConfigFile     = "config.yaml"
+	blocksStorageEngine = "blocks"
+	clientCertFile      = "certs/client.crt"
+	clientKeyFile       = "certs/client.key"
+	caCertFile          = "certs/root.crt"
+	serverCertFile      = "certs/server.crt"
+	serverKeyFile       = "certs/server.key"
 )
 
 // GetNetworkName returns the docker network name to run tests within.
