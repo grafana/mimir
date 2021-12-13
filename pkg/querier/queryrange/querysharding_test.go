@@ -428,6 +428,9 @@ func TestQueryShardingCorrectness(t *testing.T) {
 	})
 
 	for testName, testData := range tests {
+		// Change scope to ensure it work fine when test cases are executed concurrently.
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
