@@ -16,7 +16,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
-	"github.com/grafana/dskit/flagext"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -27,7 +26,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 var (
@@ -53,8 +51,6 @@ func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.CacheConfig.RegisterFlagsWithPrefix("frontend.", "", f)
 
 	f.StringVar(&cfg.Compression, "frontend.compression", "", "Use compression in results cache. Supported values are: 'snappy' and '' (disable compression).")
-	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
-	flagext.DeprecatedFlag(f, "frontend.cache-split-interval", "Deprecated: The maximum interval expected for each request, results will be cached per single interval. This behavior is now determined by querier.split-queries-by-interval.", util_log.Logger)
 }
 
 func (cfg *ResultsCacheConfig) Validate() error {
