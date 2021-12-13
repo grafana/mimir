@@ -153,7 +153,6 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 		}
 
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
-		sort.Sort(ls)
 
 		chunks, err := chunkcompat.FromChunks(userID, ls, result.Chunks)
 		if err != nil {
