@@ -785,7 +785,6 @@ func fetchCachedSeries(ctx context.Context, indexCache cache.IndexCache, blockID
 	matchersKey := cache.CanonicalLabelMatchersKey(matchers)
 	data, ok := indexCache.FetchSeries(ctx, blockID, matchersKey, shard)
 	if !ok {
-		// TODO: maybe it's worth checking cache without shard and then just dropping the unneeded series?
 		return nil, false
 	}
 	var entry seriesCacheEntry
