@@ -73,14 +73,3 @@ func NewETCD() *e2e.HTTPService {
 		9000, // Metrics
 	)
 }
-
-func NewDynamoDB() *e2e.HTTPService {
-	return e2e.NewHTTPService(
-		"dynamodb",
-		images.DynamoDB,
-		e2e.NewCommand("-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"),
-		// DynamoDB doesn't have a readiness probe, so we check if the / works even if returns 400
-		e2e.NewHTTPReadinessProbe(8000, "/", 400, 400),
-		8000,
-	)
-}

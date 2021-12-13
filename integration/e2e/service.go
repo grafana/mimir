@@ -198,7 +198,7 @@ func (s *ConcreteService) Endpoint(port int) string {
 		return ""
 	}
 
-	// Do not use "localhost" cause it doesn't work with the AWS DynamoDB client.
+	// Do not use "localhost" cause it may not work with some clients.
 	return fmt.Sprintf("127.0.0.1:%d", localPort)
 }
 
