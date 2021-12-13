@@ -115,7 +115,7 @@ jobs:
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
           touch mimir-build-image/.uptodate
-          touch mimir/.uptodate
+          touch ./cmd/mimir/.uptodate
           make BUILD_IN_CONTAINER=false
 
   integration:
