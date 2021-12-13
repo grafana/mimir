@@ -56,7 +56,7 @@ func newFrontendSchedulerWorkers(cfg Config, frontendAddress string, requestsCh 
 		workers:         map[string]*frontendSchedulerWorker{},
 		enqueuedRequests: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_query_frontend_workers_enqueued_requests_total",
-			Help: "Total amount of requests enqueued by each query frontend worker (regardless of the result, labeled by scheduler address.",
+			Help: "Total number of requests enqueued by each query frontend worker (regardless of the result, labeled by scheduler address.",
 		}, []string{schedulerAddressLabel}),
 	}
 
@@ -185,7 +185,7 @@ type frontendSchedulerWorker struct {
 	// query has been enqueued to scheduler.
 	cancelCh chan uint64
 
-	// Amount of queries sent to this scheduler
+	// Number of queries sent to this scheduler.
 	enqueuedRequests prometheus.Counter
 }
 
