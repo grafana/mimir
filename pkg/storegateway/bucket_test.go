@@ -2829,7 +2829,7 @@ func TestBlockSeries_Cache(t *testing.T) {
 					labels.FromStrings("i", "0"+labelLongSuffix, "n", "0"+labelLongSuffix, "j", "bar", "q", "foo"),
 				},
 			},
-			// shard 1_of_2
+			// shard 2_of_2
 			{
 				matchers: []*labels.Matcher{
 					labels.MustNewMatcher(labels.MatchEqual, "i", "0"+labelLongSuffix),
