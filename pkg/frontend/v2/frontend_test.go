@@ -156,7 +156,7 @@ func TestFrontendRequestsPerWorkerMetric(t *testing.T) {
 	require.Equal(t, []byte(body), resp.Body)
 
 	expectedMetrics = fmt.Sprintf(`
-		# HELP cortex_query_frontend_workers_enqueued_requests_total Total amount of requests enqueued by each query frontend worker (regardless of the result, labeled by scheduler address.
+		# HELP cortex_query_frontend_workers_enqueued_requests_total Total number of requests enqueued by each query frontend worker (regardless of the result), labeled by scheduler address.
 		# TYPE cortex_query_frontend_workers_enqueued_requests_total counter
 		cortex_query_frontend_workers_enqueued_requests_total{scheduler_address="%s"} 1
 	`, f.cfg.SchedulerAddress)
