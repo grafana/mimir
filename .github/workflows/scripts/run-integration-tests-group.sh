@@ -41,6 +41,10 @@ ALL_TESTS=$(go test -tags=requires_docker -list 'Test.*' "${INTEGRATION_DIR}/...
 # Filter tests by the requested group.
 GROUP_TESTS=$(echo "$ALL_TESTS" | awk -v TOTAL=$TOTAL -v INDEX=$INDEX 'NR % TOTAL == INDEX')
 
+echo "This group will run the following tests:"
+echo "$GROUP_TESTS"
+echo ""
+
 # Build the regex used to run this group's tests.
 REGEX="^("
 for TEST in $GROUP_TESTS; do
