@@ -597,7 +597,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		queryable = tenantfederation.NewQueryable(queryable, false, util_log.Logger)
 	}
 
-	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, eng, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
+	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, eng, t.Overrides, prometheus.DefaultRegisterer)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return nil, err
