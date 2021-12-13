@@ -6,7 +6,6 @@
 package v2
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"net"
