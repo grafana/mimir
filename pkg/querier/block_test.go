@@ -233,10 +233,14 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		}
 	}
 
+	// Test while calling .At() after varying numbers of samples have been consumed
 	for _, callAtEvery := range []uint32{1, 3, 100, 971, 1000} {
-		// Test while calling .At() after varying numbers of samples have been consumed
+		// Change scope of the variable to have tests working fine when running in parallel.
+		callAtEvery := callAtEvery
 
 		t.Run(fmt.Sprintf("consume with .Next() method, perform .At() after every %dth call to .Next()", callAtEvery), func(t *testing.T) {
+			t.Parallel()
+
 			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Next() }
 			ss := getSeriesSet()
 
@@ -265,6 +269,8 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		})
 
 		t.Run(fmt.Sprintf("consume with .Seek() method, perform .At() after every %dth call to .Seek()", callAtEvery), func(t *testing.T) {
+			t.Parallel()
+
 			advance := func(it chunkenc.Iterator, wantTs int64) bool { return it.Seek(wantTs) }
 			ss := getSeriesSet()
 
@@ -293,6 +299,8 @@ func TestBlockQuerierSeriesSet(t *testing.T) {
 		})
 
 		t.Run(fmt.Sprintf("consume with alternating calls to .Seek() and .Next() method, perform .At() after every %dth call to .Seek() or .Next()", callAtEvery), func(t *testing.T) {
+			t.Parallel()
+
 			var seek bool
 			advance := func(it chunkenc.Iterator, wantTs int64) bool {
 				seek = !seek
