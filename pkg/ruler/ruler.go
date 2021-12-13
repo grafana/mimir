@@ -270,12 +270,20 @@ type Ruler struct {
 	logger   log.Logger
 }
 
-// NewRuler creates a new ruler from a distributor and chunk store.
-func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
-	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
+type ConfigOption func(*Ruler)
+
+func WithRuleGroupAuthorizer(a RuleGroupAuthorizer) ConfigOption {
+	return func(r *Ruler) {
+		r.authorizer = a
+	}
 }
 
-func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
+// NewRuler creates a new ruler from a distributor and chunk store.
+func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, opts ...ConfigOption) (*Ruler, error) {
+	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg), opts...)
+}
+
+func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool, opts ...ConfigOption) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:            cfg,
 		store:          ruleStore,
@@ -318,6 +326,10 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		if err = enableSharding(ruler, ringStore); err != nil {
 			return nil, errors.Wrap(err, "setup ruler sharding ring")
 		}
+	}
+
+	for _, o := range opts {
+		o(ruler)
 	}
 
 	ruler.Service = services.NewBasicService(ruler.starting, ruler.run, ruler.stopping)
