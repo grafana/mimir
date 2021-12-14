@@ -39,7 +39,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
 
 const (
@@ -834,25 +833,6 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 		})
 	}
-}
-
-// mockDistibutorFor duplicates the chunks in the mockChunkStore into the mockDistributor
-// so we can test everything is dedupe correctly.
-func mockDistibutorFor(t *testing.T, cs mockChunkStore, through model.Time) *mockDistributor {
-	chunks, err := chunkcompat.ToChunks(cs.chunks)
-	require.NoError(t, err)
-
-	tsc := client.TimeSeriesChunk{
-		Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}},
-		Chunks: chunks,
-	}
-	matrix, err := chunk.ChunksToMatrix(context.Background(), cs.chunks, 0, through)
-	require.NoError(t, err)
-
-	result := &mockDistributor{}
-	result.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(matrix, nil)
-	result.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{Chunkseries: []client.TimeSeriesChunk{tsc}}, nil)
-	return result
 }
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
