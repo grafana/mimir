@@ -69,7 +69,7 @@ func (t *TracingIndexCache) FetchMultiPostings(ctx context.Context, userID strin
 	hits, misses = t.c.FetchMultiPostings(ctx, userID, blockID, keys)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_postings", "requested keys", len(keys), "cache hits", len(hits), "cache misses", len(misses))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_postings", "requested keys", len(keys), "cache hits", len(hits), "cache misses", len(misses), "user_id", userID)
 
 	return hits, misses
 }
@@ -82,7 +82,7 @@ func (t *TracingIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID 
 	hits, misses = t.c.FetchMultiSeriesForRefs(ctx, userID, blockID, ids)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_series_for_ref", "requested series", len(ids), "cache hits", len(hits), "cache misses", len(misses))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_series_for_ref", "requested series", len(ids), "cache hits", len(hits), "cache misses", len(misses), "user_id", userID)
 
 	return hits, misses
 }
@@ -95,7 +95,7 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, userID st
 	data, found := t.c.FetchExpandedPostings(ctx, userID, blockID, key)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_expanded_postings", "requested key", key, "found", found, "returned bytes", len(data))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_expanded_postings", "requested key", key, "found", found, "returned bytes", len(data), "user_id", userID)
 
 	return data, found
 }
@@ -108,7 +108,7 @@ func (t *TracingIndexCache) FetchSeries(ctx context.Context, userID string, bloc
 	data, found := t.c.FetchSeries(ctx, userID, blockID, matchersKey, shard)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_series", "requested key", matchersKey, "shard", shardKey(shard), "found", found, "returned bytes", len(data))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_series", "requested key", matchersKey, "shard", shardKey(shard), "found", found, "returned bytes", len(data), "user_id", userID)
 
 	return data, found
 }
@@ -121,7 +121,7 @@ func (t *TracingIndexCache) FetchLabelNames(ctx context.Context, userID string, 
 	data, found := t.c.FetchLabelNames(ctx, userID, blockID, matchersKey)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_label_names", "requested key", matchersKey, "found", found, "returned bytes", len(data))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_label_names", "requested key", matchersKey, "found", found, "returned bytes", len(data), "user_id", userID)
 
 	return data, found
 }
@@ -134,7 +134,7 @@ func (t *TracingIndexCache) FetchLabelValues(ctx context.Context, userID string,
 	data, found := t.c.FetchLabelValues(ctx, userID, blockID, labelName, matchersKey)
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
-	level.Debug(spanLogger).Log("msg", "cache_fetch_label_values", "label name", labelName, "requested key", matchersKey, "found", found, "returned bytes", len(data))
+	level.Debug(spanLogger).Log("msg", "cache_fetch_label_values", "label name", labelName, "requested key", matchersKey, "found", found, "returned bytes", len(data), "user_id", userID)
 
 	return data, found
 }
