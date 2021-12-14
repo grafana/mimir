@@ -865,7 +865,7 @@ type indexCacheMissingLabelValues struct {
 	storecache.IndexCache
 }
 
-func (indexCacheMissingLabelValues) FetchLabelValues(_ context.Context, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey) ([]byte, bool) {
+func (indexCacheMissingLabelValues) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey storecache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 

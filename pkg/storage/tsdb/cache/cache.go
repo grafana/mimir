@@ -46,39 +46,39 @@ var (
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
 	// StorePostings stores postings for a single series.
-	StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte)
+	StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte)
 
 	// FetchMultiPostings fetches multiple postings - each identified by a label -
 	// and returns a map containing cache hits, along with a list of missing keys.
-	FetchMultiPostings(ctx context.Context, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label)
+	FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label)
 
 	// StoreSeriesForRef stores a single series.
-	StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte)
+	StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte)
 
 	// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 	// and returns a map containing cache hits, along with a list of missing IDs.
-	FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
+	FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef)
 
 	// StoreExpandedPostings stores the result of ExpandedPostings, encoded with an unspecified codec.
-	StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte)
+	StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey, v []byte)
 
 	// FetchExpandedPostings fetches the result of ExpandedPostings, encoded with an unspecified codec.
-	FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
+	FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool)
 
 	// StoreSeries stores the result of a Series() call.
-	StoreSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
+	StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte)
 	// FetchSeries fetches the result of a Series() call.
-	FetchSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
+	FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool)
 
 	// StoreLabelNames stores the result of a LabelNames() call.
-	StoreLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
+	StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelNames fetches the result of a LabelNames() call.
-	FetchLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool)
+	FetchLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool)
 
 	// StoreLabelValues stores the result of a LabelValues() call.
-	StoreLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
+	StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte)
 	// FetchLabelValues fetches the result of a LabelValues() call.
-	FetchLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
+	FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool)
 }
 
 // LabelMatchersKey represents a canonical key for a []*matchers.Matchers slice

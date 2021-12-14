@@ -83,21 +83,21 @@ func (c *MemcachedIndexCache) get(ctx context.Context, typ string, key string) (
 // StorePostings sets the postings identified by the ulid and label to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *MemcachedIndexCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(ctx, cacheTypePostings, postingsCacheKey(blockID, l), v)
+func (c *MemcachedIndexCache) StorePostings(ctx context.Context, userID string, blockID ulid.ULID, l labels.Label, v []byte) {
+	c.set(ctx, cacheTypePostings, postingsCacheKey(userID, blockID, l), v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
 // and returns a map containing cache hits, along with a list of missing keys.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
+func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, lbls []labels.Label) (hits map[labels.Label][]byte, misses []labels.Label) {
 	// Build the cache keys, while keeping a map between input matchers and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(lbls))
 	keysMapping := map[labels.Label]string{}
 
 	for _, lbl := range lbls {
-		key := postingsCacheKey(blockID, lbl)
+		key := postingsCacheKey(userID, blockID, lbl)
 
 		keys = append(keys, key)
 		keysMapping[lbl] = key
@@ -136,31 +136,31 @@ func (c *MemcachedIndexCache) FetchMultiPostings(ctx context.Context, blockID ul
 	return hits, misses
 }
 
-func postingsCacheKey(blockID ulid.ULID, l labels.Label) string {
+func postingsCacheKey(userID string, blockID ulid.ULID, l labels.Label) string {
 	// Use cryptographically hash functions to avoid hash collisions
 	// which would end up in wrong query results.
 	lblHash := blake2b.Sum256([]byte(l.Name + ":" + l.Value))
-	return "P:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
+	return "P:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(lblHash[0:])
 }
 
 // StoreSeriesForRef sets the series identified by the ulid and id to the value v.
 // The function enqueues the request and returns immediately: the entry will be
 // asynchronously stored in the cache.
-func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.set(ctx, cacheTypeSeriesForRef, seriesForRefCacheKey(blockID, id), v)
+func (c *MemcachedIndexCache) StoreSeriesForRef(ctx context.Context, userID string, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.set(ctx, cacheTypeSeriesForRef, seriesForRefCacheKey(userID, blockID, id), v)
 }
 
 // FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
 // In case of error, it logs and return an empty cache hits map.
-func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, userID string, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
 	// Build the cache keys, while keeping a map between input id and the cache key
 	// so that we can easily reverse it back after the GetMulti().
 	keys := make([]string, 0, len(ids))
 	keysMapping := map[storage.SeriesRef]string{}
 
 	for _, id := range ids {
-		key := seriesForRefCacheKey(blockID, id)
+		key := seriesForRefCacheKey(userID, blockID, id)
 
 		keys = append(keys, key)
 		keysMapping[id] = key
@@ -199,67 +199,67 @@ func (c *MemcachedIndexCache) FetchMultiSeriesForRefs(ctx context.Context, block
 	return hits, misses
 }
 
-func seriesForRefCacheKey(blockID ulid.ULID, id storage.SeriesRef) string {
-	return "S:" + blockID.String() + ":" + strconv.FormatUint(uint64(id), 10)
+func seriesForRefCacheKey(userID string, blockID ulid.ULID, id storage.SeriesRef) string {
+	return "S:" + userID + ":" + blockID.String() + ":" + strconv.FormatUint(uint64(id), 10)
 }
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(blockID, lmKey), v)
+func (c *MemcachedIndexCache) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey, v []byte) {
+	c.set(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey), v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
-func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
-	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(blockID, lmKey))
+func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, lmKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeExpandedPostings, expandedPostingsCacheKey(userID, blockID, lmKey))
 }
 
-func expandedPostingsCacheKey(blockID ulid.ULID, lmKey LabelMatchersKey) string {
+func expandedPostingsCacheKey(userID string, blockID ulid.ULID, lmKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(lmKey))
-	return "E:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "E:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
 
 // StoreSeries stores the result of a Series() call.
-func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
-	c.set(ctx, cacheTypeSeries, seriesCacheKey(blockID, matchersKey, shard), v)
+func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	c.set(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard), v)
 }
 
 // FetchSeries fetches the result of a Series() call.
-func (c *MemcachedIndexCache) FetchSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
-	return c.get(ctx, cacheTypeSeries, seriesCacheKey(blockID, matchersKey, shard))
+func (c *MemcachedIndexCache) FetchSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+	return c.get(ctx, cacheTypeSeries, seriesCacheKey(userID, blockID, matchersKey, shard))
 }
 
-func seriesCacheKey(blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) string {
+func seriesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
 	// We use SS: as S: is already used for SeriesForRef
-	return "SS:" + blockID.String() + ":" + shardKey(shard) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "SS:" + userID + ":" + blockID.String() + ":" + shardKey(shard) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
 
 // StoreLabelNames stores the result of a LabelNames() call.
-func (c *MemcachedIndexCache) StoreLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeLabelNames, labelNamesCacheKey(blockID, matchersKey), v)
+func (c *MemcachedIndexCache) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	c.set(ctx, cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey), v)
 }
 
 // FetchLabelNames fetches the result of a LabelNames() call.
-func (c *MemcachedIndexCache) FetchLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
-	return c.get(ctx, cacheTypeLabelNames, labelNamesCacheKey(blockID, matchersKey))
+func (c *MemcachedIndexCache) FetchLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeLabelNames, labelNamesCacheKey(userID, blockID, matchersKey))
 }
 
-func labelNamesCacheKey(blockID ulid.ULID, matchersKey LabelMatchersKey) string {
+func labelNamesCacheKey(userID string, blockID ulid.ULID, matchersKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
-	return "LN:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "LN:" + userID + ":" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
 
 // StoreLabelValues stores the result of a LabelValues() call.
-func (c *MemcachedIndexCache) StoreLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
-	c.set(ctx, cacheTypeLabelValues, labelValuesCacheKey(blockID, labelName, matchersKey), v)
+func (c *MemcachedIndexCache) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	c.set(ctx, cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey), v)
 }
 
 // FetchLabelValues fetches the result of a LabelValues() call.
-func (c *MemcachedIndexCache) FetchLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
-	return c.get(ctx, cacheTypeLabelValues, labelValuesCacheKey(blockID, labelName, matchersKey))
+func (c *MemcachedIndexCache) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeLabelValues, labelValuesCacheKey(userID, blockID, labelName, matchersKey))
 }
 
-func labelValuesCacheKey(blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
+func labelValuesCacheKey(userID string, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(matchersKey))
-	return "LV:" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+	return "LV:" + userID + ":" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }
