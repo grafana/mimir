@@ -28,7 +28,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const day = 24 * time.Hour
+const (
+	day                = 24 * time.Hour
+	queryRangePrefix   = "/query_range"
+	queryInstantPrefix = "/query"
+)
 
 var (
 	// PassthroughMiddleware is a noop middleware
@@ -169,6 +173,7 @@ func NewTripperware(
 		c = cache
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("results_cache", metrics), queryCacheMiddleware)
 	}
+	queryInstantMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 
 	if cfg.ShardedQueries {
 		if storageEngine != storage.StorageEngineBlocks {
@@ -180,21 +185,28 @@ func NewTripperware(
 
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
-
+		queryshardingMiddleware := NewQueryShardingMiddleware(
+			log,
+			promql.NewEngine(engineOpts),
+			limits,
+			registerer,
+		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics),
-			NewQueryShardingMiddleware(
-				log,
-				promql.NewEngine(engineOpts),
-				limits,
-				registerer,
-			),
+			queryshardingMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			InstrumentMiddleware("querysharding", metrics),
+			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
+		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	// Track query range statistics.
@@ -203,16 +215,17 @@ func NewTripperware(
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
-		// Finally, if the user selected any query range middleware, stitch it in.
-		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
-			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
-				op := "query"
-				if isQueryRange {
-					op = "query_range"
-				}
-
+		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		instant := NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			isQueryRange := strings.HasSuffix(r.URL.Path, queryRangePrefix)
+			isInstant := strings.HasSuffix(r.URL.Path, queryInstantPrefix)
+			op := "query"
+			if isQueryRange {
+				op = "query_range"
+			}
+			// Finally, if the user selected any query range middleware, stitch it in.
+			if isQueryRange && len(queryRangeMiddleware) > 0 {
 				tenantIDs, err := tenant.TenantIDs(r.Context())
 				// This should never happen anyways because we have auth middleware before this.
 				if err != nil {
@@ -221,14 +234,13 @@ func NewTripperware(
 				userStr := tenant.JoinTenantIDs(tenantIDs)
 				activeUsers.UpdateUserTimestamp(userStr, time.Now())
 				queriesPerTenant.WithLabelValues(op, userStr).Inc()
-
-				if !isQueryRange {
-					return next.RoundTrip(r)
-				}
 				return queryrange.RoundTrip(r)
-			})
-		}
-		return next
+			}
+			if isInstant && len(queryInstantMiddleware) > 0 {
+				return instant.RoundTrip(r)
+			}
+			return next.RoundTrip(r)
+		})
 	}, c, nil
 }
 

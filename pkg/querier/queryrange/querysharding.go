@@ -138,13 +138,23 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
 
-	qry, err := s.engine.NewRangeQuery(
-		lazyquery.NewLazyQueryable(shardedQueryable),
-		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
-		time.Duration(r.GetStep())*time.Millisecond,
-	)
+	var qry promql.Query
+	if r.GetEnd() == r.GetStart() {
+		qry, err = s.engine.NewInstantQuery(
+			lazyquery.NewLazyQueryable(shardedQueryable),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()),
+		)
+	} else {
+		qry, err = s.engine.NewRangeQuery(
+			lazyquery.NewLazyQueryable(shardedQueryable),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
+	}
+
 	if err != nil {
 		return nil, err
 	}
