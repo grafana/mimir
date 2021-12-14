@@ -26,7 +26,7 @@ import (
 
 	"github.com/grafana/dskit/flagext"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
@@ -38,10 +38,7 @@ import (
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
-	"github.com/grafana/mimir/pkg/querier/batch"
-	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
 
 const (
@@ -62,15 +59,6 @@ type query struct {
 }
 
 var (
-	testcases = []struct {
-		name string
-		f    chunkIteratorFunc
-	}{
-		{"matrixes", mergeChunks},
-		{"iterators", iterators.NewChunkMergeIterator},
-		{"batches", batch.NewChunkMergeIterator},
-	}
-
 	encodings = []struct {
 		name string
 		e    promchunk.Encoding
@@ -148,31 +136,119 @@ func TestQuerier(t *testing.T) {
 
 	const chunks = 24
 
-	// Generate TSDB head with the same samples as makeMockChunkStore.
-	db := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
+	// Generate TSDB head used to simulate querying the long-term storage.
+	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
 
 	for _, query := range queries {
-		for _, encoding := range encodings {
-			for _, iterators := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/%s/iterators=%t", query.query, encoding.name, iterators), func(t *testing.T) {
-					cfg.Iterators = iterators
+		for _, iterators := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
+				cfg.Iterators = iterators
 
-					chunkStore, through := makeMockChunkStore(t, chunks, encoding.e)
-					distributor := mockDistibutorFor(t, chunkStore, through)
+				// No samples returned by ingesters.
+				distributor := &mockDistributor{}
+				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
+				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
 
-					overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-					require.NoError(t, err)
+				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+				require.NoError(t, err)
 
-					queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore)), UseAlwaysQueryable(db)}
-					queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
-					testRangeQuery(t, queryable, through, query)
-				})
-			}
+				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				testRangeQuery(t, queryable, through, query)
+			})
 		}
 	}
 }
 
-func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) storage.Queryable {
+// This test ensures the PromQL engine works correct if Select() function returns samples outside
+// the queried range because the underlying queryable doesn't trim chunks based on the query start/end time.
+func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
+	var (
+		logger     = log.NewNopLogger()
+		queryStart = mustParseTime("2021-11-01T06:00:00Z")
+		queryEnd   = mustParseTime("2021-11-01T06:05:00Z")
+		queryStep  = time.Minute
+	)
+
+	var cfg Config
+	flagext.DefaultValues(&cfg)
+
+	// Mock distributor to return chunks containing samples outside the queried range.
+	distributor := &mockDistributor{}
+	distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(
+		&client.QueryStreamResponse{
+			Chunkseries: []client.TimeSeriesChunk{
+				// Series with data points only before queryStart.
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToChunks(t, []mimirpb.Sample{
+						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 1},
+						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 1},
+					}),
+				},
+				// Series with data points before and after queryStart, but before queryEnd.
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToChunks(t, []mimirpb.Sample{
+						{TimestampMs: queryStart.Add(-9*time.Minute).Unix() * 1000, Value: 1},
+						{TimestampMs: queryStart.Add(-8*time.Minute).Unix() * 1000, Value: 3},
+						{TimestampMs: queryStart.Add(-7*time.Minute).Unix() * 1000, Value: 5},
+						{TimestampMs: queryStart.Add(-6*time.Minute).Unix() * 1000, Value: 7},
+						{TimestampMs: queryStart.Add(-5*time.Minute).Unix() * 1000, Value: 11},
+						{TimestampMs: queryStart.Add(-4*time.Minute).Unix() * 1000, Value: 13},
+						{TimestampMs: queryStart.Add(-3*time.Minute).Unix() * 1000, Value: 17},
+						{TimestampMs: queryStart.Add(-2*time.Minute).Unix() * 1000, Value: 19},
+						{TimestampMs: queryStart.Add(-1*time.Minute).Unix() * 1000, Value: 23},
+						{TimestampMs: queryStart.Add(+0*time.Minute).Unix() * 1000, Value: 29},
+						{TimestampMs: queryStart.Add(+1*time.Minute).Unix() * 1000, Value: 31},
+						{TimestampMs: queryStart.Add(+2*time.Minute).Unix() * 1000, Value: 37},
+					}),
+				},
+				// Series with data points after queryEnd.
+				{
+					Labels: []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "one"}},
+					Chunks: convertToChunks(t, []mimirpb.Sample{
+						{TimestampMs: queryStart.Add(+4*time.Minute).Unix() * 1000, Value: 41},
+						{TimestampMs: queryStart.Add(+5*time.Minute).Unix() * 1000, Value: 43},
+						{TimestampMs: queryStart.Add(+6*time.Minute).Unix() * 1000, Value: 47},
+						{TimestampMs: queryStart.Add(+7*time.Minute).Unix() * 1000, Value: 53},
+					}),
+				},
+			},
+		},
+		nil)
+
+	overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+	require.NoError(t, err)
+
+	engine := promql.NewEngine(promql.EngineOpts{
+		Logger:     logger,
+		MaxSamples: 1e6,
+		Timeout:    1 * time.Minute,
+	})
+
+	queryable, _, _ := New(cfg, overrides, distributor, nil, purger.NewTombstonesLoader(nil, nil), nil, logger)
+	query, err := engine.NewRangeQuery(queryable, `sum({__name__=~".+"})`, queryStart, queryEnd, queryStep)
+	require.NoError(t, err)
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	r := query.Exec(ctx)
+	m, err := r.Matrix()
+	require.NoError(t, err)
+
+	require.Equal(t, 1, m.Len())
+	assert.Equal(t, []promql.Point{
+		{T: 1635746400000, V: 29},
+		{T: 1635746460000, V: 31},
+		{T: 1635746520000, V: 37},
+		{T: 1635746580000, V: 37},
+		{T: 1635746640000, V: 78},
+		{T: 1635746700000, V: 80},
+	}, m[0].Points)
+}
+
+func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) (storage.Queryable, model.Time) {
 	dir, err := ioutil.TempDir("", "tsdb")
 	require.NoError(t, err)
 
@@ -213,9 +289,11 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	}
 
 	require.NoError(t, app.Commit())
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return tsdb.NewBlockQuerier(head, mint, maxt)
 	})
+
+	return queryable, ts
 }
 
 func TestNoHistoricalQueryToIngester(t *testing.T) {
@@ -681,23 +759,80 @@ func TestQuerier_ValidateQueryTimeRange_MaxQueryLookback(t *testing.T) {
 	}
 }
 
-// mockDistibutorFor duplicates the chunks in the mockChunkStore into the mockDistributor
-// so we can test everything is dedupe correctly.
-func mockDistibutorFor(t *testing.T, cs mockChunkStore, through model.Time) *mockDistributor {
-	chunks, err := chunkcompat.ToChunks(cs.chunks)
-	require.NoError(t, err)
+// Check that time range of /series is restricted by maxLabelsQueryLength.
+// LabelName and LabelValues are checked in TestBlocksStoreQuerier_MaxLabelsQueryRange(),
+// because the implementation of those makes it really hard to do in Querier.
+func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
+	const (
+		engineLookbackDelta = 5 * time.Minute
+		thirtyDays          = 30 * 24 * time.Hour
+	)
 
-	tsc := client.TimeSeriesChunk{
-		Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}},
-		Chunks: chunks,
+	now := time.Now()
+
+	tests := map[string]struct {
+		maxLabelsQueryLength      model.Duration
+		queryStartTime            time.Time
+		queryEndTime              time.Time
+		expectedMetadataStartTime time.Time
+		expectedMetadataEndTime   time.Time
+	}{
+		"should manipulate series query on large time range over the limit": {
+			maxLabelsQueryLength:      model.Duration(thirtyDays),
+			queryStartTime:            now.Add(-thirtyDays).Add(-100 * time.Hour),
+			queryEndTime:              now,
+			expectedMetadataStartTime: now.Add(-thirtyDays),
+			expectedMetadataEndTime:   now,
+		},
 	}
-	matrix, err := chunk.ChunksToMatrix(context.Background(), cs.chunks, 0, through)
-	require.NoError(t, err)
 
-	result := &mockDistributor{}
-	result.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(matrix, nil)
-	result.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{Chunkseries: []client.TimeSeriesChunk{tsc}}, nil)
-	return result
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			ctx := user.InjectOrgID(context.Background(), "test")
+
+			var cfg Config
+			flagext.DefaultValues(&cfg)
+			cfg.QueryLabelNamesWithMatchers = true
+
+			limits := defaultLimitsConfig()
+			limits.MaxQueryLookback = model.Duration(thirtyDays * 2)
+			limits.MaxLabelsQueryLength = testData.maxLabelsQueryLength
+			overrides, err := validation.NewOverrides(limits, nil)
+			require.NoError(t, err)
+
+			// We don't need to query any data for this test, so an empty store is fine.
+			chunkStore := &emptyChunkStore{}
+			queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore))}
+
+			t.Run("series", func(t *testing.T) {
+				distributor := &mockDistributor{}
+				distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
+
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				q, err := queryable.Querier(ctx, util.TimeToMillis(testData.queryStartTime), util.TimeToMillis(testData.queryEndTime))
+				require.NoError(t, err)
+
+				hints := &storage.SelectHints{
+					Start: util.TimeToMillis(testData.queryStartTime),
+					End:   util.TimeToMillis(testData.queryEndTime),
+					Func:  "series",
+				}
+				matcher := labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "test")
+
+				set := q.Select(false, hints, matcher)
+				require.False(t, set.Next()) // Expected to be empty.
+				require.NoError(t, set.Err())
+
+				// Assert on the time range of the actual executed query (5s delta).
+				delta := float64(5000)
+				require.Len(t, distributor.Calls, 1)
+				assert.Equal(t, "MetricsForLabelMatchers", distributor.Calls[0].Method)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataStartTime), int64(distributor.Calls[0].Arguments.Get(1).(model.Time)), delta)
+				assert.InDelta(t, util.TimeToMillis(testData.expectedMetadataEndTime), int64(distributor.Calls[0].Arguments.Get(2).(model.Time)), delta)
+			})
+
+		})
+	}
 }
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
@@ -1008,4 +1143,12 @@ func defaultLimitsConfig() validation.Limits {
 	limits := validation.Limits{}
 	flagext.DefaultValues(&limits)
 	return limits
+}
+
+func mustParseTime(input string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, input)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
 }

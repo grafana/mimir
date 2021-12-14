@@ -13,7 +13,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 var (

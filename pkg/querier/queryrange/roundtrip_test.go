@@ -31,6 +31,11 @@ import (
 )
 
 func TestTripperware(t *testing.T) {
+	var (
+		query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
+		responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
+	)
+
 	s := httptest.NewServer(
 		middleware.AuthenticateUser.Wrap(
 			http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -171,14 +176,20 @@ func TestTripperware_Metrics(t *testing.T) {
 	tests := map[string]struct {
 		path                    string
 		expectedNotAlignedCount int
+		stepAlignEnabled        bool
 	}{
 		"start/end is aligned to step": {
 			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=120",
 			expectedNotAlignedCount: 0,
 		},
-		"start/end is not aligned to step": {
+		"start/end is not aligned to step, aligning disabled": {
 			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
 			expectedNotAlignedCount: 1,
+		},
+		"start/end is not aligned to step, aligning enabled": {
+			path:                    "/api/v1/query_range?query=up&start=1536673680&end=1536716880&step=7",
+			expectedNotAlignedCount: 1,
+			stepAlignEnabled:        true,
 		},
 	}
 
@@ -203,7 +214,7 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, _, err := NewTripperware(Config{},
+			tw, _, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
 				PrometheusCodec,

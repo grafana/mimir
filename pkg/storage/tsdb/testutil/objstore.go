@@ -6,8 +6,6 @@
 package testutil
 
 import (
-	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -17,12 +15,7 @@ import (
 )
 
 func PrepareFilesystemBucket(t testing.TB) (objstore.Bucket, string) {
-	storageDir, err := ioutil.TempDir(os.TempDir(), "bucket")
-	require.NoError(t, err)
-
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(storageDir))
-	})
+	storageDir := t.TempDir()
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
 	require.NoError(t, err)

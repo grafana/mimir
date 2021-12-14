@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // LabelsToMetric converts a Labels to Metric

@@ -2,6 +2,7 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Ruler: endpoints for listing rules (`/api/v1/rules`, `/api/v1/rules/{namespace}`) now return HTTP status code 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. #456
 * [CHANGE] Compactor: Removed support for block deletion marks migration. If you're upgrading from Cortex < 1.7.0 to Mimir, you should upgrade the compactor to Cortex >= 1.7.0 first, run it at least once and then upgrade to Mimir. #122
 * [CHANGE] Removed query sharding for the chunks storage. Query sharding is now only supported for blocks storage. #86 #119
 * [CHANGE] Renamed build image to us.gcr.io/kubernetes-dev/mimir-build-image. #40
@@ -21,7 +22,7 @@
 * [CHANGE] Ingester: `-ingester.min-ready-duration` now start counting the delay after the ring's health checks have passed instead of when the ring client was started. #126
 * [CHANGE] Blocks storage: memcached client DNS resolution switched from golang built-in to [`miekg/dns`](https://github.com/miekg/dns). #142
 * [CHANGE] Query-frontend: the `cortex_frontend_mapped_asts_total` metric has been renamed to `cortex_frontend_query_sharding_rewrites_attempted_total`. #150
-* [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173
+* [CHANGE] Renamed metric `cortex_overrides` to `cortex_limits_overrides`. #173 #407
 * [CHANGE] Allow experimental ingester max-exemplars setting to be changed dynamically #144
   * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
   * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
@@ -36,11 +37,38 @@
 * [CHANGE] Limits: Set the default max number of inflight ingester push requests (`-ingester.instance-limits.max-inflight-push-requests`) to 30000 in order to prevent clusters from being overwhelmed by request volume or temporary slow-downs. #259
 * [CHANGE] Compactor no longer waits for initial blocks cleanup to finish before starting compactions. #282
 * [CHANGE] Flag `-querier.parallelise-shardable-queries` has been renamed to `-query-frontend.parallelize-shardable-queries` #284
-* [CHANGE] Update Go version to 1.16.9. #391
+* [CHANGE] Update Go version to 1.17.3. #480
+* [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor with `split-and-merge` strategy, but are correctly handled by compactor. #494
+* [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
+* [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
+* [CHANGE] Remove chunks storage engine. #510 #545
+  This removes the following flags:
+  * `-ingester.checkpoint-duration`
+  * `-ingester.checkpoint-enabled`
+  * `-ingester.chunk-age-jitter`
+  * `-ingester.concurrent-flushes`
+  * `-ingester.flush-on-shutdown-with-wal-enabled`
+  * `-ingester.flush-op-timeout`
+  * `-ingester.flush-period`
+  * `-ingester.max-chunk-age`
+  * `-ingester.max-chunk-idle`
+  * `-ingester.max-stale-chunk-idle`
+  * `-ingester.max-transfer-retries`
+  * `-ingester.recover-from-wal`
+  * `-ingester.retain-period`
+  * `-ingester.spread-flushes`
+  * `-ingester.wal-dir`
+  * `-ingester.wal-enabled`
+  * All `-table-manager.*` flags
+* [CHANGE] Compactor: compactor now uses deletion marks from `<tenant>/markers` location in the bucket. Marker files are no longer fetched, only listed. #550
+* [CHANGE] Compactor: Default value of `-compactor.block-sync-concurrency` has changed from 20 to 8. This flag is now only used to control number of goroutines for downloading and uploading blocks during compaction. #552
+* [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563
+* [CHANGE] Query-frontend: removed the deprecated (and unused) `-frontend.cache-split-interval`. Use `-querier.split-queries-by-interval` instead. #587
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
-* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #609
+* [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enabled querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #609
   * New config options:
-    * `-querier.total-shards`: The amount of shards to use when doing parallelisation via query sharding.
+    * `-frontend.query-sharding-total-shards`: The amount of shards to use when doing parallelisation via query sharding.
+    * `-frontend.query-sharding-max-sharded-queries`: The max number of sharded queries that can be run for a given received query. 0 to disable limit.
     * `-blocks-storage.bucket-store.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the store-gateway.
     * `-blocks-storage.tsdb.series-hash-cache-max-size-bytes`: Max size - in bytes - of the in-memory series hash cache in the ingester.
   * New exported metrics:
@@ -63,12 +91,23 @@
   * Sharding can be dynamically controlled per request using the `Sharding-Control: 64` header. (0 to disable)
   * Sharding can be dynamically controlled per tenant using the limit `query_sharding_total_shards`. (0 to disable)
   * Added `sharded_queries` count to the "query stats" log.
+  * Number of shards is adjusted to be compatible with number of compactor shards used by split-and-merge compactor. Querier can use this to avoid querying blocks that cannot have series in given query shard. This only works when using split-and-merge compactor.
 * [FEATURE] PromQL: added `present_over_time` support. #139
 * [FEATURE] Ingester: can expose metrics on active series matching custom trackers configured via `-ingester.active-series-custom-trackers` (or its respective YAML config option). When configured, active series for custom trackers are exposed by the `cortex_ingester_active_series_custom_tracker` metric. #42
 * [FEATURE] Ingester: Enable snapshotting of in-memory TSDB on disk during shutdown via `-blocks-storage.tsdb.memory-snapshot-on-shutdown`. #249
-* [FEATURE] Compactor: added support for a new compaction strategy `-compactor.compaction-strategy=split-and-merge`. When the `split-and-merge` compactor is used, source blocks for a given tenant are split into `-compactor.split-and-merge-shards` shards (configurable on a per-tenant basis) and compaction of each tenant shards can be horizontally scaled. Number of compactors that work on jobs for single tenant can be limited by using `-compactor.compactor-tenant-shard-size` parameter, or per-tenant `compactor_tenant_shard_size` override.  #275 #281 #282 #283 #288 #290 #303 #307 #317 #323 #324 #328 #353 #368
-* [FEATURE] Querier: Added label names cardinality endpoint `<prefix>/api/v1/cardinality/label_names` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #301 #377
-* [FEATURE] Querier: Added label values cardinality endpoint `<prefix>/api/v1/cardinality/label_values` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #332 #395
+* [FEATURE] Compactor: added support for a new compaction strategy `-compactor.compaction-strategy=split-and-merge`. When the `split-and-merge` compactor is used, source blocks for a given tenant are grouped into `-compactor.split-groups` number of groups. Each group of blocks is then compacted separately, and is split into `-compactor.split-and-merge-shards` shards (configurable on a per-tenant basis). Compaction of each tenant shards can be horizontally scaled. Number of compactors that work on jobs for single tenant can be limited by using `-compactor.compactor-tenant-shard-size` parameter, or per-tenant `compactor_tenant_shard_size` override.  #275 #281 #282 #283 #288 #290 #303 #307 #317 #323 #324 #328 #353 #368 #479
+* [FEATURE] Querier: Added label names cardinality endpoint `<prefix>/api/v1/cardinality/label_names` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #301 #377 #474
+* [FEATURE] Distributor: Added `-api.skip-label-name-validation-header-enabled` option to allow skipping label name validation on the HTTP write path based on `X-Mimir-SkipLabelNameValidation` header being `true` or not. #390
+* [FEATURE] Querier: Added label values cardinality endpoint `<prefix>/api/v1/cardinality/label_values` that is disabled by default. Can be enabled/disabled via the CLI flag `-querier.cardinality-analysis-enabled` or its respective YAML config option. Configurable on a per-tenant basis. #332 #395 #474
+* [FEATURE] Query-Frontend: Added `-query-frontend.cache-unaligned-requests` option to cache responses for requests that do not have step-aligned start and end times. This can improve speed of repeated queries, but can also pollute cache with results that are never reused. #432
+* [FEATURE] Querier: Added `-store.max-labels-query-length` to restrict the range of `/series`, label-names and label-values requests. #507
+* [FEATURE] Ingester: Added `-blocks-storage.tsdb.isolation-enabled` flag, which allows disabling TSDB isolation feature. This is enabled by default (per TSDB default), but disabling can improve performance of write requests. #512
+* [FEATURE] Compactor: Added `-compactor.max-compaction-time` to control how long can compaction for a single tenant take. If compactions for a tenant take longer, no new compactions are started in the same compaction cycle. Running compactions are not stopped however, and may take much longer. #523
+* [FEATURE] Compactor: When compactor finds blocks with out-of-order chunks, it will mark them for no-compaction. Blocks marked for no-compaction are ignored in future compactions too. Added metric `cortex_compactor_blocks_marked_for_no_compaction_total` to track number of blocks marked for no-compaction. Added `CortexCompactorSkippedBlocksWithOutOfOrderChunks` alert based on new metric. Markers are only checked from `<tenant>/markers` location, but uploaded to the block directory too. #520 #535 #550
+* [FEATURE] Compactor: multiple blocks are now downloaded and uploaded at once, which can shorten compaction process. #552
+* [FEATURE] Ingester: Added `-blocks-storage.tsdb.head-chunks-write-queue-size` flag, which allows setting the size of the queue used by the TSDB before m-mapping chunks. #591
+  * Added `cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total` metric to track different operations of this queue.
+* [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_workers_enqueued_requests_total` metric to track the number of requests enqueued in each query-scheduler. #384
 * [ENHANCEMENT] Add a flag (`--proxy.compare-use-relative-error`) in the query-tee to compare floating point values using relative error. #208
 * [ENHANCEMENT] Add a flag (`--proxy.compare-skip-recent-samples`) in the query-tee to skip comparing recent samples. By default samples not older than 1 minute are skipped. #234
 * [ENHANCEMENT] Include additional limits in the per-tenant override exporter. The following limits have been added to the `cortex_limit_overrides` metric: #21
@@ -88,14 +127,37 @@
 * [ENHANCEMENT] Add tags to tracing span for distributor push with user, cluster and replica. #210
 * [ENHANCEMENT] Optimisations to distributor. #212 #217 #242
 * [ENHANCEMENT] Memberlist: Add `-memberlist.advertise-addr` and `-memberlist.advertise-port` options for setting the address to advertise to other members of the cluster to enable NAT traversal. #260
+* [ENHANCEMENT] Distributor: reduce latency when HA-Tracking by doing KVStore updates in the background. #271
 * [ENHANCEMENT] Compactor: when sharding is enabled, skip already planned compaction jobs if the tenant doesn't belong to the compactor instance anymore. #303
 * [ENHANCEMENT] Query federation: improve performance in MergeQueryable by memoizing labels. #312
 * [ENHANCEMENT] Compactor: Blocks cleaner will ignore users that it no longer "owns" when sharding is enabled, and user ownership has changed since last scan. #325
 * [ENHANCEMENT] Querier / store-gateway: optimized regex matchers. #319 #334 #355
-* [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_non_step_aligned_queries_total` to track the total number of range queries with start/end not aligned to step. #347 #357
+* [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_non_step_aligned_queries_total` to track the total number of range queries with start/end not aligned to step. #347 #357 #582
 * [ENHANCEMENT] Compactor: added `-compactor.compaction-jobs-order` support to configure which compaction jobs should run first for a given tenant (in case there are multiple ones). Supported values are: `smallest-range-oldest-blocks-first` (default), `newest-blocks-first` (not supported by `default` compaction strategy). #364
 * [ENHANCEMENT] Add option (`-querier.label-values-max-cardinality-label-names-per-request`) to configure the maximum number of label names allowed to be queried in a single `<prefix>/api/v1/cardinality/label_values` API call. #332
 * [ENHANCEMENT] Make distributor inflight push requests count include background calls to ingester. #398
+* [ENHANCEMENT] Store-gateway: added an in-memory LRU cache for chunks attributes. Can be enabled setting `-blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items=X` where `X` is the max number of items to keep in the in-memory cache. The following new metrics are exposed: #279 #415 #437
+  * `cortex_cache_memory_requests_total`
+  * `cortex_cache_memory_hits_total`
+  * `cortex_cache_memory_items_count`
+* [ENHANCEMENT] Store-gateway: log index cache requests to tracing spans. #419
+* [ENHANCEMENT] Ingester: reduce CPU and memory utilization if remote write requests contains a large amount of "out of bounds" samples. #413
+* [ENHANCEMENT] Ingester: reduce CPU and memory utilization when querying chunks from ingesters. #430
+* [ENHANCEMENT] Querier: when fetching data for specific query-shard, we can ignore some blocks based on compactor-shard ID, since sharding of series by query sharding and compactor is the same. Added metrics: #438 #450
+  * `cortex_querier_blocks_found_total`
+  * `cortex_querier_blocks_queried_total`
+  * `cortex_querier_blocks_with_compactor_shard_but_incompatible_query_shard_total`
+* [ENHANCEMENT] Querier&Ruler: reduce cpu usage, latency and peak memory consumption. #459 #463 #589
+* [ENHANCEMENT] Overrides Exporter: Add `max_fetched_chunks_per_query` and `max_global_exemplars_per_user` limits to the default and per-tenant limits exported as metrics. #471 #515
+* [ENHANCEMENT] Compactor (blocks cleaner): Delete blocks marked for deletion faster. #490
+* [ENHANCEMENT] Store-gateway: store-gateway can now ignore blocks with minimum time within `-blocks-storage.bucket-store.ignore-blocks-within` duration. Useful when used together with `-querier.query-store-after`. #502
+* [ENHANCEMENT] Distributor: silently drop exemplars more than 5 minutes older than samples in the same batch. #544
+* [ENHANCEMENT] Ring/Memberlist: reduce CPU utilization for rings with a large number of members. #537 #563
+* [ENHANCEMENT] Add histogram metrics `cortex_distributor_sample_delay_seconds` and `cortex_ingester_tsdb_sample_out_of_order_delta_seconds` #488
+* [ENHANCEMENT] Compactor: expose low-level concurrency options for compactor: `-compactor.max-opening-blocks-concurrency`, `-compactor.max-closing-blocks-concurrency`, `-compactor.symbols-flushers-concurrency`, used when using `split-and-merge` compaction strategy. #569
+* [ENHANCEMENT] Store-gateway: label values with matchers now doesn't preload or list series, reducing latency and memory consumption. #534
+* [ENHANCEMENT] Azure client: expose option to configure MSI URL and user-assigned identity. #584
+* [ENHANCEMENT] Store-gateway: the results of `LabelNames()`, `LabelValues()` and `Series(skipChunks=true)` calls are now cached in the index cache. #590
 * [BUGFIX] Frontend: Fixes @ modifier functions (start/end) when splitting queries by time. #206
 * [BUGFIX] Fixes a panic in the query-tee when comparing result. #207
 * [BUGFIX] Upgrade Prometheus. TSDB now waits for pending readers before truncating Head block, fixing the `chunk not found` error and preventing wrong query results. #16
@@ -103,11 +165,25 @@
 * [BUGFIX] Ingester: don't create TSDB or appender if no samples are sent by a tenant. #162
 * [BUGFIX] Alertmanager: don't replace user configurations with blank fallback configurations (when enabled), particularly during scaling up/down instances when sharding is enabled. #224
 * [BUGFIX] Query-tee: Ensure POST requests are handled correctly #286
-* [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360
+* [BUGFIX] Query-frontend: Ensure query_range requests handled by the query-frontend return JSON formatted errors. #360 #499
+* [BUGFIX] Query-frontend: don't reuse cached results for queries that are not step-aligned. #424
+* [BUGFIX] Querier: fixed UserStats endpoint. When zone-aware replication is enabled, `MaxUnavailableZones` param is used instead of `MaxErrors`, so setting `MaxErrors = 0` doesn't make the Querier wait for all Ingesters responses. #474
+* [BUGFIX] Ingester: fix out-of-order chunks in TSDB head in-memory series after WAL replay in case some samples were appended to TSDB WAL before series. #530
+* [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
+* [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
+* [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 
 Mixin:
 
+* [CHANGE] Raised `CortexKVStoreFailure` alert severity from warning to critical. #493
+* [CHANGE] Increase `CortexRolloutStuck` alert "for" duration from 15m to 30m. #493 #573
 * [ENHANCEMENT] Added `CortexReachingTCPConnectionsLimit` alert. #403
+* [ENHANCEMENT] Added "Cortex / Writes Networking" and "Cortex / Reads Networking" dashboards. #405
+* [ENHANCEMENT] Improved "Queue length" panel in "Cortex / Queries" dashboard. #408
+* [ENHANCEMENT] Add `CortexDistributorReachingInflightPushRequestLimit` alert and playbook. #401
+* [ENHANCEMENT] Added "Recover accidentally deleted blocks (Google Cloud specific)" playbook. #475
+* [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
+* [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
 
 ### Query-tee
 

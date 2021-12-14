@@ -173,6 +173,12 @@ func TestTSDBMetrics(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="get"} 30
+
 			# HELP cortex_ingester_tsdb_blocks_loaded Number of currently loaded data blocks
 			# TYPE cortex_ingester_tsdb_blocks_loaded gauge
 			cortex_ingester_tsdb_blocks_loaded 15
@@ -180,6 +186,18 @@ func TestTSDBMetrics(t *testing.T) {
 			# HELP cortex_ingester_tsdb_reloads_total Number of times the database reloaded block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
+
+			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out of order.
+			# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+			# observations        buckets
+			#                     600
+			# 7*999            -> 86400
+			# 7*12245, 7*85787 -> inf
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 0
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="86400"} 1
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 3
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 693917
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 3
 
 			# HELP cortex_ingester_tsdb_reloads_failures_total Number of times the database failed to reloadBlocks block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_failures_total counter
@@ -383,6 +401,12 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# TYPE cortex_ingester_tsdb_mmap_chunk_corruptions_total counter
 			cortex_ingester_tsdb_mmap_chunk_corruptions_total 2577406
 
+			# HELP cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total Total number of memory-mapped TSDB chunk corruptions.
+			# TYPE cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total counter
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="add"} 150
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="complete"} 120
+			cortex_ingester_tsdb_mmap_chunk_write_queue_operations_total{operation="get"} 30
+
 			# HELP cortex_ingester_tsdb_blocks_loaded Number of currently loaded data blocks
 			# TYPE cortex_ingester_tsdb_blocks_loaded gauge
 			cortex_ingester_tsdb_blocks_loaded 10
@@ -390,6 +414,18 @@ func TestTSDBMetricsWithRemoval(t *testing.T) {
 			# HELP cortex_ingester_tsdb_reloads_total Number of times the database reloaded block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_total counter
 			cortex_ingester_tsdb_reloads_total 30
+
+			# HELP cortex_ingester_tsdb_sample_out_of_order_delta_seconds Delta in seconds by which a sample is considered out of order.
+			# TYPE cortex_ingester_tsdb_sample_out_of_order_delta_seconds histogram
+			# observations        buckets
+			#                     600
+			# 7*999            -> 86400
+			# 7*12245, 7*85787 -> inf
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="600"} 0
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="86400"} 1
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_bucket{le="+Inf"} 3
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_sum 693917
+			cortex_ingester_tsdb_sample_out_of_order_delta_seconds_count 3
 
 			# HELP cortex_ingester_tsdb_reloads_failures_total Number of times the database failed to reloadBlocks block data from disk.
 			# TYPE cortex_ingester_tsdb_reloads_failures_total counter
@@ -588,6 +624,21 @@ func populateTSDBMetrics(base float64) *prometheus.Registry {
 		Help: "Total number of memory-mapped chunk corruptions.",
 	})
 	mmapChunkCorruptionTotal.Add(26 * base)
+
+	mmapChunkQueueOperationsTotal := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "prometheus_tsdb_chunk_write_queue_operations_total",
+		Help: "Number of operations on the chunk_write_queue.",
+	}, []string{"operation"})
+	mmapChunkQueueOperationsTotal.WithLabelValues("add").Add(50)
+	mmapChunkQueueOperationsTotal.WithLabelValues("get").Add(10)
+	mmapChunkQueueOperationsTotal.WithLabelValues("complete").Add(40)
+
+	tsdbOOOHistogram := promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+		Name:    "prometheus_tsdb_sample_ooo_delta",
+		Help:    "Delta in seconds by which a sample is considered out of order.",
+		Buckets: []float64{60 * 10, 60 * 60 * 24}, // for testing: 3 buckets: 10 min, 24 hour, and inf
+	})
+	tsdbOOOHistogram.Observe(7 * base)
 
 	walCorruptionsTotal := promauto.With(r).NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_tsdb_wal_corruptions_total",

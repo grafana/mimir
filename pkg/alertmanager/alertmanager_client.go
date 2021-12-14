@@ -51,26 +51,37 @@ func (cfg *ClientConfig) RegisterFlagsWithPrefix(prefix string, f *flag.FlagSet)
 	cfg.TLS.RegisterFlagsWithPrefix(prefix, f)
 }
 
+// alertmanagerClientsPool is a pool of alertmanager clients.
 type alertmanagerClientsPool struct {
 	pool *client.Pool
 }
 
+// newAlertmanagerClientsPool creates a new pool of alertmanager clients.
 func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientCfg ClientConfig, logger log.Logger, reg prometheus.Registerer) ClientsPool {
-	// We prefer sane defaults instead of exposing further config options.
+	// We prefer sensible defaults instead of exposing further config options.
 	grpcCfg := grpcclient.Config{
-		MaxRecvMsgSize:      16 * 1024 * 1024,
-		MaxSendMsgSize:      4 * 1024 * 1024,
-		GRPCCompression:     "",
-		RateLimit:           0,
-		RateLimitBurst:      0,
-		BackoffOnRatelimits: false,
+		MaxRecvMsgSize:      16 * 1024 * 1024, // 16MiB.
+		MaxSendMsgSize:      4 * 1024 * 1024,  // 4MiB.
+		GRPCCompression:     "",               // No compression.
+		RateLimit:           0,                // No rate limit.
+		RateLimitBurst:      0,                // No burst of rate limit.
+		BackoffOnRatelimits: false,            // No backoffs for rate limiting.
 		TLSEnabled:          amClientCfg.TLSEnabled,
 		TLS:                 amClientCfg.TLS,
 	}
 
 	requestDuration := promauto.With(reg).NewHistogramVec(prometheus.HistogramOpts{
-		Name:    "cortex_alertmanager_distributor_client_request_duration_seconds",
-		Help:    "Time spent executing requests from an alertmanager to another alertmanager.",
+		Name: "cortex_alertmanager_distributor_client_request_duration_seconds",
+		Help: "Time spent executing requests from an alertmanager to another alertmanager.",
+		// Buckets
+		// 1 0.008s  (8ms)
+		// 2 0.032s  (32ms)
+		// 3 0.128s  (128ms)
+		// 4 0.512s  (512ms)
+		// 5 2.048s  (2048ms)
+		// 6 8.192s  (8192ms)
+		// 7 32.768s (32768ms)
+		// 8 +Inf
 		Buckets: prometheus.ExponentialBuckets(0.008, 4, 7),
 	}, []string{"operation", "status_code"})
 
@@ -93,6 +104,7 @@ func newAlertmanagerClientsPool(discovery client.PoolServiceDiscovery, amClientC
 	return &alertmanagerClientsPool{pool: client.NewPool("alertmanager", poolCfg, discovery, factory, clientsCount, logger)}
 }
 
+// GetClientFor returns the alertmanager client for the specified address, creating it if one did not already exist.
 func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 	c, err := f.pool.GetClientFor(addr)
 	if err != nil {
@@ -101,6 +113,8 @@ func (f *alertmanagerClientsPool) GetClientFor(addr string) (Client, error) {
 	return c.(Client), nil
 }
 
+// dialAlertmanagerClient establishes a GRPC connection to an alertmanager that is aware of the the health of the server
+// and collects observations of request durations.
 func dialAlertmanagerClient(cfg grpcclient.Config, addr string, requestDuration *prometheus.HistogramVec) (*alertmanagerClient, error) {
 	opts, err := cfg.DialOption(grpcclient.Instrument(requestDuration))
 	if err != nil {
@@ -118,20 +132,26 @@ func dialAlertmanagerClient(cfg grpcclient.Config, addr string, requestDuration 
 	}, nil
 }
 
+// alertmanagerClient is a GRPC client of an alertmanager.
 type alertmanagerClient struct {
 	alertmanagerpb.AlertmanagerClient
 	grpc_health_v1.HealthClient
 	conn *grpc.ClientConn
 }
 
+// Close closes the client's GRPC connection.
 func (c *alertmanagerClient) Close() error {
 	return c.conn.Close()
 }
 
+// String implements the Stringer interface.
+// It returns the remote address of the alertmanager server which is unique for each client.
 func (c *alertmanagerClient) String() string {
 	return c.RemoteAddress()
 }
 
+// RemoteAddress implements the Client interface.
+// It returns the address of the alertmanager server which is unique for each client.
 func (c *alertmanagerClient) RemoteAddress() string {
 	return c.conn.Target()
 }

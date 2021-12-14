@@ -6,11 +6,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/stretchr/testify/require"
@@ -287,6 +289,102 @@ func TestLabelValues_ExpectedAllValuesToBeReturnedInSingleMessage(t *testing.T) 
 	}
 }
 
+func TestLabelNamesAndValues_ContextCancellation(t *testing.T) {
+	cctx, cancel := context.WithCancel(context.Background())
+
+	// Server mock.
+	mockServer := mockLabelNamesAndValuesServer{context: cctx}
+	var server client.Ingester_LabelNamesAndValuesServer = &mockServer
+
+	// Index reader mock.
+	existingLabels := make(map[string][]string)
+	lbValues := make([]string, 0, 100)
+	for j := 0; j < 100; j++ {
+		lbValues = append(lbValues, fmt.Sprintf("val-%d", j))
+	}
+	existingLabels["__name__"] = lbValues
+
+	idxOpDelay := time.Millisecond * 100
+
+	idxReader := &mockIndex{
+		existingLabels: existingLabels,
+		opDelay:        idxOpDelay,
+	}
+
+	doneCh := make(chan error, 1)
+	go func() {
+		err := labelNamesAndValues(
+			idxReader,
+			[]*labels.Matcher{},
+			1*1024*1024, // 1MB
+			server,
+		)
+		doneCh <- err // Signal request completion.
+	}()
+
+	cancel() // Cancel stream context.
+
+	// Assert labelNamesAndValues completion.
+	select {
+	case err := <-doneCh:
+		require.ErrorIsf(t, err, context.Canceled, "labelNamesAndValues unexpected error: %s", err)
+
+	case <-time.After(time.Second):
+		require.Fail(t, "labelNamesAndValues was not completed after context cancellation")
+	}
+}
+
+func TestLabelValuesCardinality_ContextCancellation(t *testing.T) {
+	cctx, cancel := context.WithCancel(context.Background())
+
+	// Server mock.
+	mockServer := &mockLabelValuesCardinalityServer{context: cctx}
+	var server client.Ingester_LabelValuesCardinalityServer = mockServer
+
+	// Index reader mock.
+	existingLabels := make(map[string][]string)
+	lbValues := make([]string, 0, 100)
+	for j := 0; j < 100; j++ {
+		lbValues = append(lbValues, fmt.Sprintf("val-%d", j))
+	}
+	existingLabels["__name__"] = lbValues
+
+	idxOpDelay := time.Millisecond * 100
+
+	idxReader := &mockIndex{
+		existingLabels: existingLabels,
+		opDelay:        idxOpDelay,
+	}
+
+	// Posting mock.
+	postingsForMatchersFn := func(reader tsdb.IndexPostingsReader, matcher ...*labels.Matcher) (index.Postings, error) {
+		return &mockPostings{n: 100}, nil
+	}
+	doneCh := make(chan error, 1)
+	go func() {
+		err := labelValuesCardinality(
+			[]string{"__name__"},
+			nil,
+			idxReader,
+			postingsForMatchersFn,
+			1*1024*1024, // 1MB
+			server,
+		)
+		doneCh <- err // Signal request completion.
+	}()
+
+	cancel() // Cancel stream context.
+
+	// Assert labelValuesCardinality completion.
+	select {
+	case err := <-doneCh:
+		require.ErrorIsf(t, err, context.Canceled, "labelValuesCardinality unexpected error: %s", err)
+
+	case <-time.After(time.Second):
+		require.Fail(t, "labelValuesCardinality was not completed after context cancellation")
+	}
+}
+
 type mockPostings struct {
 	index.Postings
 	n int
@@ -304,9 +402,13 @@ func (m *mockPostings) Err() error { return nil }
 type mockIndex struct {
 	tsdb.IndexReader
 	existingLabels map[string][]string
+	opDelay        time.Duration
 }
 
 func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
+	if i.opDelay > 0 {
+		time.Sleep(i.opDelay)
+	}
 	var l []string
 	for k := range i.existingLabels {
 		l = append(l, k)
@@ -316,6 +418,9 @@ func (i mockIndex) LabelNames(_ ...*labels.Matcher) ([]string, error) {
 }
 
 func (i mockIndex) LabelValues(name string, _ ...*labels.Matcher) ([]string, error) {
+	if i.opDelay > 0 {
+		time.Sleep(i.opDelay)
+	}
 	return i.existingLabels[name], nil
 }
 

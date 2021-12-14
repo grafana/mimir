@@ -8,73 +8,23 @@ package queryrange
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
-	"github.com/grafana/dskit/flagext"
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-)
-
-const (
-	query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
-	responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
-)
-
-var (
-	parsedRequest = &PrometheusRequest{
-		Path:  "/api/v1/query_range",
-		Start: 1536673680 * 1e3,
-		End:   1536716880 * 1e3,
-		Step:  120 * 1e3,
-		Query: "sum(container_memory_rss) by (namespace)",
-	}
-	noCacheRequest = &PrometheusRequest{
-		Path:    "/api/v1/query_range",
-		Start:   1536673680 * 1e3,
-		End:     1536716898 * 1e3,
-		Step:    120 * 1e3,
-		Query:   "sum(container_memory_rss) by (namespace)",
-		Options: Options{CacheDisabled: true},
-	}
-	respHeaders = []*PrometheusResponseHeader{
-		{
-			Name:   "Content-Type",
-			Values: []string{"application/json"},
-		},
-	}
-	parsedResponse = &PrometheusResponse{
-		Status: "success",
-		Data: PrometheusData{
-			ResultType: model.ValMatrix.String(),
-			Result: []SampleStream{
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "foo", Value: "bar"},
-					},
-					Samples: []mimirpb.Sample{
-						{Value: 137, TimestampMs: 1536673680000},
-						{Value: 137, TimestampMs: 1536673780000},
-					},
-				},
-			},
-		},
-	}
 )
 
 func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 	var samples []mimirpb.Sample
 	for i := start; i <= end; i += step {
 		samples = append(samples, mimirpb.Sample{
-			TimestampMs: int64(i),
+			TimestampMs: i,
 			Value:       float64(i),
 		})
 	}
@@ -120,6 +70,7 @@ func TestIsRequestCachable(t *testing.T) {
 		request                Request
 		cacheGenNumberToInject string
 		expected               bool
+		cacheStepUnaligned     bool
 	}{
 		// @ modifier on vector selectors.
 		{
@@ -221,14 +172,21 @@ func TestIsRequestCachable(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "request that is NOT step aligned",
-			request:  &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
-			expected: false,
+			name:               "request that is NOT step aligned, with cacheStepUnaligned=false",
+			request:            &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			expected:           false,
+			cacheStepUnaligned: false,
+		},
+		{
+			name:               "request that is NOT step aligned",
+			request:            &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			expected:           true,
+			cacheStepUnaligned: true,
 		},
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ret := isRequestCachable(tc.request, maxCacheTime, log.NewNopLogger())
+				ret := isRequestCachable(tc.request, maxCacheTime, tc.cacheStepUnaligned, log.NewNopLogger())
 				require.Equal(t, tc.expected, ret)
 			})
 		}
@@ -405,6 +363,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(0, 100),
@@ -419,6 +378,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(110, 210),
@@ -427,6 +387,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   100,
+					Step:  10,
 				},
 			},
 		},
@@ -435,6 +396,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 0,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 100),
@@ -443,6 +405,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 0,
 					End:   50,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -454,6 +417,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   200,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 120),
@@ -463,6 +427,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 120,
 					End:   160,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -475,6 +440,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   160,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 120),
@@ -484,6 +450,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 120,
 					End:   160,
+					Step:  10,
 				},
 			},
 			expectedCachedResponse: []Response{
@@ -495,6 +462,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(50, 90),
@@ -503,6 +471,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				&PrometheusRequest{
 					Start: 100,
 					End:   100,
+					Step:  10,
 				},
 			},
 		},
@@ -512,12 +481,38 @@ func TestPartitionCacheExtents(t *testing.T) {
 			input: &PrometheusRequest{
 				Start: 100,
 				End:   100,
+				Step:  10,
 			},
 			prevCachedResponse: []Extent{
 				mkExtent(100, 100),
 			},
 			expectedCachedResponse: []Response{
 				mkAPIResponse(100, 105, 10),
+			},
+		},
+
+		{
+			name: "Start time of all requests must have the same offset into the step.",
+			input: &PrometheusRequest{
+				Start: 123, // 123 % 33 = 24
+				End:   1000,
+				Step:  33,
+			},
+			prevCachedResponse: []Extent{
+				// 486 is equal to input.Start + N * input.Step (for integer N)
+				// 625 is not equal to input.Start + N * input.Step for any integer N.
+				mkExtentWithStep(486, 625, 33),
+			},
+			expectedCachedResponse: []Response{
+				mkAPIResponse(486, 625, 33),
+			},
+			expectedRequests: []Request{
+				&PrometheusRequest{Start: 123, End: 486, Step: 33},
+				&PrometheusRequest{
+					Start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
+					End:   1000, // until the end
+					Step:  33,   // unchanged
+				},
 			},
 		},
 	} {
@@ -529,404 +524,13 @@ func TestPartitionCacheExtents(t *testing.T) {
 			require.Nil(t, err)
 			require.Equal(t, tc.expectedRequests, reqs)
 			require.Equal(t, tc.expectedCachedResponse, resps)
-		})
-	}
-}
 
-func TestHandleHit(t *testing.T) {
-	for _, tc := range []struct {
-		name                       string
-		input                      Request
-		cachedEntry                []Extent
-		expectedUpdatedCachedEntry []Extent
-	}{
-		{
-			name: "Should drop tiny extent that overlaps with non-tiny request only",
-			input: &PrometheusRequest{
-				Start: 100,
-				End:   120,
-				Step:  5,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(110, 150, 5),
-				mkExtentWithStep(160, 165, 5),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 150, 5),
-				mkExtentWithStep(160, 165, 5),
-			},
-		},
-		{
-			name: "Should replace tiny extents that are cover by bigger request",
-			input: &PrometheusRequest{
-				Start: 100,
-				End:   200,
-				Step:  5,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(110, 115, 5),
-				mkExtentWithStep(120, 125, 5),
-				mkExtentWithStep(220, 225, 5),
-				mkExtentWithStep(240, 250, 5),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 200, 5),
-				mkExtentWithStep(220, 225, 5),
-				mkExtentWithStep(240, 250, 5),
-			},
-		},
-		{
-			name: "Should not drop tiny extent that completely overlaps with tiny request",
-			input: &PrometheusRequest{
-				Start: 100,
-				End:   105,
-				Step:  5,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(0, 50, 5),
-				mkExtentWithStep(60, 65, 5),
-				mkExtentWithStep(100, 105, 5),
-				mkExtentWithStep(160, 165, 5),
-			},
-			expectedUpdatedCachedEntry: nil, // no cache update need, request fulfilled using cache
-		},
-		{
-			name: "Should not drop tiny extent that partially center-overlaps with tiny request",
-			input: &PrometheusRequest{
-				Start: 106,
-				End:   108,
-				Step:  2,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(104, 110, 2),
-				mkExtentWithStep(160, 166, 2),
-			},
-			expectedUpdatedCachedEntry: nil, // no cache update need, request fulfilled using cache
-		},
-		{
-			name: "Should not drop tiny extent that partially left-overlaps with tiny request",
-			input: &PrometheusRequest{
-				Start: 100,
-				End:   106,
-				Step:  2,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(104, 110, 2),
-				mkExtentWithStep(160, 166, 2),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(100, 110, 2),
-				mkExtentWithStep(160, 166, 2),
-			},
-		},
-		{
-			name: "Should not drop tiny extent that partially right-overlaps with tiny request",
-			input: &PrometheusRequest{
-				Start: 100,
-				End:   106,
-				Step:  2,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(98, 102, 2),
-				mkExtentWithStep(160, 166, 2),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(60, 64, 2),
-				mkExtentWithStep(98, 106, 2),
-				mkExtentWithStep(160, 166, 2),
-			},
-		},
-		{
-			name: "Should merge fragmented extents if request fills the hole",
-			input: &PrometheusRequest{
-				Start: 40,
-				End:   80,
-				Step:  20,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(0, 20, 20),
-				mkExtentWithStep(80, 100, 20),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(0, 100, 20),
-			},
-		},
-		{
-			name: "Should left-extend extent if request starts earlier than extent in cache",
-			input: &PrometheusRequest{
-				Start: 40,
-				End:   80,
-				Step:  20,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(60, 160, 20),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(40, 160, 20),
-			},
-		},
-		{
-			name: "Should right-extend extent if request ends later than extent in cache",
-			input: &PrometheusRequest{
-				Start: 100,
-				End:   180,
-				Step:  20,
-			},
-			cachedEntry: []Extent{
-				mkExtentWithStep(60, 160, 20),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(60, 180, 20),
-			},
-		},
-		{
-			name: "Should not throw error if complete-overlapped smaller Extent is erroneous",
-			input: &PrometheusRequest{
-				// This request is carefully crated such that cachedEntry is not used to fulfill
-				// the request.
-				Start: 160,
-				End:   180,
-				Step:  20,
-			},
-			cachedEntry: []Extent{
-				{
-					Start: 60,
-					End:   80,
-
-					// if the optimization of "sorting by End when Start of 2 Extents are equal" is not there, this nil
-					// response would cause error during Extents merge phase. With the optimization
-					// this bad Extent should be dropped. The good Extent below can be used instead.
-					Response: nil,
-				},
-				mkExtentWithStep(60, 160, 20),
-			},
-			expectedUpdatedCachedEntry: []Extent{
-				mkExtentWithStep(60, 180, 20),
-			},
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			sut := resultsCache{
-				extractor:      PrometheusResponseExtractor{},
-				minCacheExtent: 10,
-				limits:         mockLimits{},
-				merger:         PrometheusCodec,
-				next: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
-					return mkAPIResponse(req.GetStart(), req.GetEnd(), req.GetStep()), nil
-				}),
+			for _, req := range reqs {
+				assert.Equal(t, tc.input.GetStep(), req.GetStep())
+				assert.Equal(t, tc.input.GetStart()%tc.input.GetStep(), req.GetStart()%req.GetStep())
 			}
-
-			ctx := user.InjectOrgID(context.Background(), "1")
-			response, updatedExtents, err := sut.handleHit(ctx, tc.input, tc.cachedEntry, time.Now().Unix()*1000)
-			require.NoError(t, err)
-
-			expectedResponse := mkAPIResponse(tc.input.GetStart(), tc.input.GetEnd(), tc.input.GetStep())
-			require.Equal(t, expectedResponse, response, "response does not match the expectation")
-			require.Equal(t, tc.expectedUpdatedCachedEntry, updatedExtents, "updated cache entry does not match the expectation")
 		})
 	}
-}
-
-func TestResultsCache(t *testing.T) {
-	calls := 0
-	cfg := ResultsCacheConfig{
-		CacheConfig: cache.Config{
-			Cache: cache.NewMockCache(),
-		},
-	}
-	rcm, _, err := NewResultsCacheMiddleware(
-		log.NewNopLogger(),
-		cfg,
-		constSplitter(day),
-		mockLimits{},
-		PrometheusCodec,
-		PrometheusResponseExtractor{},
-		nil,
-		nil,
-		nil,
-	)
-	require.NoError(t, err)
-
-	rc := rcm.Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
-		calls++
-		return parsedResponse, nil
-	}))
-	ctx := user.InjectOrgID(context.Background(), "1")
-	resp, err := rc.Do(ctx, parsedRequest)
-	require.NoError(t, err)
-	require.Equal(t, 1, calls)
-	require.Equal(t, parsedResponse, resp)
-
-	// Doing same request again shouldn't change anything.
-	resp, err = rc.Do(ctx, parsedRequest)
-	require.NoError(t, err)
-	require.Equal(t, 1, calls)
-	require.Equal(t, parsedResponse, resp)
-
-	// Doing request with new end time should do one more query.
-	req := parsedRequest.WithStartEnd(parsedRequest.GetStart(), parsedRequest.GetEnd()+100)
-	_, err = rc.Do(ctx, req)
-	require.NoError(t, err)
-	require.Equal(t, 2, calls)
-}
-
-func TestResultsCacheRecent(t *testing.T) {
-	var cfg ResultsCacheConfig
-	flagext.DefaultValues(&cfg)
-	cfg.CacheConfig.Cache = cache.NewMockCache()
-	rcm, _, err := NewResultsCacheMiddleware(
-		log.NewNopLogger(),
-		cfg,
-		constSplitter(day),
-		mockLimits{maxCacheFreshness: 10 * time.Minute},
-		PrometheusCodec,
-		PrometheusResponseExtractor{},
-		nil,
-		nil,
-		nil,
-	)
-	require.NoError(t, err)
-
-	req := parsedRequest.WithStartEnd(int64(model.Now())-(60*1e3), int64(model.Now()))
-
-	calls := 0
-	rc := rcm.Wrap(HandlerFunc(func(_ context.Context, r Request) (Response, error) {
-		calls++
-		assert.Equal(t, r, req)
-		return parsedResponse, nil
-	}))
-	ctx := user.InjectOrgID(context.Background(), "1")
-
-	// Request should result in a query.
-	resp, err := rc.Do(ctx, req)
-	require.NoError(t, err)
-	require.Equal(t, 1, calls)
-	require.Equal(t, parsedResponse, resp)
-
-	// Doing same request again should result in another query.
-	resp, err = rc.Do(ctx, req)
-	require.NoError(t, err)
-	require.Equal(t, 2, calls)
-	require.Equal(t, parsedResponse, resp)
-}
-
-func TestResultsCacheMaxFreshness(t *testing.T) {
-	modelNow := model.Now()
-	for i, tc := range []struct {
-		fakeLimits       Limits
-		Handler          HandlerFunc
-		expectedResponse *PrometheusResponse
-	}{
-		{
-			fakeLimits:       mockLimits{maxCacheFreshness: 5 * time.Second},
-			Handler:          nil,
-			expectedResponse: mkAPIResponse(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3), 10),
-		},
-		{
-			// should not lookup cache because per-tenant override will be applied
-			fakeLimits: mockLimits{maxCacheFreshness: 10 * time.Minute},
-			Handler: HandlerFunc(func(_ context.Context, _ Request) (Response, error) {
-				return parsedResponse, nil
-			}),
-			expectedResponse: parsedResponse,
-		},
-	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var cfg ResultsCacheConfig
-			flagext.DefaultValues(&cfg)
-			cfg.CacheConfig.Cache = cache.NewMockCache()
-
-			fakeLimits := tc.fakeLimits
-			rcm, _, err := NewResultsCacheMiddleware(
-				log.NewNopLogger(),
-				cfg,
-				constSplitter(day),
-				fakeLimits,
-				PrometheusCodec,
-				PrometheusResponseExtractor{},
-				nil,
-				nil,
-				nil,
-			)
-			require.NoError(t, err)
-
-			// create cache with handler
-			rc := rcm.Wrap(tc.Handler)
-			ctx := user.InjectOrgID(context.Background(), "1")
-
-			// create request with start end within the key extents
-			req := parsedRequest.WithStartEnd(int64(modelNow)-(50*1e3), int64(modelNow)-(10*1e3))
-
-			// fill cache
-			key := constSplitter(day).GenerateCacheKey("1", req)
-			rc.(*resultsCache).put(ctx, key, []Extent{mkExtent(int64(modelNow)-(600*1e3), int64(modelNow))})
-
-			resp, err := rc.Do(ctx, req)
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedResponse, resp)
-		})
-	}
-}
-
-func Test_resultsCache_MissingData(t *testing.T) {
-	cfg := ResultsCacheConfig{
-		CacheConfig: cache.Config{
-			Cache: cache.NewMockCache(),
-		},
-	}
-	rm, _, err := NewResultsCacheMiddleware(
-		log.NewNopLogger(),
-		cfg,
-		constSplitter(day),
-		mockLimits{},
-		PrometheusCodec,
-		PrometheusResponseExtractor{},
-		nil,
-		nil,
-		nil,
-	)
-	require.NoError(t, err)
-	rc := rm.Wrap(nil).(*resultsCache)
-	ctx := context.Background()
-
-	// fill up the cache
-	rc.put(ctx, "empty", []Extent{{
-		Start:    100,
-		End:      200,
-		Response: nil,
-	}})
-	rc.put(ctx, "notempty", []Extent{mkExtent(100, 120)})
-	rc.put(ctx, "mixed", []Extent{mkExtent(100, 120), {
-		Start:    120,
-		End:      200,
-		Response: nil,
-	}})
-
-	extents, hit := rc.get(ctx, "empty")
-	require.Empty(t, extents)
-	require.False(t, hit)
-
-	extents, hit = rc.get(ctx, "notempty")
-	require.Equal(t, len(extents), 1)
-	require.True(t, hit)
-
-	extents, hit = rc.get(ctx, "mixed")
-	require.Equal(t, len(extents), 0)
-	require.False(t, hit)
 }
 
 func TestConstSplitter_generateCacheKey(t *testing.T) {
@@ -942,81 +546,18 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 		{"<30m", &PrometheusRequest{Start: toMs(10 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:0"},
 		{"30m", &PrometheusRequest{Start: toMs(30 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:1"},
 		{"91m", &PrometheusRequest{Start: toMs(91 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:3"},
+		{"91m_5m", &PrometheusRequest{Start: toMs(91 * time.Minute), Step: 5 * time.Minute.Milliseconds(), Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:300000:3:60000"},
 		{"0", &PrometheusRequest{Start: 0, Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
 		{"<1d", &PrometheusRequest{Start: toMs(22 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
 		{"4d", &PrometheusRequest{Start: toMs(4 * 24 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:4"},
 		{"3d5h", &PrometheusRequest{Start: toMs(77 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:3"},
+		{"1111m", &PrometheusRequest{Start: 1111 * time.Minute.Milliseconds(), Step: 10 * time.Minute.Milliseconds(), Query: "foo{}"}, 1 * time.Hour, "fake:foo{}:600000:18:60000"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {
 			if got := constSplitter(tt.interval).GenerateCacheKey("fake", tt.r); got != tt.want {
 				t.Errorf("generateKey() = %v, want %v", got, tt.want)
 			}
-		})
-	}
-}
-
-func TestResultsCacheShouldCacheFunc(t *testing.T) {
-	testcases := []struct {
-		name         string
-		shouldCache  ShouldCacheFn
-		requests     []Request
-		expectedCall int
-	}{
-		{
-			name:         "normal",
-			shouldCache:  nil,
-			requests:     []Request{parsedRequest, parsedRequest},
-			expectedCall: 1,
-		},
-		{
-			name: "always no cache",
-			shouldCache: func(r Request) bool {
-				return false
-			},
-			requests:     []Request{parsedRequest, parsedRequest},
-			expectedCall: 2,
-		},
-		{
-			name: "check cache based on request",
-			shouldCache: func(r Request) bool {
-				return !r.GetOptions().CacheDisabled
-			},
-			requests:     []Request{noCacheRequest, noCacheRequest},
-			expectedCall: 2,
-		},
-	}
-
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			calls := 0
-			var cfg ResultsCacheConfig
-			flagext.DefaultValues(&cfg)
-			cfg.CacheConfig.Cache = cache.NewMockCache()
-			rcm, _, err := NewResultsCacheMiddleware(
-				log.NewNopLogger(),
-				cfg,
-				constSplitter(day),
-				mockLimits{maxCacheFreshness: 10 * time.Minute},
-				PrometheusCodec,
-				PrometheusResponseExtractor{},
-				nil,
-				tc.shouldCache,
-				nil,
-			)
-			require.NoError(t, err)
-			rc := rcm.Wrap(HandlerFunc(func(_ context.Context, req Request) (Response, error) {
-				calls++
-				return parsedResponse, nil
-			}))
-
-			for _, req := range tc.requests {
-				ctx := user.InjectOrgID(context.Background(), "1")
-				_, err := rc.Do(ctx, req)
-				require.NoError(t, err)
-			}
-
-			require.Equal(t, tc.expectedCall, calls)
 		})
 	}
 }

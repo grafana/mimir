@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     max_samples_per_sec_per_ingester: 80e3,
     max_samples_per_sec_per_distributor: 240e3,
     limit_utilisation_target: 0.6,
-    cortex_overrides_metric: 'cortex_overrides',
+    cortex_overrides_metric: 'cortex_limits_overrides',
   } + $._config + $._group_config,
   prometheusRules+:: {
     groups+: [

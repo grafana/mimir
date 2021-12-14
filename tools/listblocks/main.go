@@ -17,11 +17,12 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/dustin/go-humanize"
 	gokitlog "github.com/go-kit/log"
 	"github.com/grafana/dskit/concurrency"
 	"github.com/grafana/dskit/flagext"
 	"github.com/oklog/ulid"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -41,9 +42,12 @@ type config struct {
 	showSources         bool
 	showParents         bool
 	showCompactionLevel bool
+	showBlockSize       bool
 	splitCount          int
 	minTime             flagext.Time
 	maxTime             flagext.Time
+
+	useUlidTimeForMinTimeCheck bool
 }
 
 func main() {
@@ -56,9 +60,11 @@ func main() {
 	flag.BoolVar(&cfg.showSources, "show-sources", false, "Show compaction sources")
 	flag.BoolVar(&cfg.showParents, "show-parents", false, "Show parent blocks")
 	flag.BoolVar(&cfg.showCompactionLevel, "show-compaction-level", false, "Show compaction level")
+	flag.BoolVar(&cfg.showBlockSize, "show-block-size", false, "Show size of block based on details in meta.json, if available")
 	flag.IntVar(&cfg.splitCount, "split-count", 0, "It not 0, shows split number that would be used for grouping blocks during split compaction")
 	flag.Var(&cfg.minTime, "min-time", "If set, only blocks with MinTime >= this value are printed")
 	flag.Var(&cfg.maxTime, "max-time", "If set, only blocks with MaxTime <= this value are printed")
+	flag.BoolVar(&cfg.useUlidTimeForMinTimeCheck, "use-ulid-time-for-min-time-check", false, "If true, meta.json files for blocks with ULID time before min-time are not loaded. This may incorrectly skip blocks that have data from the future (minT/maxT higher than ULID).")
 	flag.Parse()
 
 	if cfg.userID == "" {
@@ -74,7 +80,12 @@ func main() {
 		log.Fatalln("failed to create bucket:", err)
 	}
 
-	metas, deletedTimes, err := loadMetaFilesAndDeletionMarkers(ctx, bkt, cfg.userID, cfg.showDeleted)
+	loadMetasMinTime := time.Time{}
+	if cfg.useUlidTimeForMinTimeCheck {
+		loadMetasMinTime = time.Time(cfg.minTime)
+	}
+
+	metas, deletedTimes, err := loadMetaFilesAndDeletionMarkers(ctx, bkt, cfg.userID, cfg.showDeleted, loadMetasMinTime)
 	if err != nil {
 		log.Fatalln("failed to read block metadata:", err)
 	}
@@ -82,7 +93,7 @@ func main() {
 	printMetas(metas, deletedTimes, cfg)
 }
 
-func loadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.Bucket, user string, showDeleted bool) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
+func loadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.Bucket, user string, showDeleted bool, minTime time.Time) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
 	deletedBlocks := map[ulid.ULID]bool{}
 	deletionMarkerFiles := []string(nil)
 
@@ -104,6 +115,13 @@ func loadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.Bucket, u
 			if !showDeleted && deletedBlocks[id] {
 				return nil
 			}
+
+			// Block's ULID is typically higher than min/max time of the block,
+			// unless somebody was ingesting data with timestamps in the future.
+			if !minTime.IsZero() && ulid.Time(id.Time()).Before(minTime) {
+				return nil
+			}
+
 			metaPaths = append(metaPaths, path.Join(s, "meta.json"))
 		}
 		return nil
@@ -195,14 +213,27 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	}
 
 	sort.Slice(blocks, func(i, j int) bool {
+		// By min-time
 		if blocks[i].MinTime != blocks[j].MinTime {
 			return blocks[i].MinTime < blocks[j].MinTime
 		}
-		if blocks[i].MaxTime != blocks[j].MaxTime {
-			return blocks[i].MaxTime < blocks[j].MaxTime
+
+		// Duration
+		duri := blocks[i].MaxTime - blocks[i].MinTime
+		durj := blocks[j].MaxTime - blocks[j].MinTime
+		if duri != durj {
+			return duri < durj
 		}
 
-		// check block creation time instead
+		// Compactor shard
+		shardi := blocks[i].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+		shardj := blocks[j].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
+
+		if shardi != "" && shardj != "" && shardi != shardj {
+			return shardi < shardj
+		}
+
+		// ULID time.
 		return blocks[i].ULID.Time() < blocks[j].ULID.Time()
 	})
 
@@ -225,6 +256,9 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 	}
 	if cfg.showCompactionLevel {
 		fmt.Fprintf(tabber, "Lvl\t")
+	}
+	if cfg.showBlockSize {
+		fmt.Fprintf(tabber, "Size\t")
 	}
 	if cfg.showLabels {
 		fmt.Fprintf(tabber, "Labels (excl. "+tsdb.TenantIDExternalLabel+")\t")
@@ -272,6 +306,10 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 			fmt.Fprintf(tabber, "%d\t", b.Compaction.Level)
 		}
 
+		if cfg.showBlockSize {
+			fmt.Fprintf(tabber, "%s\t", getFormattedBlockSize(b))
+		}
+
 		if cfg.showLabels {
 			if m := b.Thanos.Labels; m != nil {
 				fmt.Fprintf(tabber, "%s\t", labels.FromMap(b.Thanos.Labels).WithoutLabels(tsdb.TenantIDExternalLabel))
@@ -296,4 +334,17 @@ func printMetas(metas map[ulid.ULID]*metadata.Meta, deletedTimes map[ulid.ULID]t
 
 		fmt.Fprintln(tabber)
 	}
+}
+
+func getFormattedBlockSize(b *metadata.Meta) string {
+	if len(b.Thanos.Files) == 0 {
+		return ""
+	}
+
+	size := uint64(0)
+	for _, f := range b.Thanos.Files {
+		size += uint64(f.SizeBytes)
+	}
+
+	return humanize.IBytes(size)
 }

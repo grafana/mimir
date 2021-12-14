@@ -3,7 +3,7 @@
 package ingester
 
 import (
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 
@@ -18,6 +18,8 @@ func labelNamesAndValues(
 	messageSizeThreshold int,
 	server client.Ingester_LabelNamesAndValuesServer,
 ) error {
+	ctx := server.Context()
+
 	labelNames, err := index.LabelNames(matchers...)
 	if err != nil {
 		return err
@@ -26,6 +28,9 @@ func labelNamesAndValues(
 	response := client.LabelNamesAndValuesResponse{}
 	responseSizeBytes := 0
 	for _, labelName := range labelNames {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		labelItem := &client.LabelValues{LabelName: labelName}
 		responseSizeBytes += len(labelName)
 		// send message if (response size + size of label name of current label) is greater or equals to threshold
@@ -90,6 +95,8 @@ func labelValuesCardinality(
 	msgSizeThreshold int,
 	srv client.Ingester_LabelValuesCardinalityServer,
 ) error {
+	ctx := srv.Context()
+
 	resp := client.LabelValuesCardinalityResponse{}
 	respSize := 0
 
@@ -98,6 +105,9 @@ func labelValuesCardinality(
 	copy(lblValMatchers, matchers)
 
 	for _, lbName := range lbNames {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		// Obtain all values for current label name.
 		lbValues, err := idxReader.LabelValues(lbName, matchers...)
 		if err != nil {
@@ -107,6 +117,9 @@ func labelValuesCardinality(
 		var respItem *client.LabelValueSeriesCount
 
 		for _, lbValue := range lbValues {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
 			// Create label name response item entry.
 			if respItem == nil {
 				respItem = &client.LabelValueSeriesCount{

@@ -49,8 +49,19 @@ func NewScenario(networkName string) (*Scenario, error) {
 	// the previous tests run didn't cleanup correctly.
 	s.shutdown()
 
+	args := []string{
+		"network", "create", networkName,
+	}
+
+	if extraArgs := os.Getenv("DOCKER_NETWORK_CREATE_EXTRA_ARGS"); extraArgs != "" {
+		args = append(
+			args,
+			strings.Split(extraArgs, ",")...,
+		)
+	}
+
 	// Setup the docker network.
-	if out, err := RunCommandAndGetOutput("docker", "network", "create", networkName); err != nil {
+	if out, err := RunCommandAndGetOutput("docker", args...); err != nil {
 		logger.Log(string(out))
 		s.clean()
 		return nil, errors.Wrapf(err, "create docker network '%s'", networkName)

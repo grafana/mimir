@@ -10,10 +10,10 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 func TestGenLabelsCorrectness(t *testing.T) {
@@ -116,8 +116,8 @@ func TestNewMockShardedqueryable(t *testing.T) {
 
 			set := q.Select(false, nil, &labels.Matcher{
 				Type: labels.MatchEqual,
-				Name: querysharding.ShardLabel,
-				Value: querysharding.ShardSelector{
+				Name: sharding.ShardLabel,
+				Value: sharding.ShardSelector{
 					ShardIndex: i,
 					ShardCount: tc.shards,
 				}.LabelValue(),

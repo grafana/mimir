@@ -17,6 +17,8 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block"
@@ -109,4 +111,40 @@ func testIgnoreDeletionMarkFilter(t *testing.T, bucketIndexEnabled bool) {
 	assert.Equal(t, 1.0, promtest.ToFloat64(synced.WithLabelValues(block.MarkedForDeletionMeta)))
 	assert.Equal(t, expectedMetas, inputMetas)
 	assert.Equal(t, expectedDeletionMarks, f.DeletionMarkBlocks())
+}
+
+func TestTimeMetaFilter(t *testing.T) {
+	now := time.Now()
+	limit := 10 * time.Minute
+	limitTime := now.Add(-limit)
+
+	ulid1 := ulid.MustNew(1, nil)
+	ulid2 := ulid.MustNew(2, nil)
+	ulid3 := ulid.MustNew(3, nil)
+	ulid4 := ulid.MustNew(4, nil)
+
+	inputMetas := map[ulid.ULID]*metadata.Meta{
+		ulid1: {BlockMeta: tsdb.BlockMeta{MinTime: 100}},                                             // Very old, keep it
+		ulid2: {BlockMeta: tsdb.BlockMeta{MinTime: timestamp.FromTime(now)}},                         // Fresh block, remove.
+		ulid3: {BlockMeta: tsdb.BlockMeta{MinTime: timestamp.FromTime(limitTime.Add(time.Minute))}},  // Inside limit time, remove.
+		ulid4: {BlockMeta: tsdb.BlockMeta{MinTime: timestamp.FromTime(limitTime.Add(-time.Minute))}}, // Before limit time, keep.
+	}
+
+	expectedMetas := map[ulid.ULID]*metadata.Meta{}
+	expectedMetas[ulid1] = inputMetas[ulid1]
+	expectedMetas[ulid4] = inputMetas[ulid4]
+
+	synced := extprom.NewTxGaugeVec(nil, prometheus.GaugeOpts{Name: "synced"}, []string{"state"})
+
+	// Test negative limit.
+	f := newMinTimeMetaFilter(-10 * time.Minute)
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
+	assert.Equal(t, inputMetas, inputMetas)
+	assert.Equal(t, 0.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
+
+	f = newMinTimeMetaFilter(limit)
+	require.NoError(t, f.Filter(context.Background(), inputMetas, synced))
+
+	assert.Equal(t, expectedMetas, inputMetas)
+	assert.Equal(t, 2.0, promtest.ToFloat64(synced.WithLabelValues(minTimeExcludedMeta)))
 }

@@ -17,8 +17,8 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -26,7 +26,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/querier/astmapper"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -291,12 +291,12 @@ func Test_FunctionParallelism(t *testing.T) {
 				queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 					return &querierMock{
 						series: []*promql.StorageSeries{
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, factor(5)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, factor(7)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(12)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, factor(11)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, factor(8)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, arithmeticSequence(10)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, step, factor(5)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, factor(7)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(12)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, step, factor(11)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(8)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 						},
 					}, nil
 				})
@@ -368,7 +368,7 @@ type querierMock struct {
 }
 
 func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	shard, matchers, err := querysharding.RemoveShardFromMatchers(matchers)
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
@@ -415,7 +415,7 @@ func seriesMatches(series *promql.StorageSeries, matchers ...*labels.Matcher) bo
 	return true
 }
 
-func filterSeriesByShard(series []*promql.StorageSeries, shard *querysharding.ShardSelector) []*promql.StorageSeries {
+func filterSeriesByShard(series []*promql.StorageSeries, shard *sharding.ShardSelector) []*promql.StorageSeries {
 	if shard == nil {
 		return series
 	}
@@ -431,7 +431,7 @@ func filterSeriesByShard(series []*promql.StorageSeries, shard *querysharding.Sh
 	return filtered
 }
 
-func newSeries(metric labels.Labels, from, to time.Time, gen generator) *promql.StorageSeries {
+func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen generator) *promql.StorageSeries {
 	var (
 		points    []promql.Point
 		prevValue *float64

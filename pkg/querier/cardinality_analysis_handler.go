@@ -8,9 +8,11 @@ import (
 	"sort"
 	"strconv"
 
+	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/weaveworks/common/httpgrpc"
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -45,7 +47,7 @@ func LabelNamesCardinalityHandler(d Distributor, limits *validation.Overrides) h
 		}
 		response, err := d.LabelNamesAndValues(ctx, matchers)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondFromError(err, w)
 			return
 		}
 		cardinalityResponse := toLabelNamesCardinalityResponse(response, limit)
@@ -76,7 +78,7 @@ func LabelValuesCardinalityHandler(distributor Distributor, limits *validation.O
 
 		seriesCountTotal, cardinalityResponse, err := distributor.LabelValuesCardinality(ctx, labelNames, matchers)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			respondFromError(err, w)
 			return
 		}
 
@@ -175,6 +177,16 @@ func extractLabelNames(r *http.Request) ([]model.LabelName, error) {
 	}
 
 	return labelNames, nil
+}
+
+func respondFromError(err error, w http.ResponseWriter) {
+	httpResp, ok := httpgrpc.HTTPResponseFromError(errors.Cause(err))
+	if !ok {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(int(httpResp.Code))
+	w.Write(httpResp.Body) //nolint
 }
 
 // toLabelNamesCardinalityResponse converts ingester's response to LabelNamesCardinalityResponse

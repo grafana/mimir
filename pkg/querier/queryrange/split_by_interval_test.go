@@ -6,24 +6,16 @@
 package queryrange
 
 import (
-	"context"
-	"io/ioutil"
-	"net/http"
-	"net/http/httptest"
-	"net/url"
+	"fmt"
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/middleware"
-	"github.com/weaveworks/common/user"
-	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 const seconds = 1e3 // 1e3 milliseconds per second.
@@ -73,179 +65,152 @@ func TestSplitQueryByInterval(t *testing.T) {
 		interval time.Duration
 	}{
 		{
-			input: &PrometheusRequest{
-				Start: 0,
-				End:   60 * 60 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 0,
-					End:   60 * 60 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 0,
-				End:   60 * 60 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 0,
-					End:   60 * 60 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 0, End: 60 * 60 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 0,
-				End:   24 * 3600 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 0,
-					End:   24 * 3600 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 0, End: 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 0,
-				End:   3 * 3600 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 0,
-					End:   3 * 3600 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 0, End: 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 0,
-				End:   2 * 24 * 3600 * seconds,
-				Step:  15 * seconds,
-				Query: "foo @ start()",
-			},
+			input: &PrometheusRequest{Start: 0, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo @ start()"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 0,
-					End:   (24 * 3600 * seconds) - (15 * seconds),
-					Step:  15 * seconds,
-					Query: "foo @ 0.000",
-				},
-				&PrometheusRequest{
-					Start: 24 * 3600 * seconds,
-					End:   2 * 24 * 3600 * seconds,
-					Step:  15 * seconds,
-					Query: "foo @ 0.000",
-				},
+				&PrometheusRequest{Start: 0, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo @ 0.000"},
+				&PrometheusRequest{Start: 24 * 3600 * seconds, End: 2 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo @ 0.000"},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 0,
-				End:   2 * 3 * 3600 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 0, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 0,
-					End:   (3 * 3600 * seconds) - (15 * seconds),
-					Step:  15 * seconds,
-					Query: "foo",
-				},
-				&PrometheusRequest{
-					Start: 3 * 3600 * seconds,
-					End:   2 * 3 * 3600 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 0, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
+				&PrometheusRequest{Start: 3 * 3600 * seconds, End: 2 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: 3 * time.Hour,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 3 * 3600 * seconds,
-				End:   3 * 24 * 3600 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 3 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 3 * 3600 * seconds,
-					End:   (24 * 3600 * seconds) - (15 * seconds),
-					Step:  15 * seconds,
-					Query: "foo",
-				},
-				&PrometheusRequest{
-					Start: 24 * 3600 * seconds,
-					End:   (2 * 24 * 3600 * seconds) - (15 * seconds),
-					Step:  15 * seconds,
-					Query: "foo",
-				},
-				&PrometheusRequest{
-					Start: 2 * 24 * 3600 * seconds,
-					End:   3 * 24 * 3600 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 3 * 3600 * seconds, End: (24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
+				&PrometheusRequest{Start: 24 * 3600 * seconds, End: (2 * 24 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
+				&PrometheusRequest{Start: 2 * 24 * 3600 * seconds, End: 3 * 24 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: day,
 		},
 		{
-			input: &PrometheusRequest{
-				Start: 2 * 3600 * seconds,
-				End:   3 * 3 * 3600 * seconds,
-				Step:  15 * seconds,
-				Query: "foo",
-			},
+			input: &PrometheusRequest{Start: 2 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			expected: []Request{
-				&PrometheusRequest{
-					Start: 2 * 3600 * seconds,
-					End:   (3 * 3600 * seconds) - (15 * seconds),
-					Step:  15 * seconds,
-					Query: "foo",
-				},
-				&PrometheusRequest{
-					Start: 3 * 3600 * seconds,
-					End:   (2 * 3 * 3600 * seconds) - (15 * seconds),
-					Step:  15 * seconds,
-					Query: "foo",
-				},
-				&PrometheusRequest{
-					Start: 2 * 3 * 3600 * seconds,
-					End:   3 * 3 * 3600 * seconds,
-					Step:  15 * seconds,
-					Query: "foo",
-				},
+				&PrometheusRequest{Start: 2 * 3600 * seconds, End: (3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
+				&PrometheusRequest{Start: 3 * 3600 * seconds, End: (2 * 3 * 3600 * seconds) - (15 * seconds), Step: 15 * seconds, Query: "foo"},
+				&PrometheusRequest{Start: 2 * 3 * 3600 * seconds, End: 3 * 3 * 3600 * seconds, Step: 15 * seconds, Query: "foo"},
 			},
 			interval: 3 * time.Hour,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:03:00Z"), Step: 5 * time.Minute.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-14T23:48:00Z"), End: timeToMillis(t, "2021-10-14T23:54:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 6 * time.Minute.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-14T22:00:00Z"), End: timeToMillis(t, "2021-10-14T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-16T22:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T22:00:00Z"), End: timeToMillis(t, "2021-10-17T22:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T00:00:00Z"), End: timeToMillis(t, "2021-10-15T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-16T00:00:00Z"), End: timeToMillis(t, "2021-10-16T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T00:00:00Z"), End: timeToMillis(t, "2021-10-17T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-18T00:00:00Z"), End: timeToMillis(t, "2021-10-18T00:00:00Z"), Step: 24 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T22:00:00Z"), End: timeToMillis(t, "2021-10-15T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T04:00:00Z"), End: timeToMillis(t, "2021-10-17T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-18T10:00:00Z"), End: timeToMillis(t, "2021-10-18T10:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-19T16:00:00Z"), End: timeToMillis(t, "2021-10-19T16:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-20T22:00:00Z"), End: timeToMillis(t, "2021-10-20T22:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-22T04:00:00Z"), End: timeToMillis(t, "2021-10-22T04:00:00Z"), Step: 30 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T14:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-16T06:00:00Z"), End: timeToMillis(t, "2021-10-16T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 12 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T18:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
+		},
+		{
+			input: &PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+			expected: []Request{
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-15T06:00:00Z"), End: timeToMillis(t, "2021-10-15T16:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-16T02:00:00Z"), End: timeToMillis(t, "2021-10-16T22:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+				&PrometheusRequest{Start: timeToMillis(t, "2021-10-17T08:00:00Z"), End: timeToMillis(t, "2021-10-17T08:00:00Z"), Step: 10 * time.Hour.Milliseconds(), Query: "foo"},
+			},
+			interval: day,
 		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
+		t.Run(fmt.Sprintf("%d: start: %v, end: %v, step: %v", i, tc.input.GetStart(), tc.input.GetEnd(), tc.input.GetStep()), func(t *testing.T) {
 			days, err := splitQueryByInterval(tc.input, tc.interval)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, days)
@@ -253,59 +218,10 @@ func TestSplitQueryByInterval(t *testing.T) {
 	}
 }
 
-func TestSplitByDay(t *testing.T) {
-	mergedResponse, err := PrometheusCodec.MergeResponse(parsedResponse, parsedResponse)
+func timeToMillis(t *testing.T, input string) int64 {
+	r, err := time.Parse(time.RFC3339, input)
 	require.NoError(t, err)
-
-	mergedHTTPResponse, err := PrometheusCodec.EncodeResponse(context.Background(), mergedResponse)
-	require.NoError(t, err)
-
-	mergedHTTPResponseBody, err := ioutil.ReadAll(mergedHTTPResponse.Body)
-	require.NoError(t, err)
-
-	for i, tc := range []struct {
-		path, expectedBody string
-		expectedQueryCount int32
-	}{
-		{query, string(mergedHTTPResponseBody), 2},
-	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			var actualCount atomic.Int32
-			s := httptest.NewServer(
-				middleware.AuthenticateUser.Wrap(
-					http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						actualCount.Inc()
-						_, _ = w.Write([]byte(responseBody))
-					}),
-				),
-			)
-			defer s.Close()
-
-			u, err := url.Parse(s.URL)
-			require.NoError(t, err)
-
-			interval := func(_ Request) time.Duration { return 24 * time.Hour }
-			roundtripper := NewRoundTripper(singleHostRoundTripper{
-				host: u.Host,
-				next: http.DefaultTransport,
-			}, PrometheusCodec, log.NewNopLogger(), NewLimitsMiddleware(mockLimits{}, log.NewNopLogger()), SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, nil))
-
-			req, err := http.NewRequest("GET", tc.path, http.NoBody)
-			require.NoError(t, err)
-
-			ctx := user.InjectOrgID(context.Background(), "1")
-			req = req.WithContext(ctx)
-
-			resp, err := roundtripper.RoundTrip(req)
-			require.NoError(t, err)
-			require.Equal(t, 200, resp.StatusCode)
-
-			bs, err := ioutil.ReadAll(resp.Body)
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedBody, string(bs))
-			require.Equal(t, tc.expectedQueryCount, actualCount.Load())
-		})
-	}
+	return util.TimeToMillis(r)
 }
 
 func Test_evaluateAtModifier(t *testing.T) {
@@ -363,13 +279,4 @@ func Test_evaluateAtModifier(t *testing.T) {
 			require.Equal(t, expectedExpr.String(), out)
 		})
 	}
-}
-
-func TestSplitByInterval_WrapMultipleTimes(t *testing.T) {
-	interval := func(_ Request) time.Duration { return 24 * time.Hour }
-	m := SplitByIntervalMiddleware(interval, mockLimits{}, PrometheusCodec, prometheus.NewRegistry())
-	require.NotPanics(t, func() {
-		m.Wrap(mockHandlerWith(nil, nil))
-		m.Wrap(mockHandlerWith(nil, nil))
-	})
 }

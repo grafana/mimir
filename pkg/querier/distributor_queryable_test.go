@@ -7,12 +7,15 @@ package querier
 
 import (
 	"context"
+	"fmt"
+	"math"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
@@ -27,10 +30,6 @@ import (
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-)
-
-const (
-	maxt, mint = 0, 10
 )
 
 func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) {
@@ -94,10 +93,9 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			querier, err := queryable.Querier(ctx, testData.queryMinT, testData.queryMaxT)
 			require.NoError(t, err)
 
-			// Select hints are not passed by Prometheus when querying /series.
-			var hints *storage.SelectHints
-			if !testData.querySeries {
-				hints = &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
+			hints := &storage.SelectHints{Start: testData.queryMinT, End: testData.queryMaxT}
+			if testData.querySeries {
+				hints.Func = "series"
 			}
 
 			seriesSet := querier.Select(true, hints)
@@ -131,7 +129,9 @@ func TestDistributorQueryableFilter(t *testing.T) {
 }
 
 func TestIngesterStreaming(t *testing.T) {
-	// We need to make sure that there is atleast one chunk present,
+	const mint, maxt = 0, 10
+
+	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
 	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
 	require.NoError(t, err)
@@ -259,6 +259,8 @@ func TestIngesterStreamingMixedResults(t *testing.T) {
 }
 
 func TestDistributorQuerier_LabelNames(t *testing.T) {
+	const mint, maxt = 0, 10
+
 	someMatchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
 	labelNames := []string{"foo", "job"}
 
@@ -300,6 +302,58 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 	})
 }
 
+func BenchmarkDistributorQueryable_Select(b *testing.B) {
+	const (
+		numSeries          = 10000
+		numLabelsPerSeries = 20
+	)
+
+	// We need to make sure that there is at least one chunk present,
+	// else no series will be selected.
+	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	require.NoError(b, err)
+
+	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
+		chunk.NewChunk("", 0, nil, promChunk, model.Earliest, model.Earliest),
+	})
+	require.NoError(b, err)
+
+	// Generate fixtures for series that are going to be returned by the mocked QueryStream().
+	commonLabelsBuilder := labels.NewBuilder(nil)
+	for i := 0; i < numLabelsPerSeries-1; i++ {
+		commonLabelsBuilder.Set(fmt.Sprintf("label_%d", i), fmt.Sprintf("value_%d", i))
+	}
+	commonLabels := commonLabelsBuilder.Labels()
+
+	response := &client.QueryStreamResponse{Chunkseries: make([]client.TimeSeriesChunk, 0, numSeries)}
+	for i := 0; i < numSeries; i++ {
+		lbls := labels.NewBuilder(commonLabels)
+		lbls.Set("series_id", strconv.Itoa(i))
+
+		response.Chunkseries = append(response.Chunkseries, client.TimeSeriesChunk{
+			Labels: mimirpb.FromLabelsToLabelAdapters(lbls.Labels()),
+			Chunks: clientChunks,
+		})
+	}
+
+	d := &mockDistributor{}
+	d.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(response, nil)
+
+	ctx := user.InjectOrgID(context.Background(), "0")
+	queryable := newDistributorQueryable(d, mergeChunks, 0, true, log.NewNopLogger())
+	querier, err := queryable.Querier(ctx, math.MinInt64, math.MaxInt64)
+	require.NoError(b, err)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		seriesSet := querier.Select(true, &storage.SelectHints{Start: math.MinInt64, End: math.MaxInt64})
+		if seriesSet.Err() != nil {
+			b.Fatal(seriesSet.Err())
+		}
+	}
+}
+
 func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples []mimirpb.Sample) {
 	require.Equal(t, l, series.Labels())
 
@@ -316,7 +370,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 }
 
 func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
-	// We need to make sure that there is atleast one chunk present,
+	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
 	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
 	require.NoError(t, err)

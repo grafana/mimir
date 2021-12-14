@@ -265,6 +265,39 @@ local utils = import 'mixin-utils/utils.libsonnet';
     then 'label_name=~"ingester.*"'
     else 'label_name="%s"' % containerName,
 
+  jobNetworkingRow(title, name)::
+    super.row(title)
+    .addPanel($.containerNetworkReceiveBytesPanel($._config.instance_names[name]))
+    .addPanel($.containerNetworkTransmitBytesPanel($._config.instance_names[name]))
+    .addPanel(
+      $.panel('Inflight Requests (per pod)') +
+      $.queryPanel([
+        'avg(cortex_inflight_requests{%s})' % $.jobMatcher($._config.job_names[name]),
+        'max(cortex_inflight_requests{%s})' % $.jobMatcher($._config.job_names[name]),
+      ], ['avg', 'highest']) +
+      { fill: 0 }
+    )
+    .addPanel(
+      $.panel('TCP Connections (per pod)') +
+      $.queryPanel([
+        'avg(sum by(pod) (cortex_tcp_connections{%s}))' % $.jobMatcher($._config.job_names[name]),
+        'max(sum by(pod) (cortex_tcp_connections{%s}))' % $.jobMatcher($._config.job_names[name]),
+        'min(cortex_tcp_connections_limit{%s})' % $.jobMatcher($._config.job_names[name]),
+      ], ['avg', 'highest', 'limit']) +
+      { fill: 0 }
+    ),
+
+  kvStoreRow(title, jobName, kvName)::
+    super.row(title)
+    .addPanel(
+      $.panel('Requests / sec') +
+      $.qpsPanel('cortex_kv_request_duration_seconds_count{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+    )
+    .addPanel(
+      $.panel('Latency') +
+      $.latencyPanel('cortex_kv_request_duration_seconds', '{%s, kv_name=~"%s"}' % [$.jobMatcher($._config.job_names[jobName]), kvName])
+    ),
+
   goHeapInUsePanel(title, jobName)::
     $.panel(title) +
     $.queryPanel(

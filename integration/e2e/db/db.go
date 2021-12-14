@@ -35,7 +35,7 @@ func NewMinio(port int, bktNames ...string) *e2e.HTTPService {
 		images.Minio,
 		// Create the "mimir" bucket before starting minio
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", strings.Join(commands, " && ")),
-		e2e.NewHTTPReadinessProbe(port, "/minio/health/ready", 200, 200),
+		e2e.NewHTTPReadinessProbe(port, "/minio/health/cluster", 200, 200),
 		port,
 	)
 	m.SetEnvVars(map[string]string{
@@ -71,16 +71,5 @@ func NewETCD() *e2e.HTTPService {
 		e2e.NewHTTPReadinessProbe(9000, "/health", 200, 204),
 		2379,
 		9000, // Metrics
-	)
-}
-
-func NewDynamoDB() *e2e.HTTPService {
-	return e2e.NewHTTPService(
-		"dynamodb",
-		images.DynamoDB,
-		e2e.NewCommand("-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"),
-		// DynamoDB doesn't have a readiness probe, so we check if the / works even if returns 400
-		e2e.NewHTTPReadinessProbe(8000, "/", 400, 400),
-		8000,
 	)
 }

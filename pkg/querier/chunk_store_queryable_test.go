@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/chunk"
@@ -22,20 +22,6 @@ import (
 
 // Make sure that chunkSeries implements SeriesWithChunks
 var _ SeriesWithChunks = &chunkSeries{}
-
-func TestChunkQueryable(t *testing.T) {
-	for _, testcase := range testcases {
-		for _, encoding := range encodings {
-			for _, query := range queries {
-				t.Run(fmt.Sprintf("%s/%s/%s", testcase.name, encoding.name, query.query), func(t *testing.T) {
-					store, from := makeMockChunkStore(t, 24, encoding.e)
-					queryable := newChunkStoreQueryable(store, testcase.f)
-					testRangeQuery(t, queryable, from, query)
-				})
-			}
-		}
-	}
-}
 
 type mockChunkStore struct {
 	chunks []chunk.Chunk

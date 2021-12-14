@@ -12,6 +12,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
+
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestIndex_RemoveBlock(t *testing.T) {
@@ -204,6 +206,70 @@ func TestBlockFromThanosMeta(t *testing.T) {
 				MaxTime:        20,
 				SegmentsFormat: SegmentsFormat1Based6Digits,
 				SegmentsNum:    3,
+			},
+		},
+		"meta.json with external labels, no compactor shard ID": {
+			meta: metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						"a": "b",
+						"c": "d",
+					},
+				},
+			},
+			expected: Block{
+				ID:      blockID,
+				MinTime: 10,
+				MaxTime: 20,
+			},
+		},
+		"meta.json with external labels, with compactor shard ID": {
+			meta: metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						"a":                                      "b",
+						"c":                                      "d",
+						mimir_tsdb.CompactorShardIDExternalLabel: "10_of_20",
+					},
+				},
+			},
+			expected: Block{
+				ID:               blockID,
+				MinTime:          10,
+				MaxTime:          20,
+				CompactorShardID: "10_of_20",
+			},
+		},
+		"meta.json with external labels, with invalid shard ID": {
+			meta: metadata.Meta{
+				BlockMeta: tsdb.BlockMeta{
+					ULID:    blockID,
+					MinTime: 10,
+					MaxTime: 20,
+				},
+				Thanos: metadata.Thanos{
+					Labels: map[string]string{
+						"a":                                      "b",
+						"c":                                      "d",
+						mimir_tsdb.CompactorShardIDExternalLabel: "some weird value",
+					},
+				},
+			},
+			expected: Block{
+				ID:               blockID,
+				MinTime:          10,
+				MaxTime:          20,
+				CompactorShardID: "some weird value",
 			},
 		},
 	}

@@ -16,17 +16,13 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 )
 
-const (
-	nanosecondsInMillisecond = int64(time.Millisecond / time.Nanosecond)
-)
-
 func TimeToMillis(t time.Time) int64 {
-	return t.UnixNano() / nanosecondsInMillisecond
+	return t.Unix()*1000 + int64(t.Nanosecond())/int64(time.Millisecond)
 }
 
 // TimeFromMillis is a helper to turn milliseconds -> time.Time
 func TimeFromMillis(ms int64) time.Time {
-	return time.Unix(0, ms*nanosecondsInMillisecond)
+	return time.Unix(ms/1000, (ms%1000)*int64(time.Millisecond)).UTC()
 }
 
 // FormatTimeMillis returns a human readable version of the input time (in milliseconds).

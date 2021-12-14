@@ -17,11 +17,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
@@ -51,7 +50,7 @@ var (
 )
 
 type swappableCache struct {
-	ptr storecache.IndexCache
+	storecache.IndexCache
 }
 
 type customLimiter struct {
@@ -68,32 +67,8 @@ func (c *customLimiter) Reserve(num uint64) error {
 	return nil
 }
 
-func (c *swappableCache) SwapWith(ptr2 storecache.IndexCache) {
-	c.ptr = ptr2
-}
-
-func (c *swappableCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.ptr.StorePostings(ctx, blockID, l, v)
-}
-
-func (c *swappableCache) FetchMultiPostings(ctx context.Context, blockID ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
-	return c.ptr.FetchMultiPostings(ctx, blockID, keys)
-}
-
-func (c *swappableCache) StoreSeries(ctx context.Context, blockID ulid.ULID, id uint64, v []byte) {
-	c.ptr.StoreSeries(ctx, blockID, id, v)
-}
-
-func (c *swappableCache) FetchMultiSeries(ctx context.Context, blockID ulid.ULID, ids []uint64) (map[uint64][]byte, []uint64) {
-	return c.ptr.FetchMultiSeries(ctx, blockID, ids)
-}
-
-func (c *swappableCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {
-	c.ptr.StoreExpandedPostings(ctx, blockID, key, v)
-}
-
-func (c *swappableCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
-	return c.ptr.FetchExpandedPostings(ctx, blockID, key)
+func (c *swappableCache) SwapWith(cache storecache.IndexCache) {
+	c.IndexCache = cache
 }
 
 type storeSuite struct {
@@ -173,6 +148,10 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		labels.FromStrings("a", "2", "c", "1"),
 		labels.FromStrings("a", "2", "c", "2"),
 	}
+	return prepareStoreWithTestBlocksForSeries(t, dir, bkt, manyParts, chunksLimiterFactory, seriesLimiterFactory, relabelConfig, filterConf, series)
+}
+
+func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.Bucket, manyParts bool, chunksLimiterFactory ChunksLimiterFactory, seriesLimiterFactory SeriesLimiterFactory, relabelConfig []*relabel.Config, filterConf *FilterConfig, series []labels.Labels) *storeSuite {
 	extLset := labels.FromStrings("ext1", "value1")
 
 	minTime, maxTime := prepareTestBlocks(t, time.Now(), 3, dir, bkt, series, extLset)
@@ -210,7 +189,9 @@ func prepareStoreWithTestBlocks(t testing.TB, dir string, bkt objstore.Bucket, m
 		WithFilterConfig(filterConf),
 	)
 	assert.NoError(t, err)
-	defer func() { assert.NoError(t, store.Close()) }()
+	t.Cleanup(func() {
+		assert.NoError(t, s.store.Close())
+	})
 
 	s.store = store
 
@@ -258,14 +239,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
 			},
 		},
 		{
@@ -278,10 +259,10 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
 		{
@@ -294,10 +275,10 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
 		{
@@ -310,14 +291,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
 			},
 		},
 		{
@@ -330,14 +311,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
 			},
 		},
 		{
@@ -350,34 +331,8 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-			},
-		},
-		{
-			// Matching by external label should work as well.
-			req: &storepb.SeriesRequest{
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
-					{Type: storepb.LabelMatcher_EQ, Name: "ext2", Value: "value2"},
-				},
-				MinTime: mint,
-				MaxTime: maxt,
-			},
-			expectedChunkLen: 3,
-			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
-			},
-		},
-		{
-			req: &storepb.SeriesRequest{
-				Matchers: []storepb.LabelMatcher{
-					{Type: storepb.LabelMatcher_EQ, Name: "a", Value: "1"},
-					{Type: storepb.LabelMatcher_EQ, Name: "ext2", Value: "wrong-value"},
-				},
-				MinTime: mint,
-				MaxTime: maxt,
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
 			},
 		},
 		{
@@ -390,10 +345,10 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
 		{
@@ -406,14 +361,14 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 3,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "2"}, {Name: "c", Value: "2"}},
 			},
 		},
 		// Regression https://github.com/thanos-io/thanos/issues/833.
@@ -440,10 +395,10 @@ func testBucketStore_e2e(t *testing.T, ctx context.Context, s *storeSuite) {
 			},
 			expectedChunkLen: 0,
 			expected: [][]labelpb.ZLabel{
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+				{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 			},
 		},
 	} {
@@ -574,10 +529,10 @@ func TestBucketStore_TimePartitioning_e2e(t *testing.T) {
 	}
 
 	expectedLabels := [][]labelpb.ZLabel{
-		{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}, {Name: "ext1", Value: "value1"}},
-		{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}, {Name: "ext1", Value: "value1"}},
-		{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}, {Name: "ext2", Value: "value2"}},
-		{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}, {Name: "ext2", Value: "value2"}},
+		{{Name: "a", Value: "1"}, {Name: "b", Value: "1"}},
+		{{Name: "a", Value: "1"}, {Name: "b", Value: "2"}},
+		{{Name: "a", Value: "1"}, {Name: "c", Value: "1"}},
+		{{Name: "a", Value: "1"}, {Name: "c", Value: "2"}},
 	}
 
 	s.cache.SwapWith(noopCache{})
@@ -689,7 +644,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
 				},
-				expected: []string{"a", "b", "c", "ext1", "ext2"}, // ext2 is added by the prepareStoreWithTestBlocks function.
+				expected: []string{"a", "b", "c"},
 			},
 			"outside the time range": {
 				req: &storepb.LabelNamesRequest{
@@ -710,7 +665,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 						},
 					},
 				},
-				expected: []string{"a", "b", "c", "ext1", "ext2"},
+				expected: []string{"a", "b", "c"},
 			},
 			"b=1 matcher": {
 				req: &storepb.LabelNamesRequest{
@@ -724,7 +679,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 						},
 					},
 				},
-				expected: []string{"a", "b", "ext1"},
+				expected: []string{"a", "b"},
 			},
 
 			"b='' matcher": {
@@ -739,7 +694,7 @@ func TestBucketStore_LabelNames_e2e(t *testing.T) {
 						},
 					},
 				},
-				expected: []string{"a", "c", "ext2"},
+				expected: []string{"a", "c"},
 			},
 			"outside the time range, with matcher": {
 				req: &storepb.LabelNamesRequest{
@@ -843,22 +798,7 @@ func TestBucketStore_LabelValues_e2e(t *testing.T) {
 					Start: timestamp.FromTime(minTime),
 					End:   timestamp.FromTime(maxTime),
 				},
-				expected: []string{"value1"},
-			},
-			"label ext1, c=1": {
-				req: &storepb.LabelValuesRequest{
-					Label: "ext1",
-					Start: timestamp.FromTime(minTime),
-					End:   timestamp.FromTime(maxTime),
-					Matchers: []storepb.LabelMatcher{
-						{
-							Type:  storepb.LabelMatcher_EQ,
-							Name:  "c",
-							Value: "1",
-						},
-					},
-				},
-				expected: nil, // ext1 is replaced with ext2 for series with c
+				expected: nil, // External labels are not returned.
 			},
 		} {
 			t.Run(name, func(t *testing.T) {

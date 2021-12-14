@@ -109,7 +109,7 @@ type enqueueResult struct {
 func NewFrontend(cfg Config, log log.Logger, reg prometheus.Registerer) (*Frontend, error) {
 	requestsCh := make(chan *frontendRequest)
 
-	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port), requestsCh, log)
+	schedulerWorkers, err := newFrontendSchedulerWorkers(cfg, fmt.Sprintf("%s:%d", cfg.Addr, cfg.Port), requestsCh, log, reg)
 	if err != nil {
 		return nil, err
 	}

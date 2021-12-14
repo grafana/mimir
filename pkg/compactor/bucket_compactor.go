@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"sync"
@@ -17,11 +18,12 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/dskit/concurrency"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
@@ -30,9 +32,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"github.com/thanos-io/thanos/pkg/runutil"
-	"golang.org/x/sync/errgroup"
+	"go.uber.org/atomic"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimit_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
 type ResolutionLevel int64
@@ -53,16 +57,15 @@ type DeduplicateFilter interface {
 // Syncer synchronizes block metas from a bucket into a local directory.
 // It sorts them into compaction groups based on equal label sets.
 type Syncer struct {
-	logger                   log.Logger
-	bkt                      objstore.Bucket
-	fetcher                  block.MetadataFetcher
-	mtx                      sync.Mutex
-	blocks                   map[ulid.ULID]*metadata.Meta
-	partial                  map[ulid.ULID]error
-	blockSyncConcurrency     int
-	metrics                  *syncerMetrics
-	deduplicateBlocksFilter  DeduplicateFilter
-	ignoreDeletionMarkFilter *block.IgnoreDeletionMarkFilter
+	logger                         log.Logger
+	bkt                            objstore.Bucket
+	fetcher                        block.MetadataFetcher
+	mtx                            sync.Mutex
+	blocks                         map[ulid.ULID]*metadata.Meta
+	partial                        map[ulid.ULID]error
+	metrics                        *syncerMetrics
+	deduplicateBlocksFilter        DeduplicateFilter
+	excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter
 }
 
 type syncerMetrics struct {
@@ -98,19 +101,18 @@ func newSyncerMetrics(reg prometheus.Registerer, blocksMarkedForDeletion, garbag
 
 // NewMetaSyncer returns a new Syncer for the given Bucket and directory.
 // Blocks must be at least as old as the sync delay for being considered.
-func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, ignoreDeletionMarkFilter *block.IgnoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter, blockSyncConcurrency int) (*Syncer, error) {
+func NewMetaSyncer(logger log.Logger, reg prometheus.Registerer, bkt objstore.Bucket, fetcher block.MetadataFetcher, deduplicateBlocksFilter DeduplicateFilter, excludeMarkedForDeletionFilter *ExcludeMarkedForDeletionFilter, blocksMarkedForDeletion, garbageCollectedBlocks prometheus.Counter) (*Syncer, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Syncer{
-		logger:                   logger,
-		bkt:                      bkt,
-		fetcher:                  fetcher,
-		blocks:                   map[ulid.ULID]*metadata.Meta{},
-		metrics:                  newSyncerMetrics(reg, blocksMarkedForDeletion, garbageCollectedBlocks),
-		deduplicateBlocksFilter:  deduplicateBlocksFilter,
-		ignoreDeletionMarkFilter: ignoreDeletionMarkFilter,
-		blockSyncConcurrency:     blockSyncConcurrency,
+		logger:                         logger,
+		bkt:                            bkt,
+		fetcher:                        fetcher,
+		blocks:                         map[ulid.ULID]*metadata.Meta{},
+		metrics:                        newSyncerMetrics(reg, blocksMarkedForDeletion, garbageCollectedBlocks),
+		deduplicateBlocksFilter:        deduplicateBlocksFilter,
+		excludeMarkedForDeletionFilter: excludeMarkedForDeletionFilter,
 	}, nil
 }
 
@@ -121,7 +123,7 @@ func (s *Syncer) SyncMetas(ctx context.Context) error {
 
 	metas, partial, err := s.fetcher.Fetch(ctx)
 	if err != nil {
-		return retry(err)
+		return err
 	}
 	s.blocks = metas
 	s.partial = partial
@@ -154,7 +156,7 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 	begin := time.Now()
 
 	// Ignore filter exists before deduplicate filter.
-	deletionMarkMap := s.ignoreDeletionMarkFilter.DeletionMarkBlocks()
+	deletionMarkMap := s.excludeMarkedForDeletionFilter.DeletionMarkBlocks()
 	duplicateIDs := s.deduplicateBlocksFilter.DuplicateIDs()
 
 	// GarbageIDs contains the duplicateIDs, since these blocks can be replaced with other blocks.
@@ -180,7 +182,7 @@ func (s *Syncer) GarbageCollect(ctx context.Context) error {
 		cancel()
 		if err != nil {
 			s.metrics.garbageCollectionFailures.Inc()
-			return retry(errors.Wrapf(err, "mark block %s for deletion", id))
+			return errors.Wrapf(err, "mark block %s for deletion", id)
 		}
 
 		// Immediately update our in-memory state so no further call to SyncMetas is needed
@@ -321,10 +323,15 @@ type Compactor interface {
 // runCompactionJob plans and runs a single compaction against the provided job. The compacted result
 // is uploaded into the bucket the blocks were retrieved from.
 func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shouldRerun bool, compIDs []ulid.ULID, rerr error) {
+	jobBeginTime := time.Now()
+
 	jobLogger := log.With(c.logger, "groupKey", job.Key())
 	subDir := filepath.Join(c.compactDir, job.Key())
 
 	defer func() {
+		elapsed := time.Since(jobBeginTime)
+		level.Info(jobLogger).Log("msg", "compaction job finished", "success", rerr == nil, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+
 		// Leave the compact directory for inspection if it is a halt error
 		// or if it is not then so that possibly we would not have to download everything again.
 		if rerr != nil {
@@ -352,70 +359,72 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// with the min/max time between all blocks to compact.
 	jobLogger = log.With(jobLogger, "minTime", minTime(toCompact).String(), "maxTime", maxTime(toCompact).String())
 
-	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "plan", fmt.Sprintf("%v", toCompact))
-
-	// Due to #183 we verify that none of the blocks in the plan have overlapping sources.
-	// This is one potential source of how we could end up with duplicated chunks.
-	uniqueSources := map[ulid.ULID]struct{}{}
+	level.Info(jobLogger).Log("msg", "compaction available and planned; downloading blocks", "blocks", len(toCompact), "plan", fmt.Sprintf("%v", toCompact))
 
 	// Once we have a plan we need to download the actual data.
-	begin := time.Now()
+	downloadBegin := time.Now()
 
-	toCompactDirs := make([]string, 0, len(toCompact))
-	for _, meta := range toCompact {
+	err = concurrency.ForEach(ctx, convertBlocksToForEachJobs(toCompact), c.blockSyncConcurrency, func(ctx context.Context, job interface{}) error {
+		meta := job.(*metadata.Meta)
+
+		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
-		for _, s := range meta.Compaction.Sources {
-			if _, ok := uniqueSources[s]; ok {
-				return false, nil, halt(errors.Errorf("overlapping sources detected for plan %v", toCompact))
-			}
-			uniqueSources[s] = struct{}{}
-		}
 
 		if err := block.Download(ctx, jobLogger, c.bkt, meta.ULID, bdir); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "download block %s", meta.ULID))
+			return errors.Wrapf(err, "download block %s", meta.ULID)
 		}
 
 		// Ensure all input blocks are valid.
 		stats, err := block.GatherIndexHealthStats(jobLogger, filepath.Join(bdir, block.IndexFilename), meta.MinTime, meta.MaxTime)
 		if err != nil {
-			return false, nil, errors.Wrapf(err, "gather index issues for block %s", bdir)
+			return errors.Wrapf(err, "gather index issues for block %s", bdir)
 		}
 
 		if err := stats.CriticalErr(); err != nil {
-			return false, nil, halt(errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels))
+			return errors.Wrapf(err, "block with not healthy index found %s; Compaction level %v; Labels: %v", bdir, meta.Compaction.Level, meta.Thanos.Labels)
 		}
 
 		if err := stats.OutOfOrderChunksErr(); err != nil {
-			return false, nil, outOfOrderChunkError(errors.Wrapf(err, "blocks with out-of-order chunks are dropped from compaction:  %s", bdir), meta.ULID)
+			return outOfOrderChunkError(errors.Wrapf(err, "blocks with out-of-order chunks are dropped from compaction:  %s", bdir), meta.ULID)
 		}
 
 		if err := stats.Issue347OutsideChunksErr(); err != nil {
-			return false, nil, issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
+			return issue347Error(errors.Wrapf(err, "invalid, but reparable block %s", bdir), meta.ULID)
 		}
 
 		if err := stats.PrometheusIssue5372Err(); err != nil {
-			return false, nil, errors.Wrapf(err, "block id %s", meta.ULID)
+			return errors.Wrapf(err, "block id %s", meta.ULID)
 		}
-		toCompactDirs = append(toCompactDirs, bdir)
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
 	}
-	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "plan", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
 
-	begin = time.Now()
+	blocksToCompactDirs := make([]string, len(toCompact))
+	for ix, meta := range toCompact {
+		blocksToCompactDirs[ix] = filepath.Join(subDir, meta.ULID.String())
+	}
+
+	elapsed := time.Since(downloadBegin)
+	level.Info(jobLogger).Log("msg", "downloaded and verified blocks; compacting blocks", "blocks", len(blocksToCompactDirs), "plan", fmt.Sprintf("%v", blocksToCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
+
+	compactionBegin := time.Now()
 
 	if job.UseSplitting() {
-		compIDs, err = c.comp.CompactWithSplitting(subDir, toCompactDirs, nil, uint64(job.SplittingShards()))
+		compIDs, err = c.comp.CompactWithSplitting(subDir, blocksToCompactDirs, nil, uint64(job.SplittingShards()))
 	} else {
 		var compID ulid.ULID
-		compID, err = c.comp.Compact(subDir, toCompactDirs, nil)
+		compID, err = c.comp.Compact(subDir, blocksToCompactDirs, nil)
 		compIDs = append(compIDs, compID)
 	}
 	if err != nil {
-		return false, nil, halt(errors.Wrapf(err, "compact blocks %v", toCompactDirs))
+		return false, nil, errors.Wrapf(err, "compact blocks %v", blocksToCompactDirs)
 	}
 
 	if !hasNonZeroULIDs(compIDs) {
 		// Prometheus compactor found that the compacted block would have no samples.
-		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", toCompactDirs))
+		level.Info(jobLogger).Log("msg", "compacted block would have no samples, deleting source blocks", "blocks", fmt.Sprintf("%v", blocksToCompactDirs))
 		for _, meta := range toCompact {
 			if meta.Stats.NumSamples == 0 {
 				if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
@@ -427,19 +436,17 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		return true, nil, nil
 	}
 
-	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", toCompactDirs), "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds())
+	elapsed = time.Since(compactionBegin)
+	level.Info(jobLogger).Log("msg", "compacted blocks", "new", fmt.Sprintf("%v", compIDs), "blocks", fmt.Sprintf("%v", blocksToCompactDirs), "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
-	for shardID, compID := range compIDs {
-		// Skip if it's an empty block.
-		if compID == (ulid.ULID{}) {
-			if job.UseSplitting() {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", formatShardIDLabelValue(uint32(shardID), job.SplittingShards()))
-			} else {
-				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
-			}
+	uploadBegin := time.Now()
+	uploadedBlocks := atomic.NewInt64(0)
 
-			continue
-		}
+	err = concurrency.ForEach(ctx, convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger), c.blockSyncConcurrency, func(ctx context.Context, j interface{}) error {
+		shardID := j.(ulidWithShardIndex).shardIndex
+		compID := j.(ulidWithShardIndex).ulid
+
+		uploadedBlocks.Inc()
 
 		bdir := filepath.Join(subDir, compID.String())
 		index := filepath.Join(bdir, block.IndexFilename)
@@ -447,7 +454,7 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 		// When splitting is enabled, we need to inject the shard ID as external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
-			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = formatShardIDLabelValue(uint32(shardID), job.SplittingShards())
+			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(shardID), uint64(job.SplittingShards()))
 		}
 
 		newMeta, err := metadata.InjectThanos(jobLogger, bdir, metadata.Thanos{
@@ -457,38 +464,79 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 			SegmentFiles: block.GetSegmentFiles(bdir),
 		}, nil)
 		if err != nil {
-			return false, nil, errors.Wrapf(err, "failed to finalize the block %s", bdir)
+			return errors.Wrapf(err, "failed to finalize the block %s", bdir)
 		}
 
 		if err = os.Remove(filepath.Join(bdir, "tombstones")); err != nil {
-			return false, nil, errors.Wrap(err, "remove tombstones")
+			return errors.Wrap(err, "remove tombstones")
 		}
 
 		// Ensure the output block is valid.
 		if err := block.VerifyIndex(jobLogger, index, newMeta.MinTime, newMeta.MaxTime); err != nil {
-			return false, nil, halt(errors.Wrapf(err, "invalid result block %s", bdir))
+			return errors.Wrapf(err, "invalid result block %s", bdir)
 		}
 
-		begin = time.Now()
-
+		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "upload of %s failed", compID))
+			return errors.Wrapf(err, "upload of %s failed", compID)
 		}
 
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", time.Since(begin), "duration_ms", time.Since(begin).Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		elapsed := time.Since(begin)
+		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		return nil
+	})
+	if err != nil {
+		return false, nil, err
 	}
+
+	elapsed = time.Since(uploadBegin)
+	level.Info(jobLogger).Log("msg", "uploaded all blocks", "blocks", uploadedBlocks, "duration", elapsed, "duration_ms", elapsed.Milliseconds())
 
 	// Mark for deletion the blocks we just compacted from the job and bucket so they do not get included
 	// into the next planning cycle.
 	// Eventually the block we just uploaded should get synced into the job again (including sync-delay).
 	for _, meta := range toCompact {
 		if err := deleteBlock(c.bkt, meta.ULID, filepath.Join(subDir, meta.ULID.String()), jobLogger, c.metrics.blocksMarkedForDeletion); err != nil {
-			return false, nil, retry(errors.Wrapf(err, "mark old block for deletion from bucket"))
+			return false, nil, errors.Wrapf(err, "mark old block for deletion from bucket")
 		}
 		c.metrics.garbageCollectedBlocks.Inc()
 	}
 
 	return true, compIDs, nil
+}
+
+func convertBlocksToForEachJobs(input []*metadata.Meta) []interface{} {
+	result := make([]interface{}, len(input))
+	for ix := range input {
+		result[ix] = input[ix]
+	}
+	return result
+}
+
+// Converts ULIDs from compaction to interface{}, and also filters out empty ULIDs. When handling result of split
+// compactions, shard index is index in the slice returned by compaction.
+func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob bool, jobLogger log.Logger) []interface{} {
+	result := make([]interface{}, 0, len(compactedBlocks))
+
+	for ix, id := range compactedBlocks {
+		// Skip if it's an empty block.
+		if id == (ulid.ULID{}) {
+			if splitJob {
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block", "shard_id", sharding.FormatShardIDLabelValue(uint64(ix), uint64(len(compactedBlocks))))
+			} else {
+				level.Info(jobLogger).Log("msg", "compaction produced an empty block")
+			}
+			continue
+		}
+
+		result = append(result, ulidWithShardIndex{shardIndex: ix, ulid: id})
+	}
+	return result
+}
+
+type ulidWithShardIndex struct {
+	ulid       ulid.ULID
+	shardIndex int
 }
 
 // Issue347Error is a type wrapper for errors that should invoke repair process for broken block.
@@ -532,68 +580,6 @@ func IsOutOfOrderChunkError(err error) bool {
 	return ok
 }
 
-// HaltError is a type wrapper for errors that should halt any further progress on compactions.
-type HaltError struct {
-	err error
-}
-
-func halt(err error) HaltError {
-	return HaltError{err: err}
-}
-
-func (e HaltError) Error() string {
-	return e.err.Error()
-}
-
-// IsHaltError returns true if the base error is a HaltError.
-// If a multierror is passed, any halt error will return true.
-func IsHaltError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(HaltError); ok {
-				return true
-			}
-		}
-		return false
-	}
-
-	_, ok := errors.Cause(err).(HaltError)
-	return ok
-}
-
-// RetryError is a type wrapper for errors that should trigger warning log and retry whole compaction loop, but aborting
-// current compaction further progress.
-type RetryError struct {
-	err error
-}
-
-func retry(err error) error {
-	if IsHaltError(err) {
-		return err
-	}
-	return RetryError{err: err}
-}
-
-func (e RetryError) Error() string {
-	return e.err.Error()
-}
-
-// IsRetryError returns true if the base error is a RetryError.
-// If a multierror is passed, all errors must be retriable.
-func IsRetryError(err error) bool {
-	if multiErr, ok := errors.Cause(err).(errutil.NonNilMultiError); ok {
-		for _, err := range multiErr {
-			if _, ok := errors.Cause(err).(RetryError); !ok {
-				return false
-			}
-		}
-		return true
-	}
-
-	_, ok := errors.Cause(err).(RetryError)
-	return ok
-}
-
 // RepairIssue347 repairs the https://github.com/prometheus/tsdb/issues/347 issue when having issue347Error.
 func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket, blocksMarkedForDeletion prometheus.Counter, issue347Err error) error {
 	ie, ok := errors.Cause(issue347Err).(Issue347Error)
@@ -616,7 +602,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 
 	bdir := filepath.Join(tmpdir, ie.id.String())
 	if err := block.Download(ctx, logger, bkt, ie.id, bdir); err != nil {
-		return retry(errors.Wrapf(err, "download block %s", ie.id))
+		return errors.Wrapf(err, "download block %s", ie.id)
 	}
 
 	meta, err := metadata.ReadFromDir(bdir)
@@ -636,7 +622,7 @@ func RepairIssue347(ctx context.Context, logger log.Logger, bkt objstore.Bucket,
 
 	level.Info(logger).Log("msg", "uploading repaired block", "newID", resid)
 	if err = block.Upload(ctx, logger, bkt, filepath.Join(tmpdir, resid.String()), metadata.NoneFunc); err != nil {
-		return retry(errors.Wrapf(err, "upload of %s failed", resid))
+		return errors.Wrapf(err, "upload of %s failed", resid)
 	}
 
 	level.Info(logger).Log("msg", "deleting broken block", "id", ie.id)
@@ -698,9 +684,12 @@ func NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks p
 			Help: "Total number of group compaction attempts that resulted in new block(s).",
 		}),
 		blocksMarkedForDeletion: blocksMarkedForDeletion,
-		// Do not track blocks marked for no-compact cause it's not supported by Mimir yet.
-		blocksMarkedForNoCompact: prometheus.NewCounter(prometheus.CounterOpts{}),
-		garbageCollectedBlocks:   garbageCollectedBlocks,
+		blocksMarkedForNoCompact: promauto.With(reg).NewCounter(prometheus.CounterOpts{
+			Name:        "cortex_compactor_blocks_marked_for_no_compaction_total",
+			Help:        "Total number of blocks that were marked for no-compaction.",
+			ConstLabels: prometheus.Labels{"reason": metadata.OutOfOrderChunksNoCompactReason},
+		}),
+		garbageCollectedBlocks: garbageCollectedBlocks,
 	}
 }
 
@@ -723,7 +712,8 @@ type BucketCompactor struct {
 	concurrency                    int
 	skipBlocksWithOutOfOrderChunks bool
 	ownJob                         ownCompactionJobFunc
-	sortJobs                       jobsOrderFunc
+	sortJobs                       JobsOrderFunc
+	blockSyncConcurrency           int
 	metrics                        *BucketCompactorMetrics
 }
 
@@ -739,7 +729,8 @@ func NewBucketCompactor(
 	concurrency int,
 	skipBlocksWithOutOfOrderChunks bool,
 	ownJob ownCompactionJobFunc,
-	sortJobs jobsOrderFunc,
+	sortJobs JobsOrderFunc,
+	blockSyncConcurrency int,
 	metrics *BucketCompactorMetrics,
 ) (*BucketCompactor, error) {
 	if concurrency <= 0 {
@@ -757,12 +748,14 @@ func NewBucketCompactor(
 		skipBlocksWithOutOfOrderChunks: skipBlocksWithOutOfOrderChunks,
 		ownJob:                         ownJob,
 		sortJobs:                       sortJobs,
+		blockSyncConcurrency:           blockSyncConcurrency,
 		metrics:                        metrics,
 	}, nil
 }
 
 // Compact runs compaction over bucket.
-func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
+// If maxCompactionTime is positive then after this time no more new compactions are started.
+func (c *BucketCompactor) Compact(ctx context.Context, maxCompactionTime time.Duration) (rerr error) {
 	defer func() {
 		// Do not remove the compactDir if an error has occurred
 		// because potentially on the next run we would not have to download
@@ -774,6 +767,11 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			level.Error(c.logger).Log("msg", "failed to remove compaction work directory", "path", c.compactDir, "err", err)
 		}
 	}()
+
+	var maxCompactionTimeChan <-chan time.Time
+	if maxCompactionTime > 0 {
+		maxCompactionTimeChan = time.After(maxCompactionTime)
+	}
 
 	// Loop over bucket and compact until there's no work left.
 	for {
@@ -896,6 +894,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 
 		level.Info(c.logger).Log("msg", "start of compactions")
 
+		maxCompactionTimeReached := false
 		// Send all jobs found during this pass to the compaction workers.
 		var jobErrs errutil.MultiError
 	jobLoop:
@@ -905,6 +904,10 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 				jobErrs.Add(jobErr)
 				break jobLoop
 			case jobChan <- g:
+			case <-maxCompactionTimeChan:
+				maxCompactionTimeReached = true
+				level.Info(c.logger).Log("msg", "max compaction time reached, no more compactions will be started")
+				break jobLoop
 			}
 		}
 		close(jobChan)
@@ -922,7 +925,7 @@ func (c *BucketCompactor) Compact(ctx context.Context) (rerr error) {
 			return jobErrs.Err()
 		}
 
-		if finishedAllJobs {
+		if maxCompactionTimeReached || finishedAllJobs {
 			break
 		}
 	}
@@ -944,98 +947,60 @@ func (c *BucketCompactor) filterOwnJobs(jobs []*Job) ([]*Job, error) {
 	return jobs, nil
 }
 
-var _ block.MetadataFilter = &GatherNoCompactionMarkFilter{}
+var _ block.MetadataFilter = &NoCompactionMarkFilter{}
 
-// GatherNoCompactionMarkFilter is a block.Fetcher filter that passes all metas. While doing it, it gathers all no-compact-mark.json markers.
-// Not go routine safe.
-// TODO(bwplotka): Add unit test.
-type GatherNoCompactionMarkFilter struct {
-	logger             log.Logger
-	bkt                objstore.InstrumentedBucketReader
-	noCompactMarkedMap map[ulid.ULID]*metadata.NoCompactMark
-	concurrency        int
+// NoCompactionMarkFilter is a block.Fetcher filter that finds all blocks with no-compact marker files, and optionally
+// removes them from synced metas.
+type NoCompactionMarkFilter struct {
+	bkt                   objstore.InstrumentedBucketReader
+	noCompactMarkedMap    map[ulid.ULID]struct{}
+	removeNoCompactBlocks bool
 }
 
-// NewGatherNoCompactionMarkFilter creates GatherNoCompactionMarkFilter.
-func NewGatherNoCompactionMarkFilter(logger log.Logger, bkt objstore.InstrumentedBucketReader, concurrency int) *GatherNoCompactionMarkFilter {
-	return &GatherNoCompactionMarkFilter{
-		logger:      logger,
-		bkt:         bkt,
-		concurrency: concurrency,
+// NewNoCompactionMarkFilter creates NoCompactionMarkFilter.
+func NewNoCompactionMarkFilter(bkt objstore.InstrumentedBucketReader, removeNoCompactBlocks bool) *NoCompactionMarkFilter {
+	return &NoCompactionMarkFilter{
+		bkt:                   bkt,
+		removeNoCompactBlocks: removeNoCompactBlocks,
 	}
 }
 
 // NoCompactMarkedBlocks returns block ids that were marked for no compaction.
-func (f *GatherNoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]*metadata.NoCompactMark {
+// It is safe to call this method only after Filter has finished, and it is also safe to manipulate the map between calls to Filter.
+func (f *NoCompactionMarkFilter) NoCompactMarkedBlocks() map[ulid.ULID]struct{} {
 	return f.noCompactMarkedMap
 }
 
-// Filter passes all metas, while gathering no compact markers.
-func (f *GatherNoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
-	f.noCompactMarkedMap = make(map[ulid.ULID]*metadata.NoCompactMark)
+// Filter finds blocks that should not be compacted, and fills f.noCompactMarkedMap. If f.removeNoCompactBlocks is true,
+// blocks are also removed from metas. (Thanos version of the filter doesn't do removal).
+func (f *NoCompactionMarkFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+	noCompactMarkedMap := make(map[ulid.ULID]struct{})
 
-	// Make a copy of block IDs to check, in order to avoid concurrency issues
-	// between the scheduler and workers.
-	blockIDs := make([]ulid.ULID, 0, len(metas))
-	for id := range metas {
-		blockIDs = append(blockIDs, id)
-	}
-
-	var (
-		eg  errgroup.Group
-		ch  = make(chan ulid.ULID, f.concurrency)
-		mtx sync.Mutex
-	)
-
-	for i := 0; i < f.concurrency; i++ {
-		eg.Go(func() error {
-			var lastErr error
-			for id := range ch {
-				m := &metadata.NoCompactMark{}
-				// TODO(bwplotka): Hook up bucket cache here + reset API so we don't introduce API calls .
-				if err := metadata.ReadMarker(ctx, f.logger, f.bkt, id.String(), m); err != nil {
-					if errors.Cause(err) == metadata.ErrorMarkerNotFound {
-						continue
-					}
-					if errors.Cause(err) == metadata.ErrorUnmarshalMarker {
-						level.Warn(f.logger).Log("msg", "found partial no-compact-mark.json; if we will see it happening often for the same block, consider manually deleting no-compact-mark.json from the object storage", "block", id, "err", err)
-						continue
-					}
-					// Remember the last error and continue draining the channel.
-					lastErr = err
-					continue
-				}
-
-				mtx.Lock()
-				f.noCompactMarkedMap[id] = m
-				mtx.Unlock()
-				synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
-			}
-
-			return lastErr
-		})
-	}
-
-	// Workers scheduled, distribute blocks.
-	eg.Go(func() error {
-		defer close(ch)
-
-		for _, id := range blockIDs {
-			select {
-			case ch <- id:
-				// Nothing to do.
-			case <-ctx.Done():
-				return ctx.Err()
-			}
+	// Find all no-compact markers in the storage.
+	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+		if err := ctx.Err(); err != nil {
+			return err
 		}
 
+		if blockID, ok := bucketindex.IsNoCompactMarkFilename(path.Base(name)); ok {
+			_, exists := metas[blockID]
+			if exists {
+				noCompactMarkedMap[blockID] = struct{}{}
+				synced.WithLabelValues(block.MarkedForNoCompactionMeta).Inc()
+
+				if f.removeNoCompactBlocks {
+					delete(metas, blockID)
+				}
+			}
+
+		}
 		return nil
 	})
-
-	if err := eg.Wait(); err != nil {
-		return errors.Wrap(err, "filter blocks marked for no compaction")
+	if err != nil {
+		return errors.Wrap(err, "list block no-compact marks")
 	}
 
+	f.noCompactMarkedMap = noCompactMarkedMap
 	return nil
 }
 
@@ -1047,4 +1012,54 @@ func hasNonZeroULIDs(ids []ulid.ULID) bool {
 	}
 
 	return false
+}
+
+// ExcludeMarkedForDeletionFilter is a filter that filters out the blocks that are marked for deletion.
+// Compared to IgnoreDeletionMarkFilter filter from Thanos, this implementation doesn't use any deletion delay,
+// and only uses marker files under bucketindex.MarkersPathname.
+type ExcludeMarkedForDeletionFilter struct {
+	bkt objstore.InstrumentedBucketReader
+
+	deletionMarkMap map[ulid.ULID]struct{}
+}
+
+func NewExcludeMarkedForDeletionFilter(bkt objstore.InstrumentedBucketReader) *ExcludeMarkedForDeletionFilter {
+	return &ExcludeMarkedForDeletionFilter{
+		bkt: bkt,
+	}
+}
+
+// DeletionMarkBlocks returns block ids that were marked for deletion.
+// It is safe to call this method only after Filter has finished, and it is also safe to manipulate the map between calls to Filter.
+func (f *ExcludeMarkedForDeletionFilter) DeletionMarkBlocks() map[ulid.ULID]struct{} {
+	return f.deletionMarkMap
+}
+
+// Filter filters out blocks that are marked for deletion.
+// It also builds the map returned by DeletionMarkBlocks() method.
+func (f *ExcludeMarkedForDeletionFilter) Filter(ctx context.Context, metas map[ulid.ULID]*metadata.Meta, synced *extprom.TxGaugeVec) error {
+	deletionMarkMap := make(map[ulid.ULID]struct{})
+
+	// Find all markers in the storage.
+	err := f.bkt.Iter(ctx, bucketindex.MarkersPathname+"/", func(name string) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		if blockID, ok := bucketindex.IsBlockDeletionMarkFilename(path.Base(name)); ok {
+			_, exists := metas[blockID]
+			if exists {
+				deletionMarkMap[blockID] = struct{}{}
+				synced.WithLabelValues(block.MarkedForDeletionMeta).Inc()
+				delete(metas, blockID)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return errors.Wrap(err, "list block deletion marks")
+	}
+
+	f.deletionMarkMap = deletionMarkMap
+	return nil
 }

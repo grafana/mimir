@@ -343,13 +343,24 @@ blocks_storage:
     [container_name: <string> | default = ""]
 
     # Azure storage endpoint suffix without schema. The account name will be
-    # prefixed to this value to create the FQDN
+    # prefixed to this value to create the FQDN. If set to empty string, default
+    # endpoint suffix is used.
     # CLI flag: -blocks-storage.azure.endpoint-suffix
     [endpoint_suffix: <string> | default = ""]
 
     # Number of retries for recoverable errors
     # CLI flag: -blocks-storage.azure.max-retries
     [max_retries: <int> | default = 20]
+
+    # If set, this URL is used instead of
+    # https://<storage-account-name>.<endpoint-suffix> for obtaining
+    # ServicePrincipalToken from MSI.
+    # CLI flag: -blocks-storage.azure.msi-resource
+    [msi_resource: <string> | default = ""]
+
+    # User assigned identity. If empty, then System assigned identity is used.
+    # CLI flag: -blocks-storage.azure.user-assigned-id
+    [user_assigned_id: <string> | default = ""]
 
   swift:
     # OpenStack Swift authentication API version. 0 to autodetect.
@@ -587,6 +598,12 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
       [attributes_ttl: <duration> | default = 168h]
 
+      # Maximum number of object attribute items to keep in a first level
+      # in-memory LRU cache. Metadata will be stored and fetched in-memory
+      # before hitting the cache backend. 0 to disable the in-memory cache.
+      # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
+      [attributes_in_memory_max_items: <int> | default = 0]
+
       # TTL for caching individual chunks subranges.
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
       [subrange_ttl: <duration> | default = 24h]
@@ -725,6 +742,14 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
       [max_stale_period: <duration> | default = 1h]
 
+    # Blocks with minimum time within this duration are ignored, and not loaded
+    # by store-gateway. Useful when used together with
+    # -querier.query-store-after to prevent loading young blocks, because there
+    # are usually many of them (depending on number of ingesters) and they are
+    # not yet compacted. Negative values or 0 disable the filter.
+    # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
+    [ignore_blocks_within: <duration> | default = 0s]
+
     # Max size - in bytes - of a chunks pool, used to reduce memory allocations.
     # The pool is shared across all tenants. 0 to disable the limit.
     # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
@@ -826,6 +851,16 @@ blocks_storage:
     # down.
     # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
     [memory_snapshot_on_shutdown: <boolean> | default = false]
+
+    # The size of the write queue used by the head chunks mapper. Lower values
+    # reduce memory utilisation at the cost of potentially higher ingest
+    # latency. 0 disables the use of the chunk write queue.
+    # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
+    [head_chunks_write_queue_size: <int> | default = 0]
+
+    # Enables TSDB isolation feature. Disabling may improve performance.
+    # CLI flag: -blocks-storage.tsdb.isolation-enabled
+    [isolation_enabled: <boolean> | default = true]
 
     # Max size - in bytes - of the in-memory series hash cache. The cache is
     # shared across all tenants and it's used only when query sharding is

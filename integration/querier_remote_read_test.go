@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/querier_remote_read_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -16,7 +17,7 @@ import (
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -32,21 +33,13 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
-	flags := mergeFlags(ChunksStorageFlags(), map[string]string{})
+	flags := mergeFlags(BlocksStorageFlags(), map[string]string{})
 
 	// Start dependencies.
-	dynamo := e2edb.NewDynamoDB()
+	minio := e2edb.NewMinio(9000, bucketName)
 
 	consul := e2edb.NewConsul()
-	require.NoError(t, s.StartAndWaitReady(consul, dynamo))
-
-	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
-	require.NoError(t, s.StartAndWaitReady(tableManager))
-
-	// Wait until the first table-manager sync has completed, so that we're
-	// sure the tables have been created.
-	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	// Start Mimir components for the write path.
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
@@ -67,7 +60,7 @@ func TestQuerierRemoteRead(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 200, res.StatusCode)
 
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), ChunksStorageFlags(), "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), BlocksStorageFlags(), "")
 	require.NoError(t, s.StartAndWaitReady(querier))
 
 	// Wait until the querier has updated the ring.

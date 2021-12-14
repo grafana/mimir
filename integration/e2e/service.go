@@ -41,6 +41,7 @@ type ConcreteService struct {
 	env          map[string]string
 	user         string
 	command      *Command
+	cmd          *exec.Cmd
 	readiness    ReadinessProbe
 
 	// Maps container ports to dynamically binded local ports.
@@ -106,10 +107,10 @@ func (s *ConcreteService) Start(networkName, sharedDir string) (err error) {
 		}
 	}()
 
-	cmd := exec.Command("docker", s.buildDockerRunArgs(networkName, sharedDir)...)
-	cmd.Stdout = &LinePrefixLogger{prefix: s.name + ": ", logger: logger}
-	cmd.Stderr = &LinePrefixLogger{prefix: s.name + ": ", logger: logger}
-	if err = cmd.Start(); err != nil {
+	s.cmd = exec.Command("docker", s.buildDockerRunArgs(networkName, sharedDir)...)
+	s.cmd.Stdout = &LinePrefixLogger{prefix: s.name + ": ", logger: logger}
+	s.cmd.Stderr = &LinePrefixLogger{prefix: s.name + ": ", logger: logger}
+	if err = s.cmd.Start(); err != nil {
 		return err
 	}
 	s.usedNetworkName = networkName
@@ -157,7 +158,7 @@ func (s *ConcreteService) Stop() error {
 	}
 	s.usedNetworkName = ""
 
-	return nil
+	return s.cmd.Wait()
 }
 
 func (s *ConcreteService) Kill() error {
@@ -197,7 +198,7 @@ func (s *ConcreteService) Endpoint(port int) string {
 		return ""
 	}
 
-	// Do not use "localhost" cause it doesn't work with the AWS DynamoDB client.
+	// Do not use "localhost" cause it may not work with some clients.
 	return fmt.Sprintf("127.0.0.1:%d", localPort)
 }
 

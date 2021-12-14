@@ -22,25 +22,33 @@ import (
 )
 
 func MockStorageBlock(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64) tsdb.BlockMeta {
+	m := MockStorageBlockWithExtLabels(t, bucket, userID, minT, maxT, nil)
+	return m.BlockMeta
+}
+
+func MockStorageBlockWithExtLabels(t testing.TB, bucket objstore.Bucket, userID string, minT, maxT int64, externalLabels map[string]string) metadata.Meta {
 	// Generate a block ID whose timestamp matches the maxT (for simplicity we assume it
 	// has been compacted and shipped in zero time, even if not realistic).
 	id := ulid.MustNew(uint64(maxT), rand.Reader)
 
-	meta := tsdb.BlockMeta{
-		Version: 1,
-		ULID:    id,
-		MinTime: minT,
-		MaxTime: maxT,
-		Compaction: tsdb.BlockMetaCompaction{
-			Level:   1,
-			Sources: []ulid.ULID{id},
+	meta := metadata.Meta{
+		BlockMeta: tsdb.BlockMeta{
+			Version: 1,
+			ULID:    id,
+			MinTime: minT,
+			MaxTime: maxT,
+			Compaction: tsdb.BlockMetaCompaction{
+				Level:   1,
+				Sources: []ulid.ULID{id},
+			},
+		},
+		Thanos: metadata.Thanos{
+			Labels: externalLabels,
 		},
 	}
 
 	metaContent, err := json.Marshal(meta)
-	if err != nil {
-		panic("failed to marshal mocked block meta")
-	}
+	require.NoError(t, err, "failed to marshal mocked block meta")
 
 	metaContentReader := strings.NewReader(string(metaContent))
 	metaPath := fmt.Sprintf("%s/%s/meta.json", userID, id.String())
@@ -61,12 +69,29 @@ func MockStorageDeletionMark(t testing.TB, bucket objstore.Bucket, userID string
 	}
 
 	markContent, err := json.Marshal(mark)
-	if err != nil {
-		panic("failed to marshal mocked block meta")
-	}
+	require.NoError(t, err, "failed to marshal mocked deletion mark")
 
 	markContentReader := strings.NewReader(string(markContent))
 	markPath := fmt.Sprintf("%s/%s/%s", userID, meta.ULID.String(), metadata.DeletionMarkFilename)
+	require.NoError(t, bucket.Upload(context.Background(), markPath, markContentReader))
+
+	return &mark
+}
+
+func MockNoCompactMark(t testing.TB, bucket objstore.Bucket, userID string, meta tsdb.BlockMeta) *metadata.NoCompactMark {
+	mark := metadata.NoCompactMark{
+		ID:            meta.ULID,
+		NoCompactTime: time.Now().Unix(),
+		Version:       metadata.DeletionMarkVersion1,
+		Details:       "details",
+		Reason:        metadata.ManualNoCompactReason,
+	}
+
+	markContent, err := json.Marshal(mark)
+	require.NoError(t, err, "failed to marshal mocked no-compact mark")
+
+	markContentReader := strings.NewReader(string(markContent))
+	markPath := fmt.Sprintf("%s/%s/%s", userID, meta.ULID.String(), metadata.NoCompactMarkFilename)
 	require.NoError(t, bucket.Upload(context.Background(), markPath, markContentReader))
 
 	return &mark

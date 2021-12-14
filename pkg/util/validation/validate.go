@@ -53,6 +53,7 @@ const (
 	exemplarLabelsMissing    = "exemplar_labels_missing"
 	exemplarLabelsTooLong    = "exemplar_labels_too_long"
 	exemplarTimestampInvalid = "exemplar_timestamp_invalid"
+	exemplarTooOld           = "exemplar_too_old"
 
 	// RateLimited is one of the values for the reason to discard samples.
 	// Declared here to avoid duplication in ingester and distributor.
@@ -108,15 +109,16 @@ type SampleValidationConfig interface {
 
 // ValidateSample returns an err if the sample is invalid.
 // The returned error may retain the provided series labels.
-func ValidateSample(cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
+// It uses the passed 'now' time to measure the relative time of the sample.
+func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
 
-	if cfg.RejectOldSamples(userID) && model.Time(s.TimestampMs) < model.Now().Add(-cfg.RejectOldSamplesMaxAge(userID)) {
+	if cfg.RejectOldSamples(userID) && model.Time(s.TimestampMs) < now.Add(-cfg.RejectOldSamplesMaxAge(userID)) {
 		DiscardedSamples.WithLabelValues(greaterThanMaxSampleAge, userID).Inc()
 		return newSampleTimestampTooOldError(unsafeMetricName, s.TimestampMs)
 	}
 
-	if model.Time(s.TimestampMs) > model.Now().Add(cfg.CreationGracePeriod(userID)) {
+	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		DiscardedSamples.WithLabelValues(tooFarInFuture, userID).Inc()
 		return newSampleTimestampTooNewError(unsafeMetricName, s.TimestampMs)
 	}
@@ -159,6 +161,16 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	}
 
 	return nil
+}
+
+// ExemplarTimestampOK returns true if the timestamp is newer than minTS.
+// This is separate from ValidateExemplar() so we can silently drop old ones, not log an error.
+func ExemplarTimestampOK(userID string, minTS int64, e mimirpb.Exemplar) bool {
+	if e.TimestampMs < minTS {
+		DiscardedExemplars.WithLabelValues(exemplarTooOld, userID).Inc()
+		return false
+	}
+	return true
 }
 
 // LabelValidationConfig helps with getting required config to validate labels.

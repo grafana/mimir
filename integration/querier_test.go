@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -878,21 +878,13 @@ func TestHashCollisionHandling(t *testing.T) {
 	require.NoError(t, err)
 	defer s.Close()
 
-	require.NoError(t, writeFileToSharedDir(s, mimirSchemaConfigFile, []byte(mimirSchemaConfigYaml)))
-	flags := ChunksStorageFlags()
+	flags := BlocksStorageFlags()
 
 	// Start dependencies.
-	dynamo := e2edb.NewDynamoDB()
+	minio := e2edb.NewMinio(9000, bucketName)
 
 	consul := e2edb.NewConsul()
-	require.NoError(t, s.StartAndWaitReady(consul, dynamo))
-
-	tableManager := e2emimir.NewTableManager("table-manager", ChunksStorageFlags(), "")
-	require.NoError(t, s.StartAndWaitReady(tableManager))
-
-	// Wait until the first table-manager sync has completed, so that we're
-	// sure the tables have been created.
-	require.NoError(t, tableManager.WaitSumMetrics(e2e.Greater(0), "cortex_table_manager_sync_success_timestamp_seconds"))
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
 	// Start Mimir components for the write path.
 	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")

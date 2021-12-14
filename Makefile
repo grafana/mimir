@@ -2,12 +2,17 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin push-multiarch-mimir list-image-targets
 .DEFAULT_GOAL := all
 
 # Version number
 VERSION=$(shell cat "./VERSION" 2> /dev/null)
+GOOS ?= $(shell go env GOOS)
+GOARCH ?= $(shell go env GOARCH)
 GOPROXY_VALUE=$(shell go env GOPROXY)
+
+# Suffix added to the name of built binary (via exes target)
+BINARY_SUFFIX ?= ""
 
 # Boiler plate for building Docker containers.
 # All this must go at top of file I'm afraid.
@@ -49,6 +54,18 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
 	touch $@
+
+# This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
+# Images are first built for each platform separately, as building both at once used to fail more often.
+push-multiarch-mimir:
+	@echo
+	$(MAKE) GOOS=linux GOARCH=amd64 BINARY_SUFFIX=_linux_amd64 cmd/mimir/mimir
+	$(SUDO) docker buildx build --platform linux/amd64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true cmd/mimir
+	$(MAKE) GOOS=linux GOARCH=arm64 BINARY_SUFFIX=_linux_arm64 cmd/mimir/mimir
+	$(SUDO) docker buildx build --platform linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true cmd/mimir
+	# This command will run the same build as above, but it will reuse existing platform-specific images,
+	# put them together and push to registry.
+	$(SUDO) docker buildx build -o type=registry --platform linux/amd64,linux/arm64 --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) --build-arg=USE_BINARY_SUFFIX=true -t $(IMAGE_PREFIX)mimir:$(IMAGE_TAG) cmd/mimir
 
 # This target fetches current build image, and tags it with "latest" tag. It can be used instead of building the image locally.
 fetch-build-image:
@@ -119,6 +136,7 @@ pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
 all: $(UPTODATE_FILES)
 test: protos
+test-with-race: protos
 mod-check: protos
 lint: lint-packaging-scripts protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
@@ -126,7 +144,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= 20211021_update-go-1.16.9-eaeb584bb
+LATEST_BUILD_IMAGE_TAG ?= 20211111_update-go-1.17.3-4e9f65408
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -143,19 +161,19 @@ GOVOLUMES=	-v $(shell pwd)/.cache:/go/cache:delegated,z \
 # Mount local ssh credentials to be able to clone private repos when doing `mod-check`
 SSHVOLUME=  -v ~/.ssh/:/root/.ssh:delegated,z
 
-exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
+exes $(EXES) protos $(PROTO_GOS) lint lint-packaging-scripts test test-with-race cover shell mod-check check-protos web-build web-pre web-deploy doc format: mimir-build-image/$(UPTODATE)
 	@mkdir -p $(shell pwd)/.pkg
 	@mkdir -p $(shell pwd)/.cache
 	@echo
 	@echo ">>>> Entering build container: $@"
-	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) $@;
+	$(SUDO) time docker run --rm $(TTY) -i $(SSHVOLUME) $(GOVOLUMES) $(BUILD_IMAGE) GOOS=$(GOOS) GOARCH=$(GOARCH) BINARY_SUFFIX=$(BINARY_SUFFIX) $@;
 
 else
 
 exes: $(EXES)
 
 $(EXES):
-	CGO_ENABLED=0 go build $(GO_FLAGS) -o $@ ./$(@D)
+	CGO_ENABLED=0 GOOS=$(GOOS) GOARCH=$(GOARCH) go build $(GO_FLAGS) -o "$@$(BINARY_SUFFIX)" ./$(@D)
 
 protos: $(PROTO_GOS)
 
@@ -194,7 +212,7 @@ lint: lint-packaging-scripts
 	faillint -paths "github.com/grafana/mimir/pkg/storage/tsdb/..." ./pkg/storage/bucket/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/alertmanager/alertspb/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/ruler/rulespb/...
-	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/querysharding/...
+	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/storage/sharding/...
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 
 	# Ensure all errors are report as APIError
@@ -216,6 +234,9 @@ lint: lint-packaging-scripts
 		./pkg/querier/... \
 		./pkg/ruler/...
 
+	faillint -paths "github.com/thanos-io/thanos/pkg/block.{NewIgnoreDeletionMarkFilter}" \
+		./pkg/compactor/...
+
 	# Ensure packages we imported from Thanos are no longer used.
 	GOFLAGS="-tags=requires_docker" faillint -paths \
 		"github.com/thanos/thanos-io/pkg/store,\
@@ -228,6 +249,9 @@ format:
 	find . $(DONT_FIND) -name '*.pb.go' -prune -o -type f -name '*.go' -exec goimports -w -local github.com/grafana/mimir {} \;
 
 test:
+	go test -timeout 30m ./...
+
+test-with-race:
 	go test -tags netgo -timeout 30m -race -count 1 ./...
 
 cover:
@@ -290,6 +314,10 @@ clean:
 clean-protos:
 	rm -rf $(PROTO_GOS)
 
+# List all images building make targets.
+list-image-targets:
+	@echo $(UPTODATE_FILES) | tr " " "\n"
+
 save-images:
 	@mkdir -p docker-images
 	for image_name in $(IMAGE_NAMES); do \
@@ -314,17 +342,19 @@ clean-doc:
 		./docs/guides/encryption-at-rest.md
 
 check-doc: doc
-	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md
+	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md ./operations/mimir-mixin/docs/*.md
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: clean-white-noise
-	@git diff --exit-code --quiet -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
+	@git diff --exit-code -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
-	@git diff --exit-code --quiet -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
+	@echo "Checking diff:"
+	git diff
+	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -349,6 +379,9 @@ build-mixin: check-mixin-jb
 
 format-mixin:
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+
+check-tsdb-blocks-storage-s3-docker-compose-yaml:
+	cd development/tsdb-blocks-storage-s3 && make check
 
 web-serve:
 	cd website && hugo --config config.toml --minify -v server

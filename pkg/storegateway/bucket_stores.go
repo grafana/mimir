@@ -20,14 +20,12 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/backoff"
-	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/thanos-io/thanos/pkg/block"
-	thanos_metadata "github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/extprom"
 	"github.com/thanos-io/thanos/pkg/gate"
 	"github.com/thanos-io/thanos/pkg/objstore"
@@ -442,24 +440,16 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	fetcherReg := prometheus.NewRegistry()
 
 	// The sharding strategy filter MUST be before the ones we create here (order matters).
-	filters := append([]block.MetadataFilter{NewShardingMetadataFilterAdapter(userID, u.shardingStrategy)}, []block.MetadataFilter{
+	filters := []block.MetadataFilter{
+		NewShardingMetadataFilterAdapter(userID, u.shardingStrategy),
 		block.NewConsistencyDelayMetaFilter(userLogger, u.cfg.BucketStore.ConsistencyDelay, fetcherReg),
+		newMinTimeMetaFilter(u.cfg.BucketStore.IgnoreBlocksWithin),
 		// Use our own custom implementation.
 		NewIgnoreDeletionMarkFilter(userLogger, userBkt, u.cfg.BucketStore.IgnoreDeletionMarksDelay, u.cfg.BucketStore.MetaSyncConcurrency),
 		// The duplicate filter has been intentionally omitted because it could cause troubles with
 		// the consistency check done on the querier. The duplicate filter removes redundant blocks
 		// but if the store-gateway removes redundant blocks before the querier discovers them, the
 		// consistency check on the querier will fail.
-	}...)
-
-	modifiers := []block.MetadataModifier{
-		// Remove Mimir external labels so that they're not injected when querying blocks.
-		NewReplicaLabelRemover(userLogger, []string{
-			tsdb.TenantIDExternalLabel,
-			tsdb.IngesterIDExternalLabel,
-			tsdb.CompactorShardIDExternalLabel,
-			tsdb.DeprecatedShardIDExternalLabel,
-		}),
 	}
 
 	// Instantiate a different blocks metadata fetcher based on whether bucket index is enabled or not.
@@ -473,7 +463,8 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			u.logger,
 			fetcherReg,
 			filters,
-			modifiers)
+			nil,
+		) // No modifiers needed.
 	} else {
 		// Wrap the bucket reader to skip iterating the bucket at all if the user doesn't
 		// belong to the store-gateway shard. We need to run the BucketStore synching anyway
@@ -490,7 +481,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 			u.syncDirForUser(userID), // The fetcher stores cached metas in the "meta-syncer/" sub directory
 			fetcherReg,
 			filters,
-			modifiers,
+			nil, // No modifiers needed.
 		)
 		if err != nil {
 			return nil, err
@@ -600,33 +591,6 @@ func getUserIDFromGRPCContext(ctx context.Context) string {
 	}
 
 	return values[0]
-}
-
-// ReplicaLabelRemover is a BaseFetcher modifier modifies external labels of existing blocks, it removes given replica labels from the metadata of blocks that have it.
-type ReplicaLabelRemover struct {
-	logger log.Logger
-
-	replicaLabels []string
-}
-
-// NewReplicaLabelRemover creates a ReplicaLabelRemover.
-func NewReplicaLabelRemover(logger log.Logger, replicaLabels []string) *ReplicaLabelRemover {
-	return &ReplicaLabelRemover{logger: logger, replicaLabels: replicaLabels}
-}
-
-// Modify modifies external labels of existing blocks, it removes given replica labels from the metadata of blocks that have it.
-func (r *ReplicaLabelRemover) Modify(_ context.Context, metas map[ulid.ULID]*thanos_metadata.Meta, modified *extprom.TxGaugeVec) error {
-	for u, meta := range metas {
-		l := meta.Thanos.Labels
-		for _, replicaLabel := range r.replicaLabels {
-			if _, exists := l[replicaLabel]; exists {
-				level.Debug(r.logger).Log("msg", "replica label removed", "label", replicaLabel)
-				delete(l, replicaLabel)
-			}
-		}
-		metas[u].Thanos.Labels = l
-	}
-	return nil
 }
 
 type spanSeriesServer struct {

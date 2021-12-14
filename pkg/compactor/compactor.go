@@ -47,19 +47,18 @@ const (
 
 	CompactionStrategyDefault    = "default"
 	CompactionStrategySplitMerge = "split-and-merge"
-
-	CompactionOrderOldestFirst = "smallest-range-oldest-blocks-first"
-	CompactionOrderNewestFirst = "newest-blocks-first"
 )
 
 var (
-	errInvalidBlockRanges         = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
-	errInvalidCompactionOrder     = errors.Errorf("unsupported compaction order (supported values: %s)", strings.Join(compactionOrders, ", "))
-	errUnsupportedCompactionOrder = "the %s compaction strategy does not support %s order"
-	RingOp                        = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
+	errInvalidBlockRanges                 = "compactor block range periods should be divisible by the previous one, but %s is not divisible by %s"
+	errInvalidCompactionOrder             = fmt.Errorf("unsupported compaction order (supported values: %s)", strings.Join(CompactionOrders, ", "))
+	errUnsupportedCompactionOrder         = "the %s compaction strategy does not support %s order"
+	errInvalidMaxOpeningBlocksConcurrency = fmt.Errorf("invalid max-opening-blocks-concurrency value, must be positive")
+	errInvalidMaxClosingBlocksConcurrency = fmt.Errorf("invalid max-closing-blocks-concurrency value, must be positive")
+	errInvalidSymbolFlushersConcurrency   = fmt.Errorf("invalid symbols-flushers-concurrency value, must be positive")
+	RingOp                                = ring.NewOp([]ring.InstanceState{ring.ACTIVE}, nil)
 
 	compactionStrategies = []string{CompactionStrategyDefault, CompactionStrategySplitMerge}
-	compactionOrders     = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst}
 )
 
 // BlocksGrouperFactory builds and returns the grouper to use to compact a tenant's blocks.
@@ -94,6 +93,12 @@ type Config struct {
 	CleanupConcurrency    int                     `yaml:"cleanup_concurrency"`
 	DeletionDelay         time.Duration           `yaml:"deletion_delay"`
 	TenantCleanupDelay    time.Duration           `yaml:"tenant_cleanup_delay"`
+	MaxCompactionTime     time.Duration           `yaml:"max_compaction_time"`
+
+	// Compactor concurrency options
+	MaxOpeningBlocksConcurrency int `yaml:"max_opening_blocks_concurrency"` // Number of goroutines opening blocks before compaction.
+	MaxClosingBlocksConcurrency int `yaml:"max_closing_blocks_concurrency"` // Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.
+	SymbolsFlushersConcurrency  int `yaml:"symbols_flushers_concurrency"`   // Number of symbols flushers used when doing split compaction.
 
 	EnabledTenants  flagext.StringSliceCSV `yaml:"enabled_tenants"`
 	DisabledTenants flagext.StringSliceCSV `yaml:"disabled_tenants"`
@@ -127,21 +132,26 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.Var(&cfg.BlockRanges, "compactor.block-ranges", "List of compaction time ranges.")
 	f.DurationVar(&cfg.ConsistencyDelay, "compactor.consistency-delay", 0, fmt.Sprintf("Minimum age of fresh (non-compacted) blocks before they are being processed. Malformed blocks older than the maximum of consistency-delay and %s will be removed.", PartialUploadThresholdAge))
-	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 20, "Number of Go routines to use when syncing block index and chunks files from the long term storage.")
+	f.IntVar(&cfg.BlockSyncConcurrency, "compactor.block-sync-concurrency", 8, "Number of Go routines to use when downloading blocks for compaction and uploading resulting blocks.")
 	f.IntVar(&cfg.MetaSyncConcurrency, "compactor.meta-sync-concurrency", 20, "Number of Go routines to use when syncing block meta files from the long term storage.")
 	f.StringVar(&cfg.DataDir, "compactor.data-dir", "./data", "Data directory in which to cache blocks and process compactions")
 	f.DurationVar(&cfg.CompactionInterval, "compactor.compaction-interval", time.Hour, "The frequency at which the compaction runs")
+	f.DurationVar(&cfg.MaxCompactionTime, "compactor.max-compaction-time", 0, "Max time for starting compactions for a single tenant. After this time no new compactions for the tenant are started before next compaction cycle. This can help in multi-tenant environments to avoid single tenant using all compaction time, but also in single-tenant environments to force new discovery of blocks more often. 0 = disabled.")
 	f.IntVar(&cfg.CompactionRetries, "compactor.compaction-retries", 3, "How many times to retry a failed compaction within a single compaction run.")
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
 	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard tenants across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
 	f.StringVar(&cfg.CompactionStrategy, "compactor.compaction-strategy", CompactionStrategyDefault, fmt.Sprintf("The compaction strategy to use. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
-	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compacton jobs should run first for a given tenant. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(compactionStrategies, ", ")))
+	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Changing this setting is not supported by the default compaction strategy. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
 		"If 0, blocks will be deleted straight away. Note that deleting blocks immediately can cause query failures.")
 	f.DurationVar(&cfg.TenantCleanupDelay, "compactor.tenant-cleanup-delay", 6*time.Hour, "For tenants marked for deletion, this is time between deleting of last block, and doing final cleanup (marker files, debug files) of the tenant.")
+	// compactor concurrency options
+	f.IntVar(&cfg.MaxOpeningBlocksConcurrency, "compactor.max-opening-blocks-concurrency", 1, "Number of goroutines opening blocks before compaction.")
+	f.IntVar(&cfg.MaxClosingBlocksConcurrency, "compactor.max-closing-blocks-concurrency", 1, "Max number of blocks that can be closed concurrently during split compaction. Note that closing of newly compacted block uses a lot of memory for writing index.")
+	f.IntVar(&cfg.SymbolsFlushersConcurrency, "compactor.symbols-flushers-concurrency", 1, "Number of symbols flushers used when doing split compaction.")
 
 	f.Var(&cfg.EnabledTenants, "compactor.enabled-tenants", "Comma separated list of tenants that can be compacted. If specified, only these tenants will be compacted by compactor, otherwise all tenants can be compacted. Subject to sharding.")
 	f.Var(&cfg.DisabledTenants, "compactor.disabled-tenants", "Comma separated list of tenants that cannot be compacted by this compactor. If specified, and compactor would normally pick given tenant for compaction (via -compactor.enabled-tenants or sharding), it will be ignored instead.")
@@ -155,11 +165,21 @@ func (cfg *Config) Validate() error {
 		}
 	}
 
+	if cfg.MaxOpeningBlocksConcurrency < 1 {
+		return errInvalidMaxOpeningBlocksConcurrency
+	}
+	if cfg.MaxClosingBlocksConcurrency < 1 {
+		return errInvalidMaxClosingBlocksConcurrency
+	}
+	if cfg.SymbolsFlushersConcurrency < 1 {
+		return errInvalidSymbolFlushersConcurrency
+	}
+
 	if !util.StringsContain(compactionStrategies, cfg.CompactionStrategy) {
 		return fmt.Errorf("unsupported compaction strategy (supported values: %s)", strings.Join(compactionStrategies, ", "))
 	}
 
-	if !util.StringsContain(compactionOrders, cfg.CompactionJobsOrder) {
+	if !util.StringsContain(CompactionOrders, cfg.CompactionJobsOrder) {
 		return errInvalidCompactionOrder
 	}
 
@@ -180,6 +200,11 @@ type ConfigProvider interface {
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
 	// (used only when split-and-merge compaction strategy is enabled).
 	CompactorSplitAndMergeShards(userID string) int
+
+	// CompactorSplitGroupsCount returns the number of groups that blocks used for splitting should
+	// be grouped into. Different groups are then split by different jobs.
+	// Used only when split-and-merge compaction strategy is enabled.
+	CompactorSplitGroups(userID string) int
 
 	// CompactorTenantShardSize returns number of compactors that this user can use. Only used
 	// for split-and-merge compaction strategy. 0 = all compactors.
@@ -220,7 +245,7 @@ type MultitenantCompactor struct {
 	ringSubservicesWatcher *services.FailureWatcher
 
 	shardingStrategy shardingStrategy
-	jobsOrder        jobsOrderFunc
+	jobsOrder        JobsOrderFunc
 
 	// Metrics.
 	compactionRunsStarted          prometheus.Counter
@@ -346,10 +371,9 @@ func newMultitenantCompactor(
 		level.Info(c.logger).Log("msg", "compactor using disabled users", "disabled", strings.Join(compactorCfg.DisabledTenants, ", "))
 	}
 
-	if compactorCfg.CompactionJobsOrder == CompactionOrderNewestFirst {
-		c.jobsOrder = sortJobsByNewestBlocksFirst
-	} else {
-		c.jobsOrder = sortJobsBySmallestRangeOldestBlocksFirst
+	c.jobsOrder = GetJobsOrderFunction(compactorCfg.CompactionJobsOrder)
+	if c.jobsOrder == nil {
+		return nil, errInvalidCompactionOrder
 	}
 
 	c.Service = services.NewBasicService(c.starting, c.running, c.stopping)
@@ -636,13 +660,12 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 
 	ulogger := util_log.WithUserID(userID, c.logger)
 
-	// While fetching blocks, we filter out blocks that were marked for deletion by using IgnoreDeletionMarkFilter.
+	// While fetching blocks, we filter out blocks that were marked for deletion by using ExcludeMarkedForDeletionFilter.
 	// No delay is used -- all blocks with deletion marker are ignored, and not considered for compaction.
-	ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(
-		ulogger,
-		bucket,
-		0,
-		c.compactorCfg.MetaSyncConcurrency)
+	excludeMarkedForDeletionFilter := NewExcludeMarkedForDeletionFilter(bucket)
+	// Filters out duplicate blocks that can be formed from two or more overlapping
+	// blocks that fully submatches the source blocks of the older blocks.
+	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 
 	// List of filters to apply (order matters).
 	fetcherFilters := []block.MetadataFilter{
@@ -650,13 +673,11 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		// honoring the shard ID if sharding was done in the past.
 		NewLabelRemoverFilter([]string{mimir_tsdb.IngesterIDExternalLabel}),
 		block.NewConsistencyDelayMetaFilter(ulogger, c.compactorCfg.ConsistencyDelay, reg),
-		ignoreDeletionMarkFilter,
+		excludeMarkedForDeletionFilter,
+		deduplicateBlocksFilter,
+		// removes blocks that should not be compacted due to being marked so.
+		NewNoCompactionMarkFilter(bucket, true),
 	}
-
-	// Filters out duplicate blocks that can be formed from two or more overlapping
-	// blocks that fully submatches the source blocks of the older blocks.
-	deduplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-	fetcherFilters = append(fetcherFilters, deduplicateBlocksFilter)
 
 	fetcher, err := block.NewMetaFetcher(
 		ulogger,
@@ -677,10 +698,9 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		bucket,
 		fetcher,
 		deduplicateBlocksFilter,
-		ignoreDeletionMarkFilter,
+		excludeMarkedForDeletionFilter,
 		c.blocksMarkedForDeletion,
 		c.garbageCollectedBlocks,
-		c.compactorCfg.BlockSyncConcurrency,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create syncer")
@@ -695,16 +715,17 @@ func (c *MultitenantCompactor) compactUser(ctx context.Context, userID string) e
 		path.Join(c.compactorCfg.DataDir, "compact"),
 		bucket,
 		c.compactorCfg.CompactionConcurrency,
-		false, // Do not skip blocks with out of order chunks.
+		true, // Skip blocks with out of order chunks, and mark them for no-compaction.
 		c.shardingStrategy.ownJob,
 		c.jobsOrder,
+		c.compactorCfg.BlockSyncConcurrency,
 		c.bucketCompactorMetrics,
 	)
 	if err != nil {
 		return errors.Wrap(err, "failed to create bucket compactor")
 	}
 
-	if err := compactor.Compact(ctx); err != nil {
+	if err := compactor.Compact(ctx, c.compactorCfg.MaxCompactionTime); err != nil {
 		return errors.Wrap(err, "compaction")
 	}
 

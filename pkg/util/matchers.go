@@ -8,7 +8,7 @@ package util
 import (
 	"strings"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // SplitFiltersAndMatchers splits empty matchers off, which are treated as filters, see #220
@@ -27,6 +27,23 @@ func SplitFiltersAndMatchers(allMatchers []*labels.Matcher) (filters, matchers [
 		}
 	}
 	return
+}
+
+// MultiMatchersStringer implements Stringer for a slice of slices of Prometheus matchers. Useful for logging.
+type MultiMatchersStringer [][]*labels.Matcher
+
+func (s MultiMatchersStringer) String() string {
+	var b strings.Builder
+	for _, multi := range s {
+		if b.Len() > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('{')
+		b.WriteString(MatchersStringer(multi).String())
+		b.WriteByte('}')
+	}
+
+	return b.String()
 }
 
 // MatchersStringer implements Stringer for a slice of Prometheus matchers. Useful for logging.

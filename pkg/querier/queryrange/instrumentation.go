@@ -9,13 +9,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/weaveworks/common/instrument"
+
+	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
 // InstrumentMiddleware can be inserted into the middleware chain to expose timing information.
-func InstrumentMiddleware(name string, metrics *InstrumentMiddlewareMetrics) Middleware {
+func InstrumentMiddleware(name string, metrics *InstrumentMiddlewareMetrics, logger log.Logger) Middleware {
 	var durationCol instrument.Collector
 
 	// Support the case metrics shouldn't be tracked (ie. unit tests).
@@ -29,6 +32,9 @@ func InstrumentMiddleware(name string, metrics *InstrumentMiddlewareMetrics) Mid
 		return HandlerFunc(func(ctx context.Context, req Request) (Response, error) {
 			var resp Response
 			err := instrument.CollectedRequest(ctx, name, durationCol, instrument.ErrorCode, func(ctx context.Context) error {
+				sp := spanlogger.FromContext(ctx, logger)
+				req.LogToSpan(sp.Span)
+
 				var err error
 				resp, err = next.Do(ctx, req)
 				return err

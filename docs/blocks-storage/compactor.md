@@ -49,7 +49,7 @@ The `split-and-merge` compaction strategy is a more sophisticated compaction str
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` allows you to configure max number of concurrent compactions running in a single compactor replica (each compaction uses 1 CPU core).
 - **Horizontal scaling**<br />
-  When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across the available replicas.
+  When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across compactor replicas. Use the CLI flag `-compactor.compactor-tenant-shard-size` (or its respective YAML config option) to control how many of the available replicas to spread compaction jobs across. If set to 0, compaction jobs will be spread across all available replicas.
 
 The `split-and-merge` is designed to overcome TSDB index limitations and avoid that compacted blocks can grow indefinitely for a very large tenant (at any compaction stage).
 
@@ -65,7 +65,7 @@ The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
-This strategy is suited for clusters with large tenants. The `N` number of split blocks is configurable on a per-tenant basis (`-compactor.split-and-merge-shards`) and can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards, in order to improve compaction parallelization and keep each per-shard compacted block size under control.
+This strategy is suited for clusters with large tenants. The `N` number of split blocks is configurable on a per-tenant basis (`-compactor.split-and-merge-shards`) and can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards, in order to improve compaction parallelization and keep each per-shard compacted block size under control. We currently recommend 1 shard per every 25 to 30 million active series in a tenant (e.g., for a tenant with 100 million active series, you'd want roughly 4 shards). Please note this recommendation may change because this feature is still experimental.
 
 When sharding is enabled, each compaction stage (both split and merge) planned by the compactor can be horizontally scaled. Non conflicting / overlapping jobs will be executed in parallel.
 
@@ -112,6 +112,8 @@ The compactor allows to configure the compaction jobs order via the `-compactor.
 This ordering gives priority to smallest range, oldest blocks first.
 
 For example let's assume that you run the compactor with the compaction ranges `2h, 12h, 24h`. Compactor will compact 2h ranges first and among them it gives priority to oldest blocks. Once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
+
+When using `split-and-merge` compaction strategy all split jobs are moved to the front of the work queue, because finishing all split jobs in a given time range unblocks all merge jobs.
 
 ### `newest-blocks-first`
 
@@ -164,10 +166,10 @@ compactor:
   # CLI flag: -compactor.block-ranges
   [block_ranges: <list of duration> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-  # Number of Go routines to use when syncing block index and chunks files from
-  # the long term storage.
+  # Number of Go routines to use when downloading blocks for compaction and
+  # uploading resulting blocks.
   # CLI flag: -compactor.block-sync-concurrency
-  [block_sync_concurrency: <int> | default = 20]
+  [block_sync_concurrency: <int> | default = 8]
 
   # Number of Go routines to use when syncing block meta files from the long
   # term storage.
@@ -218,6 +220,28 @@ compactor:
   # block, and doing final cleanup (marker files, debug files) of the tenant.
   # CLI flag: -compactor.tenant-cleanup-delay
   [tenant_cleanup_delay: <duration> | default = 6h]
+
+  # Max time for starting compactions for a single tenant. After this time no
+  # new compactions for the tenant are started before next compaction cycle.
+  # This can help in multi-tenant environments to avoid single tenant using all
+  # compaction time, but also in single-tenant environments to force new
+  # discovery of blocks more often. 0 = disabled.
+  # CLI flag: -compactor.max-compaction-time
+  [max_compaction_time: <duration> | default = 0s]
+
+  # Number of goroutines opening blocks before compaction.
+  # CLI flag: -compactor.max-opening-blocks-concurrency
+  [max_opening_blocks_concurrency: <int> | default = 1]
+
+  # Max number of blocks that can be closed concurrently during split
+  # compaction. Note that closing of newly compacted block uses a lot of memory
+  # for writing index.
+  # CLI flag: -compactor.max-closing-blocks-concurrency
+  [max_closing_blocks_concurrency: <int> | default = 1]
+
+  # Number of symbols flushers used when doing split compaction.
+  # CLI flag: -compactor.symbols-flushers-concurrency
+  [symbols_flushers_concurrency: <int> | default = 1]
 
   # Comma separated list of tenants that can be compacted. If specified, only
   # these tenants will be compacted by compactor, otherwise all tenants can be
@@ -305,9 +329,10 @@ compactor:
   # CLI flag: -compactor.compaction-strategy
   [compaction_strategy: <string> | default = "default"]
 
-  # The sorting to use when deciding which compacton jobs should run first for a
-  # given tenant. Changing this setting is not supported by the default
-  # compaction strategy. Supported values are: default, split-and-merge.
+  # The sorting to use when deciding which compaction jobs should run first for
+  # a given tenant. Changing this setting is not supported by the default
+  # compaction strategy. Supported values are:
+  # smallest-range-oldest-blocks-first, newest-blocks-first.
   # CLI flag: -compactor.compaction-jobs-order
   [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```

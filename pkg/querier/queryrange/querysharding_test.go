@@ -9,8 +9,10 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -18,8 +20,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -124,7 +126,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 1,
 		},
 		"sum(rate()) with no effective grouping because all groups have 1 series": {
-			query:                  `sum by(unique) (rate(metric_counter[1m]))`,
+			query:                  `sum by(unique) (rate(metric_counter{group_1="0"}[1m]))`,
 			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() grouping only 'by' le": {
@@ -140,7 +142,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 1,
 		},
 		"histogram_quantile() with no effective grouping because all groups have 1 series": {
-			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket[1m])))`,
+			query:                  `histogram_quantile(0.5, sum by(unique, le) (rate(metric_histogram_bucket{group_1="0"}[1m])))`,
 			expectedShardedQueries: 1,
 		},
 		"min() no grouping": {
@@ -224,6 +226,24 @@ func TestQueryShardingCorrectness(t *testing.T) {
 				>
 				avg(rate(metric_counter[1m]))`,
 			expectedShardedQueries: 3, // avg() is parallelized as sum()/count().
+		},
+		"sum by (rate()) / 2 ^ 2": {
+			query: `
+			sum by (group_1) (rate(metric_counter[1m])) / 2 ^ 2`,
+			expectedShardedQueries: 1,
+		},
+		"sum by (rate()) / time() *2": {
+			query: `
+			sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate()) / vector(3) ^ month()": {
+			query:                  `sum(rate(metric_counter[1m])) / vector(3) ^ month()`,
+			expectedShardedQueries: 1,
+		},
+		"sum(rate(metric_counter[1m])) / vector(3) ^ vector(2) + sum(ln(metric_counter))": {
+			query:                  `sum(rate(metric_counter[1m])) / vector(3) ^ vector(2) + sum(ln(metric_counter))`,
+			expectedShardedQueries: 2,
 		},
 		"nested count()": {
 			query: `sum(
@@ -335,7 +355,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 0,
 		},
 		"histogram_quantile without aggregation": {
-			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket[1m]))`,
+			query:                  `histogram_quantile(0.5, rate(metric_histogram_bucket{group_1="0"}[1m]))`,
 			expectedShardedQueries: 0,
 		},
 		`subqueries with non parallelizable function in children`: {
@@ -361,25 +381,25 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			gen = stale(start.Add(10*time.Minute), start.Add(20*time.Minute), gen)
 		}
 
-		series = append(series, newSeries(newTestCounterLabels(seriesID), start.Add(-lookbackDelta), end, gen))
+		series = append(series, newSeries(newTestCounterLabels(seriesID), start.Add(-lookbackDelta), end, step, gen))
 		seriesID++
 	}
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and has NO stale marker.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		start.Add(-lookbackDelta), end.Add(-5*time.Minute), factor(2)))
+		start.Add(-lookbackDelta), end.Add(-5*time.Minute), step, factor(2)))
 	seriesID++
 
 	// Add a special series whose data points end earlier than the end of the queried time range
 	// and HAS a stale marker at the end.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		start.Add(-lookbackDelta), end.Add(-5*time.Minute), stale(end.Add(-6*time.Minute), end.Add(-4*time.Minute), factor(2))))
+		start.Add(-lookbackDelta), end.Add(-5*time.Minute), step, stale(end.Add(-6*time.Minute), end.Add(-4*time.Minute), factor(2))))
 	seriesID++
 
 	// Add a special series whose data points start later than the start of the queried time range.
 	series = append(series, newSeries(newTestCounterLabels(seriesID),
-		start.Add(5*time.Minute), end, factor(2)))
+		start.Add(5*time.Minute), end, step, factor(2)))
 	seriesID++
 
 	// Add histogram series.
@@ -393,7 +413,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			}
 
 			series = append(series, newSeries(newTestHistogramLabels(seriesID, bucketLe),
-				start.Add(-lookbackDelta), end, gen))
+				start.Add(-lookbackDelta), end, step, gen))
 		}
 
 		// Increase the series ID after all per-bucket series have been created.
@@ -408,64 +428,71 @@ func TestQueryShardingCorrectness(t *testing.T) {
 	})
 
 	for testName, testData := range tests {
-		for _, numShards := range []int{2, 4, 8, 16} {
-			t.Run(fmt.Sprintf("%s (shards: %d)", testName, numShards), func(t *testing.T) {
-				req := &PrometheusRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: testData.query,
-				}
+		// Change scope to ensure it work fine when test cases are executed concurrently.
+		testData := testData
 
-				reg := prometheus.NewPedanticRegistry()
-				engine := newEngine()
-				shardingware := NewQueryShardingMiddleware(
-					log.NewNopLogger(),
-					engine,
-					mockLimits{totalShards: numShards},
-					reg,
-				)
-				downstream := &downstreamHandler{
-					engine:    engine,
-					queryable: queryable,
-				}
+		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
 
-				// Run the query without sharding.
-				expectedRes, err := downstream.Do(context.Background(), req)
-				require.Nil(t, err)
+			req := &PrometheusRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: testData.query,
+			}
 
-				// Ensure the query produces some results.
-				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+			engine := newEngine()
+			downstream := &downstreamHandler{
+				engine:    engine,
+				queryable: queryable,
+			}
 
-				// Ensure the query produces some results which are not NaN.
-				foundValidSamples := false
-			outer:
-				for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
-					for _, sample := range stream.Samples {
-						if !math.IsNaN(sample.Value) {
-							foundValidSamples = true
-							break outer
-						}
+			// Run the query without sharding.
+			expectedRes, err := downstream.Do(context.Background(), req)
+			require.Nil(t, err)
+
+			// Ensure the query produces some results.
+			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+
+			// Ensure the query produces some results which are not NaN.
+			foundValidSamples := false
+		outer:
+			for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
+				for _, sample := range stream.Samples {
+					if !math.IsNaN(sample.Value) {
+						foundValidSamples = true
+						break outer
 					}
 				}
-				require.True(t, foundValidSamples, "the query returns some not NaN samples")
+			}
+			require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
-				// Run the query with sharding.
-				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
-				require.Nil(t, err)
+			for _, numShards := range []int{2, 4, 8, 16} {
+				t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+					reg := prometheus.NewPedanticRegistry()
+					shardingware := NewQueryShardingMiddleware(
+						log.NewNopLogger(),
+						engine,
+						mockLimits{totalShards: numShards},
+						reg,
+					)
 
-				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-				// if you rerun the same query twice).
-				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+					// Run the query with sharding.
+					shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+					require.Nil(t, err)
 
-				// Ensure the query has been sharded/not sharded as expected.
-				expectedSharded := 0
-				if testData.expectedShardedQueries > 0 {
-					expectedSharded = 1
-				}
+					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+					// if you rerun the same query twice).
+					approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
 
-				assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					// Ensure the query has been sharded/not sharded as expected.
+					expectedSharded := 0
+					if testData.expectedShardedQueries > 0 {
+						expectedSharded = 1
+					}
+
+					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
 					cortex_frontend_query_sharding_rewrites_attempted_total 1
@@ -478,11 +505,12 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					# TYPE cortex_frontend_sharded_queries_total counter
 					cortex_frontend_sharded_queries_total %d
 				`, expectedSharded, testData.expectedShardedQueries*numShards)),
-					"cortex_frontend_query_sharding_rewrites_attempted_total",
-					"cortex_frontend_query_sharding_rewrites_succeeded_total",
-					"cortex_frontend_sharded_queries_total"))
-			})
-		}
+						"cortex_frontend_query_sharding_rewrites_attempted_total",
+						"cortex_frontend_query_sharding_rewrites_succeeded_total",
+						"cortex_frontend_sharded_queries_total"))
+				})
+			}
+		})
 	}
 }
 
@@ -564,6 +592,151 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 	downstream.AssertNumberOfCalls(t, "Do", 128)
 }
 
+func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
+	tests := map[string]struct {
+		query             string
+		hints             *Hints
+		totalShards       int
+		maxShardedQueries int
+		expectedShards    int
+		compactorShards   int
+	}{
+		"query is not shardable": {
+			query:             "metric",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    1,
+		},
+		"single splitted query, query has 1 shardable leg": {
+			query:             "sum(metric)",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    16,
+		},
+		"single splitted query, query has many shardable legs": {
+			query:             "sum(metric_1) + sum(metric_2) + sum(metric_3) + sum(metric_4)",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       16,
+			maxShardedQueries: 16,
+			expectedShards:    4,
+		},
+		"multiple splitted queries, query has 1 shardable leg": {
+			query:             "sum(metric)",
+			hints:             &Hints{TotalQueries: 10},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    6,
+		},
+		"multiple splitted queries, query has 2 shardable legs": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 10},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			expectedShards:    3,
+		},
+		"multiple splitted queries, query has 2 shardable legs, no compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   0,
+			expectedShards:    10,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 3 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   3,
+			expectedShards:    9,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 4 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   4,
+			expectedShards:    8,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 10 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   10,
+			expectedShards:    10,
+		},
+		"multiple splitted queries, query has 2 shardable legs, 11 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   11,
+			expectedShards:    10, // cannot be adjusted to make 11 multiple or divisible, keep original.
+		},
+		"multiple splitted queries, query has 2 shardable legs, 14 compactor shards": {
+			query:             "sum(metric) / count(metric)",
+			hints:             &Hints{TotalQueries: 3},
+			totalShards:       16,
+			maxShardedQueries: 64,
+			compactorShards:   14,
+			expectedShards:    7, // 7 divides 14
+		},
+		"query sharding is disabled": {
+			query:             "sum(metric)",
+			hints:             &Hints{TotalQueries: 1},
+			totalShards:       0, // Disabled.
+			maxShardedQueries: 64,
+			expectedShards:    1,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			req := &PrometheusRequest{
+				Path:  "/query_range",
+				Start: util.TimeToMillis(start),
+				End:   util.TimeToMillis(end),
+				Step:  step.Milliseconds(),
+				Query: testData.query,
+				Hints: testData.hints,
+			}
+
+			limits := mockLimits{
+				totalShards:       testData.totalShards,
+				maxShardedQueries: testData.maxShardedQueries,
+				compactorShards:   testData.compactorShards,
+			}
+			shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, nil)
+
+			// Keep track of the unique number of shards queried to downstream.
+			uniqueShardsMx := sync.Mutex{}
+			uniqueShards := map[string]struct{}{}
+
+			downstream := &mockHandler{}
+			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
+				Status: StatusSuccess, Data: PrometheusData{
+					ResultType: string(parser.ValueTypeVector),
+				},
+			}, nil).Run(func(args mock.Arguments) {
+				req := args[1].(Request)
+				reqShard := regexp.MustCompile(`__query_shard__="[^"]+"`).FindString(req.GetQuery())
+
+				uniqueShardsMx.Lock()
+				uniqueShards[reqShard] = struct{}{}
+				uniqueShardsMx.Unlock()
+			})
+
+			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+			require.NoError(t, err)
+			assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+			assert.Equal(t, testData.expectedShards, len(uniqueShards))
+		})
+	}
+}
+
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
 	req := &PrometheusRequest{
 		Path:  "/query_range",
@@ -619,7 +792,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		queryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return &querierMock{
 				series: []*promql.StorageSeries{
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, factor(5)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
 				},
 			}, nil
 		})
@@ -649,7 +822,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			name:             "downstream - sample limit",
 			engineDownstream: engineSampleLimit,
 			engineSharding:   engine,
-			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
+			expError:         apierror.New(apierror.TypeExec, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:             "sharding - timeout",
@@ -657,12 +830,6 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 			engineSharding:   engineTimeout,
 			expError:         apierror.New(apierror.TypeTimeout, "query timed out in expression evaluation"),
 			queryable:        queryableSlow,
-		},
-		{
-			name:             "downstream - sample limit",
-			engineDownstream: engine,
-			engineSharding:   engineSampleLimit,
-			expError:         apierror.New(apierror.TypeInternal, "query processing would load too many samples into memory in query execution"),
 		},
 		{
 			name:             "downstream - storage",

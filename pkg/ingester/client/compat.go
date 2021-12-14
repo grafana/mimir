@@ -9,14 +9,14 @@ import (
 	"fmt"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // ToQueryRequest builds a QueryRequest proto.
 func ToQueryRequest(from, to model.Time, matchers []*labels.Matcher) (*QueryRequest, error) {
-	ms, err := toLabelMatchers(matchers)
+	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -39,19 +39,11 @@ func FromQueryRequest(req *QueryRequest) (model.Time, model.Time, []*labels.Matc
 	return from, to, matchers, nil
 }
 
-func ToLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*LabelNamesAndValuesRequest, error) {
-	matchersProto, err := toLabelMatchers(matchers)
-	if err != nil {
-		return nil, err
-	}
-	return &LabelNamesAndValuesRequest{Matchers: matchersProto}, nil
-}
-
 // ToExemplarQueryRequest builds an ExemplarQueryRequest proto.
 func ToExemplarQueryRequest(from, to model.Time, matchers ...[]*labels.Matcher) (*ExemplarQueryRequest, error) {
 	var reqMatchers []*LabelMatchers
 	for _, m := range matchers {
-		ms, err := toLabelMatchers(m)
+		ms, err := ToLabelMatchers(m)
 		if err != nil {
 			return nil, err
 		}
@@ -81,7 +73,7 @@ func FromExemplarQueryRequest(req *ExemplarQueryRequest) (int64, int64, [][]*lab
 
 // ToMetricsForLabelMatchersRequest builds a MetricsForLabelMatchersRequest proto
 func ToMetricsForLabelMatchersRequest(from, to model.Time, matchers []*labels.Matcher) (*MetricsForLabelMatchersRequest, error) {
-	ms, err := toLabelMatchers(matchers)
+	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +111,7 @@ func FromMetricsForLabelMatchersResponse(resp *MetricsForLabelMatchersResponse) 
 
 // ToLabelValuesRequest builds a LabelValuesRequest proto
 func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, matchers []*labels.Matcher) (*LabelValuesRequest, error) {
-	ms, err := toLabelMatchers(matchers)
+	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -130,18 +122,6 @@ func ToLabelValuesRequest(labelName model.LabelName, from, to model.Time, matche
 		EndTimestampMs:   int64(to),
 		Matchers:         &LabelMatchers{Matchers: ms},
 	}, nil
-}
-
-func ToLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*LabelValuesCardinalityRequest, error) {
-	matchersProto, err := toLabelMatchers(matchers)
-	if err != nil {
-		return nil, err
-	}
-	labelNamesStr := make([]string, 0, len(labelNames))
-	for _, labelName := range labelNames {
-		labelNamesStr = append(labelNamesStr, string(labelName))
-	}
-	return &LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto}, nil
 }
 
 // FromLabelValuesRequest unpacks a LabelValuesRequest proto
@@ -161,7 +141,7 @@ func FromLabelValuesRequest(req *LabelValuesRequest) (string, int64, int64, []*l
 
 // ToLabelNamesRequest builds a LabelNamesRequest proto
 func ToLabelNamesRequest(from, to model.Time, matchers []*labels.Matcher) (*LabelNamesRequest, error) {
-	ms, err := toLabelMatchers(matchers)
+	ms, err := ToLabelMatchers(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -188,7 +168,7 @@ func FromLabelNamesRequest(req *LabelNamesRequest) (int64, int64, []*labels.Matc
 	return req.StartTimestampMs, req.EndTimestampMs, matchers, nil
 }
 
-func toLabelMatchers(matchers []*labels.Matcher) ([]*LabelMatcher, error) {
+func ToLabelMatchers(matchers []*labels.Matcher) ([]*LabelMatcher, error) {
 	result := make([]*LabelMatcher, 0, len(matchers))
 	for _, matcher := range matchers {
 		var mType MatchType

@@ -51,6 +51,7 @@ type Config struct {
 	CacheResults           bool `yaml:"cache_results"`
 	MaxRetries             int  `yaml:"max_retries"`
 	ShardedQueries         bool `yaml:"parallelize_shardable_queries"`
+	CacheUnalignedRequests bool `yaml:"cache_unaligned_requests"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
@@ -60,6 +61,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.BoolVar(&cfg.AlignQueriesWithStep, "querier.align-querier-with-step", false, "Mutate incoming queries to align their start and end with their step.")
 	f.BoolVar(&cfg.CacheResults, "querier.cache-results", false, "Cache query results.")
 	f.BoolVar(&cfg.ShardedQueries, "query-frontend.parallelize-shardable-queries", false, "Perform query parallelizations based on storage sharding configuration and query ASTs. This feature is supported only by the blocks storage engine.")
+	f.BoolVar(&cfg.CacheUnalignedRequests, "query-frontend.cache-unaligned-requests", false, "Cache requests that are not step-aligned.")
 	cfg.ResultsCacheConfig.RegisterFlags(f)
 }
 
@@ -152,26 +154,54 @@ func NewTripperware(
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
-	queryRangeMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
-	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics), StepAlignMiddleware)
+	queryRangeMiddleware := []Middleware{
+		// Track query range statistics. Added first before any subsequent middleware modifies the request.
+		newQueryStatsMiddleware(registerer),
+		NewLimitsMiddleware(limits, log),
 	}
-	if cfg.SplitQueriesByInterval != 0 {
-		staticIntervalFn := func(_ Request) time.Duration { return cfg.SplitQueriesByInterval }
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval", metrics), SplitByIntervalMiddleware(staticIntervalFn, limits, codec, registerer))
+	if cfg.AlignQueriesWithStep {
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), StepAlignMiddleware)
 	}
 
 	var c cache.Cache
-	if cfg.CacheResults {
+
+	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
+	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
+		// Init the cache client.
+		if cfg.CacheResults {
+			var err error
+
+			c, err = cache.New(cfg.ResultsCacheConfig.CacheConfig, registerer, log)
+			if err != nil {
+				return nil, nil, err
+			}
+			if cfg.ResultsCacheConfig.Compression == "snappy" {
+				c = cache.NewSnappy(c, log)
+			}
+			if cacheGenNumberLoader != nil {
+				c = cache.NewCacheGenNumMiddleware(c)
+			}
+		}
+
 		shouldCache := func(r Request) bool {
 			return !r.GetOptions().CacheDisabled
 		}
-		queryCacheMiddleware, cache, err := NewResultsCacheMiddleware(log, cfg.ResultsCacheConfig, constSplitter(cfg.SplitQueriesByInterval), limits, codec, cacheExtractor, cacheGenNumberLoader, shouldCache, registerer)
-		if err != nil {
-			return nil, nil, err
-		}
-		c = cache
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("results_cache", metrics), queryCacheMiddleware)
+
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
+			cfg.SplitQueriesByInterval > 0,
+			cfg.CacheResults,
+			cfg.SplitQueriesByInterval,
+			cfg.CacheUnalignedRequests,
+			limits,
+			codec,
+			c,
+			constSplitter(cfg.SplitQueriesByInterval),
+			cacheExtractor,
+			cacheGenNumberLoader,
+			shouldCache,
+			log,
+			registerer,
+		))
 	}
 	queryInstantMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 
@@ -193,24 +223,21 @@ func NewTripperware(
 		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
-			InstrumentMiddleware("querysharding", metrics),
+			InstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			InstrumentMiddleware("querysharding", metrics),
+			InstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
 		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
-
-	// Track query range statistics.
-	queryRangeMiddleware = append(queryRangeMiddleware, newQueryStatsMiddleware(registerer))
 
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 	_ = activeUsers.StartAsync(context.Background())

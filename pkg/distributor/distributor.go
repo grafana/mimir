@@ -10,6 +10,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	math "math"
 	"net/http"
 	"sort"
 	"strings"
@@ -27,11 +28,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/instrument"
+	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"golang.org/x/sync/errgroup"
@@ -108,6 +110,7 @@ type Distributor struct {
 	nonHASamples                     *prometheus.CounterVec
 	dedupedSamples                   *prometheus.CounterVec
 	labelsHistogram                  prometheus.Histogram
+	sampleDelayHistogram             prometheus.Histogram
 	ingesterAppends                  *prometheus.CounterVec
 	ingesterAppendFailures           *prometheus.CounterVec
 	ingesterQueries                  *prometheus.CounterVec
@@ -296,6 +299,25 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 			Name:      "labels_per_sample",
 			Help:      "Number of labels per sample.",
 			Buckets:   []float64{5, 10, 15, 20, 25},
+		}),
+		sampleDelayHistogram: promauto.With(reg).NewHistogram(prometheus.HistogramOpts{
+			Namespace: "cortex",
+			Name:      "distributor_sample_delay_seconds",
+			Help:      "Number of seconds by which a sample came in late wrt wallclock.",
+			Buckets: []float64{
+				30,           // 30s
+				60 * 1,       // 1 min
+				60 * 2,       // 2 min
+				60 * 4,       // 4 min
+				60 * 8,       // 8 min
+				60 * 10,      // 10 min
+				60 * 30,      // 30 min
+				60 * 60,      // 1h
+				60 * 60 * 2,  // 2h
+				60 * 60 * 3,  // 3h
+				60 * 60 * 6,  // 6h
+				60 * 60 * 24, // 24h
+			},
 		}),
 		ingesterAppends: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Namespace: "cortex",
@@ -501,19 +523,30 @@ func (d *Distributor) checkSample(ctx context.Context, userID, cluster, replica 
 }
 
 // Validates a single series from a write request.
+// May alter timeseries data in-place.
 // The returned error may retain the series labels.
-func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool) error {
+// It uses the passed nowt time to observe the delay of sample timestamps.
+func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseries, userID string, skipLabelNameValidation bool, minExemplarTS int64) error {
 	if err := validation.ValidateLabels(d.limits, userID, ts.Labels, skipLabelNameValidation); err != nil {
 		return err
 	}
 
+	now := model.TimeFromUnixNano(nowt.UnixNano())
+
 	for _, s := range ts.Samples {
-		if err := validation.ValidateSample(d.limits, userID, ts.Labels, s); err != nil {
+
+		delta := now - model.Time(s.TimestampMs)
+		if delta > 0 {
+			d.sampleDelayHistogram.Observe(float64(delta) / 1000)
+		}
+
+		if err := validation.ValidateSample(now, d.limits, userID, ts.Labels, s); err != nil {
 			return err
 		}
 	}
 
-	for _, e := range ts.Exemplars {
+	for i := 0; i < len(ts.Exemplars); {
+		e := ts.Exemplars[i]
 		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
@@ -521,6 +554,16 @@ func (d *Distributor) validateSeries(ts mimirpb.PreallocTimeseries, userID strin
 			// there never will be any.
 			return err
 		}
+		if !validation.ExemplarTimestampOK(userID, minExemplarTS, e) {
+			// Delete this exemplar by moving the last one on top and shortening the slice
+			last := len(ts.Exemplars) - 1
+			if i < last {
+				ts.Exemplars[i] = ts.Exemplars[last]
+			}
+			ts.Exemplars = ts.Exemplars[:last]
+			continue
+		}
+		i++
 	}
 
 	return nil
@@ -568,7 +611,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	now := time.Now()
+	now := mtime.Now()
 	d.activeUsers.UpdateUserTimestamp(userID, now)
 
 	source := util.GetSourceIPsFromOutgoingCtx(ctx)
@@ -627,22 +670,29 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		}
 	}
 
-	latestSampleTimestampMs := int64(0)
-	defer func() {
-		// Update this metric even in case of errors.
-		if latestSampleTimestampMs > 0 {
-			d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+	// Find the earliest and latest samples in the batch.
+	earliestSampleTimestampMs, latestSampleTimestampMs := int64(math.MaxInt64), int64(0)
+	for _, ts := range req.Timeseries {
+		for _, s := range ts.Samples {
+			earliestSampleTimestampMs = util_math.Min64(earliestSampleTimestampMs, s.TimestampMs)
+			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, s.TimestampMs)
 		}
-	}()
+	}
+	// Update this metric even in case of errors.
+	if latestSampleTimestampMs > 0 {
+		d.latestSeenSampleTimestampPerUser.WithLabelValues(userID).Set(float64(latestSampleTimestampMs) / 1000)
+	}
+	// Exemplars are not expired by Prometheus client libraries, therefore we may receive old exemplars
+	// repeated on every scrape. Drop any that are more than 5 minutes older than samples in the same batch.
+	// (If we didn't find any samples this will be 0, and we won't reject any exemplars.)
+	var minExemplarTS int64
+	if earliestSampleTimestampMs != math.MaxInt64 {
+		minExemplarTS = earliestSampleTimestampMs - 300000
+	}
 
 	// For each timeseries, compute a hash to distribute across ingesters;
 	// check each sample and discard if outside limits.
 	for _, ts := range req.Timeseries {
-		// Use timestamp of latest sample in the series. If samples for series are not ordered, metric for user may be wrong.
-		if len(ts.Samples) > 0 {
-			latestSampleTimestampMs = util_math.Max64(latestSampleTimestampMs, ts.Samples[len(ts.Samples)-1].TimestampMs)
-		}
-
 		if mrc := d.limits.MetricRelabelConfigs(userID); len(mrc) > 0 {
 			l := relabel.Process(mimirpb.FromLabelAdaptersToLabels(ts.Labels), mrc...)
 			ts.Labels = mimirpb.FromLabelsToLabelAdapters(l)
@@ -668,6 +718,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		// different tokens, which is bad.
 		// 2) In validation code, when checking for duplicate label names. As duplicate label names are rejected
 		// later in the validation phase, we ignore them here.
+		// 3) Ingesters expect labels to be sorted in the Push request.
 		sortLabelsIfNeeded(ts.Labels)
 
 		// Generate the sharding token based on the series labels without the HA replica
@@ -680,7 +731,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 		d.labelsHistogram.Observe(float64(len(ts.Labels)))
 
 		skipLabelNameValidation := d.cfg.SkipLabelNameValidation || req.GetSkipLabelNameValidation()
-		validationErr := d.validateSeries(ts, userID, skipLabelNameValidation)
+		// Note that validateSeries may drop some data in ts.
+		validationErr := d.validateSeries(now, ts, userID, skipLabelNameValidation, minExemplarTS)
 
 		// Errors in validation are considered non-fatal, as one series in a request may contain
 		// invalid data but all the remaining series could be perfectly valid.
@@ -895,7 +947,7 @@ func (d *Distributor) LabelNamesAndValues(ctx context.Context, matchers []*label
 		return nil, err
 	}
 
-	req, err := ingester_client.ToLabelNamesCardinalityRequest(matchers)
+	req, err := toLabelNamesCardinalityRequest(matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -926,8 +978,20 @@ type labelNamesAndValuesResponseMerger struct {
 	currentSizeBytes int
 }
 
+func toLabelNamesCardinalityRequest(matchers []*labels.Matcher) (*ingester_client.LabelNamesAndValuesRequest, error) {
+	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
+	}
+	return &ingester_client.LabelNamesAndValuesRequest{Matchers: matchersProto}, nil
+}
+
 // toLabelNamesAndValuesResponses converts map with distinct label values to `ingester_client.LabelNamesAndValuesResponse`.
 func (m *labelNamesAndValuesResponseMerger) toLabelNamesAndValuesResponses() *ingester_client.LabelNamesAndValuesResponse {
+	// we need to acquire the lock to prevent concurrent read/write to the map because it might be a case that some ingesters responses are
+	// still being processed if replicationSet.Do() returned execution to this method when it decided that it got enough responses from the quorum of instances.
+	m.lock.Lock()
+	defer m.lock.Unlock()
 	responses := make([]*ingester_client.LabelValues, 0, len(m.result))
 	for name, values := range m.result {
 		labelValues := make([]string, 0, len(values))
@@ -996,7 +1060,7 @@ func (d *Distributor) LabelValuesCardinality(ctx context.Context, labelNames []m
 
 	lbNamesLimit := d.limits.LabelValuesMaxCardinalityLabelNamesPerRequest(userID)
 	if len(labelNames) > lbNamesLimit {
-		return 0, nil, fmt.Errorf("label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
+		return 0, nil, httpgrpc.Errorf(http.StatusBadRequest, "label values cardinality request label names limit (limit: %d actual: %d) exceeded", lbNamesLimit, len(labelNames))
 	}
 
 	// Run labelValuesCardinality and UserStats methods in parallel
@@ -1031,12 +1095,13 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 
 	// Make sure we get a successful response from all the ingesters
 	replicationSet.MaxErrors = 0
+	replicationSet.MaxUnavailableZones = 0
 
 	cardinalityConcurrentMap := &labelValuesCardinalityConcurrentMap{
 		cardinalityMap: map[string]map[string]uint64{},
 	}
 
-	labelValuesReq, err := ingester_client.ToLabelValuesCardinalityRequest(labelNames, matchers)
+	labelValuesReq, err := toLabelValuesCardinalityRequest(labelNames, matchers)
 	if err != nil {
 		return nil, err
 	}
@@ -1053,25 +1118,19 @@ func (d *Distributor) labelValuesCardinality(ctx context.Context, labelNames []m
 	if err != nil {
 		return nil, err
 	}
+	return cardinalityConcurrentMap.toLabelValuesCardinalityResponse(d.ingestersRing.ReplicationFactor()), nil
+}
 
-	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(labelNames))
-
-	// Adjust label values' series count based on the ingester's replication factor
-	for labelName, labelValueSeriesCountMap := range cardinalityConcurrentMap.cardinalityMap {
-		for labelValue, seriesCount := range labelValueSeriesCountMap {
-			labelValueSeriesCountMap[labelValue] = seriesCount / uint64(d.ingestersRing.ReplicationFactor())
-		}
-		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
-			LabelName:        labelName,
-			LabelValueSeries: labelValueSeriesCountMap,
-		})
+func toLabelValuesCardinalityRequest(labelNames []model.LabelName, matchers []*labels.Matcher) (*ingester_client.LabelValuesCardinalityRequest, error) {
+	matchersProto, err := ingester_client.ToLabelMatchers(matchers)
+	if err != nil {
+		return nil, err
 	}
-
-	cardinalityResponse := &ingester_client.LabelValuesCardinalityResponse{
-		Items: cardinalityItems,
+	labelNamesStr := make([]string, 0, len(labelNames))
+	for _, labelName := range labelNames {
+		labelNamesStr = append(labelNamesStr, string(labelName))
 	}
-
-	return cardinalityResponse, nil
+	return &ingester_client.LabelValuesCardinalityRequest{LabelNames: labelNamesStr, Matchers: matchersProto}, nil
 }
 
 type labelValuesCardinalityConcurrentMap struct {
@@ -1118,6 +1177,30 @@ func (cm *labelValuesCardinalityConcurrentMap) processLabelValuesCardinalityMess
 			// Label name existent
 			cm.cardinalityMap[item.LabelName][labelValue] += seriesCount
 		}
+	}
+}
+
+// toLabelValuesCardinalityResponse adjust count of series to the replication factor and converts the map to `ingester_client.LabelValuesCardinalityResponse`.
+func (cm *labelValuesCardinalityConcurrentMap) toLabelValuesCardinalityResponse(replicationFactor int) *ingester_client.LabelValuesCardinalityResponse {
+	// we need to acquire the lock to prevent concurrent read/write to the map
+	cm.lock.Lock()
+	defer cm.lock.Unlock()
+
+	cardinalityItems := make([]*ingester_client.LabelValueSeriesCount, 0, len(cm.cardinalityMap))
+	// Adjust label values' series count based on the ingester's replication factor
+	for labelName, labelValueSeriesCountMap := range cm.cardinalityMap {
+		adjustedSeriesCountMap := make(map[string]uint64, len(labelValueSeriesCountMap))
+		for labelValue, seriesCount := range labelValueSeriesCountMap {
+			adjustedSeriesCountMap[labelValue] = seriesCount / uint64(replicationFactor)
+		}
+		cardinalityItems = append(cardinalityItems, &ingester_client.LabelValueSeriesCount{
+			LabelName:        labelName,
+			LabelValueSeries: adjustedSeriesCountMap,
+		})
+	}
+
+	return &ingester_client.LabelValuesCardinalityResponse{
+		Items: cardinalityItems,
 	}
 }
 
@@ -1242,6 +1325,7 @@ func (d *Distributor) UserStats(ctx context.Context) (*UserStats, error) {
 
 	// Make sure we get a successful response from all of them.
 	replicationSet.MaxErrors = 0
+	replicationSet.MaxUnavailableZones = 0
 
 	req := &ingester_client.UserStatsRequest{}
 	resps, err := d.ForReplicationSet(ctx, replicationSet, func(ctx context.Context, client ingester_client.IngesterClient) (interface{}, error) {

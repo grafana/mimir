@@ -17,9 +17,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/model"
 	"gopkg.in/yaml.v2"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 var DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
@@ -95,65 +98,49 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 		Name: "thanos_store_index_cache_items_evicted_total",
 		Help: "Total number of items that were evicted from the index cache.",
 	}, []string{"item_type"})
-	c.evicted.WithLabelValues(cacheTypePostings)
-	c.evicted.WithLabelValues(cacheTypeSeries)
-	c.evicted.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.evicted.MetricVec)
 
 	c.added = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_items_added_total",
 		Help: "Total number of items that were added to the index cache.",
 	}, []string{"item_type"})
-	c.added.WithLabelValues(cacheTypePostings)
-	c.added.WithLabelValues(cacheTypeSeries)
-	c.added.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.added.MetricVec)
 
 	c.requests = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_requests_total",
 		Help: "Total number of requests to the cache.",
 	}, []string{"item_type"})
-	c.requests.WithLabelValues(cacheTypePostings)
-	c.requests.WithLabelValues(cacheTypeSeries)
-	c.requests.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.requests.MetricVec)
 
 	c.overflow = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_items_overflowed_total",
 		Help: "Total number of items that could not be added to the cache due to being too big.",
 	}, []string{"item_type"})
-	c.overflow.WithLabelValues(cacheTypePostings)
-	c.overflow.WithLabelValues(cacheTypeSeries)
-	c.overflow.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.overflow.MetricVec)
 
 	c.hits = promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 		Name: "thanos_store_index_cache_hits_total",
 		Help: "Total number of requests to the cache that were a hit.",
 	}, []string{"item_type"})
-	c.hits.WithLabelValues(cacheTypePostings)
-	c.hits.WithLabelValues(cacheTypeSeries)
-	c.hits.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.hits.MetricVec)
 
 	c.current = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_items",
 		Help: "Current number of items in the index cache.",
 	}, []string{"item_type"})
-	c.current.WithLabelValues(cacheTypePostings)
-	c.current.WithLabelValues(cacheTypeSeries)
-	c.current.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.current.MetricVec)
 
 	c.currentSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_items_size_bytes",
 		Help: "Current byte size of items in the index cache.",
 	}, []string{"item_type"})
-	c.currentSize.WithLabelValues(cacheTypePostings)
-	c.currentSize.WithLabelValues(cacheTypeSeries)
-	c.currentSize.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.currentSize.MetricVec)
 
 	c.totalCurrentSize = promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_total_size_bytes",
 		Help: "Current byte size of items (both value and key) in the index cache.",
 	}, []string{"item_type"})
-	c.totalCurrentSize.WithLabelValues(cacheTypePostings)
-	c.totalCurrentSize.WithLabelValues(cacheTypeSeries)
-	c.totalCurrentSize.WithLabelValues(cacheTypeExpandedPostings)
+	initLabelValuesForAllCacheTypes(c.totalCurrentSize.MetricVec)
 
 	_ = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
 		Name: "thanos_store_index_cache_max_size_bytes",
@@ -186,18 +173,20 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 }
 
 func (c *InMemoryIndexCache) onEvict(key, val interface{}) {
-	k := key.(cacheKey).keyType()
+	k := key.(cacheKey)
+	typ := k.typ()
 	entrySize := sliceHeaderSize + uint64(len(val.([]byte)))
 
-	c.evicted.WithLabelValues(string(k)).Inc()
-	c.current.WithLabelValues(string(k)).Dec()
-	c.currentSize.WithLabelValues(string(k)).Sub(float64(entrySize))
-	c.totalCurrentSize.WithLabelValues(string(k)).Sub(float64(entrySize + key.(cacheKey).size()))
+	c.evicted.WithLabelValues(typ).Inc()
+	c.current.WithLabelValues(typ).Dec()
+	c.currentSize.WithLabelValues(typ).Sub(float64(entrySize))
+	c.totalCurrentSize.WithLabelValues(typ).Sub(float64(entrySize + k.size()))
 
 	c.curSize -= entrySize
 }
 
-func (c *InMemoryIndexCache) get(typ string, key cacheKey) ([]byte, bool) {
+func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
+	typ := key.typ()
 	c.requests.WithLabelValues(typ).Inc()
 
 	c.mtx.Lock()
@@ -211,7 +200,8 @@ func (c *InMemoryIndexCache) get(typ string, key cacheKey) ([]byte, bool) {
 	return v.([]byte), true
 }
 
-func (c *InMemoryIndexCache) set(typ string, key cacheKey, val []byte) {
+func (c *InMemoryIndexCache) set(key cacheKey, val []byte) {
+	typ := key.typ()
 	size := sliceHeaderSize + uint64(len(val))
 
 	c.mtx.Lock()
@@ -287,15 +277,15 @@ func copyString(s string) string {
 	return string(b)
 }
 
-// copyToKey is required as underlying strings might be mmaped.
-func copyToKey(l labels.Label) cacheKeyPostings {
-	return cacheKeyPostings(labels.Label{Value: copyString(l.Value), Name: copyString(l.Name)})
+// copyLabel is required as underlying strings might be mmaped.
+func copyLabel(l labels.Label) labels.Label {
+	return labels.Label{Value: copyString(l.Value), Name: copyString(l.Name)}
 }
 
 // StorePostings sets the postings identified by the ulid and label to the value v,
 // if the postings already exists in the cache it is not mutated.
 func (c *InMemoryIndexCache) StorePostings(_ context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.set(cacheTypePostings, cacheKey{block: blockID, key: copyToKey(l)}, v)
+	c.set(cacheKeyPostings{block: blockID, label: copyLabel(l)}, v)
 }
 
 // FetchMultiPostings fetches multiple postings - each identified by a label -
@@ -304,7 +294,7 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 	hits = map[labels.Label][]byte{}
 
 	for _, key := range keys {
-		if b, ok := c.get(cacheTypePostings, cacheKey{blockID, cacheKeyPostings(key)}); ok {
+		if b, ok := c.get(cacheKeyPostings{blockID, key}); ok {
 			hits[key] = b
 			continue
 		}
@@ -315,19 +305,19 @@ func (c *InMemoryIndexCache) FetchMultiPostings(_ context.Context, blockID ulid.
 	return hits, misses
 }
 
-// StoreSeries sets the series identified by the ulid and id to the value v,
+// StoreSeriesForRef sets the series identified by the ulid and id to the value v,
 // if the series already exists in the cache it is not mutated.
-func (c *InMemoryIndexCache) StoreSeries(_ context.Context, blockID ulid.ULID, id uint64, v []byte) {
-	c.set(cacheTypeSeries, cacheKey{blockID, cacheKeySeries(id)}, v)
+func (c *InMemoryIndexCache) StoreSeriesForRef(_ context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
+	c.set(cacheKeySeriesForRef{blockID, id}, v)
 }
 
-// FetchMultiSeries fetches multiple series - each identified by ID - from the cache
+// FetchMultiSeriesForRefs fetches multiple series - each identified by ID - from the cache
 // and returns a map containing cache hits, along with a list of missing IDs.
-func (c *InMemoryIndexCache) FetchMultiSeries(_ context.Context, blockID ulid.ULID, ids []uint64) (hits map[uint64][]byte, misses []uint64) {
-	hits = map[uint64][]byte{}
+func (c *InMemoryIndexCache) FetchMultiSeriesForRefs(_ context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (hits map[storage.SeriesRef][]byte, misses []storage.SeriesRef) {
+	hits = map[storage.SeriesRef][]byte{}
 
 	for _, id := range ids {
-		if b, ok := c.get(cacheTypeSeries, cacheKey{blockID, cacheKeySeries(id)}); ok {
+		if b, ok := c.get(cacheKeySeriesForRef{blockID, id}); ok {
 			hits[id] = b
 			continue
 		}
@@ -340,10 +330,127 @@ func (c *InMemoryIndexCache) FetchMultiSeries(_ context.Context, blockID ulid.UL
 
 // StoreExpandedPostings stores the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) StoreExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey, v []byte) {
-	c.set(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)}, v)
+	c.set(cacheKeyExpandedPostings{blockID, key}, v)
 }
 
 // FetchExpandedPostings fetches the encoded result of ExpandedPostings for specified matchers identified by the provided LabelMatchersKey.
 func (c *InMemoryIndexCache) FetchExpandedPostings(_ context.Context, blockID ulid.ULID, key LabelMatchersKey) ([]byte, bool) {
-	return c.get(cacheTypeExpandedPostings, cacheKey{blockID, cacheKeyExpandedPostings(key)})
+	return c.get(cacheKeyExpandedPostings{blockID, key})
+}
+
+// StoreSeries stores the result of a Series() call.
+func (c *InMemoryIndexCache) StoreSeries(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	c.set(cacheKeySeries{blockID, matchersKey, shardKey(shard)}, v)
+}
+
+// FetchSeries fetches the result of a Series() call.
+func (c *InMemoryIndexCache) FetchSeries(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+	return c.get(cacheKeySeries{blockID, matchersKey, shardKey(shard)})
+}
+
+// StoreLabelNames stores the result of a LabelNames() call.
+func (c *InMemoryIndexCache) StoreLabelNames(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheKeyLabelNames{blockID, matchersKey}, v)
+}
+
+// FetchLabelNames fetches the result of a LabelNames() call.
+func (c *InMemoryIndexCache) FetchLabelNames(_ context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(cacheKeyLabelNames{blockID, matchersKey})
+}
+
+// StoreLabelValues stores the result of a LabelValues() call.
+func (c *InMemoryIndexCache) StoreLabelValues(_ context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	c.set(cacheKeyLabelValues{blockID, labelName, matchersKey}, v)
+}
+
+// FetchLabelValues fetches the result of a LabelValues() call.
+func (c *InMemoryIndexCache) FetchLabelValues(_ context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(cacheKeyLabelValues{blockID, labelName, matchersKey})
+}
+
+// cacheKey is used by in-memory representation to store cached data.
+// The implementations of cacheKey should be hashable, as they will be used as keys for *lru.LRU cache
+type cacheKey interface {
+	// typ is used as label for metrics.
+	typ() string
+	// size is used to keep track of the cache size, it represents the footprint of the cache key in memory.
+	size() uint64
+}
+
+// cacheKeyPostings implements cacheKey and is used to reference a postings cache entry in the inmemory cache.
+type cacheKeyPostings struct {
+	block ulid.ULID
+	label labels.Label
+}
+
+func (c cacheKeyPostings) typ() string { return cacheTypePostings }
+
+func (c cacheKeyPostings) size() uint64 {
+	// ULID + 2 slice headers + number of chars in value and name.
+	return ulidSize + 2*sliceHeaderSize + uint64(len(c.label.Value)+len(c.label.Name))
+}
+
+// cacheKeyPostings implements cacheKey and is used to reference a seriesRef cache entry in the inmemory cache.
+type cacheKeySeriesForRef struct {
+	block ulid.ULID
+	ref   storage.SeriesRef
+}
+
+func (c cacheKeySeriesForRef) typ() string { return cacheTypeSeriesForRef }
+
+func (c cacheKeySeriesForRef) size() uint64 {
+	return ulidSize + 8 // ULID + uint64.
+}
+
+// cacheKeyPostings implements cacheKey and is used to reference an expanded postings cache entry in the inmemory cache.
+type cacheKeyExpandedPostings struct {
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+}
+
+func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPostings }
+
+func (c cacheKeyExpandedPostings) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey))
+}
+
+type cacheKeySeries struct {
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+	shard       string
+}
+
+func (c cacheKeySeries) typ() string {
+	return cacheTypeSeries
+}
+
+func (c cacheKeySeries) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey)) + sliceHeaderSize + uint64(len(c.shard))
+}
+
+type cacheKeyLabelNames struct {
+	block       ulid.ULID
+	matchersKey LabelMatchersKey
+}
+
+func (c cacheKeyLabelNames) typ() string {
+	return cacheTypeLabelNames
+}
+
+func (c cacheKeyLabelNames) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.matchersKey))
+}
+
+type cacheKeyLabelValues struct {
+	block       ulid.ULID
+	labelName   string
+	matchersKey LabelMatchersKey
+}
+
+func (c cacheKeyLabelValues) typ() string {
+	return cacheTypeLabelValues
+}
+
+func (c cacheKeyLabelValues) size() uint64 {
+	return ulidSize + sliceHeaderSize + uint64(len(c.labelName)) + sliceHeaderSize + uint64(len(c.matchersKey))
 }

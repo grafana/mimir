@@ -22,12 +22,6 @@ func newSubtreeFolder() ASTMapper {
 
 // MapNode implements NodeMapper.
 func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser.Node, finished bool, err error) {
-	switch n := node.(type) {
-	// Do not attempt to fold number or string leaf nodes.
-	case *parser.NumberLiteral, *parser.StringLiteral:
-		return n, true, nil
-	}
-
 	hasEmbeddedQueries, err := EvalPredicate(node, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
@@ -38,8 +32,23 @@ func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser
 		return node, false, nil
 	}
 
-	expr, err := vectorSquasher(node)
-	return expr, true, err
+	hasVectorSelector, err := EvalPredicate(node, func(n parser.Node) (bool, error) {
+		switch n.(type) {
+		case *parser.VectorSelector:
+			return true, nil
+		}
+		return false, nil
+	})
+	if err != nil {
+		return nil, true, err
+	}
+
+	// Change the node if it contains vector selectors, as only those need to be embedded.
+	if hasVectorSelector {
+		expr, err := vectorSquasher(node)
+		return expr, true, err
+	}
+	return node, false, nil
 }
 
 // hasEmbeddedQueries returns whether the node has embedded queries.
@@ -49,9 +58,6 @@ func hasEmbeddedQueries(node parser.Node) (bool, error) {
 		if n.Name == EmbeddedQueriesMetricName {
 			return true, nil
 		}
-
-	case *parser.MatrixSelector:
-		return hasEmbeddedQueries(n.VectorSelector)
 	}
 	return false, nil
 }

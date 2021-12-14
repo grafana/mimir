@@ -74,6 +74,14 @@ api:
   # CLI flag: -api.response-compression-enabled
   [response_compression_enabled: <boolean> | default = false]
 
+  # Allows to skip label name validation via header on the http write path. Use
+  # with caution as it breaks PromQL. Allowing this for external clients allows
+  # any client to send invalid label names. After enabling it, requests with
+  # X-Mimir-SkipLabelNameValidation HTTP header set to true will not have label
+  # names validated.
+  # CLI flag: -api.skip-label-name-validation-header-enabled
+  [skip_label_name_validation_header_enabled: <boolean> | default = false]
+
   # HTTP URL path under which the Alertmanager ui and api will be served.
   # CLI flag: -http.alertmanager-http-prefix
   [alertmanager_http_prefix: <string> | default = "/alertmanager"]
@@ -126,9 +134,6 @@ api:
 # The query_range_config configures the query splitting and caching in the
 # query-frontend.
 [query_range: <query_range_config>]
-
-# The table_manager_config configures the table-manager.
-[table_manager: <table_manager_config>]
 
 # The blocks_storage_config configures the blocks storage.
 [blocks_storage: <blocks_storage_config>]
@@ -600,36 +605,6 @@ instance_limits:
 The `ingester_config` configures the ingester.
 
 ```yaml
-# Configures the Write-Ahead Log (WAL) for the Mimir chunks storage. This config
-# is ignored when running the Mimir blocks storage.
-walconfig:
-  # Enable writing of ingested data into WAL.
-  # CLI flag: -ingester.wal-enabled
-  [wal_enabled: <boolean> | default = false]
-
-  # Enable checkpointing of in-memory chunks. It should always be true when
-  # using normally. Set it to false iff you are doing some small tests as there
-  # is no mechanism to delete the old WAL yet if checkpoint is disabled.
-  # CLI flag: -ingester.checkpoint-enabled
-  [checkpoint_enabled: <boolean> | default = true]
-
-  # Recover data from existing WAL irrespective of WAL enabled/disabled.
-  # CLI flag: -ingester.recover-from-wal
-  [recover_from_wal: <boolean> | default = false]
-
-  # Directory to store the WAL and/or recover from WAL.
-  # CLI flag: -ingester.wal-dir
-  [wal_dir: <string> | default = "wal"]
-
-  # Interval at which checkpoints should be created.
-  # CLI flag: -ingester.checkpoint-duration
-  [checkpoint_duration: <duration> | default = 30m]
-
-  # When WAL is enabled, should chunks be flushed to long-term storage on
-  # shutdown. Useful eg. for migration to blocks engine.
-  # CLI flag: -ingester.flush-on-shutdown-with-wal-enabled
-  [flush_on_shutdown_with_wal_enabled: <boolean> | default = false]
-
 lifecycler:
   ring:
     kvstore:
@@ -740,51 +715,6 @@ lifecycler:
   # slowed down.
   # CLI flag: -ingester.readiness-check-ring-health
   [readiness_check_ring_health: <boolean> | default = true]
-
-# Number of times to try and transfer chunks before falling back to flushing.
-# Negative value or zero disables hand-over. This feature is supported only by
-# the chunks storage.
-# CLI flag: -ingester.max-transfer-retries
-[max_transfer_retries: <int> | default = 10]
-
-# Period with which to attempt to flush chunks.
-# CLI flag: -ingester.flush-period
-[flush_period: <duration> | default = 1m]
-
-# Period chunks will remain in memory after flushing.
-# CLI flag: -ingester.retain-period
-[retain_period: <duration> | default = 5m]
-
-# Maximum chunk idle time before flushing.
-# CLI flag: -ingester.max-chunk-idle
-[max_chunk_idle_time: <duration> | default = 5m]
-
-# Maximum chunk idle time for chunks terminating in stale markers before
-# flushing. 0 disables it and a stale series is not flushed until the
-# max-chunk-idle timeout is reached.
-# CLI flag: -ingester.max-stale-chunk-idle
-[max_stale_chunk_idle_time: <duration> | default = 2m]
-
-# Timeout for individual flush operations.
-# CLI flag: -ingester.flush-op-timeout
-[flush_op_timeout: <duration> | default = 1m]
-
-# Maximum chunk age before flushing.
-# CLI flag: -ingester.max-chunk-age
-[max_chunk_age: <duration> | default = 12h]
-
-# Range of time to subtract from -ingester.max-chunk-age to spread out flushes
-# CLI flag: -ingester.chunk-age-jitter
-[chunk_age_jitter: <duration> | default = 0s]
-
-# Number of concurrent goroutines flushing to dynamodb.
-# CLI flag: -ingester.concurrent-flushes
-[concurrent_flushes: <int> | default = 50]
-
-# If true, spread series flushes across the whole period of
-# -ingester.max-chunk-age.
-# CLI flag: -ingester.spread-flushes
-[spread_flushes: <boolean> | default = true]
 
 # Period at which metadata we have not seen will remain in memory before being
 # deleted.
@@ -1189,6 +1119,10 @@ results_cache:
 # query ASTs. This feature is supported only by the blocks storage engine.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
+
+# Cache requests that are not step-aligned.
+# CLI flag: -query-frontend.cache-unaligned-requests
+[cache_unaligned_requests: <boolean> | default = false]
 ```
 
 ### `ruler_config`
@@ -1777,13 +1711,24 @@ azure:
   [container_name: <string> | default = ""]
 
   # Azure storage endpoint suffix without schema. The account name will be
-  # prefixed to this value to create the FQDN
+  # prefixed to this value to create the FQDN. If set to empty string, default
+  # endpoint suffix is used.
   # CLI flag: -ruler-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
   # Number of retries for recoverable errors
   # CLI flag: -ruler-storage.azure.max-retries
   [max_retries: <int> | default = 20]
+
+  # If set, this URL is used instead of
+  # https://<storage-account-name>.<endpoint-suffix> for obtaining
+  # ServicePrincipalToken from MSI.
+  # CLI flag: -ruler-storage.azure.msi-resource
+  [msi_resource: <string> | default = ""]
+
+  # User assigned identity. If empty, then System assigned identity is used.
+  # CLI flag: -ruler-storage.azure.user-assigned-id
+  [user_assigned_id: <string> | default = ""]
 
 swift:
   # OpenStack Swift authentication API version. 0 to autodetect.
@@ -2311,13 +2256,24 @@ azure:
   [container_name: <string> | default = ""]
 
   # Azure storage endpoint suffix without schema. The account name will be
-  # prefixed to this value to create the FQDN
+  # prefixed to this value to create the FQDN. If set to empty string, default
+  # endpoint suffix is used.
   # CLI flag: -alertmanager-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
   # Number of retries for recoverable errors
   # CLI flag: -alertmanager-storage.azure.max-retries
   [max_retries: <int> | default = 20]
+
+  # If set, this URL is used instead of
+  # https://<storage-account-name>.<endpoint-suffix> for obtaining
+  # ServicePrincipalToken from MSI.
+  # CLI flag: -alertmanager-storage.azure.msi-resource
+  [msi_resource: <string> | default = ""]
+
+  # User assigned identity. If empty, then System assigned identity is used.
+  # CLI flag: -alertmanager-storage.azure.user-assigned-id
+  [user_assigned_id: <string> | default = ""]
 
 swift:
   # OpenStack Swift authentication API version. 0 to autodetect.
@@ -2405,341 +2361,6 @@ local:
   # Path at which alertmanager configurations are stored.
   # CLI flag: -alertmanager-storage.local.path
   [path: <string> | default = ""]
-```
-
-### `table_manager_config`
-
-The `table_manager_config` configures the table-manager.
-
-```yaml
-# If true, disable all changes to DB capacity
-# CLI flag: -table-manager.throughput-updates-disabled
-[throughput_updates_disabled: <boolean> | default = false]
-
-# If true, enables retention deletes of DB tables
-# CLI flag: -table-manager.retention-deletes-enabled
-[retention_deletes_enabled: <boolean> | default = false]
-
-# Tables older than this retention period are deleted. Must be either 0
-# (disabled) or a multiple of 24h. When enabled, be aware this setting is
-# destructive to data!
-# CLI flag: -table-manager.retention-period
-[retention_period: <duration> | default = 0s]
-
-# How frequently to poll backend to learn our capacity.
-# CLI flag: -table-manager.poll-interval
-[poll_interval: <duration> | default = 2m]
-
-# Periodic tables grace period (duration which table will be created/deleted
-# before/after it's needed).
-# CLI flag: -table-manager.periodic-table.grace-period
-[creation_grace_period: <duration> | default = 10m]
-
-index_tables_provisioning:
-  # Enables on demand throughput provisioning for the storage provider (if
-  # supported). Applies only to tables which are not autoscaled. Supported by
-  # DynamoDB
-  # CLI flag: -table-manager.index-table.enable-ondemand-throughput-mode
-  [enable_ondemand_throughput_mode: <boolean> | default = false]
-
-  # Table default write throughput. Supported by DynamoDB
-  # CLI flag: -table-manager.index-table.write-throughput
-  [provisioned_write_throughput: <int> | default = 1000]
-
-  # Table default read throughput. Supported by DynamoDB
-  # CLI flag: -table-manager.index-table.read-throughput
-  [provisioned_read_throughput: <int> | default = 300]
-
-  write_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.index-table.write-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.index-table.write-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.index-table.write-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.index-table.write-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.index-table.write-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.index-table.write-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.index-table.write-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  read_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.index-table.read-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.index-table.read-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.index-table.read-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.index-table.read-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.index-table.read-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.index-table.read-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.index-table.read-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  # Enables on demand throughput provisioning for the storage provider (if
-  # supported). Applies only to tables which are not autoscaled. Supported by
-  # DynamoDB
-  # CLI flag: -table-manager.index-table.inactive-enable-ondemand-throughput-mode
-  [enable_inactive_throughput_on_demand_mode: <boolean> | default = false]
-
-  # Table write throughput for inactive tables. Supported by DynamoDB
-  # CLI flag: -table-manager.index-table.inactive-write-throughput
-  [inactive_write_throughput: <int> | default = 1]
-
-  # Table read throughput for inactive tables. Supported by DynamoDB
-  # CLI flag: -table-manager.index-table.inactive-read-throughput
-  [inactive_read_throughput: <int> | default = 300]
-
-  inactive_write_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.index-table.inactive-write-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  inactive_read_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.index-table.inactive-read-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  # Number of last inactive tables to enable write autoscale.
-  # CLI flag: -table-manager.index-table.inactive-write-throughput.scale-last-n
-  [inactive_write_scale_lastn: <int> | default = 4]
-
-  # Number of last inactive tables to enable read autoscale.
-  # CLI flag: -table-manager.index-table.inactive-read-throughput.scale-last-n
-  [inactive_read_scale_lastn: <int> | default = 4]
-
-chunk_tables_provisioning:
-  # Enables on demand throughput provisioning for the storage provider (if
-  # supported). Applies only to tables which are not autoscaled. Supported by
-  # DynamoDB
-  # CLI flag: -table-manager.chunk-table.enable-ondemand-throughput-mode
-  [enable_ondemand_throughput_mode: <boolean> | default = false]
-
-  # Table default write throughput. Supported by DynamoDB
-  # CLI flag: -table-manager.chunk-table.write-throughput
-  [provisioned_write_throughput: <int> | default = 1000]
-
-  # Table default read throughput. Supported by DynamoDB
-  # CLI flag: -table-manager.chunk-table.read-throughput
-  [provisioned_read_throughput: <int> | default = 300]
-
-  write_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.chunk-table.write-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  read_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.chunk-table.read-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  # Enables on demand throughput provisioning for the storage provider (if
-  # supported). Applies only to tables which are not autoscaled. Supported by
-  # DynamoDB
-  # CLI flag: -table-manager.chunk-table.inactive-enable-ondemand-throughput-mode
-  [enable_inactive_throughput_on_demand_mode: <boolean> | default = false]
-
-  # Table write throughput for inactive tables. Supported by DynamoDB
-  # CLI flag: -table-manager.chunk-table.inactive-write-throughput
-  [inactive_write_throughput: <int> | default = 1]
-
-  # Table read throughput for inactive tables. Supported by DynamoDB
-  # CLI flag: -table-manager.chunk-table.inactive-read-throughput
-  [inactive_read_throughput: <int> | default = 300]
-
-  inactive_write_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  inactive_read_scale:
-    # Should we enable autoscale for the table.
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.enabled
-    [enabled: <boolean> | default = false]
-
-    # AWS AutoScaling role ARN
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.role-arn
-    [role_arn: <string> | default = ""]
-
-    # DynamoDB minimum provision capacity.
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.min-capacity
-    [min_capacity: <int> | default = 3000]
-
-    # DynamoDB maximum provision capacity.
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.max-capacity
-    [max_capacity: <int> | default = 6000]
-
-    # DynamoDB minimum seconds between each autoscale up.
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.out-cooldown
-    [out_cooldown: <int> | default = 1800]
-
-    # DynamoDB minimum seconds between each autoscale down.
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.in-cooldown
-    [in_cooldown: <int> | default = 1800]
-
-    # DynamoDB target ratio of consumed capacity to provisioned capacity.
-    # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale.target-value
-    [target: <float> | default = 80]
-
-  # Number of last inactive tables to enable write autoscale.
-  # CLI flag: -table-manager.chunk-table.inactive-write-throughput.scale-last-n
-  [inactive_write_scale_lastn: <int> | default = 4]
-
-  # Number of last inactive tables to enable read autoscale.
-  # CLI flag: -table-manager.chunk-table.inactive-read-throughput.scale-last-n
-  [inactive_read_scale_lastn: <int> | default = 4]
 ```
 
 ### `storage_config`
@@ -4121,6 +3742,13 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -querier.max-query-parallelism
 [max_query_parallelism: <int> | default = 14]
 
+# Limit the time range (end - start time) of series, label names and values
+# queries. This limit is enforced in the querier. If the requested time range is
+# outside the allowed range, the request will not fail but will be manipulated
+# to only query data within the allowed time range. 0 to disable.
+# CLI flag: -store.max-labels-query-length
+[max_labels_query_length: <duration> | default = 0s]
+
 # Cardinality limit for index queries. This limit is ignored when using blocks
 # storage. 0 to disable.
 # CLI flag: -store.cardinality-limit
@@ -4142,9 +3770,17 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_queriers_per_tenant: <int> | default = 0]
 
 # The amount of shards to use when doing parallelisation via query sharding by
-# tenant. 0 to disable query sharding for tenant.
+# tenant. 0 to disable query sharding for tenant. Query sharding implementation
+# will adjust the number of query shards based on compactor shards used by
+# split-and-merge compaction strategy. This allows querier to not search the
+# blocks which cannot possibly have the series for given query shard.
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
+
+# The max number of sharded queries that can be run for a given received query.
+# 0 to disable limit.
+# CLI flag: -frontend.query-sharding-max-sharded-queries
+[query_sharding_max_sharded_queries: <int> | default = 128]
 
 # Enables endpoints used for cardinality analysis.
 # CLI flag: -querier.cardinality-analysis-enabled
@@ -4197,7 +3833,14 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # only when split-and-merge compaction strategy is in use. 0 to disable
 # splitting but keep using the split-and-merge compaction strategy.
 # CLI flag: -compactor.split-and-merge-shards
-[compactor_split_and_merge_shards: <int> | default = 4]
+[compactor_split_and_merge_shards: <int> | default = 0]
+
+# Number of groups that blocks for splitting should be grouped into. Each group
+# of blocks is then split separately. Number of output split shards is
+# controlled by -compactor.split-and-merge-shards. Only used when
+# split-and-merge compaction strategy is in used.
+# CLI flag: -compactor.split-groups
+[compactor_split_groups: <int> | default = 4]
 
 # Max number of compactors that can compact blocks for single tenant. Only used
 # when split-and-merge compaction strategy is in use. 0 to disable the limit and
@@ -4571,13 +4214,24 @@ azure:
   [container_name: <string> | default = ""]
 
   # Azure storage endpoint suffix without schema. The account name will be
-  # prefixed to this value to create the FQDN
+  # prefixed to this value to create the FQDN. If set to empty string, default
+  # endpoint suffix is used.
   # CLI flag: -blocks-storage.azure.endpoint-suffix
   [endpoint_suffix: <string> | default = ""]
 
   # Number of retries for recoverable errors
   # CLI flag: -blocks-storage.azure.max-retries
   [max_retries: <int> | default = 20]
+
+  # If set, this URL is used instead of
+  # https://<storage-account-name>.<endpoint-suffix> for obtaining
+  # ServicePrincipalToken from MSI.
+  # CLI flag: -blocks-storage.azure.msi-resource
+  [msi_resource: <string> | default = ""]
+
+  # User assigned identity. If empty, then System assigned identity is used.
+  # CLI flag: -blocks-storage.azure.user-assigned-id
+  [user_assigned_id: <string> | default = ""]
 
 swift:
   # OpenStack Swift authentication API version. 0 to autodetect.
@@ -4814,6 +4468,12 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-ttl
     [attributes_ttl: <duration> | default = 168h]
 
+    # Maximum number of object attribute items to keep in a first level
+    # in-memory LRU cache. Metadata will be stored and fetched in-memory before
+    # hitting the cache backend. 0 to disable the in-memory cache.
+    # CLI flag: -blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items
+    [attributes_in_memory_max_items: <int> | default = 0]
+
     # TTL for caching individual chunks subranges.
     # CLI flag: -blocks-storage.bucket-store.chunks-cache.subrange-ttl
     [subrange_ttl: <duration> | default = 24h]
@@ -4952,6 +4612,14 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.bucket-index.max-stale-period
     [max_stale_period: <duration> | default = 1h]
 
+  # Blocks with minimum time within this duration are ignored, and not loaded by
+  # store-gateway. Useful when used together with -querier.query-store-after to
+  # prevent loading young blocks, because there are usually many of them
+  # (depending on number of ingesters) and they are not yet compacted. Negative
+  # values or 0 disable the filter.
+  # CLI flag: -blocks-storage.bucket-store.ignore-blocks-within
+  [ignore_blocks_within: <duration> | default = 0s]
+
   # Max size - in bytes - of a chunks pool, used to reduce memory allocations.
   # The pool is shared across all tenants. 0 to disable the limit.
   # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
@@ -5051,6 +4719,16 @@ tsdb:
   # CLI flag: -blocks-storage.tsdb.memory-snapshot-on-shutdown
   [memory_snapshot_on_shutdown: <boolean> | default = false]
 
+  # The size of the write queue used by the head chunks mapper. Lower values
+  # reduce memory utilisation at the cost of potentially higher ingest latency.
+  # 0 disables the use of the chunk write queue.
+  # CLI flag: -blocks-storage.tsdb.head-chunks-write-queue-size
+  [head_chunks_write_queue_size: <int> | default = 0]
+
+  # Enables TSDB isolation feature. Disabling may improve performance.
+  # CLI flag: -blocks-storage.tsdb.isolation-enabled
+  [isolation_enabled: <boolean> | default = true]
+
   # Max size - in bytes - of the in-memory series hash cache. The cache is
   # shared across all tenants and it's used only when query sharding is enabled.
   # CLI flag: -blocks-storage.tsdb.series-hash-cache-max-size-bytes
@@ -5070,10 +4748,10 @@ The `compactor_config` configures the compactor for the blocks storage.
 # CLI flag: -compactor.block-ranges
 [block_ranges: <list of duration> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-# Number of Go routines to use when syncing block index and chunks files from
-# the long term storage.
+# Number of Go routines to use when downloading blocks for compaction and
+# uploading resulting blocks.
 # CLI flag: -compactor.block-sync-concurrency
-[block_sync_concurrency: <int> | default = 20]
+[block_sync_concurrency: <int> | default = 8]
 
 # Number of Go routines to use when syncing block meta files from the long term
 # storage.
@@ -5124,6 +4802,28 @@ The `compactor_config` configures the compactor for the blocks storage.
 # and doing final cleanup (marker files, debug files) of the tenant.
 # CLI flag: -compactor.tenant-cleanup-delay
 [tenant_cleanup_delay: <duration> | default = 6h]
+
+# Max time for starting compactions for a single tenant. After this time no new
+# compactions for the tenant are started before next compaction cycle. This can
+# help in multi-tenant environments to avoid single tenant using all compaction
+# time, but also in single-tenant environments to force new discovery of blocks
+# more often. 0 = disabled.
+# CLI flag: -compactor.max-compaction-time
+[max_compaction_time: <duration> | default = 0s]
+
+# Number of goroutines opening blocks before compaction.
+# CLI flag: -compactor.max-opening-blocks-concurrency
+[max_opening_blocks_concurrency: <int> | default = 1]
+
+# Max number of blocks that can be closed concurrently during split compaction.
+# Note that closing of newly compacted block uses a lot of memory for writing
+# index.
+# CLI flag: -compactor.max-closing-blocks-concurrency
+[max_closing_blocks_concurrency: <int> | default = 1]
+
+# Number of symbols flushers used when doing split compaction.
+# CLI flag: -compactor.symbols-flushers-concurrency
+[symbols_flushers_concurrency: <int> | default = 1]
 
 # Comma separated list of tenants that can be compacted. If specified, only
 # these tenants will be compacted by compactor, otherwise all tenants can be
@@ -5211,9 +4911,10 @@ sharding_ring:
 # CLI flag: -compactor.compaction-strategy
 [compaction_strategy: <string> | default = "default"]
 
-# The sorting to use when deciding which compacton jobs should run first for a
+# The sorting to use when deciding which compaction jobs should run first for a
 # given tenant. Changing this setting is not supported by the default compaction
-# strategy. Supported values are: default, split-and-merge.
+# strategy. Supported values are: smallest-range-oldest-blocks-first,
+# newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```

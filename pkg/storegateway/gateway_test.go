@@ -31,7 +31,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/assert"
@@ -45,9 +45,9 @@ import (
 	"github.com/thanos-io/thanos/pkg/store/storepb"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/querier/querysharding"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
@@ -915,7 +915,7 @@ func TestStoreGateway_SeriesQueryingShouldRemoveExternalLabels(t *testing.T) {
 				samples, err := readSamplesFromChunks(actual.Chunks)
 				require.NoError(t, err)
 				assert.Equal(t, []sample{
-					{ts: minT + (step * int64(seriesID)), value: float64(seriesID)},
+					{t: minT + (step * int64(seriesID)), v: float64(seriesID)},
 				}, samples)
 			}
 		})
@@ -952,7 +952,7 @@ func TestStoreGateway_Series_QuerySharding(t *testing.T) {
 		"should touch only series belonging to the specified shard": {
 			matchers: []storepb.LabelMatcher{
 				{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
-				{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+				{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 					ShardIndex: 2,
 					ShardCount: 3,
 				}.LabelValue()},
@@ -1075,7 +1075,7 @@ func TestStoreGateway_Series_QueryShardingConcurrency(t *testing.T) {
 				MaxTime: math.MaxInt64,
 				Matchers: []storepb.LabelMatcher{
 					{Type: storepb.LabelMatcher_RE, Name: labels.MetricName, Value: ".*"},
-					{Type: storepb.LabelMatcher_EQ, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+					{Type: storepb.LabelMatcher_EQ, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 						ShardIndex: uint64(shardIndex),
 						ShardCount: uint64(shardCount),
 					}.LabelValue()},
@@ -1346,8 +1346,8 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 
 			ts, v := it.At()
 			samples = append(samples, sample{
-				ts:    ts,
-				value: v,
+				t: ts,
+				v: v,
 			})
 		}
 
@@ -1360,8 +1360,16 @@ func readSamplesFromChunks(rawChunks []storepb.AggrChunk) ([]sample, error) {
 }
 
 type sample struct {
-	ts    int64
-	value float64
+	t int64
+	v float64
+}
+
+func (s sample) T() int64 {
+	return s.t
+}
+
+func (s sample) V() float64 {
+	return s.v
 }
 
 func defaultLimitsConfig() validation.Limits {

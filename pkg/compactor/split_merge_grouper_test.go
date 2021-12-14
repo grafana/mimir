@@ -3,13 +3,11 @@
 package compactor
 
 import (
-	"math/rand"
 	"testing"
 
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/compact/downsample"
 
@@ -31,10 +29,11 @@ func TestPlanCompaction(t *testing.T) {
 	block10 := ulid.MustNew(10, nil) // Hash: 1446683087
 
 	tests := map[string]struct {
-		ranges     []int64
-		shardCount uint32
-		blocks     []*metadata.Meta
-		expected   []*job
+		ranges      []int64
+		shardCount  uint32
+		splitGroups uint32
+		blocks      []*metadata.Meta
+		expected    []*job
 	}{
 		"no input blocks": {
 			ranges:   []int64{20},
@@ -129,9 +128,41 @@ func TestPlanCompaction(t *testing.T) {
 				}},
 			},
 		},
-		"should merge and split multiple 1st level blocks in different time ranges, honoring the number of shards": {
-			ranges:     []int64{10, 20},
-			shardCount: 2,
+		"should merge and split multiple 1st level blocks in different time ranges, single split group": {
+			ranges:      []int64{10, 20},
+			shardCount:  2,
+			splitGroups: 1,
+			blocks: []*metadata.Meta{
+				// 1st level range [0, 10]
+				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
+				// 1st level range [10, 20]
+				{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
+				{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
+			},
+			expected: []*job{
+				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: 0,
+					rangeEnd:   10,
+					blocks: []*metadata.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block2, MinTime: 0, MaxTime: 10}},
+					},
+				}},
+				{userID: userID, stage: stageSplit, shardID: "1_of_1", blocksGroup: blocksGroup{
+					rangeStart: 10,
+					rangeEnd:   20,
+					blocks: []*metadata.Meta{
+						{BlockMeta: tsdb.BlockMeta{ULID: block3, MinTime: 10, MaxTime: 20}},
+						{BlockMeta: tsdb.BlockMeta{ULID: block4, MinTime: 10, MaxTime: 20}},
+					},
+				}},
+			},
+		},
+		"should merge and split multiple 1st level blocks in different time ranges, two split groups": {
+			ranges:      []int64{10, 20},
+			shardCount:  2,
+			splitGroups: 2,
 			blocks: []*metadata.Meta{
 				// 1st level range [0, 10]
 				{BlockMeta: tsdb.BlockMeta{ULID: block1, MinTime: 0, MaxTime: 10}},
@@ -513,7 +544,7 @@ func TestPlanCompaction(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.shardCount)
+			actual := planCompaction(userID, testData.blocks, testData.ranges, testData.shardCount, testData.splitGroups)
 
 			// Print the actual jobs (useful for debugging if tests fail).
 			t.Logf("got %d jobs:", len(actual))
@@ -536,14 +567,14 @@ func TestPlanSplitting(t *testing.T) {
 	block5 := ulid.MustNew(5, nil) // Hash: 2931974232
 
 	tests := map[string]struct {
-		blocks     blocksGroup
-		shardCount uint32
-		expected   []*job
+		blocks      blocksGroup
+		splitGroups uint32
+		expected    []*job
 	}{
 		"should return nil if the input group is empty": {
-			blocks:     blocksGroup{},
-			shardCount: 2,
-			expected:   nil,
+			blocks:      blocksGroup{},
+			splitGroups: 2,
+			expected:    nil,
 		},
 		"should return nil if the input group contains no non-sharded blocks": {
 			blocks: blocksGroup{
@@ -554,8 +585,8 @@ func TestPlanSplitting(t *testing.T) {
 					{BlockMeta: tsdb.BlockMeta{ULID: block2}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "2_of_2"}}},
 				},
 			},
-			shardCount: 2,
-			expected:   nil,
+			splitGroups: 2,
+			expected:    nil,
 		},
 		"should return a split job if the input group contains 1 non-sharded block": {
 			blocks: blocksGroup{
@@ -566,7 +597,7 @@ func TestPlanSplitting(t *testing.T) {
 					{BlockMeta: tsdb.BlockMeta{ULID: block2}},
 				},
 			},
-			shardCount: 2,
+			splitGroups: 2,
 			expected: []*job{
 				{
 					blocksGroup: blocksGroup{
@@ -582,7 +613,7 @@ func TestPlanSplitting(t *testing.T) {
 				},
 			},
 		},
-		"should shardCount split jobs if the input group contains multiple non-sharded blocks": {
+		"should splitGroups split jobs if the input group contains multiple non-sharded blocks": {
 			blocks: blocksGroup{
 				rangeStart: 10,
 				rangeEnd:   20,
@@ -594,7 +625,7 @@ func TestPlanSplitting(t *testing.T) {
 					{BlockMeta: tsdb.BlockMeta{ULID: block5}, Thanos: metadata.Thanos{Labels: map[string]string{mimir_tsdb.CompactorShardIDExternalLabel: "1_of_2"}}},
 				},
 			},
-			shardCount: 2,
+			splitGroups: 2,
 			expected: []*job{
 				{
 					blocksGroup: blocksGroup{
@@ -626,7 +657,7 @@ func TestPlanSplitting(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.ElementsMatch(t, testData.expected, planSplitting(userID, testData.blocks, testData.shardCount))
+			assert.ElementsMatch(t, testData.expected, planSplitting(userID, testData.blocks, testData.splitGroups))
 		})
 	}
 }
@@ -791,39 +822,5 @@ func TestGroupBlocksByRange(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			assert.Equal(t, testData.expected, groupBlocksByRange(testData.blocks, testData.timeRange))
 		})
-	}
-}
-
-func TestFormatAndParseShardId(t *testing.T) {
-	r := rand.New(rand.NewSource(0))
-
-	const maxTests = 1000
-	const maxShardCount = 10000
-
-	for i := 0; i < maxTests; i++ {
-		count := 1 + r.Intn(maxShardCount)
-		id := r.Intn(count)
-
-		require.True(t, id < count)
-
-		out := formatShardIDLabelValue(uint32(id), uint32(count))
-		nid, ncount, err := parseShardIDLabelValue(out)
-
-		require.NoError(t, err)
-		require.Equal(t, uint64(id), nid)
-		require.Equal(t, uint64(count), ncount)
-	}
-}
-
-func TestParseInvalidShardId(t *testing.T) {
-	for _, inp := range []string{
-		"invalid",
-		"0_of_10",
-		"11_of_10",
-		"-5_of_10",
-		"5_of_-10",
-	} {
-		_, _, err := parseShardIDLabelValue(inp)
-		require.Error(t, err)
 	}
 }

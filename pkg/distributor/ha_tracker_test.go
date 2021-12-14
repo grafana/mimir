@@ -22,8 +22,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
@@ -34,16 +34,23 @@ import (
 )
 
 func checkReplicaTimestamp(t *testing.T, duration time.Duration, c *haTracker, user, cluster, replica string, expected time.Time) {
-	key := fmt.Sprintf("%s/%s", user, cluster)
+	t.Helper()
 
 	// Round the expected timestamp with milliseconds precision
 	// to match "received at" precision
 	expected = expected.Truncate(time.Millisecond)
 
 	test.Poll(t, duration, nil, func() interface{} {
+		var r ReplicaDesc
 		c.electedLock.RLock()
-		r := c.elected[key]
+		info := c.clusters[user][cluster]
+		if info != nil {
+			r = info.elected
+		}
 		c.electedLock.RUnlock()
+		if info == nil {
+			return fmt.Errorf("no data for user %s cluster %s", user, cluster)
+		}
 
 		if r.GetReplica() != replica {
 			return fmt.Errorf("replicas did not match: %s != %s", r.GetReplica(), replica)
@@ -177,7 +184,16 @@ func TestCheckReplicaOverwriteTimeout(t *testing.T) {
 	// Wait more than the overwrite timeout.
 	now = now.Add(1100 * time.Millisecond)
 
-	// Accept from replica 2, this should overwrite the saved replica of replica 1.
+	// Another sample from replica2 to update its timestamp.
+	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
+	assert.Error(t, err)
+
+	// Update KVStore - this should elect replica 2.
+	c.updateKVStoreAll(context.Background(), now)
+
+	checkReplicaTimestamp(t, time.Second, c, "user", "test", replica2, now)
+
+	// Now we should accept from replica 2.
 	err = c.checkReplica(context.Background(), "user", "test", replica2, now)
 	assert.NoError(t, err)
 
@@ -280,6 +296,12 @@ func TestCheckReplicaMultiClusterTimeout(t *testing.T) {
 	// Wait more than the failover timeout.
 	now = now.Add(1100 * time.Millisecond)
 
+	// Another sample from c1/replica2 to update its timestamp.
+	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
+	assert.Error(t, err)
+	c.updateKVStoreAll(context.Background(), now)
+	checkReplicaTimestamp(t, time.Second, c, "user", "c1", replica2, now)
+
 	// Accept a sample from c1/replica2.
 	err = c.checkReplica(context.Background(), "user", "c1", replica2, now)
 	assert.NoError(t, err)
@@ -341,6 +363,7 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 
 	// Wait 500ms and the timestamp should still not update.
 	updateTime := time.Unix(0, startTime.UnixNano()).Add(500 * time.Millisecond)
+	c.updateKVStoreAll(context.Background(), updateTime)
 
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
@@ -348,6 +371,7 @@ func TestCheckReplicaUpdateTimeout(t *testing.T) {
 
 	// Now we've waited > 1s, so the timestamp should update.
 	updateTime = time.Unix(0, startTime.UnixNano()).Add(1100 * time.Millisecond)
+	c.updateKVStoreAll(context.Background(), updateTime)
 
 	err = c.checkReplica(context.Background(), user, cluster, replica, updateTime)
 	assert.NoError(t, err)
@@ -391,6 +415,8 @@ func TestCheckReplicaMultiUser(t *testing.T) {
 	updated := now.Add(1100 * time.Millisecond)
 	err = c.checkReplica(context.Background(), "user1", cluster, replica, updated)
 	assert.NoError(t, err)
+	c.updateKVStoreAll(context.Background(), updated)
+
 	checkReplicaTimestamp(t, time.Second, c, "user1", cluster, replica, updated)
 	// No update for user2.
 	checkReplicaTimestamp(t, time.Second, c, "user2", cluster, replica, now)
@@ -471,6 +497,7 @@ func TestCheckReplicaUpdateTimeoutJitter(t *testing.T) {
 			// Refresh the replica in the KV Store
 			err = c.checkReplica(ctx, "user1", "cluster", "replica-1", testData.updateTime)
 			require.NoError(t, err)
+			c.updateKVStoreAll(context.Background(), testData.updateTime)
 
 			// Assert on the the received timestamp
 			checkReplicaTimestamp(t, time.Second, c, "user1", "cluster", "replica-1", testData.expectedTimestamp)
@@ -569,6 +596,13 @@ func TestHAClustersLimit(t *testing.T) {
 
 	// Move time forward, and make sure that checkReplica for existing cluster works fine.
 	now = now.Add(5 * time.Second) // higher than "update timeout"
+
+	// Another sample to update internal timestamp.
+	err = t1.checkReplica(context.Background(), userID, "b", "b2", now)
+	assert.Error(t, err)
+	// Update KVStore.
+	t1.updateKVStoreAll(context.Background(), now)
+	checkReplicaTimestamp(t, time.Second, t1, userID, "b", "b2", now)
 
 	assert.NoError(t, t1.checkReplica(context.Background(), userID, "b", "b2", now))
 	waitForClustersUpdate(t, 2, t1, userID)
@@ -795,7 +829,7 @@ func checkReplicaDeletionState(t *testing.T, duration time.Duration, c *haTracke
 
 	test.Poll(t, duration, nil, func() interface{} {
 		c.electedLock.RLock()
-		_, exists := c.elected[key]
+		_, exists := c.clusters[user][cluster]
 		c.electedLock.RUnlock()
 
 		if exists != expectedExistsInMemory {

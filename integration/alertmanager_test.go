@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/alertmanager_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -18,7 +19,7 @@ import (
 	amlabels "github.com/prometheus/alertmanager/pkg/labels"
 	"github.com/prometheus/alertmanager/types"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

@@ -6,19 +6,59 @@ import (
 	"sort"
 )
 
-type jobsOrderFunc func(jobs []*Job) []*Job
+const (
+	CompactionOrderOldestFirst = "smallest-range-oldest-blocks-first"
+	CompactionOrderNewestFirst = "newest-blocks-first"
+)
+
+var CompactionOrders = []string{CompactionOrderOldestFirst, CompactionOrderNewestFirst}
+
+type JobsOrderFunc func(jobs []*Job) []*Job
+
+// GetJobsOrderFunction returns jobs ordering function, or nil, if name doesn't refer to any function.
+func GetJobsOrderFunction(name string) JobsOrderFunc {
+	switch name {
+	case CompactionOrderNewestFirst:
+		return sortJobsByNewestBlocksFirst
+	case CompactionOrderOldestFirst:
+		return sortJobsBySmallestRangeOldestBlocksFirst
+	default:
+		return nil
+	}
+}
 
 // sortJobsBySmallestRangeOldestBlocksFirst returns input jobs sorted by smallest range, oldest min time first.
 // The rationale of this sorting is that we may want to favor smaller ranges first (ie. to deduplicate samples
 // sooner than later) and older ones are more likely to be "complete" (no missing block still to be uploaded).
+// Split jobs are moved to the beginning of the output, because merge jobs are only generated if there are no split jobs in the
+// same time range, so finishing split jobs first unblocks more jobs and gives opportunity to more compactors
+// to work on them.
 func sortJobsBySmallestRangeOldestBlocksFirst(jobs []*Job) []*Job {
 	sort.SliceStable(jobs, func(i, j int) bool {
-		iLength := jobs[i].MaxTime() - jobs[i].MinTime()
-		jLength := jobs[j].MaxTime() - jobs[j].MinTime()
-
-		if iLength != jLength {
-			return iLength < jLength
+		// Move split jobs to the front.
+		if jobs[i].UseSplitting() && !jobs[j].UseSplitting() {
+			return true
 		}
+
+		if !jobs[i].UseSplitting() && jobs[j].UseSplitting() {
+			return false
+		}
+
+		checkLength := true
+		// Don't check length for splitting jobs. We want to the oldest split blocks to be first, no matter the length.
+		if jobs[i].UseSplitting() && jobs[j].UseSplitting() {
+			checkLength = false
+		}
+
+		if checkLength {
+			iLength := jobs[i].MaxTime() - jobs[i].MinTime()
+			jLength := jobs[j].MaxTime() - jobs[j].MinTime()
+
+			if iLength != jLength {
+				return iLength < jLength
+			}
+		}
+
 		if jobs[i].MinTime() != jobs[j].MinTime() {
 			return jobs[i].MinTime() < jobs[j].MinTime()
 		}

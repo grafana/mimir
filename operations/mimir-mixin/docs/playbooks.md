@@ -71,7 +71,7 @@ How to **fix**:
   )
   >
   (
-    max by(user) (cortex_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
+    max by(user) (cortex_limits_overrides{namespace="<namespace>",limit_name="max_global_series_per_user"})
     *
     scalar(max(cortex_distributor_replication_factor{namespace="<namespace>"}))
     *
@@ -81,6 +81,12 @@ How to **fix**:
 
   # Decomment the following to show only tenants beloging to a specific ingester's shard.
   # and count by(user) (cortex_ingester_active_series{namespace="<namespace>",pod="ingester-<id>"})
+  ```
+
+- Run the following **instant query** to find tenants that contribute the most to active series on a specific ingester:
+
+  ```
+  topk(10, sum by(user) (cortex_ingester_memory_series_created_total{namespace="<namespace>",pod="ingester-<id>"} - cortex_ingester_memory_series_removed_total{namespace="<namespace>",pod="ingester-<id>"}))
   ```
 
 - Check the current shard size of each tenant in the output and, if they're not already sharded across all ingesters, you may consider to double their shard size
@@ -120,6 +126,33 @@ How to **fix**:
 
 1. Ensure shuffle-sharding is enabled in the Cortex cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
+
+### CortexDistributorReachingInflightPushRequestLimit
+
+This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of inflight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing inflight push requests will continue to succeed.
+
+In case of **emergency**:
+
+- If the actual number of inflight push requests is very close to or already at the set limit, then you can increase the limit via CLI flag or config to gain some time
+- Increasing the limit will increase the number of inflight push requests which will increase distributors' memory utilization. Please monitor the distributors' memory utilization via the `Cortex / Writes Resources` dashboard
+
+How the limit is **configured**:
+
+- The limit can be configured either by the CLI flag (`-distributor.instance-limits.max-inflight-push-requests`) or in the config:
+  ```
+  distributor:
+    instance_limits:
+      max_inflight_push_requests: <int>
+  ```
+- These changes are applied with a distributor restart.
+- The configured limit can be queried via `cortex_distributor_instance_limits{limit="max_inflight_push_requests"})`
+
+How to **fix**:
+
+1. **Temporarily increase the limit**<br />
+   If the actual number of inflight push requests is very close to or already hit the limit.
+2. **Scale up distributors**<br />
+   Scaling up distributors will lower the number of inflight push requests per distributor.
 
 ### CortexRequestLatency
 
@@ -405,6 +438,10 @@ How to **investigate**:
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
 
+### CortexCompactorSkippedBlocksWithOutOfOrderChunks
+
+This alert fires when compactor tries to compact a block, but finds that given block has out-of-order chunks. This indicates a bug in Prometheus TSDB library and should be investigated.
+
 #### Compactor is failing because of `not healthy index found`
 
 The compactor may fail to compact blocks due a corrupted block index found in one of the source blocks:
@@ -549,6 +586,10 @@ How to **investigate**:
     - Check the `Cortex / Slow Queries` dashboard to find slow queries
   - On multi-tenant Cortex cluster with **shuffle-sharing for queriers disabled**, you may consider to enable it for that specific tenant to reduce its blast radius. To enable queriers shuffle-sharding for a single tenant you need to set the `max_queriers_per_tenant` limit override for the specific tenant (the value should be set to the number of queriers assigned to the tenant).
   - On multi-tenant Cortex cluster with **shuffle-sharding for queriers enabled**, you may consider to temporarily increase the shard size for affected tenants: be aware that this could affect other tenants too, reducing resources available to run other tenant queries. Alternatively, you may choose to do nothing and let Cortex return errors for that given user once the per-tenant queue is full.
+  - On multi-tenant Cortex clusters with **query-sharding enabled** and **more than a few tenants** being affected: The workload exceeds the available downstream capacity. Scaling of queriers and potentially store-gateways should be considered.
+  - On multi-tenant Cortex clusters with **query-sharding enabled** and **only a single tenant** being affected:
+    - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Cortex / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
+    - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
 
 ### CortexMemcachedRequestErrors
 
@@ -1036,6 +1077,32 @@ A PVC can be manually deleted by an operator. When a PVC claim is deleted, what 
 
 - `Retain`: the volume will not be deleted until the PV resource will be manually deleted from Kubernetes
 - `Delete`: the volume will be automatically deleted
+
+### Recover accidentally deleted blocks (Google Cloud specific)
+
+_This playbook assumes you've enabled versioning in your GCS bucket and the retention of deleted blocks didn't expire yet._
+
+These are just example actions but should give you a fair idea on how you could go about doing this. Read the [GCS doc](https://cloud.google.com/storage/docs/using-versioned-objects#gsutil_1) before you proceed.
+
+Step 1: Use `gsutil ls -l -a $BUCKET` to list all blocks, including the deleted ones. Now identify the deleted blocks and save the ones to restore in a file named `deleted-block-list` (one block per line).
+
+Step 2: Once you have the `deleted-block-list`, you can now list all the objects you need to restore, because only objects can be restored and not prefixes:
+
+```
+while read block; do
+gsutil ls -a -r $block | grep "#" | grep -v deletion-mark.json | grep -v index.cache.json
+done < deleted-list > full-deleted-file-list
+```
+
+The above script will ignore the `deletion-mark.json` and `index.cache.json` which shouldn't be restored.
+
+Step 3: Run the following script to restore the objects:
+
+```
+while read file; do
+gsutil cp $file ${file%#*}
+done < full-deleted-list
+```
 
 ## Log lines
 

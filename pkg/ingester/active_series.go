@@ -12,7 +12,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
 )
 

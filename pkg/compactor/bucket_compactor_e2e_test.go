@@ -28,7 +28,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -41,12 +42,15 @@ import (
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
-)
 
-const fetcherConcurrency = 32
+	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
+)
 
 func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -111,8 +115,8 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, nil, 48*time.Hour, fetcherConcurrency)
-		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks, 1)
+		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(nil)
+		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks)
 		require.NoError(t, err)
 
 		// Do one initial synchronization with the bucket.
@@ -121,7 +125,10 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 		var rem []ulid.ULID
 		err = bkt.Iter(ctx, "", func(n string) error {
-			id := ulid.MustParse(n[:len(n)-1])
+			id, ok := block.IsBlockDir(n)
+			if !ok {
+				return nil
+			}
 			deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
 
 			exists, err := bkt.Exists(ctx, deletionMarkFile)
@@ -160,6 +167,9 @@ func TestSyncer_GarbageCollect_e2e(t *testing.T) {
 
 func TestGroupCompactE2E(t *testing.T) {
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -203,9 +213,9 @@ func TestGroupCompactE2E(t *testing.T) {
 
 		reg := prometheus.NewRegistry()
 
-		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(logger, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
+		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(objstore.WithNoopInstr(bkt))
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-		noCompactMarkerFilter := NewGatherNoCompactionMarkFilter(logger, objstore.WithNoopInstr(bkt), 2)
+		noCompactMarkerFilter := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
@@ -215,7 +225,7 @@ func TestGroupCompactE2E(t *testing.T) {
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks, 5)
+		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks)
 		require.NoError(t, err)
 
 		comp, err := tsdb.NewLeveledCompactor(ctx, reg, logger, []int64{1000, 3000}, nil, nil)
@@ -224,11 +234,11 @@ func TestGroupCompactE2E(t *testing.T) {
 		planner := NewPlanner(logger, []int64{1000, 3000}, noCompactMarkerFilter)
 		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks, prometheus.NewPedanticRegistry())
-		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, metrics)
+		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 4, metrics)
 		require.NoError(t, err)
 
 		// Compaction on empty should not fail.
-		require.NoError(t, bComp.Compact(ctx))
+		require.NoError(t, bComp.Compact(ctx, 0), 0)
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectedBlocks))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
@@ -328,7 +338,7 @@ func TestGroupCompactE2E(t *testing.T) {
 			},
 		})
 
-		require.NoError(t, bComp.Compact(ctx))
+		require.NoError(t, bComp.Compact(ctx, 0), 0)
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.garbageCollectedBlocks))
 		assert.Equal(t, 5.0, promtest.ToFloat64(sy.metrics.blocksMarkedForDeletion))
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))
@@ -465,6 +475,9 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 	logger := log.NewLogfmtLogger(os.Stderr)
 
 	foreachStore(t, func(t *testing.T, bkt objstore.Bucket) {
+		// Use bucket with global markers to make sure that our custom filters work correctly.
+		bkt = bucketindex.BucketWithGlobalMarkers(bkt)
+
 		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 		defer cancel()
 
@@ -501,7 +514,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 
 		blocksMarkedForDeletion := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
 		garbageCollectedBlocks := promauto.With(nil).NewCounter(prometheus.CounterOpts{})
-		ignoreDeletionMarkFilter := block.NewIgnoreDeletionMarkFilter(nil, objstore.WithNoopInstr(bkt), 48*time.Hour, fetcherConcurrency)
+		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(objstore.WithNoopInstr(bkt))
 
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
@@ -510,7 +523,7 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 		}, nil)
 		require.NoError(t, err)
 
-		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks, 1)
+		sy, err := NewMetaSyncer(nil, nil, bkt, metaFetcher, duplicateBlocksFilter, ignoreDeletionMarkFilter, blocksMarkedForDeletion, garbageCollectedBlocks)
 		require.NoError(t, err)
 
 		// Do one initial synchronization with the bucket.
@@ -545,7 +558,10 @@ func TestGarbageCollectDoesntCreateEmptyBlocksWithDeletionMarksOnly(t *testing.T
 func listBlocksMarkedForDeletion(ctx context.Context, bkt objstore.Bucket) ([]ulid.ULID, error) {
 	var rem []ulid.ULID
 	err := bkt.Iter(ctx, "", func(n string) error {
-		id := ulid.MustParse(n[:len(n)-1])
+		id, ok := block.IsBlockDir(n)
+		if !ok {
+			return nil
+		}
 		deletionMarkFile := path.Join(id.String(), metadata.DeletionMarkFilename)
 
 		exists, err := bkt.Exists(ctx, deletionMarkFile)
@@ -803,14 +819,14 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 		chk1 := chunks.Meta{
 			MinTime: maxTime - 2,
 			MaxTime: maxTime - 1,
-			Ref:     rand.Uint64(),
+			Ref:     chunks.ChunkRef(rand.Uint64()),
 			Chunk:   chunkenc.NewXORChunk(),
 		}
 		metas = append(metas, chk1)
 		chk2 := chunks.Meta{
 			MinTime: minTime + 1,
 			MaxTime: minTime + 2,
-			Ref:     rand.Uint64(),
+			Ref:     chunks.ChunkRef(rand.Uint64()),
 			Chunk:   chunkenc.NewXORChunk(),
 		}
 		metas = append(metas, chk2)
@@ -844,7 +860,7 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 	)
 
 	for i, s := range input {
-		if err := iw.AddSeries(uint64(i), s.labels, s.chunks...); err != nil {
+		if err := iw.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...); err != nil {
 			return err
 		}
 
@@ -856,7 +872,7 @@ func putOutOfOrderIndex(blockDir string, minTime int64, maxTime int64) error {
 			}
 			valset[l.Value] = struct{}{}
 		}
-		postings.Add(uint64(i), s.labels)
+		postings.Add(storage.SeriesRef(i), s.labels)
 	}
 
 	return iw.Close()

@@ -24,7 +24,7 @@ import (
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -77,6 +77,8 @@ type Merger interface {
 
 // Request represents a query range request that can be process by middlewares.
 type Request interface {
+	// GetId returns the ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
+	GetId() int64
 	// GetStart returns the start timestamp of the request in milliseconds.
 	GetStart() int64
 	// GetEnd returns the end timestamp of the request in milliseconds.
@@ -87,10 +89,17 @@ type Request interface {
 	GetQuery() string
 	// GetOptions returns the options for the given request.
 	GetOptions() Options
+	// GetHints returns hints that could be optionally attached to the request to pass down the stack.
+	// These hints can be used to optimize the query execution.
+	GetHints() *Hints
+	// WithID clones the current request with the provided ID.
+	WithID(id int64) Request
 	// WithStartEnd clone the current request with different start and end timestamp.
 	WithStartEnd(startTime int64, endTime int64) Request
 	// WithQuery clone the current request with a different query.
 	WithQuery(string) Request
+	// WithHints clone the current request with the provided hints.
+	WithHints(hints *Hints) Request
 	proto.Message
 	// LogToSpan writes information about this request to an OpenTracing span
 	LogToSpan(opentracing.Span)
@@ -105,6 +114,13 @@ type Response interface {
 
 type prometheusCodec struct{}
 
+// WithID clones the current `PrometheusRequest` with the provided ID.
+func (q *PrometheusRequest) WithID(id int64) Request {
+	new := *q
+	new.Id = id
+	return &new
+}
+
 // WithStartEnd clones the current `PrometheusRequest` with a new `start` and `end` timestamp.
 func (q *PrometheusRequest) WithStartEnd(start int64, end int64) Request {
 	new := *q
@@ -117,6 +133,13 @@ func (q *PrometheusRequest) WithStartEnd(start int64, end int64) Request {
 func (q *PrometheusRequest) WithQuery(query string) Request {
 	new := *q
 	new.Query = query
+	return &new
+}
+
+// WithQuery clones the current `PrometheusRequest` with new hints.
+func (q *PrometheusRequest) WithHints(hints *Hints) Request {
+	new := *q
+	new.Hints = hints
 	return &new
 }
 

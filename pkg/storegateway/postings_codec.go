@@ -10,6 +10,7 @@ import (
 
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
@@ -65,7 +66,7 @@ func diffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
 		buf.B = make([]byte, 0, 5*length/4)
 	}
 
-	prev := uint64(0)
+	prev := storage.SeriesRef(0)
 	for p.Next() {
 		v := p.At()
 		if v < prev {
@@ -73,7 +74,7 @@ func diffVarintEncodeNoHeader(p index.Postings, length int) ([]byte, error) {
 		}
 
 		// This is the 'diff' part -- compute difference from previous value.
-		buf.PutUvarint64(v - prev)
+		buf.PutUvarint64(uint64(v - prev))
 		prev = v
 	}
 	if p.Err() != nil {
@@ -103,10 +104,10 @@ func newDiffVarintPostings(input []byte) *diffVarintPostings {
 // diffVarintPostings is an implementation of index.Postings based on diff+varint encoded data.
 type diffVarintPostings struct {
 	buf *encoding.Decbuf
-	cur uint64
+	cur storage.SeriesRef
 }
 
-func (it *diffVarintPostings) At() uint64 {
+func (it *diffVarintPostings) At() storage.SeriesRef {
 	return it.cur
 }
 
@@ -120,11 +121,11 @@ func (it *diffVarintPostings) Next() bool {
 		return false
 	}
 
-	it.cur = it.cur + val
+	it.cur = it.cur + storage.SeriesRef(val)
 	return true
 }
 
-func (it *diffVarintPostings) Seek(x uint64) bool {
+func (it *diffVarintPostings) Seek(x storage.SeriesRef) bool {
 	if it.cur >= x {
 		return true
 	}

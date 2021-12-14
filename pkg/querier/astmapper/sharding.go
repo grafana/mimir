@@ -10,10 +10,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 // NewSharding creates a new query sharding mapper.
@@ -341,7 +341,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 }
 
 func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, querysharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +359,7 @@ func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) 
 }
 
 func shardMatrixSelector(curshard, shards int, selector *parser.MatrixSelector) (parser.Node, error) {
-	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, querysharding.ShardLabel, querysharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
+	shardMatcher, err := labels.NewMatcher(labels.MatchEqual, sharding.ShardLabel, sharding.ShardSelector{ShardIndex: uint64(curshard), ShardCount: uint64(shards)}.LabelValue())
 	if err != nil {
 		return nil, err
 	}

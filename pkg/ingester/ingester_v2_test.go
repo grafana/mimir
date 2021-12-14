@@ -34,7 +34,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -52,7 +52,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/querysharding"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -60,7 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-func TestIngester_v2Push(t *testing.T) {
+func TestIngester_Push(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricLabelSet := mimirpb.FromLabelAdaptersToMetric(metricLabelAdapters)
@@ -342,18 +342,24 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_active_series{user="test"} 1
 			`,
 		},
-		"should soft fail on sample out of bound": {
+		"should soft fail on all samples out of bound in a write request": {
 			reqs: []*mimirpb.WriteRequest{
 				mimirpb.ToWriteRequest(
 					[]labels.Labels{metricLabels},
 					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
 					nil,
 					mimirpb.API),
-				mimirpb.ToWriteRequest(
-					[]labels.Labels{metricLabels},
-					[]mimirpb.Sample{{Value: 1, TimestampMs: 1575043969 - (86400 * 1000)}},
-					nil,
-					mimirpb.API),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels:  metricLabelAdapters,
+								Samples: []mimirpb.Sample{{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)}, {Value: 1, TimestampMs: 1575043969 - (86000 * 1000)}},
+							},
+						},
+					},
+				},
 			},
 			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
 			expectedIngested: model.Matrix{
@@ -365,7 +371,7 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_ingested_samples_total 1
 				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
 				# TYPE cortex_ingester_ingested_samples_failures_total counter
-				cortex_ingester_ingested_samples_failures_total 1
+				cortex_ingester_ingested_samples_failures_total 2
 				# HELP cortex_ingester_memory_users The current number of users in memory.
 				# TYPE cortex_ingester_memory_users gauge
 				cortex_ingester_memory_users 1
@@ -380,7 +386,60 @@ func TestIngester_v2Push(t *testing.T) {
 				cortex_ingester_memory_series_removed_total{user="test"} 0
 				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
 				# TYPE cortex_discarded_samples_total counter
-				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 1
+				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 2
+				# HELP cortex_ingester_active_series Number of currently active series per user.
+				# TYPE cortex_ingester_active_series gauge
+				cortex_ingester_active_series{user="test"} 1
+			`,
+		},
+		"should soft fail on some samples out of bound in a write request": {
+			reqs: []*mimirpb.WriteRequest{
+				mimirpb.ToWriteRequest(
+					[]labels.Labels{metricLabels},
+					[]mimirpb.Sample{{Value: 2, TimestampMs: 1575043969}},
+					nil,
+					mimirpb.API),
+				// Write request with 1 series and 2 samples.
+				{
+					Timeseries: []mimirpb.PreallocTimeseries{
+						{
+							TimeSeries: &mimirpb.TimeSeries{
+								Labels: metricLabelAdapters,
+								Samples: []mimirpb.Sample{
+									{Value: 0, TimestampMs: 1575043969 - (86400 * 1000)},
+									{Value: 1, TimestampMs: 1575043969 - (86000 * 1000)},
+									{Value: 3, TimestampMs: 1575043969 + 1}},
+							},
+						},
+					},
+				},
+			},
+			expectedErr: httpgrpc.Errorf(http.StatusBadRequest, wrapWithUser(wrappedTSDBIngestErr(storage.ErrOutOfBounds, model.Time(1575043969-(86400*1000)), mimirpb.FromLabelsToLabelAdapters(metricLabels)), userID).Error()),
+			expectedIngested: model.Matrix{
+				&model.SampleStream{Metric: metricLabelSet, Values: []model.SamplePair{{Value: 2, Timestamp: 1575043969}, {Value: 3, Timestamp: 1575043969 + 1}}},
+			},
+			expectedMetrics: `
+				# HELP cortex_ingester_ingested_samples_total The total number of samples ingested.
+				# TYPE cortex_ingester_ingested_samples_total counter
+				cortex_ingester_ingested_samples_total 2
+				# HELP cortex_ingester_ingested_samples_failures_total The total number of samples that errored on ingestion.
+				# TYPE cortex_ingester_ingested_samples_failures_total counter
+				cortex_ingester_ingested_samples_failures_total 2
+				# HELP cortex_ingester_memory_users The current number of users in memory.
+				# TYPE cortex_ingester_memory_users gauge
+				cortex_ingester_memory_users 1
+				# HELP cortex_ingester_memory_series The current number of series in memory.
+				# TYPE cortex_ingester_memory_series gauge
+				cortex_ingester_memory_series 1
+				# HELP cortex_ingester_memory_series_created_total The total number of series that were created per user.
+				# TYPE cortex_ingester_memory_series_created_total counter
+				cortex_ingester_memory_series_created_total{user="test"} 1
+				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
+				# TYPE cortex_ingester_memory_series_removed_total counter
+				cortex_ingester_memory_series_removed_total{user="test"} 0
+				# HELP cortex_discarded_samples_total The total number of samples that were discarded.
+				# TYPE cortex_discarded_samples_total counter
+				cortex_discarded_samples_total{reason="sample-out-of-bounds",user="test"} 2
 				# HELP cortex_ingester_active_series Number of currently active series per user.
 				# TYPE cortex_ingester_active_series gauge
 				cortex_ingester_active_series{user="test"} 1
@@ -566,14 +625,15 @@ func TestIngester_v2Push(t *testing.T) {
 
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			// Wait until the ingester is ACTIVE
-			test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-				return i.lifecycler.GetState()
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
 			})
 
 			// Push timeseries
 			for idx, req := range testData.reqs {
-				_, err := i.v2Push(ctx, req)
+				// Push metrics to the ingester. Override the default cleanup method of mimirpb.ReuseSlice with a no-op one.
+				_, err := i.PushWithCleanup(ctx, req, func() {})
 
 				// We expect no error on any request except the last one
 				// which may error (and in that case we assert on it)
@@ -586,7 +646,7 @@ func TestIngester_v2Push(t *testing.T) {
 
 			// Read back samples to see what has been really ingested
 			s := &stream{ctx: ctx}
-			err = i.v2QueryStream(&client.QueryRequest{
+			err = i.QueryStream(&client.QueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers:         []*client.LabelMatcher{{Type: client.REGEX_MATCH, Name: labels.MetricName, Value: ".*"}},
@@ -601,7 +661,7 @@ func TestIngester_v2Push(t *testing.T) {
 			assert.Equal(t, testData.expectedIngested, res)
 
 			// Read back samples to see what has been really ingested
-			exemplarRes, err := i.v2QueryExemplars(ctx, &client.ExemplarQueryRequest{
+			exemplarRes, err := i.QueryExemplars(ctx, &client.ExemplarQueryRequest{
 				StartTimestampMs: math.MinInt64,
 				EndTimestampMs:   math.MaxInt64,
 				Matchers: []*client.LabelMatchers{
@@ -624,7 +684,7 @@ func TestIngester_v2Push(t *testing.T) {
 
 			// Update active series for metrics check.
 			if !testData.disableActiveSeries {
-				i.v2UpdateActiveSeries()
+				i.updateActiveSeries()
 			}
 
 			// Append additional metrics to assert on.
@@ -637,7 +697,7 @@ func TestIngester_v2Push(t *testing.T) {
 	}
 }
 
-func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
+func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
@@ -661,9 +721,9 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
-	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push timeseries for each user
@@ -683,13 +743,13 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 
 		for _, req := range reqs {
 			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err := i.v2Push(ctx, req)
+			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
 	}
 
 	// Update active series for metrics check.
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -722,7 +782,7 @@ func TestIngester_v2Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *tes
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 }
 
-func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
+func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	metricLabelAdapters := []mimirpb.LabelAdapter{{Name: labels.MetricName, Value: "test"}}
 	metricLabels := mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)
 	metricNames := []string{
@@ -743,9 +803,9 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
-	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push timeseries for each user
@@ -765,7 +825,7 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 
 		for _, req := range reqs {
 			ctx := user.InjectOrgID(context.Background(), userID)
-			_, err := i.v2Push(ctx, req)
+			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
 	}
@@ -774,7 +834,7 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Update active series for metrics check. This will remove inactive series.
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -795,12 +855,12 @@ func TestIngester_v2Push_DecreaseInactiveSeries(t *testing.T) {
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
 }
 
-func BenchmarkIngesterV2Push(b *testing.B) {
+func BenchmarkIngesterPush(b *testing.B) {
 	limits := defaultLimitsTestConfig()
-	benchmarkIngesterV2Push(b, limits, false)
+	benchmarkIngesterPush(b, limits, false)
 }
 
-func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpected bool) {
+func benchmarkIngesterPush(b *testing.B, limits validation.Limits, errorsExpected bool) {
 	registry := prometheus.NewRegistry()
 	ctx := user.InjectOrgID(context.Background(), userID)
 
@@ -813,9 +873,9 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 	require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 	defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
-	test.Poll(b, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
+	// Wait until the ingester is healthy
+	test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+		return ingester.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push a single time series to set the TSDB min time.
@@ -828,7 +888,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 		[]mimirpb.Sample{{Value: 1, TimestampMs: startTime}},
 		nil,
 		mimirpb.API)
-	_, err = ingester.v2Push(ctx, currTimeReq)
+	_, err = ingester.Push(ctx, currTimeReq)
 	require.NoError(b, err)
 
 	const (
@@ -845,7 +905,7 @@ func benchmarkIngesterV2Push(b *testing.B, limits validation.Limits, errorsExpec
 			for i := range allSamples {
 				allSamples[i].TimestampMs = startTime + int64(iter*samples+j+1)
 			}
-			_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
+			_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(allLabels, allSamples, nil, mimirpb.API))
 			if !errorsExpected {
 				require.NoError(b, err)
 			}
@@ -860,7 +920,7 @@ func verifyErrorString(tb testing.TB, err error, expectedErr string) {
 	}
 }
 
-func Benchmark_Ingester_v2PushOnError(b *testing.B) {
+func Benchmark_Ingester_PushOnError(b *testing.B) {
 	var (
 		ctx             = user.InjectOrgID(context.Background(), userID)
 		sampleTimestamp = int64(100)
@@ -872,22 +932,26 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 		numConcurrentClients int
 	}{
 		"no concurrency": {
-			numSeriesPerRequest:  1000,
+			numSeriesPerRequest:  500,
 			numConcurrentClients: 1,
 		},
 		"low concurrency": {
-			numSeriesPerRequest:  1000,
+			numSeriesPerRequest:  500,
 			numConcurrentClients: 100,
 		},
 		"high concurrency": {
-			numSeriesPerRequest:  1000,
+			numSeriesPerRequest:  500,
 			numConcurrentClients: 1000,
+		},
+		"low number of series per request and very high concurrency": {
+			numSeriesPerRequest:  100,
+			numConcurrentClients: 2500,
 		},
 	}
 
 	instanceLimits := map[string]*InstanceLimits{
 		"no limits":  nil,
-		"limits set": {MaxIngestionRate: 1000, MaxInMemoryTenants: 1, MaxInMemorySeries: 1000, MaxInflightPushRequests: 1000}, // these match max values from scenarios
+		"limits set": {MaxIngestionRate: 1e12, MaxInMemoryTenants: 1, MaxInMemorySeries: 500, MaxInflightPushRequests: 2500}, // these match max values from scenarios
 	}
 
 	tests := map[string]struct {
@@ -905,7 +969,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: util.TimeToMillis(time.Now())}},
 					nil,
 					mimirpb.API)
-				_, err := ingester.v2Push(ctx, currTimeReq)
+				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
@@ -913,7 +977,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 
 				// Push out of bound samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -930,7 +994,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 						nil,
 						mimirpb.API)
 
-					_, err := ingester.v2Push(ctx, currTimeReq)
+					_, err := ingester.Push(ctx, currTimeReq)
 					require.NoError(b, err)
 				}
 			},
@@ -939,7 +1003,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 
 				// Push out of order samples.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 
 					verifyErrorString(b, err, expectedErr)
 				}
@@ -957,13 +1021,13 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					mimirpb.API)
-				_, err := ingester.v2Push(ctx, currTimeReq)
+				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with a different name than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-user series limit")
 				}
 			},
@@ -980,13 +1044,13 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					[]mimirpb.Sample{{Value: 1, TimestampMs: sampleTimestamp + 1}},
 					nil,
 					mimirpb.API)
-				_, err := ingester.v2Push(ctx, currTimeReq)
+				_, err := ingester.Push(ctx, currTimeReq)
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)) // nolint:errcheck
 					verifyErrorString(b, err, "per-metric series limit")
 				}
 			},
@@ -1001,7 +1065,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Send a lot of samples
-				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 
 				ingester.ingestionRate.Tick()
@@ -1009,8 +1073,8 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
-					verifyErrorString(b, err, "push rate reached")
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+					verifyErrorString(b, err, "push rate limit reached")
 				}
 			},
 		},
@@ -1025,13 +1089,13 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Send some samples for one tenant (not the same that is used during the test)
 				ctx := user.InjectOrgID(context.Background(), "different_tenant")
-				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				// Push series with different labels than the one already pushed.
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "max tenants limit reached")
 				}
 			},
@@ -1045,12 +1109,12 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
-				_, err := ingester.v2Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
 				for n := 0; n < b.N; n++ {
-					_, err := ingester.v2Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+					_, err := ingester.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
 					verifyErrorString(b, err, "max series limit reached")
 				}
 			},
@@ -1107,9 +1171,9 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 					require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingester))
 					defer services.StopAndAwaitTerminated(context.Background(), ingester) //nolint:errcheck
 
-					// Wait until the ingester is ACTIVE
-					test.Poll(b, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-						return ingester.lifecycler.GetState()
+					// Wait until the ingester is healthy
+					test.Poll(b, 100*time.Millisecond, 1, func() interface{} {
+						return ingester.lifecycler.HealthyInstancesCount()
 					})
 
 					testData.beforeBenchmark(b, ingester, scenario.numSeriesPerRequest)
@@ -1148,7 +1212,7 @@ func Benchmark_Ingester_v2PushOnError(b *testing.B) {
 	}
 }
 
-func Test_Ingester_v2LabelNames(t *testing.T) {
+func Test_Ingester_LabelNames(t *testing.T) {
 	series := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -1166,9 +1230,9 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series
@@ -1176,7 +1240,7 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -1184,7 +1248,7 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 		expected := []string{"__name__", "status", "route"}
 
 		// Get label names
-		res, err := i.v2LabelNames(ctx, &client.LabelNamesRequest{})
+		res, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
@@ -1201,13 +1265,13 @@ func Test_Ingester_v2LabelNames(t *testing.T) {
 		require.NoError(t, err)
 
 		// Get label names
-		res, err := i.v2LabelNames(ctx, req)
+		res, err := i.LabelNames(ctx, req)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
 }
 
-func Test_Ingester_v2LabelValues(t *testing.T) {
+func Test_Ingester_LabelValues(t *testing.T) {
 	series := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -1231,9 +1295,9 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series
@@ -1241,20 +1305,20 @@ func Test_Ingester_v2LabelValues(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
 	// Get label values
 	for labelName, expectedValues := range expected {
 		req := &client.LabelValuesRequest{LabelName: labelName}
-		res, err := i.v2LabelValues(ctx, req)
+		res, err := i.LabelValues(ctx, req)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
 	}
 }
 
-func Test_Ingester_v2Query(t *testing.T) {
+func Test_Ingester_Query(t *testing.T) {
 	series := []series{
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "200"}, {Name: "route", Value: "get_user"}}, 1, 100000},
 		{labels.Labels{{Name: labels.MetricName, Value: "test_1"}, {Name: "status", Value: "500"}, {Name: "route", Value: "get_user"}}, 1, 110000},
@@ -1346,9 +1410,9 @@ func Test_Ingester_v2Query(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series
@@ -1356,7 +1420,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -1370,7 +1434,7 @@ func Test_Ingester_v2Query(t *testing.T) {
 			}
 
 			s := stream{ctx: ctx}
-			err = i.v2QueryStream(req, &s)
+			err = i.QueryStream(req, &s)
 			require.NoError(t, err)
 
 			res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -1586,7 +1650,7 @@ func pushSeriesToIngester(t testing.TB, series []series, i *Ingester) context.Co
 	ctx := user.InjectOrgID(context.Background(), "test")
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 	return ctx
@@ -1603,7 +1667,7 @@ func extractItemsWithSortedValues(responses []client.LabelNamesAndValuesResponse
 	return items
 }
 
-func TestIngester_v2Query_QuerySharding(t *testing.T) {
+func TestIngester_Query_QuerySharding(t *testing.T) {
 	const (
 		numSeries = 1000
 		numShards = 16
@@ -1615,9 +1679,9 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
@@ -1632,7 +1696,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 		}
 
 		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 
 		// Compact the TSDB head once half of the series have been pushed.
@@ -1650,7 +1714,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 			EndTimestampMs:   math.MaxInt64,
 			Matchers: []*client.LabelMatcher{
 				{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
-				{Type: client.EQUAL, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+				{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 					ShardIndex: uint64(shardIndex),
 					ShardCount: uint64(numShards),
 				}.LabelValue()},
@@ -1658,7 +1722,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 		}
 
 		s := stream{ctx: ctx}
-		err = i.v2QueryStream(req, &s)
+		err = i.QueryStream(req, &s)
 		require.NoError(t, err)
 
 		res, err := chunkcompat.StreamsToMatrix(model.Earliest, model.Latest, s.responses)
@@ -1687,7 +1751,7 @@ func TestIngester_v2Query_QuerySharding(t *testing.T) {
 	}
 }
 
-func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+func TestIngester_Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -1699,7 +1763,7 @@ func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	req := &client.QueryRequest{}
 
 	s := stream{ctx: ctx}
-	err = i.v2QueryStream(req, &s)
+	err = i.QueryStream(req, &s)
 	require.NoError(t, err)
 
 	assert.Empty(t, s.responses)
@@ -1709,7 +1773,7 @@ func TestIngester_v2Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_v2LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+func TestIngester_LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -1720,7 +1784,7 @@ func TestIngester_v2LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T)
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &client.LabelValuesRequest{}
 
-	res, err := i.v2LabelValues(ctx, req)
+	res, err := i.LabelValues(ctx, req)
 	require.NoError(t, err)
 	assert.Equal(t, &client.LabelValuesResponse{}, res)
 
@@ -1729,7 +1793,7 @@ func TestIngester_v2LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T)
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_v2LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
+func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
@@ -1740,7 +1804,7 @@ func TestIngester_v2LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) 
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req := &client.LabelNamesRequest{}
 
-	res, err := i.v2LabelNames(ctx, req)
+	res, err := i.LabelNames(ctx, req)
 	require.NoError(t, err)
 	assert.Equal(t, &client.LabelNamesResponse{}, res)
 
@@ -1749,7 +1813,7 @@ func TestIngester_v2LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) 
 	assert.False(t, tsdbCreated)
 }
 
-func TestIngester_v2Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
+func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	// Configure the lifecycler to not immediately join the ring, to make sure
 	// the ingester will NOT be in the ACTIVE state when we'll push samples.
 	cfg := defaultIngesterTestConfig(t)
@@ -1766,7 +1830,7 @@ func TestIngester_v2Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, 0)
 
-	res, err := i.v2Push(ctx, req)
+	res, err := i.Push(ctx, req)
 	assert.EqualError(t, err, wrapWithUser(fmt.Errorf(errTSDBCreateIncompatibleState, "PENDING"), userID).Error())
 	assert.Nil(t, res)
 
@@ -1836,7 +1900,7 @@ func TestIngester_getOrCreateTSDB_ShouldNotAllowToCreateTSDBIfIngesterStateIsNot
 	}
 }
 
-func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
+func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 	fixtures := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -1954,9 +2018,9 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push fixtures
@@ -1964,7 +2028,7 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 
 	for _, series := range fixtures {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -1979,14 +2043,14 @@ func Test_Ingester_v2MetricsForLabelMatchers(t *testing.T) {
 				MatchersSet:      testData.matchers,
 			}
 
-			res, err := i.v2MetricsForLabelMatchers(ctx, req)
+			res, err := i.MetricsForLabelMatchers(ctx, req)
 			require.NoError(t, err)
 			assert.ElementsMatch(t, testData.expected, res.Metric)
 		})
 	}
 }
 
-func Test_Ingester_v2MetricsForLabelMatchers_Deduplication(t *testing.T) {
+func Test_Ingester_MetricsForLabelMatchers_Deduplication(t *testing.T) {
 	const (
 		userID    = "test"
 		numSeries = 100000
@@ -2010,12 +2074,12 @@ func Test_Ingester_v2MetricsForLabelMatchers_Deduplication(t *testing.T) {
 		},
 	}
 
-	res, err := i.v2MetricsForLabelMatchers(ctx, req)
+	res, err := i.MetricsForLabelMatchers(ctx, req)
 	require.NoError(t, err)
 	require.Len(t, res.GetMetric(), numSeries)
 }
 
-func Benchmark_Ingester_v2MetricsForLabelMatchers(b *testing.B) {
+func Benchmark_Ingester_MetricsForLabelMatchers(b *testing.B) {
 	var (
 		userID              = "test"
 		numSeries           = 10000
@@ -2043,7 +2107,7 @@ func Benchmark_Ingester_v2MetricsForLabelMatchers(b *testing.B) {
 			}}},
 		}
 
-		res, err := i.v2MetricsForLabelMatchers(ctx, req)
+		res, err := i.MetricsForLabelMatchers(ctx, req)
 		require.NoError(b, err)
 		require.Len(b, res.GetMetric(), numSeries)
 	}
@@ -2061,9 +2125,9 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 	})
 
-	// Wait until it's ACTIVE.
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push fixtures.
@@ -2090,7 +2154,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 
 			// Send metrics to the ingester.
 			req := mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API)
-			_, err := i.v2Push(ctx, req)
+			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 		}
 	}
@@ -2098,7 +2162,7 @@ func createIngesterWithSeries(t testing.TB, userID string, numSeries, numSamples
 	return i
 }
 
-func TestIngester_v2QueryStream(t *testing.T) {
+func TestIngester_QueryStream(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 
@@ -2113,9 +2177,9 @@ func TestIngester_v2QueryStream(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE.
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
@@ -2132,7 +2196,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 		}
 
 		req, _, _, _ := mockWriteRequest(t, lbls, float64(seriesID), int64(seriesID))
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 
 		// Compact the TSDB head once half of the series have been pushed.
@@ -2228,7 +2292,7 @@ func TestIngester_v2QueryStream(t *testing.T) {
 						EndTimestampMs:   math.MaxInt64,
 						Matchers: []*client.LabelMatcher{
 							{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "foo"},
-							{Type: client.EQUAL, Name: querysharding.ShardLabel, Value: querysharding.ShardSelector{
+							{Type: client.EQUAL, Name: sharding.ShardLabel, Value: sharding.ShardSelector{
 								ShardIndex: uint64(shardIndex),
 								ShardCount: uint64(testData.numShards),
 							}.LabelValue()},
@@ -2306,16 +2370,16 @@ func TestIngester_v2QueryStream(t *testing.T) {
 	}
 }
 
-func TestIngester_v2QueryStreamManySamples(t *testing.T) {
+func TestIngester_QueryStreamManySamples(t *testing.T) {
 	// Create ingester.
 	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE.
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series.
@@ -2332,15 +2396,15 @@ func TestIngester_v2QueryStreamManySamples(t *testing.T) {
 	}
 
 	// 10k samples encode to around 140 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:10000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:10000]))
 	require.NoError(t, err)
 
 	// 100k samples encode to around 1.4 MiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
 	require.NoError(t, err)
 
 	// 50k samples encode to around 716 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:50000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:50000]))
 	require.NoError(t, err)
 
 	// Create a GRPC server used to query back the data.
@@ -2400,7 +2464,7 @@ func TestIngester_v2QueryStreamManySamples(t *testing.T) {
 	require.Equal(t, 10000+50000+samplesCount, totalSamples)
 }
 
-func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
+func TestIngester_QueryStreamManySamplesChunks(t *testing.T) {
 	// Create ingester.
 	cfg := defaultIngesterTestConfig(t)
 	cfg.StreamChunksWhenUsingBlocks = true
@@ -2410,9 +2474,9 @@ func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE.
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy.
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series.
@@ -2429,15 +2493,15 @@ func TestIngester_v2QueryStreamManySamplesChunks(t *testing.T) {
 	}
 
 	// 100k samples in chunks use about 154 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:100000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "1"}}, samples[0:100000]))
 	require.NoError(t, err)
 
 	// 1M samples in chunks use about 1.51 MiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "2"}}, samples))
 	require.NoError(t, err)
 
 	// 500k samples in chunks need 775 KiB,
-	_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:500000]))
+	_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: "3"}}, samples[0:500000]))
 	require.NoError(t, err)
 
 	// Create a GRPC server used to query back the data.
@@ -2558,9 +2622,9 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 		require.NoError(b, services.StopAndAwaitTerminated(context.Background(), i))
 	})
 
-	// Wait until it's ACTIVE.
-	test.Poll(b, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy.
+	test.Poll(b, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series to a compacted block.
@@ -2576,7 +2640,7 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
-		_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
+		_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
 		require.NoError(b, err)
 	}
 
@@ -2592,36 +2656,67 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 	}
 
 	for s := 0; s < numSeries; s++ {
-		_, err = i.v2Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
+		_, err = i.Push(ctx, writeRequestSingleSeries(labels.Labels{{Name: labels.MetricName, Value: "foo"}, {Name: "l", Value: strconv.Itoa(s)}}, samples))
 		require.NoError(b, err)
+	}
+
+	// Benchmark different ranges.
+	ranges := []struct {
+		name       string
+		start, end int64
+	}{
+		{
+			name:  "full data",
+			start: math.MinInt64,
+			end:   math.MaxInt64,
+		},
+		{
+			name:  "partial block",
+			start: 1,
+			end:   numBlockSamples / 3,
+		},
+		{
+			name:  "partial head",
+			start: numBlockSamples + 5,
+			end:   numBlockSamples + numHeadSamples - 5,
+		},
+		{
+			name:  "head + partial block",
+			start: numBlockSamples / 3,
+			end:   numBlockSamples + numHeadSamples,
+		},
 	}
 
 	b.Run("query samples", func(b *testing.B) {
 		streamType = QueryStreamSamples
 
-		for _, queryShardingEnabled := range []bool{false, true} {
-			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
-				benchmarkIngesterV2QueryStream(ctx, b, i, queryShardingEnabled, numShards)
-			})
+		for _, timeRange := range ranges {
+			for _, queryShardingEnabled := range []bool{false, true} {
+				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
+					benchmarkIngesterQueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
+				})
+			}
 		}
 	})
 
 	b.Run("query chunks", func(b *testing.B) {
 		streamType = QueryStreamChunks
 
-		for _, queryShardingEnabled := range []bool{false, true} {
-			b.Run(fmt.Sprintf("query sharding=%v", queryShardingEnabled), func(b *testing.B) {
-				benchmarkIngesterV2QueryStream(ctx, b, i, queryShardingEnabled, numShards)
-			})
+		for _, timeRange := range ranges {
+			for _, queryShardingEnabled := range []bool{false, true} {
+				b.Run(fmt.Sprintf("time range=%v, query sharding=%v", timeRange.name, queryShardingEnabled), func(b *testing.B) {
+					benchmarkIngesterQueryStream(ctx, b, i, timeRange.start, timeRange.end, queryShardingEnabled, numShards)
+				})
+			}
 		}
 	})
 }
 
 func requireActiveIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, registerer prometheus.Registerer) *Ingester {
 	ingester := getStartedIngesterWithBlocksStorage(t, ingesterCfg, registerer)
-	// Wait until the ingester is ACTIVE
-	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return ingester.lifecycler.GetState()
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return ingester.lifecycler.HealthyInstancesCount()
 	})
 	return ingester
 }
@@ -2637,7 +2732,7 @@ func getStartedIngesterWithBlocksStorage(t testing.TB, ingesterCfg Config, regis
 	return ingester
 }
 
-func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingester, queryShardingEnabled bool, numShards int) {
+func benchmarkIngesterQueryStream(ctx context.Context, b *testing.B, i *Ingester, start, end int64, queryShardingEnabled bool, numShards int) {
 	mockStream := &mockQueryStreamServer{ctx: ctx}
 
 	metricMatcher := &client.LabelMatcher{
@@ -2651,26 +2746,26 @@ func benchmarkIngesterV2QueryStream(ctx context.Context, b *testing.B, i *Ingest
 			// Query each shard.
 			for idx := 0; idx < numShards; idx++ {
 				req := &client.QueryRequest{
-					StartTimestampMs: math.MinInt64,
-					EndTimestampMs:   math.MaxInt64,
+					StartTimestampMs: start,
+					EndTimestampMs:   end,
 					Matchers: []*client.LabelMatcher{metricMatcher, {
 						Type:  client.EQUAL,
-						Name:  querysharding.ShardLabel,
-						Value: querysharding.ShardSelector{ShardIndex: uint64(idx), ShardCount: uint64(numShards)}.LabelValue(),
+						Name:  sharding.ShardLabel,
+						Value: sharding.ShardSelector{ShardIndex: uint64(idx), ShardCount: uint64(numShards)}.LabelValue(),
 					}},
 				}
 
-				err := i.v2QueryStream(req, mockStream)
+				err := i.QueryStream(req, mockStream)
 				require.NoError(b, err)
 			}
 		} else {
 			req := &client.QueryRequest{
-				StartTimestampMs: math.MinInt64,
-				EndTimestampMs:   math.MaxInt64,
+				StartTimestampMs: start,
+				EndTimestampMs:   end,
 				Matchers:         []*client.LabelMatcher{metricMatcher},
 			}
 
-			err := i.v2QueryStream(req, mockStream)
+			err := i.QueryStream(req, mockStream)
 			require.NoError(b, err)
 		}
 	}
@@ -2763,12 +2858,11 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 		return nil, err
 	}
 
-	ingesterCfg.BlocksStorageEnabled = true
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = dataDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "filesystem"
 	ingesterCfg.BlocksStorageConfig.Bucket.Filesystem.Directory = bucketDir
 
-	ingester, err := NewV2(ingesterCfg, clientCfg, overrides, registerer, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, clientCfg, overrides, registerer, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -2776,7 +2870,7 @@ func prepareIngesterWithBlocksStorageAndLimits(t testing.TB, ingesterCfg Config,
 	return ingester, nil
 }
 
-func TestIngester_v2OpenExistingTSDBOnStartup(t *testing.T) {
+func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
@@ -2904,7 +2998,6 @@ func TestIngester_v2OpenExistingTSDBOnStartup(t *testing.T) {
 			defer os.RemoveAll(tempDir)
 
 			ingesterCfg := defaultIngesterTestConfig(t)
-			ingesterCfg.BlocksStorageEnabled = true
 			ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
 			ingesterCfg.BlocksStorageConfig.TSDB.MaxTSDBOpeningConcurrencyOnStartup = testData.concurrency
 			ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
@@ -2913,7 +3006,7 @@ func TestIngester_v2OpenExistingTSDBOnStartup(t *testing.T) {
 			// setup the tsdbs dir
 			testData.setup(t, tempDir)
 
-			ingester, err := NewV2(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
+			ingester, err := New(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
 			require.NoError(t, err)
 
 			startErr := services.StartAndAwaitRunning(context.Background(), ingester)
@@ -2941,9 +3034,9 @@ func TestIngester_shipBlocks(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Create the TSDB for 3 users and then replace the shipper with the mocked one
@@ -2984,9 +3077,9 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	pushSingleSampleWithMetadata(t, i)
@@ -3036,9 +3129,9 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	pushSingleSampleWithMetadata(t, i)
@@ -3073,9 +3166,9 @@ func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInP
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Mock the shipper to slow down Sync() execution.
@@ -3115,9 +3208,9 @@ func TestIngester_closingAndOpeningTsdbConcurrently(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	_, err = i.getOrCreateTSDB(userID, false)
@@ -3168,9 +3261,9 @@ func TestIngester_idleCloseEmptyTSDB(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(ctx, i))
 	defer services.StopAndAwaitTerminated(ctx, i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	db, err := i.getOrCreateTSDB(userID, true)
@@ -3215,9 +3308,9 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	ctx := user.InjectOrgID(context.Background(), userID)
@@ -3225,7 +3318,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 
 	{
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, sampleTimestamp)
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -3240,7 +3333,7 @@ func TestIngester_invalidSamplesDontChangeLastUpdateTime(t *testing.T) {
 	// Push another sample to the same metric and timestamp, with different value. We expect to get error.
 	{
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 1, sampleTimestamp)
-		_, err = i.v2Push(ctx, req)
+		_, err = i.Push(ctx, req)
 		require.Error(t, err)
 	}
 
@@ -3452,9 +3545,9 @@ func TestIngester_flushing(t *testing.T) {
 				_ = services.StopAndAwaitTerminated(context.Background(), i)
 			})
 
-			// Wait until it's ACTIVE
-			test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-				return i.lifecycler.GetState()
+			// Wait until it's healthy
+			test.Poll(t, 1*time.Second, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
 			})
 
 			// mock user's shipper
@@ -3479,9 +3572,9 @@ func TestIngester_ForFlush(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push some data.
@@ -3499,7 +3592,7 @@ func TestIngester_ForFlush(t *testing.T) {
 
 	// Restart ingester in "For Flusher" mode. We reuse the same config (esp. same dir)
 	reg = prometheus.NewPedanticRegistry()
-	i, err = NewV2ForFlusher(i.cfg, i.limits, reg, log.NewNopLogger())
+	i, err = NewForFlusher(i.cfg, i.limits, reg, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 
@@ -3530,7 +3623,7 @@ func mockUserShipper(t *testing.T, i *Ingester) *shipperMock {
 	return m
 }
 
-func Test_Ingester_v2UserStats(t *testing.T) {
+func Test_Ingester_UserStats(t *testing.T) {
 	series := []struct {
 		lbls      labels.Labels
 		value     float64
@@ -3547,9 +3640,9 @@ func Test_Ingester_v2UserStats(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push series
@@ -3557,7 +3650,7 @@ func Test_Ingester_v2UserStats(t *testing.T) {
 
 	for _, series := range series {
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -3568,14 +3661,14 @@ func Test_Ingester_v2UserStats(t *testing.T) {
 	}
 
 	// Get label names
-	res, err := i.v2UserStats(ctx, &client.UserStatsRequest{})
+	res, err := i.UserStats(ctx, &client.UserStatsRequest{})
 	require.NoError(t, err)
 	assert.InDelta(t, 0.2, res.ApiIngestionRate, 0.0001)
 	assert.InDelta(t, float64(0), res.RuleIngestionRate, 0.0001)
 	assert.Equal(t, uint64(3), res.NumSeries)
 }
 
-func Test_Ingester_v2AllUserStats(t *testing.T) {
+func Test_Ingester_AllUserStats(t *testing.T) {
 	series := []struct {
 		user      string
 		lbls      labels.Labels
@@ -3595,14 +3688,14 @@ func Test_Ingester_v2AllUserStats(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 	for _, series := range series {
 		ctx := user.InjectOrgID(context.Background(), series.user)
 		req, _, _, _ := mockWriteRequest(t, series.lbls, series.value, series.timestamp)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -3613,7 +3706,7 @@ func Test_Ingester_v2AllUserStats(t *testing.T) {
 	}
 
 	// Get label names
-	res, err := i.v2AllUserStats(context.Background(), &client.UserStatsRequest{})
+	res, err := i.AllUserStats(context.Background(), &client.UserStatsRequest{})
 	require.NoError(t, err)
 
 	expect := []*client.UserIDStatsResponse{
@@ -3657,9 +3750,9 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	pushSingleSampleWithMetadata(t, i)
@@ -3723,8 +3816,8 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	cfg.LifecyclerConfig.JoinAfter = 0
 	cfg.BlocksStorageConfig.TSDB.ShipInterval = 1 * time.Second // Required to enable shipping.
 	cfg.BlocksStorageConfig.TSDB.ShipConcurrency = 1
-	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 1 * time.Second
 	cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout = 1 * time.Second
+	cfg.BlocksStorageConfig.TSDB.HeadCompactionInterval = 100 * time.Millisecond
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout = 1 * time.Second
 	cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval = 100 * time.Millisecond
 
@@ -3739,13 +3832,13 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), i))
 	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
 
@@ -3779,14 +3872,14 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
     `), metricsToCheck...))
 
 	// Wait until TSDB has been closed and removed.
-	test.Poll(t, 10*time.Second, 0, func() interface{} {
-		i.userStatesMtx.Lock()
-		defer i.userStatesMtx.Unlock()
+	test.Poll(t, 20*time.Second, 0, func() interface{} {
+		i.tsdbStateDBMtx.Lock()
+		defer i.tsdbStateDBMtx.Unlock()
 		return len(i.TSDBState.dbs)
 	})
 
 	require.Greater(t, testutil.ToFloat64(i.TSDBState.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
@@ -3811,7 +3904,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Pushing another sample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
-	i.v2UpdateActiveSeries()
+	i.updateActiveSeries()
 
 	// User is back.
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
@@ -3853,14 +3946,14 @@ func pushSingleSampleWithMetadata(t *testing.T, i *Ingester) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
 	req.Metadata = append(req.Metadata, &mimirpb.MetricMetadata{MetricFamilyName: "test", Help: "a help for metric", Unit: "", Type: mimirpb.COUNTER})
-	_, err := i.v2Push(ctx, req)
+	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
 }
 
 func pushSingleSampleAtTime(t *testing.T, i *Ingester, ts int64) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, ts)
-	_, err := i.v2Push(ctx, req)
+	_, err := i.Push(ctx, req)
 	require.NoError(t, err)
 }
 
@@ -3916,13 +4009,12 @@ func TestHeadCompactionOnStartup(t *testing.T) {
 	require.NoError(t, err)
 
 	ingesterCfg := defaultIngesterTestConfig(t)
-	ingesterCfg.BlocksStorageEnabled = true
 	ingesterCfg.BlocksStorageConfig.TSDB.Dir = tempDir
 	ingesterCfg.BlocksStorageConfig.Bucket.Backend = "s3"
 	ingesterCfg.BlocksStorageConfig.Bucket.S3.Endpoint = "localhost"
 	ingesterCfg.BlocksStorageConfig.TSDB.Retention = 2 * 24 * time.Hour // Make sure that no newly created blocks are deleted.
 
-	ingester, err := NewV2(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
+	ingester, err := New(ingesterCfg, clientCfg, overrides, nil, log.NewNopLogger())
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingester))
 
@@ -3947,13 +4039,10 @@ func TestIngester_CloseTSDBsOnShutdown(t *testing.T) {
 	require.NoError(t, err)
 
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
-	t.Cleanup(func() {
-		_ = services.StopAndAwaitTerminated(context.Background(), i)
-	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push some data.
@@ -3988,9 +4077,9 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	require.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(`
@@ -4003,7 +4092,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), userID)
 	for j := int64(0); j < 5; j++ {
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, j*chunkRangeMilliSec)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 
@@ -4030,7 +4119,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(5); j < 6; j++ {
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, j*chunkRangeMilliSec)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 	require.Nil(t, db.Compact())
@@ -4058,7 +4147,7 @@ func TestIngesterNotDeleteUnshippedBlocks(t *testing.T) {
 	// Add more samples that could trigger another compaction and hence reload of blocks.
 	for j := int64(6); j < 7; j++ {
 		req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, j*chunkRangeMilliSec)
-		_, err := i.v2Push(ctx, req)
+		_, err := i.Push(ctx, req)
 		require.NoError(t, err)
 	}
 	require.Nil(t, db.Compact())
@@ -4089,9 +4178,9 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push a sample, it should succeed.
@@ -4105,7 +4194,7 @@ func TestIngesterPushErrorDuringForcedCompaction(t *testing.T) {
 	// Ingestion should fail with a 503.
 	req, _, _, _ := mockWriteRequest(t, labels.Labels{{Name: labels.MetricName, Value: "test"}}, 0, util.TimeToMillis(time.Now()))
 	ctx := user.InjectOrgID(context.Background(), userID)
-	_, err = i.v2Push(ctx, req)
+	_, err = i.Push(ctx, req)
 	require.Equal(t, httpgrpc.Errorf(http.StatusServiceUnavailable, wrapWithUser(errors.New("forced compaction in progress"), userID).Error()), err)
 
 	// Ingestion is successful after a flush.
@@ -4123,9 +4212,9 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 		_ = services.StopAndAwaitTerminated(context.Background(), i)
 	})
 
-	// Wait until it's ACTIVE
-	test.Poll(t, 1*time.Second, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until it's healthy
+	test.Poll(t, 1*time.Second, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	// Push few samples.
@@ -4170,7 +4259,7 @@ func TestIngesterNoFlushWithInFlightRequest(t *testing.T) {
 	`), "cortex_ingester_tsdb_compactions_total"))
 }
 
-func TestIngester_v2PushInstanceLimits(t *testing.T) {
+func TestIngester_PushInstanceLimits(t *testing.T) {
 	tests := map[string]struct {
 		limits          InstanceLimits
 		reqs            map[string][]*mimirpb.WriteRequest
@@ -4276,9 +4365,9 @@ func TestIngester_v2PushInstanceLimits(t *testing.T) {
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 			defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-			// Wait until the ingester is ACTIVE
-			test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-				return i.lifecycler.GetState()
+			// Wait until the ingester is healthy
+			test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+				return i.lifecycler.HealthyInstancesCount()
 			})
 
 			// Iterate through users in sorted order (by username).
@@ -4375,9 +4464,9 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
-	// Wait until the ingester is ACTIVE
-	test.Poll(t, 100*time.Millisecond, ring.ACTIVE, func() interface{} {
-		return i.lifecycler.GetState()
+	// Wait until the ingester is healthy
+	test.Poll(t, 100*time.Millisecond, 1, func() interface{} {
+		return i.lifecycler.HealthyInstancesCount()
 	})
 
 	ctx := user.InjectOrgID(context.Background(), "test")
