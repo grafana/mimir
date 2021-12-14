@@ -9,8 +9,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/grafana/dskit/ring"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestIsHealthyForStoreGatewayOperations(t *testing.T) {
@@ -73,5 +75,22 @@ func TestIsHealthyForStoreGatewayOperations(t *testing.T) {
 			actual = testData.instance.IsHealthy(BlocksRead, testData.timeout, time.Now())
 			assert.Equal(t, testData.readExpected, actual)
 		})
+	}
+}
+
+func TestUnregisterOnShutdownFlag(t *testing.T) {
+	logger := log.NewNopLogger()
+	{
+		cfg := RingConfig{UnregisterOnShutdown: true, InstanceAddr: "test"}
+		lcCfg, err := cfg.ToLifecyclerConfig(logger)
+		require.NoError(t, err)
+		assert.False(t, lcCfg.KeepInstanceInTheRingOnShutdown)
+	}
+
+	{
+		cfg := RingConfig{UnregisterOnShutdown: false, InstanceAddr: "test"}
+		lcCfg, err := cfg.ToLifecyclerConfig(logger)
+		require.NoError(t, err)
+		assert.True(t, lcCfg.KeepInstanceInTheRingOnShutdown)
 	}
 }
