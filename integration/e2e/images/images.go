@@ -15,4 +15,5 @@ var (
 	Minio     = "minio/minio:RELEASE.2021-10-13T00-23-17Z"
 	Consul    = "consul:1.8.15"
 	ETCD      = "gcr.io/etcd-development/etcd:v3.4.13"
+	KES       = "minio/kes:v0.17.1"
 )
