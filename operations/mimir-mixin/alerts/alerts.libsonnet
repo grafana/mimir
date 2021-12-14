@@ -265,7 +265,7 @@
         {
           alert: 'CortexMemoryMapAreasTooHigh',
           expr: |||
-            process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway)"} > 0.8
+            process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
           |||,
           'for': '5m',
           labels: {
