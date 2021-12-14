@@ -255,13 +255,13 @@
     $.util.readinessProbe +
     $.jaeger_mixin,
 
-  store_gateway_statefulset:
-    statefulSet.new('store-gateway', 3, [$.store_gateway_container], store_gateway_data_pvc) +
-    statefulSet.mixin.spec.withServiceName('store-gateway') +
+  newStoreGatewayStatefulSet(name, container)::
+    statefulSet.new(name, 3, [$.store_gateway_container], store_gateway_data_pvc) +
+    statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
-    statefulSet.mixin.metadata.withLabels({ name: 'store-gateway' }) +
-    statefulSet.mixin.spec.template.metadata.withLabels({ name: 'store-gateway' }) +
-    statefulSet.mixin.spec.selector.withMatchLabels({ name: 'store-gateway' }) +
+    statefulSet.mixin.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.template.metadata.withLabels({ name: name }) +
+    statefulSet.mixin.spec.selector.withMatchLabels({ name: name }) +
     statefulSet.mixin.spec.template.spec.securityContext.withRunAsUser(0) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(120) +
@@ -271,6 +271,8 @@
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
+
+  store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container),
 
   store_gateway_service:
     $.util.serviceFor($.store_gateway_statefulset),
