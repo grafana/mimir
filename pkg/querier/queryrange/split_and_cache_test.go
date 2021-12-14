@@ -602,6 +602,10 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 
 	for testName, testData := range tests {
 		for _, maxConcurrency := range []int{1, numQueries} {
+			// Change scope to ensure tests work fine when run concurrently.
+			testData := testData
+			maxConcurrency := maxConcurrency
+
 			t.Run(fmt.Sprintf("%s (concurrency: %d)", testName, maxConcurrency), func(t *testing.T) {
 				t.Parallel()
 
