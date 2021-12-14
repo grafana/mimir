@@ -83,6 +83,8 @@ type RingConfig struct {
 	InstanceAddr           string   `yaml:"instance_addr" doc:"hidden"`
 	InstanceZone           string   `yaml:"instance_availability_zone"`
 
+	UnregisterOnShutdown bool `yaml:"unregister_on_shutdown"`
+
 	// Injected internally
 	ListenPort      int           `yaml:"-"`
 	RingCheckPeriod time.Duration `yaml:"-"`
@@ -118,6 +120,8 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&cfg.InstanceID, ringFlagsPrefix+"instance-id", hostname, "Instance ID to register in the ring.")
 	f.StringVar(&cfg.InstanceZone, ringFlagsPrefix+"instance-availability-zone", "", "The availability zone where this instance is running. Required if zone-awareness is enabled.")
 
+	f.BoolVar(&cfg.UnregisterOnShutdown, ringFlagsPrefix+"unregister-on-shutdown", true, "Unregister from the ring upon clean shutdown.")
+
 	// Defaults for internal settings.
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -144,11 +148,12 @@ func (cfg *RingConfig) ToLifecyclerConfig(logger log.Logger) (ring.BasicLifecycl
 	instancePort := ring.GetInstancePort(cfg.InstancePort, cfg.ListenPort)
 
 	return ring.BasicLifecyclerConfig{
-		ID:                  cfg.InstanceID,
-		Addr:                fmt.Sprintf("%s:%d", instanceAddr, instancePort),
-		Zone:                cfg.InstanceZone,
-		HeartbeatPeriod:     cfg.HeartbeatPeriod,
-		TokensObservePeriod: 0,
-		NumTokens:           RingNumTokens,
+		ID:                              cfg.InstanceID,
+		Addr:                            fmt.Sprintf("%s:%d", instanceAddr, instancePort),
+		Zone:                            cfg.InstanceZone,
+		HeartbeatPeriod:                 cfg.HeartbeatPeriod,
+		TokensObservePeriod:             0,
+		NumTokens:                       RingNumTokens,
+		KeepInstanceInTheRingOnShutdown: !cfg.UnregisterOnShutdown,
 	}, nil
 }

@@ -277,6 +277,10 @@ store_gateway:
     # CLI flag: -store-gateway.sharding-ring.instance-availability-zone
     [instance_availability_zone: <string> | default = ""]
 
+    # Unregister from the ring upon clean shutdown.
+    # CLI flag: -store-gateway.sharding-ring.unregister-on-shutdown
+    [unregister_on_shutdown: <boolean> | default = true]
+
   # The sharding strategy to use. Supported values are: default,
   # shuffle-sharding.
   # CLI flag: -store-gateway.sharding-strategy
