@@ -225,7 +225,7 @@ replace github.com/gogo/status => github.com/gogo/status v1.0.3
 // Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
 replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
-replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211125080947-19dcc7902d24
+replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211214083919-d837809b4669
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.

@@ -171,6 +171,7 @@
 * [BUGFIX] Ingester: fix out-of-order chunks in TSDB head in-memory series after WAL replay in case some samples were appended to TSDB WAL before series. #530
 * [BUGFIX] Memberlist: fixed corrupted packets when sending compound messages with more than 255 messages or messages bigger than 64KB. #551
 * [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
+* [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 
 Mixin:
 

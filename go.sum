@@ -1435,8 +1435,8 @@ github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.0.194/go.mod 
 github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/kms v1.0.194/go.mod h1:yrBKWhChnDqNz1xuXdSbWXG56XawEq0G5j1lg4VwBD4=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.31 h1:NujkkOKMJ3IFs1+trCwXOKRCIPQ8qI5Lxul9JkhTg6M=
 github.com/tencentyun/cos-go-sdk-v5 v0.7.31/go.mod h1:4E4+bQ2gBVJcgEC9Cufwylio4mXOct2iu05WjgEBx1o=
-github.com/thanos-io/thanos v0.19.1-0.20211125080947-19dcc7902d24 h1:pffRQD6Ww6r0zlKx0zmgHpv10Q8nFT8p8RnpMlCp4Ck=
-github.com/thanos-io/thanos v0.19.1-0.20211125080947-19dcc7902d24/go.mod h1:sfnKJG7cDA41ixNL4gsTJEa3w9Qt8lwAjw+dqRMSDG0=
+github.com/thanos-io/thanos v0.19.1-0.20211214083919-d837809b4669 h1:Eg19Y/hH/IRKJt4w4cdnxpiZxwgsKDDZJQ4n8U+uX1c=
+github.com/thanos-io/thanos v0.19.1-0.20211214083919-d837809b4669/go.mod h1:LKBxvV7/LiKtF6tbsin4vQxCosambQi6+CET2/5cFiY=
 github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab h1:7ZR3hmisBWw77ZpO1/o86g+JV3VKlk3d48jopJxzTjU=
 github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab/go.mod h1:eheTFp954zcWZXCU8d0AT76ftsQOTo4DTqkN/h3k1MY=
 github.com/tidwall/pretty v0.0.0-20180105212114-65a9db5fad51/go.mod h1:XNkn88O1ChpSDQmQeStsy+sBenx6DDtFZJxhVysOjyk=
