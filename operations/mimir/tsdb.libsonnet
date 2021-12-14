@@ -256,7 +256,7 @@
     $.jaeger_mixin,
 
   newStoreGatewayStatefulSet(name, container)::
-    statefulSet.new(name, 3, [$.store_gateway_container], store_gateway_data_pvc) +
+    statefulSet.new(name, 3, [container], store_gateway_data_pvc) +
     statefulSet.mixin.spec.withServiceName(name) +
     statefulSet.mixin.metadata.withNamespace($._config.namespace) +
     statefulSet.mixin.metadata.withLabels({ name: name }) +
