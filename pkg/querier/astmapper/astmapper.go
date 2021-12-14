@@ -16,14 +16,6 @@ type ASTMapper interface {
 	Map(node parser.Node, stats *MapperStats) (mapped parser.Node, err error)
 }
 
-// MapperFunc is a function adapter for ASTMapper
-type MapperFunc func(node parser.Node) (parser.Node, bool, error)
-
-// Map applies a mapperfunc as an ASTMapper
-func (fn MapperFunc) Map(node parser.Node) (parser.Node, bool, error) {
-	return fn(node)
-}
-
 // MultiMapper can compose multiple ASTMappers
 type MultiMapper struct {
 	mappers []ASTMapper
@@ -71,14 +63,6 @@ type NodeMapper interface {
 	// MapNode either maps a single AST node or returns the unaltered node.
 	// It returns a finished bool to signal whether no further recursion is necessary.
 	MapNode(node parser.Node, stats *MapperStats) (mapped parser.Node, finished bool, err error)
-}
-
-// NodeMapperFunc is an adapter for NodeMapper
-type NodeMapperFunc func(node parser.Node) (parser.Node, bool, bool, error)
-
-// MapNode applies a NodeMapperFunc as a NodeMapper
-func (f NodeMapperFunc) MapNode(node parser.Node) (parser.Node, bool, bool, error) {
-	return f(node)
 }
 
 // NewASTNodeMapper creates an ASTMapper from a NodeMapper
