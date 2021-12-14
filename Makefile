@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin push-multiarch-mimir list-images-to-build
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin push-multiarch-mimir list-image-targets
 .DEFAULT_GOAL := all
 
 # Version number
@@ -314,8 +314,8 @@ clean:
 clean-protos:
 	rm -rf $(PROTO_GOS)
 
-# List all images to build.
-list-images-to-build:
+# List all images building make targets.
+list-image-targets:
 	@echo $(UPTODATE_FILES) | tr " " "\n"
 
 save-images:
