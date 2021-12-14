@@ -183,10 +183,10 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 			colorstring.Println("[green]  +[reset] created") //nolint
 		}
 		if updated > 0 {
-			colorstring.Println("[yellow]  +[reset] updated") //nolint
+			colorstring.Println("[yellow]  ~[reset] updated") //nolint
 		}
 		if deleted > 0 {
-			colorstring.Println("[red]  +[reset] deleted") //nolint
+			colorstring.Println("[red]  -[reset] deleted") //nolint
 		}
 		fmt.Println()
 		fmt.Println("The following changes will be made if the provided rule set is synced:")
@@ -222,7 +222,7 @@ func PrintComparisonResult(results []NamespaceChange, verbose bool) error {
 					oldYaml, _ := yaml.Marshal(c.Original)
 					separated = strings.Split(string(oldYaml), "\n")
 					for _, l := range separated {
-						colorstring.Printf("[red]+ %v\n", l)
+						colorstring.Printf("[red]- %v\n", l)
 					}
 				}
 			}

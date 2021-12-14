@@ -122,10 +122,10 @@ func (p *Printer) PrintComparisonResult(results []rules.NamespaceChange, verbose
 			p.Println("[green]  +[reset] created")
 		}
 		if updated > 0 {
-			p.Println("[yellow]  +[reset] updated")
+			p.Println("[yellow]  ~[reset] updated")
 		}
 		if deleted > 0 {
-			p.Println("[red]  +[reset] deleted")
+			p.Println("[red]  -[reset] deleted")
 		}
 		fmt.Println()
 		fmt.Println("The following changes will be made if the provided rule set is synced:")
