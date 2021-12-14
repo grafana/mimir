@@ -38,10 +38,7 @@ import (
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
-	"github.com/grafana/mimir/pkg/querier/batch"
-	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/util"
-	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
 
 const (
@@ -62,15 +59,6 @@ type query struct {
 }
 
 var (
-	testcases = []struct {
-		name string
-		f    chunkIteratorFunc
-	}{
-		{"matrixes", mergeChunks},
-		{"iterators", iterators.NewChunkMergeIterator},
-		{"batches", batch.NewChunkMergeIterator},
-	}
-
 	encodings = []struct {
 		name string
 		e    promchunk.Encoding
@@ -148,26 +136,26 @@ func TestQuerier(t *testing.T) {
 
 	const chunks = 24
 
-	// Generate TSDB head with the same samples as makeMockChunkStore.
-	db := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
+	// Generate TSDB head used to simulate querying the long-term storage.
+	db, through := mockTSDB(t, model.Time(0), int(chunks*samplesPerChunk), sampleRate, chunkOffset, int(samplesPerChunk))
 
 	for _, query := range queries {
-		for _, encoding := range encodings {
-			for _, iterators := range []bool{false, true} {
-				t.Run(fmt.Sprintf("%s/%s/iterators=%t", query.query, encoding.name, iterators), func(t *testing.T) {
-					cfg.Iterators = iterators
+		for _, iterators := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/iterators=%t", query.query, iterators), func(t *testing.T) {
+				cfg.Iterators = iterators
 
-					chunkStore, through := makeMockChunkStore(t, chunks, encoding.e)
-					distributor := mockDistibutorFor(t, chunkStore, through)
+				// No samples returned by ingesters.
+				distributor := &mockDistributor{}
+				distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryResponse{}, nil)
+				distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
 
-					overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
-					require.NoError(t, err)
+				overrides, err := validation.NewOverrides(defaultLimitsConfig(), nil)
+				require.NoError(t, err)
 
-					queryables := []QueryableWithFilter{UseAlwaysQueryable(NewChunkStoreQueryable(cfg, chunkStore)), UseAlwaysQueryable(db)}
-					queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
-					testRangeQuery(t, queryable, through, query)
-				})
-			}
+				queryables := []QueryableWithFilter{UseAlwaysQueryable(db)}
+				queryable, _, _ := New(cfg, overrides, distributor, queryables, purger.NewTombstonesLoader(nil, nil), nil, log.NewNopLogger())
+				testRangeQuery(t, queryable, through, query)
+			})
 		}
 	}
 }
@@ -260,7 +248,7 @@ func TestQuerier_QueryableReturnsChunksOutsideQueriedRange(t *testing.T) {
 	}, m[0].Points)
 }
 
-func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) storage.Queryable {
+func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time.Duration, samplesPerChunk int) (storage.Queryable, model.Time) {
 	dir, err := ioutil.TempDir("", "tsdb")
 	require.NoError(t, err)
 
@@ -301,9 +289,11 @@ func mockTSDB(t *testing.T, mint model.Time, samples int, step, chunkOffset time
 	}
 
 	require.NoError(t, app.Commit())
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		return tsdb.NewBlockQuerier(head, mint, maxt)
 	})
+
+	return queryable, ts
 }
 
 func TestNoHistoricalQueryToIngester(t *testing.T) {
@@ -843,25 +833,6 @@ func TestQuerier_MaxLabelsQueryRange(t *testing.T) {
 
 		})
 	}
-}
-
-// mockDistibutorFor duplicates the chunks in the mockChunkStore into the mockDistributor
-// so we can test everything is dedupe correctly.
-func mockDistibutorFor(t *testing.T, cs mockChunkStore, through model.Time) *mockDistributor {
-	chunks, err := chunkcompat.ToChunks(cs.chunks)
-	require.NoError(t, err)
-
-	tsc := client.TimeSeriesChunk{
-		Labels: []mimirpb.LabelAdapter{{Name: model.MetricNameLabel, Value: "foo"}},
-		Chunks: chunks,
-	}
-	matrix, err := chunk.ChunksToMatrix(context.Background(), cs.chunks, 0, through)
-	require.NoError(t, err)
-
-	result := &mockDistributor{}
-	result.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(matrix, nil)
-	result.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{Chunkseries: []client.TimeSeriesChunk{tsc}}, nil)
-	return result
 }
 
 func testRangeQuery(t testing.TB, queryable storage.Queryable, end model.Time, q query) *promql.Result {
