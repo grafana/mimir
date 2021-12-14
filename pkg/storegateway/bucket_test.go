@@ -1019,7 +1019,7 @@ func TestBlockLabelNames(t *testing.T) {
 			onLabelValuesCalled: func(name string) error {
 				expectedCalls--
 				if expectedCalls < 0 {
-					return fmt.Errorf("didn't expect another index.Reader.LabelNames() call")
+					return fmt.Errorf("didn't expect another index.Reader.LabelValues() call")
 				}
 				return nil
 			},
