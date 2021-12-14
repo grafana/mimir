@@ -137,9 +137,7 @@ jobs:
           docker pull minio/minio:RELEASE.2021-02-19T04-38-02Z
           docker pull consul:1.8.15
           docker pull gcr.io/etcd-development/etcd:v3.4.13
-          docker pull quay.io/cortexproject/cortex:v1.8.0
-          docker pull quay.io/cortexproject/cortex:v1.9.0
-          docker pull quay.io/cortexproject/cortex:v1.10.0
+          docker pull quay.io/cortexproject/cortex:v1.11.0
           docker pull memcached:1.6.12
       - name: Integration Tests
         run: |

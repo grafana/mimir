@@ -25,19 +25,9 @@ var (
 	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
 	//nolint:unused
 	previousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.8.0":  preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.9.0":  preCortex110Flags,
-		"quay.io/cortexproject/cortex:v1.10.0": nil,
+		"quay.io/cortexproject/cortex:v1.11.0": nil,
 	}
 )
-
-func preCortex110Flags(flags map[string]string) map[string]string {
-	return e2e.MergeFlagsWithoutRemovingEmpty(flags, map[string]string{
-		// Store-gateway "wait ring stability" has been introduced in 1.10.0
-		"-store-gateway.sharding-ring.wait-stability-min-duration": "",
-		"-store-gateway.sharding-ring.wait-stability-max-duration": "",
-	})
-}
 
 func TestBackwardCompatibility(t *testing.T) {
 	for previousImage, flagsFn := range previousVersionImages {
