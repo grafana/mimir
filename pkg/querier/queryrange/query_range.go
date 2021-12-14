@@ -8,6 +8,7 @@ package queryrange
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -218,33 +219,44 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
 	var result PrometheusRequest
 	var err error
-	result.Start, err = util.ParseTime(r.FormValue("start"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "start")
-	}
 
-	result.End, err = util.ParseTime(r.FormValue("end"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "end")
-	}
+	if isQueryRange(r.URL.Path) {
+		result.Start, err = util.ParseTime(r.FormValue("start"))
+		if err != nil {
+			return nil, decorateWithParamName(err, "start")
+		}
 
-	if result.End < result.Start {
-		return nil, errEndBeforeStart
-	}
+		result.End, err = util.ParseTime(r.FormValue("end"))
+		if err != nil {
+			return nil, decorateWithParamName(err, "end")
+		}
 
-	result.Step, err = parseDurationMs(r.FormValue("step"))
-	if err != nil {
-		return nil, decorateWithParamName(err, "step")
-	}
+		if result.End < result.Start {
+			return nil, errEndBeforeStart
+		}
 
-	if result.Step <= 0 {
-		return nil, errNegativeStep
-	}
+		result.Step, err = parseDurationMs(r.FormValue("step"))
+		if err != nil {
+			return nil, decorateWithParamName(err, "step")
+		}
 
-	// For safety, limit the number of returned points per timeseries.
-	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
-	if (result.End-result.Start)/result.Step > 11000 {
-		return nil, errStepTooSmall
+		if result.Step <= 0 {
+			return nil, errNegativeStep
+		}
+
+		// For safety, limit the number of returned points per timeseries.
+		// This is sufficient for 60s resolution for a week or 1h resolution for a year.
+		if (result.End-result.Start)/result.Step > 11000 {
+			return nil, errStepTooSmall
+		}
+	} else if isInstantQuery(r.URL.Path) {
+		result.Start, err = util.ParseTime(r.FormValue("time"))
+		if err != nil {
+			return nil, decorateWithParamName(err, "time")
+		}
+		result.End = result.Start
+	} else {
+		return nil, fmt.Errorf("cannot decode request for path %s", r.URL.Path)
 	}
 
 	result.Query = r.FormValue("query")
@@ -258,12 +270,21 @@ func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Requ
 	if !ok {
 		return nil, apierror.New(apierror.TypeBadData, "invalid request format")
 	}
-	params := url.Values{
-		"start": []string{encodeTime(promReq.Start)},
-		"end":   []string{encodeTime(promReq.End)},
-		"step":  []string{encodeDurationMs(promReq.Step)},
-		"query": []string{promReq.Query},
+	var params url.Values
+	if isInstantQuery(promReq.Path) {
+		params = url.Values{
+			"query": []string{promReq.Query},
+			"time":  []string{encodeTime(promReq.Start)},
+		}
+	} else {
+		params = url.Values{
+			"start": []string{encodeTime(promReq.Start)},
+			"end":   []string{encodeTime(promReq.End)},
+			"step":  []string{encodeDurationMs(promReq.Step)},
+			"query": []string{promReq.Query},
+		}
 	}
+
 	u := &url.URL{
 		Path:     promReq.Path,
 		RawQuery: params.Encode(),

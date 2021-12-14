@@ -27,6 +27,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestTripperware(t *testing.T) {
@@ -102,6 +103,73 @@ func TestTripperware(t *testing.T) {
 			require.Equal(t, tc.expectedBody, string(bs))
 		})
 	}
+}
+
+func TestInstantTripperware(t *testing.T) {
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+	tw, _, err := NewTripperware(Config{
+		ShardedQueries: true,
+	},
+		log.NewNopLogger(),
+		mockLimits{
+			totalShards: 8,
+		},
+		PrometheusCodec,
+		nil,
+		storage.StorageEngineBlocks,
+		promql.EngineOpts{
+			Logger:     log.NewNopLogger(),
+			Reg:        nil,
+			MaxSamples: 1000,
+			Timeout:    time.Minute,
+		},
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	r := &PrometheusRequest{
+		Path:  "/api/v1/query",
+		Start: 1000,
+		End:   1000,
+		Query: `sum(increase(cortex_distributor_samples_in_total[1h]))`,
+	}
+
+	req, err := PrometheusCodec.EncodeRequest(ctx, r)
+	require.NoError(t, err)
+
+	httpRes, err := tw(RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return PrometheusCodec.EncodeResponse(ctx, &PrometheusResponse{
+			Status: "success",
+			Data: PrometheusData{
+				ResultType: "vector",
+				Result: []SampleStream{
+					{
+						Labels: []mimirpb.LabelAdapter{},
+						Samples: []mimirpb.Sample{
+							{TimestampMs: 1000, Value: 1},
+						},
+					},
+				},
+			},
+		})
+	})).RoundTrip(req)
+	require.NoError(t, err)
+	require.Equal(t, 200, httpRes.StatusCode)
+	res, err := PrometheusCodec.DecodeResponse(ctx, httpRes, r, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, "success", res.(*PrometheusResponse).Status)
+	require.Equal(t, PrometheusData{
+		ResultType: "vector",
+		Result: []SampleStream{
+			{
+				Labels: []mimirpb.LabelAdapter{},
+				Samples: []mimirpb.Sample{
+					{TimestampMs: 1000, Value: 8},
+				},
+			},
+		},
+	}, res.(*PrometheusResponse).Data)
 }
 
 func TestTripperware_Metrics(t *testing.T) {
