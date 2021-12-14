@@ -21,6 +21,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 func TestNewInMemoryIndexCache(t *testing.T) {
@@ -122,20 +124,21 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 	})
 	assert.NoError(t, err)
 
-	uid := func(id storage.SeriesRef) ulid.ULID { return ulid.MustNew(uint64(id), nil) }
+	uid := func(id uint64) ulid.ULID { return ulid.MustNew(uint64(id), nil) }
 	lbl := labels.Label{Name: "foo", Value: "bar"}
 	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"), labels.MustNewMatcher(labels.MatchNotRegexp, "baz", ".*")}
+	shard := &sharding.ShardSelector{ShardIndex: 1, ShardCount: 16}
 	ctx := context.Background()
 
 	for _, tt := range []struct {
 		typ string
-		set func(storage.SeriesRef, []byte)
-		get func(storage.SeriesRef) ([]byte, bool)
+		set func(uint64, []byte)
+		get func(uint64) ([]byte, bool)
 	}{
 		{
 			typ: cacheTypePostings,
-			set: func(id storage.SeriesRef, b []byte) { cache.StorePostings(ctx, uid(id), lbl, b) },
-			get: func(id storage.SeriesRef) ([]byte, bool) {
+			set: func(id uint64, b []byte) { cache.StorePostings(ctx, uid(id), lbl, b) },
+			get: func(id uint64) ([]byte, bool) {
 				hits, _ := cache.FetchMultiPostings(ctx, uid(id), []labels.Label{lbl})
 				b, ok := hits[lbl]
 
@@ -144,21 +147,49 @@ func TestInMemoryIndexCache_UpdateItem(t *testing.T) {
 		},
 		{
 			typ: cacheTypeSeriesForRef,
-			set: func(id storage.SeriesRef, b []byte) { cache.StoreSeriesForRef(ctx, uid(id), id, b) },
-			get: func(id storage.SeriesRef) ([]byte, bool) {
-				hits, _ := cache.FetchMultiSeriesForRefs(ctx, uid(id), []storage.SeriesRef{id})
-				b, ok := hits[id]
+			set: func(id uint64, b []byte) { cache.StoreSeriesForRef(ctx, uid(id), storage.SeriesRef(id), b) },
+			get: func(id uint64) ([]byte, bool) {
+				seriesRef := storage.SeriesRef(id)
+				hits, _ := cache.FetchMultiSeriesForRefs(ctx, uid(id), []storage.SeriesRef{seriesRef})
+				b, ok := hits[seriesRef]
 
 				return b, ok
 			},
 		},
 		{
 			typ: cacheTypeExpandedPostings,
-			set: func(id storage.SeriesRef, b []byte) {
+			set: func(id uint64, b []byte) {
 				cache.StoreExpandedPostings(ctx, uid(id), CanonicalLabelMatchersKey(matchers), b)
 			},
-			get: func(id storage.SeriesRef) ([]byte, bool) {
+			get: func(id uint64) ([]byte, bool) {
 				return cache.FetchExpandedPostings(ctx, uid(id), CanonicalLabelMatchersKey(matchers))
+			},
+		},
+		{
+			typ: cacheTypeSeries,
+			set: func(id uint64, b []byte) {
+				cache.StoreSeries(ctx, uid(id), CanonicalLabelMatchersKey(matchers), shard, b)
+			},
+			get: func(id uint64) ([]byte, bool) {
+				return cache.FetchSeries(ctx, uid(id), CanonicalLabelMatchersKey(matchers), shard)
+			},
+		},
+		{
+			typ: cacheTypeLabelNames,
+			set: func(id uint64, b []byte) {
+				cache.StoreLabelNames(ctx, uid(id), CanonicalLabelMatchersKey(matchers), b)
+			},
+			get: func(id uint64) ([]byte, bool) {
+				return cache.FetchLabelNames(ctx, uid(id), CanonicalLabelMatchersKey(matchers))
+			},
+		},
+		{
+			typ: cacheTypeLabelValues,
+			set: func(id uint64, b []byte) {
+				cache.StoreLabelValues(ctx, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers), b)
+			},
+			get: func(id uint64) ([]byte, bool) {
+				return cache.FetchLabelValues(ctx, uid(id), fmt.Sprintf("lbl_%d", id), CanonicalLabelMatchersKey(matchers))
 			},
 		},
 	} {
@@ -229,15 +260,17 @@ func TestInMemoryIndexCache_MaxNumberOfItemsHit(t *testing.T) {
 
 	assert.Equal(t, uint64(2*sliceHeaderSize+4), cache.curSize)
 	assert.Equal(t, float64(0), promtest.ToFloat64(cache.overflow.WithLabelValues(cacheTypePostings)))
-	assert.Equal(t, float64(0), promtest.ToFloat64(cache.overflow.WithLabelValues(cacheTypeSeriesForRef)))
 	assert.Equal(t, float64(1), promtest.ToFloat64(cache.evicted.WithLabelValues(cacheTypePostings)))
-	assert.Equal(t, float64(0), promtest.ToFloat64(cache.evicted.WithLabelValues(cacheTypeSeriesForRef)))
 	assert.Equal(t, float64(3), promtest.ToFloat64(cache.added.WithLabelValues(cacheTypePostings)))
-	assert.Equal(t, float64(0), promtest.ToFloat64(cache.added.WithLabelValues(cacheTypeSeriesForRef)))
 	assert.Equal(t, float64(0), promtest.ToFloat64(cache.requests.WithLabelValues(cacheTypePostings)))
-	assert.Equal(t, float64(0), promtest.ToFloat64(cache.requests.WithLabelValues(cacheTypeSeriesForRef)))
 	assert.Equal(t, float64(0), promtest.ToFloat64(cache.hits.WithLabelValues(cacheTypePostings)))
-	assert.Equal(t, float64(0), promtest.ToFloat64(cache.hits.WithLabelValues(cacheTypeSeriesForRef)))
+	for _, typ := range remove(allCacheTypes, cacheTypePostings) {
+		assert.Equal(t, float64(0), promtest.ToFloat64(cache.overflow.WithLabelValues(typ)))
+		assert.Equal(t, float64(0), promtest.ToFloat64(cache.evicted.WithLabelValues(typ)))
+		assert.Equal(t, float64(0), promtest.ToFloat64(cache.added.WithLabelValues(typ)))
+		assert.Equal(t, float64(0), promtest.ToFloat64(cache.requests.WithLabelValues(typ)))
+		assert.Equal(t, float64(0), promtest.ToFloat64(cache.hits.WithLabelValues(typ)))
+	}
 }
 
 func TestInMemoryIndexCache_Eviction_WithMetrics(t *testing.T) {

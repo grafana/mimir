@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/thanos/pkg/cache"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -95,6 +96,45 @@ func (t *TracingIndexCache) FetchExpandedPostings(ctx context.Context, blockID u
 
 	spanLogger := spanlogger.FromContext(ctx, t.logger)
 	level.Debug(spanLogger).Log("msg", "cache_fetch_expanded_postings", "requested key", key, "found", found, "returned bytes", len(data))
+
+	return data, found
+}
+
+func (t *TracingIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	t.c.StoreSeries(ctx, blockID, matchersKey, shard, v)
+}
+
+func (t *TracingIndexCache) FetchSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+	data, found := t.c.FetchSeries(ctx, blockID, matchersKey, shard)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log("msg", "cache_fetch_series", "requested key", matchersKey, "shard", shardKey(shard), "found", found, "returned bytes", len(data))
+
+	return data, found
+}
+
+func (t *TracingIndexCache) StoreLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	t.c.StoreLabelNames(ctx, blockID, matchersKey, v)
+}
+
+func (t *TracingIndexCache) FetchLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
+	data, found := t.c.FetchLabelNames(ctx, blockID, matchersKey)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log("msg", "cache_fetch_label_names", "requested key", matchersKey, "found", found, "returned bytes", len(data))
+
+	return data, found
+}
+
+func (t *TracingIndexCache) StoreLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	t.c.StoreLabelValues(ctx, blockID, labelName, matchersKey, v)
+}
+
+func (t *TracingIndexCache) FetchLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
+	data, found := t.c.FetchLabelValues(ctx, blockID, labelName, matchersKey)
+
+	spanLogger := spanlogger.FromContext(ctx, t.logger)
+	level.Debug(spanLogger).Log("msg", "cache_fetch_label_values", "label name", labelName, "requested key", matchersKey, "found", found, "returned bytes", len(data))
 
 	return data, found
 }

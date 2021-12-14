@@ -11,8 +11,6 @@ import (
 	"strconv"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
@@ -20,8 +18,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-
 	"github.com/thanos-io/thanos/pkg/cacheutil"
+	"golang.org/x/crypto/blake2b"
+
+	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
 const (
@@ -216,4 +216,50 @@ func (c *MemcachedIndexCache) FetchExpandedPostings(ctx context.Context, blockID
 func expandedPostingsCacheKey(blockID ulid.ULID, lmKey LabelMatchersKey) string {
 	hash := blake2b.Sum256([]byte(lmKey))
 	return "E:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+}
+
+// StoreSeries stores the result of a Series() call.
+func (c *MemcachedIndexCache) StoreSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
+	c.set(ctx, cacheTypeSeries, seriesCacheKey(blockID, matchersKey, shard), v)
+}
+
+// FetchSeries fetches the result of a Series() call.
+func (c *MemcachedIndexCache) FetchSeries(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) ([]byte, bool) {
+	return c.get(ctx, cacheTypeSeries, seriesCacheKey(blockID, matchersKey, shard))
+}
+
+func seriesCacheKey(blockID ulid.ULID, matchersKey LabelMatchersKey, shard *sharding.ShardSelector) string {
+	hash := blake2b.Sum256([]byte(matchersKey))
+	// We use SS: as S: is already used for SeriesForRef
+	return "SS:" + blockID.String() + ":" + shardKey(shard) + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+}
+
+// StoreLabelNames stores the result of a LabelNames() call.
+func (c *MemcachedIndexCache) StoreLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey, v []byte) {
+	c.set(ctx, cacheTypeLabelNames, labelNamesCacheKey(blockID, matchersKey), v)
+}
+
+// FetchLabelNames fetches the result of a LabelNames() call.
+func (c *MemcachedIndexCache) FetchLabelNames(ctx context.Context, blockID ulid.ULID, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeLabelNames, labelNamesCacheKey(blockID, matchersKey))
+}
+
+func labelNamesCacheKey(blockID ulid.ULID, matchersKey LabelMatchersKey) string {
+	hash := blake2b.Sum256([]byte(matchersKey))
+	return "LN:" + blockID.String() + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
+}
+
+// StoreLabelValues stores the result of a LabelValues() call.
+func (c *MemcachedIndexCache) StoreLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey, v []byte) {
+	c.set(ctx, cacheTypeLabelValues, labelValuesCacheKey(blockID, labelName, matchersKey), v)
+}
+
+// FetchLabelValues fetches the result of a LabelValues() call.
+func (c *MemcachedIndexCache) FetchLabelValues(ctx context.Context, blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) ([]byte, bool) {
+	return c.get(ctx, cacheTypeLabelValues, labelValuesCacheKey(blockID, labelName, matchersKey))
+}
+
+func labelValuesCacheKey(blockID ulid.ULID, labelName string, matchersKey LabelMatchersKey) string {
+	hash := blake2b.Sum256([]byte(matchersKey))
+	return "LV:" + blockID.String() + ":" + labelName + ":" + base64.RawURLEncoding.EncodeToString(hash[0:])
 }

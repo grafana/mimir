@@ -17,12 +17,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/status"
-	"github.com/oklog/ulid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/objstore/filesystem"
@@ -52,7 +50,7 @@ var (
 )
 
 type swappableCache struct {
-	ptr storecache.IndexCache
+	storecache.IndexCache
 }
 
 type customLimiter struct {
@@ -69,32 +67,8 @@ func (c *customLimiter) Reserve(num uint64) error {
 	return nil
 }
 
-func (c *swappableCache) SwapWith(ptr2 storecache.IndexCache) {
-	c.ptr = ptr2
-}
-
-func (c *swappableCache) StorePostings(ctx context.Context, blockID ulid.ULID, l labels.Label, v []byte) {
-	c.ptr.StorePostings(ctx, blockID, l, v)
-}
-
-func (c *swappableCache) FetchMultiPostings(ctx context.Context, blockID ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
-	return c.ptr.FetchMultiPostings(ctx, blockID, keys)
-}
-
-func (c *swappableCache) StoreSeriesForRef(ctx context.Context, blockID ulid.ULID, id storage.SeriesRef, v []byte) {
-	c.ptr.StoreSeriesForRef(ctx, blockID, id, v)
-}
-
-func (c *swappableCache) FetchMultiSeriesForRefs(ctx context.Context, blockID ulid.ULID, ids []storage.SeriesRef) (map[storage.SeriesRef][]byte, []storage.SeriesRef) {
-	return c.ptr.FetchMultiSeriesForRefs(ctx, blockID, ids)
-}
-
-func (c *swappableCache) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {
-	c.ptr.StoreExpandedPostings(ctx, blockID, key, v)
-}
-
-func (c *swappableCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
-	return c.ptr.FetchExpandedPostings(ctx, blockID, key)
+func (c *swappableCache) SwapWith(cache storecache.IndexCache) {
+	c.IndexCache = cache
 }
 
 type storeSuite struct {
