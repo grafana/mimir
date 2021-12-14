@@ -10,4 +10,4 @@ docker-compose.yml: docker-compose.jsonnet
 	jsonnet -S docker-compose.jsonnet -o docker-compose.yml
 
 check: docker-compose.yml
-	@git diff --exit-code --quiet -- 'docker-compose.yml' || (echo "docker-compose.jsonnet and docker-compose.yml don't match in ${PWD}" && false)
+	@git diff --exit-code -- 'docker-compose.yml' || (echo "docker-compose.jsonnet and docker-compose.yml don't match in ${PWD}" && false)

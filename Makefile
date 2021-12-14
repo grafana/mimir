@@ -345,12 +345,12 @@ clean-white-noise:
 	SED_BIN="$(SED)" xargs ./tools/cleanup-white-noise.sh
 
 check-white-noise: clean-white-noise
-	@git diff --exit-code --quiet -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
+	@git diff --exit-code -- '*.md' || (echo "Please remove trailing whitespaces running 'make clean-white-noise'" && false)
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
 	@echo "Checking diff:"
 	git diff
-	@git diff --exit-code --quiet -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
+	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
