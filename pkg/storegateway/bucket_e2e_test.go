@@ -170,6 +170,7 @@ func prepareStoreWithTestBlocksForSeries(t testing.TB, dir string, bkt objstore.
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
+		"tenant",
 		objstore.WithNoopInstr(bkt),
 		metaFetcher,
 		dir,

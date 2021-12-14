@@ -30,6 +30,8 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	label1 := labels.Label{Name: "instance", Value: "a"}
@@ -41,6 +43,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 	tests := map[string]struct {
 		setup          []mockedPostings
 		mockedErr      error
+		fetchUserID    string
 		fetchBlockID   ulid.ULID
 		fetchLabels    []labels.Label
 		expectedHits   map[labels.Label][]byte
@@ -48,6 +51,7 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 	}{
 		"should return no hits on empty cache": {
 			setup:          []mockedPostings{},
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchLabels:    []labels.Label{label1, label2},
 			expectedHits:   nil,
@@ -55,10 +59,12 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 		},
 		"should return no misses on 100% hit ratio": {
 			setup: []mockedPostings{
-				{block: block1, label: label1, value: value1},
-				{block: block1, label: label2, value: value2},
-				{block: block2, label: label1, value: value3},
+				{userID: user1, block: block1, label: label1, value: value1},
+				{userID: user2, block: block1, label: label1, value: value2},
+				{userID: user1, block: block1, label: label2, value: value2},
+				{userID: user1, block: block2, label: label1, value: value3},
 			},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchLabels:  []labels.Label{label1, label2},
 			expectedHits: map[labels.Label][]byte{
@@ -69,9 +75,10 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 		},
 		"should return hits and misses on partial hits": {
 			setup: []mockedPostings{
-				{block: block1, label: label1, value: value1},
-				{block: block2, label: label1, value: value3},
+				{userID: user1, block: block1, label: label1, value: value1},
+				{userID: user1, block: block2, label: label1, value: value3},
 			},
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchLabels:    []labels.Label{label1, label2},
 			expectedHits:   map[labels.Label][]byte{label1: value1},
@@ -79,11 +86,12 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 		},
 		"should return no hits on memcached error": {
 			setup: []mockedPostings{
-				{block: block1, label: label1, value: value1},
-				{block: block1, label: label2, value: value2},
-				{block: block2, label: label1, value: value3},
+				{userID: user1, block: block1, label: label1, value: value1},
+				{userID: user1, block: block1, label: label2, value: value2},
+				{userID: user1, block: block2, label: label1, value: value3},
 			},
 			mockedErr:      errors.New("mocked error"),
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchLabels:    []labels.Label{label1, label2},
 			expectedHits:   nil,
@@ -100,11 +108,11 @@ func TestMemcachedIndexCache_FetchMultiPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StorePostings(ctx, p.block, p.label, p.value)
+				c.StorePostings(ctx, p.userID, p.block, p.label, p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			hits, misses := c.FetchMultiPostings(ctx, testData.fetchBlockID, testData.fetchLabels)
+			hits, misses := c.FetchMultiPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabels)
 			assert.Equal(t, testData.expectedHits, hits)
 			assert.Equal(t, testData.expectedMisses, misses)
 
@@ -123,6 +131,8 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	value1 := []byte{1}
@@ -132,6 +142,7 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	tests := map[string]struct {
 		setup          []mockedSeriesForRef
 		mockedErr      error
+		fetchUserID    string
 		fetchBlockID   ulid.ULID
 		fetchIds       []storage.SeriesRef
 		expectedHits   map[storage.SeriesRef][]byte
@@ -139,6 +150,7 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 	}{
 		"should return no hits on empty cache": {
 			setup:          []mockedSeriesForRef{},
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchIds:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
@@ -146,10 +158,13 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 		},
 		"should return no misses on 100% hit ratio": {
 			setup: []mockedSeriesForRef{
-				{block: block1, id: 1, value: value1},
-				{block: block1, id: 2, value: value2},
-				{block: block2, id: 1, value: value3},
+				{userID: user1, block: block1, id: 1, value: value1},
+				{userID: user2, block: block1, id: 1, value: value2},
+				{userID: user1, block: block1, id: 1, value: value1},
+				{userID: user1, block: block1, id: 2, value: value2},
+				{userID: user1, block: block2, id: 1, value: value3},
 			},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchIds:     []storage.SeriesRef{1, 2},
 			expectedHits: map[storage.SeriesRef][]byte{
@@ -160,9 +175,10 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 		},
 		"should return hits and misses on partial hits": {
 			setup: []mockedSeriesForRef{
-				{block: block1, id: 1, value: value1},
-				{block: block2, id: 1, value: value3},
+				{userID: user1, block: block1, id: 1, value: value1},
+				{userID: user1, block: block2, id: 1, value: value3},
 			},
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchIds:       []storage.SeriesRef{1, 2},
 			expectedHits:   map[storage.SeriesRef][]byte{1: value1},
@@ -170,11 +186,12 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 		},
 		"should return no hits on memcached error": {
 			setup: []mockedSeriesForRef{
-				{block: block1, id: 1, value: value1},
-				{block: block1, id: 2, value: value2},
-				{block: block2, id: 1, value: value3},
+				{userID: user1, block: block1, id: 1, value: value1},
+				{userID: user1, block: block1, id: 2, value: value2},
+				{userID: user1, block: block2, id: 1, value: value3},
 			},
 			mockedErr:      errors.New("mocked error"),
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchIds:       []storage.SeriesRef{1, 2},
 			expectedHits:   nil,
@@ -191,11 +208,11 @@ func TestMemcachedIndexCache_FetchMultiSeriesForRef(t *testing.T) {
 			// Store the series expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeriesForRef(ctx, p.block, p.id, p.value)
+				c.StoreSeriesForRef(ctx, p.userID, p.block, p.id, p.value)
 			}
 
 			// Fetch series from cached and assert on it.
-			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchBlockID, testData.fetchIds)
+			hits, misses := c.FetchMultiSeriesForRefs(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchIds)
 			assert.Equal(t, testData.expectedHits, hits)
 			assert.Equal(t, testData.expectedMisses, misses)
 
@@ -214,6 +231,8 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
@@ -225,6 +244,7 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 	tests := map[string]struct {
 		setup        []mockedExpandedPostings
 		mockedErr    error
+		fetchUserID  string
 		fetchBlockID ulid.ULID
 		fetchKey     LabelMatchersKey
 		expectedData []byte
@@ -232,6 +252,7 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 	}{
 		"should return no hit on empty cache": {
 			setup:        []mockedExpandedPostings{},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			expectedData: nil,
@@ -239,10 +260,12 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 		},
 		"should return no miss on hit": {
 			setup: []mockedExpandedPostings{
-				{block: block1, matchers: matchers1, value: value1},
-				{block: block1, matchers: matchers2, value: value2},
-				{block: block2, matchers: matchers1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, value: value1},
+				{userID: user2, block: block1, matchers: matchers1, value: value2},
+				{userID: user1, block: block1, matchers: matchers2, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, value: value3},
 			},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			expectedData: value1,
@@ -250,11 +273,12 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 		},
 		"should return no hit on memcached error": {
 			setup: []mockedExpandedPostings{
-				{block: block1, matchers: matchers1, value: value1},
-				{block: block1, matchers: matchers2, value: value2},
-				{block: block2, matchers: matchers1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, value: value1},
+				{userID: user1, block: block1, matchers: matchers2, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, value: value3},
 			},
 			mockedErr:    context.DeadlineExceeded,
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			expectedData: nil,
@@ -271,11 +295,11 @@ func TestMemcachedIndexCache_FetchExpandedPostings(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreExpandedPostings(ctx, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreExpandedPostings(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchExpandedPostings(ctx, testData.fetchBlockID, testData.fetchKey)
+			data, ok := c.FetchExpandedPostings(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey)
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 
@@ -298,6 +322,8 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
@@ -311,6 +337,7 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	tests := map[string]struct {
 		setup        []mockedSeries
 		mockedErr    error
+		fetchUserID  string
 		fetchBlockID ulid.ULID
 		fetchKey     LabelMatchersKey
 		fetchShard   *sharding.ShardSelector
@@ -319,6 +346,7 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 	}{
 		"should return no hit on empty cache": {
 			setup:        []mockedSeries{},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			fetchShard:   shard1,
@@ -327,11 +355,13 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 		},
 		"should return no miss on hit": {
 			setup: []mockedSeries{
-				{block: block1, matchers: matchers1, shard: shard1, value: value1},
-				{block: block1, matchers: matchers1, shard: shard2, value: value2}, // different shard
-				{block: block1, matchers: matchers2, shard: shard1, value: value2}, // different matchers
-				{block: block2, matchers: matchers1, shard: shard1, value: value3}, // different block
+				{userID: user1, block: block1, matchers: matchers1, shard: shard1, value: value1},
+				{userID: user2, block: block1, matchers: matchers1, shard: shard1, value: value2}, // different user
+				{userID: user1, block: block1, matchers: matchers1, shard: shard2, value: value2}, // different shard
+				{userID: user1, block: block1, matchers: matchers2, shard: shard1, value: value2}, // different matchers
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, value: value3}, // different block
 			},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			fetchShard:   shard1,
@@ -340,11 +370,12 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 		},
 		"should return no hit on memcached error": {
 			setup: []mockedSeries{
-				{block: block1, matchers: matchers1, shard: shard1, value: value1},
-				{block: block1, matchers: matchers2, shard: shard1, value: value2},
-				{block: block2, matchers: matchers1, shard: shard1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, shard: shard1, value: value1},
+				{userID: user1, block: block1, matchers: matchers2, shard: shard1, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, shard: shard1, value: value3},
 			},
 			mockedErr:    context.DeadlineExceeded,
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			fetchShard:   shard1,
@@ -362,11 +393,11 @@ func TestMemcachedIndexCache_FetchSeries(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreSeries(ctx, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
+				c.StoreSeries(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.shard, p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchSeries(ctx, testData.fetchBlockID, testData.fetchKey, testData.fetchShard)
+			data, ok := c.FetchSeries(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey, testData.fetchShard)
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 
@@ -389,6 +420,8 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	matchers1 := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")}
@@ -400,6 +433,7 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 	tests := map[string]struct {
 		setup        []mockedLabelNames
 		mockedErr    error
+		fetchUserID  string
 		fetchBlockID ulid.ULID
 		fetchKey     LabelMatchersKey
 		expectedData []byte
@@ -407,6 +441,7 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 	}{
 		"should return no hit on empty cache": {
 			setup:        []mockedLabelNames{},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			expectedData: nil,
@@ -414,10 +449,12 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 		},
 		"should return no miss on hit": {
 			setup: []mockedLabelNames{
-				{block: block1, matchers: matchers1, value: value1},
-				{block: block1, matchers: matchers2, value: value2},
-				{block: block2, matchers: matchers1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, value: value1},
+				{userID: user2, block: block1, matchers: matchers1, value: value2},
+				{userID: user1, block: block1, matchers: matchers2, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, value: value3},
 			},
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			expectedData: value1,
@@ -425,11 +462,12 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 		},
 		"should return no hit on memcached error": {
 			setup: []mockedLabelNames{
-				{block: block1, matchers: matchers1, value: value1},
-				{block: block1, matchers: matchers2, value: value2},
-				{block: block2, matchers: matchers1, value: value3},
+				{userID: user1, block: block1, matchers: matchers1, value: value1},
+				{userID: user1, block: block1, matchers: matchers2, value: value2},
+				{userID: user1, block: block2, matchers: matchers1, value: value3},
 			},
 			mockedErr:    context.DeadlineExceeded,
+			fetchUserID:  user1,
 			fetchBlockID: block1,
 			fetchKey:     CanonicalLabelMatchersKey(matchers1),
 			expectedData: nil,
@@ -446,11 +484,11 @@ func TestMemcachedIndexCache_FetchLabelNames(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreLabelNames(ctx, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreLabelNames(ctx, p.userID, p.block, CanonicalLabelMatchersKey(p.matchers), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchLabelNames(ctx, testData.fetchBlockID, testData.fetchKey)
+			data, ok := c.FetchLabelNames(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchKey)
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 
@@ -473,6 +511,8 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 	t.Parallel()
 
 	// Init some data to conveniently define test cases later one.
+	user1 := "tenant1"
+	user2 := "tenant2"
 	block1 := ulid.MustNew(1, nil)
 	block2 := ulid.MustNew(2, nil)
 	labelName1 := "one"
@@ -486,6 +526,7 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 	tests := map[string]struct {
 		setup          []mockedLabelValues
 		mockedErr      error
+		fetchUserID    string
 		fetchBlockID   ulid.ULID
 		fetchLabelName string
 		fetchKey       LabelMatchersKey
@@ -494,6 +535,7 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 	}{
 		"should return no hit on empty cache": {
 			setup:          []mockedLabelValues{},
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchLabelName: labelName1,
 			fetchKey:       CanonicalLabelMatchersKey(matchers1),
@@ -502,11 +544,13 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 		},
 		"should return no miss on hit": {
 			setup: []mockedLabelValues{
-				{block: block1, labelName: labelName1, matchers: matchers1, value: value1},
-				{block: block1, labelName: labelName2, matchers: matchers2, value: value2},
-				{block: block2, labelName: labelName1, matchers: matchers1, value: value3},
-				{block: block2, labelName: labelName1, matchers: matchers2, value: value3},
+				{userID: user1, block: block1, labelName: labelName1, matchers: matchers1, value: value1},
+				{userID: user2, block: block1, labelName: labelName1, matchers: matchers1, value: value2},
+				{userID: user1, block: block1, labelName: labelName2, matchers: matchers2, value: value2},
+				{userID: user1, block: block2, labelName: labelName1, matchers: matchers1, value: value3},
+				{userID: user1, block: block2, labelName: labelName1, matchers: matchers2, value: value3},
 			},
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchLabelName: labelName1,
 			fetchKey:       CanonicalLabelMatchersKey(matchers1),
@@ -515,12 +559,13 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 		},
 		"should return no hit on memcached error": {
 			setup: []mockedLabelValues{
-				{block: block1, labelName: labelName1, matchers: matchers1, value: value1},
-				{block: block1, labelName: labelName2, matchers: matchers2, value: value2},
-				{block: block2, labelName: labelName1, matchers: matchers1, value: value3},
-				{block: block2, labelName: labelName1, matchers: matchers2, value: value3},
+				{userID: user1, block: block1, labelName: labelName1, matchers: matchers1, value: value1},
+				{userID: user1, block: block1, labelName: labelName2, matchers: matchers2, value: value2},
+				{userID: user1, block: block2, labelName: labelName1, matchers: matchers1, value: value3},
+				{userID: user1, block: block2, labelName: labelName1, matchers: matchers2, value: value3},
 			},
 			mockedErr:      context.DeadlineExceeded,
+			fetchUserID:    user1,
 			fetchBlockID:   block1,
 			fetchLabelName: labelName1,
 			fetchKey:       CanonicalLabelMatchersKey(matchers1),
@@ -538,11 +583,11 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 			// Store the postings expected before running the test.
 			ctx := context.Background()
 			for _, p := range testData.setup {
-				c.StoreLabelValues(ctx, p.block, p.labelName, CanonicalLabelMatchersKey(p.matchers), p.value)
+				c.StoreLabelValues(ctx, p.userID, p.block, p.labelName, CanonicalLabelMatchersKey(p.matchers), p.value)
 			}
 
 			// Fetch postings from cached and assert on it.
-			data, ok := c.FetchLabelValues(ctx, testData.fetchBlockID, testData.fetchLabelName, testData.fetchKey)
+			data, ok := c.FetchLabelValues(ctx, testData.fetchUserID, testData.fetchBlockID, testData.fetchLabelName, testData.fetchKey)
 			assert.Equal(t, testData.expectedData, data)
 			assert.Equal(t, testData.expectedOk, ok)
 
@@ -564,6 +609,7 @@ func TestMemcachedIndexCache_FetchLabelValues(t *testing.T) {
 func TestStringCacheKeys_Values(t *testing.T) {
 	t.Parallel()
 
+	user := "tenant"
 	uid := ulid.MustNew(1, nil)
 
 	tests := map[string]struct {
@@ -571,17 +617,17 @@ func TestStringCacheKeys_Values(t *testing.T) {
 		expected string
 	}{
 		"should stringify postings cache key": {
-			key: postingsCacheKey(uid, labels.Label{Name: "foo", Value: "bar"}),
+			key: postingsCacheKey(user, uid, labels.Label{Name: "foo", Value: "bar"}),
 			expected: func() string {
 				hash := blake2b.Sum256([]byte("foo:bar"))
 				encodedHash := base64.RawURLEncoding.EncodeToString(hash[0:])
 
-				return fmt.Sprintf("P:%s:%s", uid.String(), encodedHash)
+				return fmt.Sprintf("P:%s:%s:%s", user, uid.String(), encodedHash)
 			}(),
 		},
 		"should stringify series cache key": {
-			key:      seriesForRefCacheKey(uid, 12345),
-			expected: fmt.Sprintf("S:%s:12345", uid.String()),
+			key:      seriesForRefCacheKey(user, uid, 12345),
+			expected: fmt.Sprintf("S:%s:%s:12345", user, uid.String()),
 		},
 	}
 
@@ -596,6 +642,7 @@ func TestStringCacheKeys_Values(t *testing.T) {
 func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) {
 	t.Parallel()
 
+	user := "tenant"
 	uid := ulid.MustNew(1, nil)
 
 	tests := map[string]struct {
@@ -603,16 +650,16 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 		expectedLen int
 	}{
 		"should guarantee reasonably short key length for postings": {
-			expectedLen: 72,
+			expectedLen: 79,
 			keys: []string{
-				postingsCacheKey(uid, labels.Label{Name: "a", Value: "b"}),
-				postingsCacheKey(uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
+				postingsCacheKey(user, uid, labels.Label{Name: "a", Value: "b"}),
+				postingsCacheKey(user, uid, labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}),
 			},
 		},
 		"should guarantee reasonably short key length for series": {
-			expectedLen: 49,
+			expectedLen: 56,
 			keys: []string{
-				seriesForRefCacheKey(uid, math.MaxUint64),
+				seriesForRefCacheKey(user, uid, math.MaxUint64),
 			},
 		},
 	}
@@ -627,54 +674,60 @@ func TestStringCacheKeys_ShouldGuaranteeReasonablyShortKeysLength(t *testing.T) 
 }
 
 func BenchmarkStringCacheKeys(b *testing.B) {
+	userID := "tenant"
 	uid := ulid.MustNew(1, nil)
 	lbl := labels.Label{Name: strings.Repeat("a", 100), Value: strings.Repeat("a", 1000)}
 	lmKey := CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")})
 
 	b.Run("postings", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			postingsCacheKey(uid, lbl)
+			postingsCacheKey(userID, uid, lbl)
 		}
 	})
 
 	b.Run("series ref", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			seriesForRefCacheKey(uid, math.MaxUint64)
+			seriesForRefCacheKey(userID, uid, math.MaxUint64)
 		}
 	})
 
 	b.Run("expanded postings", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			expandedPostingsCacheKey(uid, lmKey)
+			expandedPostingsCacheKey(userID, uid, lmKey)
 		}
 	})
 }
 
 type mockedPostings struct {
-	block ulid.ULID
-	label labels.Label
-	value []byte
+	userID string
+	block  ulid.ULID
+	label  labels.Label
+	value  []byte
 }
 
 type mockedSeriesForRef struct {
-	block ulid.ULID
-	id    storage.SeriesRef
-	value []byte
+	userID string
+	block  ulid.ULID
+	id     storage.SeriesRef
+	value  []byte
 }
 
 type mockedExpandedPostings struct {
+	userID   string
 	block    ulid.ULID
 	matchers []*labels.Matcher
 	value    []byte
 }
 
 type mockedLabelNames struct {
+	userID   string
 	block    ulid.ULID
 	matchers []*labels.Matcher
 	value    []byte
 }
 
 type mockedSeries struct {
+	userID   string
 	block    ulid.ULID
 	matchers []*labels.Matcher
 	shard    *sharding.ShardSelector
@@ -682,6 +735,7 @@ type mockedSeries struct {
 }
 
 type mockedLabelValues struct {
+	userID    string
 	block     ulid.ULID
 	labelName string
 	matchers  []*labels.Matcher

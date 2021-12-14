@@ -64,7 +64,6 @@ import (
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -226,7 +225,7 @@ func TestBucketBlock_matchLabels(t *testing.T) {
 		},
 	}
 
-	b, err := newBucketBlock(context.Background(), log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, nil)
+	b, err := newBucketBlock(context.Background(), "test", log.NewNopLogger(), NewBucketStoreMetrics(nil), meta, bkt, path.Join(dir, blockID.String()), nil, nil, nil, nil)
 	assert.NoError(t, err)
 
 	cases := []struct {
@@ -519,6 +518,7 @@ func TestBucketStore_Info(t *testing.T) {
 	assert.NoError(t, err)
 
 	bucketStore, err := NewBucketStore(
+		"test",
 		nil,
 		nil,
 		dir,
@@ -769,6 +769,7 @@ func testSharding(t *testing.T, reuseDisk string, bkt objstore.Bucket, all ...ul
 			assert.NoError(t, err)
 
 			bucketStore, err := NewBucketStore(
+				"test",
 				objstore.WithNoopInstr(rec),
 				metaFetcher,
 				dir,
@@ -1048,7 +1049,7 @@ type cacheNotExpectingToStoreLabelNames struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey, _ []byte) {
+func (c cacheNotExpectingToStoreLabelNames) StoreLabelNames(ctx context.Context, userID string, blockID ulid.ULID, matchersKey storecache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelNames should not be called")
 }
 
@@ -1149,7 +1150,7 @@ type cacheNotExpectingToStoreLabelValues struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(_ context.Context, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey, _ []byte) {
+func (c cacheNotExpectingToStoreLabelValues) StoreLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey storecache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreLabelValues should not be called")
 }
 
@@ -1421,13 +1422,13 @@ func (w *contextNotifyingOnDoneWaiting) Done() <-chan struct{} {
 
 type corruptedExpandedPostingsCache struct{ noopCache }
 
-func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
+func (c corruptedExpandedPostingsCache) FetchExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key storecache.LabelMatchersKey) ([]byte, bool) {
 	return []byte(codecHeaderSnappy + "corrupted"), true
 }
 
 type corruptedPostingsCache struct{ noopCache }
 
-func (c corruptedPostingsCache) FetchMultiPostings(_ context.Context, _ ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
+func (c corruptedPostingsCache) FetchMultiPostings(ctx context.Context, userID string, blockID ulid.ULID, keys []labels.Label) (map[labels.Label][]byte, []labels.Label) {
 	res := make(map[labels.Label][]byte)
 	for _, k := range keys {
 		res[k] = []byte("corrupted or unknown")
@@ -1440,7 +1441,7 @@ type cacheNotExpectingToStoreExpandedPostings struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, blockID ulid.ULID, key cache.LabelMatchersKey, v []byte) {
+func (c cacheNotExpectingToStoreExpandedPostings) StoreExpandedPostings(ctx context.Context, userID string, blockID ulid.ULID, key storecache.LabelMatchersKey, v []byte) {
 	c.t.Fatalf("StoreExpandedPostings should not be called")
 }
 
@@ -1471,6 +1472,7 @@ func prepareTestBlock(tb test.TB, series int, dirPattern string) func() *bucketB
 
 	return func() *bucketBlock {
 		return &bucketBlock{
+			userID:            "tenant",
 			logger:            log.NewNopLogger(),
 			metrics:           NewBucketStoreMetrics(nil),
 			indexHeaderReader: r,
@@ -1713,6 +1715,7 @@ func benchBucketSeries(t test.TB, skipChunk bool, samplesPerSeries, totalSeries 
 	assert.NoError(t, err)
 
 	st, err := NewBucketStore(
+		"test",
 		ibkt,
 		f,
 		tmpDir,
@@ -1929,6 +1932,7 @@ func TestBucketSeries_OneBlock_InMemIndexCacheSegfault(t *testing.T) {
 	}
 
 	store := &BucketStore{
+		userID:          "test",
 		bkt:             objstore.WithNoopInstr(bkt),
 		logger:          logger,
 		indexCache:      indexCache,
@@ -2080,6 +2084,7 @@ func TestSeries_ErrorUnmarshallingRequestHints(t *testing.T) {
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
+		"test",
 		instrBkt,
 		fetcher,
 		tmpDir,
@@ -2172,6 +2177,7 @@ func TestSeries_BlockWithMultipleChunks(t *testing.T) {
 	assert.NoError(t, err)
 
 	store, err := NewBucketStore(
+		"tenant",
 		instrBkt,
 		fetcher,
 		tmpDir,
@@ -2357,6 +2363,7 @@ func setupStoreForHintsTest(t *testing.T) (test.TB, *BucketStore, []*storepb.Ser
 	assert.NoError(tb, err)
 
 	store, err := NewBucketStore(
+		"tenant",
 		instrBkt,
 		fetcher,
 		tmpDir,
@@ -2585,7 +2592,7 @@ func BenchmarkBucketBlock_readChunkRange(b *testing.B) {
 	assert.NoError(b, err)
 
 	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, nil)
+	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, nil, chunkPool, nil, nil)
 	assert.NoError(b, err)
 
 	b.ResetTimer()
@@ -2680,7 +2687,7 @@ func prepareBucket(b *testing.B, resolutionLevel compactor.ResolutionLevel) (*bu
 	assert.NoError(b, err)
 
 	// Create a bucket block with only the dependencies we need for the benchmark.
-	blk, err := newBucketBlock(context.Background(), logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, indexCache, chunkPool, indexHeaderReader, partitioner)
+	blk, err := newBucketBlock(context.Background(), "tenant", logger, NewBucketStoreMetrics(nil), blockMeta, bkt, tmpDir, indexCache, chunkPool, indexHeaderReader, partitioner)
 	assert.NoError(b, err)
 	return blk, blockMeta
 }
@@ -2891,7 +2898,7 @@ type cacheNotExpectingToStoreSeries struct {
 	t *testing.T
 }
 
-func (c cacheNotExpectingToStoreSeries) StoreSeries(_ context.Context, _ ulid.ULID, _ storecache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
+func (c cacheNotExpectingToStoreSeries) StoreSeries(ctx context.Context, userID string, blockID ulid.ULID, matchersKey storecache.LabelMatchersKey, shard *sharding.ShardSelector, v []byte) {
 	c.t.Fatalf("StoreSeries should not be called")
 }
 

@@ -499,6 +499,7 @@ func (u *BucketStores) getOrCreateStore(userID string) (*BucketStore, error) {
 	}
 
 	bs, err := NewBucketStore(
+		userID,
 		userBkt,
 		fetcher,
 		u.syncDirForUser(userID),
