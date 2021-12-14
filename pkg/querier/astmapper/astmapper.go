@@ -16,14 +16,6 @@ type ASTMapper interface {
 	Map(node parser.Node, stats *MapperStats) (mapped parser.Node, err error)
 }
 
-// MapperFunc is a function adapter for ASTMapper
-type MapperFunc func(node parser.Node) (parser.Node, bool, error)
-
-// Map applies a mapperfunc as an ASTMapper
-func (fn MapperFunc) Map(node parser.Node) (parser.Node, bool, error) {
-	return fn(node)
-}
-
 // MultiMapper can compose multiple ASTMappers
 type MultiMapper struct {
 	mappers []ASTMapper
