@@ -9,6 +9,12 @@
 VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
+
+# Don't export GOOS and GOARCH as env. variables. We set it at place where we need to (running go build), but
+# we don't want them to be used when running go run.
+unexport GOOS
+unexport GOARCH
+
 GOPROXY_VALUE=$(shell go env GOPROXY)
 
 # Suffix added to the name of built binary (via exes target)
