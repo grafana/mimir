@@ -434,65 +434,76 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			req := &PrometheusRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: testData.query,
-			}
-
-			engine := newEngine()
-			downstream := &downstreamHandler{
-				engine:    engine,
-				queryable: queryable,
-			}
-
-			// Run the query without sharding.
-			expectedRes, err := downstream.Do(context.Background(), req)
-			require.Nil(t, err)
-
-			// Ensure the query produces some results.
-			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
-
-			// Ensure the query produces some results which are not NaN.
-			foundValidSamples := false
-		outer:
-			for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
-				for _, sample := range stream.Samples {
-					if !math.IsNaN(sample.Value) {
-						foundValidSamples = true
-						break outer
+			for _, req := range []*PrometheusRequest{
+				{
+					// range query
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+					Query: testData.query,
+				},
+				{
+					// instant query
+					Path:  "/query",
+					Start: util.TimeToMillis(end),
+					End:   util.TimeToMillis(end),
+					Step:  0,
+					Query: testData.query,
+				},
+			} {
+				t.Run(req.Path, func(t *testing.T) {
+					engine := newEngine()
+					downstream := &downstreamHandler{
+						engine:    engine,
+						queryable: queryable,
 					}
-				}
-			}
-			require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
-			for _, numShards := range []int{2, 4, 8, 16} {
-				t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
-					reg := prometheus.NewPedanticRegistry()
-					shardingware := NewQueryShardingMiddleware(
-						log.NewNopLogger(),
-						engine,
-						mockLimits{totalShards: numShards},
-						reg,
-					)
-
-					// Run the query with sharding.
-					shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+					// Run the query without sharding.
+					expectedRes, err := downstream.Do(context.Background(), req)
 					require.Nil(t, err)
 
-					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-					// if you rerun the same query twice).
-					approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+					// Ensure the query produces some results.
+					require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
 
-					// Ensure the query has been sharded/not sharded as expected.
-					expectedSharded := 0
-					if testData.expectedShardedQueries > 0 {
-						expectedSharded = 1
+					// Ensure the query produces some results which are not NaN.
+					foundValidSamples := false
+				outer:
+					for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
+						for _, sample := range stream.Samples {
+							if !math.IsNaN(sample.Value) {
+								foundValidSamples = true
+								break outer
+							}
+						}
 					}
+					require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
-					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					for _, numShards := range []int{2, 4, 8, 16} {
+						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+							reg := prometheus.NewPedanticRegistry()
+							shardingware := NewQueryShardingMiddleware(
+								log.NewNopLogger(),
+								engine,
+								mockLimits{totalShards: numShards},
+								reg,
+							)
+
+							// Run the query with sharding.
+							shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+							require.Nil(t, err)
+
+							// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+							// if you rerun the same query twice).
+							approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+
+							// Ensure the query has been sharded/not sharded as expected.
+							expectedSharded := 0
+							if testData.expectedShardedQueries > 0 {
+								expectedSharded = 1
+							}
+
+							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
 					cortex_frontend_query_sharding_rewrites_attempted_total 1
@@ -505,9 +516,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					# TYPE cortex_frontend_sharded_queries_total counter
 					cortex_frontend_sharded_queries_total %d
 				`, expectedSharded, testData.expectedShardedQueries*numShards)),
-						"cortex_frontend_query_sharding_rewrites_attempted_total",
-						"cortex_frontend_query_sharding_rewrites_succeeded_total",
-						"cortex_frontend_sharded_queries_total"))
+								"cortex_frontend_query_sharding_rewrites_attempted_total",
+								"cortex_frontend_query_sharding_rewrites_succeeded_total",
+								"cortex_frontend_sharded_queries_total"))
+						})
+					}
 				})
 			}
 		})
