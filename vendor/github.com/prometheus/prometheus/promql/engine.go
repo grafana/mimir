@@ -612,6 +612,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		}
 
 		query.matrix = mat
+
+		sortSpanTimer, _ := query.stats.GetSpanTimer(ctx, stats.ResultSortTime, ng.metrics.queryResultSort)
+		sort.Sort(mat)
+		sortSpanTimer.Finish()
+
 		switch s.Expr.Type() {
 		case parser.ValueTypeVector:
 			// Convert matrix with one value per series into vector.
