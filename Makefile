@@ -9,6 +9,12 @@
 VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
+
+# Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
+# but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
+unexport GOOS
+unexport GOARCH
+
 GOPROXY_VALUE=$(shell go env GOPROXY)
 
 # Suffix added to the name of built binary (via exes target)
