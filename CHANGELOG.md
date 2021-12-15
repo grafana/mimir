@@ -184,7 +184,7 @@ Mixin:
 * [ENHANCEMENT] Improved "Queue length" panel in "Cortex / Queries" dashboard. #408
 * [ENHANCEMENT] Add `CortexDistributorReachingInflightPushRequestLimit` alert and playbook. #401
 * [ENHANCEMENT] Added "Recover accidentally deleted blocks (Google Cloud specific)" playbook. #475
-* [ENHANCEMENT] Added support to multi-zone store-gateway deployments. #608
+* [ENHANCEMENT] Added support to multi-zone store-gateway deployments. #608 #615
 * [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
 

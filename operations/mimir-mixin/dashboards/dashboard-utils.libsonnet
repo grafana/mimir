@@ -261,8 +261,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     { yaxes: $.yaxes('percentunit') },
 
   containerLabelMatcher(containerName)::
-    if containerName == 'ingester'
-    then 'label_name=~"ingester.*"'
+    if containerName == 'ingester' then 'label_name=~"ingester.*"'
+    else if containerName == 'store-gateway' then 'label_name=~"store-gateway.*"'
     else 'label_name="%s"' % containerName,
 
   jobNetworkingRow(title, name)::
