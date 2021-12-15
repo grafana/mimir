@@ -54,6 +54,12 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # with a Dockerfile in it builds an image called us.gcr.io/kubernetes-dev/<directory>.
 # Dependencies (i.e. things that go in the image) still need to be explicitly
 # declared.
+#
+# When building for docker, always build for Linux. This doesn't set GOARCH, which
+# really depends on whether image is going to be used locally (then GOARCH should be set based on
+# host architecture), or pushed remotely. Ideally one would use push-multiarch-* targets instead
+# in that case.
+%/$(UPTODATE): GOOS=linux
 %/$(UPTODATE): %/Dockerfile
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
