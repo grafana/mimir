@@ -27,12 +27,7 @@ const (
 	cacheTypeLabelValues      = "LabelValues"
 )
 
-const (
-	sliceHeaderSize = 16
-)
-
 var (
-	ulidSize      = uint64(len(ulid.ULID{}))
 	allCacheTypes = []string{
 		cacheTypePostings,
 		cacheTypeSeriesForRef,

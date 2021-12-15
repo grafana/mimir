@@ -32,6 +32,13 @@ var DefaultInMemoryIndexCacheConfig = InMemoryIndexCacheConfig{
 
 const maxInt = int(^uint(0) >> 1)
 
+const (
+	stringHeaderSize = 8
+	sliceHeaderSize  = 16
+)
+
+var ulidSize = uint64(len(ulid.ULID{}))
+
 type InMemoryIndexCache struct {
 	mtx sync.Mutex
 
@@ -175,7 +182,7 @@ func NewInMemoryIndexCacheWithConfig(logger log.Logger, reg prometheus.Registere
 func (c *InMemoryIndexCache) onEvict(key, val interface{}) {
 	k := key.(cacheKey)
 	typ := k.typ()
-	entrySize := sliceHeaderSize + uint64(len(val.([]byte)))
+	entrySize := sliceSize(val.([]byte))
 
 	c.evicted.WithLabelValues(typ).Inc()
 	c.current.WithLabelValues(typ).Dec()
@@ -202,7 +209,7 @@ func (c *InMemoryIndexCache) get(key cacheKey) ([]byte, bool) {
 
 func (c *InMemoryIndexCache) set(key cacheKey, val []byte) {
 	typ := key.typ()
-	size := sliceHeaderSize + uint64(len(val))
+	size := sliceSize(val)
 
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -387,8 +394,7 @@ type cacheKeyPostings struct {
 func (c cacheKeyPostings) typ() string { return cacheTypePostings }
 
 func (c cacheKeyPostings) size() uint64 {
-	// ULID + 2 slice headers + number of chars in value and name.
-	return ulidSize + 3*sliceHeaderSize + uint64(len(c.userID)) + uint64(len(c.label.Value)+len(c.label.Name))
+	return stringSize(c.userID) + ulidSize + stringSize(c.label.Name) + stringSize(c.label.Value)
 }
 
 // cacheKeyPostings implements cacheKey and is used to reference a seriesRef cache entry in the inmemory cache.
@@ -401,7 +407,7 @@ type cacheKeySeriesForRef struct {
 func (c cacheKeySeriesForRef) typ() string { return cacheTypeSeriesForRef }
 
 func (c cacheKeySeriesForRef) size() uint64 {
-	return ulidSize + 8 // ULID + uint64.
+	return stringSize(c.userID) + ulidSize + 8
 }
 
 // cacheKeyPostings implements cacheKey and is used to reference an expanded postings cache entry in the inmemory cache.
@@ -414,7 +420,7 @@ type cacheKeyExpandedPostings struct {
 func (c cacheKeyExpandedPostings) typ() string { return cacheTypeExpandedPostings }
 
 func (c cacheKeyExpandedPostings) size() uint64 {
-	return ulidSize + 2*sliceHeaderSize + uint64(len(c.userID)) + uint64(len(c.matchersKey))
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey))
 }
 
 type cacheKeySeries struct {
@@ -429,7 +435,7 @@ func (c cacheKeySeries) typ() string {
 }
 
 func (c cacheKeySeries) size() uint64 {
-	return ulidSize + 2*sliceHeaderSize + uint64(len(c.userID)) + uint64(len(c.matchersKey)) + sliceHeaderSize + uint64(len(c.shard))
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey)) + stringSize(c.shard)
 }
 
 type cacheKeyLabelNames struct {
@@ -443,7 +449,7 @@ func (c cacheKeyLabelNames) typ() string {
 }
 
 func (c cacheKeyLabelNames) size() uint64 {
-	return ulidSize + 2*sliceHeaderSize + uint64(len(c.userID)) + uint64(len(c.matchersKey))
+	return stringSize(c.userID) + ulidSize + stringSize(string(c.matchersKey))
 }
 
 type cacheKeyLabelValues struct {
@@ -458,5 +464,13 @@ func (c cacheKeyLabelValues) typ() string {
 }
 
 func (c cacheKeyLabelValues) size() uint64 {
-	return ulidSize + 2*sliceHeaderSize + uint64(len(c.userID)) + uint64(len(c.labelName)) + sliceHeaderSize + uint64(len(c.matchersKey))
+	return stringSize(c.userID) + ulidSize + stringSize(c.labelName) + stringSize(string(c.matchersKey))
+}
+
+func stringSize(s string) uint64 {
+	return stringHeaderSize + uint64(len(s))
+}
+
+func sliceSize(b []byte) uint64 {
+	return sliceHeaderSize + uint64(len(b))
 }
