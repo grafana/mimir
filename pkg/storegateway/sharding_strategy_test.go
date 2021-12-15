@@ -211,7 +211,7 @@ func TestDefaultShardingStrategy(t *testing.T) {
 				"127.0.0.4": {},
 			},
 		},
-		"LEAVING instance in the ring should continue to keep its shard blocks but they should also be replicated to another instance": {
+		"LEAVING instance in the ring should continue to keep its shard blocks and they should NOT be replicated to another instance": {
 			replicationFactor: 1,
 			setupRing: func(r *ring.Desc) {
 				r.AddIngester("instance-1", "127.0.0.1", "", []uint32{block1Hash + 1, block3Hash + 1}, ring.ACTIVE, registeredAt)
@@ -219,7 +219,7 @@ func TestDefaultShardingStrategy(t *testing.T) {
 				r.AddIngester("instance-3", "127.0.0.3", "", []uint32{block4Hash + 1}, ring.LEAVING, registeredAt)
 			},
 			expectedBlocks: map[string][]ulid.ULID{
-				"127.0.0.1": {block1, block3 /* replicated: */, block4},
+				"127.0.0.1": {block1, block3},
 				"127.0.0.2": {block2},
 				"127.0.0.3": {block4},
 			},
@@ -541,7 +541,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{ /* no blocks because unhealthy */ }},
 			},
 		},
-		"LEAVING instance in the ring should continue to keep its shard blocks but they should also be replicated to another instance": {
+		"LEAVING instance in the ring should continue to keep its shard blocks and they should NOT be replicated to another instance": {
 			replicationFactor: 1,
 			limits:            &shardingLimitsMock{storeGatewayTenantShardSize: 2},
 			setupRing: func(r *ring.Desc) {
@@ -555,7 +555,7 @@ func TestShuffleShardingStrategy(t *testing.T) {
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", users: []string{userID}},
 			},
 			expectedBlocks: []blocksExpectation{
-				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3 /* replicated: */, block4}},
+				{instanceID: "instance-1", instanceAddr: "127.0.0.1", blocks: []ulid.ULID{block1, block2, block3}},
 				{instanceID: "instance-2", instanceAddr: "127.0.0.2", blocks: []ulid.ULID{ /* no blocks because not belonging to the shard */ }},
 				{instanceID: "instance-3", instanceAddr: "127.0.0.3", blocks: []ulid.ULID{block4}},
 			},
