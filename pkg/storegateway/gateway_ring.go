@@ -39,11 +39,7 @@ const (
 var (
 	// BlocksOwnerSync is the operation used to check the authoritative owners of a block
 	// (replicas included).
-	BlocksOwnerSync = ring.NewOp([]ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.LEAVING}, func(s ring.InstanceState) bool {
-		// Extend the replication set only when an instance is LEAVING so that
-		// their blocks will be loaded sooner on the next authoritative owner(s).
-		return s == ring.LEAVING
-	})
+	BlocksOwnerSync = ring.NewOp([]ring.InstanceState{ring.JOINING, ring.ACTIVE, ring.LEAVING}, nil)
 
 	// BlocksOwnerRead is the operation used to check the authoritative owners of a block
 	// (replicas included) that are available for queries (a store-gateway is available for
