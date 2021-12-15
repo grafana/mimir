@@ -64,8 +64,12 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 	@echo
 	$(SUDO) docker build --build-arg=revision=$(GIT_REVISION) --build-arg=goproxyValue=$(GOPROXY_VALUE) -t $(IMAGE_PREFIX)$(shell basename $(@D)) -t $(IMAGE_PREFIX)$(shell basename $(@D)):$(IMAGE_TAG) $(@D)/
 	@echo
-	@echo Please use push-multiarch-build-image to build and push build image for all supported architectures.
-	touch $@
+	@echo Go binaries were built using "GOOS=$(GOOS) and GOARCH=$(GOARCH)"
+	@echo
+	@echo Please use '"make push-multiarch-build-image"' to build and push build image for all supported architectures.
+	@echo Please use '"make push-multiarch-mimir"' to build and push Mimir image.
+	@echo
+	@touch $@
 
 # This target compiles mimir for linux/amd64 and linux/arm64 and then builds and pushes a multiarch image to the target repository.
 # Images are first built for each platform separately, as building both at once used to fail more often.
