@@ -135,23 +135,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
 
-	var qry promql.Query
-	if r.GetEnd() == r.GetStart() {
-		qry, err = s.engine.NewInstantQuery(
-			lazyquery.NewLazyQueryable(shardedQueryable),
-			r.GetQuery(),
-			util.TimeFromMillis(r.GetStart()),
-		)
-	} else {
-		qry, err = s.engine.NewRangeQuery(
-			lazyquery.NewLazyQueryable(shardedQueryable),
-			r.GetQuery(),
-			util.TimeFromMillis(r.GetStart()),
-			util.TimeFromMillis(r.GetEnd()),
-			time.Duration(r.GetStep())*time.Millisecond,
-		)
-	}
-
+	qry, err := s.newQuery(r, shardedQueryable)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -169,6 +153,31 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+func (s *querySharding) newQuery(r Request, shardedQueryable *ShardedQueryable) (promql.Query, error) {
+	if isInstant(r) {
+		return s.engine.NewInstantQuery(
+			lazyquery.NewLazyQueryable(shardedQueryable),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()),
+		)
+	}
+
+	return s.engine.NewRangeQuery(
+		lazyquery.NewLazyQueryable(shardedQueryable),
+		r.GetQuery(),
+		util.TimeFromMillis(r.GetStart()),
+		util.TimeFromMillis(r.GetEnd()),
+		time.Duration(r.GetStep())*time.Millisecond,
+	)
+}
+
+// isInstant infers whether a request is instant or not based on start/end & step params.
+// It uses the same logic as prometheus does:
+// http://github.com/grafana/mimir/blob/f79547bfbe8530a08f094d59ebc9c45923cbd56b/vendor/github.com/prometheus/prometheus/promql/engine.go#L582-L583
+func isInstant(r Request) bool {
+	return r.GetEnd() == r.GetStart() && r.GetStep() == 0
 }
 
 func mapEngineError(err error) error {
