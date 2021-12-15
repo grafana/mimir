@@ -56,7 +56,7 @@ SED ?= $(shell which gsed 2>/dev/null || which sed)
 # declared.
 #
 # When building for docker, always build for Linux. This doesn't set GOARCH, which
-# really depends on whether image is going to be used locally (then GOARCH should be set based on
+# really depends on whether the image is going to be used locally (then GOARCH should be set based on
 # host architecture), or pushed remotely. Ideally one would use push-multiarch-* targets instead
 # in that case.
 %/$(UPTODATE): GOOS=linux
