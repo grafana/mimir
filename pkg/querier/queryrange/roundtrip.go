@@ -14,7 +14,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -257,42 +256,6 @@ func NewTripperware(
 		}
 		return next
 	}, c, nil
-}
-
-type roundTripper struct {
-	handler Handler
-	codec   Codec
-}
-
-// NewRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
-// using the codec to translate requests and responses.
-func NewRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
-	return roundTripper{
-		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
-			logger: logger,
-			next:   next,
-			codec:  codec,
-		}),
-		codec: codec,
-	}
-}
-
-func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	request, err := q.codec.DecodeRequest(r.Context(), r)
-	if err != nil {
-		return nil, err
-	}
-
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.LogToSpan(span)
-	}
-
-	response, err := q.handler.Do(r.Context(), request)
-	if err != nil {
-		return nil, err
-	}
-
-	return q.codec.EncodeResponse(r.Context(), response)
 }
 
 // roundTripperHandler is a handler that roundtrips requests to next roundtripper.
