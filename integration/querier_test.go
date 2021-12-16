@@ -69,50 +69,108 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 		},
 	}
 
+	const blockRangePeriod = 5 * time.Second
+
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	defer s.Close()
+
+	// Configure the blocks storage to frequently compact TSDB head
+	// and ship blocks to the storage.
+	commonFlags := mergeFlags(BlocksStorageFlags(), map[string]string{
+		"-blocks-storage.tsdb.block-ranges-period": blockRangePeriod.String(),
+		"-blocks-storage.tsdb.ship-interval":       "1s",
+		"-blocks-storage.tsdb.retention-period":    ((blockRangePeriod * 2) - 1).String(),
+	})
+
+	// Start dependencies in common with all test cases.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, commonFlags["-blocks-storage.s3.bucket-name"])
+	require.NoError(t, s.StartAndWaitReady(consul, minio))
+
+	// Start Mimir components in common with all test cases.
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), commonFlags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), commonFlags, "")
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester))
+
+	// Wait until both the distributor and querier have updated the ring. The querier will also watch
+	// the store-gateway ring if blocks sharding is enabled.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+	// Push some series to Mimir.
+	writeClient, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "user-1")
+	require.NoError(t, err)
+
+	series1Timestamp := time.Now()
+	series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
+	series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
+	series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
+
+	res, err := writeClient.Push(series1)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	res, err = writeClient.Push(series2)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	// Wait until the TSDB head is compacted and shipped to the storage.
+	// The shipped block contains the 1st series, while the 2ns series in in the head.
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
+
+	// Push another series to further compact another block and delete the first block
+	// due to expired retention.
+	series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
+	series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
+
+	res, err = writeClient.Push(series3)
+	require.NoError(t, err)
+	require.Equal(t, 200, res.StatusCode)
+
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_shipper_uploads_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(3), "cortex_ingester_memory_series_created_total"))
+	require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_removed_total"))
+
+	// Start the compactor to have the bucket index created before querying.
+	// This is only required for tests using the bucket index, but doesn't hurt doing it for all of them.
+	compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), commonFlags, "")
+	require.NoError(t, s.StartAndWaitReady(compactor))
+
 	for testName, testCfg := range tests {
 		t.Run(testName, func(t *testing.T) {
-			const blockRangePeriod = 5 * time.Second
+			// We start a dedicated memcached for each test case because we want each test to start
+			// with an empty cache.
+			memcached := e2ecache.NewMemcached()
+			t.Cleanup(func() { require.NoError(t, s.Stop(memcached)) })
+			require.NoError(t, s.StartAndWaitReady(memcached))
 
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
-
-			// Configure the blocks storage to frequently compact TSDB head
-			// and ship blocks to the storage.
-			flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-				"-blocks-storage.tsdb.block-ranges-period":          blockRangePeriod.String(),
-				"-blocks-storage.tsdb.ship-interval":                "1s",
-				"-blocks-storage.bucket-store.sync-interval":        "1s",
-				"-blocks-storage.tsdb.retention-period":             ((blockRangePeriod * 2) - 1).String(),
-				"-blocks-storage.bucket-store.index-cache.backend":  testCfg.indexCacheBackend,
-				"-store-gateway.sharding-enabled":                   strconv.FormatBool(testCfg.blocksShardingStrategy != ""),
-				"-store-gateway.sharding-strategy":                  testCfg.blocksShardingStrategy,
-				"-store-gateway.tenant-shard-size":                  fmt.Sprintf("%d", testCfg.tenantShardSize),
-				"-querier.query-store-for-labels-enabled":           "true",
-				"-blocks-storage.bucket-store.bucket-index.enabled": strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-frontend.query-stats-enabled":                     "true",
-				"-query-frontend.parallelize-shardable-queries":     strconv.FormatBool(testCfg.queryShardingEnabled),
+			flags := mergeFlags(commonFlags, map[string]string{
+				"-blocks-storage.bucket-store.index-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+				"-blocks-storage.bucket-store.sync-interval":                   "1s",
+				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
+				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
+				"-store-gateway.sharding-enabled":                              strconv.FormatBool(testCfg.blocksShardingStrategy != ""),
+				"-store-gateway.sharding-strategy":                             testCfg.blocksShardingStrategy,
+				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
+				"-querier.query-store-for-labels-enabled":                      "true",
+				"-frontend.query-stats-enabled":                                "true",
+				"-query-frontend.parallelize-shardable-queries":                strconv.FormatBool(testCfg.queryShardingEnabled),
 			})
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, flags["-blocks-storage.s3.bucket-name"])
-			memcached := e2ecache.NewMemcached()
-			require.NoError(t, s.StartAndWaitReady(consul, minio, memcached))
-
-			// Add the memcached address to the flags.
-			flags["-blocks-storage.bucket-store.index-cache.memcached.addresses"] = "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort)
-
-			// Start Mimir components.
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+			// Start store-gateways.
 			storeGateway1 := e2emimir.NewStoreGateway("store-gateway-1", consul.NetworkHTTPEndpoint(), flags, "")
 			storeGateway2 := e2emimir.NewStoreGateway("store-gateway-2", consul.NetworkHTTPEndpoint(), flags, "")
 			storeGateways := e2emimir.NewCompositeMimirService(storeGateway1, storeGateway2)
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester, storeGateway1, storeGateway2))
+			t.Cleanup(func() { require.NoError(t, s.Stop(storeGateway1, storeGateway2)) })
+			require.NoError(t, s.StartAndWaitReady(storeGateway1, storeGateway2))
 
 			// Start the query-frontend but do not check for readiness yet.
 			queryFrontend := e2emimir.NewQueryFrontend("query-frontend", flags, "")
+			t.Cleanup(func() { require.NoError(t, s.Stop(queryFrontend)) })
 			require.NoError(t, s.Start(queryFrontend))
 
 			// Configure the querier to connect to the query-frontend.
@@ -125,61 +183,19 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				})
 			}
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			t.Cleanup(func() { require.NoError(t, s.Stop(querier)) })
 			require.NoError(t, s.StartAndWaitReady(querier))
 			require.NoError(t, s.WaitReady(queryFrontend))
 
-			// Wait until both the distributor and querier have updated the ring. The querier will also watch
+			// Wait until the querier has updated the ring. The querier will also watch
 			// the store-gateway ring if blocks sharding is enabled.
-			require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 			if testCfg.blocksShardingStrategy != "" {
 				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 			} else {
 				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 			}
 
-			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), queryFrontend.HTTPEndpoint(), "", "", "user-1")
-			require.NoError(t, err)
-
-			// Push some series to Mimir.
-			series1Timestamp := time.Now()
-			series2Timestamp := series1Timestamp.Add(blockRangePeriod * 2)
-			series1, expectedVector1 := generateSeries("series_1", series1Timestamp, prompb.Label{Name: "series_1", Value: "series_1"})
-			series2, expectedVector2 := generateSeries("series_2", series2Timestamp, prompb.Label{Name: "series_2", Value: "series_2"})
-
-			res, err := c.Push(series1)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-
-			res, err = c.Push(series2)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-
-			// Wait until the TSDB head is compacted and shipped to the storage.
-			// The shipped block contains the 1st series, while the 2ns series in in the head.
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_shipper_uploads_total"))
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_created_total"))
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series_removed_total"))
-
-			// Push another series to further compact another block and delete the first block
-			// due to expired retention.
-			series3Timestamp := series2Timestamp.Add(blockRangePeriod * 2)
-			series3, expectedVector3 := generateSeries("series_3", series3Timestamp, prompb.Label{Name: "series_3", Value: "series_3"})
-
-			res, err = c.Push(series3)
-			require.NoError(t, err)
-			require.Equal(t, 200, res.StatusCode)
-
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_shipper_uploads_total"))
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(1), "cortex_ingester_memory_series"))
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(3), "cortex_ingester_memory_series_created_total"))
-			require.NoError(t, ingester.WaitSumMetrics(e2e.Equals(2), "cortex_ingester_memory_series_removed_total"))
-
-			if testCfg.bucketIndexEnabled {
-				// Start the compactor to have the bucket index created before querying.
-				compactor := e2emimir.NewCompactor("compactor", consul.NetworkHTTPEndpoint(), flags, "")
-				require.NoError(t, s.StartAndWaitReady(compactor))
-			} else {
+			if !testCfg.bucketIndexEnabled {
 				// Wait until the querier has discovered the uploaded blocks.
 				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(2), "cortex_blocks_meta_synced"))
 			}
@@ -203,6 +219,9 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
 			expectedFetchedSeries := 0
+
+			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "user-1")
+			require.NoError(t, err)
 
 			result, err := c.Query("series_1", series1Timestamp)
 			require.NoError(t, err)
