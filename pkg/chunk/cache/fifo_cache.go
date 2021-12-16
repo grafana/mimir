@@ -16,7 +16,6 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/flagext"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -39,8 +38,6 @@ type FifoCacheConfig struct {
 	MaxSizeBytes string        `yaml:"max_size_bytes"`
 	MaxSizeItems int           `yaml:"max_size_items"`
 	Validity     time.Duration `yaml:"validity"`
-
-	DeprecatedSize int `yaml:"size"`
 }
 
 // RegisterFlagsWithPrefix adds the flags required to config this to the given FlagSet
@@ -48,8 +45,6 @@ func (cfg *FifoCacheConfig) RegisterFlagsWithPrefix(prefix, description string, 
 	f.StringVar(&cfg.MaxSizeBytes, prefix+"fifocache.max-size-bytes", "", description+"Maximum memory size of the cache in bytes. A unit suffix (KB, MB, GB) may be applied.")
 	f.IntVar(&cfg.MaxSizeItems, prefix+"fifocache.max-size-items", 0, description+"Maximum number of entries in the cache.")
 	f.DurationVar(&cfg.Validity, prefix+"fifocache.duration", 0, description+"The expiry duration for the cache.")
-
-	f.IntVar(&cfg.DeprecatedSize, prefix+"fifocache.size", 0, "Deprecated (use max-size-items or max-size-bytes instead): "+description+"The number of entries to cache. ")
 }
 
 func (cfg *FifoCacheConfig) Validate() error {
@@ -100,11 +95,6 @@ type cacheEntry struct {
 func NewFifoCache(name string, cfg FifoCacheConfig, reg prometheus.Registerer, logger log.Logger) *FifoCache {
 	util_log.WarnExperimentalUse("In-memory (FIFO) cache")
 
-	if cfg.DeprecatedSize > 0 {
-		flagext.DeprecatedFlagsUsed.Inc()
-		level.Warn(logger).Log("msg", "running with DEPRECATED flag fifocache.size, use fifocache.max-size-items or fifocache.max-size-bytes instead", "cache", name)
-		cfg.MaxSizeItems = cfg.DeprecatedSize
-	}
 	maxSizeBytes, _ := parsebytes(cfg.MaxSizeBytes)
 
 	if maxSizeBytes == 0 && cfg.MaxSizeItems == 0 {

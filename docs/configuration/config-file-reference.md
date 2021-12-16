@@ -4095,11 +4095,6 @@ The `fifo_cache_config` configures the local in-memory cache. The supported CLI 
 # The expiry duration for the cache.
 # CLI flag: -<prefix>.fifocache.duration
 [validity: <duration> | default = 0s]
-
-# Deprecated (use max-size-items or max-size-bytes instead): The number of
-# entries to cache.
-# CLI flag: -<prefix>.fifocache.size
-[size: <int> | default = 0]
 ```
 
 ### `blocks_storage_config`
