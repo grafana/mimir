@@ -281,6 +281,9 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 }
 
 func TestRuler_Authorizer(t *testing.T) {
+	require.Contains(t, mockRules, "user1", "test data has changed, refactor this test too")
+	require.Contains(t, mockRules, "user2", "test data has changed, refactor this test too")
+
 	testCases := map[string]struct {
 		allRules        map[string]rulespb.RuleGroupList
 		authorizedRules []rulespb.RuleGroupList
