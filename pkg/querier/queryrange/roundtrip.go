@@ -227,31 +227,27 @@ func NewTripperware(
 	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
 	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
-		// Finally, if the user selected any query range middleware, stitch it in.
-		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
-			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
-				op := "query"
-				if isQueryRange {
-					op = "query_range"
-				}
+		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
+			op := "query"
+			if isQueryRange {
+				op = "query_range"
+			}
 
-				tenantIDs, err := tenant.TenantIDs(r.Context())
-				// This should never happen anyways because we have auth middleware before this.
-				if err != nil {
-					return nil, err
-				}
-				userStr := tenant.JoinTenantIDs(tenantIDs)
-				activeUsers.UpdateUserTimestamp(userStr, time.Now())
-				queriesPerTenant.WithLabelValues(op, userStr).Inc()
+			tenantIDs, err := tenant.TenantIDs(r.Context())
+			// This should never happen anyways because we have auth middleware before this.
+			if err != nil {
+				return nil, err
+			}
+			userStr := tenant.JoinTenantIDs(tenantIDs)
+			activeUsers.UpdateUserTimestamp(userStr, time.Now())
+			queriesPerTenant.WithLabelValues(op, userStr).Inc()
 
-				if !isQueryRange {
-					return next.RoundTrip(r)
-				}
-				return queryrange.RoundTrip(r)
-			})
-		}
-		return next
+			if !isQueryRange {
+				return next.RoundTrip(r)
+			}
+			return queryrange.RoundTrip(r)
+		})
 	}, c, nil
 }
