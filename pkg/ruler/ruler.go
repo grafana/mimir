@@ -544,8 +544,7 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 	}
 
 	for userID, groups := range userGroups {
-		var toRemove map[*rulespb.RuleGroupDesc]struct{}
-
+		var amendedList rulespb.RuleGroupList
 		for _, g := range groups {
 			isAuthorized, err := r.authorizer.IsAuthorized(ctx, g)
 			switch {
@@ -559,23 +558,11 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 				fallthrough
 			case !isAuthorized:
 				r.syncFailedGroupAuthorizations.WithLabelValues(userID).Inc()
-				if toRemove == nil {
-					toRemove = make(map[*rulespb.RuleGroupDesc]struct{})
-				}
-				toRemove[g] = struct{}{}
-			}
-		}
-
-		if len(toRemove) > 0 {
-			amendedList := make(rulespb.RuleGroupList, 0, len(groups)-len(toRemove))
-			for _, g := range groups {
-				if _, shouldRemove := toRemove[g]; shouldRemove {
-					continue
-				}
+			default:
 				amendedList = append(amendedList, g)
 			}
-			userGroups[userID] = amendedList
 		}
+		userGroups[userID] = amendedList
 	}
 }
 
