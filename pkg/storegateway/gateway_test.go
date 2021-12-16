@@ -241,7 +241,7 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	test.VerifyNoLeak(t)
 
-	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClientOnDisk, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// This tests uses real TSDB blocks. 24h time range, 2h block range period,
 	// 2 users = total (24 / 12) * 2 = 24 blocks.
@@ -250,6 +250,21 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	now := time.Now()
 	mockTSDB(t, path.Join(storageDir, "user-1"), 24, 12, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
 	mockTSDB(t, path.Join(storageDir, "user-2"), 24, 12, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
+
+	// Uploading the blocks to in memory storage - otherwise we run out of file descriptors during the test
+	// The default limit for fsd is 1024 on linux.
+	bucketClient := objstore.NewInMemBucket()
+	for _, userID := range []string{"user-1", "user-2"} {
+		userBucketClient := bucket.NewUserBucketClient(userID, bucketClient, nil)
+		require.NoError(t, bucketClientOnDisk.Iter(context.Background(), userID, func(key string) error {
+			dir := strings.TrimSuffix(path.Join(storageDir, key), "/")
+			err := block.UploadPromBlock(context.Background(), log.NewNopLogger(), userBucketClient, dir, metadata.NoneFunc)
+			if err != nil {
+				return err
+			}
+			return nil
+		}))
+	}
 
 	// Write the bucket index.
 	for _, userID := range []string{"user-1", "user-2"} {
@@ -312,8 +327,13 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 
 	for testName, testData := range tests {
 		for _, bucketIndexEnabled := range []bool{true, false} {
+			// capture running variables, otherwise reused due to t.Parallel leading to corrupt test
+			testName := testName
+			testData := testData
+			bucketIndexEnabled := bucketIndexEnabled
 			t.Run(fmt.Sprintf("%s (bucket index enabled = %v)", testName, bucketIndexEnabled), func(t *testing.T) {
-				// Randomise the seed but log it in case we need to reproduce the test on failure.
+				t.Parallel()
+				// Randomize the seed but log it in case we need to reproduce the test on failure.
 				seed := time.Now().UnixNano()
 				rand.Seed(seed)
 				t.Log("random generator seed:", seed)
