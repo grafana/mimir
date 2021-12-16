@@ -14,14 +14,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/weaveworks/common/user"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -114,6 +111,17 @@ func MergeMiddlewares(middleware ...Middleware) Middleware {
 // Tripperware is a signature for all http client-side middleware.
 type Tripperware func(http.RoundTripper) http.RoundTripper
 
+// MergeTripperwares produces a tripperware that applies multiple tripperware in turn;
+// ie Merge(f,g,h).Wrap(tripper) == f(g(h(tripper)))
+func MergeTripperwares(tripperware ...Tripperware) Tripperware {
+	return func(next http.RoundTripper) http.RoundTripper {
+		for i := len(tripperware) - 1; i >= 0; i-- {
+			next = tripperware[i](next)
+		}
+		return next
+	}
+}
+
 // RoundTripFunc is to http.RoundTripper what http.HandlerFunc is to http.Handler.
 type RoundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -134,19 +142,27 @@ func NewTripperware(
 	registerer prometheus.Registerer,
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
-	// Per tenant query metrics.
-	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_queries_total",
-		Help: "Total queries sent per tenant.",
-	}, []string{"op", "user"})
+	queryRangeTripperware, cache, err := newQueryRangeTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer, cacheGenNumberLoader)
+	if err != nil {
+		return nil, nil, err
+	}
+	return MergeTripperwares(
+		newActiveUsersTripperware(log, registerer),
+		queryRangeTripperware,
+	), cache, err
+}
 
-	activeUsers := util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
-		err := util.DeleteMatchingLabels(queriesPerTenant, map[string]string{"user": user})
-		if err != nil {
-			level.Warn(log).Log("msg", "failed to remove cortex_query_frontend_queries_total metric for user", "user", user)
-		}
-	})
-
+func newQueryRangeTripperware(
+	cfg Config,
+	log log.Logger,
+	limits Limits,
+	codec Codec,
+	cacheExtractor Extractor,
+	storageEngine string,
+	engineOpts promql.EngineOpts,
+	registerer prometheus.Registerer,
+	cacheGenNumberLoader CacheGenNumberLoader,
+) (Tripperware, cache.Cache, error) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
@@ -227,98 +243,54 @@ func NewTripperware(
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
 	}
 
-	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
-	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
-		// Finally, if the user selected any query range middleware, stitch it in.
-		if len(queryRangeMiddleware) > 0 {
-			queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
-			return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-				isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
-				op := "query"
-				if isQueryRange {
-					op = "query_range"
-				}
-
-				tenantIDs, err := tenant.TenantIDs(r.Context())
-				// This should never happen anyways because we have auth middleware before this.
-				if err != nil {
-					return nil, err
-				}
-				userStr := tenant.JoinTenantIDs(tenantIDs)
-				activeUsers.UpdateUserTimestamp(userStr, time.Now())
-				queriesPerTenant.WithLabelValues(op, userStr).Inc()
-
-				if !isQueryRange {
-					return next.RoundTrip(r)
-				}
+		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			if isQueryRange(r) {
 				return queryrange.RoundTrip(r)
-			})
-		}
-		return next
+			}
+			return next.RoundTrip(r)
+		})
 	}, c, nil
 }
 
-type roundTripper struct {
-	handler Handler
-	codec   Codec
-}
+func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Registerer) Tripperware {
+	// Per tenant query metrics.
+	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_frontend_queries_total",
+		Help: "Total queries sent per tenant.",
+	}, []string{"op", "user"})
 
-// NewRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
-// using the codec to translate requests and responses.
-func NewRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
-	return roundTripper{
-		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
-			logger: logger,
-			next:   next,
-			codec:  codec,
-		}),
-		codec: codec,
+	activeUsers := util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
+		err := util.DeleteMatchingLabels(queriesPerTenant, map[string]string{"user": user})
+		if err != nil {
+			level.Warn(logger).Log("msg", "failed to remove cortex_query_frontend_queries_total metric for user", "user", user)
+		}
+	})
+
+	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
+	_ = activeUsers.StartAsync(context.Background())
+	return func(next http.RoundTripper) http.RoundTripper {
+		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+			op := "query"
+			if isQueryRange(r) {
+				op = "query_range"
+			}
+
+			tenantIDs, err := tenant.TenantIDs(r.Context())
+			// This should never happen anyways because we have auth middleware before this.
+			if err != nil {
+				return nil, err
+			}
+			userStr := tenant.JoinTenantIDs(tenantIDs)
+			activeUsers.UpdateUserTimestamp(userStr, time.Now())
+			queriesPerTenant.WithLabelValues(op, userStr).Inc()
+
+			return next.RoundTrip(r)
+		})
 	}
 }
 
-func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
-	request, err := q.codec.DecodeRequest(r.Context(), r)
-	if err != nil {
-		return nil, err
-	}
-
-	if span := opentracing.SpanFromContext(r.Context()); span != nil {
-		request.LogToSpan(span)
-	}
-
-	response, err := q.handler.Do(r.Context(), request)
-	if err != nil {
-		return nil, err
-	}
-
-	return q.codec.EncodeResponse(r.Context(), response)
-}
-
-// roundTripperHandler is a handler that roundtrips requests to next roundtripper.
-// It basically encodes a Request from Handler.Do and decode response from next roundtripper.
-type roundTripperHandler struct {
-	logger log.Logger
-	next   http.RoundTripper
-	codec  Codec
-}
-
-// Do implements Handler.
-func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
-	request, err := q.codec.EncodeRequest(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-
-	response, err := q.next.RoundTrip(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	return q.codec.DecodeResponse(ctx, response, r, q.logger)
+func isQueryRange(r *http.Request) bool {
+	return strings.HasSuffix(r.URL.Path, "/query_range")
 }

@@ -15,6 +15,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -117,6 +118,34 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	return l.next.Do(ctx, r)
+}
+
+// roundTripperHandler is a handler that roundtrips Request to next http.RoundTripper.
+// It basically encodes a Request from Handler.Do and decodes response from next roundtripper.
+type roundTripperHandler struct {
+	logger log.Logger
+	next   http.RoundTripper
+	codec  Codec
+}
+
+// Do implements Handler.
+func (rth roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
+	request, err := rth.codec.EncodeRequest(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
+		return nil, apierror.New(apierror.TypeBadData, err.Error())
+	}
+
+	response, err := rth.next.RoundTrip(request)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	return rth.codec.DecodeResponse(ctx, response, r, rth.logger)
 }
 
 type limitedRoundTripper struct {

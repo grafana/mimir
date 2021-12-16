@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/opentracing/opentracing-go"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
@@ -29,9 +30,8 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/grafana/mimir/pkg/chunk/cache"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
 func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
@@ -102,7 +102,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 		newAssertHintsMiddleware(t, &Hints{TotalQueries: 2}),
 	}
 
-	roundtripper := NewRoundTripper(singleHostRoundTripper{
+	roundtripper := newRoundTripper(singleHostRoundTripper{
 		host: downstreamURL.Host,
 		next: http.DefaultTransport,
 	}, PrometheusCodec, log.NewNopLogger(), middlewares...)
@@ -1181,4 +1181,40 @@ type assertHintsMiddleware struct {
 func (m *assertHintsMiddleware) Do(ctx context.Context, req Request) (Response, error) {
 	assert.Equal(m.t, m.expected, req.GetHints())
 	return m.next.Do(ctx, req)
+}
+
+type roundTripper struct {
+	handler Handler
+	codec   Codec
+}
+
+// newRoundTripper merges a set of middlewares into an handler, then inject it into the `next` roundtripper
+// using the codec to translate requests and responses.
+func newRoundTripper(next http.RoundTripper, codec Codec, logger log.Logger, middlewares ...Middleware) http.RoundTripper {
+	return roundTripper{
+		handler: MergeMiddlewares(middlewares...).Wrap(roundTripperHandler{
+			logger: logger,
+			next:   next,
+			codec:  codec,
+		}),
+		codec: codec,
+	}
+}
+
+func (q roundTripper) RoundTrip(r *http.Request) (*http.Response, error) {
+	request, err := q.codec.DecodeRequest(r.Context(), r)
+	if err != nil {
+		return nil, err
+	}
+
+	if span := opentracing.SpanFromContext(r.Context()); span != nil {
+		request.LogToSpan(span)
+	}
+
+	response, err := q.handler.Do(r.Context(), request)
+	if err != nil {
+		return nil, err
+	}
+
+	return q.codec.EncodeResponse(r.Context(), response)
 }
