@@ -306,7 +306,7 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 
 		syncFailedGroupAuthorizations: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
 			Name: "cortex_ruler_sync_groups_authr_failed_total",
-			Help: "Total number of skipped rule groups during sync due to RuleGroupAuthorizer not authorizing them.",
+			Help: "Total number of skipped rule groups during sync due to failed authorizations.",
 		}, []string{"user"}),
 	}
 
