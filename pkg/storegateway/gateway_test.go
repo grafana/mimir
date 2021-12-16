@@ -234,11 +234,11 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	assert.False(t, g.ringLifecycler.IsRegistered())
 }
 
-// TestStoreGateway_InitialSyncWithWaitRingStability tests the store-gateway cold start case.
+// TestStoreGateway_InitialSyncWithWaitRingTokensStability tests the store-gateway cold start case.
 // When several store-gateways start up at once, we expect each store-gateway to only load
 // their own blocks, regardless which store-gateway joined the ring first or last (even if starting
 // at the same time, they will join the ring at a slightly different time).
-func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
+func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	test.VerifyNoLeak(t)
 
 	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
