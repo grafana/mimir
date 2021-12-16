@@ -352,6 +352,10 @@ func New(cfg Config) (*Mimir, error) {
 	if cfg.TenantFederation.Enabled {
 		util_log.WarnExperimentalUse("tenant-federation")
 		tenant.WithDefaultResolver(tenant.NewMultiResolver())
+
+		if cfg.Ruler.TenantFederation.Enabled {
+			util_log.WarnExperimentalUse("ruler.tenant-federation")
+		}
 	}
 
 	// Don't check auth header on TransferChunks, as we weren't originally

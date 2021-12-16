@@ -279,7 +279,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
-		byPassForSingleQuerier := true
+		const byPassForSingleQuerier = true
 		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, byPassForSingleQuerier, util_log.Logger))
 	}
 	return nil, nil
@@ -633,7 +633,14 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 
 	if t.Cfg.Ruler.TenantFederation.Enabled {
-		queryable = tenantfederation.NewQueryable(queryable, false, util_log.Logger)
+		if !t.Cfg.TenantFederation.Enabled {
+			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+		}
+		// Make sure the mergeQuerier is only used for request with more than a
+		// single tenant. This allows for a less impactful enabling of tenant
+		// federation.
+		const byPassForSingleQuerier = true
+		queryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
 	}
 
 	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, eng, t.Overrides, prometheus.DefaultRegisterer)
