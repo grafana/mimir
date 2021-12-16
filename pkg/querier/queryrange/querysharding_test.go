@@ -374,7 +374,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 						rate(metric_counter[1m])
 					[5m:1m])
 				[2m:1m])
-			[10m:1m])`,
+			[10m:1m] offset 25m)`,
 			expectedShardedQueries: 0,
 		},
 	}
