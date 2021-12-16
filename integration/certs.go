@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/configs.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
 //go:build requires_docker
 // +build requires_docker
 
@@ -17,7 +14,6 @@ import (
 )
 
 func writeCerts(dir string, dnsNames ...string) error {
-	// set the ca
 	cert := ca.New("Test")
 
 	// Ensure the entire path of directories exist.
