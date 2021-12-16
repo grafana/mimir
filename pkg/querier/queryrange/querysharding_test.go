@@ -11,6 +11,7 @@ import (
 	"math"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -31,6 +32,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -100,6 +102,9 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		// Expected number of sharded queries per shard (the final expected
 		// number will be multiplied for the number of shards).
 		expectedShardedQueries int
+
+		// expectSpecificOrder disables result sorting and checks that both results are returned in same order
+		expectSpecificOrder bool
 	}{
 		"sum() no grouping": {
 			query:                  `sum(metric_counter)`,
@@ -311,6 +316,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 							)`,
 			expectedShardedQueries: 1,
 		},
+		`query with sort() expects specific order`: {
+			query:                  `sort(sum(metric_histogram_bucket) by (le))`,
+			expectedShardedQueries: 1,
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//
@@ -462,22 +471,14 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					// Run the query without sharding.
 					expectedRes, err := downstream.Do(context.Background(), req)
 					require.Nil(t, err)
+					expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+					if !testData.expectSpecificOrder {
+						sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
+					}
 
 					// Ensure the query produces some results.
-					require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
-
-					// Ensure the query produces some results which are not NaN.
-					foundValidSamples := false
-				outer:
-					for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
-						for _, sample := range stream.Samples {
-							if !math.IsNaN(sample.Value) {
-								foundValidSamples = true
-								break outer
-							}
-						}
-					}
-					require.True(t, foundValidSamples, "the query returns some not NaN samples")
+					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+					requireValidSamples(t, expectedPrometheusRes.Data.Result)
 
 					for _, numShards := range []int{2, 4, 8, 16} {
 						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
@@ -495,7 +496,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 							// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
 							// if you rerun the same query twice).
-							approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+							shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+							if !testData.expectSpecificOrder {
+								sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+							}
+							approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
 
 							// Ensure the query has been sharded/not sharded as expected.
 							expectedSharded := 0
@@ -525,6 +530,30 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			}
 		})
 	}
+}
+
+// requireValidSamples ensures the query produces some results which are not NaN.
+func requireValidSamples(t *testing.T, result []SampleStream) {
+	t.Helper()
+	for _, stream := range result {
+		for _, sample := range stream.Samples {
+			if !math.IsNaN(sample.Value) {
+				return
+			}
+		}
+	}
+	t.Fatalf("Result should have some not-NaN samples")
+}
+
+type byLabels []SampleStream
+
+func (b byLabels) Len() int      { return len(b) }
+func (b byLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
+func (b byLabels) Less(i, j int) bool {
+	return labels.Compare(
+		mimirpb.FromLabelAdaptersToLabels(b[i].Labels),
+		mimirpb.FromLabelAdaptersToLabels(b[j].Labels),
+	) < 0
 }
 
 func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
