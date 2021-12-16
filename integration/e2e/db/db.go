@@ -48,7 +48,7 @@ func newMinio(port int, envVars map[string]string, bktNames ...string) *e2e.HTTP
 		images.Minio,
 		// Create the "mimir" bucket before starting minio
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", strings.Join(commands, " && ")),
-		e2e.NewHTTPReadinessProbe(port, "/minio/health/cluster", 200, 200),
+		e2e.NewHTTPReadinessProbe(port, "/minio/health/ready", 200, 200),
 		port,
 	)
 	envVars["MINIO_ACCESS_KEY"] = MinioAccessKey
@@ -60,19 +60,23 @@ func newMinio(port int, envVars map[string]string, bktNames ...string) *e2e.HTTP
 }
 
 // NewKES returns KES server, used as a local key management store
-func NewKES(port int, serverKeyFile, serverCertFile, rootCertFile string) *e2e.HTTPService {
+func NewKES(port int, serverName, serverKeyFile, serverCertFile, clientKeyFile, clientCertFile, rootCertFile, hostSharedDir string) (*e2e.HTTPService, error) {
 	// Run this as a shell command, so sub-shell can evaluate 'identity' of root user.
 	command := fmt.Sprintf("/kes server --addr 0.0.0.0:%d --key=%s --cert=%s --root=$(/kes tool identity of %s) --auth=off",
-		port, filepath.Join(e2e.ContainerSharedDir, serverKeyFile), filepath.Join(e2e.ContainerSharedDir, serverCertFile), filepath.Join(e2e.ContainerSharedDir, rootCertFile))
+		port, filepath.Join(e2e.ContainerSharedDir, serverKeyFile), filepath.Join(e2e.ContainerSharedDir, serverCertFile), filepath.Join(e2e.ContainerSharedDir, clientCertFile))
 
-	m := e2e.NewHTTPService(
+	readinessProbe, err := e2e.NewHTTPSReadinessProbe(port, "/v1/status", serverName, filepath.Join(hostSharedDir, clientKeyFile), filepath.Join(hostSharedDir, clientCertFile), filepath.Join(hostSharedDir, rootCertFile), 200, 200)
+	if err != nil {
+		return nil, err
+	}
+
+	return e2e.NewHTTPService(
 		"kes",
 		images.KES,
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", command),
-		nil, // KES only supports https calls - TODO make Scenario able to call https or poll plain TCP socket.
+		readinessProbe,
 		port,
-	)
-	return m
+	), nil
 }
 
 func NewConsul() *e2e.HTTPService {

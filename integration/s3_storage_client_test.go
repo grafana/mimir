@@ -31,8 +31,9 @@ func TestS3Client(t *testing.T) {
 	kesDNSName := networkName + "-kes"
 	require.NoError(t, writeCerts(s.SharedDir(), kesDNSName))
 	// Start dependencies.
-	kes := e2edb.NewKES(7373, serverKeyFile, serverCertFile, clientCertFile)
-	require.NoError(t, s.Start(kes)) // TODO: wait for it to be ready, but currently there is no way to probe.
+	kes, err := e2edb.NewKES(7373, kesDNSName, serverKeyFile, serverCertFile, clientKeyFile, clientCertFile, caCertFile, s.SharedDir())
+	require.NoError(t, err)
+	require.NoError(t, s.StartAndWaitReady(kes))
 	minio := e2edb.NewMinioWithKES(9000, "https://"+kesDNSName+":7373", clientKeyFile, clientCertFile, caCertFile, bucketName)
 	require.NoError(t, s.StartAndWaitReady(minio))
 
