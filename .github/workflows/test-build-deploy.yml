@@ -56,8 +56,8 @@ jobs:
           go-version: 1.17.3
       - name: Symlink Expected Path to Workspace
         run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+          sudo mkdir -p /go/src/github.com/grafana/mimir
+          sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       # Note that we're running the 'test-with-race' target here which runs unit tests with the go data race detector
       - name: Run Tests
         run: make BUILD_IN_CONTAINER=false test-with-race
