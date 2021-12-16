@@ -166,21 +166,25 @@ func TestSingleBinaryWithMemberlistScaling(t *testing.T) {
 
 	// Scale up instances. These numbers seem enough to reliably reproduce some unwanted
 	// consequences of slow propagation, such as missing tombstones.
-
 	maxMimir := 20
 	minMimir := 3
 	instances := make([]*e2emimir.MimirService, 0)
 
-	for i := 0; i < maxMimir; i++ {
-		name := fmt.Sprintf("mimir-%d", i+1)
-		join := ""
-		if i > 0 {
-			join = e2e.NetworkContainerHostPort(networkName, "mimir-1", 8000)
-		}
+	// Start the 1st instance. This will provide the initial state to other members.
+	firstInstance := newSingleBinary("mimir-1", "", "", nil)
+	require.NoError(t, s.StartAndWaitReady(firstInstance))
+	instances = append(instances, firstInstance)
+
+	// Start all other instances concurrently, joining the 1st instance.
+	var nextInstances []e2e.Service
+	for i := 2; i <= maxMimir; i++ {
+		name := fmt.Sprintf("mimir-%d", i)
+		join := e2e.NetworkContainerHostPort(networkName, firstInstance.Name(), 8000)
 		c := newSingleBinary(name, "", join, nil)
-		require.NoError(t, s.StartAndWaitReady(c))
+		nextInstances = append(nextInstances, c)
 		instances = append(instances, c)
 	}
+	require.NoError(t, s.StartAndWaitReady(nextInstances...))
 
 	// Sanity check the ring membership and give each instance time to see every other instance.
 
