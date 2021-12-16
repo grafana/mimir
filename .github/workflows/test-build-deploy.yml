@@ -47,14 +47,13 @@ jobs:
 
   test:
     runs-on: ubuntu-20.04
-    container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:20211111_update-go-1.17.3-4e9f65408
-      credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
+      - name: Upgrade golang
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17.3
       - name: Symlink Expected Path to Workspace
         run: |
           mkdir -p /go/src/github.com/grafana/mimir

@@ -151,8 +151,6 @@ pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanage
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 
 all: $(UPTODATE_FILES)
-test: protos
-test-with-race: protos
 mod-check: protos
 lint: lint-packaging-scripts protos
 mimir-build-image/$(UPTODATE): mimir-build-image/*
