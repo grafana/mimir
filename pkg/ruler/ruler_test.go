@@ -7,6 +7,7 @@ package ruler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -280,58 +281,67 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 }
 
 func TestRuler_Authorizer(t *testing.T) {
+	testCases := map[string]struct {
+		allRules        map[string]rulespb.RuleGroupList
+		authorizedRules []rulespb.RuleGroupList
+		authorizerErr   error
 
-	t.Run("happy flow", func(t *testing.T) {
-		cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
-		t.Cleanup(cleanup)
+		expectedRulesPerUser map[string]int
+	}{
+		"happy flow": {
+			allRules:        mockRules,
+			authorizedRules: []rulespb.RuleGroupList{mockRules["user2"]},
 
-		// Treat only user2's groups as authorized
-		authorizer := newMockAuthorizer(nil, mockRules["user2"])
-		r, rCleanup := buildRuler(t, cfg, nil, WithRuleGroupAuthorizer(authorizer))
+			expectedRulesPerUser: map[string]int{
+				"user1": 0,
+				"user2": len(mockRules["user2"]),
+			},
+		},
+		"no authorized groups": {
+			allRules:        mockRules,
+			authorizedRules: nil,
+			authorizerErr:   nil,
 
-		// Start the ruler and prep cleanup
-		t.Cleanup(rCleanup)
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-		defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+			expectedRulesPerUser: map[string]int{
+				"user1": 0,
+				"user2": 0,
+			},
+		},
+		"group is treated as non-authorized when authorizer returns an error": {
+			allRules:        mockRules,
+			authorizedRules: []rulespb.RuleGroupList{mockRules["user1"], mockRules["user2"]},
+			authorizerErr:   errors.New("boom"),
 
-		r.syncRules(context.Background(), rulerSyncReasonInitial)
+			expectedRulesPerUser: map[string]int{
+				"user1": 0,
+				"user2": 0,
+			},
+		},
+	}
 
-		// user1 shouldn't have any groups because we didn't mark them as authorized
-		loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), "user1"))
-		require.NoError(t, err)
-		require.Empty(t, loadedGroups)
+	for name, tc := range testCases {
+		tc := tc
+		t.Run(name, func(t *testing.T) {
+			cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(tc.allRules))
+			t.Cleanup(cleanup)
 
-		// user2 should have all their groups loaded
-		loadedGroups, err = r.GetRules(user.InjectOrgID(context.Background(), "user2"))
-		require.NoError(t, err)
-		require.Len(t, loadedGroups, len(mockRules["user2"]))
-	})
+			authorizer := newMockAuthorizer(tc.authorizerErr, tc.authorizedRules...)
+			r, rCleanup := buildRuler(t, cfg, nil, WithRuleGroupAuthorizer(authorizer))
 
-	t.Run("group is treated as non-authorized when authorizer returns an error", func(t *testing.T) {
-		cfg, cleanup := defaultRulerConfig(t, newMockRuleStore(mockRules))
-		t.Cleanup(cleanup)
+			// Start the ruler and prep cleanup
+			t.Cleanup(rCleanup)
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r)) })
 
-		// Treat all groups as authorized, but return an error
-		authorizer := newMockAuthorizer(fmt.Errorf("oops"), mockRules["user2"], mockRules["user1"])
-		r, rCleanup := buildRuler(t, cfg, nil, WithRuleGroupAuthorizer(authorizer))
+			r.syncRules(context.Background(), rulerSyncReasonInitial)
 
-		// Start the ruler and prep cleanup
-		t.Cleanup(rCleanup)
-		require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-		defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
-
-		r.syncRules(context.Background(), rulerSyncReasonInitial)
-
-		// user1 shouldn't have any groups because authorizer returned an error
-		loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), "user1"))
-		require.NoError(t, err)
-		require.Empty(t, loadedGroups)
-
-		// user2 shouldn't have any groups because authorizer returned an error
-		loadedGroups, err = r.GetRules(user.InjectOrgID(context.Background(), "user2"))
-		require.NoError(t, err)
-		require.Empty(t, loadedGroups)
-	})
+			for userID, expectedResults := range tc.expectedRulesPerUser {
+				loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID))
+				require.NoError(t, err)
+				require.Len(t, loadedGroups, expectedResults)
+			}
+		})
+	}
 }
 
 func TestGetRules(t *testing.T) {
