@@ -18,9 +18,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/weaveworks/common/user"
 
-	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -256,32 +254,4 @@ func NewTripperware(
 		}
 		return next
 	}, c, nil
-}
-
-// roundTripperHandler is a handler that roundtrips requests to next roundtripper.
-// It basically encodes a Request from Handler.Do and decode response from next roundtripper.
-type roundTripperHandler struct {
-	logger log.Logger
-	next   http.RoundTripper
-	codec  Codec
-}
-
-// Do implements Handler.
-func (q roundTripperHandler) Do(ctx context.Context, r Request) (Response, error) {
-	request, err := q.codec.EncodeRequest(ctx, r)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := user.InjectOrgIDIntoHTTPRequest(ctx, request); err != nil {
-		return nil, apierror.New(apierror.TypeBadData, err.Error())
-	}
-
-	response, err := q.next.RoundTrip(request)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = response.Body.Close() }()
-
-	return q.codec.DecodeResponse(ctx, response, r, q.logger)
 }
