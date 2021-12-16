@@ -685,11 +685,10 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	})
 }
 
+// TestRulerFederatedRules pushes some metrics to tenants tenant-1 and tenant-2. It then creates a recording rule in tenant-3
+// which aggregates the metrics from tenant-1 and tenant-2. The test asserts that the resulting timeseries from
+// the rule indeed contained data from both tenants.
 func TestRulerFederatedRules(t *testing.T) {
-	// This test pushes some metrics to tenants tenant-1 and tenant-2. It then creates a recording rule in tenant-3
-	// which aggregates the metrics from tenant-1 and tenant-2. The test asserts that the resulting timeseries from
-	// the rule indeed contained data from both tenants.
-
 	const tenant1, tenant2 = "tenant-1", "tenant-2"
 	tenantIDs := []string{tenant1, tenant2}
 
