@@ -725,19 +725,19 @@ func TestRulerFederatedRules(t *testing.T) {
 
 	// Generate some series under different tenants
 	sampleTime := time.Now()
-	var sumPushedSeries model.SampleValue
+	pushedSeriesCount := 0
 
 	for _, tenantID := range tenantIDs {
 		client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 		require.NoError(t, err)
 
-		series, pushedVectors := generateSeries("metric", sampleTime)
+		series, _ := generateSeries("metric", sampleTime)
 
 		res, err := client.Push(series)
 		require.NoError(t, err)
 		require.Equal(t, 200, res.StatusCode)
 
-		sumPushedSeries += pushedVectors[0].Value
+		pushedSeriesCount++
 	}
 
 	// Create a client as tenant1
@@ -747,7 +747,7 @@ func TestRulerFederatedRules(t *testing.T) {
 	// Create some federated rules under the same tenant
 	namespace := "test_namespace"
 	// A query that should aggregate over all labels and over the past hour, so race conditions are unlikely
-	ruleGroup := ruleGroupWithRule("ten", "sum:metric", "sum(sum_over_time(metric[1h]))")
+	ruleGroup := ruleGroupWithRule("ten", "count:metric", "count(sum_over_time(metric[1h]))")
 	ruleGroup.Interval = model.Duration(time.Second / 4)
 	ruleGroup.SourceTenants = tenantIDs
 	require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
@@ -769,10 +769,10 @@ func TestRulerFederatedRules(t *testing.T) {
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(ruleEvaluationsRightAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
 
 	// Check that the resulting rule was indeed evaluated across both tenants
-	result, err := c.Query("sum:metric", time.Now())
+	result, err := c.Query("count:metric", time.Now())
 	require.NoError(t, err)
 	require.Len(t, result, 1)
-	require.InDelta(t, float64(result.(model.Vector)[0].Value), float64(sumPushedSeries), 0.0001)
+	require.Equal(t, float64(result.(model.Vector)[0].Value), float64(pushedSeriesCount))
 }
 
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
