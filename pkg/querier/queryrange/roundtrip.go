@@ -111,6 +111,17 @@ func MergeMiddlewares(middleware ...Middleware) Middleware {
 // Tripperware is a signature for all http client-side middleware.
 type Tripperware func(http.RoundTripper) http.RoundTripper
 
+// MergeTripperwares produces a tripperware that applies multiple tripperware in turn;
+// ie Merge(f,g,h).Wrap(tripper) == f(g(h(tripper)))
+func MergeTripperwares(tripperware ...Tripperware) Tripperware {
+	return func(next http.RoundTripper) http.RoundTripper {
+		for i := len(tripperware) - 1; i >= 0; i-- {
+			next = tripperware[i](next)
+		}
+		return next
+	}
+}
+
 // RoundTripFunc is to http.RoundTripper what http.HandlerFunc is to http.Handler.
 type RoundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -131,19 +142,27 @@ func NewTripperware(
 	registerer prometheus.Registerer,
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
-	// Per tenant query metrics.
-	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_query_frontend_queries_total",
-		Help: "Total queries sent per tenant.",
-	}, []string{"op", "user"})
+	queryRangeTripperware, cache, err := newQueryRangeTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer, cacheGenNumberLoader)
+	if err != nil {
+		return nil, nil, err
+	}
+	return MergeTripperwares(
+		newActiveUsersTripperware(log, registerer),
+		queryRangeTripperware,
+	), cache, err
+}
 
-	activeUsers := util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
-		err := util.DeleteMatchingLabels(queriesPerTenant, map[string]string{"user": user})
-		if err != nil {
-			level.Warn(log).Log("msg", "failed to remove cortex_query_frontend_queries_total metric for user", "user", user)
-		}
-	})
-
+func newQueryRangeTripperware(
+	cfg Config,
+	log log.Logger,
+	limits Limits,
+	codec Codec,
+	cacheExtractor Extractor,
+	storageEngine string,
+	engineOpts promql.EngineOpts,
+	registerer prometheus.Registerer,
+	cacheGenNumberLoader CacheGenNumberLoader,
+) (Tripperware, cache.Cache, error) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := NewInstrumentMiddlewareMetrics(registerer)
 
@@ -224,14 +243,37 @@ func NewTripperware(
 		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
 	}
 
-	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
-	_ = activeUsers.StartAsync(context.Background())
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			isQueryRange := strings.HasSuffix(r.URL.Path, "/query_range")
+			if isQueryRange(r) {
+				return queryrange.RoundTrip(r)
+			}
+			return next.RoundTrip(r)
+		})
+	}, c, nil
+}
+
+func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Registerer) Tripperware {
+	// Per tenant query metrics.
+	queriesPerTenant := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_query_frontend_queries_total",
+		Help: "Total queries sent per tenant.",
+	}, []string{"op", "user"})
+
+	activeUsers := util.NewActiveUsersCleanupWithDefaultValues(func(user string) {
+		err := util.DeleteMatchingLabels(queriesPerTenant, map[string]string{"user": user})
+		if err != nil {
+			level.Warn(logger).Log("msg", "failed to remove cortex_query_frontend_queries_total metric for user", "user", user)
+		}
+	})
+
+	// Start cleanup. If cleaner stops or fail, we will simply not clean the metrics for inactive users.
+	_ = activeUsers.StartAsync(context.Background())
+	return func(next http.RoundTripper) http.RoundTripper {
+		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			op := "query"
-			if isQueryRange {
+			if isQueryRange(r) {
 				op = "query_range"
 			}
 
@@ -244,10 +286,11 @@ func NewTripperware(
 			activeUsers.UpdateUserTimestamp(userStr, time.Now())
 			queriesPerTenant.WithLabelValues(op, userStr).Inc()
 
-			if !isQueryRange {
-				return next.RoundTrip(r)
-			}
-			return queryrange.RoundTrip(r)
+			return next.RoundTrip(r)
 		})
-	}, c, nil
+	}
+}
+
+func isQueryRange(r *http.Request) bool {
+	return strings.HasSuffix(r.URL.Path, "/query_range")
 }
