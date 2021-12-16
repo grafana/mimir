@@ -7,6 +7,7 @@ package e2e
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"io/ioutil"
 	"math"
@@ -81,21 +82,33 @@ func BuildArgs(flags map[string]string) []string {
 // DoGet performs a HTTP GET request towards the supplied URL and using a
 // timeout of 1 second.
 func DoGet(url string) (*http.Response, error) {
-	return doRequest("GET", url, nil)
+	return doRequest("GET", url, nil, nil)
+}
+
+// DoGetTLS is like DoGet but allows to configure a TLS config.
+func DoGetTLS(url string, tlsConfig *tls.Config) (*http.Response, error) {
+	return doRequest("GET", url, nil, tlsConfig)
 }
 
 // DoPost performs a HTTP POST request towards the supplied URL with an empty
 // body and using a timeout of 1 second.
 func DoPost(url string) (*http.Response, error) {
-	return doRequest("POST", url, strings.NewReader(""))
+	return doRequest("POST", url, strings.NewReader(""), nil)
 }
 
-func doRequest(method, url string, body io.Reader) (*http.Response, error) {
+func doRequest(method, url string, body io.Reader, tlsConfig *tls.Config) (*http.Response, error) {
 	req, err := http.NewRequest(method, url, body)
 	if err != nil {
 		return nil, err
 	}
-	client := &http.Client{Timeout: time.Second}
+
+	client := &http.Client{
+		Timeout: time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: tlsConfig,
+		},
+	}
+
 	return client.Do(req)
 }
 
