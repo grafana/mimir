@@ -13,8 +13,6 @@ concurrency:
   group: "${{ github.ref_name }}-${{ github.head_ref }}"
   cancel-in-progress: true
 
-# Works?
-
 jobs:
   lint:
     runs-on: ubuntu-20.04
