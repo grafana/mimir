@@ -425,7 +425,7 @@ func TestRulerAlertmanager(t *testing.T) {
 	require.NoError(t, writeFileToSharedDir(s, "alertmanager_configs/user-1.yaml", []byte(mimirAlertmanagerUserConfigYaml)))
 
 	// Start Alertmanagers.
-	amFlags := mergeFlags(AlertmanagerFlags(), AlertmanagerLocalFlags())
+	amFlags := mergeFlags(AlertmanagerFlags(), AlertManagerLocalFlags())
 	am1 := e2emimir.NewAlertmanager("alertmanager1", amFlags, "")
 	am2 := e2emimir.NewAlertmanager("alertmanager2", amFlags, "")
 	require.NoError(t, s.StartAndWaitReady(am1, am2))
@@ -510,7 +510,7 @@ func TestRulerAlertmanagerTLS(t *testing.T) {
 	// Start Alertmanagers.
 	amFlags := mergeFlags(
 		AlertmanagerFlags(),
-		AlertmanagerLocalFlags(),
+		AlertManagerLocalFlags(),
 		getServerHTTPTLSFlags(),
 	)
 	am1 := e2emimir.NewAlertmanagerWithTLS("alertmanager1", amFlags, "")

@@ -620,13 +620,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 func (t *Mimir) initAlertManager() (serv services.Service, err error) {
 	t.Cfg.Alertmanager.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	// Initialise the store.
-	var store alertstore.AlertStore
-	if !t.Cfg.Alertmanager.Store.IsDefaults() {
-		store, err = alertstore.NewLegacyAlertStore(t.Cfg.Alertmanager.Store, util_log.Logger)
-	} else {
-		store, err = alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
-	}
+	store, err := alertstore.NewAlertStore(context.Background(), t.Cfg.AlertmanagerStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {
 		return
 	}

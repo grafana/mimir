@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/configs.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -107,23 +108,14 @@ var (
 		}
 	}
 
-	AlertmanagerLocalFlags = func() map[string]string {
+	AlertManagerLocalFlags = func() map[string]string {
 		return map[string]string{
-			"-alertmanager.storage.type":       "local",
-			"-alertmanager.storage.local.path": filepath.Join(e2e.ContainerSharedDir, "alertmanager_configs"),
+			"-alertmanager-storage.backend":    "local",
+			"-alertmanager-storage.local.path": filepath.Join(e2e.ContainerSharedDir, "alertmanager_configs"),
 		}
 	}
 
-	AlertmanagerS3Flags = func(legacy bool) map[string]string {
-		if legacy {
-			return map[string]string{
-				"-alertmanager.storage.type":                "s3",
-				"-alertmanager.storage.s3.buckets":          alertsBucketName,
-				"-alertmanager.storage.s3.force-path-style": "true",
-				"-alertmanager.storage.s3.url":              fmt.Sprintf("s3://%s:%s@%s-minio-9000.:9000", e2edb.MinioAccessKey, e2edb.MinioSecretKey, networkName),
-			}
-		}
-
+	AlertmanagerS3Flags = func() map[string]string {
 		return map[string]string{
 			"-alertmanager-storage.backend":              "s3",
 			"-alertmanager-storage.s3.access-key-id":     e2edb.MinioAccessKey,
