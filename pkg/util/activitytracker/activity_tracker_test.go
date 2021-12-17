@@ -14,7 +14,7 @@ func TestActivityTracker(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "activity")
 
 	const maxEntries = 5
-	tr, err := NewActivityTracker(Config{Filename: file, MaxEntries: 5}, nil)
+	tr, err := NewActivityTracker(Config{Filename: file, MaxEntries: 5, skipTimestamp: true}, nil)
 	require.NoError(t, err)
 
 	defer func() {
