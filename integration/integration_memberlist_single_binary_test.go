@@ -123,7 +123,6 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 		"-ingester.join-after":               "0s", // join quickly
 		"-ingester.min-ready-duration":       "0s",
 		"-ingester.num-tokens":               "512",
-		"-ingester.observe-period":           "5s", // to avoid conflicts in tokens
 		"-ring.store":                        "memberlist",
 		"-memberlist.bind-port":              "8000",
 		"-memberlist.left-ingesters-timeout": "600s", // effectively disable
@@ -131,6 +130,9 @@ func newSingleBinary(name string, servername string, join string, testFlags map[
 
 	if join != "" {
 		flags["-memberlist.join"] = join
+		flags["-ingester.observe-period"] = "5s" // Observe ring tokens to avoid conflicts.
+	} else {
+		flags["-ingester.observe-period"] = "0s" // No need to observe tokens because we're going to be the first instance.
 	}
 
 	serv := e2emimir.NewSingleBinary(
