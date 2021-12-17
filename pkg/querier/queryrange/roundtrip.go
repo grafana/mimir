@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -257,7 +258,10 @@ func newQueryTripperware(
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
-		instant := NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...)
+		instant := defaultInstantQueryParamsRoundTripper(
+			NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...),
+			time.Now,
+		)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			switch {
 			case isRangeQuery(r.URL.Path):
@@ -314,4 +318,15 @@ func isRangeQuery(path string) bool {
 
 func isInstantQuery(path string) bool {
 	return strings.HasSuffix(path, instantQueryPathSuffix)
+}
+
+func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() time.Time) http.RoundTripper {
+	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if isInstantQuery(r.URL.Path) && !r.URL.Query().Has("time") {
+			q := r.URL.Query()
+			q.Add("time", strconv.FormatInt(time.Now().Unix(), 10))
+			r.URL.RawQuery = q.Encode()
+		}
+		return next.RoundTrip(r)
+	})
 }
