@@ -7,6 +7,7 @@ package queryrange
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
@@ -135,13 +136,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
 
-	qry, err := s.engine.NewRangeQuery(
-		lazyquery.NewLazyQueryable(shardedQueryable),
-		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
-		time.Duration(r.GetStep())*time.Millisecond,
-	)
+	qry, err := s.newQuery(r, shardedQueryable)
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -159,6 +154,28 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+func (s *querySharding) newQuery(r Request, shardedQueryable *ShardedQueryable) (promql.Query, error) {
+	switch r := r.(type) {
+	case *PrometheusRangeQueryRequest:
+		return s.engine.NewRangeQuery(
+			lazyquery.NewLazyQueryable(shardedQueryable),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
+	case *PrometheusInstantQueryRequest:
+		return s.engine.NewInstantQuery(
+			lazyquery.NewLazyQueryable(shardedQueryable),
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetTime()),
+		)
+
+	default:
+		return nil, fmt.Errorf("unsupported query type %T", r)
+	}
 }
 
 func mapEngineError(err error) error {
