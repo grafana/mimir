@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/edsrzf/mmap-go"
-	"github.com/go-kit/log"
 	"github.com/grafana/dskit/multierror"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -25,7 +24,6 @@ type ActivityTracker struct {
 	file             *os.File
 	fileBytes        mmap.MMap
 	entryIndexQueue  chan int // Used as a queue of free indexes.
-	logger           log.Logger
 	maxEntries       int
 	prependTimestamp bool
 
