@@ -146,7 +146,7 @@ func NewTripperware(
 	registerer prometheus.Registerer,
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
-	queryRangeTripperware, cache, err := newQueryRangeTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer, cacheGenNumberLoader)
+	queryRangeTripperware, cache, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer, cacheGenNumberLoader)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -156,7 +156,7 @@ func NewTripperware(
 	), cache, err
 }
 
-func newQueryRangeTripperware(
+func newQueryTripperware(
 	cfg Config,
 	log log.Logger,
 	limits Limits,
@@ -219,6 +219,7 @@ func newQueryRangeTripperware(
 			registerer,
 		))
 	}
+	queryInstantMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 
 	if cfg.ShardedQueries {
 		if storageEngine != storage.StorageEngineBlocks {
@@ -230,30 +231,42 @@ func newQueryRangeTripperware(
 
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
-
+		queryshardingMiddleware := NewQueryShardingMiddleware(
+			log,
+			promql.NewEngine(engineOpts),
+			limits,
+			registerer,
+		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics, log),
-			NewQueryShardingMiddleware(
-				log,
-				promql.NewEngine(engineOpts),
-				limits,
-				registerer,
-			),
+			queryshardingMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			InstrumentMiddleware("querysharding", metrics, log),
+			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
+		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		instant := NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if isRangeQuery(r.URL.Path) {
+			switch {
+			case isRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
+			case isInstantQuery(r.URL.Path):
+				return instant.RoundTrip(r)
+			default:
+				return next.RoundTrip(r)
 			}
-			return next.RoundTrip(r)
 		})
 	}, c, nil
 }
