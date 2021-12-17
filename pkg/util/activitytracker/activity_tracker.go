@@ -1,6 +1,7 @@
-package util
+package activitytracker
 
 import (
+	"flag"
 	"io"
 	"os"
 	"strings"
@@ -18,6 +19,7 @@ import (
 // these are returned on initialization.
 // Activity tracker uses mmap to write to the file, which allows fast writes because it's only using memory access, with
 // no system call.
+// Nil activity tracker ignores all calls to its public API.
 type ActivityTracker struct {
 	file            *os.File
 	fileBytes       mmap.MMap
@@ -34,10 +36,24 @@ const (
 
 var emptyEntry = make([]byte, entrySize)
 
-func NewActivityTracker(filename string, maxEntries int, reg prometheus.Registerer) (*ActivityTracker, error) {
-	filesize := maxEntries * entrySize
+type Config struct {
+	Filename   string `yaml:"filename"`
+	MaxEntries int    `yaml:"max_entries"`
+}
 
-	file, fileAsBytes, err := getMappedFile(filename, filesize)
+func (c *Config) RegisterFlags(f *flag.FlagSet) {
+	f.StringVar(&c.Filename, "activity-tracker.filename", "", "File where ongoing activities are stored. If empty, activity tracking is disabled.")
+	f.IntVar(&c.MaxEntries, "activity-tracker.max-entries", 1024, "Max number of concurrent activities that can be tracked. Used to size file in advance. Additional activities are ignored.")
+}
+
+func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker, error) {
+	if cfg.Filename == "" {
+		return nil, nil
+	}
+
+	filesize := cfg.MaxEntries * entrySize
+
+	file, fileAsBytes, err := getMappedFile(cfg.Filename, filesize)
 	if err != nil {
 		return nil, err
 	}
@@ -45,8 +61,8 @@ func NewActivityTracker(filename string, maxEntries int, reg prometheus.Register
 	tracker := &ActivityTracker{
 		file:            file,
 		fileBytes:       fileAsBytes,
-		entryIndexQueue: make(chan int, maxEntries),
-		maxEntries:      maxEntries,
+		entryIndexQueue: make(chan int, cfg.MaxEntries),
+		maxEntries:      cfg.MaxEntries,
 
 		failedInserts: promauto.With(reg).NewCounter(prometheus.CounterOpts{
 			Name: "activity_tracker_full_total",
@@ -54,7 +70,7 @@ func NewActivityTracker(filename string, maxEntries int, reg prometheus.Register
 		}),
 	}
 
-	for i := 0; i < maxEntries; i++ {
+	for i := 0; i < cfg.MaxEntries; i++ {
 		tracker.entryIndexQueue <- i
 	}
 
@@ -158,13 +174,15 @@ func getMappedFile(filename string, filesize int) (*os.File, mmap.MMap, error) {
 	return file, fileAsBytes, err
 }
 
+// LoadUnfinishedEntries loads and returns list of unfinished activities in the activity file. It's best-effort,
+// so all errors are ignored.
 func LoadUnfinishedEntries(file string) []string {
 	fd, err := os.Open(file)
 	if err != nil {
 		return nil
 	}
 
-	defer fd.Close()
+	defer func() { _ = fd.Close() }()
 
 	var results []string
 

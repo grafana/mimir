@@ -49,12 +49,14 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // The various modules that make up Mimir.
 const (
+	ActivityTracker          string = "activity-tracker"
 	API                      string = "api"
 	Ring                     string = "ring"
 	RuntimeConfig            string = "runtime-config"
@@ -106,6 +108,28 @@ func (t *Mimir) initAPI() (services.Service, error) {
 	t.API = a
 	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig())
 
+	return nil, nil
+}
+
+func (t *Mimir) initActivityTracker() (services.Service, error) {
+	if t.Cfg.ActivityTracker.Filename != "" {
+		acs := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filename)
+
+		l := util_log.Logger
+		if len(acs) > 0 {
+			level.Warn(l).Log("msg", "found unfinished activities from previous run", "count", len(acs))
+		}
+		for _, a := range acs {
+			level.Warn(l).Log("activity", a)
+		}
+	}
+
+	at, err := activitytracker.NewActivityTracker(t.Cfg.ActivityTracker, prometheus.DefaultRegisterer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.ActivityTracker = at
 	return nil, nil
 }
 
@@ -747,6 +771,7 @@ func (t *Mimir) setupModuleManager() error {
 	// Register all modules here.
 	// RegisterModule(name string, initFn func()(services.Service, error))
 	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
+	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
@@ -779,6 +804,7 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
+		Server:                   {ActivityTracker},
 		API:                      {Server},
 		MemberlistKV:             {API},
 		RuntimeConfig:            {API},
