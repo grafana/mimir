@@ -27,7 +27,8 @@ type ActivityTracker struct {
 	logger          log.Logger
 	maxEntries      int
 
-	failedInserts prometheus.Counter
+	failedInserts       prometheus.Counter
+	freeActivityEntries prometheus.GaugeFunc
 }
 
 const (
@@ -69,6 +70,13 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 			Help: "How many times has activity tracker failed to insert new activity due to being full.",
 		}),
 	}
+
+	tracker.freeActivityEntries = promauto.With(reg).NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "activity_tracker_free_slots",
+		Help: "Number of free slots in activity file.",
+	}, func() float64 {
+		return float64(len(tracker.entryIndexQueue))
+	})
 
 	for i := 0; i < cfg.MaxEntries; i++ {
 		tracker.entryIndexQueue <- i

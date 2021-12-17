@@ -27,6 +27,7 @@ func TestActivityTracker(t *testing.T) {
 		aix := tr.InsertStatic(a)
 		require.True(t, aix >= 0)
 		insertedActivities = append(insertedActivities, a)
+		require.Equal(t, float64(maxEntries-i)-1, testutil.ToFloat64(tr.freeActivityEntries))
 	}
 
 	require.Equal(t, 0.0, testutil.ToFloat64(tr.failedInserts))
@@ -48,6 +49,7 @@ func TestActivityTracker(t *testing.T) {
 		insertedActivities = insertedActivities[1:]
 
 		require.ElementsMatch(t, LoadUnfinishedEntries(file), insertedActivities)
+		require.Equal(t, float64(i+1), testutil.ToFloat64(tr.freeActivityEntries))
 	}
 }
 
