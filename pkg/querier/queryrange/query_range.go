@@ -155,6 +155,49 @@ func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
 	)
 }
 
+func (r *PrometheusInstantQueryRequest) GetStart() int64 {
+	return r.GetTime()
+}
+
+func (r *PrometheusInstantQueryRequest) GetEnd() int64 {
+	return r.GetTime()
+}
+
+func (r *PrometheusInstantQueryRequest) GetStep() int64 {
+	return 0
+}
+
+func (r *PrometheusInstantQueryRequest) WithID(id int64) Request {
+	new := *r
+	new.Id = id
+	return &new
+}
+
+func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, endTime int64) Request {
+	new := *r
+	new.Time = startTime
+	return &new
+}
+
+func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
+	new := *r
+	new.Query = s
+	return &new
+}
+
+func (r *PrometheusInstantQueryRequest) WithHints(hints *Hints) Request {
+	new := *r
+	new.Hints = hints
+	return &new
+}
+
+func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
+	sp.LogFields(
+		otlog.String("query", r.GetQuery()),
+		otlog.String("time", timestamp.Time(r.GetTime()).String()),
+	)
+}
+
 type byFirstTime []*PrometheusResponse
 
 func (a byFirstTime) Len() int           { return len(a) }

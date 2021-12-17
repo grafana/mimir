@@ -34,6 +34,20 @@ message PrometheusRangeQueryRequest {
   Hints hints = 9 [(gogoproto.nullable) = true];
 }
 
+message PrometheusInstantQueryRequest {
+  string path = 1;
+  int64 time = 2;
+  string query = 3;
+  Options options = 4 [(gogoproto.nullable) = false];
+
+  // ID of the request used by splitAndCacheMiddleware to correlate downstream requests and responses.
+  int64 id = 5;
+
+  // Hints that could be optionally attached to the request to pass down the stack.
+  // These hints can be used to optimize the query execution.
+  Hints hints = 6 [(gogoproto.nullable) = true];
+}
+
 message PrometheusResponseHeader {
   string Name = 1 [(gogoproto.jsontag) = "-"];
   repeated string Values = 2 [(gogoproto.jsontag) = "-"];
