@@ -214,6 +214,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "A single empty response shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
+					Status: StatusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
@@ -233,12 +234,14 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Multiple empty responses shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
+					Status: StatusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
 					},
 				},
 				&PrometheusResponse{
+					Status: StatusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
@@ -258,6 +261,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Basic merging of two responses.",
 			input: []Response{
 				&PrometheusResponse{
+					Status: StatusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
@@ -272,6 +276,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					},
 				},
 				&PrometheusResponse{
+					Status: StatusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
@@ -408,6 +413,48 @@ func TestMergeAPIResponses(t *testing.T) {
 			require.Equal(t, tc.expected, output)
 		})
 	}
+
+	t.Run("shouldn't merge unsuccessful responses", func(t *testing.T) {
+		successful := &PrometheusResponse{
+			Status: StatusSuccess,
+			Data:   &PrometheusData{ResultType: matrix},
+		}
+		unsuccessful := &PrometheusResponse{
+			Status: statusError,
+			Data:   &PrometheusData{ResultType: matrix},
+		}
+
+		_, err := PrometheusCodec.MergeResponse(successful, unsuccessful)
+		require.Error(t, err)
+	})
+
+	t.Run("shouldn't merge nil data", func(t *testing.T) {
+		// nil data has no type, so we can't merge it, it's basically an unsuccessful response,
+		// and we should never reach the point where we're merging an unsuccessful response.
+		successful := &PrometheusResponse{
+			Status: StatusSuccess,
+			Data:   &PrometheusData{ResultType: matrix},
+		}
+		nilData := &PrometheusResponse{
+			Status: StatusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
+			Data:   nil,
+		}
+		_, err := PrometheusCodec.MergeResponse(successful, nilData)
+		require.Error(t, err)
+	})
+
+	t.Run("shouldn't merge non-matrix data", func(t *testing.T) {
+		matrixResponse := &PrometheusResponse{
+			Status: StatusSuccess,
+			Data:   &PrometheusData{ResultType: matrix},
+		}
+		vectorResponse := &PrometheusResponse{
+			Status: StatusSuccess,
+			Data:   &PrometheusData{ResultType: model.ValVector.String()},
+		}
+		_, err := PrometheusCodec.MergeResponse(matrixResponse, vectorResponse)
+		require.Error(t, err)
+	})
 }
 
 func TestIsRequestStepAligned(t *testing.T) {
