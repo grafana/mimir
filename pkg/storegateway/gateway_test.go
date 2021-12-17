@@ -234,14 +234,14 @@ func TestStoreGateway_InitialSyncFailure(t *testing.T) {
 	assert.False(t, g.ringLifecycler.IsRegistered())
 }
 
-// TestStoreGateway_InitialSyncWithWaitRingStability tests the store-gateway cold start case.
+// TestStoreGateway_InitialSyncWithWaitRingTokensStability tests the store-gateway cold start case.
 // When several store-gateways start up at once, we expect each store-gateway to only load
 // their own blocks, regardless which store-gateway joined the ring first or last (even if starting
 // at the same time, they will join the ring at a slightly different time).
-func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
+func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 	test.VerifyNoLeak(t)
 
-	bucketClient, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
+	bucketClientOnDisk, storageDir := mimir_testutil.PrepareFilesystemBucket(t)
 
 	// This tests uses real TSDB blocks. 24h time range, 2h block range period,
 	// 2 users = total (24 / 12) * 2 = 24 blocks.
@@ -250,6 +250,21 @@ func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
 	now := time.Now()
 	mockTSDB(t, path.Join(storageDir, "user-1"), 24, 12, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
 	mockTSDB(t, path.Join(storageDir, "user-2"), 24, 12, now.Add(-24*time.Hour).Unix()*1000, now.Unix()*1000)
+
+	// Uploading the blocks to in memory storage - otherwise we run out of file descriptors during the test
+	// The default limit for fsd is 1024 on linux.
+	bucketClient := objstore.NewInMemBucket()
+	for _, userID := range []string{"user-1", "user-2"} {
+		userBucketClient := bucket.NewUserBucketClient(userID, bucketClient, nil)
+		require.NoError(t, bucketClientOnDisk.Iter(context.Background(), userID, func(key string) error {
+			dir := strings.TrimSuffix(path.Join(storageDir, key), "/")
+			err := block.UploadPromBlock(context.Background(), log.NewNopLogger(), userBucketClient, dir, metadata.NoneFunc)
+			if err != nil {
+				return err
+			}
+			return nil
+		}))
+	}
 
 	// Write the bucket index.
 	for _, userID := range []string{"user-1", "user-2"} {
@@ -312,8 +327,13 @@ func TestStoreGateway_InitialSyncWithWaitRingStability(t *testing.T) {
 
 	for testName, testData := range tests {
 		for _, bucketIndexEnabled := range []bool{true, false} {
+			// capture running variables, otherwise reused due to t.Parallel leading to corrupt test
+			testName := testName
+			testData := testData
+			bucketIndexEnabled := bucketIndexEnabled
 			t.Run(fmt.Sprintf("%s (bucket index enabled = %v)", testName, bucketIndexEnabled), func(t *testing.T) {
-				// Randomise the seed but log it in case we need to reproduce the test on failure.
+				t.Parallel()
+				// Randomize the seed but log it in case we need to reproduce the test on failure.
 				seed := time.Now().UnixNano()
 				rand.Seed(seed)
 				t.Log("random generator seed:", seed)
