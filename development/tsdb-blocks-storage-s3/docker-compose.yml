@@ -6,7 +6,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filename=/activity/alertmanager-8031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"
     "depends_on":
       - "consul"
       - "minio"
@@ -21,6 +21,7 @@
       - "8031:8031"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "alertmanager-2":
     "build":
       "context": "."
@@ -28,7 +29,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filename=/activity/alertmanager-8032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"
     "depends_on":
       - "consul"
       - "minio"
@@ -43,6 +44,7 @@
       - "8032:8032"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "alertmanager-3":
     "build":
       "context": "."
@@ -50,7 +52,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filename=/activity/alertmanager-8033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"
     "depends_on":
       - "consul"
       - "minio"
@@ -65,6 +67,7 @@
       - "8033:8033"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "compactor":
     "build":
       "context": "."
@@ -72,7 +75,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filename=/activity/compactor-8006 "
     "depends_on":
       - "consul"
       - "minio"
@@ -87,6 +90,7 @@
       - "8006:8006"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "consul":
     "command":
       - "agent"
@@ -103,7 +107,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filename=/activity/distributor-8001 "
     "depends_on":
       - "consul"
       - "minio"
@@ -118,6 +122,7 @@
       - "8001:8001"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "grafana-agent":
     "command":
       - "-config.file=/etc/agent-config/grafana-agent.yaml"
@@ -134,7 +139,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filename=/activity/ingester-8002 "
     "depends_on":
       - "consul"
       - "minio"
@@ -149,6 +154,7 @@
       - "8002:8002"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
       - ".data-ingester-1:/tmp/mimir-tsdb-ingester:delegated"
   "ingester-2":
     "build":
@@ -157,7 +163,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filename=/activity/ingester-8003 "
     "depends_on":
       - "consul"
       - "minio"
@@ -172,6 +178,7 @@
       - "8003:8003"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
       - ".data-ingester-2:/tmp/mimir-tsdb-ingester:delegated"
   "jaeger":
     "image": "jaegertracing/all-in-one"
@@ -208,7 +215,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filename=/activity/purger-8014 "
     "depends_on":
       - "consul"
       - "minio"
@@ -223,6 +230,7 @@
       - "8014:8014"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "querier":
     "build":
       "context": "."
@@ -230,7 +238,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filename=/activity/querier-8004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
     "depends_on":
       - "consul"
       - "minio"
@@ -245,6 +253,7 @@
       - "8004:8004"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "query-frontend":
     "build":
       "context": "."
@@ -252,7 +261,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filename=/activity/query-frontend-8007 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"
     "depends_on":
       - "consul"
       - "minio"
@@ -267,6 +276,7 @@
       - "8007:8007"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "query-scheduler":
     "build":
       "context": "."
@@ -274,7 +284,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -store.max-query-length=8760h"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filename=/activity/query-scheduler-8011 -store.max-query-length=8760h"
     "depends_on":
       - "consul"
       - "minio"
@@ -289,6 +299,7 @@
       - "8011:8011"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "ruler-1":
     "build":
       "context": "."
@@ -296,7 +307,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021 -activity-tracker.filename=/activity/ruler-8021 "
     "depends_on":
       - "consul"
       - "minio"
@@ -311,6 +322,7 @@
       - "8021:8021"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "ruler-2":
     "build":
       "context": "."
@@ -318,7 +330,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filename=/activity/ruler-8022 "
     "depends_on":
       - "consul"
       - "minio"
@@ -333,6 +345,7 @@
       - "8022:8022"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "store-gateway-1":
     "build":
       "context": "."
@@ -340,7 +353,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filename=/activity/store-gateway-8008 "
     "depends_on":
       - "consul"
       - "minio"
@@ -355,6 +368,7 @@
       - "8008:8008"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
   "store-gateway-2":
     "build":
       "context": "."
@@ -362,7 +376,7 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009 -activity-tracker.filename=/activity/store-gateway-8009 "
     "depends_on":
       - "consul"
       - "minio"
@@ -377,4 +391,5 @@
       - "8009:8009"
     "volumes":
       - "./config:/mimir/config"
+      - "./activity:/activity"
 "version": "3.4"
