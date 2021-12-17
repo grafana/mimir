@@ -11,13 +11,11 @@ import (
 	"flag"
 	"io"
 	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
@@ -28,22 +26,19 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/chunk/aws"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
-	"github.com/grafana/mimir/pkg/ruler"
+	"github.com/grafana/mimir/pkg/ruler/rulestore"
 	"github.com/grafana/mimir/pkg/scheduler/schedulerpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestMimir(t *testing.T) {
-	rulerURL, err := url.Parse("inmemory:///rules")
-	require.NoError(t, err)
-
 	cfg := Config{
 		Storage: storage.Config{
 			Engine: storage.StorageEngineBlocks, // makes config easier
@@ -82,13 +77,11 @@ func TestMimir(t *testing.T) {
 				},
 			},
 		},
-		Ruler: ruler.Config{
-			StoreConfig: ruler.RuleStoreConfig{
-				Type: "s3",
-				S3: aws.S3Config{
-					S3: flagext.URLValue{
-						URL: rulerURL,
-					},
+		RulerStorage: rulestore.Config{
+			Config: bucket.Config{
+				Backend: "filesystem",
+				Filesystem: filesystem.Config{
+					Directory: t.TempDir(),
 				},
 			},
 		},
