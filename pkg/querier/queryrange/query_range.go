@@ -8,6 +8,7 @@ package queryrange
 import (
 	"bytes"
 	"context"
+	stdjson "encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -16,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"time"
+	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
@@ -318,6 +320,42 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	return &resp, nil
 }
 
+func (d *PrometheusData) UnmarshalJSON(b []byte) error {
+	v := struct {
+		Type   model.ValueType    `json:"resultType"`
+		Result stdjson.RawMessage `json:"result"`
+	}{}
+
+	err := json.Unmarshal(b, &v)
+	if err != nil {
+		return err
+	}
+	d.ResultType = v.Type.String()
+	switch v.Type {
+	case model.ValScalar:
+		var sss scalarSampleStreams
+		if err := json.Unmarshal(v.Result, &sss); err != nil {
+			return err
+		}
+		d.Result = sss
+		return nil
+
+	case model.ValVector:
+		var vss []vectorSampleStream
+		if err := json.Unmarshal(v.Result, &vss); err != nil {
+			return err
+		}
+		d.Result = fromVectorSampleStreams(vss)
+		return nil
+
+	case model.ValMatrix:
+		return json.Unmarshal(v.Result, &d.Result)
+
+	default:
+		return fmt.Errorf("unsupported value type %q", v.Type)
+	}
+}
+
 // Buffer can be used to read a response body.
 // This allows to avoid reading the body multiple times from the `http.Response.Body`.
 type Buffer interface {
@@ -369,6 +407,101 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
+}
+
+func (d *PrometheusData) MarshalJSON() ([]byte, error) {
+	if d == nil {
+		return []byte("null"), nil
+	}
+
+	switch d.ResultType {
+	case model.ValScalar.String():
+		return json.Marshal(struct {
+			Type   model.ValueType     `json:"resultType"`
+			Result scalarSampleStreams `json:"result"`
+		}{
+			Type:   model.ValScalar,
+			Result: d.Result,
+		})
+
+	case model.ValVector.String():
+		return json.Marshal(struct {
+			Type   model.ValueType      `json:"resultType"`
+			Result []vectorSampleStream `json:"result"`
+		}{
+			Type:   model.ValVector,
+			Result: asVectorSampleStreams(d.Result),
+		})
+
+	case model.ValMatrix.String():
+		type plain *PrometheusData
+		return json.Marshal(plain(d))
+
+	default:
+		return nil, fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
+	}
+}
+
+type scalarSampleStreams []SampleStream
+
+func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
+	if len(sss) != 1 {
+		return nil, fmt.Errorf("scalar sample streams should have exactly one stream, got %d", len(sss))
+	}
+	ss := sss[0]
+	if len(ss.Samples) != 1 {
+		return nil, fmt.Errorf("scalar sample stream should have exactly one sample, got %d", len(ss.Samples))
+	}
+	s := ss.Samples[0]
+	return json.Marshal(model.Scalar{
+		Timestamp: model.Time(s.TimestampMs),
+		Value:     model.SampleValue(s.Value),
+	})
+}
+
+func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
+	var sv model.Scalar
+	if err := json.Unmarshal(b, &sv); err != nil {
+		return err
+	}
+	*sss = []SampleStream{{Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}}}}
+	return nil
+}
+
+// asVectorSampleStreams converts a slice of SampleStream into a slice of vectorSampleStream.
+// This can be done as vectorSampleStream is defined as a SampleStream.
+func asVectorSampleStreams(ss []SampleStream) []vectorSampleStream {
+	return *(*[]vectorSampleStream)(unsafe.Pointer(&ss))
+}
+
+// fromVectorSampleStreams is the inverse of asVectorSampleStreams.
+func fromVectorSampleStreams(vss []vectorSampleStream) []SampleStream {
+	return *(*[]SampleStream)(unsafe.Pointer(&vss))
+}
+
+type vectorSampleStream SampleStream
+
+func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
+	s := model.Sample{}
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	*vs = vectorSampleStream{
+		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
+		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
+	}
+	return nil
+}
+
+func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
+	if len(vs.Samples) != 1 {
+		return nil, fmt.Errorf("vector sample stream should have exactly one sample, got %d", len(vs.Samples))
+	}
+	return json.Marshal(model.Sample{
+		Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
+		Timestamp: model.Time(vs.Samples[0].TimestampMs),
+		Value:     model.SampleValue(vs.Samples[0].Value),
+	})
 }
 
 // UnmarshalJSON implements json.Unmarshaler.

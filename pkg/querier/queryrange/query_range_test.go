@@ -120,6 +120,53 @@ func TestResponseRoundtrip(t *testing.T) {
 		expected *PrometheusResponse
 	}{
 		{
+			name: "successful scalar response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type: model.ValScalar,
+					Result: &model.Scalar{
+						Value:     200,
+						Timestamp: 1_000,
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful instant response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type: model.ValVector,
+					Result: model.Vector{
+						{Metric: model.Metric{"foo": "bar"}, Timestamp: 1_000, Value: 200},
+						{Metric: model.Metric{"bar": "baz"}, Timestamp: 1_000, Value: 201},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
 			name: "successful range response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
@@ -162,7 +209,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "error range response",
+			name: "error response",
 			resp: prometheusAPIResponse{
 				Status:    statusError,
 				ErrorType: "expected",
