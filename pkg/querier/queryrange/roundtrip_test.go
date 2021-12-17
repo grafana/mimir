@@ -176,7 +176,7 @@ func TestTripperware_Metrics(t *testing.T) {
 
 			body, err := ioutil.ReadAll(resp.Body)
 			require.NoError(t, err)
-			require.Equal(t, `{"status":"","data":{"resultType":"","result":null}}`, string(body))
+			require.Equal(t, `{"status":""}`, string(body))
 
 			assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 				# HELP cortex_query_frontend_non_step_aligned_queries_total Total queries sent that are not step aligned.

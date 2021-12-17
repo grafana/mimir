@@ -173,7 +173,7 @@ func (resp *PrometheusResponse) minTime() int64 {
 func NewEmptyPrometheusResponse() *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: StatusSuccess,
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result:     []SampleStream{},
 		},
@@ -199,7 +199,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	response := PrometheusResponse{
 		Status: StatusSuccess,
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result:     matrixMerge(promResponses),
 		},
@@ -339,8 +339,9 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
-
-	sp.LogFields(otlog.Int("series", len(a.Data.Result)))
+	if a.Data != nil {
+		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
+	}
 
 	b, err := json.Marshal(a)
 	if err != nil {

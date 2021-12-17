@@ -149,7 +149,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 
 	expectedResponse := &PrometheusResponse{
 		Status: "success",
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
@@ -223,7 +223,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 
 	expectedResponse := &PrometheusResponse{
 		Status: "success",
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{
@@ -285,7 +285,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 
 	expectedResponse := &PrometheusResponse{
 		Status: "success",
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result: []SampleStream{
 				{

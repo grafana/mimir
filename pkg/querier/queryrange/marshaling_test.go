@@ -89,7 +89,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 
 	return &PrometheusResponse{
 		Status: "success",
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: "vector",
 			Result:     stream,
 		},
@@ -99,7 +99,7 @@ func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusRespo
 func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples ...mimirpb.Sample) *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: "success",
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: "matrix",
 			Result: []SampleStream{
 				{

@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-kit/log"
 	jsoniter "github.com/json-iterator/go"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -86,62 +87,107 @@ func TestRequest(t *testing.T) {
 	}
 }
 
-func TestResponse(t *testing.T) {
-	respHeaders := []*PrometheusResponseHeader{
+const (
+	statusSuccess = "success"
+	statusError   = "error"
+)
+
+type prometheusAPIResponse struct {
+	Status    string       `json:"status"`
+	Data      interface{}  `json:"data,omitempty"`
+	ErrorType v1.ErrorType `json:"errorType,omitempty"`
+	Error     string       `json:"error,omitempty"`
+	Warnings  []string     `json:"warnings,omitempty"`
+}
+
+type prometeheusResponseData struct {
+	Type   model.ValueType `json:"resultType"`
+	Result model.Value     `json:"result"`
+}
+
+func TestResponseRoundtrip(t *testing.T) {
+	headers := http.Header{"Content-Type": []string{"application/json"}}
+	expectedRespHeaders := []*PrometheusResponseHeader{
 		{
 			Name:   "Content-Type",
 			Values: []string{"application/json"},
 		},
 	}
-	parsedResponse := &PrometheusResponse{
-		Status: "success",
-		Data: PrometheusData{
-			ResultType: model.ValMatrix.String(),
-			Result: []SampleStream{
-				{
-					Labels: []mimirpb.LabelAdapter{
-						{Name: "foo", Value: "bar"},
-					},
-					Samples: []mimirpb.Sample{
-						{Value: 137, TimestampMs: 1536673680000},
-						{Value: 137, TimestampMs: 1536673780000},
-					},
-				},
-			},
-		},
-	}
 
-	r := *parsedResponse
-	r.Headers = respHeaders
-	for i, tc := range []struct {
-		body     string
+	for _, tc := range []struct {
+		name     string
+		resp     prometheusAPIResponse
 		expected *PrometheusResponse
 	}{
 		{
-			body:     `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`,
-			expected: &r,
+			name: "successful range response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type: model.ValMatrix,
+					Result: model.Matrix{
+						{Metric: model.Metric{"foo": "bar"}, Values: []model.SamplePair{{Timestamp: 1_000, Value: 100}, {Timestamp: 2_000, Value: 200}}},
+						{Metric: model.Metric{"bar": "baz"}, Values: []model.SamplePair{{Timestamp: 1_000, Value: 101}, {Timestamp: 2_000, Value: 201}}},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result: []SampleStream{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 100}, {TimestampMs: 2_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 101}, {TimestampMs: 2_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "error range response",
+			resp: prometheusAPIResponse{
+				Status:    statusError,
+				ErrorType: "expected",
+				Error:     "failed",
+			},
+			expected: &PrometheusResponse{
+				Status:    statusError,
+				ErrorType: "expected",
+				Error:     "failed",
+				Headers:   expectedRespHeaders,
+			},
 		},
 	} {
-		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			response := &http.Response{
-				StatusCode: 200,
-				Header:     http.Header{"Content-Type": []string{"application/json"}},
-				Body:       ioutil.NopCloser(bytes.NewBuffer([]byte(tc.body))),
-			}
-			resp, err := PrometheusCodec.DecodeResponse(context.Background(), response, nil, log.NewNopLogger())
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(tc.resp)
 			require.NoError(t, err)
-			assert.Equal(t, tc.expected, resp)
+			httpResponse := &http.Response{
+				StatusCode:    200,
+				Header:        headers,
+				Body:          ioutil.NopCloser(bytes.NewBuffer(body)),
+				ContentLength: int64(len(body)),
+			}
+			decoded, err := PrometheusCodec.DecodeResponse(context.Background(), httpResponse, nil, log.NewNopLogger())
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, decoded)
 
 			// Reset response, as the above call will have consumed the body reader.
-			response = &http.Response{
+			httpResponse = &http.Response{
 				StatusCode:    200,
-				Header:        http.Header{"Content-Type": []string{"application/json"}},
-				Body:          ioutil.NopCloser(bytes.NewBuffer([]byte(tc.body))),
-				ContentLength: int64(len(tc.body)),
+				Header:        headers,
+				Body:          ioutil.NopCloser(bytes.NewBuffer(body)),
+				ContentLength: int64(len(body)),
 			}
-			resp2, err := PrometheusCodec.EncodeResponse(context.Background(), resp)
+			encoded, err := PrometheusCodec.EncodeResponse(context.Background(), decoded)
 			require.NoError(t, err)
-			assert.Equal(t, response, resp2)
+
+			expectedJSON, err := bodyBuffer(httpResponse)
+			require.NoError(t, err)
+			encodedJSON, err := bodyBuffer(encoded)
+			require.NoError(t, err)
+
+			require.JSONEq(t, string(expectedJSON), string(encodedJSON))
+			assert.Equal(t, httpResponse, encoded)
 		})
 	}
 }
@@ -157,7 +203,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			input: []Response{},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
 				},
@@ -168,7 +214,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "A single empty response shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
 					},
@@ -176,7 +222,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
 				},
@@ -187,13 +233,13 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Multiple empty responses shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
 					},
 				},
 				&PrometheusResponse{
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
 					},
@@ -201,7 +247,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
 				},
@@ -212,7 +258,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Basic merging of two responses.",
 			input: []Response{
 				&PrometheusResponse{
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
@@ -226,7 +272,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					},
 				},
 				&PrometheusResponse{
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
 							{
@@ -242,7 +288,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
@@ -267,7 +313,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
@@ -292,7 +338,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
@@ -315,7 +361,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
 						{
@@ -340,7 +386,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			},
 			expected: &PrometheusResponse{
 				Status: StatusSuccess,
-				Data: PrometheusData{
+				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
 						{

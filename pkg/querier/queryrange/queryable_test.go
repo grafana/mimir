@@ -46,7 +46,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 
 				expected := &PrometheusResponse{
 					Status: "success",
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: string(parser.ValueTypeVector),
 					},
 				}
@@ -94,7 +94,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 			name: "returns SeriesSet",
 			querier: mkShardedQuerier(mockHandlerWith(
 				&PrometheusResponse{
-					Data: PrometheusData{
+					Data: &PrometheusData{
 						ResultType: string(parser.ValueTypeVector),
 						Result: []SampleStream{
 							{
@@ -213,7 +213,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 		downstreamWg.Wait()
 
 		return &PrometheusResponse{
-			Data: PrometheusData{
+			Data: &PrometheusData{
 				ResultType: string(parser.ValueTypeVector),
 				Result: []SampleStream{{
 					Labels:  []mimirpb.LabelAdapter{{Name: "a", Value: "1"}},

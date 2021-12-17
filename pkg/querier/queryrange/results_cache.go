@@ -77,12 +77,16 @@ type PrometheusResponseExtractor struct{}
 // Extract extracts response for specific a range from a response.
 func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Response {
 	promRes := from.(*PrometheusResponse)
-	return &PrometheusResponse{
-		Status: StatusSuccess,
-		Data: PrometheusData{
+	var data *PrometheusData
+	if promRes.Data != nil {
+		data = &PrometheusData{
 			ResultType: promRes.Data.ResultType,
 			Result:     extractMatrix(start, end, promRes.Data.Result),
-		},
+		}
+	}
+	return &PrometheusResponse{
+		Status:  promRes.Status,
+		Data:    data,
 		Headers: promRes.Headers,
 	}
 }
@@ -91,12 +95,16 @@ func (PrometheusResponseExtractor) Extract(start, end int64, from Response) Resp
 // we anyways do not need headers for sending back the response so this saves some space by reducing size of the objects.
 func (PrometheusResponseExtractor) ResponseWithoutHeaders(resp Response) Response {
 	promRes := resp.(*PrometheusResponse)
-	return &PrometheusResponse{
-		Status: StatusSuccess,
-		Data: PrometheusData{
+	var data *PrometheusData
+	if promRes.Data != nil {
+		data = &PrometheusData{
 			ResultType: promRes.Data.ResultType,
 			Result:     promRes.Data.Result,
-		},
+		}
+	}
+	return &PrometheusResponse{
+		Status: promRes.Status,
+		Data:   data,
 	}
 }
 
