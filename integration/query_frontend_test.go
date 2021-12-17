@@ -257,16 +257,14 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 			require.Regexp(t, "querier_wall_time;dur=[0-9.]*, response_time;dur=[0-9.]*$", res.Header.Values("Server-Timing")[0])
 		}
 
-		// In this test we do ensure that the /series start/end time is ignored and Mimir
-		// always returns series in ingesters memory. No need to repeat it for each user.
+		// Beyond the range of -querier.query-ingesters-within should return nothing. No need to repeat it for each user.
 		if userID == 0 {
 			start := now.Add(-1000 * time.Hour)
 			end := now.Add(-999 * time.Hour)
 
 			result, err := c.Series([]string{"series_1"}, start, end)
 			require.NoError(t, err)
-			require.Len(t, result, 1)
-			assert.Equal(t, model.LabelSet{labels.MetricName: "series_1"}, result[0])
+			require.Len(t, result, 0)
 		}
 
 		for q := 0; q < numQueriesPerUser; q++ {
