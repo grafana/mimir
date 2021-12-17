@@ -25,7 +25,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const day = 24 * time.Hour
+const (
+	day                    = 24 * time.Hour
+	queryRangePathSuffix   = "/query_range"
+	instantQueryPathSuffix = "/query"
+)
 
 var (
 	// PassthroughMiddleware is a noop middleware
@@ -246,7 +250,7 @@ func newQueryRangeTripperware(
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if isQueryRange(r) {
+			if isRangeQuery(r.URL.Path) {
 				return queryrange.RoundTrip(r)
 			}
 			return next.RoundTrip(r)
@@ -273,7 +277,7 @@ func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Register
 	return func(next http.RoundTripper) http.RoundTripper {
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			op := "query"
-			if isQueryRange(r) {
+			if isRangeQuery(r.URL.Path) {
 				op = "query_range"
 			}
 
@@ -291,6 +295,10 @@ func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Register
 	}
 }
 
-func isQueryRange(r *http.Request) bool {
-	return strings.HasSuffix(r.URL.Path, "/query_range")
+func isRangeQuery(path string) bool {
+	return strings.HasSuffix(path, queryRangePathSuffix)
+}
+
+func isInstantQuery(path string) bool {
+	return strings.HasSuffix(path, instantQueryPathSuffix)
 }

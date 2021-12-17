@@ -42,6 +42,14 @@ func TestRequest(t *testing.T) {
 			},
 		},
 		{
+			url: "/api/v1/query?query=sum%28container_memory_rss%29+by+%28namespace%29&time=1536716880",
+			expected: &PrometheusInstantQueryRequest{
+				Path:  "/api/v1/query",
+				Time:  1536716880 * 1e3,
+				Query: "sum(container_memory_rss) by (namespace)",
+			},
+		},
+		{
 			url:         "api/v1/query_range?start=foo",
 			expectedErr: apierror.New(apierror.TypeBadData, "invalid parameter \"start\": cannot parse \"foo\" to a valid timestamp"),
 		},

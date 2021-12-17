@@ -270,7 +270,19 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	return &response, nil
 }
 
-func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
+func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
+	switch {
+	case isRangeQuery(r.URL.Path):
+		return c.decodeRangeQueryRequest(r)
+	case isInstantQuery(r.URL.Path):
+		return c.decodeInstantQueryRequest(r)
+	default:
+		return nil, fmt.Errorf("prometheus codec doesn't support requests to %s", r.URL.Path)
+	}
+
+}
+
+func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
 	result.Start, err = util.ParseTime(r.FormValue("start"))
@@ -308,21 +320,45 @@ func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Reques
 	return &result, nil
 }
 
+func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, error) {
+	var result PrometheusInstantQueryRequest
+	var err error
+	result.Time, err = util.ParseTime(r.FormValue("time"))
+	if err != nil {
+		return nil, decorateWithParamName(err, "time")
+	}
+
+	result.Query = r.FormValue("query")
+	result.Path = r.URL.Path
+	DecodeOptions(r, &result.Options)
+	return &result, nil
+}
+
 func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
-	promReq, ok := r.(*PrometheusRangeQueryRequest)
-	if !ok {
-		return nil, apierror.New(apierror.TypeBadData, "invalid request format")
+	var u *url.URL
+	switch r := r.(type) {
+	case *PrometheusRangeQueryRequest:
+		u = &url.URL{
+			Path: r.Path,
+			RawQuery: url.Values{
+				"start": []string{encodeTime(r.Start)},
+				"end":   []string{encodeTime(r.End)},
+				"step":  []string{encodeDurationMs(r.Step)},
+				"query": []string{r.Query},
+			}.Encode(),
+		}
+	case *PrometheusInstantQueryRequest:
+		u = &url.URL{
+			Path: r.Path,
+			RawQuery: url.Values{
+				"time":  []string{encodeTime(r.Time)},
+				"query": []string{r.Query},
+			}.Encode(),
+		}
+	default:
+		return nil, fmt.Errorf("unsupported request type %T", r)
 	}
-	params := url.Values{
-		"start": []string{encodeTime(promReq.Start)},
-		"end":   []string{encodeTime(promReq.End)},
-		"step":  []string{encodeDurationMs(promReq.Step)},
-		"query": []string{promReq.Query},
-	}
-	u := &url.URL{
-		Path:     promReq.Path,
-		RawQuery: params.Encode(),
-	}
+
 	req := &http.Request{
 		Method:     "GET",
 		RequestURI: u.String(), // This is what the httpgrpc code looks at.
