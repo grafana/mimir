@@ -33,7 +33,7 @@ func TestRequest(t *testing.T) {
 	}{
 		{
 			url: "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120",
-			expected: &PrometheusRequest{
+			expected: &PrometheusRangeQueryRequest{
 				Path:  "/api/v1/query_range",
 				Start: 1536673680 * 1e3,
 				End:   1536716880 * 1e3,
@@ -528,19 +528,19 @@ func TestIsRequestStepAligned(t *testing.T) {
 		expected bool
 	}{
 		"should return true if start and end are aligned to step": {
-			req:      &PrometheusRequest{Start: 10, End: 20, Step: 10},
+			req:      &PrometheusRangeQueryRequest{Start: 10, End: 20, Step: 10},
 			expected: true,
 		},
 		"should return false if start is not aligned to step": {
-			req:      &PrometheusRequest{Start: 11, End: 20, Step: 10},
+			req:      &PrometheusRangeQueryRequest{Start: 11, End: 20, Step: 10},
 			expected: false,
 		},
 		"should return false if end is not aligned to step": {
-			req:      &PrometheusRequest{Start: 10, End: 19, Step: 10},
+			req:      &PrometheusRangeQueryRequest{Start: 10, End: 19, Step: 10},
 			expected: false,
 		},
 		"should return true if step is 0": {
-			req:      &PrometheusRequest{Start: 10, End: 11, Step: 0},
+			req:      &PrometheusRangeQueryRequest{Start: 10, End: 11, Step: 0},
 			expected: true,
 		},
 	}

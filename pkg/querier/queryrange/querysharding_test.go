@@ -434,7 +434,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
 
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:  "/query_range",
 				Start: util.TimeToMillis(start),
 				End:   util.TimeToMillis(end),
@@ -515,7 +515,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 }
 
 func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -539,7 +539,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 }
 
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -564,7 +564,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 }
 
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -695,7 +695,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:  "/query_range",
 				Start: util.TimeToMillis(start),
 				End:   util.TimeToMillis(end),
@@ -738,7 +738,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 }
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -840,7 +840,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:  "/query_range",
 				Start: util.TimeToMillis(start),
 				End:   util.TimeToMillis(end),
@@ -873,7 +873,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 }
 
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -962,7 +962,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 				step        = (end - start) / 1000
 			)
 
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:    "/query_range",
 				Start:   start,
 				End:     end,

@@ -116,37 +116,37 @@ type Response interface {
 
 type prometheusCodec struct{}
 
-// WithID clones the current `PrometheusRequest` with the provided ID.
-func (q *PrometheusRequest) WithID(id int64) Request {
+// WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
+func (q *PrometheusRangeQueryRequest) WithID(id int64) Request {
 	new := *q
 	new.Id = id
 	return &new
 }
 
-// WithStartEnd clones the current `PrometheusRequest` with a new `start` and `end` timestamp.
-func (q *PrometheusRequest) WithStartEnd(start int64, end int64) Request {
+// WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
+func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Request {
 	new := *q
 	new.Start = start
 	new.End = end
 	return &new
 }
 
-// WithQuery clones the current `PrometheusRequest` with a new query.
-func (q *PrometheusRequest) WithQuery(query string) Request {
+// WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
+func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
 	new := *q
 	new.Query = query
 	return &new
 }
 
-// WithQuery clones the current `PrometheusRequest` with new hints.
-func (q *PrometheusRequest) WithHints(hints *Hints) Request {
+// WithQuery clones the current `PrometheusRangeQueryRequest` with new hints.
+func (q *PrometheusRangeQueryRequest) WithHints(hints *Hints) Request {
 	new := *q
 	new.Hints = hints
 	return &new
 }
 
-// LogToSpan logs the current `PrometheusRequest` parameters to the specified span.
-func (q *PrometheusRequest) LogToSpan(sp opentracing.Span) {
+// LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
+func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
 	sp.LogFields(
 		otlog.String("query", q.GetQuery()),
 		otlog.String("start", timestamp.Time(q.GetStart()).String()),
@@ -228,7 +228,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 }
 
 func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Request, error) {
-	var result PrometheusRequest
+	var result PrometheusRangeQueryRequest
 	var err error
 	result.Start, err = util.ParseTime(r.FormValue("start"))
 	if err != nil {
@@ -266,7 +266,7 @@ func (prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Reques
 }
 
 func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
-	promReq, ok := r.(*PrometheusRequest)
+	promReq, ok := r.(*PrometheusRangeQueryRequest)
 	if !ok {
 		return nil, apierror.New(apierror.TypeBadData, "invalid request format")
 	}

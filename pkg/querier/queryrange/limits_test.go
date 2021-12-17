@@ -75,7 +75,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Start: util.TimeToMillis(testData.reqStartTime),
 				End:   util.TimeToMillis(testData.reqEndTime),
 			}
@@ -160,7 +160,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Start: util.TimeToMillis(testData.reqStartTime),
 				End:   util.TimeToMillis(testData.reqEndTime),
 			}
@@ -265,7 +265,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRequest{
+	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -282,7 +282,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						_, _ = next.Do(c, &PrometheusRequest{})
+						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
 				wg.Wait()
@@ -308,7 +308,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 		ctx = user.InjectOrgID(context.Background(), "foo")
 	)
 
-	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRequest{
+	r, err := PrometheusCodec.EncodeRequest(ctx, &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -323,7 +323,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 				// fire up work and we don't wait.
 				for i := 0; i < 10; i++ {
 					go func() {
-						_, _ = next.Do(c, &PrometheusRequest{})
+						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
 				return NewEmptyPrometheusResponse(), nil
@@ -348,7 +348,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 		reqCtx, reqCancel = context.WithCancel(user.InjectOrgID(context.Background(), "foo"))
 	)
 
-	r, err := PrometheusCodec.EncodeRequest(reqCtx, &PrometheusRequest{
+	r, err := PrometheusCodec.EncodeRequest(reqCtx, &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: time.Now().Add(time.Hour).Unix(),
 		End:   util.TimeToMillis(time.Now()),
@@ -368,7 +368,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						_, _ = next.Do(c, &PrometheusRequest{})
+						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
 

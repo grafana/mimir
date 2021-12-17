@@ -5,19 +5,21 @@ package queryrange
 
 import (
 	fmt "fmt"
-	_ "github.com/gogo/protobuf/gogoproto"
-	proto "github.com/gogo/protobuf/proto"
-	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
-	types "github.com/gogo/protobuf/types"
-	_ "github.com/golang/protobuf/ptypes/duration"
-	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
-	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 	io "io"
 	math "math"
 	math_bits "math/bits"
 	reflect "reflect"
 	strings "strings"
 	time "time"
+
+	_ "github.com/gogo/protobuf/gogoproto"
+	proto "github.com/gogo/protobuf/proto"
+	github_com_gogo_protobuf_types "github.com/gogo/protobuf/types"
+	types "github.com/gogo/protobuf/types"
+	_ "github.com/golang/protobuf/ptypes/duration"
+
+	github_com_grafana_mimir_pkg_mimirpb "github.com/grafana/mimir/pkg/mimirpb"
+	mimirpb "github.com/grafana/mimir/pkg/mimirpb"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -32,7 +34,7 @@ var _ = time.Kitchen
 // proto package needs to be updated.
 const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
 
-type PrometheusRequest struct {
+type PrometheusRangeQueryRequest struct {
 	Path    string        `protobuf:"bytes,1,opt,name=path,proto3" json:"path,omitempty"`
 	Start   int64         `protobuf:"varint,2,opt,name=start,proto3" json:"start,omitempty"`
 	End     int64         `protobuf:"varint,3,opt,name=end,proto3" json:"end,omitempty"`
@@ -47,15 +49,15 @@ type PrometheusRequest struct {
 	Hints *Hints `protobuf:"bytes,9,opt,name=hints,proto3" json:"hints,omitempty"`
 }
 
-func (m *PrometheusRequest) Reset()      { *m = PrometheusRequest{} }
-func (*PrometheusRequest) ProtoMessage() {}
-func (*PrometheusRequest) Descriptor() ([]byte, []int) {
+func (m *PrometheusRangeQueryRequest) Reset()      { *m = PrometheusRangeQueryRequest{} }
+func (*PrometheusRangeQueryRequest) ProtoMessage() {}
+func (*PrometheusRangeQueryRequest) Descriptor() ([]byte, []int) {
 	return fileDescriptor_79b02382e213d0b2, []int{0}
 }
-func (m *PrometheusRequest) XXX_Unmarshal(b []byte) error {
+func (m *PrometheusRangeQueryRequest) XXX_Unmarshal(b []byte) error {
 	return m.Unmarshal(b)
 }
-func (m *PrometheusRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+func (m *PrometheusRangeQueryRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
 	if deterministic {
 		return xxx_messageInfo_PrometheusRequest.Marshal(b, m, deterministic)
 	} else {
@@ -67,75 +69,75 @@ func (m *PrometheusRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, e
 		return b[:n], nil
 	}
 }
-func (m *PrometheusRequest) XXX_Merge(src proto.Message) {
+func (m *PrometheusRangeQueryRequest) XXX_Merge(src proto.Message) {
 	xxx_messageInfo_PrometheusRequest.Merge(m, src)
 }
-func (m *PrometheusRequest) XXX_Size() int {
+func (m *PrometheusRangeQueryRequest) XXX_Size() int {
 	return m.Size()
 }
-func (m *PrometheusRequest) XXX_DiscardUnknown() {
+func (m *PrometheusRangeQueryRequest) XXX_DiscardUnknown() {
 	xxx_messageInfo_PrometheusRequest.DiscardUnknown(m)
 }
 
 var xxx_messageInfo_PrometheusRequest proto.InternalMessageInfo
 
-func (m *PrometheusRequest) GetPath() string {
+func (m *PrometheusRangeQueryRequest) GetPath() string {
 	if m != nil {
 		return m.Path
 	}
 	return ""
 }
 
-func (m *PrometheusRequest) GetStart() int64 {
+func (m *PrometheusRangeQueryRequest) GetStart() int64 {
 	if m != nil {
 		return m.Start
 	}
 	return 0
 }
 
-func (m *PrometheusRequest) GetEnd() int64 {
+func (m *PrometheusRangeQueryRequest) GetEnd() int64 {
 	if m != nil {
 		return m.End
 	}
 	return 0
 }
 
-func (m *PrometheusRequest) GetStep() int64 {
+func (m *PrometheusRangeQueryRequest) GetStep() int64 {
 	if m != nil {
 		return m.Step
 	}
 	return 0
 }
 
-func (m *PrometheusRequest) GetTimeout() time.Duration {
+func (m *PrometheusRangeQueryRequest) GetTimeout() time.Duration {
 	if m != nil {
 		return m.Timeout
 	}
 	return 0
 }
 
-func (m *PrometheusRequest) GetQuery() string {
+func (m *PrometheusRangeQueryRequest) GetQuery() string {
 	if m != nil {
 		return m.Query
 	}
 	return ""
 }
 
-func (m *PrometheusRequest) GetOptions() Options {
+func (m *PrometheusRangeQueryRequest) GetOptions() Options {
 	if m != nil {
 		return m.Options
 	}
 	return Options{}
 }
 
-func (m *PrometheusRequest) GetId() int64 {
+func (m *PrometheusRangeQueryRequest) GetId() int64 {
 	if m != nil {
 		return m.Id
 	}
 	return 0
 }
 
-func (m *PrometheusRequest) GetHints() *Hints {
+func (m *PrometheusRangeQueryRequest) GetHints() *Hints {
 	if m != nil {
 		return m.Hints
 	}
@@ -586,7 +588,7 @@ func (m *Hints) GetTotalQueries() int32 {
 }
 
 func init() {
-	proto.RegisterType((*PrometheusRequest)(nil), "queryrange.PrometheusRequest")
+	proto.RegisterType((*PrometheusRangeQueryRequest)(nil), "queryrange.PrometheusRangeQueryRequest")
 	proto.RegisterType((*PrometheusResponseHeader)(nil), "queryrange.PrometheusResponseHeader")
 	proto.RegisterType((*PrometheusResponse)(nil), "queryrange.PrometheusResponse")
 	proto.RegisterType((*PrometheusData)(nil), "queryrange.PrometheusData")
@@ -660,14 +662,14 @@ var fileDescriptor_79b02382e213d0b2 = []byte{
 	0xbd, 0x7f, 0x02, 0x00, 0x00, 0xff, 0xff, 0xe9, 0xd3, 0x6c, 0xd9, 0xbc, 0x06, 0x00, 0x00,
 }
 
-func (this *PrometheusRequest) Equal(that interface{}) bool {
+func (this *PrometheusRangeQueryRequest) Equal(that interface{}) bool {
 	if that == nil {
 		return this == nil
 	}
 
-	that1, ok := that.(*PrometheusRequest)
+	that1, ok := that.(*PrometheusRangeQueryRequest)
 	if !ok {
-		that2, ok := that.(PrometheusRequest)
+		that2, ok := that.(PrometheusRangeQueryRequest)
 		if ok {
 			that1 = &that2
 		} else {
@@ -969,12 +971,12 @@ func (this *Hints) Equal(that interface{}) bool {
 	}
 	return true
 }
-func (this *PrometheusRequest) GoString() string {
+func (this *PrometheusRangeQueryRequest) GoString() string {
 	if this == nil {
 		return "nil"
 	}
 	s := make([]string, 0, 13)
-	s = append(s, "&queryrange.PrometheusRequest{")
+	s = append(s, "&queryrange.PrometheusRangeQueryRequest{")
 	s = append(s, "Path: "+fmt.Sprintf("%#v", this.Path)+",\n")
 	s = append(s, "Start: "+fmt.Sprintf("%#v", this.Start)+",\n")
 	s = append(s, "End: "+fmt.Sprintf("%#v", this.End)+",\n")
@@ -1114,7 +1116,7 @@ func valueToGoStringQueryrange(v interface{}, typ string) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("func(v %v) *%v { return &v } ( %#v )", typ, typ, pv)
 }
-func (m *PrometheusRequest) Marshal() (dAtA []byte, err error) {
+func (m *PrometheusRangeQueryRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
 	n, err := m.MarshalToSizedBuffer(dAtA[:size])
@@ -1124,12 +1126,12 @@ func (m *PrometheusRequest) Marshal() (dAtA []byte, err error) {
 	return dAtA[:n], nil
 }
 
-func (m *PrometheusRequest) MarshalTo(dAtA []byte) (int, error) {
+func (m *PrometheusRangeQueryRequest) MarshalTo(dAtA []byte) (int, error) {
 	size := m.Size()
 	return m.MarshalToSizedBuffer(dAtA[:size])
 }
 
-func (m *PrometheusRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
+func (m *PrometheusRangeQueryRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
 	i := len(dAtA)
 	_ = i
 	var l int
@@ -1588,7 +1590,7 @@ func encodeVarintQueryrange(dAtA []byte, offset int, v uint64) int {
 	dAtA[offset] = uint8(v)
 	return base
 }
-func (m *PrometheusRequest) Size() (n int) {
+func (m *PrometheusRangeQueryRequest) Size() (n int) {
 	if m == nil {
 		return 0
 	}
@@ -1793,11 +1795,11 @@ func sovQueryrange(x uint64) (n int) {
 func sozQueryrange(x uint64) (n int) {
 	return sovQueryrange(uint64((x << 1) ^ uint64((int64(x) >> 63))))
 }
-func (this *PrometheusRequest) String() string {
+func (this *PrometheusRangeQueryRequest) String() string {
 	if this == nil {
 		return "nil"
 	}
-	s := strings.Join([]string{`&PrometheusRequest{`,
+	s := strings.Join([]string{`&PrometheusRangeQueryRequest{`,
 		`Path:` + fmt.Sprintf("%v", this.Path) + `,`,
 		`Start:` + fmt.Sprintf("%v", this.Start) + `,`,
 		`End:` + fmt.Sprintf("%v", this.End) + `,`,
@@ -1932,7 +1934,7 @@ func valueToStringQueryrange(v interface{}) string {
 	pv := reflect.Indirect(rv).Interface()
 	return fmt.Sprintf("*%v", pv)
 }
-func (m *PrometheusRequest) Unmarshal(dAtA []byte) error {
+func (m *PrometheusRangeQueryRequest) Unmarshal(dAtA []byte) error {
 	l := len(dAtA)
 	iNdEx := 0
 	for iNdEx < l {
@@ -1955,10 +1957,10 @@ func (m *PrometheusRequest) Unmarshal(dAtA []byte) error {
 		fieldNum := int32(wire >> 3)
 		wireType := int(wire & 0x7)
 		if wireType == 4 {
-			return fmt.Errorf("proto: PrometheusRequest: wiretype end group for non-group")
+			return fmt.Errorf("proto: PrometheusRangeQueryRequest: wiretype end group for non-group")
 		}
 		if fieldNum <= 0 {
-			return fmt.Errorf("proto: PrometheusRequest: illegal tag %d (wire type %d)", fieldNum, wire)
+			return fmt.Errorf("proto: PrometheusRangeQueryRequest: illegal tag %d (wire type %d)", fieldNum, wire)
 		}
 		switch fieldNum {
 		case 1:
