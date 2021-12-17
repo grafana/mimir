@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1164,12 +1163,7 @@ func (i *Ingester) LabelValues(ctx context.Context, req *client.LabelValuesReque
 		return &client.LabelValuesResponse{}, nil
 	}
 
-	mint, maxt, err := metadataQueryRange(startTimestampMs, endTimestampMs, db)
-	if err != nil {
-		return nil, err
-	}
-
-	q, err := db.Querier(ctx, mint, maxt)
+	q, err := db.Querier(ctx, startTimestampMs, endTimestampMs)
 	if err != nil {
 		return nil, err
 	}
@@ -1201,11 +1195,6 @@ func (i *Ingester) LabelNames(ctx context.Context, req *client.LabelNamesRequest
 	}
 
 	mint, maxt, matchers, err := client.FromLabelNamesRequest(req)
-	if err != nil {
-		return nil, err
-	}
-
-	mint, maxt, err = metadataQueryRange(mint, maxt, db)
 	if err != nil {
 		return nil, err
 	}
@@ -1247,11 +1236,7 @@ func (i *Ingester) MetricsForLabelMatchers(ctx context.Context, req *client.Metr
 		return nil, err
 	}
 
-	mint, maxt, err := metadataQueryRange(req.StartTimestampMs, req.EndTimestampMs, db)
-	if err != nil {
-		return nil, err
-	}
-
+	mint, maxt := req.StartTimestampMs, req.EndTimestampMs
 	q, err := db.Querier(ctx, mint, maxt)
 	if err != nil {
 		return nil, err
@@ -2368,33 +2353,6 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// metadataQueryRange returns the best range to query for metadata queries based on the timerange in the ingester.
-func metadataQueryRange(queryStart, queryEnd int64, db *userTSDB) (mint, maxt int64, err error) {
-	// Ingesters are run with limited retention and we don't support querying the store-gateway for labels yet.
-	// This means if someone loads a dashboard that is outside the range of the ingester, and we only return the
-	// data for the timerange requested (which will be empty), the dashboards will break. To fix this we should
-	// return the "head block" range until we can query the store-gateway.
-
-	// Now the question would be what to do when the query is partially in the ingester range. I would err on the side
-	// of caution and query the entire db, as I can't think of a good way to query the head + the overlapping range.
-	mint, maxt = queryStart, queryEnd
-
-	lowestTs, err := db.StartTime()
-	if err != nil {
-		return mint, maxt, err
-	}
-
-	// Completely outside.
-	if queryEnd < lowestTs {
-		mint, maxt = db.Head().MinTime(), db.Head().MaxTime()
-	} else if queryStart < lowestTs {
-		// Partially inside.
-		mint, maxt = 0, math.MaxInt64
-	}
-
-	return
 }
 
 func wrappedTSDBIngestErr(ingestErr error, timestamp model.Time, labels []mimirpb.LabelAdapter) error {
