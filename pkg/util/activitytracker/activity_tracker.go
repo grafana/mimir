@@ -151,10 +151,6 @@ func (t *ActivityTracker) Delete(activityIndex int) {
 	t.entryIndexQueue <- activityIndex
 }
 
-func (t *ActivityTracker) flush() error {
-	return t.fileBytes.Flush()
-}
-
 // Close closes activity tracker. Calling other methods after Close() will likely panic. Don't do that.
 func (t *ActivityTracker) Close() error {
 	if t == nil {

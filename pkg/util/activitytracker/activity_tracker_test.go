@@ -39,14 +39,11 @@ func TestActivityTracker(t *testing.T) {
 
 	require.Equal(t, 1.0, testutil.ToFloat64(tr.failedInserts))
 
-	require.NoError(t, tr.flush())
-
 	activities := LoadUnfinishedEntries(file)
 	require.ElementsMatch(t, activities, insertedActivities)
 
 	for i := 0; i < maxEntries; i++ {
 		tr.Delete(i)
-		require.NoError(t, tr.flush())
 
 		insertedActivities = insertedActivities[1:]
 
