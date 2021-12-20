@@ -62,7 +62,7 @@ func TestNilActivityTracker(t *testing.T) {
 	require.NoError(t, tr.Close())
 }
 
-func BenchmarkName(b *testing.B) {
+func BenchmarkActivityTracker(b *testing.B) {
 	file := filepath.Join(b.TempDir(), "activity")
 
 	const maxEntries = 100
