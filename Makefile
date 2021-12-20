@@ -39,7 +39,7 @@ UPTODATE := .uptodate
 # path to jsonnetfmt
 JSONNET_FMT := jsonnetfmt
 
-# path to the mimir/mixin
+# path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
 
 # path to the mimir jsonnet manifests
@@ -372,7 +372,6 @@ check-white-noise: clean-white-noise
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
 	@echo "Checking diff:"
-	git diff
 	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
