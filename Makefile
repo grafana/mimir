@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin push-multiarch-mimir list-image-targets
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets
 .DEFAULT_GOAL := all
 
 # Version number
@@ -39,8 +39,11 @@ UPTODATE := .uptodate
 # path to jsonnetfmt
 JSONNET_FMT := jsonnetfmt
 
-# path to the mimir/mixin
+# path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
+
+# path to the mimir jsonnet manifests
+JSONNET_MANIFESTS_PATH := operations/mimir
 
 .PHONY: image-tag
 image-tag:
@@ -369,7 +372,6 @@ check-white-noise: clean-white-noise
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
 	@echo "Checking diff:"
-	git diff
 	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
@@ -395,6 +397,13 @@ build-mixin: check-mixin-jb
 
 format-mixin:
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+
+check-jsonnet-manifests: format-jsonnet-manifests
+	@echo "Checking diff:"
+	@git diff --exit-code -- $(JSONNET_MANIFESTS_PATH) || (echo "Please format jsonnet manifests by running 'make format-jsonnet-manifests'" && false)
+
+format-jsonnet-manifests:
+	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
