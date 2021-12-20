@@ -340,7 +340,7 @@ func (g *StoreGateway) syncStores(ctx context.Context, reason string) {
 
 func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.StoreGateway_SeriesServer) error {
 	ix := g.tracker.Insert(func() string {
-		return requestActivity("StoreGateway/Series", srv.Context(), req)
+		return requestActivity(srv.Context(), "StoreGateway/Series", req)
 	})
 	defer g.tracker.Delete(ix)
 
@@ -350,7 +350,7 @@ func (g *StoreGateway) Series(req *storepb.SeriesRequest, srv storegatewaypb.Sto
 // LabelNames implements the Storegateway proto service.
 func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRequest) (*storepb.LabelNamesResponse, error) {
 	ix := g.tracker.Insert(func() string {
-		return requestActivity("StoreGateway/LabelNames", ctx, req)
+		return requestActivity(ctx, "StoreGateway/LabelNames", req)
 	})
 	defer g.tracker.Delete(ix)
 
@@ -360,14 +360,14 @@ func (g *StoreGateway) LabelNames(ctx context.Context, req *storepb.LabelNamesRe
 // LabelValues implements the Storegateway proto service.
 func (g *StoreGateway) LabelValues(ctx context.Context, req *storepb.LabelValuesRequest) (*storepb.LabelValuesResponse, error) {
 	ix := g.tracker.Insert(func() string {
-		return requestActivity("StoreGateway/LabelValues", ctx, req)
+		return requestActivity(ctx, "StoreGateway/LabelValues", req)
 	})
 	defer g.tracker.Delete(ix)
 
 	return g.stores.LabelValues(ctx, req)
 }
 
-func requestActivity(name string, ctx context.Context, req interface{}) string {
+func requestActivity(ctx context.Context, name string, req interface{}) string {
 	user := getUserIDFromGRPCContext(ctx)
 	traceID, _ := tracing.ExtractSampledTraceID(ctx)
 	return fmt.Sprintf("%s: user=%q trace=%q request=%v", name, user, traceID, req)
