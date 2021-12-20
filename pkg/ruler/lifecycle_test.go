@@ -25,12 +25,8 @@ import (
 func TestRulerShutdown(t *testing.T) {
 	ctx := context.Background()
 
-	config, cleanup := defaultRulerConfig(t)
-	defer cleanup()
-
-	r, rcleanup := buildRuler(t, config, newMockRuleStore(mockRules), nil)
-	defer rcleanup()
-
+	config := defaultRulerConfig(t)
+	r := buildRuler(t, config, newMockRuleStore(mockRules), nil)
 	r.cfg.EnableSharding = true
 	ringStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
@@ -61,10 +57,8 @@ func TestRuler_RingLifecyclerShouldAutoForgetUnhealthyInstances(t *testing.T) {
 	const heartbeatTimeout = time.Minute
 
 	ctx := context.Background()
-	config, cleanup := defaultRulerConfig(t)
-	defer cleanup()
-	r, rcleanup := buildRuler(t, config, newMockRuleStore(mockRules), nil)
-	defer rcleanup()
+	config := defaultRulerConfig(t)
+	r := buildRuler(t, config, newMockRuleStore(mockRules), nil)
 	r.cfg.EnableSharding = true
 	r.cfg.Ring.HeartbeatPeriod = 100 * time.Millisecond
 	r.cfg.Ring.HeartbeatTimeout = heartbeatTimeout
