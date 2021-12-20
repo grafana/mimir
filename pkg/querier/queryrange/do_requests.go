@@ -28,21 +28,15 @@ func DoRequests(ctx context.Context, downstream Handler, reqs []Request, recordS
 	for i := 0; i < len(reqs); i++ {
 		req := reqs[i]
 		g.Go(func() error {
-			var (
-				span     opentracing.Span
-				childCtx = ctx
-			)
-
+			var childCtx = ctx
 			if recordSpan {
+				var span opentracing.Span
 				span, childCtx = opentracing.StartSpanFromContext(ctx, "DoRequests")
 				req.LogToSpan(span)
+				defer span.Finish()
 			}
 
 			resp, err := downstream.Do(childCtx, req)
-
-			if span != nil {
-				span.Finish()
-			}
 			if err != nil {
 				return err
 			}
