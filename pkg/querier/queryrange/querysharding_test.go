@@ -318,6 +318,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		`query with sort() expects specific order`: {
 			query:                  `sort(sum(metric_histogram_bucket) by (le))`,
 			expectedShardedQueries: 1,
+			expectSpecificOrder:    true,
 		},
 		//
 		// The following queries are not expected to be shardable.
