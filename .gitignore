@@ -1,7 +1,6 @@
 cmd/test-exporter/test-exporter
 cmd/mimir/mimir
 cmd/query-tee/query-tee
-cmd/blocksconvert/blocksconvert
 cmd/thanosconvert/thanosconvert
 .uptodate
 .pkg
@@ -15,7 +14,6 @@ active-query-tracker
 dist/
 
 # Binaries built from ./cmd
-/blocksconvert
 /mimir
 /query-tee
 /test-exporter
