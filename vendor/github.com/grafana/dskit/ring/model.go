@@ -175,6 +175,12 @@ func (i *InstanceDesc) IsReady(now time.Time, heartbeatTimeout time.Duration) er
 //
 // This method is part of memberlist.Mergeable interface, and is only used by gossiping ring.
 //
+// The receiver must be normalised, that is, the token lists must sorted and not contain
+// duplicates. The function guarantees that the receiver will be left in this normalised state,
+// so multiple subsequent Merge calls are valid usage.
+//
+// The Mergeable passed as the parameter does not need to be normalised.
+//
 // Note: This method modifies d and mergeable to reduce allocations and copies.
 func (d *Desc) Merge(mergeable memberlist.Mergeable, localCAS bool) (memberlist.Mergeable, error) {
 	return d.mergeWithTime(mergeable, localCAS, time.Now())
@@ -195,7 +201,6 @@ func (d *Desc) mergeWithTime(mergeable memberlist.Mergeable, localCAS bool, now 
 		return nil, nil
 	}
 
-	normalizeIngestersMap(d)
 	normalizeIngestersMap(other)
 
 	thisIngesterMap := d.Ingesters
