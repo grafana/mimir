@@ -144,6 +144,24 @@ func TestResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
+			name: "successful empty matrix response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type:   model.ValMatrix,
+					Result: model.Matrix{},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValMatrix.String(),
+					Result:     []SampleStream{},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
 			name: "error range response",
 			resp: prometheusAPIResponse{
 				Status:    statusError,
