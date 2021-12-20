@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-readme
 .DEFAULT_GOAL := all
 
 # Version number
@@ -404,6 +404,19 @@ check-jsonnet-manifests: format-jsonnet-manifests
 
 format-jsonnet-manifests:
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+
+check-jsonnet-readme:
+	rm -rf test-jsonnet-readme && \
+	mkdir test-jsonnet-readme && \
+	cd test-jsonnet-readme && \
+	tk init --k8s=false && \
+	jb install github.com/jsonnet-libs/k8s-alpha/1.18 && \
+	printf '(import "github.com/jsonnet-libs/k8s-alpha/1.18/main.libsonnet")\n+(import "github.com/jsonnet-libs/k8s-alpha/1.18/extensions/kausal-shim.libsonnet")' > lib/k.libsonnet && \
+	jb install github.com/grafana/mimir/operations/mimir@main && \
+	rm -fr ./vendor/mimir && \
+	cp -r ../operations/mimir ./vendor/mimir/ && \
+	cp vendor/mimir/mimir-manifests.jsonnet.example environments/default/main.jsonnet && \
+	PAGER=cat tk show environments/default
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
