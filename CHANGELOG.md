@@ -179,7 +179,7 @@
 * [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 
-Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`):
+### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
 * [CHANGE] Update grafana-builder dependency: use $__rate_interval in qpsPanel and latencyPanel. [#372](https://github.com/grafana/cortex-jsonnet/pull/372)
 * [CHANGE] `namespace` template variable in dashboards now only selects namespaces for selected clusters. [#311](https://github.com/grafana/cortex-jsonnet/pull/311)
@@ -250,7 +250,7 @@ Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`):
 * [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
 
-Jsonnet (changes since `grafana/cortex-jsonnet` `1.9.0`):
+### Jsonnet (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
 * [CHANGE] Store gateway: set `-blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency`,
   `-blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency`,
