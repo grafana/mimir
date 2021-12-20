@@ -108,7 +108,7 @@ var (
 		}
 	}
 
-	AlertManagerLocalFlags = func() map[string]string {
+	AlertmanagerLocalFlags = func() map[string]string {
 		return map[string]string{
 			"-alertmanager-storage.backend":    "local",
 			"-alertmanager-storage.local.path": filepath.Join(e2e.ContainerSharedDir, "alertmanager_configs"),

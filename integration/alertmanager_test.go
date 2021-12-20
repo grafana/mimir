@@ -47,7 +47,7 @@ func TestAlertmanager(t *testing.T) {
 		"alertmanager",
 		mergeFlags(
 			AlertmanagerFlags(),
-			AlertManagerLocalFlags(),
+			AlertmanagerLocalFlags(),
 		),
 		"",
 	)
