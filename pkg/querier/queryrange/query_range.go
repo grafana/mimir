@@ -411,6 +411,14 @@ func (d *PrometheusData) UnmarshalJSON(b []byte) error {
 	}
 	d.ResultType = v.Type.String()
 	switch v.Type {
+	case model.ValString:
+		var sss stringSampleStreams
+		if err := json.Unmarshal(v.Result, &sss); err != nil {
+			return err
+		}
+		d.Result = sss
+		return nil
+
 	case model.ValScalar:
 		var sss scalarSampleStreams
 		if err := json.Unmarshal(v.Result, &sss); err != nil {
@@ -494,6 +502,15 @@ func (d *PrometheusData) MarshalJSON() ([]byte, error) {
 	}
 
 	switch d.ResultType {
+	case model.ValString.String():
+		return json.Marshal(struct {
+			Type   model.ValueType     `json:"resultType"`
+			Result stringSampleStreams `json:"result"`
+		}{
+			Type:   model.ValString,
+			Result: d.Result,
+		})
+
 	case model.ValScalar.String():
 		return json.Marshal(struct {
 			Type   model.ValueType     `json:"resultType"`
@@ -521,6 +538,38 @@ func (d *PrometheusData) MarshalJSON() ([]byte, error) {
 	}
 }
 
+type stringSampleStreams []SampleStream
+
+func (sss stringSampleStreams) MarshalJSON() ([]byte, error) {
+	if len(sss) != 1 {
+		return nil, fmt.Errorf("string sample streams should have exactly one stream, got %d", len(sss))
+	}
+	ss := sss[0]
+	if len(ss.Labels) != 1 || ss.Labels[0].Name != "value" {
+		return nil, fmt.Errorf("string sample stream should have exactly one label called value, got %d: %v", len(ss.Labels), ss.Labels)
+	}
+	l := ss.Labels[0]
+
+	if len(ss.Samples) != 1 {
+		return nil, fmt.Errorf("string sample stream should have exactly one sample, got %d", len(ss.Samples))
+	}
+	s := ss.Samples[0]
+
+	return json.Marshal(model.String{Value: l.Value, Timestamp: model.Time(s.TimestampMs)})
+}
+
+func (sss *stringSampleStreams) UnmarshalJSON(b []byte) error {
+	var sv model.String
+	if err := json.Unmarshal(b, &sv); err != nil {
+		return err
+	}
+	*sss = []SampleStream{{
+		Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
+		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
+	}}
+	return nil
+}
+
 type scalarSampleStreams []SampleStream
 
 func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
@@ -543,7 +592,9 @@ func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
 	if err := json.Unmarshal(b, &sv); err != nil {
 		return err
 	}
-	*sss = []SampleStream{{Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}}}}
+	*sss = []SampleStream{{
+		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
+	}}
 	return nil
 }
 

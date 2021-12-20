@@ -102,8 +102,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		// number will be multiplied for the number of shards).
 		expectedShardedQueries int
 
-		// expectSpecificOrder disables result sorting and checks that both results are returned in same order
+		// expectSpecificOrder disables result sorting and checks that both results are returned in same order.
 		expectSpecificOrder bool
+
+		// noRangeQuery skips the range query (specially made for "string" query as it can't be used for a range query)
+		noRangeQuery bool
 	}{
 		"sum() no grouping": {
 			query:                  `sum(metric_counter)`,
@@ -377,6 +380,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			[10m:1m] offset 25m)`,
 			expectedShardedQueries: 0,
 		},
+		"string literal": {
+			query:                  `"test"`,
+			expectedShardedQueries: 0,
+			noRangeQuery:           true,
+		},
 	}
 
 	series := make([]*promql.StorageSeries, 0, numSeries+(numHistograms*len(histogramBuckets)))
@@ -442,21 +450,24 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-
-			for _, req := range []Request{
-				&PrometheusRangeQueryRequest{
-					Path:  "/query_range",
-					Start: util.TimeToMillis(start),
-					End:   util.TimeToMillis(end),
-					Step:  step.Milliseconds(),
-					Query: testData.query,
-				},
+			reqs := []Request{
 				&PrometheusInstantQueryRequest{
 					Path:  "/query",
 					Time:  util.TimeToMillis(end),
 					Query: testData.query,
 				},
-			} {
+			}
+			if !testData.noRangeQuery {
+				reqs = append(reqs, &PrometheusRangeQueryRequest{
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+					Query: testData.query,
+				})
+			}
+
+			for _, req := range reqs {
 				t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
 					engine := newEngine()
 					downstream := &downstreamHandler{
@@ -1050,13 +1061,7 @@ type downstreamHandler struct {
 }
 
 func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error) {
-	qry, err := h.engine.NewRangeQuery(
-		h.queryable,
-		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
-		time.Duration(r.GetStep())*time.Millisecond,
-	)
+	qry, err := newQuery(r, h.engine, h.queryable)
 	if err != nil {
 		return nil, err
 	}

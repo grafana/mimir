@@ -74,14 +74,29 @@ func TestFromValue(t *testing.T) {
 		err      bool
 		expected []SampleStream
 	}{
-		// string (errors)
-		{
-			input: &promql.Result{Value: promql.String{T: 1, V: "hi"}},
-			err:   true,
-		},
+		// error
 		{
 			input: &promql.Result{Err: errors.New("foo")},
 			err:   true,
+		},
+		// String
+		{
+			input: &promql.Result{Value: promql.String{T: 1, V: "hi"}},
+			expected: []SampleStream{
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{
+							Name:  "value",
+							Value: "hi",
+						},
+					},
+					Samples: []mimirpb.Sample{
+						{
+							TimestampMs: 1,
+						},
+					},
+				},
+			},
 		},
 		// Scalar
 		{

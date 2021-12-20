@@ -128,6 +128,29 @@ func TestResponseRoundtrip(t *testing.T) {
 		expected *PrometheusResponse
 	}{
 		{
+			name: "successful string response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type:   model.ValString,
+					Result: &model.String{Value: "foo", Timestamp: 1_500},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+							Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
+						},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
 			name: "successful scalar response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
