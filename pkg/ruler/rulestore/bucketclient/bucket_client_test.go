@@ -109,16 +109,16 @@ func TestListRules(t *testing.T) {
 
 func TestLoadRules(t *testing.T) {
 	rs := NewBucketRuleStore(objstore.NewInMemBucket(), nil, log.NewNopLogger())
-		groups := []testGroup{
-			{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
-				For:    model.Duration(5 * time.Minute),
-				Labels: map[string]string{"label1": "value1"},
-			}}}},
-			{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
-			{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
-			{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user", Interval: model.Duration(5 * time.Minute)}},
-			{user: "user3", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "third user", SourceTenants: []string{"tenant-1"}}},
-		}
+	groups := []testGroup{
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "first testGroup", Interval: model.Duration(time.Minute), Rules: []rulefmt.RuleNode{{
+			For:    model.Duration(5 * time.Minute),
+			Labels: map[string]string{"label1": "value1"},
+		}}}},
+		{user: "user1", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "second testGroup", Interval: model.Duration(2 * time.Minute)}},
+		{user: "user1", namespace: "world", ruleGroup: rulefmt.RuleGroup{Name: "another namespace testGroup", Interval: model.Duration(1 * time.Hour)}},
+		{user: "user2", namespace: "+-!@#$%. ", ruleGroup: rulefmt.RuleGroup{Name: "different user", Interval: model.Duration(5 * time.Minute)}},
+		{user: "user3", namespace: "hello", ruleGroup: rulefmt.RuleGroup{Name: "third user", SourceTenants: []string{"tenant-1"}}},
+	}
 
 	for _, g := range groups {
 		desc := rulespb.ToProto(g.user, g.namespace, g.ruleGroup)
@@ -160,14 +160,14 @@ func TestLoadRules(t *testing.T) {
 			{User: "user1", Namespace: "world", Name: "another namespace testGroup", Interval: 1 * time.Hour},
 		}, allGroupsMap["user1"])
 
-			require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-				{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
-			}, allGroupsMap["user2"])
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user2", Namespace: "+-!@#$%. ", Name: "different user", Interval: 5 * time.Minute},
+		}, allGroupsMap["user2"])
 
-			require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
-				{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
-			}, allGroupsMap["user3"])
-		}
+		require.ElementsMatch(t, []*rulespb.RuleGroupDesc{
+			{User: "user3", Namespace: "hello", Name: "third user", SourceTenants: []string{"tenant-1"}},
+		}, allGroupsMap["user3"])
+	}
 
 	// Loading group with mismatched info fails.
 	require.NoError(t, rs.SetRuleGroup(context.Background(), "user1", "hello", &rulespb.RuleGroupDesc{User: "user2", Namespace: "world", Name: "first testGroup"}))

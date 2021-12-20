@@ -703,7 +703,7 @@ func TestRulerFederatedRules(t *testing.T) {
 
 	flags := mergeFlags(
 		BlocksStorageFlags(),
-		RulerFlags(false),
+		RulerFlags(),
 		map[string]string{
 			"-ruler.tenant-federation.enabled": "true",
 			"-tenant-federation.enabled":       "true",

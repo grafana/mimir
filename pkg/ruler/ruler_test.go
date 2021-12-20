@@ -325,14 +325,12 @@ func TestRuler_Authorizer(t *testing.T) {
 	for name, tc := range testCases {
 		tc := tc
 		t.Run(name, func(t *testing.T) {
-			cfg, cleanup := defaultRulerConfig(t)
-			t.Cleanup(cleanup)
+			cfg := defaultRulerConfig(t)
 
 			authorizer := newMockAuthorizer(tc.authorizerErr, tc.authorizedRules...)
-			r, rCleanup := buildRuler(t, cfg, newMockRuleStore(tc.allRules), nil, WithRuleGroupAuthorizer(authorizer))
+			r := buildRuler(t, cfg, newMockRuleStore(tc.allRules), nil, WithRuleGroupAuthorizer(authorizer))
 
 			// Start the ruler and prep cleanup
-			t.Cleanup(rCleanup)
 			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
 			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r)) })
 
