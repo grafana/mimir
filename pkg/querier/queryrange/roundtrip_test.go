@@ -18,8 +18,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/client_golang/api"
+	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,9 +30,10 @@ import (
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/chunk/storage"
+	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-func TestTripperware(t *testing.T) {
+func TestRangeTripperware(t *testing.T) {
 	var (
 		query        = "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120"
 		responseBody = `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"foo":"bar"},"values":[[1536673680,"137"],[1536673780,"137"]]}]}}`
@@ -102,6 +106,79 @@ func TestTripperware(t *testing.T) {
 			require.Equal(t, tc.expectedBody, string(bs))
 		})
 	}
+}
+
+func TestInstantTripperware(t *testing.T) {
+	const totalShards = 8
+
+	ctx := user.InjectOrgID(context.Background(), "user-1")
+
+	tw, _, err := NewTripperware(
+		Config{
+			ShardedQueries: true,
+		},
+		log.NewNopLogger(),
+		mockLimits{totalShards: totalShards},
+		PrometheusCodec,
+		nil,
+		storage.StorageEngineBlocks,
+		promql.EngineOpts{
+			Logger:     log.NewNopLogger(),
+			Reg:        nil,
+			MaxSamples: 1000,
+			Timeout:    time.Minute,
+		},
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+
+	ts := time.Date(2021, 1, 2, 3, 4, 5, 0, time.UTC)
+	rt := RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		// We will provide a sample exactly for the requested time,
+		// this way we'll also be able to tell which time was requested.
+		reqTime, err := strconv.ParseFloat(r.URL.Query().Get("time"), 10)
+		if err != nil {
+			return nil, err
+		}
+
+		return PrometheusCodec.EncodeResponse(r.Context(), &PrometheusResponse{
+			Status: "success",
+			Data: &PrometheusData{
+				ResultType: "vector",
+				Result: []SampleStream{
+					{
+						Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+						Samples: []mimirpb.Sample{
+							{TimestampMs: int64(reqTime * 1000), Value: 1},
+						},
+					},
+				},
+			},
+		})
+	})
+
+	queryClient, err := api.NewClient(api.Config{Address: "http://localhost", RoundTripper: tw(rt)})
+	require.NoError(t, err)
+	api := v1.NewAPI(queryClient)
+
+	t.Run("happy case roundtrip", func(t *testing.T) {
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, ts)
+		require.NoError(t, err)
+		require.Equal(t, model.Vector{
+			{Metric: model.Metric{"foo": "bar"}, Timestamp: model.TimeFromUnixNano(ts.UnixNano()), Value: totalShards},
+		}, res)
+	})
+
+	t.Run("default time param", func(t *testing.T) {
+		res, _, err := api.Query(ctx, `sum(increase(we_dont_care_about_this[1h])) by (foo)`, time.Now())
+		require.NoError(t, err)
+		require.IsType(t, model.Vector{}, res)
+		require.NotEmpty(t, res.(model.Vector))
+
+		resultTime := res.(model.Vector)[0].Timestamp.Time()
+		require.InDelta(t, time.Now().Unix(), resultTime.Unix(), 1)
+	})
 }
 
 func TestTripperware_Metrics(t *testing.T) {

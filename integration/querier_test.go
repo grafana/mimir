@@ -220,8 +220,10 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			// Query back the series (1 only in the storage, 1 only in the ingesters, 1 on both).
 			expectedFetchedSeries := 0
 
+			instantQueriesCount := 0
 			c, err := e2emimir.NewClient("", queryFrontend.HTTPEndpoint(), "", "", "user-1")
 			require.NoError(t, err)
+			instantQueriesCount++
 
 			result, err := c.Query("series_1", series1Timestamp)
 			require.NoError(t, err)
@@ -229,6 +231,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			assert.Equal(t, expectedVector1, result.(model.Vector))
 			expectedFetchedSeries++ // Storage only.
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 1, Postings: 1, Series: 1
+			instantQueriesCount++
 
 			result, err = c.Query("series_2", series2Timestamp)
 			require.NoError(t, err)
@@ -236,6 +239,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			assert.Equal(t, expectedVector2, result.(model.Vector))
 			expectedFetchedSeries += 2 // Ingester + storage.
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 3, Postings: 3, Series: 2
+			instantQueriesCount++
 
 			result, err = c.Query("series_3", series3Timestamp)
 			require.NoError(t, err)
@@ -243,6 +247,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			assert.Equal(t, expectedVector3, result.(model.Vector))
 			expectedFetchedSeries++ // Ingester only.
 			// thanos_store_index_cache_requests_total: ExpandedPostings: 5, Postings: 5, Series: 2
+			instantQueriesCount++
 
 			// Check the in-memory index cache metrics (in the store-gateway).
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(12), "thanos_store_index_cache_requests_total")) // 5 + 5 + 2
@@ -288,11 +293,21 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				expectedFetchedSeries += 4 // series_2 is fetched both from ingester and storage, while other series are fetched either from ingester or storage.
 			}
 
-			// When query sharding is enabled, we expect the range query above to be sharded.
+			// This instant query can be sharded.
+			result, err = c.Query(`count({__name__=~"series.*"})`, series3Timestamp)
+			require.NoError(t, err)
+			require.Equal(t, model.ValVector, result.Type())
+			vector := result.(model.Vector)
+			require.Equal(t, 1, len(vector))
+			require.Equal(t, model.SampleValue(3), vector[0].Value)
+			instantQueriesCount++
+			expectedFetchedSeries += 4 // series_2 is fetched both from ingester and storage, while other series are fetched either from ingester or storage.
+
+			// When query sharding is enabled, we expect the range & instant queries above to be sharded.
 			if testCfg.queryShardingEnabled {
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries), "cortex_frontend_query_sharding_rewrites_attempted_total"))
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
-				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries*16), "cortex_frontend_sharded_queries_total"))
+				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries+float64(instantQueriesCount)), "cortex_frontend_query_sharding_rewrites_attempted_total"))
+				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(numRangeQueries+1), "cortex_frontend_query_sharding_rewrites_succeeded_total"))
+				require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals((numRangeQueries+1)*16), "cortex_frontend_sharded_queries_total"))
 			}
 
 			// Check query stats (supported only when gRPC streaming is enabled).

@@ -75,111 +75,111 @@ func TestIsRequestCachable(t *testing.T) {
 		// @ modifier on vector selectors.
 		{
 			name:     "@ modifier on vector selector, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 123", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "metric @ 123", End: 125000, Step: 5},
 			expected: true,
 		},
 		{
 			name:     "@ modifier on vector selector, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 127", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "metric @ 127", End: 125000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on vector selector, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 151", End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "metric @ 151", End: 200000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on vector selector, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ 151", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "metric @ 151", End: 125000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on vector selector with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ start()", Start: 100000, End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "metric @ start()", Start: 100000, End: 200000, Step: 5},
 			expected: true,
 		},
 		{
 			name:     "@ modifier on vector selector with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "metric @ end()", Start: 100000, End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "metric @ end()", Start: 100000, End: 200000, Step: 5},
 			expected: false,
 		},
 		// @ modifier on matrix selectors.
 		{
 			name:     "@ modifier on matrix selector, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 123)", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 123)", End: 125000, Step: 5},
 			expected: true,
 		},
 		{
 			name:     "@ modifier on matrix selector, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 127)", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 127)", End: 125000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on matrix selector, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 151)", End: 200000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on matrix selector, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ 151)", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ 151)", End: 125000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on matrix selector with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ start())", Start: 100000, End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ start())", Start: 100000, End: 200000, Step: 5},
 			expected: true,
 		},
 		{
 			name:     "@ modifier on matrix selector with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "rate(metric[5m] @ end())", Start: 100000, End: 200000, Step: 5},
 			expected: false,
 		},
 		// @ modifier on subqueries.
 		{
 			name:     "@ modifier on subqueries, before end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 123)", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 123)", End: 125000, Step: 5},
 			expected: true,
 		},
 		{
 			name:     "@ modifier on subqueries, after end, before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 127)", End: 125000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on subqueries, before end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 200000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on subqueries, after end, after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ 151)", End: 125000, Step: 5},
 			expected: false,
 		},
 		{
 			name:     "@ modifier on subqueries with start() before maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ start())", Start: 100000, End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ start())", Start: 100000, End: 200000, Step: 5},
 			expected: true,
 		},
 		{
 			name:     "@ modifier on subqueries with end() after maxCacheTime",
-			request:  &PrometheusRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
+			request:  &PrometheusRangeQueryRequest{Query: "sum_over_time(rate(metric[1m])[10m:1m] @ end())", Start: 100000, End: 200000, Step: 5},
 			expected: false,
 		},
 		// On step aligned and non-aligned requests
 		{
 			name:     "request that is step aligned",
-			request:  &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 10},
+			request:  &PrometheusRangeQueryRequest{Query: "query", Start: 100000, End: 200000, Step: 10},
 			expected: true,
 		},
 		{
 			name:               "request that is NOT step aligned, with cacheStepUnaligned=false",
-			request:            &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			request:            &PrometheusRangeQueryRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
 			expected:           false,
 			cacheStepUnaligned: false,
 		},
 		{
 			name:               "request that is NOT step aligned",
-			request:            &PrometheusRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
+			request:            &PrometheusRangeQueryRequest{Query: "query", Start: 100000, End: 200000, Step: 3},
 			expected:           true,
 			cacheStepUnaligned: true,
 		},
@@ -360,7 +360,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 	}{
 		{
 			name: "Test a complete hit.",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 0,
 				End:   100,
 				Step:  10,
@@ -375,7 +375,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 
 		{
 			name: "Test with a complete miss.",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 0,
 				End:   100,
 				Step:  10,
@@ -384,7 +384,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(110, 210),
 			},
 			expectedRequests: []Request{
-				&PrometheusRequest{
+				&PrometheusRangeQueryRequest{
 					Start: 0,
 					End:   100,
 					Step:  10,
@@ -393,7 +393,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 		},
 		{
 			name: "Test a partial hit.",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 0,
 				End:   100,
 				Step:  10,
@@ -402,7 +402,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(50, 100),
 			},
 			expectedRequests: []Request{
-				&PrometheusRequest{
+				&PrometheusRangeQueryRequest{
 					Start: 0,
 					End:   50,
 					Step:  10,
@@ -414,7 +414,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 		},
 		{
 			name: "Test multiple partial hits.",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   200,
 				Step:  10,
@@ -424,7 +424,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(160, 250),
 			},
 			expectedRequests: []Request{
-				&PrometheusRequest{
+				&PrometheusRangeQueryRequest{
 					Start: 120,
 					End:   160,
 					Step:  10,
@@ -437,7 +437,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 		},
 		{
 			name: "Partial hits with tiny gap.",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   160,
 				Step:  10,
@@ -447,7 +447,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(122, 130),
 			},
 			expectedRequests: []Request{
-				&PrometheusRequest{
+				&PrometheusRangeQueryRequest{
 					Start: 120,
 					End:   160,
 					Step:  10,
@@ -459,7 +459,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 		},
 		{
 			name: "Extent is outside the range and the request has a single step (same start and end).",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   100,
 				Step:  10,
@@ -468,7 +468,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkExtent(50, 90),
 			},
 			expectedRequests: []Request{
-				&PrometheusRequest{
+				&PrometheusRangeQueryRequest{
 					Start: 100,
 					End:   100,
 					Step:  10,
@@ -478,7 +478,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 		{
 			name: "Test when hit has a large step and only a single sample extent.",
 			// If there is a only a single sample in the split interval, start and end will be the same.
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   100,
 				Step:  10,
@@ -493,7 +493,7 @@ func TestPartitionCacheExtents(t *testing.T) {
 
 		{
 			name: "Start time of all requests must have the same offset into the step.",
-			input: &PrometheusRequest{
+			input: &PrometheusRangeQueryRequest{
 				Start: 123, // 123 % 33 = 24
 				End:   1000,
 				Step:  33,
@@ -507,8 +507,8 @@ func TestPartitionCacheExtents(t *testing.T) {
 				mkAPIResponse(486, 625, 33),
 			},
 			expectedRequests: []Request{
-				&PrometheusRequest{Start: 123, End: 486, Step: 33},
-				&PrometheusRequest{
+				&PrometheusRangeQueryRequest{Start: 123, End: 486, Step: 33},
+				&PrometheusRangeQueryRequest{
 					Start: 651,  // next number after 625 (end of extent) such that it is equal to input.Start + N * input.Step.
 					End:   1000, // until the end
 					Step:  33,   // unchanged
@@ -542,16 +542,16 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 		interval time.Duration
 		want     string
 	}{
-		{"0", &PrometheusRequest{Start: 0, Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:0"},
-		{"<30m", &PrometheusRequest{Start: toMs(10 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:0"},
-		{"30m", &PrometheusRequest{Start: toMs(30 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:1"},
-		{"91m", &PrometheusRequest{Start: toMs(91 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:3"},
-		{"91m_5m", &PrometheusRequest{Start: toMs(91 * time.Minute), Step: 5 * time.Minute.Milliseconds(), Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:300000:3:60000"},
-		{"0", &PrometheusRequest{Start: 0, Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
-		{"<1d", &PrometheusRequest{Start: toMs(22 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
-		{"4d", &PrometheusRequest{Start: toMs(4 * 24 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:4"},
-		{"3d5h", &PrometheusRequest{Start: toMs(77 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:3"},
-		{"1111m", &PrometheusRequest{Start: 1111 * time.Minute.Milliseconds(), Step: 10 * time.Minute.Milliseconds(), Query: "foo{}"}, 1 * time.Hour, "fake:foo{}:600000:18:60000"},
+		{"0", &PrometheusRangeQueryRequest{Start: 0, Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:0"},
+		{"<30m", &PrometheusRangeQueryRequest{Start: toMs(10 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:0"},
+		{"30m", &PrometheusRangeQueryRequest{Start: toMs(30 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:1"},
+		{"91m", &PrometheusRangeQueryRequest{Start: toMs(91 * time.Minute), Step: 10, Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:10:3"},
+		{"91m_5m", &PrometheusRangeQueryRequest{Start: toMs(91 * time.Minute), Step: 5 * time.Minute.Milliseconds(), Query: "foo{}"}, 30 * time.Minute, "fake:foo{}:300000:3:60000"},
+		{"0", &PrometheusRangeQueryRequest{Start: 0, Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
+		{"<1d", &PrometheusRangeQueryRequest{Start: toMs(22 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:0"},
+		{"4d", &PrometheusRangeQueryRequest{Start: toMs(4 * 24 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:4"},
+		{"3d5h", &PrometheusRangeQueryRequest{Start: toMs(77 * time.Hour), Step: 10, Query: "foo{}"}, 24 * time.Hour, "fake:foo{}:10:3"},
+		{"1111m", &PrometheusRangeQueryRequest{Start: 1111 * time.Minute.Milliseconds(), Step: 10 * time.Minute.Milliseconds(), Query: "foo{}"}, 1 * time.Hour, "fake:foo{}:600000:18:60000"},
 	}
 	for _, tt := range tests {
 		t.Run(fmt.Sprintf("%s - %s", tt.name, tt.interval), func(t *testing.T) {

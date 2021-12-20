@@ -301,7 +301,7 @@ func Test_FunctionParallelism(t *testing.T) {
 					}, nil
 				})
 
-				req := &PrometheusRequest{
+				req := &PrometheusRangeQueryRequest{
 					Path:  "/query_range",
 					Start: util.TimeToMillis(start),
 					End:   util.TimeToMillis(end),

@@ -9,6 +9,7 @@ import (
 	"context"
 	"flag"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -25,7 +26,11 @@ import (
 	"github.com/grafana/mimir/pkg/util"
 )
 
-const day = 24 * time.Hour
+const (
+	day                    = 24 * time.Hour
+	queryRangePathSuffix   = "/query_range"
+	instantQueryPathSuffix = "/query"
+)
 
 var (
 	// PassthroughMiddleware is a noop middleware
@@ -142,7 +147,7 @@ func NewTripperware(
 	registerer prometheus.Registerer,
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
-	queryRangeTripperware, cache, err := newQueryRangeTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer, cacheGenNumberLoader)
+	queryRangeTripperware, cache, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer, cacheGenNumberLoader)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -152,7 +157,7 @@ func NewTripperware(
 	), cache, err
 }
 
-func newQueryRangeTripperware(
+func newQueryTripperware(
 	cfg Config,
 	log log.Logger,
 	limits Limits,
@@ -215,6 +220,7 @@ func newQueryRangeTripperware(
 			registerer,
 		))
 	}
+	queryInstantMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
 
 	if cfg.ShardedQueries {
 		if storageEngine != storage.StorageEngineBlocks {
@@ -226,30 +232,45 @@ func newQueryRangeTripperware(
 
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
-
+		queryshardingMiddleware := NewQueryShardingMiddleware(
+			log,
+			promql.NewEngine(engineOpts),
+			limits,
+			registerer,
+		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
 			InstrumentMiddleware("querysharding", metrics, log),
-			NewQueryShardingMiddleware(
-				log,
-				promql.NewEngine(engineOpts),
-				limits,
-				registerer,
-			),
+			queryshardingMiddleware,
+		)
+		queryInstantMiddleware = append(
+			queryInstantMiddleware,
+			InstrumentMiddleware("querysharding", metrics, log),
+			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, NewRetryMiddlewareMetrics(registerer)))
+		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
 		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		instant := defaultInstantQueryParamsRoundTripper(
+			NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...),
+			time.Now,
+		)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
-			if isQueryRange(r) {
+			switch {
+			case isRangeQuery(r.URL.Path):
 				return queryrange.RoundTrip(r)
+			case isInstantQuery(r.URL.Path):
+				return instant.RoundTrip(r)
+			default:
+				return next.RoundTrip(r)
 			}
-			return next.RoundTrip(r)
 		})
 	}, c, nil
 }
@@ -273,7 +294,7 @@ func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Register
 	return func(next http.RoundTripper) http.RoundTripper {
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
 			op := "query"
-			if isQueryRange(r) {
+			if isRangeQuery(r.URL.Path) {
 				op = "query_range"
 			}
 
@@ -291,6 +312,21 @@ func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Register
 	}
 }
 
-func isQueryRange(r *http.Request) bool {
-	return strings.HasSuffix(r.URL.Path, "/query_range")
+func isRangeQuery(path string) bool {
+	return strings.HasSuffix(path, queryRangePathSuffix)
+}
+
+func isInstantQuery(path string) bool {
+	return strings.HasSuffix(path, instantQueryPathSuffix)
+}
+
+func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() time.Time) http.RoundTripper {
+	return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if isInstantQuery(r.URL.Path) && !r.URL.Query().Has("time") {
+			q := r.URL.Query()
+			q.Add("time", strconv.FormatInt(time.Now().Unix(), 10))
+			r.URL.RawQuery = q.Encode()
+		}
+		return next.RoundTrip(r)
+	})
 }

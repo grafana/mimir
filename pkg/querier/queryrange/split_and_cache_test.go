@@ -172,7 +172,7 @@ func TestSplitAndCacheMiddleware_ResultsCache(t *testing.T) {
 	}))
 
 	step := int64(120 * 1000)
-	req := Request(&PrometheusRequest{
+	req := Request(&PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
 		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
@@ -245,7 +245,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotLookupCacheIfStepIsNotAli
 		return expectedResponse, nil
 	}))
 
-	req := Request(&PrometheusRequest{
+	req := Request(&PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
 		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
@@ -307,7 +307,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_EnabledCachingOfStepUnalignedReque
 		return expectedResponse, nil
 	}))
 
-	req := Request(&PrometheusRequest{
+	req := Request(&PrometheusRangeQueryRequest{
 		Path:  "/api/v1/query_range",
 		Start: parseTimeRFC3339(t, "2021-10-15T10:00:00Z").Unix() * 1000,
 		End:   parseTimeRFC3339(t, "2021-10-15T12:00:00Z").Unix() * 1000,
@@ -429,7 +429,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			}))
 			ctx := user.InjectOrgID(context.Background(), userID)
 
-			req := Request(&PrometheusRequest{
+			req := Request(&PrometheusRangeQueryRequest{
 				Path:  "/api/v1/query_range",
 				Start: testData.queryStartTime.Unix() * 1000,
 				End:   testData.queryEndTime.Unix() * 1000,
@@ -573,7 +573,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 		startTime := minTime.Add(time.Duration(rand.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
 		endTime := startTime.Add(time.Duration(rand.Int63n(maxTime.Sub(startTime).Milliseconds())) * time.Millisecond)
 
-		reqs = append(reqs, &PrometheusRequest{
+		reqs = append(reqs, &PrometheusRangeQueryRequest{
 			Id:    int64(q),
 			Path:  "/api/v1/query_range",
 			Start: startTime.Unix() * 1000,
@@ -653,7 +653,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 		expectedCachedExtents  []Extent
 	}{
 		"Should drop tiny extent that overlaps with non-tiny request only": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   120,
 				Step:  5,
@@ -674,7 +674,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should replace tiny extents that are cover by bigger request": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   200,
 				Step:  5,
@@ -698,7 +698,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should not drop tiny extent that completely overlaps with tiny request": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   105,
 				Step:  5,
@@ -720,7 +720,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should not drop tiny extent that partially center-overlaps with tiny request": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 106,
 				End:   108,
 				Step:  2,
@@ -740,7 +740,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should not drop tiny extent that partially left-overlaps with tiny request": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   106,
 				Step:  2,
@@ -758,7 +758,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should not drop tiny extent that partially right-overlaps with tiny request": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   106,
 				Step:  2,
@@ -776,7 +776,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should merge fragmented extents if request fills the hole": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 40,
 				End:   80,
 				Step:  20,
@@ -791,7 +791,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should left-extend extent if request starts earlier than extent in cache": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 40,
 				End:   80,
 				Step:  20,
@@ -805,7 +805,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should right-extend extent if request ends later than extent in cache": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				Start: 100,
 				End:   180,
 				Step:  20,
@@ -819,7 +819,7 @@ func TestSplitAndCacheMiddleware_ResultsCache_ExtentsEdgeCases(t *testing.T) {
 			},
 		},
 		"Should not throw error if complete-overlapped smaller Extent is erroneous": {
-			req: &PrometheusRequest{
+			req: &PrometheusRangeQueryRequest{
 				// This request is carefully crafted such that cachedEntry is not used to fulfill
 				// the request.
 				Start: 160,
@@ -978,14 +978,14 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 		},
 		"should inject ID and hints on downstream requests and return them": {
 			input: splitRequests{
-				{downstreamRequests: []Request{&PrometheusRequest{Start: 1}, &PrometheusRequest{Start: 2}}},
+				{downstreamRequests: []Request{&PrometheusRangeQueryRequest{Start: 1}, &PrometheusRangeQueryRequest{Start: 2}}},
 				{downstreamRequests: []Request{}},
-				{downstreamRequests: []Request{&PrometheusRequest{Start: 3}}},
+				{downstreamRequests: []Request{&PrometheusRangeQueryRequest{Start: 3}}},
 			},
 			expected: []Request{
-				(&PrometheusRequest{Start: 1}).WithID(1).WithHints(&Hints{TotalQueries: 3}),
-				(&PrometheusRequest{Start: 2}).WithID(2).WithHints(&Hints{TotalQueries: 3}),
-				(&PrometheusRequest{Start: 3}).WithID(3).WithHints(&Hints{TotalQueries: 3}),
+				(&PrometheusRangeQueryRequest{Start: 1}).WithID(1).WithHints(&Hints{TotalQueries: 3}),
+				(&PrometheusRangeQueryRequest{Start: 2}).WithID(2).WithHints(&Hints{TotalQueries: 3}),
+				(&PrometheusRangeQueryRequest{Start: 3}).WithID(3).WithHints(&Hints{TotalQueries: 3}),
 			},
 		},
 	}
@@ -1027,89 +1027,89 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 		},
 		"should associate downstream responses to requests": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 1, Id: 1}, &PrometheusRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
 				downstreamRequests:  []Request{},
 				downstreamResponses: []Response{},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []RequestResponse{{
-				Request:  &PrometheusRequest{Start: 3, Id: 3},
+				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRequest{Start: 1, Id: 1},
+				Request:  &PrometheusRangeQueryRequest{Start: 1, Id: 1},
 				Response: &PrometheusResponse{Status: "response-1"},
 			}, {
-				Request:  &PrometheusRequest{Start: 2, Id: 2},
+				Request:  &PrometheusRangeQueryRequest{Start: 2, Id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expected: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 1, Id: 1}, &PrometheusRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{&PrometheusResponse{Status: "response-1"}, &PrometheusResponse{Status: "response-2"}},
 			}, {
 				downstreamRequests:  []Request{},
 				downstreamResponses: []Response{},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{&PrometheusResponse{Status: "response-3"}},
 			}},
 		},
 		"should return error if a downstream response is missing": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 1, Id: 1}, &PrometheusRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []RequestResponse{{
-				Request:  &PrometheusRequest{Start: 3, Id: 3},
+				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRequest{Start: 2, Id: 2},
+				Request:  &PrometheusRangeQueryRequest{Start: 2, Id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expectedErr: "consistency check failed: missing downstream response",
 		},
 		"should return error if multiple downstream responses have the same ID": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 1, Id: 1}, &PrometheusRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []RequestResponse{{
-				Request:  &PrometheusRequest{Start: 3, Id: 3},
+				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRequest{Start: 2, Id: 3},
+				Request:  &PrometheusRangeQueryRequest{Start: 2, Id: 3},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}},
 			expectedErr: "consistency check failed: conflicting downstream request ID",
 		},
 		"should return error if extra downstream responses are requested to be stored": {
 			requests: splitRequests{{
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 1, Id: 1}, &PrometheusRequest{Start: 2, Id: 2}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 1, Id: 1}, &PrometheusRangeQueryRequest{Start: 2, Id: 2}},
 				downstreamResponses: []Response{nil, nil},
 			}, {
-				downstreamRequests:  []Request{&PrometheusRequest{Start: 3, Id: 3}},
+				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
 			responses: []RequestResponse{{
-				Request:  &PrometheusRequest{Start: 3, Id: 3},
+				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
-				Request:  &PrometheusRequest{Start: 2, Id: 2},
+				Request:  &PrometheusRangeQueryRequest{Start: 2, Id: 2},
 				Response: &PrometheusResponse{Status: "response-2"},
 			}, {
-				Request:  &PrometheusRequest{Start: 1, Id: 1},
+				Request:  &PrometheusRangeQueryRequest{Start: 1, Id: 1},
 				Response: &PrometheusResponse{Status: "response-1"},
 			}, {
-				Request:  &PrometheusRequest{Start: 4, Id: 4},
+				Request:  &PrometheusRangeQueryRequest{Start: 4, Id: 4},
 				Response: &PrometheusResponse{Status: "response-4"},
 			}},
 			expectedErr: "consistency check failed: received more responses than expected (expected: 3, got: 4)",

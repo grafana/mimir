@@ -11,6 +11,7 @@ import (
 	"math"
 	"regexp"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -31,6 +32,7 @@ import (
 	"github.com/weaveworks/common/user"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -84,7 +86,6 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		}
 	}
 }
-
 func TestQueryShardingCorrectness(t *testing.T) {
 	var (
 		numSeries          = 1000
@@ -100,6 +101,12 @@ func TestQueryShardingCorrectness(t *testing.T) {
 		// Expected number of sharded queries per shard (the final expected
 		// number will be multiplied for the number of shards).
 		expectedShardedQueries int
+
+		// expectSpecificOrder disables result sorting and checks that both results are returned in same order.
+		expectSpecificOrder bool
+
+		// noRangeQuery skips the range query (specially made for "string" query as it can't be used for a range query)
+		noRangeQuery bool
 	}{
 		"sum() no grouping": {
 			query:                  `sum(metric_counter)`,
@@ -311,6 +318,11 @@ func TestQueryShardingCorrectness(t *testing.T) {
 							)`,
 			expectedShardedQueries: 1,
 		},
+		`query with sort() expects specific order`: {
+			query:                  `sort(sum(metric_histogram_bucket) by (le))`,
+			expectedShardedQueries: 1,
+			expectSpecificOrder:    true,
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//
@@ -365,8 +377,13 @@ func TestQueryShardingCorrectness(t *testing.T) {
 						rate(metric_counter[1m])
 					[5m:1m])
 				[2m:1m])
-			[10m:1m])`,
+			[10m:1m] offset 25m)`,
 			expectedShardedQueries: 0,
+		},
+		"string literal": {
+			query:                  `"test"`,
+			expectedShardedQueries: 0,
+			noRangeQuery:           true,
 		},
 	}
 
@@ -433,89 +450,119 @@ func TestQueryShardingCorrectness(t *testing.T) {
 
 		t.Run(testName, func(t *testing.T) {
 			t.Parallel()
-
-			req := &PrometheusRequest{
-				Path:  "/query_range",
-				Start: util.TimeToMillis(start),
-				End:   util.TimeToMillis(end),
-				Step:  step.Milliseconds(),
-				Query: testData.query,
+			reqs := []Request{
+				&PrometheusInstantQueryRequest{
+					Path:  "/query",
+					Time:  util.TimeToMillis(end),
+					Query: testData.query,
+				},
+			}
+			if !testData.noRangeQuery {
+				reqs = append(reqs, &PrometheusRangeQueryRequest{
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+					Query: testData.query,
+				})
 			}
 
-			engine := newEngine()
-			downstream := &downstreamHandler{
-				engine:    engine,
-				queryable: queryable,
-			}
-
-			// Run the query without sharding.
-			expectedRes, err := downstream.Do(context.Background(), req)
-			require.Nil(t, err)
-
-			// Ensure the query produces some results.
-			require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
-
-			// Ensure the query produces some results which are not NaN.
-			foundValidSamples := false
-		outer:
-			for _, stream := range expectedRes.(*PrometheusResponse).Data.Result {
-				for _, sample := range stream.Samples {
-					if !math.IsNaN(sample.Value) {
-						foundValidSamples = true
-						break outer
+			for _, req := range reqs {
+				t.Run(fmt.Sprintf("%T", req), func(t *testing.T) {
+					engine := newEngine()
+					downstream := &downstreamHandler{
+						engine:    engine,
+						queryable: queryable,
 					}
-				}
-			}
-			require.True(t, foundValidSamples, "the query returns some not NaN samples")
 
-			for _, numShards := range []int{2, 4, 8, 16} {
-				t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
-					reg := prometheus.NewPedanticRegistry()
-					shardingware := NewQueryShardingMiddleware(
-						log.NewNopLogger(),
-						engine,
-						mockLimits{totalShards: numShards},
-						reg,
-					)
-
-					// Run the query with sharding.
-					shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+					// Run the query without sharding.
+					expectedRes, err := downstream.Do(context.Background(), req)
 					require.Nil(t, err)
-
-					// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
-					// if you rerun the same query twice).
-					approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
-
-					// Ensure the query has been sharded/not sharded as expected.
-					expectedSharded := 0
-					if testData.expectedShardedQueries > 0 {
-						expectedSharded = 1
+					expectedPrometheusRes := expectedRes.(*PrometheusResponse)
+					if !testData.expectSpecificOrder {
+						sort.Sort(byLabels(expectedPrometheusRes.Data.Result))
 					}
 
-					assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
+					// Ensure the query produces some results.
+					require.NotEmpty(t, expectedPrometheusRes.Data.Result)
+					requireValidSamples(t, expectedPrometheusRes.Data.Result)
+
+					for _, numShards := range []int{2, 4, 8, 16} {
+						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
+							reg := prometheus.NewPedanticRegistry()
+							shardingware := NewQueryShardingMiddleware(
+								log.NewNopLogger(),
+								engine,
+								mockLimits{totalShards: numShards},
+								reg,
+							)
+
+							// Run the query with sharding.
+							shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+							require.Nil(t, err)
+
+							// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+							// if you rerun the same query twice).
+							shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+							if !testData.expectSpecificOrder {
+								sort.Sort(byLabels(shardedPrometheusRes.Data.Result))
+							}
+							approximatelyEquals(t, expectedPrometheusRes, shardedPrometheusRes)
+
+							// Ensure the query has been sharded/not sharded as expected.
+							expectedSharded := 0
+							if testData.expectedShardedQueries > 0 {
+								expectedSharded = 1
+							}
+
+							assert.NoError(t, testutil.GatherAndCompare(reg, strings.NewReader(fmt.Sprintf(`
 					# HELP cortex_frontend_query_sharding_rewrites_attempted_total Total number of queries the query-frontend attempted to shard.
 					# TYPE cortex_frontend_query_sharding_rewrites_attempted_total counter
 					cortex_frontend_query_sharding_rewrites_attempted_total 1
-
 					# HELP cortex_frontend_query_sharding_rewrites_succeeded_total Total number of queries the query-frontend successfully rewritten in a shardable way.
 					# TYPE cortex_frontend_query_sharding_rewrites_succeeded_total counter
 					cortex_frontend_query_sharding_rewrites_succeeded_total %d
-
 					# HELP cortex_frontend_sharded_queries_total Total number of sharded queries.
 					# TYPE cortex_frontend_sharded_queries_total counter
 					cortex_frontend_sharded_queries_total %d
 				`, expectedSharded, testData.expectedShardedQueries*numShards)),
-						"cortex_frontend_query_sharding_rewrites_attempted_total",
-						"cortex_frontend_query_sharding_rewrites_succeeded_total",
-						"cortex_frontend_sharded_queries_total"))
+								"cortex_frontend_query_sharding_rewrites_attempted_total",
+								"cortex_frontend_query_sharding_rewrites_succeeded_total",
+								"cortex_frontend_sharded_queries_total"))
+						})
+					}
 				})
 			}
 		})
 	}
 }
 
+// requireValidSamples ensures the query produces some results which are not NaN.
+func requireValidSamples(t *testing.T, result []SampleStream) {
+	t.Helper()
+	for _, stream := range result {
+		for _, sample := range stream.Samples {
+			if !math.IsNaN(sample.Value) {
+				return
+			}
+		}
+	}
+	t.Fatalf("Result should have some not-NaN samples")
+}
+
+type byLabels []SampleStream
+
+func (b byLabels) Len() int      { return len(b) }
+func (b byLabels) Swap(i, j int) { b[i], b[j] = b[j], b[i] }
+func (b byLabels) Less(i, j int) bool {
+	return labels.Compare(
+		mimirpb.FromLabelAdaptersToLabels(b[i].Labels),
+		mimirpb.FromLabelAdaptersToLabels(b[j].Labels),
+	) < 0
+}
+
 func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -539,7 +586,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 }
 
 func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -564,7 +611,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 }
 
 func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -695,7 +742,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:  "/query_range",
 				Start: util.TimeToMillis(start),
 				End:   util.TimeToMillis(end),
@@ -738,7 +785,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 }
 
 func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -840,7 +887,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:  "/query_range",
 				Start: util.TimeToMillis(start),
 				End:   util.TimeToMillis(end),
@@ -873,7 +920,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 }
 
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {
-	req := &PrometheusRequest{
+	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
@@ -962,7 +1009,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 				step        = (end - start) / 1000
 			)
 
-			req := &PrometheusRequest{
+			req := &PrometheusRangeQueryRequest{
 				Path:    "/query_range",
 				Start:   start,
 				End:     end,
@@ -1014,13 +1061,7 @@ type downstreamHandler struct {
 }
 
 func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error) {
-	qry, err := h.engine.NewRangeQuery(
-		h.queryable,
-		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
-		time.Duration(r.GetStep())*time.Millisecond,
-	)
+	qry, err := newQuery(r, h.engine, h.queryable)
 	if err != nil {
 		return nil, err
 	}

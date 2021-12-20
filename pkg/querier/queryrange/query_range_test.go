@@ -33,11 +33,19 @@ func TestRequest(t *testing.T) {
 	}{
 		{
 			url: "/api/v1/query_range?end=1536716880&query=sum%28container_memory_rss%29+by+%28namespace%29&start=1536673680&step=120",
-			expected: &PrometheusRequest{
+			expected: &PrometheusRangeQueryRequest{
 				Path:  "/api/v1/query_range",
 				Start: 1536673680 * 1e3,
 				End:   1536716880 * 1e3,
 				Step:  120 * 1e3,
+				Query: "sum(container_memory_rss) by (namespace)",
+			},
+		},
+		{
+			url: "/api/v1/query?query=sum%28container_memory_rss%29+by+%28namespace%29&time=1536716880",
+			expected: &PrometheusInstantQueryRequest{
+				Path:  "/api/v1/query",
+				Time:  1536716880 * 1e3,
 				Query: "sum(container_memory_rss) by (namespace)",
 			},
 		},
@@ -120,6 +128,76 @@ func TestResponseRoundtrip(t *testing.T) {
 		expected *PrometheusResponse
 	}{
 		{
+			name: "successful string response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type:   model.ValString,
+					Result: &model.String{Value: "foo", Timestamp: 1_500},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValString.String(),
+					Result: []SampleStream{
+						{
+							Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: "foo"}},
+							Samples: []mimirpb.Sample{{TimestampMs: 1_500}},
+						},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful scalar response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type: model.ValScalar,
+					Result: &model.Scalar{
+						Value:     200,
+						Timestamp: 1_000,
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValScalar.String(),
+					Result: []SampleStream{
+						{Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
+			name: "successful instant response",
+			resp: prometheusAPIResponse{
+				Status: statusSuccess,
+				Data: prometeheusResponseData{
+					Type: model.ValVector,
+					Result: model.Vector{
+						{Metric: model.Metric{"foo": "bar"}, Timestamp: 1_000, Value: 200},
+						{Metric: model.Metric{"bar": "baz"}, Timestamp: 1_000, Value: 201},
+					},
+				},
+			},
+			expected: &PrometheusResponse{
+				Status: statusSuccess,
+				Data: &PrometheusData{
+					ResultType: model.ValVector.String(),
+					Result: []SampleStream{
+						{Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 200}}},
+						{Labels: []mimirpb.LabelAdapter{{Name: "bar", Value: "baz"}}, Samples: []mimirpb.Sample{{TimestampMs: 1_000, Value: 201}}},
+					},
+				},
+				Headers: expectedRespHeaders,
+			},
+		},
+		{
 			name: "successful range response",
 			resp: prometheusAPIResponse{
 				Status: statusSuccess,
@@ -162,7 +240,7 @@ func TestResponseRoundtrip(t *testing.T) {
 			},
 		},
 		{
-			name: "error range response",
+			name: "error response",
 			resp: prometheusAPIResponse{
 				Status:    statusError,
 				ErrorType: "expected",
@@ -481,19 +559,19 @@ func TestIsRequestStepAligned(t *testing.T) {
 		expected bool
 	}{
 		"should return true if start and end are aligned to step": {
-			req:      &PrometheusRequest{Start: 10, End: 20, Step: 10},
+			req:      &PrometheusRangeQueryRequest{Start: 10, End: 20, Step: 10},
 			expected: true,
 		},
 		"should return false if start is not aligned to step": {
-			req:      &PrometheusRequest{Start: 11, End: 20, Step: 10},
+			req:      &PrometheusRangeQueryRequest{Start: 11, End: 20, Step: 10},
 			expected: false,
 		},
 		"should return false if end is not aligned to step": {
-			req:      &PrometheusRequest{Start: 10, End: 19, Step: 10},
+			req:      &PrometheusRangeQueryRequest{Start: 10, End: 19, Step: 10},
 			expected: false,
 		},
 		"should return true if step is 0": {
-			req:      &PrometheusRequest{Start: 10, End: 11, Step: 0},
+			req:      &PrometheusRangeQueryRequest{Start: 10, End: 11, Step: 0},
 			expected: true,
 		},
 	}

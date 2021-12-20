@@ -27,6 +27,22 @@ func FromResult(res *promql.Result) ([]SampleStream, error) {
 		return nil, errors.Cause(res.Err)
 	}
 	switch v := res.Value.(type) {
+	case promql.String:
+		return []SampleStream{
+			{
+				Labels: []mimirpb.LabelAdapter{
+					{
+						Name:  "value",
+						Value: v.V,
+					},
+				},
+				Samples: []mimirpb.Sample{
+					{
+						TimestampMs: v.T,
+					},
+				},
+			},
+		}, nil
 	case promql.Scalar:
 		return []SampleStream{
 			{
@@ -77,13 +93,18 @@ func ResponseToSamples(resp Response) ([]SampleStream, error) {
 		return nil, errors.New(promRes.Error)
 	}
 	switch promRes.Data.ResultType {
-	case string(parser.ValueTypeVector), string(parser.ValueTypeMatrix):
+	case string(parser.ValueTypeString),
+		string(parser.ValueTypeScalar),
+		string(parser.ValueTypeVector),
+		string(parser.ValueTypeMatrix):
 		return promRes.Data.Result, nil
 	}
 
 	return nil, errors.Errorf(
-		"Invalid promql.Value type: [%s]. Only %s and %s supported",
+		"Invalid promql.Value type: [%s]. Only %s, %s, %s and %s supported",
 		promRes.Data.ResultType,
+		parser.ValueTypeString,
+		parser.ValueTypeScalar,
 		parser.ValueTypeVector,
 		parser.ValueTypeMatrix,
 	)

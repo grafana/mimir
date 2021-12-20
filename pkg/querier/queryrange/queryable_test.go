@@ -245,7 +245,7 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 }
 
 func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
-	queryable := NewShardedQueryable(&PrometheusRequest{}, nil)
+	queryable := NewShardedQueryable(&PrometheusRangeQueryRequest{}, nil)
 	assert.Empty(t, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 1st querier.
@@ -276,5 +276,5 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 }
 
 func mkShardedQuerier(handler Handler) *ShardedQuerier {
-	return &ShardedQuerier{ctx: context.Background(), req: &PrometheusRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
+	return &ShardedQuerier{ctx: context.Background(), req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }

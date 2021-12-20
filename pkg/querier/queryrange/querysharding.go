@@ -7,7 +7,12 @@ package queryrange
 
 import (
 	"context"
+	"fmt"
 	"time"
+
+	"github.com/grafana/mimir/pkg/querier/lazyquery"
+
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -19,7 +24,6 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
-	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
@@ -135,13 +139,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	r = r.WithQuery(shardedQuery)
 	shardedQueryable := NewShardedQueryable(r, s.next)
 
-	qry, err := s.engine.NewRangeQuery(
-		lazyquery.NewLazyQueryable(shardedQueryable),
-		r.GetQuery(),
-		util.TimeFromMillis(r.GetStart()),
-		util.TimeFromMillis(r.GetEnd()),
-		time.Duration(r.GetStep())*time.Millisecond,
-	)
+	qry, err := newQuery(r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
 		return nil, apierror.New(apierror.TypeBadData, err.Error())
 	}
@@ -159,6 +157,28 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		},
 		Headers: shardedQueryable.getResponseHeaders(),
 	}, nil
+}
+
+func newQuery(r Request, engine *promql.Engine, queryable storage.Queryable) (promql.Query, error) {
+	switch r := r.(type) {
+	case *PrometheusRangeQueryRequest:
+		return engine.NewRangeQuery(
+			queryable,
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetStart()),
+			util.TimeFromMillis(r.GetEnd()),
+			time.Duration(r.GetStep())*time.Millisecond,
+		)
+	case *PrometheusInstantQueryRequest:
+		return engine.NewInstantQuery(
+			queryable,
+			r.GetQuery(),
+			util.TimeFromMillis(r.GetTime()),
+		)
+
+	default:
+		return nil, fmt.Errorf("unsupported query type %T", r)
+	}
 }
 
 func mapEngineError(err error) error {
