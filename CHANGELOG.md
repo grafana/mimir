@@ -179,18 +179,119 @@
 * [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 
-Mixin:
+Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`):
 
+* [CHANGE] Update grafana-builder dependency: use $__rate_interval in qpsPanel and latencyPanel. [#372](https://github.com/grafana/cortex-jsonnet/pull/372)
+* [CHANGE] `namespace` template variable in dashboards now only selects namespaces for selected clusters. [#311](https://github.com/grafana/cortex-jsonnet/pull/311)
+* [CHANGE] `CortexIngesterRestarts` alert severity changed from `critical` to `warning`. [#321](https://github.com/grafana/cortex-jsonnet/pull/321)
+* [CHANGE] Dashboards: added overridable `job_labels` and `cluster_labels` to the configuration object as label lists to uniquely identify jobs and clusters in the metric names and group-by lists in dashboards. [#319](https://github.com/grafana/cortex-jsonnet/pull/319)
+* [CHANGE] Dashboards: `alert_aggregation_labels` has been removed from the configuration and overriding this value has been deprecated. Instead the labels are now defined by the `cluster_labels` list, and should be overridden accordingly through that list. [#319](https://github.com/grafana/cortex-jsonnet/pull/319)
+* [CHANGE] Renamed `CortexCompactorHasNotUploadedBlocksSinceStart` to `CortexCompactorHasNotUploadedBlocks`. [#334](https://github.com/grafana/cortex-jsonnet/pull/334)
+* [CHANGE] Renamed `CortexCompactorRunFailed` to `CortexCompactorHasNotSuccessfullyRunCompaction`. [#334](https://github.com/grafana/cortex-jsonnet/pull/334)
+* [CHANGE] Renamed `CortexInconsistentConfig` alert to `CortexInconsistentRuntimeConfig` and increased severity to `critical`. [#335](https://github.com/grafana/cortex-jsonnet/pull/335)
+* [CHANGE] Increased `CortexBadRuntimeConfig` alert severity to `critical` and removed support for `cortex_overrides_last_reload_successful` metric (was removed in Cortex 1.3.0). [#335](https://github.com/grafana/cortex-jsonnet/pull/335)
+* [CHANGE] Grafana 'min step' changed to 15s so dashboard show better detail. [#340](https://github.com/grafana/cortex-jsonnet/pull/340)
+* [CHANGE] Replace `CortexRulerFailedEvaluations` with two new alerts: `CortexRulerTooManyFailedPushes` and `CortexRulerTooManyFailedQueries`. [#347](https://github.com/grafana/cortex-jsonnet/pull/347)
+* [CHANGE] Removed `CortexCacheRequestErrors` alert. This alert was not working because the legacy Cortex cache client instrumentation doesn't track errors. [#346](https://github.com/grafana/cortex-jsonnet/pull/346)
+* [CHANGE] Removed `CortexQuerierCapacityFull` alert. [#342](https://github.com/grafana/cortex-jsonnet/pull/342)
+* [CHANGE] Changes blocks storage alerts to group metrics by the configured `cluster_labels` (supporting the deprecated `alert_aggregation_labels`). [#351](https://github.com/grafana/cortex-jsonnet/pull/351)
+* [CHANGE] Increased `CortexIngesterReachingSeriesLimit` critical alert threshold from 80% to 85%. [#363](https://github.com/grafana/cortex-jsonnet/pull/363)
+* [CHANGE] Changed default `job_names` for query-frontend, query-scheduler and querier to match custom deployments too. [#376](https://github.com/grafana/cortex-jsonnet/pull/376)
+* [CHANGE] Split `cortex_api` recording rule group into three groups. This is a workaround for large clusters where this group can become slow to evaluate. [#401](https://github.com/grafana/cortex-jsonnet/pull/401)
+* [CHANGE] Increased `CortexIngesterReachingSeriesLimit` warning threshold from 70% to 80% and critical threshold from 85% to 90%. [#404](https://github.com/grafana/cortex-jsonnet/pull/404)
 * [CHANGE] Raised `CortexKVStoreFailure` alert severity from warning to critical. #493
 * [CHANGE] Increase `CortexRolloutStuck` alert "for" duration from 15m to 30m. #493 #573
+* [ENHANCEMENT] cortex-mixin: Make `cluster_namespace_deployment:kube_pod_container_resource_requests_{cpu_cores,memory_bytes}:sum` backwards compatible with `kube-state-metrics` v2.0.0. [#317](https://github.com/grafana/cortex-jsonnet/pull/317)
+* [ENHANCEMENT] Cortex-mixin: Include `cortex-gw-internal` naming variation in default `gateway` job names. [#328](https://github.com/grafana/cortex-jsonnet/pull/328)
+* [ENHANCEMENT] Ruler dashboard: added object storage metrics. [#354](https://github.com/grafana/cortex-jsonnet/pull/354)
+* [ENHANCEMENT] Alertmanager dashboard: added object storage metrics. [#354](https://github.com/grafana/cortex-jsonnet/pull/354)
+* [ENHANCEMENT] Added documentation text panels and descriptions to reads and writes dashboards. [#324](https://github.com/grafana/cortex-jsonnet/pull/324)
+* [ENHANCEMENT] Dashboards: defined container functions for common resources panels: containerDiskWritesPanel, containerDiskReadsPanel, containerDiskSpaceUtilization. [#331](https://github.com/grafana/cortex-jsonnet/pull/331)
+* [ENHANCEMENT] cortex-mixin: Added `alert_excluded_routes` config to exclude specific routes from alerts. [#338](https://github.com/grafana/cortex-jsonnet/pull/338)
+* [ENHANCEMENT] Added `CortexMemcachedRequestErrors` alert. [#346](https://github.com/grafana/cortex-jsonnet/pull/346)
+* [ENHANCEMENT] Ruler dashboard: added "Per route p99 latency" panel in the "Configuration API" row. [#353](https://github.com/grafana/cortex-jsonnet/pull/353)
+* [ENHANCEMENT] Increased the `for` duration of the `CortexIngesterReachingSeriesLimit` warning alert to 3h. [#362](https://github.com/grafana/cortex-jsonnet/pull/362)
+* [ENHANCEMENT] Added a new tier (`medium_small_user`) so we have another tier between 100K and 1Mil active series. [#364](https://github.com/grafana/cortex-jsonnet/pull/364)
+* [ENHANCEMENT] Extend Alertmanager dashboard: [#313](https://github.com/grafana/cortex-jsonnet/pull/313)
+  * "Tenants" stat panel - shows number of discovered tenant configurations.
+  * "Replication" row - information about the replication of tenants/alerts/silences over instances.
+  * "Tenant Configuration Sync" row - information about the configuration sync procedure.
+  * "Sharding Initial State Sync" row - information about the initial state sync procedure when sharding is enabled.
+  * "Sharding Runtime State Sync" row - information about various state operations which occur when sharding is enabled (replication, fetch, marge, persist).
+* [ENHANCEMENT] Update gsutil command for `not healthy index found` playbook [#370](https://github.com/grafana/cortex-jsonnet/pull/370)
+* [ENHANCEMENT] Added Alertmanager alerts and playbooks covering configuration syncs and sharding operation: [#377 [#378](https://github.com/grafana/cortex-jsonnet/pull/378)
+  * `CortexAlertmanagerSyncConfigsFailing`
+  * `CortexAlertmanagerRingCheckFailing`
+  * `CortexAlertmanagerPartialStateMergeFailing`
+  * `CortexAlertmanagerReplicationFailing`
+  * `CortexAlertmanagerPersistStateFailing`
+  * `CortexAlertmanagerInitialSyncFailed`
+* [ENHANCEMENT] Add recording rules to improve responsiveness of Alertmanager dashboard. [#387](https://github.com/grafana/cortex-jsonnet/pull/387)
+* [ENHANCEMENT] Add `CortexRolloutStuck` alert. [#405](https://github.com/grafana/cortex-jsonnet/pull/405)
+* [ENHANCEMENT] Added `CortexKVStoreFailure` alert. [#406](https://github.com/grafana/cortex-jsonnet/pull/406)
+* [ENHANCEMENT] Use configured `ruler` jobname for ruler dashboard panels. [#409](https://github.com/grafana/cortex-jsonnet/pull/409)
+* [ENHANCEMENT] Add ability to override `datasource` for generated dashboards. [#407](https://github.com/grafana/cortex-jsonnet/pull/407)
+* [ENHANCEMENT] Use alertmanager jobname for alertmanager dashboard panels [#411](https://github.com/grafana/cortex-jsonnet/pull/411)
+* [ENHANCEMENT] Added `CortexDistributorReachingInflightPushRequestLimit` alert. [#408](https://github.com/grafana/cortex-jsonnet/pull/408)
 * [ENHANCEMENT] Added `CortexReachingTCPConnectionsLimit` alert. #403
 * [ENHANCEMENT] Added "Cortex / Writes Networking" and "Cortex / Reads Networking" dashboards. #405
 * [ENHANCEMENT] Improved "Queue length" panel in "Cortex / Queries" dashboard. #408
 * [ENHANCEMENT] Add `CortexDistributorReachingInflightPushRequestLimit` alert and playbook. #401
 * [ENHANCEMENT] Added "Recover accidentally deleted blocks (Google Cloud specific)" playbook. #475
 * [ENHANCEMENT] Added support to multi-zone store-gateway deployments. #608 #615
+* [BUGFIX] Fixed `CortexIngesterHasNotShippedBlocks` alert false positive in case an ingester instance had ingested samples in the past, then no traffic was received for a long period and then it started receiving samples again. [#308](https://github.com/grafana/cortex-jsonnet/pull/308)
+* [BUGFIX] Fixed `CortexInconsistentRuntimeConfig` metric. [#335](https://github.com/grafana/cortex-jsonnet/pull/335)
+* [BUGFIX] Fixed scaling dashboard to correctly work when a Cortex service deployment spans across multiple zones (a zone is expected to have the `zone-[a-z]` suffix). [#365](https://github.com/grafana/cortex-jsonnet/pull/365)
+* [BUGFIX] Fixed rollout progress dashboard to correctly work when a Cortex service deployment spans across multiple zones (a zone is expected to have the `zone-[a-z]` suffix). [#366](https://github.com/grafana/cortex-jsonnet/pull/366)
+* [BUGFIX] Fixed rollout progress dashboard to include query-scheduler too. [#376](https://github.com/grafana/cortex-jsonnet/pull/376)
+* [BUGFIX] Upstream recording rule `node_namespace_pod_container:container_cpu_usage_seconds_total:sum_irate` renamed. [#379](https://github.com/grafana/cortex-jsonnet/pull/379)
+* [BUGFIX] Fixed writes/reads/alertmanager resources dashboards to use `$._config.job_names.gateway`. [#403](https://github.com/grafana/cortex-jsonnet/pull/403)
+* [BUGFIX] Span the annotation.message in alerts as YAML multiline strings. [#412](https://github.com/grafana/cortex-jsonnet/pull/412)
 * [BUGFIX] Fixed "Instant queries / sec" in "Cortex / Reads" dashboard. #445
 * [BUGFIX] Fixed and added missing KV store panels in Writes, Reads, Ruler and Compactor dashboards. #448
+
+Jsonnet (changes since `grafana/cortex-jsonnet` `1.9.0`):
+
+* [CHANGE] Store gateway: set `-blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency`,
+  `-blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency`,
+  `-blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency`,
+  `-blocks-storage.bucket-store.index-cache.memcached.max-idle-connections`,
+  `-blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections`,
+  `-blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections` to 100 [#414](https://github.com/grafana/cortex-jsonnet/pull/414)
+* [CHANGE] Alertmanager: mounted overrides configmap to alertmanager too. [#315](https://github.com/grafana/cortex-jsonnet/pull/315)
+* [CHANGE] Memcached: upgraded memcached from `1.5.17` to `1.6.9`. [#316](https://github.com/grafana/cortex-jsonnet/pull/316)
+* [CHANGE] Store-gateway: increased memory request and limit respectively from 6GB / 6GB to 12GB / 18GB. [#322](https://github.com/grafana/cortex-jsonnet/pull/322)
+* [CHANGE] Store-gateway: increased `-blocks-storage.bucket-store.max-chunk-pool-bytes` from 2GB (default) to 12GB. [#322](https://github.com/grafana/cortex-jsonnet/pull/322)
+* [CHANGE] Ingester/Ruler: set `-server.grpc-max-send-msg-size-bytes` and `-server.grpc-max-send-msg-size-bytes` to sensible default values (10MB). [#326](https://github.com/grafana/cortex-jsonnet/pull/326)
+* [CHANGE] Decreased `-server.grpc-max-concurrent-streams` from 100k to 10k. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
+* [CHANGE] Decreased blocks storage ingesters graceful termination period from 80m to 20m. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
+* [CHANGE] Increase the rules per group and rule groups limits on different tiers. [#396](https://github.com/grafana/cortex-jsonnet/pull/396)
+* [CHANGE] Removed `max_samples_per_query` limit, since it only works with chunks and only when using `-distributor.shard-by-all-labels=false`. [#397](https://github.com/grafana/cortex-jsonnet/pull/397)
+* [CHANGE] Removed chunks storage query sharding config support. The following config options have been removed: [#398](https://github.com/grafana/cortex-jsonnet/pull/398)
+  * `_config` > `queryFrontend` > `shard_factor`
+  * `_config` > `queryFrontend` > `sharded_queries_enabled`
+  * `_config` > `queryFrontend` > `query_split_factor`
+* [CHANGE] Rename ruler_s3_bucket_name and ruler_gcs_bucket_name to ruler_storage_bucket_name: [#415](https://github.com/grafana/cortex-jsonnet/pull/415)
+* [CHANGE] Fine-tuned rolling update policy for distributor, querier, query-frontend, query-scheduler. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
+* [CHANGE] Increased memcached metadata/chunks/index-queries max connections from 4k to 16k. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
+* [CHANGE] Disabled step alignment in query-frontend to be compliant with PromQL. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
+* [CHANGE] Do not limit compactor CPU and request a number of cores equal to the configured concurrency. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
+* [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
+* [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
+* [ENHANCEMENT] Update `etcd-operator` to latest version (see https://github.com/grafana/jsonnet-libs/pull/480). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)
+* [ENHANCEMENT] Add support for Azure storage in Alertmanager configuration. [#381](https://github.com/grafana/cortex-jsonnet/pull/381)
+* [ENHANCEMENT] Add support for running Alertmanager in sharding mode. [#394](https://github.com/grafana/cortex-jsonnet/pull/394)
+* [ENHANCEMENT] Allow to customize PromQL engine settings via `queryEngineConfig`. [#399](https://github.com/grafana/cortex-jsonnet/pull/399)
+* [ENHANCEMENT] Define Azure object storage ruler args. [#416](https://github.com/grafana/cortex-jsonnet/pull/416)
+* [ENHANCEMENT] Added the following config options to allow to schedule multiple replicas of the same service on the same node: [#418](https://github.com/grafana/cortex-jsonnet/pull/418)
+  * `cortex_distributor_allow_multiple_replicas_on_same_node`
+  * `cortex_ruler_allow_multiple_replicas_on_same_node`
+  * `cortex_querier_allow_multiple_replicas_on_same_node`
+  * `cortex_query_frontend_allow_multiple_replicas_on_same_node`
+* [BUGFIX] Alertmanager: fixed `--alertmanager.cluster.peers` CLI flag passed to alertmanager when HA is enabled. [#329](https://github.com/grafana/cortex-jsonnet/pull/329)
+* [BUGFIX] Fixed `-distributor.extend-writes` setting on ruler when `unregister_ingesters_on_shutdown` is disabled. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
+* [BUGFIX] Treat `compactor_blocks_retention_period` type as string rather than int.[#395](https://github.com/grafana/cortex-jsonnet/pull/395)
+* [BUGFIX] Pass `-ruler-storage.s3.endpoint` to ruler when using S3. [#421](https://github.com/grafana/cortex-jsonnet/pull/421)
 
 ### Query-tee
 
