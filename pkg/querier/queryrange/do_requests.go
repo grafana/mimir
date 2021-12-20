@@ -20,7 +20,7 @@ type RequestResponse struct {
 	Response Response
 }
 
-// DoRequests executes a list of requests in parallel. The limits parameters is used to limit parallelism per single request.
+// DoRequests executes a list of requests in parallel.
 func DoRequests(ctx context.Context, downstream Handler, reqs []Request, recordSpan bool) ([]RequestResponse, error) {
 	g, ctx := errgroup.WithContext(ctx)
 	mtx := sync.Mutex{}
