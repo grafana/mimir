@@ -579,7 +579,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
-		Status: StatusSuccess, Data: PrometheusData{
+		Status: StatusSuccess, Data: &PrometheusData{
 			ResultType: string(parser.ValueTypeVector),
 		},
 	}, nil)
@@ -717,7 +717,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 
 			downstream := &mockHandler{}
 			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
-				Status: StatusSuccess, Data: PrometheusData{
+				Status: StatusSuccess, Data: &PrometheusData{
 					ResultType: string(parser.ValueTypeVector),
 				},
 			}, nil).Run(func(args mock.Arguments) {
@@ -1033,7 +1033,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 
 	return &PrometheusResponse{
 		Status: StatusSuccess,
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
 		},

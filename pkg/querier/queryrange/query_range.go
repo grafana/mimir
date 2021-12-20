@@ -8,6 +8,7 @@ package queryrange
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -173,7 +174,7 @@ func (resp *PrometheusResponse) minTime() int64 {
 func NewEmptyPrometheusResponse() *PrometheusResponse {
 	return &PrometheusResponse{
 		Status: StatusSuccess,
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result:     []SampleStream{},
 		},
@@ -190,7 +191,16 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	var resultsCacheGenNumberHeaderValues []string
 
 	for _, res := range responses {
-		promResponses = append(promResponses, res.(*PrometheusResponse))
+		pr := res.(*PrometheusResponse)
+		if pr.Status != StatusSuccess {
+			return nil, fmt.Errorf("can't merge an unsuccessful response")
+		} else if pr.Data == nil {
+			return nil, fmt.Errorf("can't merge response with no data")
+		} else if pr.Data.ResultType != model.ValMatrix.String() {
+			return nil, fmt.Errorf("can't merge result type %q", pr.Data.ResultType)
+		}
+
+		promResponses = append(promResponses, pr)
 		resultsCacheGenNumberHeaderValues = append(resultsCacheGenNumberHeaderValues, getHeaderValuesWithName(res, ResultsCacheGenNumberHeaderName)...)
 	}
 
@@ -199,7 +209,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	response := PrometheusResponse{
 		Status: StatusSuccess,
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result:     matrixMerge(promResponses),
 		},
@@ -339,8 +349,9 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 	if !ok {
 		return nil, apierror.Newf(apierror.TypeInternal, "invalid response format")
 	}
-
-	sp.LogFields(otlog.Int("series", len(a.Data.Result)))
+	if a.Data != nil {
+		sp.LogFields(otlog.Int("series", len(a.Data.Result)))
+	}
 
 	b, err := json.Marshal(a)
 	if err != nil {
@@ -389,6 +400,9 @@ func (s *SampleStream) MarshalJSON() ([]byte, error) {
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
 	output := map[string]*SampleStream{}
 	for _, resp := range resps {
+		if resp.Data == nil {
+			continue
+		}
 		for _, stream := range resp.Data.Result {
 			metric := mimirpb.FromLabelAdaptersToLabels(stream.Labels).String()
 			existing, ok := output[metric]

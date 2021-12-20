@@ -24,7 +24,7 @@ import (
 
 func TestResponseToSamples(t *testing.T) {
 	input := &PrometheusResponse{
-		Data: PrometheusData{
+		Data: &PrometheusData{
 			ResultType: string(parser.ValueTypeMatrix),
 			Result: []SampleStream{
 				{
