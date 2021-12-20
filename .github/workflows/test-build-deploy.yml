@@ -45,6 +45,8 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-doc
       - name: Check Mixin
         run: make BUILD_IN_CONTAINER=false check-mixin
+      - name: Check Jsonnet Manifests
+        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check White Noise.
         run: make BUILD_IN_CONTAINER=false check-white-noise
       - name: Check License Header
