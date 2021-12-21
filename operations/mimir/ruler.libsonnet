@@ -4,7 +4,6 @@
   ruler_args::
     $._config.grpcConfig +
     $._config.ringConfig +
-    $._config.storeConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
@@ -26,9 +25,6 @@
       // Limits
       'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
       'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
-
-      // Storage
-      'querier.second-store-engine': $._config.querier_second_storage_engine,
 
       // Do not extend the replication set on unhealthy (or LEAVING) ingester when "unregister on shutdown"
       // is set to false.

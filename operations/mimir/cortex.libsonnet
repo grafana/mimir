@@ -10,7 +10,6 @@
 (import 'ingester.libsonnet') +
 (import 'querier.libsonnet') +
 (import 'query-frontend.libsonnet') +
-(import 'table-manager.libsonnet') +
 (import 'ruler.libsonnet') +
 (import 'alertmanager.libsonnet') +
 (import 'query-scheduler.libsonnet') +

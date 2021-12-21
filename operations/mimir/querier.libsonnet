@@ -4,7 +4,6 @@
   querier_args::
     $._config.grpcConfig +
     $._config.ringConfig +
-    $._config.storeConfig +
     $._config.storageConfig +
     $._config.blocksStorageConfig +
     $._config.queryConfig +
@@ -24,8 +23,6 @@
       'querier.worker-parallelism': $._config.querier.concurrency / $._config.queryFrontend.replicas,
       'querier.frontend-address': 'query-frontend-discovery.%(namespace)s.svc.cluster.local:9095' % $._config,
       'querier.frontend-client.grpc-max-send-msg-size': 100 << 20,
-
-      'querier.second-store-engine': $._config.querier_second_storage_engine,
 
       // We request high memory but the Go heap is typically very low (< 100MB) and this causes
       // the GC to trigger continuously. Setting a ballast of 256MB reduces GC.
