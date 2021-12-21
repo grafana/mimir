@@ -514,6 +514,15 @@ func TestShardSummer(t *testing.T) {
 			3,
 		},
 		{
+			`sum by (group_1) (rate(metric_counter[1m]) / time() * 2)`,
+			`sum by (group_1) (` + concat(
+				`sum by (group_1) (rate(metric_counter{__query_shard__="1_of_3"}[1m]) / time() * 2)`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="2_of_3"}[1m]) / time() * 2)`,
+				`sum by (group_1) (rate(metric_counter{__query_shard__="3_of_3"}[1m]) / time() * 2)`,
+			) + `)`,
+			3,
+		},
+		{
 			`sum by (group_1) (rate(metric_counter[1m])) / time() *2`,
 			`sum by (group_1) (` + concat(
 				`sum by (group_1) (rate(metric_counter{__query_shard__="1_of_3"}[1m]))`,
@@ -562,14 +571,64 @@ func TestShardSummer(t *testing.T) {
 			0,
 		},
 		{
-			`foo > 0`,
-			concat(`foo > 0`),
+			// we could shard foo * 2, but since it doesn't reduce the data set, we don't.
+			`foo * 2`,
+			concat(`foo * 2`),
 			0,
 		},
 		{
+			`foo > 0`,
+			concat(
+				`foo{__query_shard__="1_of_3"} > 0`,
+				`foo{__query_shard__="2_of_3"} > 0`,
+				`foo{__query_shard__="3_of_3"} > 0`,
+			),
+			3,
+		},
+		{
+			`0 <= foo`,
+			concat(
+				`0 <= foo{__query_shard__="1_of_3"}`,
+				`0 <= foo{__query_shard__="2_of_3"}`,
+				`0 <= foo{__query_shard__="3_of_3"}`,
+			),
+			3,
+		},
+		{
 			`foo > (2 * 2)`,
-			concat(`foo > (2 * 2)`),
-			0,
+			concat(
+				`foo{__query_shard__="1_of_3"} > (2 * 2)`,
+				`foo{__query_shard__="2_of_3"} > (2 * 2)`,
+				`foo{__query_shard__="3_of_3"} > (2 * 2)`,
+			),
+			3,
+		},
+		{
+			`sum by (label) (foo > 0)`,
+			`sum by(label) (` + concat(
+				`sum by (label) (foo{__query_shard__="1_of_3"} > 0)`,
+				`sum by (label) (foo{__query_shard__="2_of_3"} > 0)`,
+				`sum by (label) (foo{__query_shard__="3_of_3"} > 0)`,
+			) + `)`,
+			3,
+		},
+		{
+			`sum by (label) (foo > 0) > 0`,
+			`sum by (label) (` + concat(
+				`sum by (label) (foo{__query_shard__="1_of_3"} > 0)`,
+				`sum by (label) (foo{__query_shard__="2_of_3"} > 0)`,
+				`sum by (label) (foo{__query_shard__="3_of_3"} > 0)`,
+			) + `) > 0`,
+			3,
+		},
+		{
+			`sum_over_time(foo[1m]) > (2 * 2)`,
+			concat(
+				`sum_over_time(foo{__query_shard__="1_of_3"}[1m]) > (2 * 2)`,
+				`sum_over_time(foo{__query_shard__="2_of_3"}[1m]) > (2 * 2)`,
+				`sum_over_time(foo{__query_shard__="3_of_3"}[1m]) > (2 * 2)`,
+			),
+			3,
 		},
 		{
 			`foo > sum(bar)`,

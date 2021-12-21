@@ -103,6 +103,17 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 			return n, false, nil
 		}
 		return n, false, nil
+
+	case *parser.BinaryExpr:
+		if summer.currentShard == nil {
+			if !CanParallelize(n, summer.logger) {
+				return n, false, nil
+			}
+
+			return summer.shardBinOp(n, stats)
+		}
+		return n, false, nil
+
 	default:
 		return n, false, nil
 	}
@@ -338,6 +349,64 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 	stats.AddShardedQueries(summer.shards)
 
 	return summer.squash(children...)
+}
+
+func (summer *shardSummer) shardBinOp(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
+	switch expr.Op {
+	case parser.GTR,
+		parser.GTE,
+		parser.LSS,
+		parser.LTE:
+		mapped, err = summer.shardAndSquashBinop(expr, stats)
+		if err != nil {
+			return nil, false, err
+		}
+		return mapped, true, nil
+	default:
+		return expr, false, nil
+	}
+}
+
+// shardAndSquashBinop returns a squashed CONCAT expression including N embedded
+// queries, where N is the number of shards and each sub-query queries a different shard
+// with the binary operation between.
+func (summer *shardSummer) shardAndSquashBinop(expr *parser.BinaryExpr, stats *MapperStats) (parser.Expr, error) {
+	if expr.VectorMatching != nil {
+		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
+	}
+
+	children := make([]parser.Node, 0, summer.shards)
+	// Create sub-query for each shard.
+	for i := 0; i < summer.shards; i++ {
+		shardedLHS, err := cloneAndMap(NewASTNodeMapper(summer.CopyWithCurShard(i)), expr.LHS, stats)
+		if err != nil {
+			return nil, err
+		}
+		shardedRHS, err := cloneAndMap(NewASTNodeMapper(summer.CopyWithCurShard(i)), expr.RHS, stats)
+		if err != nil {
+			return nil, err
+		}
+
+		children = append(children, &parser.BinaryExpr{
+			LHS:        shardedLHS.(parser.Expr),
+			Op:         expr.Op,
+			RHS:        shardedRHS.(parser.Expr),
+			ReturnBool: expr.ReturnBool,
+		})
+	}
+
+	// Update stats.
+	stats.AddShardedQueries(summer.shards)
+
+	return summer.squash(children...)
+}
+
+func cloneAndMap(mapper ASTNodeMapper, node parser.Expr, stats *MapperStats) (parser.Node, error) {
+	cloned, err := CloneNode(node)
+	if err != nil {
+		return nil, err
+	}
+	return mapper.Map(cloned, stats)
 }
 
 func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Node, error) {
