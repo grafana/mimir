@@ -47,7 +47,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false check-mixin
       - name: Check Jsonnet Manifests
         run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
-      - name: Check Jsonnet README
+      - name: Check Jsonnet Getting Started
         run: |
           git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir".insteadOf "https://github.com/grafana/mimir"
           make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
