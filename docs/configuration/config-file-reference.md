@@ -158,11 +158,11 @@ tenant_federation:
 activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
   # disabled.
-  # CLI flag: -activity-tracker.filename
-  [filename: <string> | default = ""]
+  # CLI flag: -activity-tracker.filepath
+  [filepath: <string> | default = ""]
 
-  # Max number of concurrent activities that can be tracked. Used to size file
-  # in advance. Additional activities are ignored.
+  # Max number of concurrent activities that can be tracked. Used to size the
+  # file in advance. Additional activities are ignored.
   # CLI flag: -activity-tracker.max-entries
   [max_entries: <int> | default = 1024]
 
