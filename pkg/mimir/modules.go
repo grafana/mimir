@@ -112,15 +112,18 @@ func (t *Mimir) initAPI() (services.Service, error) {
 }
 
 func (t *Mimir) initActivityTracker() (services.Service, error) {
-	if t.Cfg.ActivityTracker.Filename != "" {
-		acs := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filename)
+	if t.Cfg.ActivityTracker.Filepath != "" {
+		entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
 
 		l := util_log.Logger
-		if len(acs) > 0 {
-			level.Warn(l).Log("msg", "found unfinished activities from previous run", "count", len(acs))
+		if err != nil {
+			level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
 		}
-		for _, a := range acs {
-			level.Warn(l).Log("activity", a)
+		if len(entries) > 0 {
+			level.Warn(l).Log("msg", "found unfinished activities from previous run", "count", len(entries))
+		}
+		for _, e := range entries {
+			level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
 		}
 	}
 
