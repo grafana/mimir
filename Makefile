@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-readme
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started
 .DEFAULT_GOAL := all
 
 # Version number
@@ -312,6 +312,7 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
 	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/guides/overrides-exporter.md
+	embedmd -w operations/mimir/README.md
 
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
@@ -405,18 +406,15 @@ check-jsonnet-manifests: format-jsonnet-manifests
 format-jsonnet-manifests:
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
 
-check-jsonnet-readme:
-	rm -rf test-jsonnet-readme && \
-	mkdir test-jsonnet-readme && \
-	cd test-jsonnet-readme && \
-	tk init --k8s=false && \
-	jb install github.com/jsonnet-libs/k8s-alpha/1.18 && \
-	printf '(import "github.com/jsonnet-libs/k8s-alpha/1.18/main.libsonnet")\n+(import "github.com/jsonnet-libs/k8s-alpha/1.18/extensions/kausal-shim.libsonnet")' > lib/k.libsonnet && \
-	jb install github.com/grafana/mimir/operations/mimir@main && \
-	rm -fr ./vendor/mimir && \
-	cp -r ../operations/mimir ./vendor/mimir/ && \
-	cp vendor/mimir/mimir-manifests.jsonnet.example environments/default/main.jsonnet && \
-	PAGER=cat tk show environments/default
+check-jsonnet-getting-started:
+	# Start from a clean setup.
+	rm -rf jsonnet-example
+
+	# We want to test any change in this branch/PR, so after installing Mimir jsonnet
+	# we replace it with the current code.
+	cat ./operations/mimir/getting-started.sh \
+		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
+		| bash
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check

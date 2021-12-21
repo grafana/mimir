@@ -50,7 +50,7 @@ jobs:
       - name: Check Jsonnet README
         run: |
           git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir".insteadOf "https://github.com/grafana/mimir"
-          make BUILD_IN_CONTAINER=false check-jsonnet-readme
+          make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
         env:
           GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
           GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
