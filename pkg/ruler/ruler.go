@@ -128,10 +128,6 @@ type Config struct {
 	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
 
-type TenantFederationConfig struct {
-	Enabled bool `yaml:"enabled"`
-}
-
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
 	if !util.StringsContain(supportedShardingStrategies, cfg.ShardingStrategy) {
@@ -153,6 +149,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ClientTLSConfig.RegisterFlagsWithPrefix("ruler.client", f)
 	cfg.Ring.RegisterFlags(f)
 	cfg.Notifier.RegisterFlags(f)
+	cfg.TenantFederation.RegisterFlags(f)
 
 	// Deprecated Flags that will be maintained to avoid user disruption
 
@@ -189,8 +186,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&cfg.DisabledTenants, "ruler.disabled-tenants", "Comma separated list of tenants whose rules this ruler cannot evaluate. If specified, a ruler that would normally pick the specified tenant(s) for processing will ignore them instead. Subject to sharding.")
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per user metric and as an info level log message.")
-
-	f.BoolVar(&cfg.TenantFederation.Enabled, "ruler.tenant-federation.enabled", false, "Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's `source_tenants` field. If this flag is set to `false` when there are already created federated rule groups, then these rules groups will be skipped during evaluations.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -560,19 +555,6 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 		}
 		userGroups[userID] = amendedList
 		r.groupAuthorizationFailures.WithLabelValues(userID).Set(float64(unauthorized))
-	}
-}
-
-func removeFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
-	for userID, groupList := range groups {
-		var amended rulespb.RuleGroupList
-		for _, group := range groupList {
-			if len(group.GetSourceTenants()) > 1 {
-				continue
-			}
-			amended = append(amended, group)
-		}
-		groups[userID] = amended
 	}
 }
 

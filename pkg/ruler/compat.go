@@ -26,7 +26,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
-	"github.com/grafana/mimir/pkg/tenant"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -266,23 +265,18 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 		}
 
 		return rules.NewManager(&rules.ManagerOptions{
-			Appendable: NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:  q,
-			QueryFunc:  RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
-			Context:    user.InjectOrgID(ctx, userID),
-			GroupEvaluationContextFunc: func(ctx context.Context, g *rules.Group) context.Context {
-				if len(g.SourceTenants()) == 0 {
-					return ctx
-				}
-				return user.InjectOrgID(ctx, tenant.JoinTenantIDs(g.SourceTenants()))
-			},
-			ExternalURL:     cfg.ExternalURL.URL,
-			NotifyFunc:      SendAlerts(notifier, cfg.ExternalURL.URL.String()),
-			Logger:          log.With(logger, "user", userID),
-			Registerer:      reg,
-			OutageTolerance: cfg.OutageTolerance,
-			ForGracePeriod:  cfg.ForGracePeriod,
-			ResendDelay:     cfg.ResendDelay,
+			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
+			Queryable:                  q,
+			QueryFunc:                  RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
+			Context:                    user.InjectOrgID(ctx, userID),
+			GroupEvaluationContextFunc: federatedGroupContextFunc,
+			ExternalURL:                cfg.ExternalURL.URL,
+			NotifyFunc:                 SendAlerts(notifier, cfg.ExternalURL.URL.String()),
+			Logger:                     log.With(logger, "user", userID),
+			Registerer:                 reg,
+			OutageTolerance:            cfg.OutageTolerance,
+			ForGracePeriod:             cfg.ForGracePeriod,
+			ResendDelay:                cfg.ResendDelay,
 		})
 	}
 }
