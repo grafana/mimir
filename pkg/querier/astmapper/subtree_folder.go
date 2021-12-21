@@ -22,7 +22,7 @@ func newSubtreeFolder() ASTMapper {
 
 // MapNode implements NodeMapper.
 func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser.Node, finished bool, err error) {
-	hasEmbeddedQueries, err := AnyNode(node, hasEmbeddedQueries)
+	hasEmbeddedQueries, err := anyNode(node, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
 	}
@@ -32,7 +32,7 @@ func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser
 		return node, false, nil
 	}
 
-	hasVectorSelector, err := AnyNode(node, isVectorSelector)
+	hasVectorSelector, err := anyNode(node, isVectorSelector)
 	if err != nil {
 		return nil, true, err
 	}
@@ -62,9 +62,9 @@ func isVectorSelector(n parser.Node) (bool, error) {
 	return ok, nil
 }
 
-// AnyNode is a helper which walks the input node and returns true if any node in the subtree
+// anyNode is a helper which walks the input node and returns true if any node in the subtree
 // returns true for the specified predicate function.
-func AnyNode(node parser.Node, fn predicate) (bool, error) {
+func anyNode(node parser.Node, fn predicate) (bool, error) {
 	v := &visitor{
 		fn: fn,
 	}
