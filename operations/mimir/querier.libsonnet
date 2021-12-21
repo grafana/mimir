@@ -9,6 +9,9 @@
     $._config.queryConfig +
     $._config.queryEngineConfig +
     $._config.distributorConfig +
+    $._config.queryBlocksStorageConfig +
+    $.blocks_metadata_caching_config +
+    $.bucket_index_config
     {
       target: 'querier',
 
