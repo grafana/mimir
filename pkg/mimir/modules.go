@@ -112,19 +112,21 @@ func (t *Mimir) initAPI() (services.Service, error) {
 }
 
 func (t *Mimir) initActivityTracker() (services.Service, error) {
-	if t.Cfg.ActivityTracker.Filepath != "" {
-		entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
+	if t.Cfg.ActivityTracker.Filepath == "" {
+		return nil, nil
+	}
 
-		l := util_log.Logger
-		if err != nil {
-			level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
-		}
-		if len(entries) > 0 {
-			level.Warn(l).Log("msg", "found unfinished activities from previous run", "count", len(entries))
-		}
-		for _, e := range entries {
-			level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
-		}
+	entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
+
+	l := util_log.Logger
+	if err != nil {
+		level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
+	}
+	if len(entries) > 0 {
+		level.Warn(l).Log("msg", "found unfinished activities from previous run", "count", len(entries))
+	}
+	for _, e := range entries {
+		level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
 	}
 
 	at, err := activitytracker.NewActivityTracker(t.Cfg.ActivityTracker, prometheus.DefaultRegisterer)
@@ -133,7 +135,21 @@ func (t *Mimir) initActivityTracker() (services.Service, error) {
 	}
 
 	t.ActivityTracker = at
-	return nil, nil
+
+	return services.NewIdleService(nil, func(_ error) error {
+		entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
+
+		if err != nil {
+			level.Warn(l).Log("msg", "failed to fully read file with unfinished activities during shutdown", "err", err)
+		}
+		if len(entries) > 0 {
+			level.Warn(l).Log("msg", "found unfinished activities during shutdown", "count", len(entries))
+		}
+		for _, e := range entries {
+			level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
+		}
+		return nil
+	}), nil
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
