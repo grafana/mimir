@@ -153,7 +153,6 @@ frontend_worker:
 query_range:
   split_queries_by_interval: 24h
   parallelize_shardable_queries: true
-  max_sharded_queries_limit_enabled: true
 
 limits:
   # Limit max query time range to 31d
