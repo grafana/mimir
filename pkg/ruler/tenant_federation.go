@@ -49,7 +49,7 @@ func removeFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
 	for userID, groupList := range groups {
 		var amended rulespb.RuleGroupList
 		for _, group := range groupList {
-			if len(group.GetSourceTenants()) > 1 {
+			if len(group.GetSourceTenants()) > 0 {
 				continue
 			}
 			amended = append(amended, group)

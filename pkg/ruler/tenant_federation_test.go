@@ -16,15 +16,23 @@ import (
 func TestRuler_TenantFederationFlag(t *testing.T) {
 	const userID = "tenant-1"
 
-	regularRuleGroup := &rulespb.RuleGroupDesc{
+	regularGroup := &rulespb.RuleGroupDesc{
 		Namespace:     "ns",
 		Name:          "non-federated",
 		User:          userID,
+		SourceTenants: []string{},
+	}
+
+	federatedGroupWithOneTenant := &rulespb.RuleGroupDesc{
+		Namespace:     "ns",
+		Name:          "federated-1",
+		User:          userID,
 		SourceTenants: []string{"tenant-2"},
 	}
-	federatedRuleGroup := &rulespb.RuleGroupDesc{
+
+	federatedGroupWithMultipleTenants := &rulespb.RuleGroupDesc{
 		Namespace:     "ns",
-		Name:          "federated",
+		Name:          "federated-2",
 		User:          userID,
 		SourceTenants: []string{"tenant-2", "tenant-3"},
 	}
@@ -37,15 +45,21 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 	}{
 		"tenant federation disabled": {
 			tenantFederationEnabled: false,
-			existingRules:           rulespb.RuleGroupList{regularRuleGroup, federatedRuleGroup},
+			existingRules:           rulespb.RuleGroupList{federatedGroupWithOneTenant, federatedGroupWithMultipleTenants},
 
-			expectedRunningGroupsNames: []string{regularRuleGroup.Name}, // TODO this isn't correct - there should be no allowed groups
+			expectedRunningGroupsNames: []string{},
+		},
+		"tenant federation disabled with a federated rules and a regular rule": {
+			tenantFederationEnabled: false,
+			existingRules:           rulespb.RuleGroupList{federatedGroupWithOneTenant, regularGroup},
+
+			expectedRunningGroupsNames: []string{regularGroup.Name},
 		},
 		"tenant federation enabled": {
 			tenantFederationEnabled: true,
-			existingRules:           rulespb.RuleGroupList{regularRuleGroup, federatedRuleGroup},
+			existingRules:           rulespb.RuleGroupList{federatedGroupWithOneTenant, federatedGroupWithMultipleTenants},
 
-			expectedRunningGroupsNames: []string{regularRuleGroup.Name, federatedRuleGroup.Name},
+			expectedRunningGroupsNames: []string{federatedGroupWithOneTenant.Name, federatedGroupWithMultipleTenants.Name},
 		},
 	}
 
