@@ -298,6 +298,10 @@
 
 * [ENHANCEMENT] Added `/api/v1/query_exemplars` API endpoint support (no results comparison). #168
 
+### Blocksconvert:
+
+* [CHANGE] Blocksconvert tool was removed from Mimir. #637
+
 ## main / unreleased
 
 * [FEATURE] Ruler: Add new `-ruler.query-stats-enabled` which when enabled will report the `cortex_ruler_query_seconds_total` as a per-user metric that tracks the sum of the wall time of executing queries in the ruler in seconds. #4317
