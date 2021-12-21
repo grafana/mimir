@@ -245,28 +245,66 @@ func TestNotifierSendsUserIDHeader(t *testing.T) {
 }
 
 func TestRuler_Rules(t *testing.T) {
-	cfg := defaultRulerConfig(t)
+	testCases := map[string]struct {
+		mockRules map[string]rulespb.RuleGroupList
+		userID    string
+	}{
+		"rules - user1": {
+			userID:    "user1",
+			mockRules: mockRules,
+		},
+		"rules - user2": {
+			userID:    "user2",
+			mockRules: mockRules,
+		},
+		"federated rule group": {
+			userID: "user1",
+			mockRules: map[string]rulespb.RuleGroupList{
+				"user1": {
+					&rulespb.RuleGroupDesc{
+						Name:          "group1",
+						Namespace:     "namespace1",
+						User:          "user1",
+						SourceTenants: []string{"tenant-1"},
+						Rules: []*rulespb.RuleDesc{
+							{
+								Record: "UP_RULE",
+								Expr:   "up",
+							},
+							{
+								Alert: "UP_ALERT",
+								Expr:  "up < 1",
+							},
+						},
+						Interval: interval,
+					},
+				},
+			},
+		},
+	}
 
-	r := newTestRuler(t, cfg, newMockRuleStore(mockRules))
-	defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			cfg := defaultRulerConfig(t)
+			cfg.TenantFederation.Enabled = true
 
-	// test user1
-	ctx := user.InjectOrgID(context.Background(), "user1")
-	rls, err := r.Rules(ctx, &RulesRequest{})
-	require.NoError(t, err)
-	require.Len(t, rls.Groups, 1)
-	rg := rls.Groups[0]
-	expectedRg := mockRules["user1"][0]
-	compareRuleGroupDescToStateDesc(t, expectedRg, rg)
+			r := newTestRuler(t, cfg, newMockRuleStore(tc.mockRules))
+			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-	// test user2
-	ctx = user.InjectOrgID(context.Background(), "user2")
-	rls, err = r.Rules(ctx, &RulesRequest{})
-	require.NoError(t, err)
-	require.Len(t, rls.Groups, 1)
-	rg = rls.Groups[0]
-	expectedRg = mockRules["user2"][0]
-	compareRuleGroupDescToStateDesc(t, expectedRg, rg)
+			ctx := user.InjectOrgID(context.Background(), "user1")
+			rls, err := r.Rules(ctx, &RulesRequest{})
+			require.NoError(t, err)
+			require.Len(t, rls.Groups, len(mockRules[tc.userID]))
+
+			for i, rg := range rls.Groups {
+				if rg.Group.User != tc.userID {
+					continue
+				}
+				expectedRg := tc.mockRules[tc.userID][i]
+				compareRuleGroupDescToStateDesc(t, expectedRg, rg)
+			}
+		})
+	}
 }
 
 func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDesc, got *GroupStateDesc) {
