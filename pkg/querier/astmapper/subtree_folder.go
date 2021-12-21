@@ -22,7 +22,7 @@ func newSubtreeFolder() ASTMapper {
 
 // MapNode implements NodeMapper.
 func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser.Node, finished bool, err error) {
-	hasEmbeddedQueries, err := EvalPredicate(node, hasEmbeddedQueries)
+	hasEmbeddedQueries, err := anyNode(node, hasEmbeddedQueries)
 	if err != nil {
 		return nil, true, err
 	}
@@ -32,13 +32,7 @@ func (f *subtreeFolder) MapNode(node parser.Node, _ *MapperStats) (mapped parser
 		return node, false, nil
 	}
 
-	hasVectorSelector, err := EvalPredicate(node, func(n parser.Node) (bool, error) {
-		switch n.(type) {
-		case *parser.VectorSelector:
-			return true, nil
-		}
-		return false, nil
-	})
+	hasVectorSelector, err := anyNode(node, isVectorSelector)
 	if err != nil {
 		return nil, true, err
 	}
@@ -62,9 +56,15 @@ func hasEmbeddedQueries(node parser.Node) (bool, error) {
 	return false, nil
 }
 
-// EvalPredicate is a helper which walks the input node and returns true if any node in the subtree
+// hasEmbeddedQueries returns whether the node is a vector selector.
+func isVectorSelector(n parser.Node) (bool, error) {
+	_, ok := n.(*parser.VectorSelector)
+	return ok, nil
+}
+
+// anyNode is a helper which walks the input node and returns true if any node in the subtree
 // returns true for the specified predicate function.
-func EvalPredicate(node parser.Node, fn predicate) (bool, error) {
+func anyNode(node parser.Node, fn predicate) (bool, error) {
 	v := &visitor{
 		fn: fn,
 	}

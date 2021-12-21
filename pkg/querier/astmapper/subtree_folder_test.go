@@ -59,7 +59,7 @@ func TestEvalPredicate(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.input)
 			require.Nil(t, err)
 
-			res, err := EvalPredicate(expr.(parser.Node), tc.fn)
+			res, err := anyNode(expr.(parser.Node), tc.fn)
 			if tc.expectedErr {
 				require.Error(t, err)
 			} else {
