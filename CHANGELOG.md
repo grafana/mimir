@@ -183,7 +183,7 @@
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
-* [CHANGE] Removed chunks storage support from mixin. #641
+* [CHANGE] Removed chunks storage support from mixin. #641 #643
   * Removed the following fields from `_config`:
     * `storage_engine` (defaults to `blocks`)
     * `chunk_index_backend`
