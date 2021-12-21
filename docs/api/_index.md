@@ -744,14 +744,12 @@ and `tenant-c` will be applied. If any of these limits is exceeded, the whole ev
 will be saved. The same "no partial results" guarantee applies to queries failing for other reasons (e.g. ingester
 unavailability).
 
-**Considerations:** Federated rule groups allow data from multiple source tenants to be pulled into a single destination tenant.
-Consequently, tenants with read privileges over the destination tenant's data
-via [cross-tenant query federation](../proposals/cross-tenant-query-federation.md) will have the same privileges over
-the federated rule group's results. For example, `tenant-a` has a federated rule group that aggregates over `tenant-b`'s
-data (e.g. `sum(metric_b)`) and writes the result back into `tenant-a`'s storage
-(e.g. `sum:metric_b`). `tenant-c` who has access to `tenant-a`'s data, now also has access to `sum:metric_b`, even
-though they don't have access to the original `metric_b` and cannot perform the `sum(metric_b)` against `tenant-b`
-themselves.
+**Considerations:** Federated rule groups allow data from multiple source tenants to be written into a single
+destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a
+federated rule group that aggregates over `tenant-b`'s data (e.g. `sum(metric_b)`) and writes the result back
+into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b`'s data is copied to `tenant-a` (albeit
+aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
+rules via `-ruler.tenant-federation.enabled`.
 
 _This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
 
