@@ -306,6 +306,7 @@
     * `ingester.max-stale-chunk-idle`
     * `ingester.max-transfer-retries`
     * `ingester.retain-period`
+* [CHANGE] Changed `overrides-exporter.libsonnet` from being based on cortex-tools to Mimir `overrides-exporter` target. #646
 * [CHANGE] Store gateway: set `-blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency`,
   `-blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency`,
   `-blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency`,
