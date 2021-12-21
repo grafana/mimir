@@ -227,7 +227,7 @@ type RulesManager interface {
 // ManagerFactory is a function that creates new RulesManager for given user and notifier.Manager.
 type ManagerFactory func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager
 
-func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engine *promql.Engine, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
+func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQueryable storage.Queryable, engine *promql.Engine, overrides RulesLimits, reg prometheus.Registerer) ManagerFactory {
 	totalWrites := promauto.With(reg).NewCounter(prometheus.CounterOpts{
 		Name: "cortex_ruler_write_requests_total",
 		Help: "Number of write requests to ingesters.",
@@ -253,21 +253,31 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, q storage.Queryable, engi
 		}, []string{"user"})
 	}
 
-	// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
-	// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
-	// Errors from PromQL are always "user" errors.
-	q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
-
 	return func(ctx context.Context, userID string, notifier *notifier.Manager, logger log.Logger, reg prometheus.Registerer) RulesManager {
 		var queryTime prometheus.Counter = nil
 		if rulerQuerySeconds != nil {
 			queryTime = rulerQuerySeconds.WithLabelValues(userID)
 		}
 
+		wrapQueryable := func(q storage.Queryable) (queryFunc rules.QueryFunc) {
+			// Wrap errors returned by Queryable to our wrapper, so that we can distinguish between those errors
+			// and errors returned by PromQL engine. Errors from Queryable can be either caused by user (limits) or internal errors.
+			// Errors from PromQL are always "user" errors.
+			q = querier.NewErrorTranslateQueryableWithFn(q, WrapQueryableErrors)
+
+			queryFunc = EngineQueryFunc(engine, q, overrides, userID)
+			queryFunc = MetricsQueryFunc(queryFunc, totalQueries, failedQueries)
+			queryFunc = RecordAndReportRuleQueryMetrics(queryFunc, queryTime, logger)
+			return queryFunc
+		}
+
+		regularQueryFunc := wrapQueryable(queryable)
+		federatedQueryFunc := wrapQueryable(federatedQueryable)
+
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
-			Queryable:                  q,
-			QueryFunc:                  RecordAndReportRuleQueryMetrics(MetricsQueryFunc(EngineQueryFunc(engine, q, overrides, userID), totalQueries, failedQueries), queryTime, logger),
+			Queryable:                  queryable,
+			QueryFunc:                  tenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc),
 			Context:                    user.InjectOrgID(ctx, userID),
 			GroupEvaluationContextFunc: federatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,

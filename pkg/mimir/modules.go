@@ -628,7 +628,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
-	var queryable prom_storage.Queryable
+	var queryable, federatedQueryable prom_storage.Queryable
 	// TODO: Consider wrapping logger to differentiate from querier module logger
 	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 
@@ -636,14 +636,15 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if !t.Cfg.TenantFederation.Enabled {
 			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
 		}
-		// Make sure the mergeQuerier is only used for request with more than a
-		// single tenant. This allows for a less impactful enabling of tenant
-		// federation.
-		const byPassForSingleQuerier = true
-		queryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
+		// Setting byPassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
+		// This makes this label more consistent and hopefully less confusing to users.
+		const byPassForSingleQuerier = false
+
+		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
 	}
 
-	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, eng, t.Overrides, prometheus.DefaultRegisterer)
+	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return nil, err

@@ -730,13 +730,22 @@ POST /api/v1/rules/{namespace}
 POST <legacy-http-prefix>/rules/{namespace}
 ```
 
-Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the rules **YAML** definition in the request body, and returns `202` on success.
+Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
+rules **YAML** definition in the request body, and returns `202` on success.
+
+_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
+
+_Requires [authentication](#authentication)._
+
+#### Federated rule groups
+
+A federated rule groups is a rule group with a non-empty `source_tenants`.
 
 The `source_tenants` field allows aggregating data from multiple tenants while evaluating a rule group. The expressions
 of each rule in the group will be evaluated against the data of all tenants in `source_tenants`. If `source_tenants` is
-empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`. A rule group
-with a non-empty `source_tenants` is a federated rule group. Federated rule groups are skipped during evaluation by
-default; use the `-ruler.tenant-federation.enabled=true` CLI flag (or its respective YAML config option) to change this.
+empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`. Federated
+rule groups are skipped during evaluation by default; use the `-ruler.tenant-federation.enabled=true` CLI flag (or its
+respective YAML config option) to change this.
 
 During evaluation query limits applied to single tenants are also applied to each query in the rule group. For example,
 if `tenant-a` has a federated rule group with `source_tenants: [tenant-b, tenant-c]`, then query limits for `tenant-b`
@@ -744,16 +753,15 @@ and `tenant-c` will be applied. If any of these limits is exceeded, the whole ev
 will be saved. The same "no partial results" guarantee applies to queries failing for other reasons (e.g. ingester
 unavailability).
 
+The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
+present on series returned with [cross-tenant query federation](../proposals/cross-tenant-query-federation.md).
+
 **Considerations:** Federated rule groups allow data from multiple source tenants to be written into a single
 destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a
 federated rule group that aggregates over `tenant-b`'s data (e.g. `sum(metric_b)`) and writes the result back
 into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b`'s data is copied to `tenant-a` (albeit
 aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
 rules via `-ruler.tenant-federation.enabled`.
-
-_This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
-
-_Requires [authentication](#authentication)._
 
 #### Example request
 
