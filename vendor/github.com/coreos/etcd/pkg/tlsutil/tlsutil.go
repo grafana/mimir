@@ -41,7 +41,6 @@ func NewCertPool(CAFiles []string) (*x509.CertPool, error) {
 			if err != nil {
 				return nil, err
 			}
-
 			certPool.AddCert(cert)
 		}
 	}
