@@ -183,6 +183,33 @@
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
+* [CHANGE] Removed chunks storage support from mixin. #641
+  * Removed the following fields from `_config`:
+    * `storage_engine` (defaults to `blocks`)
+    * `chunk_index_backend`
+    * `chunk_store_backend`
+  * Removed the following dashboards:
+    * "Cortex / Chunks"
+    * "Cortex / WAL"
+    * "Cortex / Blocks vs Chunks"
+  * Removed the following alerts:
+    * `CortexOldChunkInMemory`
+    * `CortexCheckpointCreationFailed`
+    * `CortexCheckpointDeletionFailed`
+    * `CortexProvisioningMemcachedTooSmall`
+    * `CortexWALCorruption`
+    * `CortexTableSyncFailure`
+    * `CortexTransferFailed`
+  * Removed the following recording rules:
+    * `cortex_chunk_store_index_lookups_per_query`
+    * `cortex_chunk_store_series_pre_intersection_per_query`
+    * `cortex_chunk_store_series_post_intersection_per_query`
+    * `cortex_chunk_store_chunks_per_query`
+    * `cortex_bigtable_request_duration_seconds`
+    * `cortex_cassandra_request_duration_seconds`
+    * `cortex_dynamo_request_duration_seconds`
+    * `cortex_database_request_duration_seconds`
+    * `cortex_gcs_request_duration_seconds`
 * [CHANGE] Update grafana-builder dependency: use $__rate_interval in qpsPanel and latencyPanel. [#372](https://github.com/grafana/cortex-jsonnet/pull/372)
 * [CHANGE] `namespace` template variable in dashboards now only selects namespaces for selected clusters. [#311](https://github.com/grafana/cortex-jsonnet/pull/311)
 * [CHANGE] `CortexIngesterRestarts` alert severity changed from `critical` to `warning`. [#321](https://github.com/grafana/cortex-jsonnet/pull/321)

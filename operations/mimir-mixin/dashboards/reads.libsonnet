@@ -196,8 +196,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('s') }
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('Store-gateway')
       .addPanel(
         $.panel('Requests / sec') +
@@ -215,37 +214,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('s') }
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.kvStoreRow('Store-gateway - Key-value store for store-gateways ring', 'store_gateway', 'store-gateway')
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks'),
-      $.row('Memcached - Chunks storage - Index')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="store.index-cache-read.memcache.fetch"}' % $.jobMatcher($._config.job_names.querier))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('method', 'store.index-cache-read.memcache.fetch')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks'),
-      $.row('Memcached - Chunks storage - Chunks')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{%s,method="chunksmemcache.fetch"}' % $.jobMatcher($._config.job_names.querier))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('method', 'chunksmemcache.fetch')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
-      $.row('Memcached – Blocks storage – Block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
+    .addRow(
+      $.row('Memcached – Block index cache (store-gateway accesses)')  // Resembles thanosMemcachedCache
       .addPanel(
         $.panel('Requests / sec') +
         $.queryPanel(
@@ -315,93 +288,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.thanosMemcachedCache(
-        'Memcached – Blocks storage – Chunks cache (store-gateway accesses)',
+        'Memcached – Chunks cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'chunks-cache'
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.thanosMemcachedCache(
-        'Memcached – Blocks storage – Metadata cache (store-gateway accesses)',
+        'Memcached – Metadata cache (store-gateway accesses)',
         $._config.job_names.store_gateway,
         'store-gateway',
         'metadata-cache'
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.thanosMemcachedCache(
-        'Memcached – Blocks storage – Metadata cache (querier accesses)',
+        'Memcached – Metadata cache (querier accesses)',
         $._config.job_names.querier,
         'querier',
         'metadata-cache'
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
-      $.row('Cassandra')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="SELECT"}' % $.jobMatcher($._config.job_names.querier))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', 'SELECT')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
-      $.row('BigTable')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/ReadRows"}' % $.jobMatcher($._config.job_names.querier))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/ReadRows')])
-      ),
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
-      $.row('DynamoDB')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.QueryPages"}' % $.jobMatcher($._config.job_names.querier))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', 'DynamoDB.QueryPages')])
-      ),
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_store_backend, 'gcs'),
-      $.row('GCS')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="GET"}' % $.jobMatcher($._config.job_names.querier))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector($._config.job_names.querier) + [utils.selector.eq('operation', 'GET')])
-      )
-    )
     // Object store metrics for the store-gateway.
-    .addRowsIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRows(
       $.getObjectStoreRows('Blocks Object Store (Store-gateway accesses)', 'store-gateway')
     )
     // Object store metrics for the querier.
-    .addRowsIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRows(
       $.getObjectStoreRows('Blocks Object Store  (Querier accesses)', 'querier')
     ),
 }

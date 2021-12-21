@@ -135,73 +135,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addRow(
       $.kvStoreRow('Ingester - Key-value store for the ingesters ring', 'ingester', 'ingester-.*')
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks'),
-      $.row('Memcached')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_memcache_request_duration_seconds_count{%s,method="Memcache.Put"}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_memcache_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('method', 'Memcache.Put')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'cassandra'),
-      $.row('Cassandra')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_cassandra_request_duration_seconds_count{%s, operation="INSERT"}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_cassandra_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', 'INSERT')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'bigtable'),
-      $.row('BigTable')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_bigtable_request_duration_seconds_count{%s, operation="/google.bigtable.v2.Bigtable/MutateRows"}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_bigtable_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', '/google.bigtable.v2.Bigtable/MutateRows')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_index_backend + $._config.chunk_store_backend, 'dynamodb'),
-      $.row('DynamoDB')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_dynamo_request_duration_seconds_count{%s, operation="DynamoDB.BatchWriteItem"}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_dynamo_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', 'DynamoDB.BatchWriteItem')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks') &&
-      std.member($._config.chunk_store_backend, 'gcs'),
-      $.row('GCS')
-      .addPanel(
-        $.panel('Requests / sec') +
-        $.qpsPanel('cortex_gcs_request_duration_seconds_count{%s, operation="POST"}' % $.jobMatcher($._config.job_names.ingester))
-      )
-      .addPanel(
-        $.panel('Latency') +
-        utils.latencyRecordingRulePanel('cortex_gcs_request_duration_seconds', $.jobSelector($._config.job_names.ingester) + [utils.selector.eq('operation', 'POST')])
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - Blocks storage - Shipper')
+    .addRow(
+      $.row('Ingester - Shipper')
       .addPanel(
         $.successFailurePanel(
           'Uploaded blocks / sec',
@@ -228,9 +163,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - Blocks storage - TSDB Head')
+    .addRow(
+      $.row('Ingester - TSDB Head')
       .addPanel(
         $.successFailurePanel(
           'Compactions / sec',
@@ -258,9 +192,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
-      $.row('Ingester - Blocks storage - TSDB write ahead log (WAL)')
+    .addRow(
+      $.row('Ingester - TSDB write ahead log (WAL)')
       .addPanel(
         $.successFailurePanel(
           'WAL truncations / sec',

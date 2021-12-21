@@ -121,23 +121,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('sum(rate(cortex_cache_corrupt_chunks_total{%s}[1m]))' % $.jobMatcher($._config.job_names.querier), 'Corrupt chunks'),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks'),
-      $.row('Querier - Chunks storage - Index Cache')
-      .addPanel(
-        $.panel('Total entries') +
-        $.queryPanel('sum(querier_cache_added_new_total{cache="store.index-cache-read.fifocache",%s}) - sum(querier_cache_evicted_total{cache="store.index-cache-read.fifocache",%s})' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Entries'),
-      )
-      .addPanel(
-        $.panel('Cache Hit %') +
-        $.queryPanel('(sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m])) - sum(rate(querier_cache_misses_total{cache="store.index-cache-read.fifocache",%s}[1m]))) / sum(rate(querier_cache_gets_total{cache="store.index-cache-read.fifocache",%s}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'hit rate')
-        { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
-      )
-      .addPanel(
-        $.panel('Churn Rate') +
-        $.queryPanel('sum(rate(querier_cache_evicted_total{cache="store.index-cache-read.fifocache",%s}[1m]))' % $.jobMatcher($._config.job_names.querier), 'churn rate'),
-      )
-    )
     .addRow(
       $.row('Ingester')
       .addPanel(
@@ -156,33 +139,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('short') },
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'chunks'),
-      $.row('Querier - Chunks storage - Store')
-      .addPanel(
-        $.panel('Index Lookups per Query') +
-        utils.latencyRecordingRulePanel('cortex_chunk_store_index_lookups_per_query', $.jobSelector($._config.job_names.querier), multiplier=1) +
-        { yaxes: $.yaxes('short') },
-      )
-      .addPanel(
-        $.panel('Series (pre-intersection) per Query') +
-        utils.latencyRecordingRulePanel('cortex_chunk_store_series_pre_intersection_per_query', $.jobSelector($._config.job_names.querier), multiplier=1) +
-        { yaxes: $.yaxes('short') },
-      )
-      .addPanel(
-        $.panel('Series (post-intersection) per Query') +
-        utils.latencyRecordingRulePanel('cortex_chunk_store_series_post_intersection_per_query', $.jobSelector($._config.job_names.querier), multiplier=1) +
-        { yaxes: $.yaxes('short') },
-      )
-      .addPanel(
-        $.panel('Chunks per Query') +
-        utils.latencyRecordingRulePanel('cortex_chunk_store_chunks_per_query', $.jobSelector($._config.job_names.querier), multiplier=1) +
-        { yaxes: $.yaxes('short') },
-      )
-    )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
-      $.row('Querier - Blocks storage')
+    .addRow(
+      $.row('Querier')
       .addPanel(
         $.panel('Number of store-gateways hit per Query') +
         $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.querier), multiplier=1) +
@@ -199,8 +157,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes({ format: 'percentunit', max: 1 }) },
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('')
       .addPanel(
         $.panel('Bucket indexes loaded (per querier)') +
@@ -223,9 +180,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_bucket_index_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.querier)),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
-      $.row('Store-gateway - Blocks storage')
+    .addRow(
+      $.row('Store-gateway')
       .addPanel(
         $.panel('Blocks queried / sec') +
         $.queryPanel('sum(rate(cortex_bucket_store_series_blocks_queried_sum{component="store-gateway",%s}[$__rate_interval]))' % $.jobMatcher($._config.job_names.store_gateway), 'blocks') +
@@ -244,8 +200,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('ops') },
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('')
       .addPanel(
         $.panel('Series fetch duration (per request)') +
@@ -260,8 +215,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel('sum(rate(cortex_bucket_store_series_result_series_sum{component="store-gateway",%s}[$__rate_interval])) / sum(rate(cortex_bucket_store_series_result_series_count{component="store-gateway",%s}[$__rate_interval]))' % [$.jobMatcher($._config.job_names.store_gateway), $.jobMatcher($._config.job_names.store_gateway)], 'avg series returned'),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('')
       .addPanel(
         $.panel('Blocks currently loaded') +
@@ -282,8 +236,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('')
       .addPanel(
         $.panel('Lazy loaded index-headers') +
@@ -294,8 +247,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.latencyPanel('cortex_bucket_store_indexheader_lazy_load_duration_seconds', '{%s}' % $.jobMatcher($._config.job_names.store_gateway)),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('')
       .addPanel(
         $.panel('Series hash cache hit ratio') +
