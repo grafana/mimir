@@ -10,8 +10,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/grafana/mimir/pkg/tenant"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -28,6 +26,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier"
+	"github.com/grafana/mimir/pkg/tenant"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
