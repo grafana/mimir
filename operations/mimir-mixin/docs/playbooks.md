@@ -223,10 +223,6 @@ How to **investigate**:
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
 
-### CortexTransferFailed
-
-This alert goes off when an ingester fails to find another node to transfer its data to when it was shutting down. If there is both a pod stuck terminating and one stuck joining, look at the kubernetes events. This may be due to scheduling problems caused by some combination of anti affinity rules/resource utilization. Adding a new node can help in these circumstances. You can see recent events associated with a resource via kubectl describe, ex: `kubectl -n <namespace> describe pod <pod>`
-
 ### CortexIngesterUnhealthy
 
 This alert goes off when an ingester is marked as unhealthy. Check the ring web page to see which is marked as unhealthy. You could then check the logs to see if there are any related to that ingester ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forgot" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, ex: `kubectl get events --namespace=prod | grep cloud-provider-node`.
@@ -495,31 +491,6 @@ How to **investigate**:
 - Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor
 - Further investigate if was an upload failed by an ingester but not later retried (ingesters are expected to retry uploads until succeed)
 
-### CortexWALCorruption
-
-This alert is only related to the chunks storage. This can happen because of 2 reasons: (1) Non graceful shutdown of ingesters. (2) Faulty storage or NFS.
-
-WAL corruptions are only detected at startups, so at this point the WAL/Checkpoint would have been repaired automatically. So we can only check what happened and if there was any data loss and take actions to avoid this happening in future.
-
-1. Check if there was any node restarts that force killed pods. If there is, then the corruption is from the non graceful shutdown of ingesters, which is generally fine. You can:
-
-- Describe the pod to see the last state.
-- Use `kube_pod_info` to check the node for the pod. `node_boot_time_seconds` to see if node just booted (which also indicates restart).
-- You can use `eventrouter` logs to double check.
-- Check ingester logs to check if the shutdown logs are missing at that time.
-
-2. To confirm this, in the logs, check the WAL segment on which the corruption happened (let's say `X`) and the last checkpoint attempt number (let's say `Y`, this is the last WAL segment that was present when checkpointing started).
-3. If `X > Y`, then it's most likely an abrupt restart of ingester and the corruption would be on the last few records of the last segment. To verify this, check the file timestamps of WAL segment `X` and `X - 1` if they were recent.
-4. If `X < Y`, then the corruption was in some WAL segment which was not the last one. This indicates faulty disk and some data loss on that ingester.
-5. In case of faulty disk corruption, if the number or ingesters that had corruption within the chunk flush age:
-6. Less than the quorum number for your replication factor: No data loss, because there is a guarantee that the data is replicated. For example, if replication factor is 3, then it's fine if corruption was on 1 ingester.
-7. Equal or more than the quorum number but less than replication factor: There is a good chance that there is no data loss if it was replicated to desired number of ingesters. But it's good to check once for data loss.
-8. Equal or more than the replication factor: Then there is definitely some data loss.
-
-### CortexTableSyncFailure
-
-_This alert applies to Cortex chunks storage only._
-
 ### CortexQueriesIncorrect
 
 _TODO: this playbook has not been written yet._
@@ -619,22 +590,6 @@ How to **investigate**:
     - Fixing this will require changes to the application code
   - `other`
     - Check both Cortex and memcached logs to find more details
-
-### CortexOldChunkInMemory
-
-_This alert applies to Cortex chunks storage only._
-
-### CortexCheckpointCreationFailed
-
-_This alert applies to Cortex chunks storage only._
-
-### CortexCheckpointDeletionFailed
-
-_This alert applies to Cortex chunks storage only._
-
-### CortexProvisioningMemcachedTooSmall
-
-_This alert applies to Cortex chunks storage only._
 
 ### CortexProvisioningTooManyActiveSeries
 

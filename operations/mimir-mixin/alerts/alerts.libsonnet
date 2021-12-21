@@ -76,27 +76,6 @@
           },
         },
         {
-          // We're syncing every 10mins, and this means with a 5min rate, we will have a NaN when syncs fail
-          // and we will never trigger the alert.
-          // We also have a 3h grace-period for creation of tables which means the we can fail for 3h before it's an outage.
-          alert: 'CortexTableSyncFailure',
-          expr: |||
-            100 * rate(cortex_table_manager_sync_duration_seconds_count{status_code!~"2.."}[15m])
-              /
-            rate(cortex_table_manager_sync_duration_seconds_count[15m])
-              > 10
-          |||,
-          'for': '30m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }} is experiencing {{ printf "%.2f" $value }}% errors syncing tables.
-            |||,
-          },
-        },
-        {
           alert: 'CortexQueriesIncorrect',
           expr: |||
             100 * sum by (%s) (rate(test_exporter_test_case_result_total{result="fail"}[5m]))
@@ -206,39 +185,6 @@
           },
           annotations: {
             message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.',
-          },
-        },
-        {
-          alert: 'CortexTransferFailed',
-          expr: |||
-            max_over_time(cortex_shutdown_duration_seconds_count{op="transfer",status!="success"}[15m])
-          |||,
-          'for': '5m',
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: '{{ $labels.job }}/{{ $labels.instance }} transfer failed.',
-          },
-        },
-        {
-          alert: 'CortexOldChunkInMemory',
-          // Even though we should flush chunks after 6h, we see that 99p of age of flushed chunks is closer
-          // to 10 hours.
-          // Ignore cortex_oldest_unflushed_chunk_timestamp_seconds that are zero (eg. distributors).
-          expr: |||
-            (time() - cortex_oldest_unflushed_chunk_timestamp_seconds > 36000)
-              and
-            (cortex_oldest_unflushed_chunk_timestamp_seconds > 0)
-          |||,
-          'for': '5m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }}/{{ $labels.instance }} has very old unflushed chunk in memory.
-            |||,
           },
         },
         {
@@ -394,87 +340,6 @@
       ],
     },
     {
-      name: 'cortex_wal_alerts',
-      rules: [
-        {
-          // Alert immediately if WAL is corrupt.
-          alert: 'CortexWALCorruption',
-          expr: |||
-            increase(cortex_ingester_wal_corruptions_total[5m]) > 0
-          |||,
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }}/{{ $labels.instance }} has a corrupted WAL or checkpoint.
-            |||,
-          },
-        },
-        {
-          // One or more failed checkpoint creation is a warning.
-          alert: 'CortexCheckpointCreationFailed',
-          expr: |||
-            increase(cortex_ingester_checkpoint_creations_failed_total[10m]) > 0
-          |||,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }}/{{ $labels.instance }} failed to create checkpoint.
-            |||,
-          },
-        },
-        {
-          // Two or more failed checkpoint creation in 1h means something is wrong.
-          alert: 'CortexCheckpointCreationFailed',
-          expr: |||
-            increase(cortex_ingester_checkpoint_creations_failed_total[1h]) > 1
-          |||,
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }}/{{ $labels.instance }} is failing to create checkpoint.
-            |||,
-          },
-        },
-        {
-          // One or more failed checkpoint deletion is a warning.
-          alert: 'CortexCheckpointDeletionFailed',
-          expr: |||
-            increase(cortex_ingester_checkpoint_deletions_failed_total[10m]) > 0
-          |||,
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.job }}/{{ $labels.instance }} failed to delete checkpoint.
-            |||,
-          },
-        },
-        {
-          // Two or more failed checkpoint deletion in 2h means something is wrong.
-          // We give this more buffer than creation as this is a less critical operation.
-          alert: 'CortexCheckpointDeletionFailed',
-          expr: |||
-            increase(cortex_ingester_checkpoint_deletions_failed_total[2h]) > 1
-          |||,
-          labels: {
-            severity: 'critical',
-          },
-          annotations: {
-            message: |||
-              {{ $labels.instance }} is failing to delete checkpoint.
-            |||,
-          },
-        },
-      ],
-    },
-    {
       name: 'cortex-rollout-alerts',
       rules: [
         {
@@ -548,30 +413,6 @@
     {
       name: 'cortex-provisioning',
       rules: [
-        {
-          alert: 'CortexProvisioningMemcachedTooSmall',
-          // 4 x in-memory series size = 24hrs of data.
-          expr: |||
-            (
-              4 *
-              sum by (%s) (cortex_ingester_memory_series * cortex_ingester_chunk_size_bytes_sum / cortex_ingester_chunk_size_bytes_count)
-               / 1e9
-            )
-              >
-            (
-              sum by (%s) (memcached_limit_bytes{job=~".+/memcached"}) / 1e9
-            )
-          ||| % [$._config.alert_aggregation_labels, $._config.alert_aggregation_labels],
-          'for': '15m',
-          labels: {
-            severity: 'warning',
-          },
-          annotations: {
-            message: |||
-              Chunk memcached cluster in %(alert_aggregation_variables)s is too small, should be at least {{ printf "%%.2f" $value }}GB.
-            ||| % $._config,
-          },
-        },
         {
           alert: 'CortexProvisioningTooManyActiveSeries',
           // We target each ingester to 1.5M in-memory series. This alert fires if the average

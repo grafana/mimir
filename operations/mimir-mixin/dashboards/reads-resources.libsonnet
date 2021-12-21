@@ -86,8 +86,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.ruler),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('Store-gateway')
       .addPanel(
         $.containerCPUUsagePanel('CPU', 'store-gateway'),
@@ -99,8 +98,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.goHeapInUsePanel('Memory (go heap inuse)', $._config.job_names.store_gateway),
       )
     )
-    .addRowIf(
-      std.member($._config.storage_engine, 'blocks'),
+    .addRow(
       $.row('')
       .addPanel(
         $.containerDiskWritesPanel('Disk Writes', 'store-gateway'),
