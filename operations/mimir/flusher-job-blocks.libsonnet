@@ -1,7 +1,7 @@
 {
   // Usage example:
   //
-  // local flusher_job = import 'cortex/flusher-job-blocks.libsonnet';
+  // local flusher_job = import 'mimir/flusher-job-blocks.libsonnet';
   //
   // flusher_job {
   //   'flusher-25': $.flusher_job_func('flusher-25', 'ingester-data-ingester-25'),

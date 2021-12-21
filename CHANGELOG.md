@@ -254,6 +254,29 @@
 
 ### Jsonnet (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
+* [CHANGE] Removed chunks storage support. #639
+  * Removed the following fields from `_config`:
+    * `storage_engine` (defaults to `blocks`)
+    * `querier_second_storage_engine` (not supported anymore)
+    * `table_manager_enabled`, `table_prefix`
+    * `memcached_index_writes_enabled` and `memcached_index_writes_max_item_size_mb`
+    * `storeMemcachedChunksConfig`
+    * `storeConfig`
+    * `max_chunk_idle`
+    * `schema` (the schema configmap is still added for backward compatibility reasons)
+    * `bigtable_instance` and `bigtable_project`
+    * `client_configs`
+    * `enabledBackends`
+    * `storage_backend`
+    * `cassandra_addresses`
+    * `s3_bucket_name`
+    * `ingester_deployment_without_wal` (was only used by chunks storage)
+    * `ingester` (was only used to configure chunks storage WAL)
+  * Removed the following CLI flags from `ingester_args`:
+    * `ingester.max-chunk-age`
+    * `ingester.max-stale-chunk-idle`
+    * `ingester.max-transfer-retries`
+    * `ingester.retain-period`
 * [CHANGE] Store gateway: set `-blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency`,
   `-blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency`,
   `-blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency`,

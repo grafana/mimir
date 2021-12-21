@@ -91,9 +91,6 @@
     'blocks-storage.tsdb.block-ranges-period': '2h',
     'blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
     'blocks-storage.tsdb.ship-interval': '1m',
-
-    // Disable TSDB blocks transfer because of persistent volumes
-    'ingester.max-transfer-retries': 0,
     'ingester.join-after': '0s',
 
     // Persist ring tokens so that when the ingester will be restarted

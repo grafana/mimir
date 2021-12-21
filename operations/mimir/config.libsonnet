@@ -5,13 +5,7 @@
     replication_factor: 3,
     external_url: error 'must define external url for cluster',
 
-    storage_backend: error 'must specify storage backend (cassandra, gcp, aws)',
-    table_prefix: $._config.namespace,
-    cassandra_addresses: error 'must specify cassandra addresses',
-    bigtable_instance: error 'must specify bigtable instance',
-    bigtable_project: error 'must specify bigtable project',
     aws_region: error 'must specify AWS region',
-    s3_bucket_name: error 'must specify S3 bucket name',
 
     // If false, ingesters are not unregistered on shutdown and left in the ring with
     // the LEAVING state. Setting to false prevents series resharding during ingesters rollouts,
@@ -25,17 +19,6 @@
     cortex_ruler_allow_multiple_replicas_on_same_node: false,
     cortex_querier_allow_multiple_replicas_on_same_node: false,
     cortex_query_frontend_allow_multiple_replicas_on_same_node: false,
-
-    // schema is used to generate the storage schema yaml file used by
-    // the Cortex chunks storage:
-    // - More information: https://github.com/cortexproject/cortex/pull/1072
-    // - Blocks storage doesn't support / uses the schema config.
-    schema: if $._config.storage_engine != 'blocks' then
-      error 'must specify a schema config'
-    else
-      [],
-
-    max_chunk_idle: '15m',
 
     test_exporter_enabled: false,
     test_exporter_start_time: error 'must specify test exporter start time',
@@ -52,47 +35,21 @@
 
     jaeger_agent_host: null,
 
-    // Use the Cortex chunks storage engine by default, while giving the ability
-    // to switch to blocks storage.
-    storage_engine: 'chunks',  // Available options are 'chunks' or 'blocks'
     blocks_storage_backend: 'gcs',  // Available options are 'gcs', 's3', 'azure'
     blocks_storage_bucket_name: error 'must specify blocks storage bucket name',
     blocks_storage_s3_endpoint: 's3.dualstack.us-east-1.amazonaws.com',
     blocks_storage_azure_account_name: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account name' else '',
     blocks_storage_azure_account_key: if $._config.blocks_storage_backend == 'azure' then error 'must specify azure account key' else '',
 
-    // Secondary storage engine is only used for querying.
-    querier_second_storage_engine: null,
-
     store_gateway_replication_factor: 3,
 
-    // By default ingesters will be run as StatefulSet with WAL.
-    // If this is set to true, ingesters will use staless deployments without WAL.
-    ingester_deployment_without_wal: false,
-
-    ingester: {
-      // These config options are only for the chunks storage.
-      wal_dir: '/wal_data',
-      statefulset_disk: '150Gi',
-    },
-
-    // Blocks storage engine doesn't require the table manager.
-    // When running blocks with chunks as secondary storage engine for querier only, we need table-manager to apply
-    // retention policies.
-    table_manager_enabled: $._config.storage_engine == 'chunks' || $._config.querier_second_storage_engine == 'chunks',
-
-    // Blocks storage engine doesn't support index-writes (for writes deduplication) cache.
-    memcached_index_writes_enabled: $._config.storage_engine != 'blocks',
-    memcached_index_writes_max_item_size_mb: 1,
-
-    // Index and chunks caches are supported by both blocks storage engine and chunks engine.
     memcached_index_queries_enabled: true,
     memcached_index_queries_max_item_size_mb: 5,
 
     memcached_chunks_enabled: true,
     memcached_chunks_max_item_size_mb: 1,
 
-    memcached_metadata_enabled: $._config.storage_engine == 'blocks',
+    memcached_metadata_enabled: true,
     memcached_metadata_max_item_size_mb: 1,
 
     // The query-tee is an optional service which can be used to send
@@ -102,54 +59,16 @@
     query_tee_backend_endpoints: [],
     query_tee_backend_preferred: '',
 
-    enabledBackends: [
-      backend
-      for backend in std.split($._config.storage_backend, ',')
-    ],
-
-    client_configs: {
-      aws:
-        if std.count($._config.enabledBackends, 'aws') > 0 then {
-          'dynamodb.api-limit': 10,
-          'dynamodb.url': 'https://%s' % $._config.aws_region,
-          's3.url': 'https://%s/%s' % [$._config.aws_region, $._config.s3_bucket_name],
-        } else {},
-      cassandra:
-        if std.count($._config.enabledBackends, 'cassandra') > 0 then {
-          'cassandra.keyspace': $._config.namespace,
-          'cassandra.addresses': $._config.cassandra_addresses,
-          'cassandra.replication-factor': $._config.replication_factor,
-        } else {},
-      gcp:
-        if std.count($._config.enabledBackends, 'gcp') > 0 then {
-          'bigtable.project': $._config.bigtable_project,
-          'bigtable.instance': $._config.bigtable_instance,
-        } else {},
-    },
-
-    storeConfig: self.storeMemcachedChunksConfig,
-
-    storeMemcachedChunksConfig: if $._config.memcached_chunks_enabled && ($._config.storage_engine == 'chunks' || $._config.querier_second_storage_engine == 'chunks') then
-      {
-        'store.chunks-cache.memcached.hostname': 'memcached.%s.svc.cluster.local' % $._config.namespace,
-        'store.chunks-cache.memcached.service': 'memcached-client',
-        'store.chunks-cache.memcached.timeout': '3s',
-      }
-    else {},
-
     grpcConfig:: {
       'server.grpc.keepalive.min-time-between-pings': '10s',
       'server.grpc.keepalive.ping-without-stream-allowed': true,
     },
 
     storageConfig:
-      $._config.client_configs.aws +
-      $._config.client_configs.cassandra +
-      $._config.client_configs.gcp +
       { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
     genericBlocksStorageConfig:: {
-      'store.engine': $._config.storage_engine,  // May still be chunks
+      'store.engine': 'blocks',
     },
     queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
@@ -179,12 +98,10 @@
     // Blocks storage configuration, used only when 'blocks' storage
     // engine is explicitly enabled.
     blocksStorageConfig: (
-      if $._config.storage_engine == 'blocks' || $._config.querier_second_storage_engine == 'blocks' then (
-        if $._config.blocks_storage_backend == 'gcs' then $._config.gcsBlocksStorageConfig
-        else if $._config.blocks_storage_backend == 's3' then $._config.s3BlocksStorageConfig
-        else if $._config.blocks_storage_backend == 'azure' then $._config.azureBlocksStorageConfig
-        else $._config.genericBlocksStorageConfig
-      ) else {}
+      if $._config.blocks_storage_backend == 'gcs' then $._config.gcsBlocksStorageConfig
+      else if $._config.blocks_storage_backend == 's3' then $._config.s3BlocksStorageConfig
+      else if $._config.blocks_storage_backend == 'azure' then $._config.azureBlocksStorageConfig
+      else $._config.genericBlocksStorageConfig
     ),
 
     // Querier component config (shared between the ruler and querier).
@@ -199,36 +116,13 @@
       // type queries. 32 days to allow for comparision over the last month (31d) and
       // then some.
       'store.max-query-length': '768h',
-    } + (
-      if $._config.storage_engine == 'chunks' then {
-        // Don't query ingesters for older queries.
-        // Chunks are held in memory for up to 6hrs right now. Additional 6h are granted for safety reasons because
-        // the remote writing Prometheus may have a delay or write requests into the database are queued.
-        'querier.query-ingesters-within': '12h',
 
-        // Don't query the chunk store for data younger than max_chunk_idle.
-        'querier.query-store-after': $._config.max_chunk_idle,
-      } else if $._config.storage_engine == 'blocks' then {
-        // Ingesters don't have data older than 13h, no need to ask them.
-        'querier.query-ingesters-within': '13h',
+      // Ingesters don't have data older than 13h, no need to ask them.
+      'querier.query-ingesters-within': '13h',
 
-        // No need to look at store for data younger than 12h, as ingesters have all of it.
-        'querier.query-store-after': '12h',
-      }
-    ) + (
-      if $._config.memcached_index_queries_enabled && ($._config.storage_engine == 'chunks' || $._config.querier_second_storage_engine == 'chunks') then
-        {
-          // Setting for index cache.
-          'store.index-cache-validity': '14m',  // ingester.retain-period=15m, 1m less for safety.
-          'store.index-cache-read.cache.enable-fifocache': true,
-          'store.index-cache-read.fifocache.max-size-items': 102400,
-          'store.index-cache-read.memcached.hostname': 'memcached-index-queries.%(namespace)s.svc.cluster.local' % $._config,
-          'store.index-cache-read.memcached.service': 'memcached-client',
-          'store.index-cache-read.memcached.timeout': '500ms',
-          'store.cache-lookups-older-than': '36h',
-        }
-      else {}
-    ),
+      // No need to look at store for data younger than 12h, as ingesters have all of it.
+      'querier.query-store-after': '12h',
+    },
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
     queryEngineConfig: {
@@ -473,7 +367,8 @@
     // if not empty, passed to overrides.yaml as another top-level field
     multi_kv_config: {},
 
-    schemaID: std.md5(std.toString($._config.schema)),
+    // TODO This should be removed but we're still keeping the schema for backward compatibility.
+    schemaID: std.md5(std.toString([])),
 
     enable_pod_priorities: true,
 
@@ -513,7 +408,7 @@
     configMap.new('schema-' + $._config.schemaID) +
     configMap.withData({
       'config.yaml': $.util.manifestYaml({
-        configs: $._config.schema,
+        configs: [],
       }),
     }),
 

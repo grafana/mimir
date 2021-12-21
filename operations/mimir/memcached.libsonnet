@@ -38,14 +38,6 @@ memcached {
     }
   else {},
 
-  // Dedicated memcached instance used to dedupe writes to the index.
-  memcached_index_writes: if $._config.memcached_index_writes_enabled then
-    $.memcached {
-      name: 'memcached-index-writes',
-      max_item_size: '%dm' % [$._config.memcached_index_writes_max_item_size_mb],
-    }
-  else {},
-
   // Memcached instance used to cache chunks.
   memcached_chunks: if $._config.memcached_chunks_enabled then
     $.memcached {
