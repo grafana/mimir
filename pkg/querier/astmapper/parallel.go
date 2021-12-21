@@ -54,10 +54,7 @@ func CanParallelize(node parser.Node, logger log.Logger) bool {
 		}
 
 		// Ensure there are no nested aggregations
-		nestedAggrs, err := EvalPredicate(n.Expr, func(node parser.Node) (bool, error) {
-			_, ok := node.(*parser.AggregateExpr)
-			return ok, nil
-		})
+		nestedAggrs, err := AnyNode(n.Expr, isAggregateExpr)
 
 		return err == nil && !nestedAggrs && CanParallelize(n.Expr, logger)
 
@@ -106,11 +103,13 @@ func CanParallelize(node parser.Node, logger log.Logger) bool {
 
 // containsAggregateExpr returns true if the given node contains an aggregate expression within its children.
 func containsAggregateExpr(n parser.Node) bool {
-	containsAggregate, _ := EvalPredicate(n, func(node parser.Node) (bool, error) {
-		_, ok := node.(*parser.AggregateExpr)
-		return ok, nil
-	})
+	containsAggregate, _ := AnyNode(n, isAggregateExpr)
 	return containsAggregate
+}
+
+func isAggregateExpr(n parser.Node) (bool, error) {
+	_, ok := n.(*parser.AggregateExpr)
+	return ok, nil
 }
 
 // ParallelizableFunc ensures that a promql function can be part of a parallel query.
