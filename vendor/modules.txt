@@ -164,6 +164,10 @@ github.com/cncf/xds/go/udpa/annotations
 github.com/cncf/xds/go/xds/annotations/v3
 github.com/cncf/xds/go/xds/core/v3
 github.com/cncf/xds/go/xds/type/matcher/v3
+# github.com/coreos/etcd v3.3.25+incompatible
+## explicit
+github.com/coreos/etcd/pkg/fileutil
+github.com/coreos/etcd/pkg/tlsutil
 # github.com/coreos/go-semver v0.3.0
 ## explicit
 github.com/coreos/go-semver/semver
@@ -342,8 +346,8 @@ github.com/gogo/protobuf/proto
 github.com/gogo/protobuf/protoc-gen-gogo/descriptor
 github.com/gogo/protobuf/sortkeys
 github.com/gogo/protobuf/types
-# github.com/gogo/status v1.1.0 => github.com/gogo/status v1.0.3
-## explicit
+# github.com/gogo/status v1.1.0
+## explicit; go 1.12
 github.com/gogo/status
 # github.com/golang-jwt/jwt/v4 v4.0.0
 ## explicit; go 1.15
@@ -420,7 +424,7 @@ github.com/grafana/dskit/services
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/test
 github.com/grafana/dskit/time
-# github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
+# github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 ## explicit; go 1.14
 github.com/grpc-ecosystem/go-grpc-middleware
 # github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.0.0-rc.2.0.20201207153454-9f6bf00c00a7
@@ -831,13 +835,11 @@ github.com/yuin/gopher-lua
 github.com/yuin/gopher-lua/ast
 github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
-# go.etcd.io/bbolt v1.3.6 => go.etcd.io/bbolt v1.3.5
+# go.etcd.io/bbolt v1.3.6
 ## explicit; go 1.12
 go.etcd.io/bbolt
-# go.etcd.io/etcd v3.3.25+incompatible => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
-## explicit; go 1.14
-go.etcd.io/etcd/pkg/fileutil
-go.etcd.io/etcd/pkg/tlsutil
+# go.etcd.io/etcd v3.3.25+incompatible
+## explicit
 go.etcd.io/etcd/pkg/transport
 # go.etcd.io/etcd/api/v3 v3.5.0
 ## explicit; go 1.16
@@ -1172,7 +1174,3 @@ sigs.k8s.io/yaml
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # google.golang.org/grpc => google.golang.org/grpc v1.38.0
-# github.com/grpc-ecosystem/go-grpc-middleware => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
-# go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
-# github.com/gogo/status => github.com/gogo/status v1.0.3
-# go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5

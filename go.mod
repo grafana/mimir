@@ -87,6 +87,7 @@ require (
 	github.com/cespare/xxhash v1.1.0 // indirect
 	github.com/cncf/udpa/go v0.0.0-20201120205902-5459f2c99403 // indirect
 	github.com/cncf/xds/go v0.0.0-20211001041855-01bcc9b48dfe // indirect
+	github.com/coreos/etcd v3.3.25+incompatible // indirect
 	github.com/coreos/go-semver v0.3.0 // indirect
 	github.com/coreos/go-systemd v0.0.0-20191104093116-d3cd4ed1dbcf // indirect
 	github.com/coreos/go-systemd/v22 v22.3.2 // indirect
@@ -212,18 +213,6 @@ replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
 // TODO review the change introduced by https://github.com/grpc/grpc-go/pull/4416 before upgrading to 1.39.0
 replace google.golang.org/grpc => google.golang.org/grpc v1.38.0
-
-// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
-replace github.com/grpc-ecosystem/go-grpc-middleware => github.com/grpc-ecosystem/go-grpc-middleware v1.2.2
-
-// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
-replace go.etcd.io/etcd => go.etcd.io/etcd v0.5.0-alpha.5.0.20200910180754-dd1b699fc489
-
-// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
-replace github.com/gogo/status => github.com/gogo/status v1.0.3
-
-// Pin in order to avoid upgrade through dskit, can be removed once we upgrade it to match dskit
-replace go.etcd.io/bbolt => go.etcd.io/bbolt v1.3.5
 
 replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211214083919-d837809b4669
 
