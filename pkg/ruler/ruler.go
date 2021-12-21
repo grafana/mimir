@@ -259,9 +259,9 @@ type Ruler struct {
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
 
-	ringCheckErrors               prometheus.Counter
-	rulerSync                     *prometheus.CounterVec
-	syncFailedGroupAuthorizations *prometheus.CounterVec
+	ringCheckErrors            prometheus.Counter
+	rulerSync                  *prometheus.CounterVec
+	groupAuthorizationFailures *prometheus.GaugeVec
 
 	allowedTenants *util.AllowedTenants
 	authorizer     RuleGroupAuthorizer
@@ -304,8 +304,8 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
 
-		syncFailedGroupAuthorizations: promauto.With(reg).NewCounterVec(prometheus.CounterOpts{
-			Name: "cortex_ruler_sync_groups_authr_failed_total",
+		groupAuthorizationFailures: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+			Name: "cortex_ruler_sync_unauthorized_groups",
 			Help: "Total number of skipped rule groups during sync due to failed authorizations.",
 		}, []string{"user"}),
 	}
@@ -548,7 +548,10 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 	}
 
 	for userID, groups := range userGroups {
-		var amendedList rulespb.RuleGroupList
+		var (
+			amendedList  rulespb.RuleGroupList
+			unauthorized int
+		)
 		for _, g := range groups {
 			isAuthorized, err := r.authorizer.IsAuthorized(ctx, g)
 			switch {
@@ -561,12 +564,13 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 				)
 				fallthrough
 			case !isAuthorized:
-				r.syncFailedGroupAuthorizations.WithLabelValues(userID).Inc()
+				unauthorized++
 			default:
 				amendedList = append(amendedList, g)
 			}
 		}
 		userGroups[userID] = amendedList
+		r.groupAuthorizationFailures.WithLabelValues(userID).Set(float64(unauthorized))
 	}
 }
 

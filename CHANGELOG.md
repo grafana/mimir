@@ -122,7 +122,7 @@
   * Added `-ruler.tenant-federation.enabled` config flag.
   * Added support for `source_tenants` field on rule groups.
   * Exposed `ruler.RuleGroupAuthorizer` interface to allow injecting authorization for federated rules during storage synchronisations.
-  * Exposed `cortex_ruler_sync_groups_authr_failed_total` metric to track the number of ignored rule groups during storage synchronisations.
+  * Exposed `cortex_ruler_sync_unauthorized_groups` gauge to track the number of ignored rule groups during storage synchronisations.
 * [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of the crash. It needs to be enabled by setting `-activity-tracker.filepath` to non-empty path. Currently only Store-gateway component uses this feature. #631
 * [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_workers_enqueued_requests_total` metric to track the number of requests enqueued in each query-scheduler. #384
 * [ENHANCEMENT] Add a flag (`--proxy.compare-use-relative-error`) in the query-tee to compare floating point values using relative error. #208
