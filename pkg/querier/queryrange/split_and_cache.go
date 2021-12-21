@@ -183,7 +183,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	execReqs := splitReqs.prepareDownstreamRequests()
 
 	if len(execReqs) > 0 {
-		execResps, err := DoRequests(ctx, s.next, execReqs, s.limits, true)
+		execResps, err := DoRequests(ctx, s.next, execReqs, true)
 		if err != nil {
 			return nil, err
 		}
