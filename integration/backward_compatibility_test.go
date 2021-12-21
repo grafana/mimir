@@ -8,6 +8,7 @@ package integration
 
 import (
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -20,12 +21,23 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
+// GetExtraArgs returns the extra args to pass to the Docker command used to run Mimir.
+func GetPreviousImage() string {
+	// Get extra args from the MIMIR_EXTRA_ARGS env variable
+	// falling back to an empty list
+	if os.Getenv("MIMIR_PREVIOUS_IMAGE") != "" {
+		return os.Getenv("MIMIR_PREVIOUS_IMAGE")
+	}
+
+	return "quay.io/cortexproject/cortex:v1.11.0"
+}
+
 var (
 	// If you change the image tag, remember to update it in the preloading done
 	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
 	//nolint:unused
 	previousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.11.0": nil,
+		GetPreviousImage(): nil,
 	}
 )
 
