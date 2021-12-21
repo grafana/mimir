@@ -195,9 +195,9 @@ Mixin:
 
 * [ENHANCEMENT] Added `/api/v1/query_exemplars` API endpoint support (no results comparison). #168
 
-Blocksconvert:
+### Blocksconvert:
 
-* [CHANGE] Blocksconvert tool was removed from Mimir.
+* [CHANGE] Blocksconvert tool was removed from Mimir. #637
 
 ## main / unreleased
 
