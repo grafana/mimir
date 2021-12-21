@@ -674,13 +674,13 @@ func testMetadataQueriesWithBlocksStorage(
 			},
 			labelNames: []string{labels.MetricName, lastSeriesInStorageName, lastSeriesInIngesterBlocksName, firstSeriesInIngesterHeadName},
 		},
-		"query metadata entirely outside the ingester range should return the head data as well": {
+		"query metadata entirely outside the ingester range should not return the head data": {
 			from: lastSeriesInStorageTs.Add(-2 * blockRangePeriod),
 			to:   lastSeriesInStorageTs,
 			seriesTests: []seriesTest{
 				{
 					lookup: firstSeriesInIngesterHeadName,
-					ok:     true,
+					ok:     false,
 					resp:   firstSeriesInIngesterHead.Labels,
 				},
 				{
@@ -696,7 +696,7 @@ func testMetadataQueriesWithBlocksStorage(
 			labelValuesTests: []labelValuesTest{
 				{
 					label: labels.MetricName,
-					resp:  []string{lastSeriesInStorageName, firstSeriesInIngesterHeadName},
+					resp:  []string{lastSeriesInStorageName},
 				},
 				{
 					label:   labels.MetricName,
@@ -705,11 +705,11 @@ func testMetadataQueriesWithBlocksStorage(
 				},
 				{
 					label:   labels.MetricName,
-					resp:    []string{firstSeriesInIngesterHeadName},
+					resp:    []string{},
 					matches: []string{firstSeriesInIngesterHeadName},
 				},
 			},
-			labelNames: []string{labels.MetricName, lastSeriesInStorageName, firstSeriesInIngesterHeadName},
+			labelNames: []string{labels.MetricName, lastSeriesInStorageName},
 		},
 	}
 

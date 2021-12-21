@@ -25,7 +25,6 @@ import (
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
-	"github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
@@ -97,33 +96,25 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 	spanlog, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.Select")
 	defer spanlog.Finish()
 
-	if sp.Func == "series" {
-		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(sp.Start), model.Time(sp.End), matchers...)
-		if err != nil {
-			return storage.ErrSeriesSet(err)
-		}
-		return series.MetricsToSeriesSet(ms)
-	}
-
 	minT, maxT := sp.Start, sp.End
 
 	// If queryIngestersWithin is enabled, we do manipulate the query mint to query samples up until
 	// now - queryIngestersWithin, because older time ranges are covered by the storage. This
 	// optimization is particularly important for the blocks storage where the blocks retention in the
 	// ingesters could be way higher than queryIngestersWithin.
-	if q.queryIngestersWithin > 0 {
-		now := time.Now()
-		origMinT := minT
-		minT = math.Max64(minT, util.TimeToMillis(now.Add(-q.queryIngestersWithin)))
+	minT = int64(clampTime(q.ctx, model.Time(minT), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", spanlog))
 
-		if origMinT != minT {
-			level.Debug(spanlog).Log("msg", "the min time of the query to ingesters has been manipulated", "original", origMinT, "updated", minT)
-		}
+	if minT > maxT {
+		level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
+		return storage.EmptySeriesSet()
+	}
 
-		if minT > maxT {
-			level.Debug(spanlog).Log("msg", "empty query time range after min time manipulation")
-			return storage.EmptySeriesSet()
+	if sp.Func == "series" {
+		ms, err := q.distributor.MetricsForLabelMatchers(ctx, model.Time(minT), model.Time(maxT), matchers...)
+		if err != nil {
+			return storage.ErrSeriesSet(err)
 		}
+		return series.MetricsToSeriesSet(ms)
 	}
 
 	return q.streamingSelect(ctx, minT, maxT, matchers)
@@ -183,7 +174,14 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 }
 
 func (q *distributorQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	lvs, err := q.distributor.LabelValuesForLabelName(q.ctx, model.Time(q.mint), model.Time(q.maxt), model.LabelName(name), matchers...)
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", q.logger)
+
+	if minT > model.Time(q.maxt) {
+		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+		return nil, nil, nil
+	}
+
+	lvs, err := q.distributor.LabelValuesForLabelName(q.ctx, minT, model.Time(q.maxt), model.LabelName(name), matchers...)
 
 	return lvs, nil, err
 }
@@ -192,11 +190,18 @@ func (q *distributorQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, 
 	log, ctx := spanlogger.NewWithLogger(q.ctx, q.logger, "distributorQuerier.LabelNames")
 	defer log.Span.Finish()
 
+	minT := clampTime(q.ctx, model.Time(q.mint), q.queryIngestersWithin, model.Now().Add(-q.queryIngestersWithin), true, "min", "query ingesters within", log)
+
+	if minT > model.Time(q.maxt) {
+		level.Debug(q.logger).Log("msg", "empty time range after min time manipulation")
+		return nil, nil, nil
+	}
+
 	if len(matchers) > 0 && !q.queryLabelNamesWithMatchers {
 		return q.legacyLabelNamesWithMatchersThroughMetricsCall(ctx, matchers...)
 	}
 
-	ln, err := q.distributor.LabelNames(ctx, model.Time(q.mint), model.Time(q.maxt), matchers...)
+	ln, err := q.distributor.LabelNames(ctx, minT, model.Time(q.maxt), matchers...)
 	return ln, nil, err
 }
 

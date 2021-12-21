@@ -1248,7 +1248,7 @@ func Test_Ingester_LabelNames(t *testing.T) {
 		expected := []string{"__name__", "status", "route"}
 
 		// Get label names
-		res, err := i.LabelNames(ctx, &client.LabelNamesRequest{})
+		res, err := i.LabelNames(ctx, &client.LabelNamesRequest{EndTimestampMs: math.MaxInt64})
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expected, res.LabelNames)
 	})
@@ -1311,7 +1311,7 @@ func Test_Ingester_LabelValues(t *testing.T) {
 
 	// Get label values
 	for labelName, expectedValues := range expected {
-		req := &client.LabelValuesRequest{LabelName: labelName}
+		req := &client.LabelValuesRequest{LabelName: labelName, EndTimestampMs: math.MaxInt64}
 		res, err := i.LabelValues(ctx, req)
 		require.NoError(t, err)
 		assert.ElementsMatch(t, expectedValues, res.LabelValues)
@@ -1802,7 +1802,7 @@ func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	// Mock request
 	userID := "test"
 	ctx := user.InjectOrgID(context.Background(), userID)
-	req := &client.LabelNamesRequest{}
+	req := &client.LabelNamesRequest{EndTimestampMs: math.MaxInt64}
 
 	res, err := i.LabelNames(ctx, req)
 	require.NoError(t, err)
@@ -1963,7 +1963,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[2].lbls)},
 			},
 		},
-		"should NOT filter metrics by time range to always return known metrics even when queried for older time ranges": {
+		"should filter metrics by time range to return nothing when queried for older time ranges": {
 			from: 100,
 			to:   1000,
 			matchers: []*client.LabelMatchers{{
@@ -1971,10 +1971,7 @@ func Test_Ingester_MetricsForLabelMatchers(t *testing.T) {
 					{Type: client.EQUAL, Name: model.MetricNameLabel, Value: "test_1"},
 				},
 			}},
-			expected: []*mimirpb.Metric{
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[0].lbls)},
-				{Labels: mimirpb.FromLabelsToLabelAdapters(fixtures[1].lbls)},
-			},
+			expected: []*mimirpb.Metric{},
 		},
 		"should not return duplicated metrics on overlapping matchers": {
 			from: math.MinInt64,

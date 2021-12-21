@@ -807,11 +807,6 @@ The `querier_config` configures the querier.
 # CLI flag: -querier.query-ingesters-within
 [query_ingesters_within: <duration> | default = 0s]
 
-# Query long-term store for series, label values and label names APIs. Works
-# only with blocks engine.
-# CLI flag: -querier.query-store-for-labels-enabled
-[query_store_for_labels_enabled: <boolean> | default = false]
-
 # True to enable queriers to use an optimized implementation which passes down
 # to ingesters the label matchers when running the label names API. Can be
 # enabled once all ingesters run a version >= the one where this option has been
