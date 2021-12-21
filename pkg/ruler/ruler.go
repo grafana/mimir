@@ -190,7 +190,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.BoolVar(&cfg.EnableQueryStats, "ruler.query-stats-enabled", false, "Report the wall time for ruler queries to complete as a per user metric and as an info level log message.")
 
-	f.BoolVar(&cfg.TenantFederation.Enabled, "ruler.tenant-federation.enabled", false, "Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's `source_tenants` field.")
+	f.BoolVar(&cfg.TenantFederation.Enabled, "ruler.tenant-federation.enabled", false, "Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's `source_tenants` field. If this flag is set to `false` when there are already created federated rule groups, then these rules groups will be skipped during evaluations.")
 
 	cfg.RingCheckPeriod = 5 * time.Second
 }
@@ -532,6 +532,10 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
+	if !r.cfg.TenantFederation.Enabled {
+		removeFederatedRuleGroups(configs)
+	}
+
 	r.removeUnauthorizedGroups(ctx, configs)
 
 	// This will also delete local group files for users that are no longer in 'configs' map.
@@ -563,6 +567,19 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 			}
 		}
 		userGroups[userID] = amendedList
+	}
+}
+
+func removeFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
+	for userID, groupList := range groups {
+		var amended rulespb.RuleGroupList
+		for _, group := range groupList {
+			if len(group.GetSourceTenants()) > 1 {
+				continue
+			}
+			amended = append(amended, group)
+		}
+		groups[userID] = amended
 	}
 }
 

@@ -1379,7 +1379,9 @@ ring:
 
 tenant_federation:
   # Enable running rule groups against multiple tenants. The tenant IDs involved
-  # need to be in the rule group's `source_tenants` field.
+  # need to be in the rule group's `source_tenants` field. If this flag is set
+  # to `false` when there are already created federated rule groups, then these
+  # rules groups will be skipped during evaluations.
   # CLI flag: -ruler.tenant-federation.enabled
   [enabled: <boolean> | default = false]
 ```

@@ -280,6 +280,70 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 	}
 }
 
+// TestRuler_TenantFederationFlag tests the case where Config.TenantFederation.Enabled = true but there are
+// already existing federated rules in the store. We expect that these federated rules aren't being evaluated.
+func TestRuler_TenantFederationFlag(t *testing.T) {
+	const userID = "tenant-1"
+
+	regularRuleGroup := &rulespb.RuleGroupDesc{
+		Namespace:     "ns",
+		Name:          "non-federated",
+		User:          userID,
+		SourceTenants: []string{"tenant-2"},
+	}
+	federatedRuleGroup := &rulespb.RuleGroupDesc{
+		Namespace:     "ns",
+		Name:          "federated",
+		User:          userID,
+		SourceTenants: []string{"tenant-2", "tenant-3"},
+	}
+
+	testCases := map[string]struct {
+		tenantFederationEnabled bool
+		existingRules           rulespb.RuleGroupList
+
+		expectedRunningGroupsNames []string
+	}{
+		"tenant federation disabled": {
+			tenantFederationEnabled: false,
+			existingRules:           rulespb.RuleGroupList{regularRuleGroup, federatedRuleGroup},
+
+			expectedRunningGroupsNames: []string{regularRuleGroup.Name},
+		},
+		"tenant federation enabled": {
+			tenantFederationEnabled: true,
+			existingRules:           rulespb.RuleGroupList{regularRuleGroup, federatedRuleGroup},
+
+			expectedRunningGroupsNames: []string{regularRuleGroup.Name, federatedRuleGroup.Name},
+		},
+	}
+
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+
+			cfg := defaultRulerConfig(t)
+			cfg.TenantFederation.Enabled = tc.tenantFederationEnabled
+			existingRules := map[string]rulespb.RuleGroupList{userID: tc.existingRules}
+
+			r := buildRuler(t, cfg, newMockRuleStore(existingRules), nil)
+
+			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
+			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r)) })
+
+			r.syncRules(context.Background(), rulerSyncReasonInitial)
+
+			loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID))
+			require.NoError(t, err)
+
+			loadedGroupsNames := make([]string, len(loadedGroups))
+			for i, g := range loadedGroups {
+				loadedGroupsNames[i] = g.Group.Name
+			}
+			require.ElementsMatch(t, tc.expectedRunningGroupsNames, loadedGroupsNames)
+		})
+	}
+}
+
 func TestRuler_Authorizer(t *testing.T) {
 	require.Contains(t, mockRules, "user1", "test data has changed, refactor this test too")
 	require.Contains(t, mockRules, "user2", "test data has changed, refactor this test too")
