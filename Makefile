@@ -2,7 +2,7 @@
 # WARNING: do not commit to a repository!
 -include Makefile.local
 
-.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets
+.PHONY: all test test-with-race integration-tests cover clean images protos exes dist doc clean-doc check-doc push-multiarch-build-image license check-license format check-mixin check-mixin-jb check-mixin-mixtool checkin-mixin-playbook build-mixin format-mixin check-jsonnet-manifests format-jsonnet-manifests push-multiarch-mimir list-image-targets check-jsonnet-getting-started
 .DEFAULT_GOAL := all
 
 # Version number
@@ -163,7 +163,7 @@ mimir-build-image/$(UPTODATE): mimir-build-image/*
 # All the boiler plate for building golang follows:
 SUDO := $(shell docker info >/dev/null 2>&1 || echo "sudo -E")
 BUILD_IN_CONTAINER := true
-LATEST_BUILD_IMAGE_TAG ?= 20211111_update-go-1.17.3-4e9f65408
+LATEST_BUILD_IMAGE_TAG ?= import-jsonnet-readme-2418fd778-WIP
 
 # TTY is parameterized to allow Google Cloud Builder to run builds,
 # as it currently disallows TTY devices. This value needs to be overridden
@@ -312,6 +312,7 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
 	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/guides/overrides-exporter.md
+	embedmd -w operations/mimir/README.md
 
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
 	prettier --write "**/*.md"
@@ -361,7 +362,7 @@ clean-doc:
 		./docs/guides/encryption-at-rest.md
 
 check-doc: doc
-	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md ./operations/mimir-mixin/docs/*.md
+	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md ./operations/mimir/*.md ./operations/mimir-mixin/docs/*.md
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
@@ -404,6 +405,16 @@ check-jsonnet-manifests: format-jsonnet-manifests
 
 format-jsonnet-manifests:
 	@find $(JSONNET_MANIFESTS_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
+
+check-jsonnet-getting-started:
+	# Start from a clean setup.
+	rm -rf jsonnet-example
+
+	# We want to test any change in this branch/PR, so after installing Mimir jsonnet
+	# we replace it with the current code.
+	cat ./operations/mimir/getting-started.sh \
+		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
+		| bash
 
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check

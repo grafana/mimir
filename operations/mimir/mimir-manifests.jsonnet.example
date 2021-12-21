@@ -1,6 +1,6 @@
-local cortex = import "cortex/cortex.libsonnet";
+local mimir = import "mimir/cortex.libsonnet";
 
-cortex {
+mimir {
   _config+:: {
     namespace: "default",
     schema: [{

@@ -13,6 +13,7 @@ website/content/en/docs
 e2e_integration_test*
 active-query-tracker
 dist/
+jsonnet-example/
 
 # Binaries built from ./cmd
 /blocksconvert

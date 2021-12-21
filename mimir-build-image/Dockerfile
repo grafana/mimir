@@ -34,6 +34,11 @@ RUN GOARCH=$(go env GOARCH) && \
 	chmod +x shfmt && \
 	mv shfmt /usr/bin
 
+ENV TANKA_VERSION=0.19.0
+RUN GOARCH=$(go env GOARCH) && \
+    curl -fSL -o "/usr/bin/tk" "https://github.com/grafana/tanka/releases/download/v${TANKA_VERSION}/tk-linux-${GOARCH}" && \
+    chmod a+x /usr/bin/tk
+
 RUN curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh| sh -s -- -b /usr/bin v1.27.0
 
 RUN GO111MODULE=on \
