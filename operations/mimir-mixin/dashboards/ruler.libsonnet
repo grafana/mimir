@@ -148,7 +148,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.kvStoreRow('Ruler - Key-value store for rulers ring', 'ruler', 'ruler')
     )
     .addRow(
-      $.row('Ruler')
+      $.row('Ruler - Blocks storage')
       .addPanel(
         $.panel('Number of store-gateways hit per Query') +
         $.latencyPanel('cortex_querier_storegateway_instances_hit_per_query', '{%s}' % $.jobMatcher($._config.job_names.ruler), multiplier=1) +
