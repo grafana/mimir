@@ -691,87 +691,106 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 func TestRulerFederatedRules(t *testing.T) {
 	const tenant1, tenant2, tenant3 = "tenant-1", "tenant-2", "tenant-3"
 
-	s, err := e2e.NewScenario(networkName)
-	require.NoError(t, err)
-	defer s.Close()
-
-	// Start dependencies.
-	consul := e2edb.NewConsul()
-	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
-	require.NoError(t, s.StartAndWaitReady(minio, consul))
-
-	flags := mergeFlags(
-		BlocksStorageFlags(),
-		RulerFlags(),
-		map[string]string{
-			"-ruler.tenant-federation.enabled": "true",
-			"-tenant-federation.enabled":       "true",
-			"-distributor.replication-factor":  "1",
-			// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
-			"-querier.store-gateway-addresses": "localhost:12345",
-		},
-	)
-
-	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
-	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
-
-	// Wait until both the distributor and ruler have updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-
-	// Generate some series under different tenants
-	sampleTime := time.Now()
-	pushedSeriesCount := 0
-
-	for _, tenantID := range []string{tenant1, tenant2} {
-		client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
-		require.NoError(t, err)
-
-		series, _ := generateSeries("metric", sampleTime)
-
-		res, err := client.Push(series)
-		require.NoError(t, err)
-		require.Equal(t, 200, res.StatusCode)
-
-		pushedSeriesCount++
+	type instantQuerier interface {
+		Query(query string, ts time.Time) (model.Value, error)
 	}
 
-	// Create a client as tenant3
-	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tenant3)
-	require.NoError(t, err)
-
-	// Create some federated rules under the same tenant
-	namespace := "test_namespace"
 	// A query that should aggregate over all labels and over the past hour, so race conditions are unlikely
-	ruleGroup := ruleGroupWithRule("ten", "count:metric", "count(sum_over_time(metric[1h]))")
-	ruleGroup.Interval = model.Duration(time.Second / 4)
-	ruleGroup.SourceTenants = []string{tenant1, tenant2}
-	require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
+	federatedRuleGroup := ruleGroupWithRule("ten", "count:metric", "count(sum_over_time(metric[1h]))")
+	federatedRuleGroup.Interval = model.Duration(time.Second / 4)
+	federatedRuleGroup.SourceTenants = []string{tenant1, tenant2}
 
-	// Wait until the user manager is created. This means the rule groups is loaded
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+	testCases := map[string]struct {
+		tenantsWithMetrics []string          // will generate series `metric{}` in each tenant
+		ruleOwner          string            // will create the federated rule under this tenant
+		ruleGroup          rulefmt.RuleGroup // group to create under ruleOwner and wait to run
+		queryAssertion     func(q instantQuerier)
+	}{
+		"separate source tenants and destination tenant": {
+			tenantsWithMetrics: []string{tenant1, tenant2},
+			ruleOwner:          tenant3,
+			ruleGroup:          federatedRuleGroup,
+			queryAssertion: func(q instantQuerier) {
+				result, err := q.Query("count:metric", time.Now())
+				require.NoError(t, err)
+				require.Len(t, result, 1)
+				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(2)) // 2 == len([]string{tenant1, tenant2})
+			},
+		},
+	}
 
-	// Check to ensure the rules running in the ruler match what was set
-	rgs, err := c.GetRuleGroups()
-	retrievedNamespace, exists := rgs[namespace]
-	require.NoError(t, err)
-	require.True(t, exists)
-	require.Len(t, retrievedNamespace, 1)
-	require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, ruleGroup.SourceTenants)
+	for name, tc := range testCases {
+		t.Run(name, func(t *testing.T) {
+			s, err := e2e.NewScenario(networkName)
+			require.NoError(t, err)
+			defer s.Close()
 
-	// Wait for at least one evaluation
-	ruleEvaluationsRightAfterPush, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
-	require.NoError(t, err)
-	require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(ruleEvaluationsRightAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
+			// Start dependencies.
+			consul := e2edb.NewConsul()
+			minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+			require.NoError(t, s.StartAndWaitReady(minio, consul))
 
-	// Check that the resulting rule was indeed evaluated across both tenants
-	result, err := c.Query("count:metric", time.Now())
-	require.NoError(t, err)
-	require.Len(t, result, 1)
-	require.Equal(t, float64(result.(model.Vector)[0].Value), float64(pushedSeriesCount))
+			flags := mergeFlags(
+				BlocksStorageFlags(),
+				RulerFlags(),
+				map[string]string{
+					"-ruler.tenant-federation.enabled": "true",
+					"-tenant-federation.enabled":       "true",
+					"-distributor.replication-factor":  "1",
+					// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
+					"-querier.store-gateway-addresses": "localhost:12345",
+				},
+			)
+
+			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
+			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+			require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+
+			// Wait until both the distributor and ruler have updated the ring.
+			require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+
+			// Generate some series under different tenants
+			sampleTime := time.Now()
+			for _, tenantID := range tc.tenantsWithMetrics {
+				client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
+				require.NoError(t, err)
+
+				series, _ := generateSeries("metric", sampleTime)
+
+				res, err := client.Push(series)
+				require.NoError(t, err)
+				require.Equal(t, 200, res.StatusCode)
+			}
+
+			// Create a client as owner tenant to upload groups and then make assertions
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleOwner)
+			require.NoError(t, err)
+
+			namespace := "test_namespace"
+			require.NoError(t, c.SetRuleGroup(tc.ruleGroup, namespace))
+
+			// Wait until the user manager is created. This means the rule groups is loaded
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+
+			// Check to ensure the rules running in the ruler match what was set
+			rgs, err := c.GetRuleGroups()
+			retrievedNamespace, exists := rgs[namespace]
+			require.NoError(t, err)
+			require.True(t, exists)
+			require.Len(t, retrievedNamespace, 1)
+			require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, tc.ruleGroup.SourceTenants)
+
+			// Wait for at least one evaluation
+			ruleEvaluationsRightAfterPush, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
+			require.NoError(t, err)
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(ruleEvaluationsRightAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
+
+			tc.queryAssertion(c)
+		})
+	}
 }
 
 func ruleGroupMatcher(user, namespace, groupName string) *labels.Matcher {
