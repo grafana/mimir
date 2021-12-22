@@ -11,16 +11,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
-var experimentalFeaturesInUse = promauto.NewCounterVec(
+var experimentalFeaturesInUse = promauto.NewCounter(
 	prometheus.CounterOpts{
 		Namespace: "cortex",
 		Name:      "experimental_features_used_total",
 		Help:      "The number of experimental features in use.",
-	}, []string{"feature"},
+	},
 )
 
 // WarnExperimentalUse logs a warning and increments the experimental features metric.
 func WarnExperimentalUse(feature string) {
 	level.Warn(Logger).Log("msg", "experimental feature in use", "feature", feature)
-	experimentalFeaturesInUse.WithLabelValues(feature).Inc()
+	experimentalFeaturesInUse.Inc()
 }
