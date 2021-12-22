@@ -194,7 +194,8 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 type MultiTenantManager interface {
 	// SyncRuleGroups is used to sync the Manager with rules from the RuleStore.
 	// If existing user is missing in the ruleGroups map, its ruler manager will be stopped.
-	SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList)
+	// A list of all such users will be returned.
+	SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) []string
 	// GetRules fetches rules for a particular tenant (userID).
 	GetRules(userID string) []*promRules.Group
 	// Stop stops all Manager components.
@@ -523,7 +524,10 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 	r.removeUnauthorizedGroups(ctx, configs)
 
 	// This will also delete local group files for users that are no longer in 'configs' map.
-	r.manager.SyncRuleGroups(ctx, configs)
+	deletedUsers := r.manager.SyncRuleGroups(ctx, configs)
+	for _, u := range deletedUsers {
+		r.syncUnauthorizedGroups.DeleteLabelValues(u)
+	}
 }
 
 func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[string]rulespb.RuleGroupList) {
