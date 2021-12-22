@@ -11,6 +11,9 @@
     $._config.distributorConfig +
     $._config.rulerClientConfig +
     $._config.rulerLimitsConfig +
+    $._config.queryBlocksStorageConfig +
+    $.blocks_metadata_caching_config +
+    $.bucket_index_config
     {
       target: 'ruler',
       // Alertmanager configs

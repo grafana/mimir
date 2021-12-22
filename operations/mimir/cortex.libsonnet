@@ -13,6 +13,8 @@
 (import 'ruler.libsonnet') +
 (import 'alertmanager.libsonnet') +
 (import 'query-scheduler.libsonnet') +
+(import 'compactor.libsonnet') +
+(import 'store-gateway.libsonnet') +
 
 // Supporting services
 (import 'etcd.libsonnet') +
