@@ -695,10 +695,12 @@ func TestRulerFederatedRules(t *testing.T) {
 		Query(query string, ts time.Time) (model.Value, error)
 	}
 
-	// A query that should aggregate over all labels and over the past hour, so race conditions are unlikely
-	federatedRuleGroup := ruleGroupWithRule("ten", "count:metric", "count(sum_over_time(metric[1h]))")
-	federatedRuleGroup.Interval = model.Duration(time.Second / 4)
-	federatedRuleGroup.SourceTenants = []string{tenant1, tenant2}
+	ruleGroupWithRuleAndSourceTenants := func(ruleName, expression string, sourceTenants []string) rulefmt.RuleGroup {
+		g := ruleGroupWithRule("x", ruleName, expression)
+		g.Interval = model.Duration(time.Second / 4)
+		g.SourceTenants = sourceTenants
+		return g
+	}
 
 	testCases := map[string]struct {
 		tenantsWithMetrics []string          // will generate series `metric{}` in each tenant
@@ -709,12 +711,46 @@ func TestRulerFederatedRules(t *testing.T) {
 		"separate source tenants and destination tenant": {
 			tenantsWithMetrics: []string{tenant1, tenant2},
 			ruleOwner:          tenant3,
-			ruleGroup:          federatedRuleGroup,
+			ruleGroup: ruleGroupWithRuleAndSourceTenants(
+				"count:metric",
+				"count(sum_over_time(metric[1h]))",
+				[]string{tenant1, tenant2},
+			),
 			queryAssertion: func(q instantQuerier) {
 				result, err := q.Query("count:metric", time.Now())
 				require.NoError(t, err)
 				require.Len(t, result, 1)
-				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(2)) // 2 == len([]string{tenant1, tenant2})
+				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(2)) // i.e. the number of tenants
+			},
+		},
+		"__tenant_id__ is present on all metrics for federated rules": {
+			tenantsWithMetrics: []string{tenant1, tenant2, tenant3},
+			ruleOwner:          tenant3,
+			ruleGroup: ruleGroupWithRuleAndSourceTenants(
+				"count_by_tenant_id:metric",
+				"count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
+				[]string{tenant1, tenant2, tenant3},
+			),
+			queryAssertion: func(q instantQuerier) {
+				result, err := q.Query("count_by_tenant_id:metric", time.Now())
+				require.NoError(t, err)
+				require.Len(t, result, 1)
+				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(3)) // i.e. the number of tenants
+			},
+		},
+		"__tenant_id__ is present on metrics for federated rules when source tenants == owner": {
+			tenantsWithMetrics: []string{tenant1},
+			ruleOwner:          tenant1,
+			ruleGroup: ruleGroupWithRuleAndSourceTenants(
+				"count_by_tenant_id:metric",
+				"count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
+				[]string{tenant1, tenant2, tenant3},
+			),
+			queryAssertion: func(q instantQuerier) {
+				result, err := q.Query("count_by_tenant_id:metric", time.Now())
+				require.NoError(t, err)
+				require.Len(t, result, 1)
+				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(1)) // i.e. the number of tenants
 			},
 		},
 	}
