@@ -5,7 +5,7 @@
 (import 'config.libsonnet') +
 (import 'consul.libsonnet') +
 
-// Cortex services
+// Mimir services
 (import 'distributor.libsonnet') +
 (import 'ingester.libsonnet') +
 (import 'querier.libsonnet') +
@@ -19,4 +19,7 @@
 // Supporting services
 (import 'etcd.libsonnet') +
 (import 'memcached.libsonnet') +
-(import 'test-exporter.libsonnet')
+(import 'test-exporter.libsonnet') +
+
+// Mimir features
+(import 'query-sharding.libsonnet')
