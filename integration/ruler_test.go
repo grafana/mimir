@@ -689,8 +689,7 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 // which aggregates the metrics from tenant-1 and tenant-2. The test asserts that the resulting timeseries from
 // the rule indeed contained data from both tenants.
 func TestRulerFederatedRules(t *testing.T) {
-	const tenant1, tenant2 = "tenant-1", "tenant-2"
-	tenantIDs := []string{tenant1, tenant2}
+	const tenant1, tenant2, tenant3 = "tenant-1", "tenant-2", "tenant-3"
 
 	s, err := e2e.NewScenario(networkName)
 	require.NoError(t, err)
@@ -727,7 +726,7 @@ func TestRulerFederatedRules(t *testing.T) {
 	sampleTime := time.Now()
 	pushedSeriesCount := 0
 
-	for _, tenantID := range tenantIDs {
+	for _, tenantID := range []string{tenant1, tenant2} {
 		client, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", tenantID)
 		require.NoError(t, err)
 
@@ -740,8 +739,8 @@ func TestRulerFederatedRules(t *testing.T) {
 		pushedSeriesCount++
 	}
 
-	// Create a client as tenant1
-	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tenant1)
+	// Create a client as tenant3
+	c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tenant3)
 	require.NoError(t, err)
 
 	// Create some federated rules under the same tenant
@@ -749,7 +748,7 @@ func TestRulerFederatedRules(t *testing.T) {
 	// A query that should aggregate over all labels and over the past hour, so race conditions are unlikely
 	ruleGroup := ruleGroupWithRule("ten", "count:metric", "count(sum_over_time(metric[1h]))")
 	ruleGroup.Interval = model.Duration(time.Second / 4)
-	ruleGroup.SourceTenants = tenantIDs
+	ruleGroup.SourceTenants = []string{tenant1, tenant2}
 	require.NoError(t, c.SetRuleGroup(ruleGroup, namespace))
 
 	// Wait until the user manager is created. This means the rule groups is loaded
