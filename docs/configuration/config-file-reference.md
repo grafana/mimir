@@ -155,6 +155,17 @@ tenant_federation:
   # CLI flag: -tenant-federation.enabled
   [enabled: <boolean> | default = false]
 
+activity_tracker:
+  # File where ongoing activities are stored. If empty, activity tracking is
+  # disabled.
+  # CLI flag: -activity-tracker.filepath
+  [filepath: <string> | default = ""]
+
+  # Max number of concurrent activities that can be tracked. Used to size the
+  # file in advance. Additional activities are ignored.
+  # CLI flag: -activity-tracker.max-entries
+  [max_entries: <int> | default = 1024]
+
 # The ruler_config configures the ruler.
 [ruler: <ruler_config>]
 

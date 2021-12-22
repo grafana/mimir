@@ -60,6 +60,7 @@ import (
 	"github.com/grafana/mimir/pkg/storegateway"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	"github.com/grafana/mimir/pkg/util/fakeauth"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/process"
@@ -115,6 +116,7 @@ type Config struct {
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
 	PurgerConfig     purger.Config                   `yaml:"purger"`
 	TenantFederation tenantfederation.Config         `yaml:"tenant_federation"`
+	ActivityTracker  activitytracker.Config          `yaml:"activity_tracker"`
 
 	Ruler               ruler.Config                               `yaml:"ruler"`
 	RulerStorage        rulestore.Config                           `yaml:"ruler_storage"`
@@ -169,6 +171,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.AlertmanagerStorage.RegisterFlags(f)
 	c.RuntimeConfig.RegisterFlags(f)
 	c.MemberlistKV.RegisterFlags(f)
+	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f)
 
 	// These don't seem to have a home.
@@ -323,13 +326,13 @@ type Mimir struct {
 	ExemplarQueryable        prom_storage.ExemplarQueryable
 	QuerierEngine            *promql.Engine
 	QueryFrontendTripperware queryrange.Tripperware
-
-	Ruler        *ruler.Ruler
-	RulerStorage rulestore.RuleStore
-	Alertmanager *alertmanager.MultitenantAlertmanager
-	Compactor    *compactor.MultitenantCompactor
-	StoreGateway *storegateway.StoreGateway
-	MemberlistKV *memberlist.KVInitService
+	Ruler                    *ruler.Ruler
+	RulerStorage             rulestore.RuleStore
+	Alertmanager             *alertmanager.MultitenantAlertmanager
+	Compactor                *compactor.MultitenantCompactor
+	StoreGateway             *storegateway.StoreGateway
+	MemberlistKV             *memberlist.KVInitService
+	ActivityTracker          *activitytracker.ActivityTracker
 
 	// Queryables that the querier should use to query the long
 	// term storage. It depends on the storage engine used.

@@ -49,12 +49,14 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
 // The various modules that make up Mimir.
 const (
+	ActivityTracker          string = "activity-tracker"
 	API                      string = "api"
 	Ring                     string = "ring"
 	RuntimeConfig            string = "runtime-config"
@@ -107,6 +109,47 @@ func (t *Mimir) initAPI() (services.Service, error) {
 	t.API.RegisterAPI(t.Cfg.Server.PathPrefix, t.Cfg, newDefaultConfig())
 
 	return nil, nil
+}
+
+func (t *Mimir) initActivityTracker() (services.Service, error) {
+	if t.Cfg.ActivityTracker.Filepath == "" {
+		return nil, nil
+	}
+
+	entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
+
+	l := util_log.Logger
+	if err != nil {
+		level.Warn(l).Log("msg", "failed to fully read file with unfinished activities", "err", err)
+	}
+	if len(entries) > 0 {
+		level.Warn(l).Log("msg", "found unfinished activities from previous run", "count", len(entries))
+	}
+	for _, e := range entries {
+		level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
+	}
+
+	at, err := activitytracker.NewActivityTracker(t.Cfg.ActivityTracker, prometheus.DefaultRegisterer)
+	if err != nil {
+		return nil, err
+	}
+
+	t.ActivityTracker = at
+
+	return services.NewIdleService(nil, func(_ error) error {
+		entries, err := activitytracker.LoadUnfinishedEntries(t.Cfg.ActivityTracker.Filepath)
+
+		if err != nil {
+			level.Warn(l).Log("msg", "failed to fully read file with unfinished activities during shutdown", "err", err)
+		}
+		if len(entries) > 0 {
+			level.Warn(l).Log("msg", "found unfinished activities during shutdown", "count", len(entries))
+		}
+		for _, e := range entries {
+			level.Warn(l).Log("start", e.Timestamp.UTC().Format(time.RFC3339Nano), "activity", e.Activity)
+		}
+		return nil
+	}), nil
 }
 
 func (t *Mimir) initServer() (services.Service, error) {
@@ -657,7 +700,7 @@ func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
 
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
-	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer)
+	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +790,7 @@ func (t *Mimir) setupModuleManager() error {
 	// Register all modules here.
 	// RegisterModule(name string, initFn func()(services.Service, error))
 	mm.RegisterModule(Server, t.initServer, modules.UserInvisibleModule)
+	mm.RegisterModule(ActivityTracker, t.initActivityTracker, modules.UserInvisibleModule)
 	mm.RegisterModule(API, t.initAPI, modules.UserInvisibleModule)
 	mm.RegisterModule(RuntimeConfig, t.initRuntimeConfig, modules.UserInvisibleModule)
 	mm.RegisterModule(MemberlistKV, t.initMemberlistKV, modules.UserInvisibleModule)
@@ -779,6 +823,7 @@ func (t *Mimir) setupModuleManager() error {
 
 	// Add dependencies
 	deps := map[string][]string{
+		Server:                   {ActivityTracker},
 		API:                      {Server},
 		MemberlistKV:             {API},
 		RuntimeConfig:            {API},
