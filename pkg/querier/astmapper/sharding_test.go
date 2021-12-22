@@ -554,6 +554,54 @@ func TestShardSummer(t *testing.T) {
 			) + `) / ` + concat(`vector(3) ^ year(foo)`),
 			3,
 		},
+		{
+			// can't shard foo > bar,
+			// because foo{__query_shard__="1_of_3"} won't have the matching labels in bar{__query_shard__="1_of_3"}
+			`foo > bar`,
+			concat(`foo > bar`),
+			0,
+		},
+		{
+			`foo > 0`,
+			concat(`foo > 0`),
+			0,
+		},
+		{
+			`foo > (2 * 2)`,
+			concat(`foo > (2 * 2)`),
+			0,
+		},
+		{
+			`foo > sum(bar)`,
+			concat(`foo`) + ` > sum(` + concat(
+				`sum(bar{__query_shard__="1_of_3"})`,
+				`sum(bar{__query_shard__="2_of_3"})`,
+				`sum(bar{__query_shard__="3_of_3"})`,
+			) + `)`,
+			3,
+		},
+		{
+			`foo > scalar(sum(bar))`,
+			concat(`foo`) + `> scalar(sum(` + concat(
+				`sum(bar{__query_shard__="1_of_3"})`,
+				`sum(bar{__query_shard__="2_of_3"})`,
+				`sum(bar{__query_shard__="3_of_3"})`,
+			) + `))`,
+			3,
+		},
+		{
+			`scalar(min(foo)) > bool scalar(sum(bar))`,
+			`scalar(min(` + concat(
+				`min(foo{__query_shard__="1_of_3"})`,
+				`min(foo{__query_shard__="2_of_3"})`,
+				`min(foo{__query_shard__="3_of_3"})`,
+			) + `)) > bool scalar(sum(` + concat(
+				`sum(bar{__query_shard__="1_of_3"})`,
+				`sum(bar{__query_shard__="2_of_3"})`,
+				`sum(bar{__query_shard__="3_of_3"})`,
+			) + `))`,
+			6,
+		},
 	} {
 		tt := tt
 
