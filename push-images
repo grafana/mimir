@@ -4,7 +4,9 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-IMAGES=$(make images)
+# Filter images to only push query-tee for now
+# TODO: Remove once mimir is becoming a public project
+IMAGES=$(make DOCKER_IMAGE_DIRS=./cmd/query-tee images)
 IMAGE_TAG=${IMAGE_TAG:-$(./tools/image-tag)}
 QUAY_PREFIX=quay.io/
 NO_QUAY=

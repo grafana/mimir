@@ -183,3 +183,39 @@ jobs:
           echo "Running integration tests with image: $MIMIR_IMAGE"
           echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+
+  deploy:
+    needs: [build, test, lint, integration]
+    if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.repository == 'grafana/mimir'
+    runs-on: ubuntu-20.04
+    container:
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+      - name: Install Docker Client
+        run: ./.github/workflows/scripts/install-docker.sh
+      - name: Symlink Expected Path to Workspace
+        run: |
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Download Docker Images Artifact
+        uses: actions/download-artifact@v2
+        with:
+          name: Docker Images
+      - name: Extract Docker Images Archive
+        run: tar -xvf images.tar -C /
+      - name: Load Images
+        run: |
+          ln -s /tmp/images ./docker-images
+          make BUILD_IN_CONTAINER=false load-images
+      - name: Deploy
+        run: |
+          if [ -n "$DOCKER_REGISTRY_PASSWORD" ]; then
+            docker login -u "$DOCKER_REGISTRY_USER" -p "$DOCKER_REGISTRY_PASSWORD"
+          fi
+          export IMAGE_TAG=$(make image-tag)
+          ./push-images -no-quay
+        env:
+          DOCKER_REGISTRY_USER: ${{secrets.DOCKER_REGISTRY_USER}}
+          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
