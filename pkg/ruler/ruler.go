@@ -254,9 +254,9 @@ type Ruler struct {
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
 
-	ringCheckErrors            prometheus.Counter
-	rulerSync                  *prometheus.CounterVec
-	groupAuthorizationFailures *prometheus.GaugeVec
+	ringCheckErrors        prometheus.Counter
+	rulerSync              *prometheus.CounterVec
+	syncUnauthorizedGroups *prometheus.GaugeVec
 
 	allowedTenants *util.AllowedTenants
 	authorizer     RuleGroupAuthorizer
@@ -292,9 +292,9 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
 
-		groupAuthorizationFailures: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
+		syncUnauthorizedGroups: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
 			Name: "cortex_ruler_sync_unauthorized_groups",
-			Help: "Total number of skipped rule groups during sync due to failed authorizations.",
+			Help: "Current number of unauthorized (and skipped) rule groups during last sync.",
 		}, []string{"user"}),
 	}
 
@@ -554,7 +554,7 @@ func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[str
 			}
 		}
 		userGroups[userID] = amendedList
-		r.groupAuthorizationFailures.WithLabelValues(userID).Set(float64(unauthorized))
+		r.syncUnauthorizedGroups.WithLabelValues(userID).Set(float64(unauthorized))
 	}
 }
 
