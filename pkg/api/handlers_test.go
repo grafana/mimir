@@ -106,9 +106,9 @@ func TestConfigDiffHandler(t *testing.T) {
 			},
 			expectedStatusCode: 200,
 			expectedBody: "my_slice:\n" +
-				"- value1\n" +
-				"- value2\n" +
-				"- value3\n",
+				"    - value1\n" +
+				"    - value2\n" +
+				"    - value3\n",
 		},
 		{
 			name: "string in nested struct changed",
@@ -119,7 +119,7 @@ func TestConfigDiffHandler(t *testing.T) {
 			},
 			expectedStatusCode: 200,
 			expectedBody: "my_nested_struct:\n" +
-				"  my_string: string2\n",
+				"    my_string: string2\n",
 		},
 		{
 			name: "bool in nested struct changed",
@@ -130,7 +130,7 @@ func TestConfigDiffHandler(t *testing.T) {
 			},
 			expectedStatusCode: 200,
 			expectedBody: "my_nested_struct:\n" +
-				"  my_bool: true\n",
+				"    my_bool: true\n",
 		},
 		{
 			name: "test invalid input",
