@@ -57,11 +57,17 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 
 			expectedRunningGroupsNames: []string{regularGroup.Name},
 		},
-		"tenant federation enabled": {
+		"tenant federation enabled only with federated groups": {
 			tenantFederationEnabled: true,
 			existingRules:           rulespb.RuleGroupList{federatedGroupWithOneTenant, federatedGroupWithMultipleTenants},
 
 			expectedRunningGroupsNames: []string{federatedGroupWithOneTenant.Name, federatedGroupWithMultipleTenants.Name},
+		},
+		"tenant federation enabled with federated and regular groups": {
+			tenantFederationEnabled: true,
+			existingRules:           rulespb.RuleGroupList{regularGroup, federatedGroupWithOneTenant, federatedGroupWithMultipleTenants},
+
+			expectedRunningGroupsNames: []string{regularGroup.Name, federatedGroupWithOneTenant.Name, federatedGroupWithMultipleTenants.Name},
 		},
 	}
 
