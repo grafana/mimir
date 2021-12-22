@@ -302,7 +302,7 @@ func (c *Config) registerServerFlagsWithChangedDefaultValues(fs *flag.FlagSet) {
 
 // Mimir is the root datastructure for Mimir.
 type Mimir struct {
-	Cfg Config
+	Cfg *Config
 
 	// set during initialization
 	ServiceMap    map[string]services.Service
@@ -340,7 +340,7 @@ type Mimir struct {
 }
 
 // New makes a new Mimir.
-func New(cfg Config) (*Mimir, error) {
+func New(cfg *Config) (*Mimir, error) {
 	if cfg.PrintConfig {
 		if err := yaml.NewEncoder(os.Stdout).Encode(&cfg); err != nil {
 			fmt.Println("Error encoding config:", err)

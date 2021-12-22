@@ -173,7 +173,7 @@ func main() {
 	// Initialise seed for randomness usage.
 	rand.Seed(time.Now().UnixNano())
 
-	t, err := mimir.New(cfg)
+	t, err := mimir.New(&cfg)
 	util_log.CheckFatal("initializing application", err)
 
 	if printModules {

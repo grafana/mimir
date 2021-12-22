@@ -21,8 +21,6 @@ func changeTargetConfig(c *Config) {
 }
 
 func TestAPIConfig(t *testing.T) {
-	actualCfg := newDefaultConfig()
-
 	mimir := &Mimir{
 		Server: &server.Server{},
 	}
@@ -83,9 +81,9 @@ func TestAPIConfig(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			mimir.Server.HTTP = mux.NewRouter()
 
-			mimir.Cfg = *actualCfg
+			mimir.Cfg = newDefaultConfig()
 			if tc.actualCfg != nil {
-				tc.actualCfg(&mimir.Cfg)
+				tc.actualCfg(mimir.Cfg)
 			}
 
 			_, err := mimir.initAPI()
@@ -144,7 +142,7 @@ func TestMimir_InitRulerStorage(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			mimir := &Mimir{
 				Server: &server.Server{},
-				Cfg:    *testData.config,
+				Cfg:    testData.config,
 			}
 
 			_, err := mimir.initRulerStorage()

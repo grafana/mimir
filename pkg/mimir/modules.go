@@ -434,7 +434,7 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	}
 }
 
-func initQueryableForEngine(engine string, cfg Config, chunkStore chunk.Store, limits *validation.Overrides, reg prometheus.Registerer) (prom_storage.Queryable, error) {
+func initQueryableForEngine(engine string, cfg *Config, chunkStore chunk.Store, limits *validation.Overrides, reg prometheus.Registerer) (prom_storage.Queryable, error) {
 	switch engine {
 	case storage.StorageEngineChunks:
 		if chunkStore == nil {

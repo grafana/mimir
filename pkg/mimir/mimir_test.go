@@ -91,7 +91,7 @@ func TestMimir(t *testing.T) {
 		Target: []string{All, Compactor},
 	}
 
-	c, err := New(cfg)
+	c, err := New(&cfg)
 	require.NoError(t, err)
 
 	serviceMap, err := c.ModuleManager.InitModuleServices(cfg.Target...)
@@ -170,7 +170,7 @@ func TestGrpcAuthMiddleware(t *testing.T) {
 
 	// Setup server, using Mimir config. This includes authentication middleware.
 	{
-		c, err := New(cfg)
+		c, err := New(&cfg)
 		require.NoError(t, err)
 
 		serv, err := c.initServer()
