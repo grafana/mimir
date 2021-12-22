@@ -4,7 +4,6 @@ go 1.17
 
 require (
 	github.com/NYTimes/gziphandler v1.1.1
-	github.com/alecthomas/chroma v0.10.0
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/bradfitz/gomemcache v0.0.0-20190913173617-a41fca850d0b
 	github.com/cespare/xxhash/v2 v2.1.2
@@ -19,16 +18,13 @@ require (
 	github.com/gogo/status v1.1.0
 	github.com/golang/protobuf v1.5.2
 	github.com/golang/snappy v0.0.4
-	github.com/google/go-github/v32 v32.1.0
 	github.com/gorilla/mux v1.8.0
-	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
-	github.com/grafana/dskit v0.0.0-20220112093026-95274ccc858d
+	github.com/grafana/dskit v0.0.0-20220117094654-cd9c89e7e460
 	github.com/grafana/e2e v0.1.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
 	github.com/minio/minio-go/v7 v7.0.16-0.20211116163909-d00629356463
-	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/mitchellh/go-wordwrap v1.0.0
 	github.com/oklog/ulid v1.3.1
 	github.com/opentracing-contrib/go-grpc v0.0.0-20210225150812-73cb765af46e
@@ -41,7 +37,6 @@ require (
 	github.com/prometheus/common v0.32.1
 	github.com/prometheus/prometheus v1.8.2-0.20211217191541-41f1a8125e66
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
-	github.com/sirupsen/logrus v1.8.1
 	github.com/sony/gobreaker v0.4.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
@@ -55,10 +50,18 @@ require (
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	google.golang.org/grpc v1.41.1
-	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	sigs.k8s.io/yaml v1.2.0
+)
+
+require (
+	github.com/alecthomas/chroma v0.10.0
+	github.com/google/go-github/v32 v32.1.0
+	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
+	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
+	github.com/sirupsen/logrus v1.8.1
+	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
 require (

@@ -447,6 +447,7 @@ func (t *Mimir) initIngesterService() (serv services.Service, err error) {
 
 func (t *Mimir) initIngester() (serv services.Service, err error) {
 	t.API.RegisterIngester(t.Ingester, t.Cfg.Distributor)
+	t.API.RegisterRing(t.Ingester.RingHandler())
 
 	return nil, nil
 }
