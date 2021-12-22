@@ -10,7 +10,6 @@ import (
 	"os"
 
 	"github.com/go-kit/log"
-	kitlog "github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/weaveworks/common/logging"
 	"github.com/weaveworks/common/server"
@@ -20,7 +19,7 @@ var (
 	// Logger is a shared go-kit logger.
 	// TODO: Change all components to take a non-global logger via their constructors.
 	// Prefer accepting a non-global logger as an argument.
-	Logger = kitlog.NewNopLogger()
+	Logger = log.NewNopLogger()
 )
 
 // InitLogger initialises the global gokit logger (util_log.Logger) and overrides the

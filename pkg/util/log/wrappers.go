@@ -9,7 +9,6 @@ import (
 	"context"
 
 	"github.com/go-kit/log"
-	kitlog "github.com/go-kit/log"
 	"github.com/weaveworks/common/tracing"
 
 	"github.com/grafana/mimir/pkg/tenant"
@@ -17,16 +16,16 @@ import (
 
 // WithUserID returns a Logger that has information about the current user in
 // its details.
-func WithUserID(userID string, l kitlog.Logger) kitlog.Logger {
+func WithUserID(userID string, l log.Logger) log.Logger {
 	// See note in WithContext.
-	return kitlog.With(l, "org_id", userID)
+	return log.With(l, "org_id", userID)
 }
 
 // WithTraceID returns a Logger that has information about the traceID in
 // its details.
-func WithTraceID(traceID string, l kitlog.Logger) kitlog.Logger {
+func WithTraceID(traceID string, l log.Logger) log.Logger {
 	// See note in WithContext.
-	return kitlog.With(l, "traceID", traceID)
+	return log.With(l, "traceID", traceID)
 }
 
 // WithContext returns a Logger that has information about the current user in
@@ -35,7 +34,7 @@ func WithTraceID(traceID string, l kitlog.Logger) kitlog.Logger {
 // e.g.
 //   log := util.WithContext(ctx)
 //   log.Errorf("Could not chunk chunks: %v", err)
-func WithContext(ctx context.Context, l kitlog.Logger) kitlog.Logger {
+func WithContext(ctx context.Context, l log.Logger) log.Logger {
 	// Weaveworks uses "orgs" and "orgID" to represent Cortex users,
 	// even though the code-base generally uses `userID` to refer to the same thing.
 	userID, err := tenant.TenantID(ctx)
