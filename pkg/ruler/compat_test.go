@@ -368,6 +368,11 @@ func newMockQueryable() *mockQueryable {
 }
 
 func (m *mockQueryable) Querier(_ context.Context, _, _ int64) (storage.Querier, error) {
-	close(m.called)
+	select {
+	case <-m.called:
+		// already closed
+	default:
+		close(m.called)
+	}
 	return storage.NoopQuerier(), nil
 }
