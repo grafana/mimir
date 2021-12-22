@@ -41,7 +41,6 @@ import (
 	"github.com/weaveworks/common/user"
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
-	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
@@ -1068,13 +1067,24 @@ func TestRuler_ListAllRules(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	require.Equal(t, "application/yaml", resp.Header.Get("Content-Type"))
 
-	gs := make(map[string]map[string][]rulefmt.RuleGroup) // user:namespace:[]rulefmt.RuleGroup
-	for userID := range mockRules {
-		gs[userID] = mockRules[userID].Formatted()
-	}
-	expectedResponse, err := yaml.Marshal(gs)
-	require.NoError(t, err)
-	require.YAMLEq(t, string(expectedResponse), string(body))
+	expectedResponseYaml := `user1:
+    namespace1:
+        - name: group1
+          interval: 1m
+          rules:
+            - record: UP_RULE
+              expr: up
+            - alert: UP_ALERT
+              expr: up < 1
+user2:
+    namespace1:
+        - name: group1
+          interval: 1m
+          rules:
+            - record: UP_RULE
+              expr: up`
+
+	require.YAMLEq(t, expectedResponseYaml, string(body))
 }
 
 type senderFunc func(alerts ...*notifier.Alert)
