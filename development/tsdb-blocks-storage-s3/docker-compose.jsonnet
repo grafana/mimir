@@ -9,6 +9,9 @@ std.manifestYamlDoc({
 
     // Whether query-frontend and querier should use query-scheduler. If set to true, query-scheduler is started as well.
     use_query_scheduler: true,
+
+    // If enabled, then Memberlist is used instead of consul, and consul service is disabled.
+    use_memberlist_for_ring: false,
   },
 
   // We explicitely list all important services here, so that it's easy to disable them by commenting out.
@@ -21,12 +24,12 @@ std.manifestYamlDoc({
     self.rulers(2) +
     self.alertmanagers(3) +
     self.purger +
-    self.consul +
     self.minio +
     self.prometheus +
     self.grafana_agent +
     self.memcached +
     self.jaeger +
+    (if !$._config.use_memberlist_for_ring then self.consul else {}) +
     {},
 
   distributor:: {
@@ -140,7 +143,7 @@ std.manifestYamlDoc({
       debugPort: self.httpPort + 10000,
       // Extra arguments passed to Mimir command line.
       extraArguments: '',
-      dependsOn: ['consul', 'minio'],
+      dependsOn: ['minio'] + (if !$._config.use_memberlist_for_ring then ['consul'] else if s.target != 'distributor' then ['distributor'] else []),
       env: {
         JAEGER_AGENT_HOST: 'jaeger',
         JAEGER_AGENT_PORT: 6831,
@@ -149,6 +152,8 @@ std.manifestYamlDoc({
         JAEGER_TAGS: 'app=%s' % s.jaegerApp,
       },
       extraVolumes: [],
+      memberlistNodeName: self.jaegerApp,
+      memberlistBindPort: self.httpPort + 2000,
     },
 
     local options = defaultOptions + serviceOptions,
@@ -164,7 +169,8 @@ std.manifestYamlDoc({
       (if $._config.sleep_seconds > 0 then 'sleep %d && ' % [$._config.sleep_seconds] else '') +
       (if $._config.debug then 'exec ./dlv exec ./mimir --listen=:%(debugPort)d --headless=true --api-version=2 --accept-multiclient --continue -- ' % options
        else 'exec ./mimir ') +
-      '-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options,
+      ('-config.file=./config/mimir.yaml -target=%(target)s -server.http-listen-port=%(httpPort)d -server.grpc-listen-port=%(grpcPort)d -activity-tracker.filepath=/activity/%(target)s-%(httpPort)d %(extraArguments)s' % options) +
+      (if $._config.use_memberlist_for_ring then ' -memberlist.nodename=%(memberlistNodeName)s -memberlist.bind-port=%(memberlistBindPort)d -ring.store=memberlist -distributor.ring.store=memberlist -compactor.ring.store=memberlist -store-gateway.sharding-ring.store=memberlist -ruler.ring.store=memberlist' % options else ''),
     ],
     environment: [
       '%s=%s' % [key, options.env[key]]

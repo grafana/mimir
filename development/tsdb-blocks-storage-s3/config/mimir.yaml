@@ -26,6 +26,12 @@ ingester:
           host: consul:8500
       replication_factor: 1
 
+# These memberlist options will be only used if memberlist is activated via CLI option.
+memberlist:
+  join_members:
+    - distributor:10001
+  abort_if_cluster_join_fails: false
+
 querier:
   query_ingesters_within: 3h
 
