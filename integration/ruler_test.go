@@ -686,72 +686,48 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 }
 
 func TestRulerFederatedRules(t *testing.T) {
-	type instantQuerier interface {
-		Query(query string, ts time.Time) (model.Value, error)
-	}
-
 	type testCase struct {
 		name               string
-		tenantsWithMetrics []string          // will generate series `metric{}` in each tenant
-		ruleOwner          string            // will create the federated rule under this tenant
-		ruleGroup          rulefmt.RuleGroup // group to create under ruleOwner and wait to run
-		queryAssertion     func(q instantQuerier)
-	}
+		tenantsWithMetrics []string // will generate series `metric{}` in each tenant
+		ruleGroupOwner     string   // will create the federated rule under this tenant
+		ruleExpression     string
+		groupSourceTenants []string
 
-	ruleGroupWithRuleAndSourceTenants := func(ruleName, expression string, sourceTenants []string) rulefmt.RuleGroup {
-		g := ruleGroupWithRule("x", ruleName, expression)
-		g.Interval = model.Duration(time.Second / 4)
-		g.SourceTenants = sourceTenants
-		return g
+		assertEvalResult func(model.Vector)
 	}
 
 	testCases := []testCase{
 		{
 			name:               "separate source tenants and destination tenant",
 			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
-			ruleOwner:          "tenant-3",
-			ruleGroup: ruleGroupWithRuleAndSourceTenants(
-				"count:metric",
-				"count(sum_over_time(metric[1h]))",
-				[]string{"tenant-1", "tenant-2"},
-			),
-			queryAssertion: func(q instantQuerier) {
-				result, err := q.Query("count:metric", time.Now())
-				require.NoError(t, err)
-				require.Len(t, result, 1)
-				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(2)) // i.e. the number of tenants
+			ruleGroupOwner:     "tenant-3",
+			ruleExpression:     "count(sum_over_time(metric[1h]))",
+			groupSourceTenants: []string{"tenant-1", "tenant-2"},
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(2))
 			},
 		},
 		{
-			name:               "__tenant_id__ is present on all metrics for federated rules",
+			name:               "__tenant_id__ is added on all metrics for federated rules",
 			tenantsWithMetrics: []string{"tenant-1", "tenant-2", "tenant-3"},
-			ruleOwner:          "tenant-3",
-			ruleGroup: ruleGroupWithRuleAndSourceTenants(
-				"count_by_tenant_id:metric",
-				"count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
-				[]string{"tenant-1", "tenant-2", "tenant-3"},
-			),
-			queryAssertion: func(q instantQuerier) {
-				result, err := q.Query("count_by_tenant_id:metric", time.Now())
-				require.NoError(t, err)
-				require.Len(t, result, 1)
-				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(3)) // i.e. the number of tenants
+			ruleGroupOwner:     "tenant-3",
+			ruleExpression:     "count(group by (__tenant_id__) (metric))", // count to number of different values of __tenant_id__
+			groupSourceTenants: []string{"tenant-1", "tenant-2", "tenant-3"},
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(3))
 			},
 		},
 		{
 			name:               "__tenant_id__ is present on metrics for federated rules when source tenants == owner",
 			tenantsWithMetrics: []string{"tenant-1"},
-			ruleOwner:          "tenant-1",
-			ruleGroup: ruleGroupWithRuleAndSourceTenants(
-				"count_by_tenant_id:metric",
-				"count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
-				[]string{"tenant-1", "tenant-2", "tenant-3"},
-			),
-			queryAssertion: func(q instantQuerier) {
-				result, err := q.Query("count_by_tenant_id:metric", time.Now())
-				require.NoError(t, err)
-				require.Len(t, result, 1)
-				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(1)) // i.e. the number of tenants
+			ruleGroupOwner:     "tenant-1",
+			ruleExpression:     "count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
+			groupSourceTenants: []string{"tenant-1", "tenant-2", "tenant-3"},
+			assertEvalResult: func(evalResult model.Vector) {
+				require.Len(t, evalResult, 1)
+				require.Equal(t, evalResult[0].Value, model.SampleValue(1))
 			},
 		},
 	}
@@ -795,12 +771,12 @@ func TestRulerFederatedRules(t *testing.T) {
 			return fmt.Sprintf("run-%d-%s", n, tenantID)
 		}
 
-		tc.ruleOwner = prefixID(tc.ruleOwner)
+		tc.ruleGroupOwner = prefixID(tc.ruleGroupOwner)
 		for i, t := range tc.tenantsWithMetrics {
 			tc.tenantsWithMetrics[i] = prefixID(t)
 		}
-		for i, t := range tc.ruleGroup.SourceTenants {
-			tc.ruleGroup.SourceTenants[i] = prefixID(t)
+		for i, t := range tc.groupSourceTenants {
+			tc.groupSourceTenants[i] = prefixID(t)
 		}
 		return tc
 	}
@@ -822,11 +798,15 @@ func TestRulerFederatedRules(t *testing.T) {
 			}
 
 			// Create a client as owner tenant to upload groups and then make assertions
-			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleOwner)
+			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleGroupOwner)
 			require.NoError(t, err)
 
 			namespace := "test_namespace"
-			require.NoError(t, c.SetRuleGroup(tc.ruleGroup, namespace))
+			ruleName := "federated_rule_name"
+			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
+			g.Interval = model.Duration(time.Second / 4)
+			g.SourceTenants = tc.groupSourceTenants
+			require.NoError(t, c.SetRuleGroup(g, namespace))
 
 			// Wait until another user manager is created (i is one more since last time). This means the rule groups is loaded.
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ruler_managers_total"))
@@ -837,14 +817,16 @@ func TestRulerFederatedRules(t *testing.T) {
 			require.NoError(t, err)
 			require.True(t, exists)
 			require.Len(t, retrievedNamespace, 1)
-			require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, tc.ruleGroup.SourceTenants)
+			require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, tc.groupSourceTenants)
 
 			// Wait for at least one evaluation
 			ruleEvaluationsRightAfterPush, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
 			require.NoError(t, err)
 			require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(ruleEvaluationsRightAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
 
-			tc.queryAssertion(c)
+			result, err := c.Query(ruleName, time.Now())
+			require.NoError(t, err)
+			tc.assertEvalResult(result.(model.Vector))
 		})
 	}
 }
