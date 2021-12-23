@@ -685,14 +685,17 @@ func TestRulerMetricsForInvalidQueries(t *testing.T) {
 	})
 }
 
-// TestRulerFederatedRules pushes some metrics to tenants tenant-1 and tenant-2. It then creates a recording rule in tenant-3
-// which aggregates the metrics from tenant-1 and tenant-2. The test asserts that the resulting timeseries from
-// the rule indeed contained data from both tenants.
 func TestRulerFederatedRules(t *testing.T) {
-	const tenant1, tenant2, tenant3 = "tenant-1", "tenant-2", "tenant-3"
-
 	type instantQuerier interface {
 		Query(query string, ts time.Time) (model.Value, error)
+	}
+
+	type testCase struct {
+		name               string
+		tenantsWithMetrics []string          // will generate series `metric{}` in each tenant
+		ruleOwner          string            // will create the federated rule under this tenant
+		ruleGroup          rulefmt.RuleGroup // group to create under ruleOwner and wait to run
+		queryAssertion     func(q instantQuerier)
 	}
 
 	ruleGroupWithRuleAndSourceTenants := func(ruleName, expression string, sourceTenants []string) rulefmt.RuleGroup {
@@ -702,19 +705,15 @@ func TestRulerFederatedRules(t *testing.T) {
 		return g
 	}
 
-	testCases := map[string]struct {
-		tenantsWithMetrics []string          // will generate series `metric{}` in each tenant
-		ruleOwner          string            // will create the federated rule under this tenant
-		ruleGroup          rulefmt.RuleGroup // group to create under ruleOwner and wait to run
-		queryAssertion     func(q instantQuerier)
-	}{
-		"separate source tenants and destination tenant": {
-			tenantsWithMetrics: []string{tenant1, tenant2},
-			ruleOwner:          tenant3,
+	testCases := []testCase{
+		{
+			name:               "separate source tenants and destination tenant",
+			tenantsWithMetrics: []string{"tenant-1", "tenant-2"},
+			ruleOwner:          "tenant-3",
 			ruleGroup: ruleGroupWithRuleAndSourceTenants(
 				"count:metric",
 				"count(sum_over_time(metric[1h]))",
-				[]string{tenant1, tenant2},
+				[]string{"tenant-1", "tenant-2"},
 			),
 			queryAssertion: func(q instantQuerier) {
 				result, err := q.Query("count:metric", time.Now())
@@ -723,13 +722,14 @@ func TestRulerFederatedRules(t *testing.T) {
 				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(2)) // i.e. the number of tenants
 			},
 		},
-		"__tenant_id__ is present on all metrics for federated rules": {
-			tenantsWithMetrics: []string{tenant1, tenant2, tenant3},
-			ruleOwner:          tenant3,
+		{
+			name:               "__tenant_id__ is present on all metrics for federated rules",
+			tenantsWithMetrics: []string{"tenant-1", "tenant-2", "tenant-3"},
+			ruleOwner:          "tenant-3",
 			ruleGroup: ruleGroupWithRuleAndSourceTenants(
 				"count_by_tenant_id:metric",
 				"count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
-				[]string{tenant1, tenant2, tenant3},
+				[]string{"tenant-1", "tenant-2", "tenant-3"},
 			),
 			queryAssertion: func(q instantQuerier) {
 				result, err := q.Query("count_by_tenant_id:metric", time.Now())
@@ -738,13 +738,14 @@ func TestRulerFederatedRules(t *testing.T) {
 				require.Equal(t, float64(result.(model.Vector)[0].Value), float64(3)) // i.e. the number of tenants
 			},
 		},
-		"__tenant_id__ is present on metrics for federated rules when source tenants == owner": {
-			tenantsWithMetrics: []string{tenant1},
-			ruleOwner:          tenant1,
+		{
+			name:               "__tenant_id__ is present on metrics for federated rules when source tenants == owner",
+			tenantsWithMetrics: []string{"tenant-1"},
+			ruleOwner:          "tenant-1",
 			ruleGroup: ruleGroupWithRuleAndSourceTenants(
 				"count_by_tenant_id:metric",
 				"count(group by (__tenant_id__) (metric))", // query to count to number of different values of __tenant_id__
-				[]string{tenant1, tenant2, tenant3},
+				[]string{"tenant-1", "tenant-2", "tenant-3"},
 			),
 			queryAssertion: func(q instantQuerier) {
 				result, err := q.Query("count_by_tenant_id:metric", time.Now())
@@ -755,39 +756,58 @@ func TestRulerFederatedRules(t *testing.T) {
 		},
 	}
 
-	for name, tc := range testCases {
-		t.Run(name, func(t *testing.T) {
-			s, err := e2e.NewScenario(networkName)
-			require.NoError(t, err)
-			defer s.Close()
+	s, err := e2e.NewScenario(networkName)
+	require.NoError(t, err)
+	t.Cleanup(s.Close)
 
-			// Start dependencies.
-			consul := e2edb.NewConsul()
-			minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
-			require.NoError(t, s.StartAndWaitReady(minio, consul))
+	// Start dependencies.
+	consul := e2edb.NewConsul()
+	minio := e2edb.NewMinio(9000, bucketName, rulestoreBucketName)
+	require.NoError(t, s.StartAndWaitReady(minio, consul))
 
-			flags := mergeFlags(
-				BlocksStorageFlags(),
-				RulerFlags(),
-				map[string]string{
-					"-ruler.tenant-federation.enabled": "true",
-					"-tenant-federation.enabled":       "true",
-					"-distributor.replication-factor":  "1",
-					// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
-					"-querier.store-gateway-addresses": "localhost:12345",
-				},
-			)
+	flags := mergeFlags(
+		BlocksStorageFlags(),
+		RulerFlags(),
+		map[string]string{
+			"-ruler.tenant-federation.enabled": "true",
+			"-tenant-federation.enabled":       "true",
+			"-distributor.replication-factor":  "1",
+			// Set store-gateway to an invalid address. As there is no store-gateway ring configured, this flag is mandatory.
+			"-querier.store-gateway-addresses": "localhost:12345",
+		},
+	)
 
-			distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
-			ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
-			ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
-			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
-			require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
+	// Start up services
+	distributor := e2emimir.NewDistributor("distributor", consul.NetworkHTTPEndpoint(), flags, "")
+	ruler := e2emimir.NewRuler("ruler", consul.NetworkHTTPEndpoint(), flags, "")
+	ingester := e2emimir.NewIngester("ingester", consul.NetworkHTTPEndpoint(), flags, "")
+	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
+	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
-			// Wait until both the distributor and ruler have updated the ring.
-			require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// Wait until both the distributor and ruler are ready.
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
+	// isolatedTestCase prefixes all the tenant IDs in the testCase with "run-<n>-"
+	// so we can ensure that the tenants in different test cases don't overlap
+	isolatedTestCase := func(tc testCase, n int) testCase {
+		prefixID := func(tenantID string) string {
+			return fmt.Sprintf("run-%d-%s", n, tenantID)
+		}
+
+		tc.ruleOwner = prefixID(tc.ruleOwner)
+		for i, t := range tc.tenantsWithMetrics {
+			tc.tenantsWithMetrics[i] = prefixID(t)
+		}
+		for i, t := range tc.ruleGroup.SourceTenants {
+			tc.ruleGroup.SourceTenants[i] = prefixID(t)
+		}
+		return tc
+	}
+
+	for i, tc := range testCases {
+		tc = isolatedTestCase(tc, i)
+		t.Run(tc.name, func(t *testing.T) {
 			// Generate some series under different tenants
 			sampleTime := time.Now()
 			for _, tenantID := range tc.tenantsWithMetrics {
@@ -808,8 +828,8 @@ func TestRulerFederatedRules(t *testing.T) {
 			namespace := "test_namespace"
 			require.NoError(t, c.SetRuleGroup(tc.ruleGroup, namespace))
 
-			// Wait until the user manager is created. This means the rule groups is loaded
-			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(1), "cortex_ruler_managers_total"))
+			// Wait until another user manager is created (i is one more since last time). This means the rule groups is loaded.
+			require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(float64(i+1)), "cortex_ruler_managers_total"))
 
 			// Check to ensure the rules running in the ruler match what was set
 			rgs, err := c.GetRuleGroups()
