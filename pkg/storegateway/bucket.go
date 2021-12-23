@@ -2120,11 +2120,10 @@ func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Match
 		for _, val := range setMatches {
 			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
-		if m.Type == labels.MatchRegexp {
-			return newPostingGroup(false, keys, nil), nil
-		} else {
+		if m.Type == labels.MatchNotRegexp {
 			return newPostingGroup(true, nil, keys), nil
 		}
+		return newPostingGroup(false, keys, nil), nil
 	}
 
 	// If the matcher selects an empty value, it selects all the series which don't
