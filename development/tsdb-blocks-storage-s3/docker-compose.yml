@@ -127,7 +127,7 @@
     "command":
       - "-config.file=/etc/agent-config/grafana-agent.yaml"
       - "-prometheus.wal-directory=/tmp"
-    "image": "grafana/agent:v0.21.1"
+    "image": "grafana/agent:v0.21.2"
     "ports":
       - "9091:9091"
     "volumes":
@@ -203,7 +203,7 @@
     "command":
       - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--enable-feature=exemplar-storage"
-    "image": "prom/prometheus:v2.27.1"
+    "image": "prom/prometheus:v2.32.1"
     "ports":
       - "9090:9090"
     "volumes":

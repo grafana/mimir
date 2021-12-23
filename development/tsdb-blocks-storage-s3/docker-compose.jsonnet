@@ -213,7 +213,7 @@ std.manifestYamlDoc({
 
   prometheus:: {
     prometheus: {
-      image: 'prom/prometheus:v2.27.1',
+      image: 'prom/prometheus:v2.32.1',
       command: [
         '--config.file=/etc/prometheus/prometheus.yaml',
         '--enable-feature=exemplar-storage',
@@ -227,7 +227,7 @@ std.manifestYamlDoc({
     // Scrape the metrics also with the Grafana agent (useful to test metadata ingestion
     // until metadata remote write is not supported by Prometheus).
     'grafana-agent': {
-      image: 'grafana/agent:v0.21.1',
+      image: 'grafana/agent:v0.21.2',
       command: ['-config.file=/etc/agent-config/grafana-agent.yaml', '-prometheus.wal-directory=/tmp'],
       volumes: ['./config:/etc/agent-config'],
       ports: ['9091:9091'],
