@@ -630,15 +630,6 @@ func (i *Ingester) starting(ctx context.Context) error {
 		servs = append(servs, shippingService)
 	}
 
-	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
-		interval := i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval
-		if interval == 0 {
-			interval = mimir_tsdb.DefaultCloseIdleTSDBInterval
-		}
-		closeIdleService := services.NewTimerService(interval, nil, i.closeAndDeleteIdleUserTSDBs, nil)
-		servs = append(servs, closeIdleService)
-	}
-
 	var err error
 	i.TSDBState.subservices, err = services.NewManager(servs...)
 	if err == nil {
@@ -696,6 +687,17 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 		defer t.Stop()
 	}
 
+	var closeAndDeleteIdleUserTSDBsChan <-chan time.Time
+	if i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBTimeout > 0 {
+		interval := i.cfg.BlocksStorageConfig.TSDB.CloseIdleTSDBInterval
+		if interval == 0 {
+			interval = mimir_tsdb.DefaultCloseIdleTSDBInterval
+		}
+		t := time.NewTicker(interval)
+		closeAndDeleteIdleUserTSDBsChan = t.C
+		defer t.Stop()
+	}
+
 	// Similarly to the above, this is a hardcoded value.
 	metadataPurgeTicker := time.NewTicker(metadataPurgePeriod)
 	defer metadataPurgeTicker.Stop()
@@ -704,6 +706,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 		select {
 		case <-metadataPurgeTicker.C:
 			i.purgeUserMetricsMetadata()
+		case <-closeAndDeleteIdleUserTSDBsChan:
+			i.closeAndDeleteIdleUserTSDBs(ctx)
 		case <-ingestionRateTicker.C:
 			i.ingestionRate.Tick()
 		case <-rateUpdateTicker.C:
@@ -2160,18 +2164,16 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 	})
 }
 
-func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
+func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) {
 	for _, userID := range i.getTSDBUsers() {
 		if ctx.Err() != nil {
-			return nil
+			return
 		}
 
 		result := i.closeAndDeleteUserTSDBIfIdle(userID)
 
 		i.TSDBState.idleTsdbChecks.WithLabelValues(string(result)).Inc()
 	}
-
-	return nil
 }
 
 func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckResult {
