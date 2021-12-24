@@ -91,8 +91,8 @@ func MergeMatchers(input []*labels.Matcher, logger log.Logger) []*labels.Matcher
 		}
 		if merged < span {
 			copy(ms[i+merged:], ms[i+span:])
-			shrinked := span - merged
-			ms = ms[:len(ms)-shrinked]
+			shrunk := span - merged
+			ms = ms[:len(ms)-shrunk]
 		}
 		i += merged - 1
 	}
