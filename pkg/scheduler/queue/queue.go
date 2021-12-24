@@ -126,7 +126,7 @@ FindQueue:
 	// We need to wait if there are no users, or no pending requests for given querier.
 	for (q.queues.len() == 0 || querierWait) && ctx.Err() == nil && !q.stopped {
 		querierWait = false
-		q.cond.Wait()
+		q.condWaitOrContextDone(ctx)
 	}
 
 	if q.stopped {
@@ -164,6 +164,51 @@ FindQueue:
 	// and wait for more requests.
 	querierWait = true
 	goto FindQueue
+}
+
+// condWaitOrContextDone does q.cond.Wait() but will also return if the context provided is done.
+// This function should be called while q.mtx is held.
+func (q *RequestQueue) condWaitOrContextDone(ctx context.Context) {
+	// "condWait" goroutine does q.cond.Wait() and signals through condWait channel.
+	condWait := make(chan struct{})
+	go func() {
+		q.cond.Wait()
+		close(condWait)
+	}()
+
+	// "waiting" goroutine: signals that the condWait goroutine has started waiting.
+	// Notice that a closed waiting channel implies that the goroutine above has started waiting
+	// (because it has unlocked the mutex), but the other way is not true:
+	// - condWait it may have unlocked and is waiting, but someone else locked the mutex faster than us:
+	//   in this case that caller will eventually unlock, and we'll be able to enter here.
+	// - condWait called Wait(), unlocked, received a broadcast and locked again faster than we were able to lock here:
+	//   in this case condWait channel will be closed, and this goroutine will be waiting until we unlock.
+	waiting := make(chan struct{})
+	go func() {
+		q.mtx.Lock()
+		close(waiting)
+		q.mtx.Unlock()
+	}()
+
+	select {
+	case <-condWait:
+		// We don't know whether the waiting goroutine is done or not, but we don't care:
+		// it will be done once nobody is fighting for the mutex anymore.
+	case <-ctx.Done():
+		// In order to avoid leaking the condWait goroutine, we can send a broadcast.
+		// Before sending the broadcast we need to make sure that condWait goroutine is already waiting (or has already waited).
+		select {
+		case <-condWait:
+			// No need to broadcast as q.cond.Wait() has returned already.
+			return
+		case <-waiting:
+			// q.cond.Wait() might be still waiting (or maybe not!), so we'll poke it just in case.
+			q.cond.Broadcast()
+		}
+
+		// Make sure we are not waiting anymore, we need to do that before returning as the caller will need to unlock the mutex.
+		<-condWait
+	}
 }
 
 func (q *RequestQueue) forgetDisconnectedQueriers(_ context.Context) error {
@@ -216,11 +261,6 @@ func (q *RequestQueue) NotifyQuerierShutdown(querierID string) {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 	q.queues.notifyQuerierShutdown(querierID)
-}
-
-// When querier is waiting for next request, this unblocks the method.
-func (q *RequestQueue) QuerierDisconnecting() {
-	q.cond.Broadcast()
 }
 
 func (q *RequestQueue) GetConnectedQuerierWorkersMetric() float64 {

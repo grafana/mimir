@@ -204,6 +204,7 @@ func TestFrontendMetricsCleanup(t *testing.T) {
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			require.Equal(t, 200, resp.StatusCode)
+			defer resp.Body.Close()
 
 			body, err := ioutil.ReadAll(resp.Body)
 			require.NoError(t, err)
