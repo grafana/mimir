@@ -1065,7 +1065,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Send a lot of samples
-				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 
 				ingester.ingestionRate.Tick()
@@ -1089,7 +1089,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
 				// Send some samples for one tenant (not the same that is used during the test)
 				ctx := user.InjectOrgID(context.Background(), "different_tenant")
-				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
@@ -1109,7 +1109,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
-				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 10000))
+				_, err := ingester.Push(ctx, generateSamplesForLabel(labels.FromStrings(labels.MetricName, "test"), 1, 10000))
 				require.NoError(b, err)
 			},
 			runBenchmark: func(b *testing.B, ingester *Ingester, metrics []labels.Labels, samples []mimirpb.Sample) {
@@ -4472,28 +4472,36 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		count := 100000
-		target := time.Second
+		const targetRequestDuration = time.Second
 
-		// find right count to make sure that push takes given target duration.
+		samples := 100000
+		series := 1
+
+		// Find right series&samples count to make sure that push takes given target duration.
 		for {
-			req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("test-%d", count)), count)
+			req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("test-%d-%d", series, samples)), series, samples)
 
 			start := time.Now()
 			_, err := i.Push(ctx, req)
 			require.NoError(t, err)
 
 			elapsed := time.Since(start)
-			t.Log(count, elapsed)
-			if elapsed > time.Second {
+			t.Log(series, samples, elapsed)
+			if elapsed > targetRequestDuration {
 				break
 			}
 
-			count = int(float64(count) * float64(target/elapsed) * 1.5) // Adjust number of samples to hit our target push duration.
+			samples = int(float64(samples) * float64(targetRequestDuration/elapsed) * 1.5) // Adjust number of series to hit our targetRequestDuration push duration.
+			for samples >= int(time.Hour.Milliseconds()) {
+				// We generate one sample per millisecond, if we have more than an hour of samples TSDB will fail with "out of bounds".
+				// So we trade samples for series here.
+				samples /= 10
+				series *= 10
+			}
 		}
 
-		// Now repeat push with number of samples calibrated to our target.
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("real-%d", count)), count)
+		// Now repeat push with number of samples calibrated to our target request duration.
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, fmt.Sprintf("real-%d-%d", series, samples)), series, samples)
 
 		// Signal that we're going to do the real push now.
 		close(startCh)
@@ -4511,7 +4519,7 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 		}
 
 		time.Sleep(10 * time.Millisecond) // Give first goroutine a chance to start pushing...
-		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1024)
+		req := generateSamplesForLabel(labels.FromStrings(labels.MetricName, "testcase"), 1, 1024)
 
 		_, err := i.Push(ctx, req)
 		require.Equal(t, errTooManyInflightPushRequests, err)
@@ -4521,17 +4529,20 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	require.NoError(t, g.Wait())
 }
 
-func generateSamplesForLabel(l labels.Labels, count int) *mimirpb.WriteRequest {
-	var lbls = make([]labels.Labels, 0, count)
-	var samples = make([]mimirpb.Sample, 0, count)
+func generateSamplesForLabel(l labels.Labels, series, samples int) *mimirpb.WriteRequest {
+	lbls := make([]labels.Labels, 0, series*samples)
+	ss := make([]mimirpb.Sample, 0, series*samples)
 
-	for i := 0; i < count; i++ {
-		samples = append(samples, mimirpb.Sample{
-			Value:       float64(i),
-			TimestampMs: int64(i),
-		})
-		lbls = append(lbls, l)
+	for s := 0; s < series; s++ {
+		l := append(labels.FromStrings("serie", strconv.Itoa(s)), l...)
+		for i := 0; i < samples; i++ {
+			ss = append(ss, mimirpb.Sample{
+				Value:       float64(i),
+				TimestampMs: int64(i),
+			})
+			lbls = append(lbls, l)
+		}
 	}
 
-	return mimirpb.ToWriteRequest(lbls, samples, nil, mimirpb.API)
+	return mimirpb.ToWriteRequest(lbls, ss, nil, mimirpb.API)
 }
