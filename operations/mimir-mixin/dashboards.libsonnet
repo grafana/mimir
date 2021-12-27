@@ -12,6 +12,7 @@
     (import 'dashboards/compactor.libsonnet') +
     (import 'dashboards/compactor-resources.libsonnet') +
     (import 'dashboards/object-store.libsonnet') +
+    (import 'dashboards/overrides.libsonnet') +
 
     (if !$._config.resources_dashboards_enabled then {} else
        (import 'dashboards/reads-resources.libsonnet') +
