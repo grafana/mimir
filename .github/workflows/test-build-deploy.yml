@@ -49,7 +49,7 @@ jobs:
 #        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
         run: |
-          export GIT_CURL_VERBOSE=1
+          apt-get update && apt-get install libssl-dev
           git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir".insteadOf "https://github.com/grafana/mimir"
           make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
         env:
