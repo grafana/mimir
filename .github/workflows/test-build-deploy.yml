@@ -30,156 +30,157 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Lint
-        run: make BUILD_IN_CONTAINER=false lint
-      - name: Check Vendor Directory
-        run: |
-          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/prometheus-private".insteadOf "https://github.com/grafana/prometheus-private"
-          make BUILD_IN_CONTAINER=false mod-check
-        env:
-          GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-          GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
-      - name: Check Protos
-        run: make BUILD_IN_CONTAINER=false check-protos
-      - name: Check Generated Documentation
-        run: make BUILD_IN_CONTAINER=false check-doc
-      - name: Check Mixin
-        run: make BUILD_IN_CONTAINER=false check-mixin
-      - name: Check Jsonnet Manifests
-        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
+#      - name: Lint
+#        run: make BUILD_IN_CONTAINER=false lint
+#      - name: Check Vendor Directory
+#        run: |
+#          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/prometheus-private".insteadOf "https://github.com/grafana/prometheus-private"
+#          make BUILD_IN_CONTAINER=false mod-check
+#        env:
+#          GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
+#          GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
+#      - name: Check Protos
+#        run: make BUILD_IN_CONTAINER=false check-protos
+#      - name: Check Generated Documentation
+#        run: make BUILD_IN_CONTAINER=false check-doc
+#      - name: Check Mixin
+#        run: make BUILD_IN_CONTAINER=false check-mixin
+#      - name: Check Jsonnet Manifests
+#        run: make BUILD_IN_CONTAINER=false check-jsonnet-manifests
       - name: Check Jsonnet Getting Started
         run: |
+          export GIT_CURL_VERBOSE=1
           git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir".insteadOf "https://github.com/grafana/mimir"
           make BUILD_IN_CONTAINER=false check-jsonnet-getting-started
         env:
           GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
           GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
-      - name: Check White Noise.
-        run: make BUILD_IN_CONTAINER=false check-white-noise
-      - name: Check License Header
-        run: make BUILD_IN_CONTAINER=false check-license
-      - name: Check Docker-Compose YAML
-        run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
+#      - name: Check White Noise.
+#        run: make BUILD_IN_CONTAINER=false check-white-noise
+#      - name: Check License Header
+#        run: make BUILD_IN_CONTAINER=false check-license
+#      - name: Check Docker-Compose YAML
+#        run: make BUILD_IN_CONTAINER=false check-tsdb-blocks-storage-s3-docker-compose-yaml
 
-  test:
-    runs-on: ubuntu-20.04
-    container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
-      credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      # Note that we're running the 'test-with-race' target here which runs unit tests with the go data race detector
-      - name: Run Tests
-        run: make BUILD_IN_CONTAINER=false test-with-race
-
-  build-mimir:
-    runs-on: ubuntu-20.04
-    container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
-      credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Install Docker Client
-        run: ./.github/workflows/scripts/install-docker.sh
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Image
-        run: |
-          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate
-      - name: Save Images
-        run: |
-          mkdir /tmp/images
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false save-images
-      - name: Create Docker Images Archive
-        run: tar -cvf images.tar /tmp/images
-      - name: Upload Docker Images Artifact
-        uses: actions/upload-artifact@v2
-        with:
-          name: Docker Images
-          path: ./images.tar
-
-  build-tools:
-    runs-on: ubuntu-20.04
-    container:
-      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
-      credentials:
-        username: _json_key
-        password: ${{ secrets.gcr_json_key }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Install Docker Client
-        run: ./.github/workflows/scripts/install-docker.sh
-      - name: Symlink Expected Path to Workspace
-        run: |
-          mkdir -p /go/src/github.com/grafana/mimir
-          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Build Images
-        # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
-        run: |
-          make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
-
-  integration:
-    needs: build-mimir
-    runs-on: ubuntu-20.04
-    strategy:
-      # Do not abort other groups when one fails.
-      fail-fast: false
-      # Split tests into 4 groups.
-      matrix:
-        test_group_id:    [0, 1, 2, 3]
-        test_group_total: [4]
-    steps:
-      - name: Upgrade golang
-        uses: actions/setup-go@v2
-        with:
-          go-version: 1.17.3
-      - name: Checkout Repo
-        uses: actions/checkout@v2
-      - name: Install Docker Client
-        run: sudo ./.github/workflows/scripts/install-docker.sh
-      - name: Symlink Expected Path to Workspace
-        run: |
-          sudo mkdir -p /go/src/github.com/grafana/mimir
-          sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Images Artifacts
-        uses: actions/download-artifact@v2
-        with:
-          name: Docker Images
-      - name: Extract Docker Images Archive
-        run: tar -xvf images.tar -C /
-      - name: Load Docker Images
-        run: |
-          ln -s /tmp/images ./docker-images
-          make BUILD_IN_CONTAINER=false load-images
-      - name: Preload Images
-        # We download docker images used by integration tests so that all images are available
-        # locally and the download time doesn't account in the test execution time, which is subject
-        # to a timeout
-        run: |
-          docker pull minio/minio:RELEASE.2021-10-13T00-23-17Z
-          docker pull consul:1.8.15
-          docker pull gcr.io/etcd-development/etcd:v3.4.13
-          docker pull quay.io/cortexproject/cortex:v1.11.0
-          docker pull memcached:1.6.12
-      - name: Integration Tests
-        run: |
-          export IMAGE_TAG=$(make image-tag)
-          export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
-          export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
-          echo "Running integration tests with image: $MIMIR_IMAGE"
-          echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
-          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+#  test:
+#    runs-on: ubuntu-20.04
+#    container:
+#      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
+#      credentials:
+#        username: _json_key
+#        password: ${{ secrets.gcr_json_key }}
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      # Note that we're running the 'test-with-race' target here which runs unit tests with the go data race detector
+#      - name: Run Tests
+#        run: make BUILD_IN_CONTAINER=false test-with-race
+#
+#  build-mimir:
+#    runs-on: ubuntu-20.04
+#    container:
+#      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
+#      credentials:
+#        username: _json_key
+#        password: ${{ secrets.gcr_json_key }}
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#      - name: Install Docker Client
+#        run: ./.github/workflows/scripts/install-docker.sh
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Build Image
+#        run: |
+#          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate
+#      - name: Save Images
+#        run: |
+#          mkdir /tmp/images
+#          ln -s /tmp/images ./docker-images
+#          make BUILD_IN_CONTAINER=false save-images
+#      - name: Create Docker Images Archive
+#        run: tar -cvf images.tar /tmp/images
+#      - name: Upload Docker Images Artifact
+#        uses: actions/upload-artifact@v2
+#        with:
+#          name: Docker Images
+#          path: ./images.tar
+#
+#  build-tools:
+#    runs-on: ubuntu-20.04
+#    container:
+#      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
+#      credentials:
+#        username: _json_key
+#        password: ${{ secrets.gcr_json_key }}
+#    steps:
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#      - name: Install Docker Client
+#        run: ./.github/workflows/scripts/install-docker.sh
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          mkdir -p /go/src/github.com/grafana/mimir
+#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Build Images
+#        # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
+#        run: |
+#          make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
+#
+#  integration:
+#    needs: build-mimir
+#    runs-on: ubuntu-20.04
+#    strategy:
+#      # Do not abort other groups when one fails.
+#      fail-fast: false
+#      # Split tests into 4 groups.
+#      matrix:
+#        test_group_id:    [0, 1, 2, 3]
+#        test_group_total: [4]
+#    steps:
+#      - name: Upgrade golang
+#        uses: actions/setup-go@v2
+#        with:
+#          go-version: 1.17.3
+#      - name: Checkout Repo
+#        uses: actions/checkout@v2
+#      - name: Install Docker Client
+#        run: sudo ./.github/workflows/scripts/install-docker.sh
+#      - name: Symlink Expected Path to Workspace
+#        run: |
+#          sudo mkdir -p /go/src/github.com/grafana/mimir
+#          sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+#      - name: Download Docker Images Artifacts
+#        uses: actions/download-artifact@v2
+#        with:
+#          name: Docker Images
+#      - name: Extract Docker Images Archive
+#        run: tar -xvf images.tar -C /
+#      - name: Load Docker Images
+#        run: |
+#          ln -s /tmp/images ./docker-images
+#          make BUILD_IN_CONTAINER=false load-images
+#      - name: Preload Images
+#        # We download docker images used by integration tests so that all images are available
+#        # locally and the download time doesn't account in the test execution time, which is subject
+#        # to a timeout
+#        run: |
+#          docker pull minio/minio:RELEASE.2021-10-13T00-23-17Z
+#          docker pull consul:1.8.15
+#          docker pull gcr.io/etcd-development/etcd:v3.4.13
+#          docker pull quay.io/cortexproject/cortex:v1.11.0
+#          docker pull memcached:1.6.12
+#      - name: Integration Tests
+#        run: |
+#          export IMAGE_TAG=$(make image-tag)
+#          export MIMIR_IMAGE="us.gcr.io/kubernetes-dev/mimir:$IMAGE_TAG"
+#          export MIMIR_CHECKOUT_DIR="/go/src/github.com/grafana/mimir"
+#          echo "Running integration tests with image: $MIMIR_IMAGE"
+#          echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
+#          ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}

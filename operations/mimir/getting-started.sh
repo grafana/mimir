@@ -12,5 +12,5 @@ jb install github.com/grafana/mimir/operations/mimir@main
 cp vendor/mimir/mimir-manifests.jsonnet.example environments/default/main.jsonnet
 
 # Generate the YAML manifests.
-export PAGER=cat
-tk show environments/default
+#export PAGER=cat
+#tk show environments/default
