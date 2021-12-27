@@ -2126,6 +2126,14 @@ func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Match
 		return newPostingGroup(false, keys, nil), nil
 	}
 
+	if m.Type == labels.MatchNotEqual {
+		var toRemove []labels.Label
+		if m.Value != "" {
+			toRemove = []labels.Label{{Name: m.Name, Value: m.Value}}
+		}
+		return newPostingGroup(true, nil, toRemove), nil
+	}
+
 	// If the matcher selects an empty value, it selects all the series which don't
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
