@@ -4534,7 +4534,7 @@ func generateSamplesForLabel(l labels.Labels, series, samples int) *mimirpb.Writ
 	ss := make([]mimirpb.Sample, 0, series*samples)
 
 	for s := 0; s < series; s++ {
-		l := append(labels.FromStrings("serie", strconv.Itoa(s)), l...)
+		l := append(labels.FromStrings("series", strconv.Itoa(s)), l...)
 		for i := 0; i < samples; i++ {
 			ss = append(ss, mimirpb.Sample{
 				Value:       float64(i),
