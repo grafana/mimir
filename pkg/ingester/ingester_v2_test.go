@@ -4529,12 +4529,12 @@ func TestIngester_inflightPushRequests(t *testing.T) {
 	require.NoError(t, g.Wait())
 }
 
-func generateSamplesForLabel(l labels.Labels, series, samples int) *mimirpb.WriteRequest {
+func generateSamplesForLabel(baseLabels labels.Labels, series, samples int) *mimirpb.WriteRequest {
 	lbls := make([]labels.Labels, 0, series*samples)
 	ss := make([]mimirpb.Sample, 0, series*samples)
 
 	for s := 0; s < series; s++ {
-		l := append(labels.FromStrings("series", strconv.Itoa(s)), l...)
+		l := append(labels.FromStrings("series", strconv.Itoa(s)), baseLabels...)
 		for i := 0; i < samples; i++ {
 			ss = append(ss, mimirpb.Sample{
 				Value:       float64(i),
