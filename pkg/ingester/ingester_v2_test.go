@@ -684,7 +684,7 @@ func TestIngester_Push(t *testing.T) {
 
 			// Update active series for metrics check.
 			if !testData.disableActiveSeries {
-				i.updateActiveSeries()
+				i.updateActiveSeries(time.Now())
 			}
 
 			// Append additional metrics to assert on.
@@ -749,7 +749,7 @@ func TestIngester_Push_ShouldCorrectlyTrackMetricsInMultiTenantScenario(t *testi
 	}
 
 	// Update active series for metrics check.
-	i.updateActiveSeries()
+	i.updateActiveSeries(time.Now())
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -834,7 +834,7 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 	time.Sleep(200 * time.Millisecond)
 
 	// Update active series for metrics check. This will remove inactive series.
-	i.updateActiveSeries()
+	i.updateActiveSeries(time.Now())
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -3835,7 +3835,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	i.updateActiveSeries()
+	i.updateActiveSeries(time.Now())
 
 	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
 
@@ -3876,7 +3876,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	})
 
 	require.Greater(t, testutil.ToFloat64(i.TSDBState.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
-	i.updateActiveSeries()
+	i.updateActiveSeries(time.Now())
 	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
@@ -3901,7 +3901,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Pushing another sample will recreate TSDB.
 	pushSingleSampleWithMetadata(t, i)
-	i.updateActiveSeries()
+	i.updateActiveSeries(time.Now())
 
 	// User is back.
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
