@@ -24,7 +24,6 @@ import (
 	commoncfg "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/objstore"
-	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/alertmanager/alertspb"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore/bucketclient"
@@ -732,9 +731,44 @@ receivers:
 	require.Equal(t, "application/yaml", resp.Header.Get("Content-Type"))
 	body, err := ioutil.ReadAll(resp.Body)
 	require.NoError(t, err)
-	old, err := yaml.Marshal(testCases)
-	require.NoError(t, err)
-	require.YAMLEq(t, string(old), string(body))
+
+	expectedYaml := `user1:
+    template_files: {}
+    alertmanager_config: |4
+        global:
+          resolve_timeout: 5m
+        route:
+          receiver: route1
+          group_by:
+          - '...'
+          continue: false
+        receivers:
+        - name: route1
+          webhook_configs:
+          - send_resolved: true
+            http_config: {}
+            url: http://alertmanager/api/notifications?orgId=1&rrid=7
+            max_alerts: 0
+user2:
+    template_files: {}
+    alertmanager_config: |4
+        global:
+          resolve_timeout: 5m
+        route:
+          receiver: route1
+          group_by:
+          - '...'
+          continue: false
+        receivers:
+        - name: route1
+          webhook_configs:
+          - send_resolved: true
+            http_config: {}
+            url: http://alertmanager/api/notifications?orgId=2&rrid=7
+            max_alerts: 0
+`
+
+	require.YAMLEq(t, expectedYaml, string(body))
 }
 
 func TestValidateAlertmanagerConfig(t *testing.T) {
