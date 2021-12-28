@@ -740,6 +740,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 		allActive, activeMatching := userDB.activeSeries.Active()
 		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
+			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 			if activeMatching[idx] > 0 {
 				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
 			} else {

@@ -748,9 +748,10 @@ lifecycler:
 # CLI flag: -ingester.active-series-metrics-idle-timeout
 [active_series_metrics_idle_timeout: <duration> | default = 10m]
 
-# Additional custom trackers for active metrics. Active series matching a
-# provided matcher (map value) will be exposed in the custom trackers metric
-# labeled using the tracker name (map key).
+# Additional custom trackers for active metrics. If there are active series
+# matching a provided matcher (map value), the count will be exposed in the
+# custom trackers metric labeled using the tracker name (map key). Zero valued
+# counts are not exposed (and removed when they go back to zero).
 # Example:
 #   The following configuration will count the active series coming from dev and
 #   prod namespaces for each tenant and label them as {name="dev"} and
