@@ -678,7 +678,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Sleep for one millisecond, this will make the append time of first push smaller than
 				// secondPushTime. This is something required to make the test deterministic
-				// (otherwise it _could_ be the same nanosecond theoretically, although unlikely on practice)
+				// (otherwise it _could_ be the same nanosecond theoretically, although unlikely in practice)
 				time.Sleep(time.Millisecond)
 				secondPushTime := time.Now()
 				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
