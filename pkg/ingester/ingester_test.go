@@ -650,7 +650,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				firstPushTime := time.Now()
 
-				// We're pushing samples at firstPushTiume - 1m, but they're accounted as pushed at firstPushTime
+				// We're pushing samples at firstPushTime - 1m, but they're accounted as pushed at firstPushTime
 				for _, req := range []*mimirpb.WriteRequest{
 					req(metricLabelsBoolTrue, firstPushTime.Add(-time.Minute)),
 					req(metricLabelsBoolFalse, firstPushTime.Add(-time.Minute)),
