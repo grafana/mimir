@@ -617,7 +617,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 		expectedMetrics     string
 		disableActiveSeries bool
 	}{
-		"should succeed on valid series and metadata": {
+		"successful push, should count active series": {
 			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
 				now := time.Now()
 
