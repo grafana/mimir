@@ -760,7 +760,6 @@ func TestIngesterActiveSeries(t *testing.T) {
 				return ing.lifecycler.HealthyInstancesCount()
 			})
 
-			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
 
 			testData.test(t, ing, registry)
 		})
