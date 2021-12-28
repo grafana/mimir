@@ -760,7 +760,6 @@ func TestIngesterActiveSeries(t *testing.T) {
 				return ing.lifecycler.HealthyInstancesCount()
 			})
 
-
 			testData.test(t, ing, registry)
 		})
 	}
