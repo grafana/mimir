@@ -2115,23 +2115,45 @@ func checkNilPosting(l labels.Label, p index.Postings) index.Postings {
 
 // NOTE: Derived from tsdb.postingsForMatcher. index.Merge is equivalent to map duplication.
 func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Matcher) (*postingGroup, error) {
-	if setMatches := m.SetMatches(); m.Type == labels.MatchRegexp && len(setMatches) > 0 {
-		toAdd := make([]labels.Label, 0, len(setMatches))
+	if setMatches := m.SetMatches(); len(setMatches) > 0 && (m.Type == labels.MatchRegexp || m.Type == labels.MatchNotRegexp) {
+		keys := make([]labels.Label, 0, len(setMatches))
 		for _, val := range setMatches {
-			toAdd = append(toAdd, labels.Label{Name: m.Name, Value: val})
+			keys = append(keys, labels.Label{Name: m.Name, Value: val})
 		}
-		return newPostingGroup(false, toAdd, nil), nil
+		if m.Type == labels.MatchNotRegexp {
+			return newPostingGroup(true, nil, keys), nil
+		}
+		return newPostingGroup(false, keys, nil), nil
 	}
 
-	// If the matcher selects an empty value, it selects all the series which don't
+	if m.Value != "" {
+		// Fast-path for equal matching.
+		// Works for every case except for `foo=""`, which is a special case, see below.
+		if m.Type == labels.MatchEqual {
+			return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), nil
+		}
+
+		// If matcher is `label!="foo"`, we select an empty label value too,
+		// i.e., series that don't have this label.
+		// So this matcher selects all series in the storage,
+		// except for the ones that do have `label="foo"`
+		if m.Type == labels.MatchNotEqual {
+			return newPostingGroup(true, nil, []labels.Label{{Name: m.Name, Value: m.Value}}), nil
+		}
+	}
+
+	vals, err := lvalsFn(m.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	// This is a more generic approach for the previous case.
+	// Here we can enter with `label=""` or regexp matchers that match the empty value,
+	// like `=~"|foo" or `error!~"5..".
+	// Remember: if the matcher selects an empty value, it selects all the series which don't
 	// have the label name set too. See: https://github.com/prometheus/prometheus/issues/3575
 	// and https://github.com/prometheus/prometheus/pull/3578#issuecomment-351653555.
 	if m.Matches("") {
-		vals, err := lvalsFn(m.Name)
-		if err != nil {
-			return nil, err
-		}
-
 		var toRemove []labels.Label
 		for _, val := range vals {
 			if !m.Matches(val) {
@@ -2142,16 +2164,8 @@ func toPostingGroup(lvalsFn func(name string) ([]string, error), m *labels.Match
 		return newPostingGroup(true, nil, toRemove), nil
 	}
 
-	// Fast-path for equal matching.
-	if m.Type == labels.MatchEqual {
-		return newPostingGroup(false, []labels.Label{{Name: m.Name, Value: m.Value}}, nil), nil
-	}
-
-	vals, err := lvalsFn(m.Name)
-	if err != nil {
-		return nil, err
-	}
-
+	// Our matcher does not match the empty value, so we just need the postings that correspond
+	// to label values matched by the matcher.
 	var toAdd []labels.Label
 	for _, val := range vals {
 		if m.Matches(val) {
