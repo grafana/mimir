@@ -718,7 +718,7 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 			i.applyExemplarsSettings()
 
 		case <-activeSeriesTickerChan:
-			i.updateActiveSeries()
+			i.updateActiveSeries(time.Now())
 
 		case <-ctx.Done():
 			return nil
@@ -728,9 +728,8 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 	}
 }
 
-func (i *Ingester) updateActiveSeries() {
-	purgeTime := time.Now().Add(-i.cfg.ActiveSeriesMetricsIdleTimeout)
-
+func (i *Ingester) updateActiveSeries(now time.Time) {
+	purgeTime := now.Add(-i.cfg.ActiveSeriesMetricsIdleTimeout)
 	for _, userID := range i.getTSDBUsers() {
 		userDB := i.getTSDB(userID)
 		if userDB == nil {
@@ -741,7 +740,12 @@ func (i *Ingester) updateActiveSeries() {
 		allActive, activeMatching := userDB.activeSeries.Active()
 		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
 		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
-			i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
+			if activeMatching[idx] > 0 {
+				i.metrics.activeSeriesCustomTrackersPerUser.WithLabelValues(userID, name).Set(float64(activeMatching[idx]))
+			} else {
+				i.metrics.activeSeriesCustomTrackersPerUser.DeleteLabelValues(userID, name)
+			}
 		}
 	}
 }

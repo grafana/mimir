@@ -593,58 +593,147 @@ func BenchmarkIngester_QueryStream(b *testing.B) {
 }
 
 func TestIngesterActiveSeries(t *testing.T) {
-	metricLabelAdapters := []mimirpb.LabelAdapter{
-		{Name: labels.MetricName, Value: "test"},
+	metricLabelsBoolTrue := labels.FromStrings(labels.MetricName, "test", "bool", "true")
+	metricLabelsBoolFalse := labels.FromStrings(labels.MetricName, "test", "bool", "false")
+
+	req := func(lbls labels.Labels, t time.Time) *mimirpb.WriteRequest {
+		return mimirpb.ToWriteRequest(
+			[]labels.Labels{lbls},
+			[]mimirpb.Sample{{Value: 1, TimestampMs: t.UnixMilli()}},
+			nil,
+			mimirpb.API,
+		)
 	}
-	metricLabels := []labels.Labels{
-		labels.Labels(mimirpb.FromLabelAdaptersToLabels(metricLabelAdapters)),
-	}
+
 	metricNames := []string{
 		"cortex_ingester_active_series",
+		"cortex_ingester_active_series_custom_tracker",
 	}
 	userID := "test"
 
-	tsNow := time.Now().Unix() * 1000
-
 	tests := map[string]struct {
+		test                func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer)
 		reqs                []*mimirpb.WriteRequest
 		expectedMetrics     string
 		disableActiveSeries bool
 	}{
-		"should succeed on valid series and metadata": {
-			reqs: []*mimirpb.WriteRequest{
-				mimirpb.ToWriteRequest(
-					metricLabels,
-					[]mimirpb.Sample{{Value: 1, TimestampMs: tsNow + 9}},
-					nil,
-					mimirpb.API),
-				mimirpb.ToWriteRequest(
-					metricLabels,
-					[]mimirpb.Sample{{Value: 2, TimestampMs: tsNow + 10}},
-					nil,
-					mimirpb.API),
+		"successful push, should count active series": {
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				now := time.Now()
+
+				for _, req := range []*mimirpb.WriteRequest{
+					req(metricLabelsBoolTrue, now.Add(-2*time.Minute)),
+					req(metricLabelsBoolTrue, now.Add(-1*time.Minute)),
+				} {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					_, err := ingester.Push(ctx, req)
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(now)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test"} 1
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
-			expectedMetrics: `
-				# HELP cortex_ingester_active_series Number of currently active series per user.
-				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 1
-			`,
+		},
+		"should track custom matchers, removing when zero": {
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				firstPushTime := time.Now()
+
+				// We're pushing samples at firstPushTime - 1m, but they're accounted as pushed at firstPushTime
+				for _, req := range []*mimirpb.WriteRequest{
+					req(metricLabelsBoolTrue, firstPushTime.Add(-time.Minute)),
+					req(metricLabelsBoolFalse, firstPushTime.Add(-time.Minute)),
+				} {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					_, err := ingester.Push(ctx, req)
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(firstPushTime)
+
+				expectedMetrics := `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test"} 2
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_false",user="test"} 1
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Sleep for one millisecond, this will make the append time of first push smaller than
+				// secondPushTime. This is something required to make the test deterministic
+				// (otherwise it _could_ be the same nanosecond theoretically, although unlikely in practice)
+				time.Sleep(time.Millisecond)
+				secondPushTime := time.Now()
+				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
+				time.Sleep(time.Millisecond)
+
+				for _, req := range []*mimirpb.WriteRequest{
+					req(metricLabelsBoolTrue, secondPushTime),
+					req(metricLabelsBoolTrue, secondPushTime),
+					// metricLabelsBoolFalse became inactive so we're not pushing it anymore
+				} {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					_, err := ingester.Push(ctx, req)
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check in the future.
+				// We update them in the exact moment in time where append time of the first push is already considered idle,
+				// while the second append happens after the purge timestamp.
+				ingester.updateActiveSeries(secondPushTime.Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+
+				expectedMetrics = `
+					# HELP cortex_ingester_active_series Number of currently active series per user.
+					# TYPE cortex_ingester_active_series gauge
+					cortex_ingester_active_series{user="test"} 1
+					# HELP cortex_ingester_active_series_custom_tracker Number of currently active series matching a pre-configured label matchers per user.
+					# TYPE cortex_ingester_active_series_custom_tracker gauge
+					cortex_ingester_active_series_custom_tracker{name="bool_is_true",user="test"} 1
+				`
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+			},
 		},
 		"successful push, active series disabled": {
 			disableActiveSeries: true,
-			reqs: []*mimirpb.WriteRequest{
-				mimirpb.ToWriteRequest(
-					metricLabels,
-					[]mimirpb.Sample{{Value: 1, TimestampMs: tsNow + 9}},
-					nil,
-					mimirpb.API),
-				mimirpb.ToWriteRequest(
-					metricLabels,
-					[]mimirpb.Sample{{Value: 2, TimestampMs: tsNow + 10}},
-					nil,
-					mimirpb.API),
+			test: func(t *testing.T, ingester *Ingester, gatherer prometheus.Gatherer) {
+				now := time.Now()
+
+				for _, req := range []*mimirpb.WriteRequest{
+					req(metricLabelsBoolTrue, now.Add(-2*time.Minute)),
+					req(metricLabelsBoolTrue, now.Add(-1*time.Minute)),
+				} {
+					ctx := user.InjectOrgID(context.Background(), userID)
+					_, err := ingester.Push(ctx, req)
+					require.NoError(t, err)
+				}
+
+				// Update active series for metrics check.
+				ingester.updateActiveSeries(now)
+
+				expectedMetrics := ``
+
+				// Check tracked Prometheus metrics
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
 			},
-			expectedMetrics: ``,
 		},
 	}
 
@@ -656,6 +745,10 @@ func TestIngesterActiveSeries(t *testing.T) {
 			cfg := defaultIngesterTestConfig(t)
 			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
+			cfg.ActiveSeriesCustomTrackers = map[string]string{
+				"bool_is_true":  `{bool="true"}`,
+				"bool_is_false": `{bool="false"}`,
+			}
 
 			ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, defaultLimitsTestConfig(), "", registry)
 			require.NoError(t, err)
@@ -667,22 +760,7 @@ func TestIngesterActiveSeries(t *testing.T) {
 				return ing.lifecycler.HealthyInstancesCount()
 			})
 
-			defer services.StopAndAwaitTerminated(context.Background(), ing) //nolint:errcheck
-
-			ctx := user.InjectOrgID(context.Background(), userID)
-
-			// Push timeseries
-			for _, req := range testData.reqs {
-				_, err := ing.Push(ctx, req)
-				assert.NoError(t, err)
-			}
-
-			// Update active series for metrics check.
-			ing.updateActiveSeries()
-
-			// Check tracked Prometheus metrics
-			err = testutil.GatherAndCompare(registry, strings.NewReader(testData.expectedMetrics), metricNames...)
-			assert.NoError(t, err)
+			testData.test(t, ing, registry)
 		})
 	}
 }
