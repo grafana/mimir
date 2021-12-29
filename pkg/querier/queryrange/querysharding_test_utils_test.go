@@ -57,13 +57,13 @@ func genLabels(
 
 }
 
-// NewMockShardedQueryable creates a shard-aware in memory queryable.
-func NewMockShardedQueryable(
+// newMockShardedQueryable creates a shard-aware in memory queryable.
+func newMockShardedQueryable(
 	nSamples int,
 	labelSet []string,
 	labelBuckets int,
 	delayPerSeries time.Duration,
-) *MockShardedQueryable {
+) *mockShardedQueryable {
 	samples := make([]model.SamplePair, 0, nSamples)
 	for i := 0; i < nSamples; i++ {
 		samples = append(samples, model.SamplePair{
@@ -77,26 +77,26 @@ func NewMockShardedQueryable(
 		xs = append(xs, series.NewConcreteSeries(ls, samples))
 	}
 
-	return &MockShardedQueryable{
+	return &mockShardedQueryable{
 		series:         xs,
 		delayPerSeries: delayPerSeries,
 	}
 }
 
-// MockShardedQueryable is exported to be reused in the querysharding benchmarking
-type MockShardedQueryable struct {
+// mockShardedQueryable is exported to be reused in the querysharding benchmarking
+type mockShardedQueryable struct {
 	series         []storage.Series
 	delayPerSeries time.Duration
 }
 
 // Querier impls storage.Queryable
-func (q *MockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (q *mockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return q, nil
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *mockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -133,7 +133,7 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 
 	results := make([]storage.Series, 0, end-start)
 	for i := start; i < end; i++ {
-		results = append(results, &ShardLabelSeries{
+		results = append(results, &shardLabelSeries{
 			shard:  shard,
 			name:   name,
 			Series: q.series[i],
@@ -156,15 +156,15 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 	return series.NewConcreteSeriesSet(results)
 }
 
-// ShardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels
-type ShardLabelSeries struct {
+// shardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels
+type shardLabelSeries struct {
 	shard *sharding.ShardSelector
 	name  string
 	storage.Series
 }
 
 // Labels impls storage.Series
-func (s *ShardLabelSeries) Labels() labels.Labels {
+func (s *shardLabelSeries) Labels() labels.Labels {
 	ls := s.Series.Labels()
 
 	if s.name != "" {
@@ -182,17 +182,17 @@ func (s *ShardLabelSeries) Labels() labels.Labels {
 }
 
 // LabelValues impls storage.Querier
-func (q *MockShardedQueryable) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
-func (q *MockShardedQueryable) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
 // Close releases the resources of the Querier.
-func (q *MockShardedQueryable) Close() error {
+func (q *mockShardedQueryable) Close() error {
 	return nil
 }
 
@@ -288,7 +288,7 @@ func TestNewMockShardedqueryable(t *testing.T) {
 			labelSet:     []string{"a", "b", "c"},
 		},
 	} {
-		q := NewMockShardedQueryable(tc.nSamples, tc.labelSet, tc.labelBuckets, 0)
+		q := newMockShardedQueryable(tc.nSamples, tc.labelSet, tc.labelBuckets, 0)
 		expectedSeries := int(math.Pow(float64(tc.labelBuckets), float64(len(tc.labelSet))))
 
 		seriesCt := 0

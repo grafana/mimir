@@ -871,7 +871,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				},
 			}, nil
 		})
-		queryableSlow = NewMockShardedQueryable(
+		queryableSlow = newMockShardedQueryable(
 			2,
 			[]string{"a", "b", "c"},
 			1,
@@ -1020,7 +1020,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 				Timeout:    time.Minute,
 			})
 
-			queryable := NewMockShardedQueryable(
+			queryable := newMockShardedQueryable(
 				tc.samplesPerSeries,
 				tc.labels,
 				tc.labelBuckets,
