@@ -395,7 +395,7 @@ github.com/googleapis/gax-go/v2/apierror/internal/proto
 # github.com/gorilla/mux v1.8.0
 ## explicit; go 1.12
 github.com/gorilla/mux
-# github.com/grafana/dskit v0.0.0-20211216220614-1f49a705499c
+# github.com/grafana/dskit v0.0.0-20211229145507-fded26153e7b
 ## explicit; go 1.16
 github.com/grafana/dskit/backoff
 github.com/grafana/dskit/concurrency
@@ -404,13 +404,13 @@ github.com/grafana/dskit/flagext
 github.com/grafana/dskit/grpcclient
 github.com/grafana/dskit/grpcencoding/snappy
 github.com/grafana/dskit/grpcutil
+github.com/grafana/dskit/internal/math
 github.com/grafana/dskit/kv
 github.com/grafana/dskit/kv/codec
 github.com/grafana/dskit/kv/consul
 github.com/grafana/dskit/kv/etcd
 github.com/grafana/dskit/kv/memberlist
 github.com/grafana/dskit/limiter
-github.com/grafana/dskit/math
 github.com/grafana/dskit/middleware
 github.com/grafana/dskit/modules
 github.com/grafana/dskit/multierror
@@ -423,7 +423,6 @@ github.com/grafana/dskit/runutil
 github.com/grafana/dskit/services
 github.com/grafana/dskit/spanlogger
 github.com/grafana/dskit/test
-github.com/grafana/dskit/time
 # github.com/grpc-ecosystem/go-grpc-middleware v1.3.0
 ## explicit; go 1.14
 github.com/grpc-ecosystem/go-grpc-middleware
