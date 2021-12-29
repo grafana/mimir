@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/split_by_interval.go
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/util.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
@@ -7,7 +8,11 @@ package queryrange
 
 import (
 	"context"
+	"sync"
 	"time"
+
+	"github.com/opentracing/opentracing-go"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -188,7 +193,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	execReqs := splitReqs.prepareDownstreamRequests()
 
 	if len(execReqs) > 0 {
-		execResps, err := DoRequests(ctx, s.next, execReqs, true)
+		execResps, err := doRequests(ctx, s.next, execReqs, true)
 		if err != nil {
 			return nil, err
 		}
@@ -432,10 +437,10 @@ func (s *splitRequests) prepareDownstreamRequests() []Request {
 	return execReqs
 }
 
-// storeDownstreamResponses associates the given executed RequestResponse with the downstream requests
+// storeDownstreamResponses associates the given executed requestResponse with the downstream requests
 // and stores the associated downstream responses for each request. If returns no error, then it's guaranteed
 // that any downstream request got its response associated.
-func (s *splitRequests) storeDownstreamResponses(responses []RequestResponse) error {
+func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
 
 	// Map responses by (unique) request IDs.
@@ -470,6 +475,43 @@ func (s *splitRequests) storeDownstreamResponses(responses []RequestResponse) er
 	}
 
 	return nil
+}
+
+// requestResponse contains a request response and the respective request that was used.
+type requestResponse struct {
+	Request  Request
+	Response Response
+}
+
+// doRequests executes a list of requests in parallel.
+func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordSpan bool) ([]requestResponse, error) {
+	g, ctx := errgroup.WithContext(ctx)
+	mtx := sync.Mutex{}
+	resps := make([]requestResponse, 0, len(reqs))
+	for i := 0; i < len(reqs); i++ {
+		req := reqs[i]
+		g.Go(func() error {
+			var childCtx = ctx
+			if recordSpan {
+				var span opentracing.Span
+				span, childCtx = opentracing.StartSpanFromContext(ctx, "doRequests")
+				req.LogToSpan(span)
+				defer span.Finish()
+			}
+
+			resp, err := downstream.Do(childCtx, req)
+			if err != nil {
+				return err
+			}
+
+			mtx.Lock()
+			resps = append(resps, requestResponse{req, resp})
+			mtx.Unlock()
+			return nil
+		})
+	}
+
+	return resps, g.Wait()
 }
 
 func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) {

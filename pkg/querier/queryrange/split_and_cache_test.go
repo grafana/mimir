@@ -1014,7 +1014,7 @@ func TestSplitRequests_prepareDownstreamRequests(t *testing.T) {
 func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 	tests := map[string]struct {
 		requests    splitRequests
-		responses   []RequestResponse
+		responses   []requestResponse
 		expectedErr string
 		expected    splitRequests
 	}{
@@ -1040,7 +1040,7 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
-			responses: []RequestResponse{{
+			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
@@ -1069,7 +1069,7 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
-			responses: []RequestResponse{{
+			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
@@ -1086,7 +1086,7 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
-			responses: []RequestResponse{{
+			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
@@ -1103,7 +1103,7 @@ func TestSplitRequests_storeDownstreamResponses(t *testing.T) {
 				downstreamRequests:  []Request{&PrometheusRangeQueryRequest{Start: 3, Id: 3}},
 				downstreamResponses: []Response{nil},
 			}},
-			responses: []RequestResponse{{
+			responses: []requestResponse{{
 				Request:  &PrometheusRangeQueryRequest{Start: 3, Id: 3},
 				Response: &PrometheusResponse{Status: "response-3"},
 			}, {
