@@ -347,6 +347,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `count by (unique) (metric_counter) > 0`,
 			expectedShardedQueries: 1,
 		},
+		`filtering binary operation with non constant`: {
+			query:                  `max_over_time(metric_counter[5m]) > scalar(min(metric_counter))`,
+			expectedShardedQueries: 1, // scalar on the right should be sharded, but not the binary op itself, hence 1
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//
@@ -408,10 +412,6 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `"test"`,
 			expectedShardedQueries: 0,
 			noRangeQuery:           true,
-		},
-		`filtering binary operation with non constant`: {
-			query:                  `max_over_time(metric_counter[5m]) > scalar(min(metric_counter))`,
-			expectedShardedQueries: 1, // scalar on the right should be sharded, but not the binary op itself, hence 1
 		},
 	}
 
