@@ -169,7 +169,7 @@ func newQueryTripperware(
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
 	// Metric used to keep track of each middleware execution duration.
-	metrics := NewInstrumentMiddlewareMetrics(registerer)
+	metrics := newInstrumentMiddlewareMetrics(registerer)
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
@@ -177,7 +177,7 @@ func newQueryTripperware(
 		NewLimitsMiddleware(limits, log),
 	}
 	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
 	}
 
 	var c cache.Cache
@@ -204,7 +204,7 @@ func newQueryTripperware(
 			return !r.GetOptions().CacheDisabled
 		}
 
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
@@ -240,20 +240,20 @@ func newQueryTripperware(
 		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
-			InstrumentMiddleware("querysharding", metrics, log),
+			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			InstrumentMiddleware("querysharding", metrics, log),
+			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
 		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
