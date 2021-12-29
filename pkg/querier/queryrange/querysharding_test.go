@@ -323,6 +323,30 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			expectedShardedQueries: 1,
 			expectSpecificOrder:    true,
 		},
+		"scalar(aggregation)": {
+			query:                  `scalar(sum(metric_counter))`,
+			expectedShardedQueries: 1,
+		},
+		`filtering binary operation with constant scalar`: {
+			query:                  `count(metric_counter > 0)`,
+			expectedShardedQueries: 1,
+		},
+		`filtering binary operation of a function result with scalar`: {
+			query:                  `max_over_time(metric_counter[5m]) > 0`,
+			expectedShardedQueries: 1,
+		},
+		`binary operation with an aggregation on one hand`: {
+			query:                  `sum(metric_counter) > 1`,
+			expectedShardedQueries: 1,
+		},
+		`binary operation with an aggregation on the other hand`: {
+			query:                  `0 < sum(metric_counter)`,
+			expectedShardedQueries: 1,
+		},
+		`binary operation with an aggregation by some label on one hand`: {
+			query:                  `count by (unique) (metric_counter) > 0`,
+			expectedShardedQueries: 1,
+		},
 		//
 		// The following queries are not expected to be shardable.
 		//
@@ -354,7 +378,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `vector(1)`,
 			expectedShardedQueries: 0,
 		},
-		"scalar()": {
+		"scalar(single metric)": {
 			query:                  `scalar(metric_counter{unique="1"})`, // Select a single metric.
 			expectedShardedQueries: 0,
 		},
@@ -384,6 +408,10 @@ func TestQueryShardingCorrectness(t *testing.T) {
 			query:                  `"test"`,
 			expectedShardedQueries: 0,
 			noRangeQuery:           true,
+		},
+		`filtering binary operation with non constant`: {
+			query:                  `max_over_time(metric_counter[5m]) > scalar(min(metric_counter))`,
+			expectedShardedQueries: 1, // scalar on the right should be sharded, but not the binary op itself, hence 1
 		},
 	}
 
