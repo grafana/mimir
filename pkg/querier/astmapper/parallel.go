@@ -69,7 +69,9 @@ func CanParallelize(node parser.Node, logger log.Logger) bool {
 		parallelisable := func(a, b parser.Node) bool {
 			return CanParallelize(a, logger) && noAggregates(a) && isConstantScalar(b)
 		}
-		return parallelisable(n.LHS, n.RHS) || parallelisable(n.RHS, n.LHS)
+		// If n.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
+		// It is just a shortcut, but the other two operations should imply the same.
+		return n.VectorMatching == nil && (parallelisable(n.LHS, n.RHS) || parallelisable(n.RHS, n.LHS))
 
 	case *parser.Call:
 		if n.Func == nil {

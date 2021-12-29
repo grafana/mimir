@@ -367,6 +367,8 @@ func (summer *shardSummer) shardBinOp(expr *parser.BinaryExpr, stats *MapperStat
 // with the same binary operation.
 func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr, stats *MapperStats) (parser.Expr, error) {
 	if expr.VectorMatching != nil {
+		// We shouldn't ever reach this point with a vector matching binary expression,
+		// but it's better to check twice than completely mess it up with the results.
 		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
 	}
 
