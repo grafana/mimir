@@ -142,7 +142,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(node *parser.Call, stats *Mapp
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
-		cloned, err := CloneNode(node)
+		cloned, err := cloneNode(node)
 		if err != nil {
 			return nil, true, err
 		}
@@ -323,13 +323,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
-		cloned, err := CloneNode(expr.Expr)
-		if err != nil {
-			return nil, err
-		}
-
-		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned, stats)
+		sharded, err := cloneAndMap(NewASTNodeMapper(summer.CopyWithCurShard(i)), expr.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
@@ -399,14 +393,6 @@ func (summer *shardSummer) shardAndSquashBinop(expr *parser.BinaryExpr, stats *M
 	stats.AddShardedQueries(summer.shards)
 
 	return summer.squash(children...)
-}
-
-func cloneAndMap(mapper ASTNodeMapper, node parser.Expr, stats *MapperStats) (parser.Node, error) {
-	cloned, err := CloneNode(node)
-	if err != nil {
-		return nil, err
-	}
-	return mapper.Map(cloned, stats)
 }
 
 func shardVectorSelector(curshard, shards int, selector *parser.VectorSelector) (parser.Node, error) {
