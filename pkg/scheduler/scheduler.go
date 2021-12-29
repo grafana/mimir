@@ -502,7 +502,9 @@ func (s *Scheduler) starting(ctx context.Context) error {
 
 func (s *Scheduler) running(ctx context.Context) error {
 	// We observe inflight requests frequently and at regular intervals, to have a good
-	// approximation of max inflight requests over percentiles of time.
+	// approximation of max inflight requests over percentiles of time. We also do it with
+	// a ticker so that we keep tracking it even if we have no new queries but stuck inflight
+	// requests (eg. queriers are all crashing).
 	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
 	defer inflightRequestsTicker.Stop()
 
