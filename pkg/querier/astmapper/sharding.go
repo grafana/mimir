@@ -345,13 +345,14 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 	return summer.squash(children...)
 }
 
+// shardBinOp attempts to shard the given binary operation expression.
 func (summer *shardSummer) shardBinOp(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
 	switch expr.Op {
 	case parser.GTR,
 		parser.GTE,
 		parser.LSS,
 		parser.LTE:
-		mapped, err = summer.shardAndSquashBinop(expr, stats)
+		mapped, err = summer.shardAndSquashBinOp(expr, stats)
 		if err != nil {
 			return nil, false, err
 		}
@@ -361,10 +362,10 @@ func (summer *shardSummer) shardBinOp(expr *parser.BinaryExpr, stats *MapperStat
 	}
 }
 
-// shardAndSquashBinop returns a squashed CONCAT expression including N embedded
+// shardAndSquashBinOp returns a squashed CONCAT expression including N embedded
 // queries, where N is the number of shards and each sub-query queries a different shard
-// with the binary operation between.
-func (summer *shardSummer) shardAndSquashBinop(expr *parser.BinaryExpr, stats *MapperStats) (parser.Expr, error) {
+// with the same binary operation.
+func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr, stats *MapperStats) (parser.Expr, error) {
 	if expr.VectorMatching != nil {
 		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
 	}
