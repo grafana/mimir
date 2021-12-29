@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStepAlign(t *testing.T) {
+func TestStepAlignMiddleware(t *testing.T) {
 	for i, tc := range []struct {
 		input, expected *PrometheusRangeQueryRequest
 	}{
@@ -45,12 +45,12 @@ func TestStepAlign(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var result *PrometheusRangeQueryRequest
-			s := stepAlign{
-				next: HandlerFunc(func(_ context.Context, req Request) (Response, error) {
-					result = req.(*PrometheusRangeQueryRequest)
-					return nil, nil
-				}),
-			}
+
+			next := HandlerFunc(func(_ context.Context, req Request) (Response, error) {
+				result = req.(*PrometheusRangeQueryRequest)
+				return nil, nil
+			})
+			s := newStepAlignMiddleware().Wrap(next)
 			_, err := s.Do(context.Background(), tc.input)
 			require.NoError(t, err)
 			require.Equal(t, tc.expected, result)

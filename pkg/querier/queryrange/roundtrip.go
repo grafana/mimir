@@ -177,7 +177,7 @@ func newQueryTripperware(
 		NewLimitsMiddleware(limits, log),
 	}
 	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), StepAlignMiddleware)
+		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
 	}
 
 	var c cache.Cache
