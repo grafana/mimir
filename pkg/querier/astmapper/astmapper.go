@@ -42,7 +42,7 @@ func (m *MultiMapper) Map(node parser.Node, stats *MapperStats) (parser.Node, er
 
 // Register adds ASTMappers into a multimapper.
 // Since registered functions are applied in the order they're registered, it's advised to register them
-// in decreasing priority and only operate on nodes that each function cares about, defaulting to CloneNode.
+// in decreasing priority and only operate on nodes that each function cares about, defaulting to cloneNode.
 func (m *MultiMapper) Register(xs ...ASTMapper) {
 	m.mappers = append(m.mappers, xs...)
 }
@@ -54,9 +54,17 @@ func NewMultiMapper(xs ...ASTMapper) *MultiMapper {
 	return m
 }
 
-// CloneNode is a helper function to clone a node.
-func CloneNode(node parser.Node) (parser.Node, error) {
+// cloneNode is a helper function to clone a node.
+func cloneNode(node parser.Node) (parser.Node, error) {
 	return parser.ParseExpr(node.String())
+}
+
+func cloneAndMap(mapper ASTNodeMapper, node parser.Expr, stats *MapperStats) (parser.Node, error) {
+	cloned, err := cloneNode(node)
+	if err != nil {
+		return nil, err
+	}
+	return mapper.Map(cloned, stats)
 }
 
 type NodeMapper interface {

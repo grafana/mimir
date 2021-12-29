@@ -103,6 +103,17 @@ func (summer *shardSummer) MapNode(node parser.Node, stats *MapperStats) (mapped
 			return n, false, nil
 		}
 		return n, false, nil
+
+	case *parser.BinaryExpr:
+		if summer.currentShard == nil {
+			if !CanParallelize(n, summer.logger) {
+				return n, false, nil
+			}
+
+			return summer.shardBinOp(n, stats)
+		}
+		return n, false, nil
+
 	default:
 		return n, false, nil
 	}
@@ -131,7 +142,7 @@ func (summer *shardSummer) shardAndSquashFuncCall(node *parser.Call, stats *Mapp
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
-		cloned, err := CloneNode(node)
+		cloned, err := cloneNode(node)
 		if err != nil {
 			return nil, true, err
 		}
@@ -312,13 +323,7 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 
 	// Create sub-query for each shard.
 	for i := 0; i < summer.shards; i++ {
-		cloned, err := CloneNode(expr.Expr)
-		if err != nil {
-			return nil, err
-		}
-
-		subSummer := NewASTNodeMapper(summer.CopyWithCurShard(i))
-		sharded, err := subSummer.Map(cloned, stats)
+		sharded, err := cloneAndMap(NewASTNodeMapper(summer.CopyWithCurShard(i)), expr.Expr, stats)
 		if err != nil {
 			return nil, err
 		}
@@ -331,6 +336,59 @@ func (summer *shardSummer) shardAndSquashAggregateExpr(expr *parser.AggregateExp
 			Expr:     sharded.(parser.Expr),
 			Grouping: expr.Grouping,
 			Without:  expr.Without,
+		})
+	}
+
+	// Update stats.
+	stats.AddShardedQueries(summer.shards)
+
+	return summer.squash(children...)
+}
+
+// shardBinOp attempts to shard the given binary operation expression.
+func (summer *shardSummer) shardBinOp(expr *parser.BinaryExpr, stats *MapperStats) (mapped parser.Node, finished bool, err error) {
+	switch expr.Op {
+	case parser.GTR,
+		parser.GTE,
+		parser.LSS,
+		parser.LTE:
+		mapped, err = summer.shardAndSquashBinOp(expr, stats)
+		if err != nil {
+			return nil, false, err
+		}
+		return mapped, true, nil
+	default:
+		return expr, false, nil
+	}
+}
+
+// shardAndSquashBinOp returns a squashed CONCAT expression including N embedded
+// queries, where N is the number of shards and each sub-query queries a different shard
+// with the same binary operation.
+func (summer *shardSummer) shardAndSquashBinOp(expr *parser.BinaryExpr, stats *MapperStats) (parser.Expr, error) {
+	if expr.VectorMatching != nil {
+		// We shouldn't ever reach this point with a vector matching binary expression,
+		// but it's better to check twice than completely mess it up with the results.
+		return nil, fmt.Errorf("tried to shard a bin op with vector matching: %s", expr)
+	}
+
+	children := make([]parser.Node, 0, summer.shards)
+	// Create sub-query for each shard.
+	for i := 0; i < summer.shards; i++ {
+		shardedLHS, err := cloneAndMap(NewASTNodeMapper(summer.CopyWithCurShard(i)), expr.LHS, stats)
+		if err != nil {
+			return nil, err
+		}
+		shardedRHS, err := cloneAndMap(NewASTNodeMapper(summer.CopyWithCurShard(i)), expr.RHS, stats)
+		if err != nil {
+			return nil, err
+		}
+
+		children = append(children, &parser.BinaryExpr{
+			LHS:        shardedLHS.(parser.Expr),
+			Op:         expr.Op,
+			RHS:        shardedRHS.(parser.Expr),
+			ReturnBool: expr.ReturnBool,
 		})
 	}
 

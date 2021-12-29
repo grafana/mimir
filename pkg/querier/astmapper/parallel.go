@@ -59,8 +59,19 @@ func CanParallelize(node parser.Node, logger log.Logger) bool {
 		return err == nil && !nestedAggrs && CanParallelize(n.Expr, logger)
 
 	case *parser.BinaryExpr:
-		// since binary exprs use each side for merging, they cannot be parallelized
-		return false
+		// Binary expressions can be parallelised when one of the sides is a constant scalar value
+		// and the other one can be parallelised and does not contain agggregations.
+		// If one side contained aggregations, like sum(foo) > 0, then aggregated values from different shards can cancel
+		// each other, like foo{shard="1"}=1 and foo{shard="2"}=-1: aggregated sum is zero, but if we concat results from different shards it's not.
+		// Both comparison and arithmetic binary operations _can_ be parallelised, but not all of them are worth parallelising,
+		// this function doesn't decide that.
+		// Since we don't care about the order in which binary op is written, we extract the condition into a lambda and check both ways.
+		parallelisable := func(a, b parser.Node) bool {
+			return CanParallelize(a, logger) && noAggregates(a) && isConstantScalar(b)
+		}
+		// If n.VectorMatching is not nil, then both hands are vector operators, so none of them is a constant scalar, so we can't shard it.
+		// It is just a shortcut, but the other two operations should imply the same.
+		return n.VectorMatching == nil && (parallelisable(n.LHS, n.RHS) || parallelisable(n.RHS, n.LHS))
 
 	case *parser.Call:
 		if n.Func == nil {
@@ -120,4 +131,32 @@ func ParallelizableFunc(f parser.Function) bool {
 		}
 	}
 	return true
+}
+
+func noAggregates(n parser.Node) bool {
+	hasAggregates, _ := anyNode(n, isAggregateExpr)
+	return !hasAggregates
+}
+
+func isConstantScalar(n parser.Node) bool {
+	isNot, _ := anyNode(n, isNotConstantNumber)
+	return !isNot
+}
+
+func isNotConstantNumber(n parser.Node) (bool, error) {
+	switch n := n.(type) {
+	case nil,
+		*parser.NumberLiteral,
+		*parser.UnaryExpr,
+		*parser.ParenExpr:
+		return false, nil
+	case *parser.BinaryExpr:
+		// if ReturnBool then not a number, otherwise, it will be a number if both sides are numbers
+		return n.ReturnBool, nil
+	case *parser.Call:
+		// The only function we consider as a constant number is `time()`, everything else is not a constant number.
+		return n.Func.Name != "time", nil
+	default:
+		return true, nil
+	}
 }

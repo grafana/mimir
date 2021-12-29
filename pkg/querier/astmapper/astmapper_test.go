@@ -69,7 +69,7 @@ func TestCloneNode(t *testing.T) {
 
 	for i, c := range testExpr {
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
-			res, err := CloneNode(c.input)
+			res, err := cloneNode(c.input)
 			require.NoError(t, err)
 			require.Equal(t, c.expected, res)
 		})
@@ -99,7 +99,7 @@ sum(rate(http_requests_total{cluster="ops-tools1"}[1m]))
 		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
 			expr, err := parser.ParseExpr(c.input)
 			require.Nil(t, err)
-			res, err := CloneNode(expr)
+			res, err := cloneNode(expr)
 			require.Nil(t, err)
 			require.Equal(t, c.expected, res.String())
 		})
