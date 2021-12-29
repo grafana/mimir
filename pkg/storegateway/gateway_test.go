@@ -362,7 +362,7 @@ func TestStoreGateway_InitialSyncWithWaitRingTokensStability(t *testing.T) {
 					gatewayCfg.ShardingRing.InstanceID = instanceID
 					gatewayCfg.ShardingRing.InstanceAddr = fmt.Sprintf("127.0.0.%d", i)
 					gatewayCfg.ShardingRing.RingCheckPeriod = time.Hour // Do not check the ring topology changes in this test. We want the initial sync only.
-					gatewayCfg.ShardingRing.WaitStabilityMinDuration = 2 * time.Second
+					gatewayCfg.ShardingRing.WaitStabilityMinDuration = 4 * time.Second
 					gatewayCfg.ShardingRing.WaitStabilityMaxDuration = 30 * time.Second
 					gatewayCfg.ShardingEnabled = true
 					gatewayCfg.ShardingStrategy = testData.shardingStrategy
