@@ -13,6 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// TestHorizontalAggregation tests a scenario where two series get horizontally aggregated by using the function "max",
+// each of them has 6 points within the aggregation bucket.
 func TestHorizontalAggregation(t *testing.T) {
 	// Aggregating to an output interval of 1min
 	from := time.Minute * 5
@@ -99,6 +101,8 @@ func TestHorizontalAggregation(t *testing.T) {
 	)
 }
 
+// TestVerticalAggregation tests a scenario where 7 series get vertically aggregated together at one single time stamp,
+// so from each series only a single point is taken into account. The aggregation function used is median/p50.
 func TestVerticalAggregation(t *testing.T) {
 	// Vertically aggregating multiple series at ts=5min
 	ts := time.Minute * 5
@@ -148,6 +152,9 @@ func TestVerticalAggregation(t *testing.T) {
 	)
 }
 
+// TestHorizontalAndVerticalAggregationCombined tests a scenario where the input are 4 series of which each have 6
+// points in the horizontal aggregation bucket. Each of them first gets horizontally aggregated using the function "avg"
+// and then the 4 results get vertically aggregated using the function "sum".
 func TestHorizontalAndVerticalAggregationCombined(t *testing.T) {
 	// Aggregating to an output interval of 1min
 	from := time.Minute * 5
