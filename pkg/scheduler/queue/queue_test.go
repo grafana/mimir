@@ -251,7 +251,7 @@ func TestContextCond(t *testing.T) {
 		cond := contextCond{
 			Cond: sync.NewCond(mtx),
 			testHookBeforeWaiting: func() {
-				// Wait just a little bit to make every goroutine
+				// Wait just a little bit to create every goroutine
 				time.Sleep(time.Millisecond)
 			},
 		}
