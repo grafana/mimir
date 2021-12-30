@@ -83,7 +83,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
 			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := NewEmptyPrometheusResponse()
+			innerRes := newEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -168,7 +168,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
 			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
 
-			innerRes := NewEmptyPrometheusResponse()
+			innerRes := newEmptyPrometheusResponse()
 			inner := &mockHandler{}
 			inner.On("Do", mock.Anything, mock.Anything).Return(innerRes, nil)
 
@@ -286,7 +286,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 					}()
 				}
 				wg.Wait()
-				return NewEmptyPrometheusResponse(), nil
+				return newEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -326,7 +326,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 						_, _ = next.Do(c, &PrometheusRangeQueryRequest{})
 					}()
 				}
-				return NewEmptyPrometheusResponse(), nil
+				return newEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)
@@ -384,7 +384,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 				wg.Wait()
 				assert.Less(t, time.Since(waitStart).Milliseconds(), int64(100))
 
-				return NewEmptyPrometheusResponse(), nil
+				return newEmptyPrometheusResponse(), nil
 			})
 		}),
 	).RoundTrip(r)

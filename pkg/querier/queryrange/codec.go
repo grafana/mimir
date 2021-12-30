@@ -8,7 +8,6 @@ package queryrange
 import (
 	"bytes"
 	"context"
-	stdjson "encoding/json"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -17,16 +16,13 @@ import (
 	"sort"
 	"strconv"
 	"time"
-	"unsafe"
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/gogo/status"
-	jsoniter "github.com/json-iterator/go"
 	"github.com/opentracing/opentracing-go"
 	otlog "github.com/opentracing/opentracing-go/log"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/weaveworks/common/httpgrpc"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
@@ -39,21 +35,12 @@ import (
 const StatusSuccess = "success"
 
 var (
-	matrix = model.ValMatrix.String()
-	json   = jsoniter.Config{
-		EscapeHTML:             false, // No HTML in our responses.
-		SortMapKeys:            true,
-		ValidateJsonRawMessage: true,
-	}.Froze()
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
 	errStepTooSmall   = apierror.New(apierror.TypeBadData, "exceeded maximum resolution of 11,000 points per timeseries. Try decreasing the query resolution (?step=XX)")
 
 	// PrometheusCodec is a codec to encode and decode Prometheus query range requests and responses.
-	PrometheusCodec Codec = &prometheusCodec{}
-
-	// Name of the cache control header.
-	cacheControlHeader = "Cache-Control"
+	PrometheusCodec Codec = prometheusCodec{}
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -116,119 +103,9 @@ type Response interface {
 
 type prometheusCodec struct{}
 
-// WithID clones the current `PrometheusRangeQueryRequest` with the provided ID.
-func (q *PrometheusRangeQueryRequest) WithID(id int64) Request {
-	new := *q
-	new.Id = id
-	return &new
-}
-
-// WithStartEnd clones the current `PrometheusRangeQueryRequest` with a new `start` and `end` timestamp.
-func (q *PrometheusRangeQueryRequest) WithStartEnd(start int64, end int64) Request {
-	new := *q
-	new.Start = start
-	new.End = end
-	return &new
-}
-
-// WithQuery clones the current `PrometheusRangeQueryRequest` with a new query.
-func (q *PrometheusRangeQueryRequest) WithQuery(query string) Request {
-	new := *q
-	new.Query = query
-	return &new
-}
-
-// WithQuery clones the current `PrometheusRangeQueryRequest` with new hints.
-func (q *PrometheusRangeQueryRequest) WithHints(hints *Hints) Request {
-	new := *q
-	new.Hints = hints
-	return &new
-}
-
-// LogToSpan logs the current `PrometheusRangeQueryRequest` parameters to the specified span.
-func (q *PrometheusRangeQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", q.GetQuery()),
-		otlog.String("start", timestamp.Time(q.GetStart()).String()),
-		otlog.String("end", timestamp.Time(q.GetEnd()).String()),
-		otlog.Int64("step (ms)", q.GetStep()),
-	)
-}
-
-func (r *PrometheusInstantQueryRequest) GetStart() int64 {
-	return r.GetTime()
-}
-
-func (r *PrometheusInstantQueryRequest) GetEnd() int64 {
-	return r.GetTime()
-}
-
-func (r *PrometheusInstantQueryRequest) GetStep() int64 {
-	return 0
-}
-
-func (r *PrometheusInstantQueryRequest) WithID(id int64) Request {
-	new := *r
-	new.Id = id
-	return &new
-}
-
-func (r *PrometheusInstantQueryRequest) WithStartEnd(startTime int64, endTime int64) Request {
-	new := *r
-	new.Time = startTime
-	return &new
-}
-
-func (r *PrometheusInstantQueryRequest) WithQuery(s string) Request {
-	new := *r
-	new.Query = s
-	return &new
-}
-
-func (r *PrometheusInstantQueryRequest) WithHints(hints *Hints) Request {
-	new := *r
-	new.Hints = hints
-	return &new
-}
-
-func (r *PrometheusInstantQueryRequest) LogToSpan(sp opentracing.Span) {
-	sp.LogFields(
-		otlog.String("query", r.GetQuery()),
-		otlog.String("time", timestamp.Time(r.GetTime()).String()),
-	)
-}
-
-type byFirstTime []*PrometheusResponse
-
-func (a byFirstTime) Len() int           { return len(a) }
-func (a byFirstTime) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byFirstTime) Less(i, j int) bool { return a[i].minTime() < a[j].minTime() }
-
-func (resp *PrometheusResponse) minTime() int64 {
-	result := resp.Data.Result
-	if len(result) == 0 {
-		return -1
-	}
-	if len(result[0].Samples) == 0 {
-		return -1
-	}
-	return result[0].Samples[0].TimestampMs
-}
-
-// NewEmptyPrometheusResponse returns an empty successful Prometheus query range response.
-func NewEmptyPrometheusResponse() *PrometheusResponse {
-	return &PrometheusResponse{
-		Status: StatusSuccess,
-		Data: &PrometheusData{
-			ResultType: model.ValMatrix.String(),
-			Result:     []SampleStream{},
-		},
-	}
-}
-
 func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	if len(responses) == 0 {
-		return NewEmptyPrometheusResponse(), nil
+		return newEmptyPrometheusResponse(), nil
 	}
 
 	promResponses := make([]*PrometheusResponse, 0, len(responses))
@@ -282,7 +159,7 @@ func (c prometheusCodec) DecodeRequest(_ context.Context, r *http.Request) (Requ
 
 }
 
-func (c prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
+func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error) {
 	var result PrometheusRangeQueryRequest
 	var err error
 	result.Start, err = util.ParseTime(r.FormValue("start"))
@@ -398,74 +275,6 @@ func (prometheusCodec) DecodeResponse(ctx context.Context, r *http.Response, _ R
 	}
 	return &resp, nil
 }
-
-func (d *PrometheusData) UnmarshalJSON(b []byte) error {
-	v := struct {
-		Type   model.ValueType    `json:"resultType"`
-		Result stdjson.RawMessage `json:"result"`
-	}{}
-
-	err := json.Unmarshal(b, &v)
-	if err != nil {
-		return err
-	}
-	d.ResultType = v.Type.String()
-	switch v.Type {
-	case model.ValString:
-		var sss stringSampleStreams
-		if err := json.Unmarshal(v.Result, &sss); err != nil {
-			return err
-		}
-		d.Result = sss
-		return nil
-
-	case model.ValScalar:
-		var sss scalarSampleStreams
-		if err := json.Unmarshal(v.Result, &sss); err != nil {
-			return err
-		}
-		d.Result = sss
-		return nil
-
-	case model.ValVector:
-		var vss []vectorSampleStream
-		if err := json.Unmarshal(v.Result, &vss); err != nil {
-			return err
-		}
-		d.Result = fromVectorSampleStreams(vss)
-		return nil
-
-	case model.ValMatrix:
-		return json.Unmarshal(v.Result, &d.Result)
-
-	default:
-		return fmt.Errorf("unsupported value type %q", v.Type)
-	}
-}
-
-// Buffer can be used to read a response body.
-// This allows to avoid reading the body multiple times from the `http.Response.Body`.
-type Buffer interface {
-	Bytes() []byte
-}
-
-func bodyBuffer(res *http.Response) ([]byte, error) {
-	// Attempt to cast the response body to a Buffer and use it if possible.
-	// This is because the frontend may have already read the body and buffered it.
-	if buffer, ok := res.Body.(Buffer); ok {
-		return buffer.Bytes(), nil
-	}
-	// Preallocate the buffer with the exact size so we don't waste allocations
-	// while progressively growing an initial small buffer. The buffer capacity
-	// is increased by MinRead to avoid extra allocations due to how ReadFrom()
-	// internally works.
-	buf := bytes.NewBuffer(make([]byte, 0, res.ContentLength+bytes.MinRead))
-	if _, err := buf.ReadFrom(res.Body); err != nil {
-		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
-	}
-	return buf.Bytes(), nil
-}
-
 func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.Response, error) {
 	sp, _ := opentracing.StartSpanFromContext(ctx, "APIResponse.ToHTTPResponse")
 	defer sp.Finish()
@@ -494,170 +303,6 @@ func (prometheusCodec) EncodeResponse(ctx context.Context, res Response) (*http.
 		ContentLength: int64(len(b)),
 	}
 	return &resp, nil
-}
-
-func (d *PrometheusData) MarshalJSON() ([]byte, error) {
-	if d == nil {
-		return []byte("null"), nil
-	}
-
-	switch d.ResultType {
-	case model.ValString.String():
-		return json.Marshal(struct {
-			Type   model.ValueType     `json:"resultType"`
-			Result stringSampleStreams `json:"result"`
-		}{
-			Type:   model.ValString,
-			Result: d.Result,
-		})
-
-	case model.ValScalar.String():
-		return json.Marshal(struct {
-			Type   model.ValueType     `json:"resultType"`
-			Result scalarSampleStreams `json:"result"`
-		}{
-			Type:   model.ValScalar,
-			Result: d.Result,
-		})
-
-	case model.ValVector.String():
-		return json.Marshal(struct {
-			Type   model.ValueType      `json:"resultType"`
-			Result []vectorSampleStream `json:"result"`
-		}{
-			Type:   model.ValVector,
-			Result: asVectorSampleStreams(d.Result),
-		})
-
-	case model.ValMatrix.String():
-		type plain *PrometheusData
-		return json.Marshal(plain(d))
-
-	default:
-		return nil, fmt.Errorf("can't marshal prometheus result type %q", d.ResultType)
-	}
-}
-
-type stringSampleStreams []SampleStream
-
-func (sss stringSampleStreams) MarshalJSON() ([]byte, error) {
-	if len(sss) != 1 {
-		return nil, fmt.Errorf("string sample streams should have exactly one stream, got %d", len(sss))
-	}
-	ss := sss[0]
-	if len(ss.Labels) != 1 || ss.Labels[0].Name != "value" {
-		return nil, fmt.Errorf("string sample stream should have exactly one label called value, got %d: %v", len(ss.Labels), ss.Labels)
-	}
-	l := ss.Labels[0]
-
-	if len(ss.Samples) != 1 {
-		return nil, fmt.Errorf("string sample stream should have exactly one sample, got %d", len(ss.Samples))
-	}
-	s := ss.Samples[0]
-
-	return json.Marshal(model.String{Value: l.Value, Timestamp: model.Time(s.TimestampMs)})
-}
-
-func (sss *stringSampleStreams) UnmarshalJSON(b []byte) error {
-	var sv model.String
-	if err := json.Unmarshal(b, &sv); err != nil {
-		return err
-	}
-	*sss = []SampleStream{{
-		Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: sv.Value}},
-		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp)}},
-	}}
-	return nil
-}
-
-type scalarSampleStreams []SampleStream
-
-func (sss scalarSampleStreams) MarshalJSON() ([]byte, error) {
-	if len(sss) != 1 {
-		return nil, fmt.Errorf("scalar sample streams should have exactly one stream, got %d", len(sss))
-	}
-	ss := sss[0]
-	if len(ss.Samples) != 1 {
-		return nil, fmt.Errorf("scalar sample stream should have exactly one sample, got %d", len(ss.Samples))
-	}
-	s := ss.Samples[0]
-	return json.Marshal(model.Scalar{
-		Timestamp: model.Time(s.TimestampMs),
-		Value:     model.SampleValue(s.Value),
-	})
-}
-
-func (sss *scalarSampleStreams) UnmarshalJSON(b []byte) error {
-	var sv model.Scalar
-	if err := json.Unmarshal(b, &sv); err != nil {
-		return err
-	}
-	*sss = []SampleStream{{
-		Samples: []mimirpb.Sample{{TimestampMs: int64(sv.Timestamp), Value: float64(sv.Value)}},
-	}}
-	return nil
-}
-
-// asVectorSampleStreams converts a slice of SampleStream into a slice of vectorSampleStream.
-// This can be done as vectorSampleStream is defined as a SampleStream.
-func asVectorSampleStreams(ss []SampleStream) []vectorSampleStream {
-	return *(*[]vectorSampleStream)(unsafe.Pointer(&ss))
-}
-
-// fromVectorSampleStreams is the inverse of asVectorSampleStreams.
-func fromVectorSampleStreams(vss []vectorSampleStream) []SampleStream {
-	return *(*[]SampleStream)(unsafe.Pointer(&vss))
-}
-
-type vectorSampleStream SampleStream
-
-func (vs *vectorSampleStream) UnmarshalJSON(b []byte) error {
-	s := model.Sample{}
-	if err := json.Unmarshal(b, &s); err != nil {
-		return err
-	}
-	*vs = vectorSampleStream{
-		Labels:  mimirpb.FromMetricsToLabelAdapters(s.Metric),
-		Samples: []mimirpb.Sample{{TimestampMs: int64(s.Timestamp), Value: float64(s.Value)}},
-	}
-	return nil
-}
-
-func (vs vectorSampleStream) MarshalJSON() ([]byte, error) {
-	if len(vs.Samples) != 1 {
-		return nil, fmt.Errorf("vector sample stream should have exactly one sample, got %d", len(vs.Samples))
-	}
-	return json.Marshal(model.Sample{
-		Metric:    mimirpb.FromLabelAdaptersToMetric(vs.Labels),
-		Timestamp: model.Time(vs.Samples[0].TimestampMs),
-		Value:     model.SampleValue(vs.Samples[0].Value),
-	})
-}
-
-// UnmarshalJSON implements json.Unmarshaler.
-func (s *SampleStream) UnmarshalJSON(data []byte) error {
-	var stream struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
-	}
-	if err := json.Unmarshal(data, &stream); err != nil {
-		return err
-	}
-	s.Labels = mimirpb.FromMetricsToLabelAdapters(stream.Metric)
-	s.Samples = stream.Values
-	return nil
-}
-
-// MarshalJSON implements json.Marshaler.
-func (s *SampleStream) MarshalJSON() ([]byte, error) {
-	stream := struct {
-		Metric model.Metric     `json:"metric"`
-		Values []mimirpb.Sample `json:"values"`
-	}{
-		Metric: mimirpb.FromLabelAdaptersToMetric(s.Labels),
-		Values: s.Samples,
-	}
-	return json.Marshal(stream)
 }
 
 func matrixMerge(resps []*PrometheusResponse) []SampleStream {
@@ -724,6 +369,23 @@ func sliceSamples(samples []mimirpb.Sample, minTs int64) []mimirpb.Sample {
 	})
 
 	return samples[searchResult:]
+}
+
+func bodyBuffer(res *http.Response) ([]byte, error) {
+	// Attempt to cast the response body to a Buffer and use it if possible.
+	// This is because the frontend may have already read the body and buffered it.
+	if buffer, ok := res.Body.(interface{ Bytes() []byte }); ok {
+		return buffer.Bytes(), nil
+	}
+	// Preallocate the buffer with the exact size so we don't waste allocations
+	// while progressively growing an initial small buffer. The buffer capacity
+	// is increased by MinRead to avoid extra allocations due to how ReadFrom()
+	// internally works.
+	buf := bytes.NewBuffer(make([]byte, 0, res.ContentLength+bytes.MinRead))
+	if _, err := buf.ReadFrom(res.Body); err != nil {
+		return nil, apierror.Newf(apierror.TypeInternal, "error decoding response: %v", err)
+	}
+	return buf.Bytes(), nil
 }
 
 func parseDurationMs(s string) (int64, error) {

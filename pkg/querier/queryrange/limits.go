@@ -95,7 +95,7 @@ func (l limitsMiddleware) Do(ctx context.Context, r Request) (Response, error) {
 				"redEnd", util.FormatTimeMillis(r.GetEnd()),
 				"maxQueryLookback", maxQueryLookback)
 
-			return NewEmptyPrometheusResponse(), nil
+			return newEmptyPrometheusResponse(), nil
 		}
 
 		if r.GetStart() < minStartTime {

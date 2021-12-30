@@ -28,12 +28,15 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var (
-	// Value that cacheControlHeader has if the response indicates that the results should not be cached.
-	noStoreValue = "no-store"
-
+const (
 	// ResultsCacheGenNumberHeaderName holds name of the header we want to set in http response
 	ResultsCacheGenNumberHeaderName = "Results-Cache-Gen-Number"
+
+	// cacheControlHeader is the name of the cache control header.
+	cacheControlHeader = "Cache-Control"
+
+	// noStoreValue is the value that cacheControlHeader has if the response indicates that the results should not be cached.
+	noStoreValue = "no-store"
 )
 
 type CacheGenNumberLoader interface {

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/marshaling_test.go
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/query_range_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
@@ -9,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"testing"
@@ -23,6 +25,10 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+)
+
+var (
+	matrix = model.ValMatrix.String()
 )
 
 func TestRequest(t *testing.T) {
@@ -589,4 +595,96 @@ func mustParse(t *testing.T, response string) Response {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	require.NoError(t, json.Unmarshal([]byte(response), &resp))
 	return &resp
+}
+
+func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
+	const (
+		numSeries           = 1000
+		numSamplesPerSeries = 1000
+	)
+
+	// Generate a mocked response and marshal it.
+	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
+	encodedRes, err := json.Marshal(res)
+	require.NoError(b, err)
+	b.Log("test prometheus response size:", len(encodedRes))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode:    200,
+			Body:          ioutil.NopCloser(bytes.NewReader(encodedRes)),
+			ContentLength: int64(len(encodedRes)),
+		}, nil, log.NewNopLogger())
+		require.NoError(b, err)
+	}
+}
+
+func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
+	const (
+		numSeries           = 1000
+		numSamplesPerSeries = 1000
+	)
+
+	// Generate a mocked response and marshal it.
+	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := PrometheusCodec.EncodeResponse(context.Background(), res)
+		require.NoError(b, err)
+	}
+}
+
+func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusResponse {
+	stream := make([]SampleStream, numSeries)
+	for s := 0; s < numSeries; s++ {
+		// Generate random samples.
+		samples := make([]mimirpb.Sample, numSamplesPerSeries)
+		for i := 0; i < numSamplesPerSeries; i++ {
+			samples[i] = mimirpb.Sample{
+				Value:       rand.Float64(),
+				TimestampMs: int64(i),
+			}
+		}
+
+		// Generate random labels.
+		lbls := make([]mimirpb.LabelAdapter, 10)
+		for i := range lbls {
+			lbls[i].Name = "a_medium_size_label_name"
+			lbls[i].Value = "a_medium_size_label_value_that_is_used_to_benchmark_marshalling"
+		}
+
+		stream[s] = SampleStream{
+			Labels:  lbls,
+			Samples: samples,
+		}
+	}
+
+	return &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: "vector",
+			Result:     stream,
+		},
+	}
+}
+
+func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples ...mimirpb.Sample) *PrometheusResponse {
+	return &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: "matrix",
+			Result: []SampleStream{
+				{
+					Labels:  series,
+					Samples: samples,
+				},
+			},
+		},
+	}
 }
