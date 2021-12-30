@@ -64,9 +64,9 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	require.Equal(t, StatusSuccess, a.Status)
 	require.Equal(t, StatusSuccess, b.Status)
 
-	as, err := ResponseToSamples(a)
+	as, err := responseToSamples(a)
 	require.Nil(t, err)
-	bs, err := ResponseToSamples(b)
+	bs, err := responseToSamples(b)
 	require.Nil(t, err)
 
 	require.Equal(t, len(as), len(bs), "expected same number of series")
@@ -1270,6 +1270,176 @@ func BenchmarkQuerySharding(b *testing.B) {
 	}
 }
 
+func TestPromqlResultToSampleStreams(t *testing.T) {
+	var testExpr = []struct {
+		input    *promql.Result
+		err      bool
+		expected []SampleStream
+	}{
+		// error
+		{
+			input: &promql.Result{Err: errors.New("foo")},
+			err:   true,
+		},
+		// String
+		{
+			input: &promql.Result{Value: promql.String{T: 1, V: "hi"}},
+			expected: []SampleStream{
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{
+							Name:  "value",
+							Value: "hi",
+						},
+					},
+					Samples: []mimirpb.Sample{
+						{
+							TimestampMs: 1,
+						},
+					},
+				},
+			},
+		},
+		// Scalar
+		{
+			input: &promql.Result{Value: promql.Scalar{T: 1, V: 1}},
+			err:   false,
+			expected: []SampleStream{
+				{
+					Samples: []mimirpb.Sample{
+						{
+							Value:       1,
+							TimestampMs: 1,
+						},
+					},
+				},
+			},
+		},
+		// Vector
+		{
+			input: &promql.Result{
+				Value: promql.Vector{
+					promql.Sample{
+						Point: promql.Point{T: 1, V: 1},
+						Metric: labels.Labels{
+							{Name: "a", Value: "a1"},
+							{Name: "b", Value: "b1"},
+						},
+					},
+					promql.Sample{
+						Point: promql.Point{T: 2, V: 2},
+						Metric: labels.Labels{
+							{Name: "a", Value: "a2"},
+							{Name: "b", Value: "b2"},
+						},
+					},
+				},
+			},
+			err: false,
+			expected: []SampleStream{
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "a", Value: "a1"},
+						{Name: "b", Value: "b1"},
+					},
+					Samples: []mimirpb.Sample{
+						{
+							Value:       1,
+							TimestampMs: 1,
+						},
+					},
+				},
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "a", Value: "a2"},
+						{Name: "b", Value: "b2"},
+					},
+					Samples: []mimirpb.Sample{
+						{
+							Value:       2,
+							TimestampMs: 2,
+						},
+					},
+				},
+			},
+		},
+		// Matrix
+		{
+			input: &promql.Result{
+				Value: promql.Matrix{
+					{
+						Metric: labels.Labels{
+							{Name: "a", Value: "a1"},
+							{Name: "b", Value: "b1"},
+						},
+						Points: []promql.Point{
+							{T: 1, V: 1},
+							{T: 2, V: 2},
+						},
+					},
+					{
+						Metric: labels.Labels{
+							{Name: "a", Value: "a2"},
+							{Name: "b", Value: "b2"},
+						},
+						Points: []promql.Point{
+							{T: 1, V: 8},
+							{T: 2, V: 9},
+						},
+					},
+				},
+			},
+			err: false,
+			expected: []SampleStream{
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "a", Value: "a1"},
+						{Name: "b", Value: "b1"},
+					},
+					Samples: []mimirpb.Sample{
+						{
+							Value:       1,
+							TimestampMs: 1,
+						},
+						{
+							Value:       2,
+							TimestampMs: 2,
+						},
+					},
+				},
+				{
+					Labels: []mimirpb.LabelAdapter{
+						{Name: "a", Value: "a2"},
+						{Name: "b", Value: "b2"},
+					},
+					Samples: []mimirpb.Sample{
+						{
+							Value:       8,
+							TimestampMs: 1,
+						},
+						{
+							Value:       9,
+							TimestampMs: 2,
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for i, c := range testExpr {
+		t.Run(fmt.Sprintf("[%d]", i), func(t *testing.T) {
+			result, err := promqlResultToSamples(c.input)
+			if c.err {
+				require.NotNil(t, err)
+			} else {
+				require.Nil(t, err)
+				require.Equal(t, c.expected, result)
+			}
+		})
+	}
+}
+
 type downstreamHandler struct {
 	engine    *promql.Engine
 	queryable storage.Queryable
@@ -1282,7 +1452,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 	}
 
 	res := qry.Exec(ctx)
-	extracted, err := FromResult(res)
+	extracted, err := promqlResultToSamples(res)
 	if err != nil {
 		return nil, err
 	}

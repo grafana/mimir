@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -143,7 +145,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	res := qry.Exec(ctx)
-	extracted, err := FromResult(res)
+	extracted, err := promqlResultToSamples(res)
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
@@ -315,4 +317,48 @@ func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog
 	}
 
 	return totalShards
+}
+
+// promqlResultToSamples transforms a promql query result into a samplestream
+func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
+	if res.Err != nil {
+		// The error could be wrapped by the PromQL engine. We get the error's cause in order to
+		// correctly parse the error in parent callers (eg. gRPC response status code extraction).
+		return nil, errors.Cause(res.Err)
+	}
+	switch v := res.Value.(type) {
+	case promql.String:
+		return []SampleStream{
+			{
+				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: v.V}},
+				Samples: []mimirpb.Sample{{TimestampMs: v.T}},
+			},
+		}, nil
+	case promql.Scalar:
+		return []SampleStream{
+			{Samples: []mimirpb.Sample{{TimestampMs: v.T, Value: v.V}}},
+		}, nil
+
+	case promql.Vector:
+		res := make([]SampleStream, 0, len(v))
+		for _, sample := range v {
+			res = append(res, SampleStream{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(sample.Metric),
+				Samples: []mimirpb.Sample{{TimestampMs: sample.Point.T, Value: sample.Point.V}}})
+		}
+		return res, nil
+
+	case promql.Matrix:
+		res := make([]SampleStream, 0, len(v))
+		for _, series := range v {
+			res = append(res, SampleStream{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Metric),
+				Samples: mimirpb.FromPointsToSamples(series.Points),
+			})
+		}
+		return res, nil
+
+	}
+
+	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
 }

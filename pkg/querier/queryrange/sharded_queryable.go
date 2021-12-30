@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/value.go
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/queryable.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
@@ -7,14 +8,21 @@ package queryrange
 
 import (
 	"context"
+	"math"
 	"sync"
+
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -113,7 +121,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 			return err
 		}
 
-		resStreams, err := ResponseToSamples(resp)
+		resStreams, err := responseToSamples(resp)
 		if err != nil {
 			return err
 		}
@@ -185,4 +193,93 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusResponseHeader {
 	}
 
 	return out
+}
+
+// newSeriesSetFromEmbeddedQueriesResults returns an in memory storage.SeriesSet from embedded queries results.
+// The passed hints (if any) is used to inject stale markers at the beginning of each gap in the embedded query
+// results.
+//
+// The returned storage.SeriesSet series is sorted.
+func newSeriesSetFromEmbeddedQueriesResults(results []SampleStream, hints *storage.SelectHints) storage.SeriesSet {
+	var (
+		set  = make([]storage.Series, 0, len(results))
+		step int64
+	)
+
+	// Get the query step from hints (if they've been passed).
+	if hints != nil {
+		step = hints.Step
+	}
+
+	for _, stream := range results {
+		// We add an extra 10 items to account for some stale markers that could be injected.
+		// We're trading a lower chance of reallocation in case stale markers are added for a
+		// slightly higher memory utilisation.
+		samples := make([]model.SamplePair, 0, len(stream.Samples)+10)
+
+		for idx, sample := range stream.Samples {
+			// When an embedded query is executed by PromQL engine, any stale marker in the time-series
+			// data is used the engine to stop applying the lookback delta but the stale marker is removed
+			// from the query results. The result of embedded queries, which we are processing in this function,
+			// is then used as input to run an outer query in the PromQL engine. This data will not contain
+			// the stale marker (because has been removed when running the embedded query) but we still need
+			// the PromQL engine to not apply the lookback delta when there are gaps in the embedded queries
+			// results. For this reason, here we do inject a stale marker at the beginning of each gap in the
+			// embedded queries results.
+			if step > 0 && idx > 0 && sample.TimestampMs > stream.Samples[idx-1].TimestampMs+step {
+				samples = append(samples, model.SamplePair{
+					Timestamp: model.Time(stream.Samples[idx-1].TimestampMs + step),
+					Value:     model.SampleValue(math.Float64frombits(value.StaleNaN)),
+				})
+			}
+
+			samples = append(samples, model.SamplePair{
+				Timestamp: model.Time(sample.TimestampMs),
+				Value:     model.SampleValue(sample.Value),
+			})
+		}
+
+		// In case the embedded query processed series which all ended before the end of the query time range,
+		// we don't want the outer query to apply the lookback at the end of the embedded query results. To keep it
+		// simple, it's safe always to add an extra stale marker at the end of the query results.
+		//
+		// This could result into an extra sample (stale marker) after the end of the query time range, but that's
+		// not a problem when running the outer query because it will just be discarded.
+		if len(samples) > 0 && step > 0 {
+			samples = append(samples, model.SamplePair{
+				Timestamp: samples[len(samples)-1].Timestamp + model.Time(step),
+				Value:     model.SampleValue(math.Float64frombits(value.StaleNaN)),
+			})
+		}
+
+		set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples))
+	}
+	return series.NewConcreteSeriesSet(set)
+}
+
+// responseToSamples is needed to map back from api response to the underlying series data
+func responseToSamples(resp Response) ([]SampleStream, error) {
+	promRes, ok := resp.(*PrometheusResponse)
+	if !ok {
+		return nil, errors.Errorf("error invalid response type: %T, expected: %T", resp, &PrometheusResponse{})
+	}
+	if promRes.Error != "" {
+		return nil, errors.New(promRes.Error)
+	}
+	switch promRes.Data.ResultType {
+	case string(parser.ValueTypeString),
+		string(parser.ValueTypeScalar),
+		string(parser.ValueTypeVector),
+		string(parser.ValueTypeMatrix):
+		return promRes.Data.Result, nil
+	}
+
+	return nil, errors.Errorf(
+		"Invalid promql.Value type: [%s]. Only %s, %s, %s and %s supported",
+		promRes.Data.ResultType,
+		parser.ValueTypeString,
+		parser.ValueTypeScalar,
+		parser.ValueTypeVector,
+		parser.ValueTypeMatrix,
+	)
 }
