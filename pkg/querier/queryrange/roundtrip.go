@@ -34,11 +34,6 @@ const (
 )
 
 var (
-	// PassthroughMiddleware is a noop middleware
-	PassthroughMiddleware = MiddlewareFunc(func(next Handler) Handler {
-		return next
-	})
-
 	errInvalidShardingStorage = errors.New("query sharding support is only available for blocks storage")
 )
 
