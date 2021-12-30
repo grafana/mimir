@@ -191,6 +191,9 @@ jobs:
     runs-on: ubuntu-20.04
     container:
       image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
+      credentials:
+        username: _json_key
+        password: ${{ secrets.gcr_json_key }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
