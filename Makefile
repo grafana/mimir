@@ -415,6 +415,12 @@ check-jsonnet-getting-started:
 		| sed 's/\(jb install github.com\/grafana\/mimir\/operations\/mimir@main\)/\1 \&\& rm -fr .\/vendor\/mimir \&\& cp -r ..\/operations\/mimir .\/vendor\/mimir\//g' \
 		| bash
 
+build-jsonnet-tests:
+	@./operations/mimir-tests/build.sh
+
+check-jsonnet-tests: build-jsonnet-tests
+	@git diff --exit-code -- ./operations/mimir-tests || (echo "Please rebuild jsonnet tests output 'make build-jsonnet-tests'" && false)
+
 check-tsdb-blocks-storage-s3-docker-compose-yaml:
 	cd development/tsdb-blocks-storage-s3 && make check
 
