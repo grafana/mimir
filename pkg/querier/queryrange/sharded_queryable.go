@@ -20,22 +20,22 @@ import (
 
 var (
 	errMissingEmbeddedQuery = errors.New("missing embedded query")
-	errNoEmbeddedQueries    = errors.New("ShardedQuerier is expecting embedded queries but didn't find any")
+	errNoEmbeddedQueries    = errors.New("shardedQuerier is expecting embedded queries but didn't find any")
 	errNotImplemented       = errors.New("not implemented")
 )
 
-// ShardedQueryable is an implementor of the Queryable interface.
-type ShardedQueryable struct {
+// shardedQueryable is an implementor of the Queryable interface.
+type shardedQueryable struct {
 	req             Request
 	handler         Handler
 	responseHeaders *responseHeadersTracker
 }
 
-// NewShardedQueryable makes a new ShardedQueryable. We expect a new queryable is created for each
+// newShardedQueryable makes a new shardedQueryable. We expect a new queryable is created for each
 // query, otherwise the response headers tracker doesn't work as expected, because it merges the
 // headers for all queries run through the queryable and never reset them.
-func NewShardedQueryable(req Request, next Handler) *ShardedQueryable {
-	return &ShardedQueryable{
+func newShardedQueryable(req Request, next Handler) *shardedQueryable {
+	return &shardedQueryable{
 		req:             req,
 		handler:         next,
 		responseHeaders: newResponseHeadersTracker(),
@@ -43,21 +43,21 @@ func NewShardedQueryable(req Request, next Handler) *ShardedQueryable {
 }
 
 // Querier implements storage.Queryable.
-func (q *ShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	querier := &ShardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}
+func (q *shardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	querier := &shardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}
 	return querier, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
 // when running the embedded queries.
-func (q *ShardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
+func (q *shardedQueryable) getResponseHeaders() []*PrometheusResponseHeader {
 	return q.responseHeaders.getHeaders()
 }
 
-// ShardedQuerier implements the storage.Querier interface with capabilities to parse the embedded queries
+// shardedQuerier implements the storage.Querier interface with capabilities to parse the embedded queries
 // from the astmapper.EmbeddedQueriesMetricName metric label value and concurrently run embedded queries
 // through the downstream handler.
-type ShardedQuerier struct {
+type shardedQuerier struct {
 	ctx     context.Context
 	req     Request
 	handler Handler
@@ -68,7 +68,7 @@ type ShardedQuerier struct {
 
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
-func (q *ShardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
@@ -99,7 +99,7 @@ func (q *ShardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...
 
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
-func (q *ShardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.SelectHints) storage.SeriesSet {
+func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.SelectHints) storage.SeriesSet {
 	var (
 		jobs      = concurrency.CreateJobsFromStrings(queries)
 		streamsMx sync.Mutex
@@ -135,17 +135,17 @@ func (q *ShardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 }
 
 // LabelValues implements storage.LabelQuerier.
-func (q *ShardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errNotImplemented
 }
 
 // LabelNames implements storage.LabelQuerier.
-func (q *ShardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errNotImplemented
 }
 
 // Close implements storage.LabelQuerier.
-func (q *ShardedQuerier) Close() error {
+func (q *shardedQuerier) Close() error {
 	return nil
 }
 

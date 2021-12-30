@@ -23,15 +23,15 @@ import (
 func TestShardedQuerier_Select(t *testing.T) {
 	var testExpr = []struct {
 		name    string
-		querier *ShardedQuerier
-		fn      func(*testing.T, *ShardedQuerier)
+		querier *shardedQuerier
+		fn      func(*testing.T, *shardedQuerier)
 	}{
 		{
 			name: "errors non embedded query",
 			querier: mkShardedQuerier(
 				nil,
 			),
-			fn: func(t *testing.T, q *ShardedQuerier) {
+			fn: func(t *testing.T, q *shardedQuerier) {
 				set := q.Select(false, nil)
 				require.Equal(t, set.Err(), errNoEmbeddedQueries)
 			},
@@ -42,7 +42,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				&PrometheusResponse{},
 				nil,
 			)),
-			fn: func(t *testing.T, q *ShardedQuerier) {
+			fn: func(t *testing.T, q *shardedQuerier) {
 
 				expected := &PrometheusResponse{
 					Status: "success",
@@ -78,7 +78,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				},
 				nil,
 			)),
-			fn: func(t *testing.T, q *ShardedQuerier) {
+			fn: func(t *testing.T, q *shardedQuerier) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
@@ -134,7 +134,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 				},
 				nil,
 			)),
-			fn: func(t *testing.T, q *ShardedQuerier) {
+			fn: func(t *testing.T, q *shardedQuerier) {
 				encoded, err := astmapper.JSONCodec.Encode([]string{`http_requests_total{cluster="prod"}`})
 				require.Nil(t, err)
 				set := q.Select(
@@ -245,14 +245,14 @@ func TestShardedQuerier_Select_ShouldConcurrentlyRunEmbeddedQueries(t *testing.T
 }
 
 func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
-	queryable := NewShardedQueryable(&PrometheusRangeQueryRequest{}, nil)
+	queryable := newShardedQueryable(&PrometheusRangeQueryRequest{}, nil)
 	assert.Empty(t, queryable.getResponseHeaders())
 
 	// Merge some response headers from the 1st querier.
 	querier, err := queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*ShardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
+	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-cache"}},
 	})
@@ -265,7 +265,7 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	querier, err = queryable.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
 
-	querier.(*ShardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
+	querier.(*shardedQuerier).responseHeaders.mergeHeaders([]*PrometheusResponseHeader{
 		{Name: "content-type", Values: []string{"application/json"}},
 		{Name: "cache-control", Values: []string{"no-store"}},
 	})
@@ -275,6 +275,6 @@ func TestShardedQueryable_GetResponseHeaders(t *testing.T) {
 	}, queryable.getResponseHeaders())
 }
 
-func mkShardedQuerier(handler Handler) *ShardedQuerier {
-	return &ShardedQuerier{ctx: context.Background(), req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
+func mkShardedQuerier(handler Handler) *shardedQuerier {
+	return &shardedQuerier{ctx: context.Background(), req: &PrometheusRangeQueryRequest{}, handler: handler, responseHeaders: newResponseHeadersTracker()}
 }

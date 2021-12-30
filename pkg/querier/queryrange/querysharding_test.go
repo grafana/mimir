@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/promql_test.go
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/querysharding_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
@@ -12,10 +13,14 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -34,6 +39,13 @@ import (
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/util"
+)
+
+var (
+	start         = time.Now()
+	end           = start.Add(30 * time.Minute)
+	step          = 30 * time.Second
+	lookbackDelta = 5 * time.Minute
 )
 
 func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
@@ -518,7 +530,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 					for _, numShards := range []int{2, 4, 8, 16} {
 						t.Run(fmt.Sprintf("shards=%d", numShards), func(t *testing.T) {
 							reg := prometheus.NewPedanticRegistry()
-							shardingware := NewQueryShardingMiddleware(
+							shardingware := newQueryShardingMiddleware(
 								log.NewNopLogger(),
 								engine,
 								mockLimits{totalShards: numShards},
@@ -589,6 +601,181 @@ func (b byLabels) Less(i, j int) bool {
 	) < 0
 }
 
+// TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
+// we keep it here since it adds more test cases.
+func TestQuerySharding_FunctionCorrectness(t *testing.T) {
+	mkQueries, tests := func(tpl, fn string, testMatrix bool, fArgs []string) []string {
+		if tpl == "" {
+			tpl = `(<fn>(bar1{}<args>))`
+		}
+		result := strings.Replace(tpl, "<fn>", fn, -1)
+
+		if testMatrix {
+			// turn selectors into ranges
+			result = strings.Replace(result, "}", "}[1m]", -1)
+		}
+
+		if len(fArgs) > 0 {
+			args := "," + strings.Join(fArgs, ",")
+			result = strings.Replace(result, "<args>", args, -1)
+		} else {
+			result = strings.Replace(result, "<args>", "", -1)
+		}
+
+		return []string{
+			result,
+			"sum" + result,
+			"sum by (bar)" + result,
+			"count" + result,
+			"count by (bar)" + result,
+		}
+	}, []struct {
+		fn         string
+		args       []string
+		rangeQuery bool
+		tpl        string
+	}{
+		{fn: "abs"},
+		{fn: "avg_over_time", rangeQuery: true},
+		{fn: "ceil"},
+		{fn: "changes", rangeQuery: true},
+		{fn: "count_over_time", rangeQuery: true},
+		{fn: "days_in_month"},
+		{fn: "day_of_month"},
+		{fn: "day_of_week"},
+		{fn: "delta", rangeQuery: true},
+		{fn: "deriv", rangeQuery: true},
+		{fn: "exp"},
+		{fn: "floor"},
+		{fn: "hour"},
+		{fn: "idelta", rangeQuery: true},
+		{fn: "increase", rangeQuery: true},
+		{fn: "irate", rangeQuery: true},
+		{fn: "ln"},
+		{fn: "log10"},
+		{fn: "log2"},
+		{fn: "max_over_time", rangeQuery: true},
+		{fn: "min_over_time", rangeQuery: true},
+		{fn: "minute"},
+		{fn: "month"},
+		{fn: "rate", rangeQuery: true},
+		{fn: "resets", rangeQuery: true},
+		{fn: "sort"},
+		{fn: "sort_desc"},
+		{fn: "sqrt"},
+		{fn: "deg"},
+		{fn: "asinh"},
+		{fn: "rad"},
+		{fn: "cosh"},
+		{fn: "atan"},
+		{fn: "atanh"},
+		{fn: "asin"},
+		{fn: "sinh"},
+		{fn: "cos"},
+		{fn: "acosh"},
+		{fn: "sin"},
+		{fn: "tanh"},
+		{fn: "tan"},
+		{fn: "acos"},
+		{fn: "stddev_over_time", rangeQuery: true},
+		{fn: "stdvar_over_time", rangeQuery: true},
+		{fn: "sum_over_time", rangeQuery: true},
+		{fn: "last_over_time", rangeQuery: true},
+		{fn: "present_over_time", rangeQuery: true},
+		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.5,bar1{}))`},
+		{fn: "quantile_over_time", rangeQuery: true, tpl: `(<fn>(0.99,bar1{}))`},
+		{fn: "timestamp"},
+		{fn: "year"},
+		{fn: "sgn"},
+		{fn: "clamp", args: []string{"5", "10"}},
+		{fn: "clamp_max", args: []string{"5"}},
+		{fn: "clamp_min", args: []string{"5"}},
+		{fn: "predict_linear", args: []string{"1"}, rangeQuery: true},
+		{fn: "round", args: []string{"20"}},
+		{fn: "holt_winters", args: []string{"0.5", "0.7"}, rangeQuery: true},
+		{fn: "label_replace", args: []string{`"fuzz"`, `"$1"`, `"foo"`, `"b(.*)"`}},
+		{fn: "label_join", args: []string{`"fuzz"`, `","`, `"foo"`, `"bar"`}},
+	}
+
+	for _, tc := range tests {
+		const numShards = 4
+		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
+			t.Run(query, func(t *testing.T) {
+				queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+					return &querierMock{
+						series: []*promql.StorageSeries{
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, step, factor(5)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, factor(7)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(12)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, step, factor(11)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(8)),
+							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
+						},
+					}, nil
+				})
+
+				req := &PrometheusRangeQueryRequest{
+					Path:  "/query_range",
+					Start: util.TimeToMillis(start),
+					End:   util.TimeToMillis(end),
+					Step:  step.Milliseconds(),
+					Query: query,
+				}
+
+				reg := prometheus.NewPedanticRegistry()
+				engine := newEngine()
+				shardingware := newQueryShardingMiddleware(
+					log.NewNopLogger(),
+					engine,
+					mockLimits{totalShards: numShards},
+					reg,
+				)
+				downstream := &downstreamHandler{
+					engine:    engine,
+					queryable: queryable,
+				}
+
+				// Run the query without sharding.
+				expectedRes, err := downstream.Do(context.Background(), req)
+				require.Nil(t, err)
+
+				// Ensure the query produces some results.
+				require.NotEmpty(t, expectedRes.(*PrometheusResponse).Data.Result)
+
+				// Run the query with sharding.
+				shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+				require.Nil(t, err)
+
+				// Ensure the two results matches (float precision can slightly differ, there's no guarantee in PromQL engine too
+				// if you rerun the same query twice).
+				approximatelyEquals(t, expectedRes.(*PrometheusResponse), shardedRes.(*PrometheusResponse))
+			})
+		}
+	}
+
+	// Ensure all PromQL functions have been tested.
+	testedFns := make(map[string]struct{}, len(tests))
+	for _, tc := range tests {
+		testedFns[tc.fn] = struct{}{}
+	}
+
+	fnToIgnore := map[string]struct{}{
+		"time":   {},
+		"scalar": {},
+		"vector": {},
+		"pi":     {},
+	}
+
+	for expectedFn := range promql.FunctionCalls {
+		if _, ok := fnToIgnore[expectedFn]; ok {
+			continue
+		}
+		// It's OK if it's tested. Ignore if it's one of the non parallelizable functions.
+		_, ok := testedFns[expectedFn]
+		assert.Truef(t, ok || util.StringsContain(astmapper.NonParallelFuncs, expectedFn), "%s should be tested", expectedFn)
+	}
+}
+
 func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
@@ -598,7 +785,7 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 		Query: "aaa{", // Invalid query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	// Mock the downstream handler, always returning success (regardless the query is valid or not).
 	downstream := &mockHandler{}
@@ -625,7 +812,7 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
@@ -650,7 +837,7 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 		},
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
@@ -784,7 +971,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 				maxShardedQueries: testData.maxShardedQueries,
 				compactorShards:   testData.compactorShards,
 			}
-			shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), limits, nil)
 
 			// Keep track of the unique number of shards queried to downstream.
 			uniqueShardsMx := sync.Mutex{}
@@ -821,7 +1008,7 @@ func TestQuerySharding_ShouldReturnErrorOnDownstreamHandlerFailure(t *testing.T)
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	// Mock the downstream handler to always return error.
 	downstreamErr := errors.Errorf("some err")
@@ -923,7 +1110,7 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 				Query: "sum(bar1)",
 			}
 
-			shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, nil)
+			shardingware := newQueryShardingMiddleware(log.NewNopLogger(), tc.engineSharding, mockLimits{totalShards: 3}, nil)
 
 			if tc.queryable == nil {
 				tc.queryable = queryable
@@ -956,7 +1143,7 @@ func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 		Query: "vector(1)", // A non shardable query.
 	}
 
-	shardingware := NewQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, prometheus.NewRegistry())
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, prometheus.NewRegistry())
 
 	require.NotPanics(t, func() {
 		_, err := shardingware.Wrap(mockHandlerWith(nil, nil)).Do(user.InjectOrgID(context.Background(), "test"), req)
@@ -1047,7 +1234,7 @@ func BenchmarkQuerySharding(b *testing.B) {
 			}
 
 			for _, shardFactor := range shards {
-				shardingware := NewQueryShardingMiddleware(
+				shardingware := newQueryShardingMiddleware(
 					log.NewNopLogger(),
 					engine,
 					mockLimits{totalShards: shardFactor},
@@ -1107,4 +1294,213 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 			Result:     extracted,
 		},
 	}, nil
+}
+
+type querierMock struct {
+	series []*promql.StorageSeries
+}
+
+func (m *querierMock) Select(sorted bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	shard, matchers, err := sharding.RemoveShardFromMatchers(matchers)
+	if err != nil {
+		return storage.ErrSeriesSet(err)
+	}
+
+	// Filter series by label matchers.
+	var filtered []*promql.StorageSeries
+
+	for _, series := range m.series {
+		if seriesMatches(series, matchers...) {
+			filtered = append(filtered, series)
+		}
+	}
+
+	// Filter series by shard (if any)
+	filtered = filterSeriesByShard(filtered, shard)
+
+	// Honor the sorting.
+	if sorted {
+		sort.Slice(filtered, func(i, j int) bool {
+			return labels.Compare(filtered[i].Labels(), filtered[j].Labels()) < 0
+		})
+	}
+
+	return newSeriesIteratorMock(filtered)
+}
+
+func (m *querierMock) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+
+func (m *querierMock) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+
+func (m *querierMock) Close() error { return nil }
+
+func seriesMatches(series *promql.StorageSeries, matchers ...*labels.Matcher) bool {
+	for _, m := range matchers {
+		if !m.Matches(series.Labels().Get(m.Name)) {
+			return false
+		}
+	}
+
+	return true
+}
+
+func filterSeriesByShard(series []*promql.StorageSeries, shard *sharding.ShardSelector) []*promql.StorageSeries {
+	if shard == nil {
+		return series
+	}
+
+	var filtered []*promql.StorageSeries
+
+	for _, s := range series {
+		if s.Labels().Hash()%shard.ShardCount == shard.ShardIndex {
+			filtered = append(filtered, s)
+		}
+	}
+
+	return filtered
+}
+
+func newSeries(metric labels.Labels, from, to time.Time, step time.Duration, gen generator) *promql.StorageSeries {
+	var (
+		points    []promql.Point
+		prevValue *float64
+	)
+
+	for ts := from; ts.Unix() <= to.Unix(); ts = ts.Add(step) {
+		t := ts.Unix() * 1e3
+		v := gen(t)
+
+		// If both the previous and current values are the stale marker, then we omit the
+		// point completely (we just keep the 1st one in a consecutive series of stale markers).
+		shouldSkip := prevValue != nil && value.IsStaleNaN(*prevValue) && value.IsStaleNaN(v)
+		prevValue = &v
+		if shouldSkip {
+			continue
+		}
+
+		points = append(points, promql.Point{
+			T: t,
+			V: v,
+		})
+	}
+
+	// Ensure series labels are sorted.
+	sort.Sort(metric)
+
+	return promql.NewStorageSeries(promql.Series{
+		Metric: metric,
+		Points: points,
+	})
+}
+
+// newTestCounterLabels generates series labels for a counter metric used in tests.
+func newTestCounterLabels(id int) labels.Labels {
+	return labels.Labels{
+		{Name: "__name__", Value: "metric_counter"},
+		{Name: "const", Value: "fixed"},                 // A constant label.
+		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
+		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
+		{Name: "group_2", Value: strconv.Itoa(id % 5)},  // A second grouping label.
+	}
+}
+
+// newTestCounterLabels generates series labels for an histogram metric used in tests.
+func newTestHistogramLabels(id int, bucketLe float64) labels.Labels {
+	return labels.Labels{
+		{Name: "__name__", Value: "metric_histogram_bucket"},
+		{Name: "le", Value: fmt.Sprintf("%f", bucketLe)},
+		{Name: "const", Value: "fixed"},                 // A constant label.
+		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
+		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
+		{Name: "group_2", Value: strconv.Itoa(id % 5)},  // A second grouping label.
+	}
+}
+
+// generator defined a function used to generate sample values in tests.
+type generator func(ts int64) float64
+
+func factor(f float64) generator {
+	i := 0.
+	return func(int64) float64 {
+		i++
+		res := i * f
+		return res
+	}
+}
+
+func arithmeticSequence(f float64) generator {
+	i := 0.
+	return func(int64) float64 {
+		i++
+		res := i + f
+		return res
+	}
+}
+
+// stale wraps the input generator and injects stale marker between from and to.
+func stale(from, to time.Time, wrap generator) generator {
+	return func(ts int64) float64 {
+		// Always get the next value from the wrapped generator.
+		v := wrap(ts)
+
+		// Inject the stale marker if we're at the right time.
+		if ts >= util.TimeToMillis(from) && ts <= util.TimeToMillis(to) {
+			return math.Float64frombits(value.StaleNaN)
+		}
+
+		return v
+	}
+}
+
+type seriesIteratorMock struct {
+	idx    int
+	series []*promql.StorageSeries
+}
+
+func newSeriesIteratorMock(series []*promql.StorageSeries) *seriesIteratorMock {
+	return &seriesIteratorMock{
+		idx:    -1,
+		series: series,
+	}
+}
+
+func (i *seriesIteratorMock) Next() bool {
+	i.idx++
+	return i.idx < len(i.series)
+}
+
+func (i *seriesIteratorMock) At() storage.Series {
+	if i.idx >= len(i.series) {
+		return nil
+	}
+
+	return i.series[i.idx]
+}
+
+func (i *seriesIteratorMock) Err() error {
+	return nil
+}
+
+func (i *seriesIteratorMock) Warnings() storage.Warnings {
+	return nil
+}
+
+// newEngine creates and return a new promql.Engine used for testing.
+func newEngine() *promql.Engine {
+	return promql.NewEngine(promql.EngineOpts{
+		Logger:             log.NewNopLogger(),
+		Reg:                nil,
+		MaxSamples:         10e6,
+		Timeout:            1 * time.Hour,
+		ActiveQueryTracker: nil,
+		LookbackDelta:      lookbackDelta,
+		EnableAtModifier:   true,
+		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 {
+			return int64(1 * time.Minute / (time.Millisecond / time.Nanosecond))
+		},
+	})
 }

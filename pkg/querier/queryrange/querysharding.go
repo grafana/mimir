@@ -10,10 +10,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/mimir/pkg/querier/lazyquery"
-
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -21,9 +17,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
@@ -49,13 +47,13 @@ type queryShardingMetrics struct {
 	shardedQueriesPerQuery prometheus.Histogram
 }
 
-// NewQueryShardingMiddleware creates a middleware that will split queries by shard.
+// newQueryShardingMiddleware creates a middleware that will split queries by shard.
 // It first looks at the query to determine if it is shardable or not.
 // Then rewrite the query into a sharded query and use the PromQL engine to execute the query.
-// Sub shard queries are embedded into a single vector selector and a modified `Queryable` (see ShardedQueryable) is passed
+// Sub shard queries are embedded into a single vector selector and a modified `Queryable` (see shardedQueryable) is passed
 // to the PromQL engine.
 // Finally we can translate the embedded vector selector back into subqueries in the Queryable and send them in parallel to downstream.
-func NewQueryShardingMiddleware(
+func newQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
 	limit Limits,
@@ -137,7 +135,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
 	r = r.WithQuery(shardedQuery)
-	shardedQueryable := NewShardedQueryable(r, s.next)
+	shardedQueryable := newShardedQueryable(r, s.next)
 
 	qry, err := newQuery(r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
@@ -202,7 +200,7 @@ func mapEngineError(err error) error {
 }
 
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
-// to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
+// to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
 	mapper, err := astmapper.NewSharding(totalShards, s.logger)

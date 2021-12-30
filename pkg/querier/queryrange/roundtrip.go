@@ -232,7 +232,7 @@ func newQueryTripperware(
 
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
-		queryshardingMiddleware := NewQueryShardingMiddleware(
+		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
 			promql.NewEngine(engineOpts),
 			limits,
