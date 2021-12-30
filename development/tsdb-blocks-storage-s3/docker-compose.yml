@@ -6,10 +6,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filename=/activity/alertmanager-8031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8031 -server.grpc-listen-port=9031 -activity-tracker.filepath=/activity/alertmanager-8031 -alertmanager.web.external-url=http://localhost:8031/alertmanager"
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -29,10 +29,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filename=/activity/alertmanager-8032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8032 -server.grpc-listen-port=9032 -activity-tracker.filepath=/activity/alertmanager-8032 -alertmanager.web.external-url=http://localhost:8032/alertmanager"
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -52,10 +52,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filename=/activity/alertmanager-8033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=alertmanager -server.http-listen-port=8033 -server.grpc-listen-port=9033 -activity-tracker.filepath=/activity/alertmanager-8033 -alertmanager.web.external-url=http://localhost:8033/alertmanager"
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -75,10 +75,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filename=/activity/compactor-8006 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=compactor -server.http-listen-port=8006 -server.grpc-listen-port=9006 -activity-tracker.filepath=/activity/compactor-8006 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -107,10 +107,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filename=/activity/distributor-8001 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=distributor -server.http-listen-port=8001 -server.grpc-listen-port=9001 -activity-tracker.filepath=/activity/distributor-8001 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -127,7 +127,7 @@
     "command":
       - "-config.file=/etc/agent-config/grafana-agent.yaml"
       - "-prometheus.wal-directory=/tmp"
-    "image": "grafana/agent:v0.2.0"
+    "image": "grafana/agent:v0.21.2"
     "ports":
       - "9091:9091"
     "volumes":
@@ -139,10 +139,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filename=/activity/ingester-8002 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8002 -server.grpc-listen-port=9002 -activity-tracker.filepath=/activity/ingester-8002 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -163,10 +163,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filename=/activity/ingester-8003 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ingester -server.http-listen-port=8003 -server.grpc-listen-port=9003 -activity-tracker.filepath=/activity/ingester-8003 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -203,7 +203,7 @@
     "command":
       - "--config.file=/etc/prometheus/prometheus.yaml"
       - "--enable-feature=exemplar-storage"
-    "image": "prom/prometheus:v2.27.1"
+    "image": "prom/prometheus:v2.32.1"
     "ports":
       - "9090:9090"
     "volumes":
@@ -215,10 +215,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filename=/activity/purger-8014 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=purger -server.http-listen-port=8014 -server.grpc-listen-port=9014 -activity-tracker.filepath=/activity/purger-8014 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -238,10 +238,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filename=/activity/querier-8004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=querier -server.http-listen-port=8004 -server.grpc-listen-port=9004 -activity-tracker.filepath=/activity/querier-8004 -querier.scheduler-address=query-scheduler:9011 -querier.frontend-address="
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -261,10 +261,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filename=/activity/query-frontend-8007 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-frontend -server.http-listen-port=8007 -server.grpc-listen-port=9007 -activity-tracker.filepath=/activity/query-frontend-8007 -store.max-query-length=8760h -frontend.scheduler-address=query-scheduler:9011"
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -284,10 +284,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filename=/activity/query-scheduler-8011 -store.max-query-length=8760h"
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=query-scheduler -server.http-listen-port=8011 -server.grpc-listen-port=9011 -activity-tracker.filepath=/activity/query-scheduler-8011 -store.max-query-length=8760h"
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -307,10 +307,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021 -activity-tracker.filename=/activity/ruler-8021 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8021 -server.grpc-listen-port=9021 -activity-tracker.filepath=/activity/ruler-8021 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -330,10 +330,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filename=/activity/ruler-8022 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=ruler -server.http-listen-port=8022 -server.grpc-listen-port=9022 -activity-tracker.filepath=/activity/ruler-8022 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -353,10 +353,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filename=/activity/store-gateway-8008 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8008 -server.grpc-listen-port=9008 -activity-tracker.filepath=/activity/store-gateway-8008 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
@@ -376,10 +376,10 @@
     "command":
       - "sh"
       - "-c"
-      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009 -activity-tracker.filename=/activity/store-gateway-8009 "
+      - "sleep 3 && exec ./mimir -config.file=./config/mimir.yaml -target=store-gateway -server.http-listen-port=8009 -server.grpc-listen-port=9009 -activity-tracker.filepath=/activity/store-gateway-8009 "
     "depends_on":
-      - "consul"
       - "minio"
+      - "consul"
     "environment":
       - "JAEGER_AGENT_HOST=jaeger"
       - "JAEGER_AGENT_PORT=6831"
