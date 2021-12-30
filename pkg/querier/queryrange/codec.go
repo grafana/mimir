@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,6 +42,10 @@ var (
 
 	// PrometheusCodec is a codec to encode and decode Prometheus query range requests and responses.
 	PrometheusCodec Codec = prometheusCodec{}
+)
+
+const (
+	totalShardsControlHeader = "Sharding-Control"
 )
 
 // Codec is used to encode/decode query range requests and responses so they can be passed down to middlewares.
@@ -193,7 +198,7 @@ func (prometheusCodec) decodeRangeQueryRequest(r *http.Request) (Request, error)
 
 	result.Query = r.FormValue("query")
 	result.Path = r.URL.Path
-	DecodeOptions(r, &result.Options)
+	decodeOptions(r, &result.Options)
 	return &result, nil
 }
 
@@ -207,8 +212,28 @@ func (c prometheusCodec) decodeInstantQueryRequest(r *http.Request) (Request, er
 
 	result.Query = r.FormValue("query")
 	result.Path = r.URL.Path
-	DecodeOptions(r, &result.Options)
+	decodeOptions(r, &result.Options)
 	return &result, nil
+}
+
+func decodeOptions(r *http.Request, opts *Options) {
+	for _, value := range r.Header.Values(cacheControlHeader) {
+		if strings.Contains(value, noStoreValue) {
+			opts.CacheDisabled = true
+			break
+		}
+	}
+
+	for _, value := range r.Header.Values(totalShardsControlHeader) {
+		shards, err := strconv.ParseInt(value, 10, 32)
+		if err != nil {
+			break
+		}
+		opts.TotalShards = int32(shards)
+		if opts.TotalShards < 1 {
+			opts.ShardingDisabled = true
+		}
+	}
 }
 
 func (prometheusCodec) EncodeRequest(ctx context.Context, r Request) (*http.Request, error) {
