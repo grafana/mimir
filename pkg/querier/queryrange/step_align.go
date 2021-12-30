@@ -20,3 +20,13 @@ func newStepAlignMiddleware() Middleware {
 		})
 	})
 }
+
+// isRequestStepAligned returns whether the Request start and end timestamps are aligned
+// with the step.
+func isRequestStepAligned(req Request) bool {
+	if req.GetStep() == 0 {
+		return true
+	}
+
+	return req.GetEnd()%req.GetStep() == 0 && req.GetStart()%req.GetStep() == 0
+}
