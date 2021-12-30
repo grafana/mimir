@@ -199,28 +199,6 @@ func TestContextCond(t *testing.T) {
 		assertChanReceived(t, doneWaiting, 250*time.Millisecond, "cond.Wait did not return after cancelling the context")
 	})
 
-	t.Run("wait until context deadline", func(t *testing.T) {
-		t.Parallel()
-		mtx := &sync.Mutex{}
-		cond := contextCond{Cond: sync.NewCond(mtx)}
-		doneWaiting := make(chan struct{})
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		mtx.Lock()
-		go func() {
-			cond.Wait(ctx)
-			mtx.Unlock()
-			close(doneWaiting)
-		}()
-
-		assertChanNotReceived(t, doneWaiting, 100*time.Millisecond, "cond.Wait returned, but it should not because we did not broadcast yet and didn't cancel the context")
-
-		cancel()
-		assertChanReceived(t, doneWaiting, 250*time.Millisecond, "cond.Wait did not return after cancelling the context")
-	})
-
 	t.Run("wait on already canceled context", func(t *testing.T) {
 		// This test represents the racy real world scenario,
 		// we don't know whether it's going to wait before the broadcast triggered by the context cancellation.
