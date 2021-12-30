@@ -148,6 +148,71 @@ func TestVerticalAggregation(t *testing.T) {
 	)
 }
 
+func TestHorizontalAndVerticalAggregationCombined(t *testing.T) {
+	// Aggregating to an output interval of 1min
+	from := time.Minute * 5
+	to := time.Minute * 6
+
+	// 4 series where each has 6 points within the 1min aggregation bucket
+	inputValues := [][]float64{
+		{3, 18, 2, -1.5, 22, 22},     // avg = 10.91666
+		{4, 32.1, 4, 32, 35, 37},     // avg = 24.01666
+		{7, 112, 234, 222, 199, 150}, // avg = 154
+		{2, 32, 14, -1.5, -103, 12},  // avg = -7.41666
+	}
+	// sum(10.91666, 24.01666, 154, -7.41666) = 181.51666
+
+	inputSeries := make([]*promql.StorageSeries, 0, len(inputValues))
+	for inputSeriesIdx := 0; inputSeriesIdx < len(inputValues); inputSeriesIdx++ {
+		points := make([]promql.Point, 0, len(inputValues))
+
+		for inputValueIdx, inputValue := range inputValues[inputSeriesIdx] {
+			points = append(points, promql.Point{
+				T: from.Milliseconds() + int64(inputValueIdx+1)*10*time.Second.Milliseconds(),
+				V: inputValue,
+			})
+		}
+
+		inputSeries = append(inputSeries, promql.NewStorageSeries(
+			promql.Series{
+				Metric: labels.Labels([]labels.Label{
+					{Name: "__name__", Value: "test_series"},
+					{Name: "enum", Value: fmt.Sprintf("series%d", inputSeriesIdx)},
+				}),
+				Points: points,
+			},
+		))
+	}
+
+	query, err := getPromqlEngine().NewInstantQuery(
+		storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+			return &querierMock{series: inputSeries}, nil
+		}),
+		"sum(avg_over_time(test_series[1m]))",
+		util.TimeFromMillis(to.Milliseconds()),
+	)
+	require.NoError(t, err)
+
+	result := query.Exec(context.Background())
+	require.NoError(t, result.Err)
+
+	vector, err := result.Vector()
+	require.NoError(t, err)
+	require.Equal(
+		t,
+		promql.Vector{
+			promql.Sample{
+				Point: promql.Point{
+					T: to.Milliseconds(),
+					V: float64(181.51666666666668),
+				},
+				Metric: labels.Labels{},
+			},
+		},
+		vector,
+	)
+}
+
 func getPromqlEngine() *promql.Engine {
 	engineOpts := promql.EngineOpts{
 		Logger:             nil,
