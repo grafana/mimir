@@ -170,7 +170,7 @@ func newQueryTripperware(
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		newQueryStatsMiddleware(registerer),
-		NewLimitsMiddleware(limits, log),
+		newLimitsMiddleware(limits, log),
 	}
 	if cfg.AlignQueriesWithStep {
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
@@ -216,7 +216,7 @@ func newQueryTripperware(
 			registerer,
 		))
 	}
-	queryInstantMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
+	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
 
 	if cfg.ShardedQueries {
 		if storageEngine != storage.StorageEngineBlocks {
@@ -253,9 +253,9 @@ func newQueryTripperware(
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
-		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := defaultInstantQueryParamsRoundTripper(
-			NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...),
+			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 			time.Now,
 		)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {

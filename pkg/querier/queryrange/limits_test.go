@@ -81,7 +81,7 @@ func TestLimitsMiddleware_MaxQueryLookback(t *testing.T) {
 			}
 
 			limits := mockLimits{maxQueryLookback: testData.maxQueryLookback}
-			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := newEmptyPrometheusResponse()
 			inner := &mockHandler{}
@@ -166,7 +166,7 @@ func TestLimitsMiddleware_MaxQueryLength(t *testing.T) {
 			}
 
 			limits := mockLimits{maxQueryLength: testData.maxQueryLength}
-			middleware := NewLimitsMiddleware(limits, log.NewNopLogger())
+			middleware := newLimitsMiddleware(limits, log.NewNopLogger())
 
 			innerRes := newEmptyPrometheusResponse()
 			inner := &mockHandler{}
@@ -274,7 +274,7 @@ func TestLimitedRoundTripper_MaxQueryParallelism(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = newLimitedParallelismRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup
@@ -317,7 +317,7 @@ func TestLimitedRoundTripper_MaxQueryParallelismLateScheduling(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = newLimitedParallelismRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				// fire up work and we don't wait.
@@ -357,7 +357,7 @@ func TestLimitedRoundTripper_OriginalRequestContextCancellation(t *testing.T) {
 	})
 	require.Nil(t, err)
 
-	_, err = NewLimitedRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
+	_, err = newLimitedParallelismRoundTripper(downstream, PrometheusCodec, mockLimits{maxQueryParallelism: maxQueryParallelism},
 		MiddlewareFunc(func(next Handler) Handler {
 			return HandlerFunc(func(c context.Context, _ Request) (Response, error) {
 				var wg sync.WaitGroup

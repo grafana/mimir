@@ -101,7 +101,7 @@ func TestSplitAndCacheMiddleware_SplitByInterval(t *testing.T) {
 
 	// Chain middlewares together.
 	middlewares := []Middleware{
-		NewLimitsMiddleware(mockLimits{}, log.NewNopLogger()),
+		newLimitsMiddleware(mockLimits{}, log.NewNopLogger()),
 		splitCacheMiddleware,
 		newAssertHintsMiddleware(t, &Hints{TotalQueries: 2}),
 	}
