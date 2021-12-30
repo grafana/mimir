@@ -128,7 +128,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 		}
 
 		promResponses = append(promResponses, pr)
-		resultsCacheGenNumberHeaderValues = append(resultsCacheGenNumberHeaderValues, getHeaderValuesWithName(res, ResultsCacheGenNumberHeaderName)...)
+		resultsCacheGenNumberHeaderValues = append(resultsCacheGenNumberHeaderValues, getHeaderValuesWithName(res, resultsCacheGenNumberHeaderName)...)
 	}
 
 	// Merge the responses.
@@ -144,7 +144,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	if len(resultsCacheGenNumberHeaderValues) != 0 {
 		response.Headers = []*PrometheusResponseHeader{{
-			Name:   ResultsCacheGenNumberHeaderName,
+			Name:   resultsCacheGenNumberHeaderName,
 			Values: resultsCacheGenNumberHeaderValues,
 		}}
 	}

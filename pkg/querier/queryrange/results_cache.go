@@ -29,8 +29,8 @@ import (
 )
 
 const (
-	// ResultsCacheGenNumberHeaderName holds name of the header we want to set in http response
-	ResultsCacheGenNumberHeaderName = "Results-Cache-Gen-Number"
+	// resultsCacheGenNumberHeaderName holds name of the header we want to set in http response
+	resultsCacheGenNumberHeaderName = "Results-Cache-Gen-Number"
 
 	// cacheControlHeader is the name of the cache control header.
 	cacheControlHeader = "Cache-Control"
@@ -174,7 +174,7 @@ func isResponseCachable(ctx context.Context, r Response, cacheGenNumberLoader Ca
 		return true
 	}
 
-	genNumbersFromResp := getHeaderValuesWithName(r, ResultsCacheGenNumberHeaderName)
+	genNumbersFromResp := getHeaderValuesWithName(r, resultsCacheGenNumberHeaderName)
 	genNumberFromCtx := cache.ExtractCacheGenNumber(ctx)
 
 	if len(genNumbersFromResp) == 0 && genNumberFromCtx != "" {

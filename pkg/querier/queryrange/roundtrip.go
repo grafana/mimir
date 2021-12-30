@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/weaveworks/common/middleware"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
@@ -328,5 +329,24 @@ func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() ti
 			r.URL.RawQuery = q.Encode()
 		}
 		return next.RoundTrip(r)
+	})
+}
+
+// NewHTTPCacheGenNumberHeaderSetterMiddleware returns a middleware that sets cache gen header to let consumer of response
+// know all previous responses could be invalid due to delete operation.
+func NewHTTPCacheGenNumberHeaderSetterMiddleware(cacheGenNumbersLoader CacheGenNumberLoader) middleware.Interface {
+	return middleware.Func(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tenantIDs, err := tenant.TenantIDs(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+
+			cacheGenNumber := cacheGenNumbersLoader.GetResultsCacheGenNumber(tenantIDs)
+
+			w.Header().Set(resultsCacheGenNumberHeaderName, cacheGenNumber)
+			next.ServeHTTP(w, r)
+		})
 	})
 }

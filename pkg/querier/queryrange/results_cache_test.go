@@ -288,7 +288,7 @@ func TestIsResponseCachable(t *testing.T) {
 			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
-						Name:   ResultsCacheGenNumberHeaderName,
+						Name:   resultsCacheGenNumberHeaderName,
 						Values: []string{"1"},
 					},
 				},
@@ -300,7 +300,7 @@ func TestIsResponseCachable(t *testing.T) {
 			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
-						Name:   ResultsCacheGenNumberHeaderName,
+						Name:   resultsCacheGenNumberHeaderName,
 						Values: []string{"1", "1"},
 					},
 				},
@@ -313,7 +313,7 @@ func TestIsResponseCachable(t *testing.T) {
 			response: Response(&PrometheusResponse{
 				Headers: []*PrometheusResponseHeader{
 					{
-						Name:   ResultsCacheGenNumberHeaderName,
+						Name:   resultsCacheGenNumberHeaderName,
 						Values: []string{"1", "2"},
 					},
 				},
@@ -330,7 +330,7 @@ func TestIsResponseCachable(t *testing.T) {
 						Values: []string{noStoreValue},
 					},
 					{
-						Name:   ResultsCacheGenNumberHeaderName,
+						Name:   resultsCacheGenNumberHeaderName,
 						Values: []string{"1", "1"},
 					},
 				},
