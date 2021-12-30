@@ -10,8 +10,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/mimir/pkg/mimirpb"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -22,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
 	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"

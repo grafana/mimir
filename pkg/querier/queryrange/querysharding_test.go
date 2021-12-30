@@ -19,9 +19,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/grafana/mimir/pkg/querier/astmapper"
-	"github.com/grafana/mimir/pkg/storage/sharding"
-
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -38,6 +35,8 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util"
 )
 

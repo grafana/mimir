@@ -16,13 +16,11 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/storage"
-
-	"github.com/grafana/mimir/pkg/querier/series"
-
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
 
