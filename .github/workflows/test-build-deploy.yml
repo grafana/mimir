@@ -186,7 +186,8 @@ jobs:
 
   deploy:
     needs: [build-mimir, test, lint, integration]
-    if: (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/20211222_push-query-tee-image' || startsWith(github.ref, 'refs/tags/')) && github.repository == 'grafana/mimir'
+    # TODO: Before merge remote 'true ||'
+    if: (true || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.repository == 'grafana/mimir'
     runs-on: ubuntu-20.04
     container:
       image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
