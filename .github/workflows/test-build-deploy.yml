@@ -97,7 +97,7 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Build Image
         run: |
-          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate
+          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate ./cmd/query-tee/.uptodate
       - name: Save Images
         run: |
           mkdir /tmp/images
