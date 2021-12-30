@@ -247,9 +247,9 @@ func newQueryTripperware(
 	}
 
 	if cfg.MaxRetries > 0 {
-		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics, log), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics, log), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
