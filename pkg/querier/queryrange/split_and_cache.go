@@ -70,7 +70,7 @@ type splitAndCacheMiddleware struct {
 	splitter               CacheSplitter
 	extractor              Extractor
 	cacheGenNumberLoader   CacheGenNumberLoader
-	shouldCacheReq         ShouldCacheFn
+	shouldCacheReq         shouldCacheFn
 }
 
 // newSplitAndCacheMiddleware makes a new splitAndCacheMiddleware.
@@ -85,7 +85,7 @@ func newSplitAndCacheMiddleware(
 	splitter CacheSplitter,
 	extractor Extractor,
 	cacheGenNumberLoader CacheGenNumberLoader,
-	shouldCacheReq ShouldCacheFn,
+	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
 	reg prometheus.Registerer) Middleware {
 	metrics := newSplitAndCacheMiddlewareMetrics(reg)

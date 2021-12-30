@@ -133,11 +133,11 @@ func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
 	return fmt.Sprintf("%s:%s:%d:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
 }
 
-// ShouldCacheFn checks whether the current request should go to cache
+// shouldCacheFn checks whether the current request should go to cache
 // or not. If not, just send the request to next handler.
-type ShouldCacheFn func(r Request) bool
+type shouldCacheFn func(r Request) bool
 
-// resultsCacheAlwaysEnabled is a ShouldCacheFn function always returning true.
+// resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
 var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
 
 // isRequestCachable says whether the request is eligible for caching.
