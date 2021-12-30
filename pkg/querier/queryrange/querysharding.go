@@ -150,7 +150,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
-		Status: StatusSuccess,
+		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,

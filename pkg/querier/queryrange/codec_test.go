@@ -101,11 +101,6 @@ func TestRequest(t *testing.T) {
 	}
 }
 
-const (
-	statusSuccess = "success"
-	statusError   = "error"
-)
-
 type prometheusAPIResponse struct {
 	Status    string       `json:"status"`
 	Data      interface{}  `json:"data,omitempty"`
@@ -304,7 +299,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name:  "No responses shouldn't panic and return a non-null result and result type.",
 			input: []Response{},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
@@ -316,7 +311,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "A single empty response shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
@@ -324,7 +319,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
@@ -336,14 +331,14 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Multiple empty responses shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
 					},
 				},
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
@@ -351,7 +346,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
@@ -363,7 +358,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Basic merging of two responses.",
 			input: []Response{
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
@@ -378,7 +373,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					},
 				},
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
@@ -394,7 +389,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -419,7 +414,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -444,7 +439,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -467,7 +462,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"],[4,"4"],[5,"5"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -492,7 +487,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"],[4,"4"],[5,"5"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -518,7 +513,7 @@ func TestMergeAPIResponses(t *testing.T) {
 
 	t.Run("shouldn't merge unsuccessful responses", func(t *testing.T) {
 		successful := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 		unsuccessful := &PrometheusResponse{
@@ -534,11 +529,11 @@ func TestMergeAPIResponses(t *testing.T) {
 		// nil data has no type, so we can't merge it, it's basically an unsuccessful response,
 		// and we should never reach the point where we're merging an unsuccessful response.
 		successful := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 		nilData := &PrometheusResponse{
-			Status: StatusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
+			Status: statusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
 			Data:   nil,
 		}
 		_, err := PrometheusCodec.MergeResponse(successful, nilData)
@@ -547,11 +542,11 @@ func TestMergeAPIResponses(t *testing.T) {
 
 	t.Run("shouldn't merge non-matrix data", func(t *testing.T) {
 		matrixResponse := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 		vectorResponse := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: model.ValVector.String()},
 		}
 		_, err := PrometheusCodec.MergeResponse(matrixResponse, vectorResponse)

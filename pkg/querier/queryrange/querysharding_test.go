@@ -61,8 +61,8 @@ func mockHandlerWith(resp *PrometheusResponse, err error) Handler {
 // approximatelyEquals ensures two responses are approximately equal, up to 6 decimals precision per sample
 func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 	// Ensure both queries succeeded.
-	require.Equal(t, StatusSuccess, a.Status)
-	require.Equal(t, StatusSuccess, b.Status)
+	require.Equal(t, statusSuccess, a.Status)
+	require.Equal(t, statusSuccess, b.Status)
 
 	as, err := responseToSamples(a)
 	require.Nil(t, err)
@@ -789,14 +789,14 @@ func TestQuerySharding_ShouldFallbackToDownstreamHandlerOnMappingFailure(t *test
 
 	// Mock the downstream handler, always returning success (regardless the query is valid or not).
 	downstream := &mockHandler{}
-	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
 
 	// Run the query with sharding middleware wrapping the downstream one.
 	// We expect the query parsing done by the query sharding middleware to fail
 	// but to fallback on the downstream one which always returns success.
 	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
 }
 
@@ -815,11 +815,11 @@ func TestQuerySharding_ShouldSkipShardingViaOption(t *testing.T) {
 	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: 16}, nil)
 
 	downstream := &mockHandler{}
-	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: StatusSuccess}, nil)
+	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{Status: statusSuccess}, nil)
 
 	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
 	// Ensure we get the same request downstream. No sharding
 	downstream.AssertCalled(t, "Do", mock.Anything, req)
 	downstream.AssertNumberOfCalls(t, "Do", 1)
@@ -841,14 +841,14 @@ func TestQuerySharding_ShouldOverrideShardingSizeViaOption(t *testing.T) {
 
 	downstream := &mockHandler{}
 	downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
-		Status: StatusSuccess, Data: &PrometheusData{
+		Status: statusSuccess, Data: &PrometheusData{
 			ResultType: string(parser.ValueTypeVector),
 		},
 	}, nil)
 
 	res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 	require.NoError(t, err)
-	assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+	assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
 	downstream.AssertCalled(t, "Do", mock.Anything, mock.Anything)
 	// we expect 128 calls to the downstream handler and not the original 16.
 	downstream.AssertNumberOfCalls(t, "Do", 128)
@@ -979,7 +979,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 
 			downstream := &mockHandler{}
 			downstream.On("Do", mock.Anything, mock.Anything).Return(&PrometheusResponse{
-				Status: StatusSuccess, Data: &PrometheusData{
+				Status: statusSuccess, Data: &PrometheusData{
 					ResultType: string(parser.ValueTypeVector),
 				},
 			}, nil).Run(func(args mock.Arguments) {
@@ -993,7 +993,7 @@ func TestQuerySharding_ShouldSupportMaxShardedQueries(t *testing.T) {
 
 			res, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
 			require.NoError(t, err)
-			assert.Equal(t, StatusSuccess, res.(*PrometheusResponse).GetStatus())
+			assert.Equal(t, statusSuccess, res.(*PrometheusResponse).GetStatus())
 			assert.Equal(t, testData.expectedShards, len(uniqueShards))
 		})
 	}
@@ -1458,7 +1458,7 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 	}
 
 	return &PrometheusResponse{
-		Status: StatusSuccess,
+		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,

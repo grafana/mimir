@@ -32,9 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// StatusSuccess Prometheus success result.
-const StatusSuccess = "success"
-
 var (
 	errEndBeforeStart = apierror.New(apierror.TypeBadData, `invalid parameter "end": end timestamp must not be before start time`)
 	errNegativeStep   = apierror.New(apierror.TypeBadData, `invalid parameter "step": zero or negative query resolution step widths are not accepted. Try a positive integer`)
@@ -45,6 +42,11 @@ var (
 )
 
 const (
+	// statusSuccess Prometheus success result.
+	statusSuccess = "success"
+	// statusSuccess Prometheus error result.
+	statusError = "error"
+
 	totalShardsControlHeader = "Sharding-Control"
 )
 
@@ -119,7 +121,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 
 	for _, res := range responses {
 		pr := res.(*PrometheusResponse)
-		if pr.Status != StatusSuccess {
+		if pr.Status != statusSuccess {
 			return nil, fmt.Errorf("can't merge an unsuccessful response")
 		} else if pr.Data == nil {
 			return nil, fmt.Errorf("can't merge response with no data")
@@ -135,7 +137,7 @@ func (prometheusCodec) MergeResponse(responses ...Response) (Response, error) {
 	sort.Sort(byFirstTime(promResponses))
 
 	response := PrometheusResponse{
-		Status: StatusSuccess,
+		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result:     matrixMerge(promResponses),

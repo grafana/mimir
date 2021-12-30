@@ -30,7 +30,7 @@ func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 	}
 
 	return &PrometheusResponse{
-		Status: StatusSuccess,
+		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: matrix,
 			Result: []SampleStream{

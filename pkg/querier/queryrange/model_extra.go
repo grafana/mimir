@@ -25,7 +25,7 @@ var (
 // newEmptyPrometheusResponse returns an empty successful Prometheus query range response.
 func newEmptyPrometheusResponse() *PrometheusResponse {
 	return &PrometheusResponse{
-		Status: StatusSuccess,
+		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: model.ValMatrix.String(),
 			Result:     []SampleStream{},
