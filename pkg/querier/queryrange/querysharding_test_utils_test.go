@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/test_utils.go
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/test_utils_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
@@ -8,12 +9,16 @@ package queryrange
 import (
 	"context"
 	"fmt"
+	"math"
+	"sort"
+	"testing"
 	"time"
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/storage/sharding"
@@ -50,13 +55,13 @@ func genLabels(
 
 }
 
-// NewMockShardedQueryable creates a shard-aware in memory queryable.
-func NewMockShardedQueryable(
+// newMockShardedQueryable creates a shard-aware in memory queryable.
+func newMockShardedQueryable(
 	nSamples int,
 	labelSet []string,
 	labelBuckets int,
 	delayPerSeries time.Duration,
-) *MockShardedQueryable {
+) *mockShardedQueryable {
 	samples := make([]model.SamplePair, 0, nSamples)
 	for i := 0; i < nSamples; i++ {
 		samples = append(samples, model.SamplePair{
@@ -70,26 +75,26 @@ func NewMockShardedQueryable(
 		xs = append(xs, series.NewConcreteSeries(ls, samples))
 	}
 
-	return &MockShardedQueryable{
+	return &mockShardedQueryable{
 		series:         xs,
 		delayPerSeries: delayPerSeries,
 	}
 }
 
-// MockShardedQueryable is exported to be reused in the querysharding benchmarking
-type MockShardedQueryable struct {
+// mockShardedQueryable is exported to be reused in the querysharding benchmarking
+type mockShardedQueryable struct {
 	series         []storage.Series
 	delayPerSeries time.Duration
 }
 
 // Querier impls storage.Queryable
-func (q *MockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+func (q *mockShardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 	return q, nil
 }
 
 // Select implements storage.Querier interface.
 // The bool passed is ignored because the series is always sorted.
-func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *mockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	tStart := time.Now()
 
 	shard, _, err := sharding.ShardFromMatchers(matchers)
@@ -126,7 +131,7 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 
 	results := make([]storage.Series, 0, end-start)
 	for i := start; i < end; i++ {
-		results = append(results, &ShardLabelSeries{
+		results = append(results, &shardLabelSeries{
 			shard:  shard,
 			name:   name,
 			Series: q.series[i],
@@ -149,15 +154,15 @@ func (q *MockShardedQueryable) Select(_ bool, _ *storage.SelectHints, matchers .
 	return series.NewConcreteSeriesSet(results)
 }
 
-// ShardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels
-type ShardLabelSeries struct {
+// shardLabelSeries allows extending a Series with new labels. This is helpful for adding cortex shard labels
+type shardLabelSeries struct {
 	shard *sharding.ShardSelector
 	name  string
 	storage.Series
 }
 
 // Labels impls storage.Series
-func (s *ShardLabelSeries) Labels() labels.Labels {
+func (s *shardLabelSeries) Labels() labels.Labels {
 	ls := s.Series.Labels()
 
 	if s.name != "" {
@@ -175,16 +180,140 @@ func (s *ShardLabelSeries) Labels() labels.Labels {
 }
 
 // LabelValues impls storage.Querier
-func (q *MockShardedQueryable) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
 // LabelNames returns all the unique label names present in the block in sorted order.
-func (q *MockShardedQueryable) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+func (q *mockShardedQueryable) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.Errorf("unimplemented")
 }
 
 // Close releases the resources of the Querier.
-func (q *MockShardedQueryable) Close() error {
+func (q *mockShardedQueryable) Close() error {
 	return nil
+}
+
+func TestGenLabelsCorrectness(t *testing.T) {
+	ls := genLabels([]string{"a", "b"}, 2)
+	for _, set := range ls {
+		sort.Sort(set)
+	}
+	expected := []labels.Labels{
+		{
+			labels.Label{
+				Name:  "a",
+				Value: "0",
+			},
+			labels.Label{
+				Name:  "b",
+				Value: "0",
+			},
+		},
+		{
+			labels.Label{
+				Name:  "a",
+				Value: "0",
+			},
+			labels.Label{
+				Name:  "b",
+				Value: "1",
+			},
+		},
+		{
+			labels.Label{
+				Name:  "a",
+				Value: "1",
+			},
+			labels.Label{
+				Name:  "b",
+				Value: "0",
+			},
+		},
+		{
+			labels.Label{
+				Name:  "a",
+				Value: "1",
+			},
+			labels.Label{
+				Name:  "b",
+				Value: "1",
+			},
+		},
+	}
+	require.Equal(t, expected, ls)
+}
+
+func TestGenLabelsSize(t *testing.T) {
+	for _, tc := range []struct {
+		set     []string
+		buckets int
+	}{
+		{
+			set:     []string{"a", "b"},
+			buckets: 5,
+		},
+		{
+			set:     []string{"a", "b", "c"},
+			buckets: 10,
+		},
+	} {
+		sets := genLabels(tc.set, tc.buckets)
+		require.Equal(
+			t,
+			math.Pow(float64(tc.buckets), float64(len(tc.set))),
+			float64(len(sets)),
+		)
+	}
+}
+
+func TestNewMockShardedqueryable(t *testing.T) {
+	for _, tc := range []struct {
+		shards                 uint64
+		nSamples, labelBuckets int
+		labelSet               []string
+	}{
+		{
+			nSamples:     100,
+			shards:       1,
+			labelBuckets: 3,
+			labelSet:     []string{"a", "b", "c"},
+		},
+		{
+			nSamples:     0,
+			shards:       2,
+			labelBuckets: 3,
+			labelSet:     []string{"a", "b", "c"},
+		},
+	} {
+		q := newMockShardedQueryable(tc.nSamples, tc.labelSet, tc.labelBuckets, 0)
+		expectedSeries := int(math.Pow(float64(tc.labelBuckets), float64(len(tc.labelSet))))
+
+		seriesCt := 0
+		for i := uint64(0); i < tc.shards; i++ {
+
+			set := q.Select(false, nil, &labels.Matcher{
+				Type: labels.MatchEqual,
+				Name: sharding.ShardLabel,
+				Value: sharding.ShardSelector{
+					ShardIndex: i,
+					ShardCount: tc.shards,
+				}.LabelValue(),
+			})
+
+			require.Nil(t, set.Err())
+
+			for set.Next() {
+				seriesCt++
+				iter := set.At().Iterator()
+				samples := 0
+				for iter.Next() {
+					samples++
+				}
+				require.Equal(t, tc.nSamples, samples)
+			}
+
+		}
+		require.Equal(t, expectedSeries, seriesCt)
+	}
 }

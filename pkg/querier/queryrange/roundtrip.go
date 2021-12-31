@@ -19,6 +19,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/weaveworks/common/middleware"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
@@ -33,11 +34,6 @@ const (
 )
 
 var (
-	// PassthroughMiddleware is a noop middleware
-	PassthroughMiddleware = MiddlewareFunc(func(next Handler) Handler {
-		return next
-	})
-
 	errInvalidShardingStorage = errors.New("query sharding support is only available for blocks storage")
 )
 
@@ -169,15 +165,15 @@ func newQueryTripperware(
 	cacheGenNumberLoader CacheGenNumberLoader,
 ) (Tripperware, cache.Cache, error) {
 	// Metric used to keep track of each middleware execution duration.
-	metrics := NewInstrumentMiddlewareMetrics(registerer)
+	metrics := newInstrumentMiddlewareMetrics(registerer)
 
 	queryRangeMiddleware := []Middleware{
 		// Track query range statistics. Added first before any subsequent middleware modifies the request.
 		newQueryStatsMiddleware(registerer),
-		NewLimitsMiddleware(limits, log),
+		newLimitsMiddleware(limits, log),
 	}
 	if cfg.AlignQueriesWithStep {
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("step_align", metrics, log), StepAlignMiddleware)
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
 	}
 
 	var c cache.Cache
@@ -204,7 +200,7 @@ func newQueryTripperware(
 			return !r.GetOptions().CacheDisabled
 		}
 
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("split_by_interval_and_results_cache", metrics, log), newSplitAndCacheMiddleware(
 			cfg.SplitQueriesByInterval > 0,
 			cfg.CacheResults,
 			cfg.SplitQueriesByInterval,
@@ -220,7 +216,7 @@ func newQueryTripperware(
 			registerer,
 		))
 	}
-	queryInstantMiddleware := []Middleware{NewLimitsMiddleware(limits, log)}
+	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
 
 	if cfg.ShardedQueries {
 		if storageEngine != storage.StorageEngineBlocks {
@@ -232,7 +228,7 @@ func newQueryTripperware(
 
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
-		queryshardingMiddleware := NewQueryShardingMiddleware(
+		queryshardingMiddleware := newQueryShardingMiddleware(
 			log,
 			promql.NewEngine(engineOpts),
 			limits,
@@ -240,26 +236,26 @@ func newQueryTripperware(
 		)
 		queryRangeMiddleware = append(
 			queryRangeMiddleware,
-			InstrumentMiddleware("querysharding", metrics, log),
+			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 		queryInstantMiddleware = append(
 			queryInstantMiddleware,
-			InstrumentMiddleware("querysharding", metrics, log),
+			newInstrumentMiddleware("querysharding", metrics, log),
 			queryshardingMiddleware,
 		)
 	}
 
 	if cfg.MaxRetries > 0 {
-		retryMiddlewareMetrics := NewRetryMiddlewareMetrics(registerer)
-		queryRangeMiddleware = append(queryRangeMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
-		queryInstantMiddleware = append(queryInstantMiddleware, InstrumentMiddleware("retry", metrics, log), NewRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		retryMiddlewareMetrics := newRetryMiddlewareMetrics(registerer)
+		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("retry", metrics, log), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
+		queryInstantMiddleware = append(queryInstantMiddleware, newInstrumentMiddleware("retry", metrics, log), newRetryMiddleware(log, cfg.MaxRetries, retryMiddlewareMetrics))
 	}
 
 	return func(next http.RoundTripper) http.RoundTripper {
-		queryrange := NewLimitedRoundTripper(next, codec, limits, queryRangeMiddleware...)
+		queryrange := newLimitedParallelismRoundTripper(next, codec, limits, queryRangeMiddleware...)
 		instant := defaultInstantQueryParamsRoundTripper(
-			NewLimitedRoundTripper(next, codec, limits, queryInstantMiddleware...),
+			newLimitedParallelismRoundTripper(next, codec, limits, queryInstantMiddleware...),
 			time.Now,
 		)
 		return RoundTripFunc(func(r *http.Request) (*http.Response, error) {
@@ -328,5 +324,24 @@ func defaultInstantQueryParamsRoundTripper(next http.RoundTripper, now func() ti
 			r.URL.RawQuery = q.Encode()
 		}
 		return next.RoundTrip(r)
+	})
+}
+
+// NewHTTPCacheGenNumberHeaderSetterMiddleware returns a middleware that sets cache gen header to let consumer of response
+// know all previous responses could be invalid due to delete operation.
+func NewHTTPCacheGenNumberHeaderSetterMiddleware(cacheGenNumbersLoader CacheGenNumberLoader) middleware.Interface {
+	return middleware.Func(func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			tenantIDs, err := tenant.TenantIDs(r.Context())
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusUnauthorized)
+				return
+			}
+
+			cacheGenNumber := cacheGenNumbersLoader.GetResultsCacheGenNumber(tenantIDs)
+
+			w.Header().Set(resultsCacheGenNumberHeaderName, cacheGenNumber)
+			next.ServeHTTP(w, r)
+		})
 	})
 }

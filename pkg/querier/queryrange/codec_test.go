@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/marshaling_test.go
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/query_range_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
@@ -9,6 +10,7 @@ import (
 	"bytes"
 	"context"
 	"io/ioutil"
+	"math/rand"
 	"net/http"
 	"strconv"
 	"testing"
@@ -23,6 +25,10 @@ import (
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/mimirpb"
+)
+
+var (
+	matrix = model.ValMatrix.String()
 )
 
 func TestRequest(t *testing.T) {
@@ -94,11 +100,6 @@ func TestRequest(t *testing.T) {
 		})
 	}
 }
-
-const (
-	statusSuccess = "success"
-	statusError   = "error"
-)
 
 type prometheusAPIResponse struct {
 	Status    string       `json:"status"`
@@ -298,7 +299,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name:  "No responses shouldn't panic and return a non-null result and result type.",
 			input: []Response{},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
@@ -310,7 +311,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "A single empty response shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
@@ -318,7 +319,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
@@ -330,14 +331,14 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Multiple empty responses shouldn't panic.",
 			input: []Response{
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
 					},
 				},
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result:     []SampleStream{},
@@ -345,7 +346,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result:     []SampleStream{},
@@ -357,7 +358,7 @@ func TestMergeAPIResponses(t *testing.T) {
 			name: "Basic merging of two responses.",
 			input: []Response{
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
@@ -372,7 +373,7 @@ func TestMergeAPIResponses(t *testing.T) {
 					},
 				},
 				&PrometheusResponse{
-					Status: StatusSuccess,
+					Status: statusSuccess,
 					Data: &PrometheusData{
 						ResultType: matrix,
 						Result: []SampleStream{
@@ -388,7 +389,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				},
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -413,7 +414,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -438,7 +439,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -461,7 +462,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"],[4,"4"],[5,"5"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -486,7 +487,7 @@ func TestMergeAPIResponses(t *testing.T) {
 				mustParse(t, `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"c":"d","a":"b"},"values":[[2,"2"],[3,"3"],[4,"4"],[5,"5"]]}]}}`),
 			},
 			expected: &PrometheusResponse{
-				Status: StatusSuccess,
+				Status: statusSuccess,
 				Data: &PrometheusData{
 					ResultType: matrix,
 					Result: []SampleStream{
@@ -512,7 +513,7 @@ func TestMergeAPIResponses(t *testing.T) {
 
 	t.Run("shouldn't merge unsuccessful responses", func(t *testing.T) {
 		successful := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 		unsuccessful := &PrometheusResponse{
@@ -528,11 +529,11 @@ func TestMergeAPIResponses(t *testing.T) {
 		// nil data has no type, so we can't merge it, it's basically an unsuccessful response,
 		// and we should never reach the point where we're merging an unsuccessful response.
 		successful := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 		nilData := &PrometheusResponse{
-			Status: StatusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
+			Status: statusSuccess, // shouldn't have nil data with a successful response, but we want to test everything.
 			Data:   nil,
 		}
 		_, err := PrometheusCodec.MergeResponse(successful, nilData)
@@ -541,46 +542,16 @@ func TestMergeAPIResponses(t *testing.T) {
 
 	t.Run("shouldn't merge non-matrix data", func(t *testing.T) {
 		matrixResponse := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: matrix},
 		}
 		vectorResponse := &PrometheusResponse{
-			Status: StatusSuccess,
+			Status: statusSuccess,
 			Data:   &PrometheusData{ResultType: model.ValVector.String()},
 		}
 		_, err := PrometheusCodec.MergeResponse(matrixResponse, vectorResponse)
 		require.Error(t, err)
 	})
-}
-
-func TestIsRequestStepAligned(t *testing.T) {
-	tests := map[string]struct {
-		req      Request
-		expected bool
-	}{
-		"should return true if start and end are aligned to step": {
-			req:      &PrometheusRangeQueryRequest{Start: 10, End: 20, Step: 10},
-			expected: true,
-		},
-		"should return false if start is not aligned to step": {
-			req:      &PrometheusRangeQueryRequest{Start: 11, End: 20, Step: 10},
-			expected: false,
-		},
-		"should return false if end is not aligned to step": {
-			req:      &PrometheusRangeQueryRequest{Start: 10, End: 19, Step: 10},
-			expected: false,
-		},
-		"should return true if step is 0": {
-			req:      &PrometheusRangeQueryRequest{Start: 10, End: 11, Step: 0},
-			expected: true,
-		},
-	}
-
-	for testName, testData := range tests {
-		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, isRequestStepAligned(testData.req))
-		})
-	}
 }
 
 func mustParse(t *testing.T, response string) Response {
@@ -589,4 +560,153 @@ func mustParse(t *testing.T, response string) Response {
 	json := jsoniter.ConfigCompatibleWithStandardLibrary
 	require.NoError(t, json.Unmarshal([]byte(response), &resp))
 	return &resp
+}
+
+func BenchmarkPrometheusCodec_DecodeResponse(b *testing.B) {
+	const (
+		numSeries           = 1000
+		numSamplesPerSeries = 1000
+	)
+
+	// Generate a mocked response and marshal it.
+	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
+	encodedRes, err := json.Marshal(res)
+	require.NoError(b, err)
+	b.Log("test prometheus response size:", len(encodedRes))
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := PrometheusCodec.DecodeResponse(context.Background(), &http.Response{
+			StatusCode:    200,
+			Body:          ioutil.NopCloser(bytes.NewReader(encodedRes)),
+			ContentLength: int64(len(encodedRes)),
+		}, nil, log.NewNopLogger())
+		require.NoError(b, err)
+	}
+}
+
+func BenchmarkPrometheusCodec_EncodeResponse(b *testing.B) {
+	const (
+		numSeries           = 1000
+		numSamplesPerSeries = 1000
+	)
+
+	// Generate a mocked response and marshal it.
+	res := mockPrometheusResponse(numSeries, numSamplesPerSeries)
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for n := 0; n < b.N; n++ {
+		_, err := PrometheusCodec.EncodeResponse(context.Background(), res)
+		require.NoError(b, err)
+	}
+}
+
+func mockPrometheusResponse(numSeries, numSamplesPerSeries int) *PrometheusResponse {
+	stream := make([]SampleStream, numSeries)
+	for s := 0; s < numSeries; s++ {
+		// Generate random samples.
+		samples := make([]mimirpb.Sample, numSamplesPerSeries)
+		for i := 0; i < numSamplesPerSeries; i++ {
+			samples[i] = mimirpb.Sample{
+				Value:       rand.Float64(),
+				TimestampMs: int64(i),
+			}
+		}
+
+		// Generate random labels.
+		lbls := make([]mimirpb.LabelAdapter, 10)
+		for i := range lbls {
+			lbls[i].Name = "a_medium_size_label_name"
+			lbls[i].Value = "a_medium_size_label_value_that_is_used_to_benchmark_marshalling"
+		}
+
+		stream[s] = SampleStream{
+			Labels:  lbls,
+			Samples: samples,
+		}
+	}
+
+	return &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: "vector",
+			Result:     stream,
+		},
+	}
+}
+
+func mockPrometheusResponseSingleSeries(series []mimirpb.LabelAdapter, samples ...mimirpb.Sample) *PrometheusResponse {
+	return &PrometheusResponse{
+		Status: "success",
+		Data: &PrometheusData{
+			ResultType: "matrix",
+			Result: []SampleStream{
+				{
+					Labels:  series,
+					Samples: samples,
+				},
+			},
+		},
+	}
+}
+
+func Test_DecodeOptions(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		input    *http.Request
+		expected *Options
+	}{
+		{
+			name: "default",
+			input: &http.Request{
+				Header: http.Header{},
+			},
+			expected: &Options{},
+		},
+		{
+			name: "disable cache",
+			input: &http.Request{
+				Header: http.Header{
+					cacheControlHeader: []string{noStoreValue},
+				},
+			},
+			expected: &Options{
+				CacheDisabled: true,
+			},
+		},
+		{
+			name: "custom sharding",
+			input: &http.Request{
+				Header: http.Header{
+					totalShardsControlHeader: []string{"64"},
+				},
+			},
+			expected: &Options{
+				TotalShards: 64,
+			},
+		},
+		{
+			name: "disable sharding",
+			input: &http.Request{
+				Header: http.Header{
+					totalShardsControlHeader: []string{"0"},
+				},
+			},
+			expected: &Options{
+				ShardingDisabled: true,
+			},
+		},
+	} {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			actual := &Options{}
+			decodeOptions(tt.input, actual)
+			require.Equal(t, tt.expected, actual)
+		})
+	}
 }

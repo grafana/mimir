@@ -17,15 +17,15 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// InstrumentMiddleware can be inserted into the middleware chain to expose timing information.
-func InstrumentMiddleware(name string, metrics *InstrumentMiddlewareMetrics, logger log.Logger) Middleware {
+// newInstrumentMiddleware can be inserted into the middleware chain to expose timing information.
+func newInstrumentMiddleware(name string, metrics *instrumentMiddlewareMetrics, logger log.Logger) Middleware {
 	var durationCol instrument.Collector
 
 	// Support the case metrics shouldn't be tracked (ie. unit tests).
 	if metrics != nil {
 		durationCol = instrument.NewHistogramCollector(metrics.duration)
 	} else {
-		durationCol = &NoopCollector{}
+		durationCol = &noopCollector{}
 	}
 
 	return MiddlewareFunc(func(next Handler) Handler {
@@ -44,14 +44,14 @@ func InstrumentMiddleware(name string, metrics *InstrumentMiddlewareMetrics, log
 	})
 }
 
-// InstrumentMiddlewareMetrics holds the metrics tracked by InstrumentMiddleware.
-type InstrumentMiddlewareMetrics struct {
+// instrumentMiddlewareMetrics holds the metrics tracked by newInstrumentMiddleware.
+type instrumentMiddlewareMetrics struct {
 	duration *prometheus.HistogramVec
 }
 
-// NewInstrumentMiddlewareMetrics makes a new InstrumentMiddlewareMetrics.
-func NewInstrumentMiddlewareMetrics(registerer prometheus.Registerer) *InstrumentMiddlewareMetrics {
-	return &InstrumentMiddlewareMetrics{
+// newInstrumentMiddlewareMetrics makes a new instrumentMiddlewareMetrics.
+func newInstrumentMiddlewareMetrics(registerer prometheus.Registerer) *instrumentMiddlewareMetrics {
+	return &instrumentMiddlewareMetrics{
 		duration: promauto.With(registerer).NewHistogramVec(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "frontend_query_range_duration_seconds",
@@ -61,15 +61,15 @@ func NewInstrumentMiddlewareMetrics(registerer prometheus.Registerer) *Instrumen
 	}
 }
 
-// NoopCollector is a noop collector that can be used as placeholder when no metric
+// noopCollector is a noop collector that can be used as placeholder when no metric
 // should tracked by the instrumentation.
-type NoopCollector struct{}
+type noopCollector struct{}
 
 // Register implements instrument.Collector.
-func (c *NoopCollector) Register() {}
+func (c *noopCollector) Register() {}
 
 // Before implements instrument.Collector.
-func (c *NoopCollector) Before(ctx context.Context, method string, start time.Time) {}
+func (c *noopCollector) Before(ctx context.Context, method string, start time.Time) {}
 
 // After implements instrument.Collector.
-func (c *NoopCollector) After(ctx context.Context, method, statusCode string, start time.Time) {}
+func (c *noopCollector) After(ctx context.Context, method, statusCode string, start time.Time) {}

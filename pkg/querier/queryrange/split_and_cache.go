@@ -1,18 +1,26 @@
 // SPDX-License-Identifier: AGPL-3.0-only
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/split_by_interval.go
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/querier/queryrange/util.go
+// Provenance-includes-license: Apache-2.0
+// Provenance-includes-copyright: The Cortex Authors.
 
 package queryrange
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
+	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/promql/parser"
+	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
 	"github.com/grafana/mimir/pkg/chunk/cache"
@@ -60,7 +68,7 @@ type splitAndCacheMiddleware struct {
 	splitter               CacheSplitter
 	extractor              Extractor
 	cacheGenNumberLoader   CacheGenNumberLoader
-	shouldCacheReq         ShouldCacheFn
+	shouldCacheReq         shouldCacheFn
 }
 
 // newSplitAndCacheMiddleware makes a new splitAndCacheMiddleware.
@@ -75,7 +83,7 @@ func newSplitAndCacheMiddleware(
 	splitter CacheSplitter,
 	extractor Extractor,
 	cacheGenNumberLoader CacheGenNumberLoader,
-	shouldCacheReq ShouldCacheFn,
+	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
 	reg prometheus.Registerer) Middleware {
 	metrics := newSplitAndCacheMiddlewareMetrics(reg)
@@ -183,7 +191,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 	execReqs := splitReqs.prepareDownstreamRequests()
 
 	if len(execReqs) > 0 {
-		execResps, err := DoRequests(ctx, s.next, execReqs, true)
+		execResps, err := doRequests(ctx, s.next, execReqs, true)
 		if err != nil {
 			return nil, err
 		}
@@ -427,10 +435,10 @@ func (s *splitRequests) prepareDownstreamRequests() []Request {
 	return execReqs
 }
 
-// storeDownstreamResponses associates the given executed RequestResponse with the downstream requests
+// storeDownstreamResponses associates the given executed requestResponse with the downstream requests
 // and stores the associated downstream responses for each request. If returns no error, then it's guaranteed
 // that any downstream request got its response associated.
-func (s *splitRequests) storeDownstreamResponses(responses []RequestResponse) error {
+func (s *splitRequests) storeDownstreamResponses(responses []requestResponse) error {
 	execRespsByID := make(map[int64]Response, len(responses))
 
 	// Map responses by (unique) request IDs.
@@ -465,4 +473,103 @@ func (s *splitRequests) storeDownstreamResponses(responses []RequestResponse) er
 	}
 
 	return nil
+}
+
+// requestResponse contains a request response and the respective request that was used.
+type requestResponse struct {
+	Request  Request
+	Response Response
+}
+
+// doRequests executes a list of requests in parallel.
+func doRequests(ctx context.Context, downstream Handler, reqs []Request, recordSpan bool) ([]requestResponse, error) {
+	g, ctx := errgroup.WithContext(ctx)
+	mtx := sync.Mutex{}
+	resps := make([]requestResponse, 0, len(reqs))
+	for i := 0; i < len(reqs); i++ {
+		req := reqs[i]
+		g.Go(func() error {
+			var childCtx = ctx
+			if recordSpan {
+				var span opentracing.Span
+				span, childCtx = opentracing.StartSpanFromContext(ctx, "doRequests")
+				req.LogToSpan(span)
+				defer span.Finish()
+			}
+
+			resp, err := downstream.Do(childCtx, req)
+			if err != nil {
+				return err
+			}
+
+			mtx.Lock()
+			resps = append(resps, requestResponse{req, resp})
+			mtx.Unlock()
+			return nil
+		})
+	}
+
+	return resps, g.Wait()
+}
+
+func splitQueryByInterval(r Request, interval time.Duration) ([]Request, error) {
+	// Replace @ modifier function to their respective constant values in the query.
+	// This way subqueries will be evaluated at the same time as the parent query.
+	query, err := evaluateAtModifierFunction(r.GetQuery(), r.GetStart(), r.GetEnd())
+	if err != nil {
+		return nil, err
+	}
+	var reqs []Request
+	for start := r.GetStart(); start <= r.GetEnd(); {
+		end := nextIntervalBoundary(start, r.GetStep(), interval)
+		if end > r.GetEnd() {
+			end = r.GetEnd()
+		}
+
+		// If step isn't too big, and adding another step saves us one extra request,
+		// then extend the current request to cover the extra step too.
+		if end+r.GetStep() == r.GetEnd() && r.GetStep() <= 5*time.Minute.Milliseconds() {
+			end = r.GetEnd()
+		}
+
+		reqs = append(reqs, r.WithQuery(query).WithStartEnd(start, end))
+
+		start = end + r.GetStep()
+	}
+	return reqs, nil
+}
+
+// evaluateAtModifierFunction parse the query and evaluates the `start()` and `end()` at modifier functions into actual constant timestamps.
+// For example given the start of the query is 10.00, `http_requests_total[1h] @ start()` query will be replaced with `http_requests_total[1h] @ 10.00`
+// If the modifier is already a constant, it will be returned as is.
+func evaluateAtModifierFunction(query string, start, end int64) (string, error) {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return "", apierror.New(apierror.TypeBadData, err.Error())
+	}
+	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
+		if selector, ok := n.(*parser.VectorSelector); ok {
+			switch selector.StartOrEnd {
+			case parser.START:
+				selector.Timestamp = &start
+			case parser.END:
+				selector.Timestamp = &end
+			}
+			selector.StartOrEnd = 0
+		}
+		return nil
+	})
+	return expr.String(), nil
+}
+
+// Round up to the step before the next interval boundary.
+func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
+	intervalMillis := interval.Milliseconds()
+	startOfNextInterval := ((t / intervalMillis) + 1) * intervalMillis
+	// ensure that target is a multiple of steps away from the start time
+	target := startOfNextInterval - ((startOfNextInterval - t) % step)
+	if target == startOfNextInterval {
+		target -= step
+	}
+	return target
 }

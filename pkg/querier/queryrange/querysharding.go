@@ -10,10 +10,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/grafana/mimir/pkg/querier/lazyquery"
-
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -21,9 +17,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
+	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/astmapper"
+	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
@@ -49,13 +48,13 @@ type queryShardingMetrics struct {
 	shardedQueriesPerQuery prometheus.Histogram
 }
 
-// NewQueryShardingMiddleware creates a middleware that will split queries by shard.
+// newQueryShardingMiddleware creates a middleware that will split queries by shard.
 // It first looks at the query to determine if it is shardable or not.
 // Then rewrite the query into a sharded query and use the PromQL engine to execute the query.
-// Sub shard queries are embedded into a single vector selector and a modified `Queryable` (see ShardedQueryable) is passed
+// Sub shard queries are embedded into a single vector selector and a modified `Queryable` (see shardedQueryable) is passed
 // to the PromQL engine.
 // Finally we can translate the embedded vector selector back into subqueries in the Queryable and send them in parallel to downstream.
-func NewQueryShardingMiddleware(
+func newQueryShardingMiddleware(
 	logger log.Logger,
 	engine *promql.Engine,
 	limit Limits,
@@ -137,7 +136,7 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	queryStats.AddShardedQueries(uint32(shardingStats.GetShardedQueries()))
 
 	r = r.WithQuery(shardedQuery)
-	shardedQueryable := NewShardedQueryable(r, s.next)
+	shardedQueryable := newShardedQueryable(r, s.next)
 
 	qry, err := newQuery(r, s.engine, lazyquery.NewLazyQueryable(shardedQueryable))
 	if err != nil {
@@ -145,12 +144,12 @@ func (s *querySharding) Do(ctx context.Context, r Request) (Response, error) {
 	}
 
 	res := qry.Exec(ctx)
-	extracted, err := FromResult(res)
+	extracted, err := promqlResultToSamples(res)
 	if err != nil {
 		return nil, mapEngineError(err)
 	}
 	return &PrometheusResponse{
-		Status: StatusSuccess,
+		Status: statusSuccess,
 		Data: &PrometheusData{
 			ResultType: string(res.Value.Type()),
 			Result:     extracted,
@@ -202,7 +201,7 @@ func mapEngineError(err error) error {
 }
 
 // shardQuery attempts to rewrite the input query in a shardable way. Returns the rewritten query
-// to be executed by PromQL engine with ShardedQueryable or an empty string if the input query
+// to be executed by PromQL engine with shardedQueryable or an empty string if the input query
 // can't be sharded.
 func (s *querySharding) shardQuery(query string, totalShards int) (string, *astmapper.MapperStats, error) {
 	mapper, err := astmapper.NewSharding(totalShards, s.logger)
@@ -317,4 +316,48 @@ func (s *querySharding) getShardsForQuery(tenantIDs []string, r Request, spanLog
 	}
 
 	return totalShards
+}
+
+// promqlResultToSamples transforms a promql query result into a samplestream
+func promqlResultToSamples(res *promql.Result) ([]SampleStream, error) {
+	if res.Err != nil {
+		// The error could be wrapped by the PromQL engine. We get the error's cause in order to
+		// correctly parse the error in parent callers (eg. gRPC response status code extraction).
+		return nil, errors.Cause(res.Err)
+	}
+	switch v := res.Value.(type) {
+	case promql.String:
+		return []SampleStream{
+			{
+				Labels:  []mimirpb.LabelAdapter{{Name: "value", Value: v.V}},
+				Samples: []mimirpb.Sample{{TimestampMs: v.T}},
+			},
+		}, nil
+	case promql.Scalar:
+		return []SampleStream{
+			{Samples: []mimirpb.Sample{{TimestampMs: v.T, Value: v.V}}},
+		}, nil
+
+	case promql.Vector:
+		res := make([]SampleStream, 0, len(v))
+		for _, sample := range v {
+			res = append(res, SampleStream{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(sample.Metric),
+				Samples: []mimirpb.Sample{{TimestampMs: sample.Point.T, Value: sample.Point.V}}})
+		}
+		return res, nil
+
+	case promql.Matrix:
+		res := make([]SampleStream, 0, len(v))
+		for _, series := range v {
+			res = append(res, SampleStream{
+				Labels:  mimirpb.FromLabelsToLabelAdapters(series.Metric),
+				Samples: mimirpb.FromPointsToSamples(series.Points),
+			})
+		}
+		return res, nil
+
+	}
+
+	return nil, errors.Errorf("unexpected value type: [%s]", res.Value.Type())
 }

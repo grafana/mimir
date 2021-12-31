@@ -73,7 +73,7 @@ func TestRetry(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			try.Store(0)
-			h := NewRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(tc.handler)
+			h := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(tc.handler)
 			resp, err := h.Do(context.Background(), nil)
 			require.Equal(t, tc.err, err)
 			require.Equal(t, tc.resp, resp)
@@ -85,7 +85,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	var try atomic.Int32
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, err := NewRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
+	_, err := newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
 		HandlerFunc(func(c context.Context, r Request) (Response, error) {
 			try.Inc()
 			return nil, ctx.Err()
@@ -95,7 +95,7 @@ func Test_RetryMiddlewareCancel(t *testing.T) {
 	require.Equal(t, ctx.Err(), err)
 
 	ctx, cancel = context.WithCancel(context.Background())
-	_, err = NewRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
+	_, err = newRetryMiddleware(log.NewNopLogger(), 5, nil).Wrap(
 		HandlerFunc(func(c context.Context, r Request) (Response, error) {
 			try.Inc()
 			cancel()

@@ -13,6 +13,8 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/grafana/mimir/pkg/querier/queryrange"
+
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -236,7 +238,7 @@ func NewQuerierHandler(
 		ResponseBodySize: sentMessageSize,
 		InflightRequests: inflightRequests,
 	}
-	cacheGenHeaderMiddleware := getHTTPCacheGenNumberHeaderSetterMiddleware(tombstonesLoader)
+	cacheGenHeaderMiddleware := queryrange.NewHTTPCacheGenNumberHeaderSetterMiddleware(tombstonesLoader)
 	middlewares := middleware.Merge(inst, cacheGenHeaderMiddleware)
 	router.Use(middlewares.Wrap)
 

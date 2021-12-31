@@ -17,12 +17,12 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-type RetryMiddlewareMetrics struct {
+type retryMiddlewareMetrics struct {
 	retriesCount prometheus.Histogram
 }
 
-func NewRetryMiddlewareMetrics(registerer prometheus.Registerer) *RetryMiddlewareMetrics {
-	return &RetryMiddlewareMetrics{
+func newRetryMiddlewareMetrics(registerer prometheus.Registerer) *retryMiddlewareMetrics {
+	return &retryMiddlewareMetrics{
 		retriesCount: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
 			Namespace: "cortex",
 			Name:      "query_frontend_retries",
@@ -37,14 +37,14 @@ type retry struct {
 	next       Handler
 	maxRetries int
 
-	metrics *RetryMiddlewareMetrics
+	metrics *retryMiddlewareMetrics
 }
 
-// NewRetryMiddleware returns a middleware that retries requests if they
+// newRetryMiddleware returns a middleware that retries requests if they
 // fail with 500 or a non-HTTP error.
-func NewRetryMiddleware(log log.Logger, maxRetries int, metrics *RetryMiddlewareMetrics) Middleware {
+func newRetryMiddleware(log log.Logger, maxRetries int, metrics *retryMiddlewareMetrics) Middleware {
 	if metrics == nil {
-		metrics = NewRetryMiddlewareMetrics(nil)
+		metrics = newRetryMiddlewareMetrics(nil)
 	}
 
 	return MiddlewareFunc(func(next Handler) Handler {

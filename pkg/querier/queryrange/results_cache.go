@@ -28,12 +28,15 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
-var (
-	// Value that cacheControlHeader has if the response indicates that the results should not be cached.
-	noStoreValue = "no-store"
+const (
+	// resultsCacheGenNumberHeaderName holds name of the header we want to set in http response
+	resultsCacheGenNumberHeaderName = "Results-Cache-Gen-Number"
 
-	// ResultsCacheGenNumberHeaderName holds name of the header we want to set in http response
-	ResultsCacheGenNumberHeaderName = "Results-Cache-Gen-Number"
+	// cacheControlHeader is the name of the cache control header.
+	cacheControlHeader = "Cache-Control"
+
+	// noStoreValue is the value that cacheControlHeader has if the response indicates that the results should not be cached.
+	noStoreValue = "no-store"
 )
 
 type CacheGenNumberLoader interface {
@@ -130,11 +133,11 @@ func (t constSplitter) GenerateCacheKey(userID string, r Request) string {
 	return fmt.Sprintf("%s:%s:%d:%d:%d", userID, r.GetQuery(), r.GetStep(), startInterval, stepOffset)
 }
 
-// ShouldCacheFn checks whether the current request should go to cache
+// shouldCacheFn checks whether the current request should go to cache
 // or not. If not, just send the request to next handler.
-type ShouldCacheFn func(r Request) bool
+type shouldCacheFn func(r Request) bool
 
-// resultsCacheAlwaysEnabled is a ShouldCacheFn function always returning true.
+// resultsCacheAlwaysEnabled is a shouldCacheFn function always returning true.
 var resultsCacheAlwaysEnabled = func(_ Request) bool { return true }
 
 // isRequestCachable says whether the request is eligible for caching.
@@ -171,7 +174,7 @@ func isResponseCachable(ctx context.Context, r Response, cacheGenNumberLoader Ca
 		return true
 	}
 
-	genNumbersFromResp := getHeaderValuesWithName(r, ResultsCacheGenNumberHeaderName)
+	genNumbersFromResp := getHeaderValuesWithName(r, resultsCacheGenNumberHeaderName)
 	genNumberFromCtx := cache.ExtractCacheGenNumber(ctx)
 
 	if len(genNumbersFromResp) == 0 && genNumberFromCtx != "" {
