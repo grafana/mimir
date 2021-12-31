@@ -215,11 +215,11 @@ jobs:
           make BUILD_IN_CONTAINER=false load-images
       - name: Deploy
         run: |
-          if [ -n "$DOCKER_REGISTRY_PASSWORD" ]; then
-            docker login -u "$DOCKER_REGISTRY_USER" -p "$DOCKER_REGISTRY_PASSWORD"
+          if [ -n "$GCR_REGISTRY_PASSWORD" ]; then
+            docker login -u "$GCR_REGISTRY_USER" -p "GCR_REGISTRY_PASSWORD" us.gcr.io
           fi
           export IMAGE_TAG=$(make image-tag)
           ./push-images
         env:
-          DOCKER_REGISTRY_USER: ${{secrets.DOCKER_REGISTRY_USER}}
-          DOCKER_REGISTRY_PASSWORD: ${{ secrets.DOCKER_REGISTRY_PASSWORD }}
+          GCR_REGISTRY_USER: _json_key
+          GCR_REGISTRY_PASSWORD: ${{ secrets.gcr_json_key }}
