@@ -97,19 +97,19 @@ jobs:
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
       - name: Build Image
         run: |
-          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate ./cmd/query-tee/.uptodate
+          make BUILD_IN_CONTAINER=false ./cmd/mimir/.uptodate
       - name: Save Images
         run: |
           mkdir /tmp/images
           ln -s /tmp/images ./docker-images
           make BUILD_IN_CONTAINER=false save-images
       - name: Create Docker Images Archive
-        run: tar -cvf images.tar /tmp/images
+        run: tar -cvf mimir-images.tar /tmp/images
       - name: Upload Docker Images Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: Docker Images
-          path: ./images.tar
+          name: Docker Images Mimir
+          path: ./mimir-images.tar
 
   build-tools:
     runs-on: ubuntu-20.04
@@ -131,6 +131,18 @@ jobs:
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
           make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
+      - name: Save Images
+        run: |
+          mkdir /tmp/images
+          ln -s /tmp/images ./docker-images
+          make BUILD_IN_CONTAINER=false save-images
+      - name: Create Docker Images Archive
+        run: tar -cvf tools-images.tar /tmp/images
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: Docker Images Tools
+          path: ./tools-images.tar
 
   integration:
     needs: build-mimir
@@ -155,12 +167,12 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Images Artifacts
+      - name: Download Docker Images Mimir Artifacts
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images
-      - name: Extract Docker Images Archive
-        run: tar -xvf images.tar -C /
+          name: Docker Images Mimir
+      - name: Extract Docker Image Archive
+        run: tar -xvf mimir-images.tar -C /
       - name: Load Docker Images
         run: |
           ln -s /tmp/images ./docker-images
@@ -185,7 +197,7 @@ jobs:
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
 
   deploy:
-    needs: [build-mimir, test, lint, integration]
+    needs: [build-mimir, build-tools, test, lint, integration]
     # TODO: Before merge remote 'true ||'
     if: (true || github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')) && github.repository == 'grafana/mimir'
     runs-on: ubuntu-20.04
@@ -203,12 +215,18 @@ jobs:
         run: |
           mkdir -p /go/src/github.com/grafana/mimir
           ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Images Artifact
+      - name: Download Docker Tool Images Artifacts
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images
-      - name: Extract Docker Images Archive
-        run: tar -xvf images.tar -C /
+          name: Docker Images Tools
+      - name: Download Docker Mimir Image Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: Docker Images Mimir
+      - name: Extract Docker Images
+        run: |
+          tar -xvf mimir-images.tar -C /
+          tar -xvf tools-images.tar -C /
       - name: Load Images
         run: |
           ln -s /tmp/images ./docker-images
