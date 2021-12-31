@@ -4,22 +4,18 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-IMAGES=$(make images)
+# Filter images to only push query-tee for now
+# TODO: Remove once mimir is becoming a public project
+IMAGES=$(make DOCKER_IMAGE_DIRS=./cmd/query-tee images)
 IMAGE_TAG=${IMAGE_TAG:-$(./tools/image-tag)}
-QUAY_PREFIX=quay.io/
-NO_QUAY=
 
 usage() {
-    echo "$0 (-noquay)"
+    echo "$0"
     exit 2
 }
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        "-noquay")
-            NO_QUAY=true
-            shift 1
-            ;;
         *)
             usage
             exit 2
@@ -31,17 +27,6 @@ push_image() {
     local image="$1"
     echo "Pushing ${image}:${IMAGE_TAG}"
     docker push ${image}:${IMAGE_TAG}
-
-    if [ -n "${NO_QUAY}" ]; then
-        return
-    fi
-
-    # remove the quay prefix and push to docker hub
-    docker_hub_image=${image#$QUAY_PREFIX}
-    docker tag ${image}:${IMAGE_TAG} ${docker_hub_image}:${IMAGE_TAG}
-
-    echo "Pushing ${docker_hub_image}:${IMAGE_TAG}"
-    docker push ${docker_hub_image}:${IMAGE_TAG}
 }
 
 for image in ${IMAGES}; do

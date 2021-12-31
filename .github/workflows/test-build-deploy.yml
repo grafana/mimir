@@ -123,12 +123,12 @@ jobs:
           ln -s /tmp/images ./docker-images
           make BUILD_IN_CONTAINER=false save-images
       - name: Create Docker Images Archive
-        run: tar -cvf images.tar /tmp/images
+        run: tar -cvf mimir-images.tar /tmp/images
       - name: Upload Docker Images Artifact
         uses: actions/upload-artifact@v2
         with:
-          name: Docker Images
-          path: ./images.tar
+          name: Docker Images Mimir
+          path: ./mimir-images.tar
 
   build-tools:
     runs-on: ubuntu-20.04
@@ -150,6 +150,18 @@ jobs:
         # Build everything except mimir (run by build-mimir job) and build image (not managed by CI).
         run: |
           make list-image-targets | grep -v -E '/mimir-build-image/|/cmd/mimir/' | xargs -I {} make BUILD_IN_CONTAINER=false {}
+      - name: Save Images
+        run: |
+          mkdir /tmp/images
+          ln -s /tmp/images ./docker-images
+          make BUILD_IN_CONTAINER=false save-images
+      - name: Create Docker Images Archive
+        run: tar -cvf tools-images.tar /tmp/images
+      - name: Upload Docker Image Artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: Docker Images Tools
+          path: ./tools-images.tar
 
   integration:
     needs: build-mimir
@@ -174,12 +186,12 @@ jobs:
         run: |
           sudo mkdir -p /go/src/github.com/grafana/mimir
           sudo ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-      - name: Download Docker Images Artifacts
+      - name: Download Docker Images Mimir Artifacts
         uses: actions/download-artifact@v2
         with:
-          name: Docker Images
-      - name: Extract Docker Images Archive
-        run: tar -xvf images.tar -C /
+          name: Docker Images Mimir
+      - name: Extract Docker Image Archive
+        run: tar -xvf mimir-images.tar -C /
       - name: Load Docker Images
         run: |
           ln -s /tmp/images ./docker-images
@@ -202,3 +214,49 @@ jobs:
           echo "Running integration tests with image: $MIMIR_IMAGE"
           echo "Running integration tests (group ${{ matrix.test_group_id }} of ${{ matrix.test_group_total }}) with Go version: $(go version)"
           ./.github/workflows/scripts/run-integration-tests-group.sh --index ${{ matrix.test_group_id }} --total ${{ matrix.test_group_total }}
+
+  deploy:
+    needs: [build-mimir, build-tools, test, lint, integration]
+    # Only deploy images on tag pushes to the grafana/mimir repo
+    if: startsWith(github.ref, 'refs/tags/') && github.repository == 'grafana/mimir'
+    runs-on: ubuntu-20.04
+    container:
+      image: us.gcr.io/kubernetes-dev/mimir-build-image:import-jsonnet-readme-2418fd778-WIP
+      credentials:
+        username: _json_key
+        password: ${{ secrets.gcr_json_key }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+      - name: Install Docker Client
+        run: ./.github/workflows/scripts/install-docker.sh
+      - name: Symlink Expected Path to Workspace
+        run: |
+          mkdir -p /go/src/github.com/grafana/mimir
+          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
+      - name: Download Docker Tool Images Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: Docker Images Tools
+      - name: Download Docker Mimir Image Artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: Docker Images Mimir
+      - name: Extract Docker Images
+        run: |
+          tar -xvf mimir-images.tar -C /
+          tar -xvf tools-images.tar -C /
+      - name: Load Images
+        run: |
+          ln -s /tmp/images ./docker-images
+          make BUILD_IN_CONTAINER=false load-images
+      - name: Deploy
+        run: |
+          if [ -n "$GCR_REGISTRY_PASSWORD" ]; then
+            printenv GCR_REGISTRY_PASSWORD | docker login -u "$GCR_REGISTRY_USER" --password-stdin us.gcr.io
+          fi
+          export IMAGE_TAG=$(make image-tag)
+          ./push-images
+        env:
+          GCR_REGISTRY_USER: _json_key
+          GCR_REGISTRY_PASSWORD: ${{ secrets.gcr_json_key }}
