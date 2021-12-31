@@ -216,7 +216,7 @@ jobs:
       - name: Deploy
         run: |
           if [ -n "$GCR_REGISTRY_PASSWORD" ]; then
-            docker login -u "$GCR_REGISTRY_USER" -p "GCR_REGISTRY_PASSWORD" us.gcr.io
+            printenv GCR_REGISTRY_PASSWORD | docker login -u "$GCR_REGISTRY_USER" --password-stdin us.gcr.io
           fi
           export IMAGE_TAG=$(make image-tag)
           ./push-images
