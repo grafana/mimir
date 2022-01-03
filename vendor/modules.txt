@@ -1,4 +1,4 @@
-# cloud.google.com/go v0.97.0
+# cloud.google.com/go v0.99.0
 ## explicit; go 1.11
 cloud.google.com/go
 cloud.google.com/go/compute/metadata
@@ -26,11 +26,11 @@ github.com/Azure/azure-storage-blob-go/azblob
 # github.com/Azure/go-autorest v14.2.0+incompatible
 ## explicit
 github.com/Azure/go-autorest
-# github.com/Azure/go-autorest/autorest v0.11.22
+# github.com/Azure/go-autorest/autorest v0.11.23
 ## explicit; go 1.15
 github.com/Azure/go-autorest/autorest
 github.com/Azure/go-autorest/autorest/azure
-# github.com/Azure/go-autorest/autorest/adal v0.9.17
+# github.com/Azure/go-autorest/autorest/adal v0.9.18
 ## explicit; go 1.15
 github.com/Azure/go-autorest/autorest/adal
 # github.com/Azure/go-autorest/autorest/azure/auth v0.5.8
@@ -79,7 +79,7 @@ github.com/armon/go-metrics/prometheus
 # github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef
 ## explicit; go 1.13
 github.com/asaskevich/govalidator
-# github.com/aws/aws-sdk-go v1.42.20
+# github.com/aws/aws-sdk-go v1.42.25
 ## explicit; go 1.11
 github.com/aws/aws-sdk-go/aws
 github.com/aws/aws-sdk-go/aws/arn
@@ -198,8 +198,8 @@ github.com/docker/go-units
 # github.com/dustin/go-humanize v1.0.0
 ## explicit
 github.com/dustin/go-humanize
-# github.com/edsrzf/mmap-go v1.0.0
-## explicit
+# github.com/edsrzf/mmap-go v1.1.0
+## explicit; go 1.17
 github.com/edsrzf/mmap-go
 # github.com/envoyproxy/go-control-plane v0.10.1
 ## explicit; go 1.11
@@ -436,7 +436,7 @@ github.com/grpc-ecosystem/go-grpc-middleware/v2/util/metautils
 # github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
 ## explicit
 github.com/hailocab/go-hostpool
-# github.com/hashicorp/consul/api v1.11.0
+# github.com/hashicorp/consul/api v1.12.0
 ## explicit; go 1.12
 github.com/hashicorp/consul/api
 # github.com/hashicorp/errwrap v1.0.0
@@ -467,10 +467,10 @@ github.com/hashicorp/go-sockaddr
 ## explicit; go 1.12
 github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
-# github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
+# github.com/hashicorp/memberlist v0.3.0
 ## explicit; go 1.12
 github.com/hashicorp/memberlist
-# github.com/hashicorp/serf v0.9.5
+# github.com/hashicorp/serf v0.9.6
 ## explicit; go 1.12
 github.com/hashicorp/serf/coordinate
 # github.com/jessevdk/go-flags v1.5.0
@@ -519,7 +519,7 @@ github.com/mattn/go-isatty
 # github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369
 ## explicit; go 1.9
 github.com/matttproud/golang_protobuf_extensions/pbutil
-# github.com/miekg/dns v1.1.43
+# github.com/miekg/dns v1.1.45
 ## explicit; go 1.14
 github.com/miekg/dns
 # github.com/minio/md5-simd v1.1.0
@@ -654,7 +654,7 @@ github.com/prometheus/common/version
 # github.com/prometheus/common/sigv4 v0.1.0
 ## explicit; go 1.15
 github.com/prometheus/common/sigv4
-# github.com/prometheus/exporter-toolkit v0.7.0
+# github.com/prometheus/exporter-toolkit v0.7.1
 ## explicit; go 1.14
 github.com/prometheus/exporter-toolkit/web
 # github.com/prometheus/node_exporter v1.0.0-rc.0.0.20200428091818-01054558c289
@@ -665,8 +665,8 @@ github.com/prometheus/node_exporter/https
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20211119115433-692a54649ed7 => github.com/grafana/prometheus-private v0.0.0-20211210120034-fbe3167fda56
-## explicit; go 1.14
+# github.com/prometheus/prometheus v1.8.2-0.20211119115433-692a54649ed7 => github.com/grafana/prometheus-private v0.0.0-20220103114714-5205ff1a813d
+## explicit; go 1.16
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
 github.com/prometheus/prometheus/discovery/dns
@@ -785,7 +785,7 @@ github.com/thanos-io/thanos/pkg/store/storepb/prompb
 github.com/thanos-io/thanos/pkg/strutil
 github.com/thanos-io/thanos/pkg/testutil
 github.com/thanos-io/thanos/pkg/tracing
-# github.com/uber/jaeger-client-go v2.29.1+incompatible
+# github.com/uber/jaeger-client-go v2.30.0+incompatible
 ## explicit
 github.com/uber/jaeger-client-go
 github.com/uber/jaeger-client-go/config
@@ -906,7 +906,7 @@ go.uber.org/zap/internal/color
 go.uber.org/zap/internal/exit
 go.uber.org/zap/zapcore
 go.uber.org/zap/zapgrpc
-# golang.org/x/crypto v0.0.0-20210921155107-089bfa567519
+# golang.org/x/crypto v0.0.0-20211202192323-5770296d904e
 ## explicit; go 1.17
 golang.org/x/crypto/argon2
 golang.org/x/crypto/bcrypt
@@ -914,7 +914,10 @@ golang.org/x/crypto/blake2b
 golang.org/x/crypto/blowfish
 golang.org/x/crypto/pkcs12
 golang.org/x/crypto/pkcs12/internal/rc2
-# golang.org/x/net v0.0.0-20211123203042-d83791d6bcd9
+# golang.org/x/mod v0.5.1
+## explicit; go 1.17
+golang.org/x/mod/semver
+# golang.org/x/net v0.0.0-20211209124913-491a49abca63
 ## explicit; go 1.17
 golang.org/x/net/bpf
 golang.org/x/net/context
@@ -946,9 +949,10 @@ golang.org/x/oauth2/jwt
 ## explicit
 golang.org/x/sync/errgroup
 golang.org/x/sync/semaphore
-# golang.org/x/sys v0.0.0-20211124211545-fe61309f8881
+# golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e
 ## explicit; go 1.17
 golang.org/x/sys/cpu
+golang.org/x/sys/execabs
 golang.org/x/sys/internal/unsafeheader
 golang.org/x/sys/unix
 golang.org/x/sys/windows
@@ -963,11 +967,25 @@ golang.org/x/text/width
 # golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 ## explicit
 golang.org/x/time/rate
+# golang.org/x/tools v0.1.8
+## explicit; go 1.17
+golang.org/x/tools/go/gcexportdata
+golang.org/x/tools/go/internal/gcimporter
+golang.org/x/tools/go/internal/packagesdriver
+golang.org/x/tools/go/packages
+golang.org/x/tools/internal/event
+golang.org/x/tools/internal/event/core
+golang.org/x/tools/internal/event/keys
+golang.org/x/tools/internal/event/label
+golang.org/x/tools/internal/gocommand
+golang.org/x/tools/internal/packagesinternal
+golang.org/x/tools/internal/typeparams
+golang.org/x/tools/internal/typesinternal
 # golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1
 ## explicit; go 1.11
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
-# google.golang.org/api v0.61.0
+# google.golang.org/api v0.63.0
 ## explicit; go 1.11
 google.golang.org/api/cloudresourcemanager/v1
 google.golang.org/api/googleapi
@@ -999,7 +1017,7 @@ google.golang.org/appengine/internal/socket
 google.golang.org/appengine/internal/urlfetch
 google.golang.org/appengine/socket
 google.golang.org/appengine/urlfetch
-# google.golang.org/genproto v0.0.0-20211129164237-f09f9a12af12
+# google.golang.org/genproto v0.0.0-20211208223120-3a66f561d7aa
 ## explicit; go 1.11
 google.golang.org/genproto/googleapis/api/annotations
 google.golang.org/genproto/googleapis/bigtable/admin/v2
@@ -1011,7 +1029,7 @@ google.golang.org/genproto/googleapis/rpc/errdetails
 google.golang.org/genproto/googleapis/rpc/status
 google.golang.org/genproto/googleapis/type/expr
 google.golang.org/genproto/protobuf/field_mask
-# google.golang.org/grpc v1.40.0 => google.golang.org/grpc v1.38.0
+# google.golang.org/grpc v1.40.1 => google.golang.org/grpc v1.38.0
 ## explicit; go 1.11
 google.golang.org/grpc
 google.golang.org/grpc/attributes
@@ -1169,7 +1187,8 @@ sigs.k8s.io/yaml
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/gocql/gocql => github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
-# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20211210120034-fbe3167fda56
+# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20220103114714-5205ff1a813d
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # google.golang.org/grpc => google.golang.org/grpc v1.38.0
+# github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b
