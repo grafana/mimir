@@ -242,7 +242,7 @@ func TestContextCond(t *testing.T) {
 			close(doneWaiting)
 		}()
 
-		assertChanReceived(t, doneWaiting, time.Second, "cond.Wait did not return after 500ms")
+		assertChanReceived(t, doneWaiting, 500*time.Millisecond, "cond.Wait did not return after 500ms")
 	})
 
 	t.Run("lots of goroutines waiting at the same time, none of them misses it's broadcast from cancel", func(t *testing.T) {
@@ -251,7 +251,7 @@ func TestContextCond(t *testing.T) {
 		cond := contextCond{
 			Cond: sync.NewCond(mtx),
 			testHookBeforeWaiting: func() {
-				// Wait just a little bit to create every goroutine
+				// Make every goroutine a little bit more racy by introducing a delay before its inner Wait call.
 				time.Sleep(time.Millisecond)
 			},
 		}
@@ -261,7 +261,7 @@ func TestContextCond(t *testing.T) {
 		release := make(chan struct{})
 
 		ctx, cancel := context.WithCancel(context.Background())
-		cancel()
+		defer cancel()
 
 		for i := 0; i < goroutines; i++ {
 			go func() {
