@@ -985,7 +985,7 @@ golang.org/x/tools/internal/typesinternal
 ## explicit; go 1.11
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
-# google.golang.org/api v0.63.0
+# google.golang.org/api v0.63.0 => google.golang.org/api v0.61.0
 ## explicit; go 1.11
 google.golang.org/api/cloudresourcemanager/v1
 google.golang.org/api/googleapi
@@ -1191,4 +1191,5 @@ sigs.k8s.io/yaml
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # google.golang.org/grpc => google.golang.org/grpc v1.38.0
+# google.golang.org/api => google.golang.org/api v0.61.0
 # github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b

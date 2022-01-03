@@ -216,6 +216,9 @@ replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 // TODO review the change introduced by https://github.com/grpc/grpc-go/pull/4416 before upgrading to 1.39.0
 replace google.golang.org/grpc => google.golang.org/grpc v1.38.0
 
+// TODO newer google.golang.org/api requires a newer google.golang.org/grpc (v0.63.0 api needs v1.41.1, specifically https://github.com/grpc/grpc-go/pull/4767)
+replace google.golang.org/api => google.golang.org/api v0.61.0
+
 replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211229180107-bf14049d5745
 
 // Replace memberlist with our fork which includes some fixes that haven't been
