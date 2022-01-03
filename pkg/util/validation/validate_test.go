@@ -28,10 +28,6 @@ type validateLabelsCfg struct {
 	maxLabelValueLength    int
 }
 
-func (v validateLabelsCfg) EnforceMetricName(userID string) bool {
-	return v.enforceMetricName
-}
-
 func (v validateLabelsCfg) MaxLabelNamesPerSeries(userID string) int {
 	return v.maxLabelNamesPerSeries
 }

@@ -57,7 +57,6 @@ type Limits struct {
 	RejectOldSamplesMaxAge    model.Duration      `yaml:"reject_old_samples_max_age" json:"reject_old_samples_max_age"`
 	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period"`
 	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name"`
-	EnforceMetricName         bool                `yaml:"enforce_metric_name" json:"enforce_metric_name"`
 	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
 	MetricRelabelConfigs      []*relabel.Config   `yaml:"metric_relabel_configs,omitempty" json:"metric_relabel_configs,omitempty" doc:"nocli|description=List of metric relabel configurations. Note that in most situations, it is more effective to use metrics relabeling directly in the Prometheus server, e.g. remote_write.write_relabel_configs."`
 
@@ -152,7 +151,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.Var(&l.RejectOldSamplesMaxAge, "validation.reject-old-samples.max-age", "Maximum accepted sample age before rejecting.")
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, "validation.create-grace-period", "Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time.")
-	f.BoolVar(&l.EnforceMetricName, "validation.enforce-metric-name", true, "Enforce every sample has a metric name.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
 
 	f.IntVar(&l.MaxSeriesPerQuery, "ingester.max-series-per-query", 100000, "The maximum number of series for which a query can fetch samples from each ingester. This limit is enforced only in the ingesters (when querying samples not flushed to the storage yet) and it's a per-instance limit. This limit is ignored when using blocks storage. When running with blocks storage use -querier.max-fetched-series-per-query limit instead.")
@@ -494,11 +492,6 @@ func (o *Overrides) QueryShardingTotalShards(userID string) int {
 // be run for a given received query. 0 to disable limit.
 func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 	return o.getOverridesForUser(userID).QueryShardingMaxShardedQueries
-}
-
-// EnforceMetricName whether to enforce the presence of a metric name.
-func (o *Overrides) EnforceMetricName(userID string) bool {
-	return o.getOverridesForUser(userID).EnforceMetricName
 }
 
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.

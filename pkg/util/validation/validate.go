@@ -175,7 +175,6 @@ func ExemplarTimestampOK(userID string, minTS int64, e mimirpb.Exemplar) bool {
 
 // LabelValidationConfig helps with getting required config to validate labels.
 type LabelValidationConfig interface {
-	EnforceMetricName(userID string) bool
 	MaxLabelNamesPerSeries(userID string) int
 	MaxLabelNameLength(userID string) int
 	MaxLabelValueLength(userID string) int
@@ -184,17 +183,15 @@ type LabelValidationConfig interface {
 // ValidateLabels returns an err if the labels are invalid.
 // The returned error may retain the provided series labels.
 func ValidateLabels(cfg LabelValidationConfig, userID string, ls []mimirpb.LabelAdapter, skipLabelNameValidation bool) ValidationError {
-	if cfg.EnforceMetricName(userID) {
-		unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
-		if err != nil {
-			DiscardedSamples.WithLabelValues(missingMetricName, userID).Inc()
-			return newNoMetricNameError()
-		}
+	unsafeMetricName, err := extract.UnsafeMetricNameFromLabelAdapters(ls)
+	if err != nil {
+		DiscardedSamples.WithLabelValues(missingMetricName, userID).Inc()
+		return newNoMetricNameError()
+	}
 
-		if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
-			DiscardedSamples.WithLabelValues(invalidMetricName, userID).Inc()
-			return newInvalidMetricNameError(unsafeMetricName)
-		}
+	if !model.IsValidMetricName(model.LabelValue(unsafeMetricName)) {
+		DiscardedSamples.WithLabelValues(invalidMetricName, userID).Inc()
+		return newInvalidMetricNameError(unsafeMetricName)
 	}
 
 	numLabelNames := len(ls)
