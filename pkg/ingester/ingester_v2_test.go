@@ -540,9 +540,6 @@ func TestIngester_Push(t *testing.T) {
 				# HELP cortex_ingester_memory_series_removed_total The total number of series that were removed per user.
 				# TYPE cortex_ingester_memory_series_removed_total counter
 				cortex_ingester_memory_series_removed_total{user="test"} 0
-				# HELP cortex_ingester_active_series Number of currently active series per user.
-				# TYPE cortex_ingester_active_series gauge
-				cortex_ingester_active_series{user="test"} 0
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
@@ -830,11 +827,9 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 		}
 	}
 
-	// Wait a bit to make series inactive (set to 100ms above).
-	time.Sleep(200 * time.Millisecond)
-
-	// Update active series for metrics check. This will remove inactive series.
-	i.updateActiveSeries(time.Now())
+	// Update active series for metrics check in the after the idle timeout.
+	// This will remove inactive series.
+	i.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetricsIdleTimeout))
 
 	// Check tracked Prometheus metrics
 	expectedMetrics := `
@@ -846,10 +841,6 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 		# TYPE cortex_ingester_memory_series_removed_total counter
 		cortex_ingester_memory_series_removed_total{user="test-1"} 0
 		cortex_ingester_memory_series_removed_total{user="test-2"} 0
-		# HELP cortex_ingester_active_series Number of currently active series per user.
-		# TYPE cortex_ingester_active_series gauge
-		cortex_ingester_active_series{user="test-1"} 0
-		cortex_ingester_active_series{user="test-2"} 0
 	`
 
 	assert.NoError(t, testutil.GatherAndCompare(registry, strings.NewReader(expectedMetrics), metricNames...))
