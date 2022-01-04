@@ -42,6 +42,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
@@ -1730,7 +1731,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 			b.Cleanup(func() { assert.NoError(b, closer.Close()) })
 
-			err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
+			err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 				func(_ interface{}) (interface{}, bool, error) {
 					d := &ring.Desc{}
 					d.AddIngester("ingester-1", "127.0.0.1", "", ring.GenerateTokens(128, nil), ring.ACTIVE, time.Now())
@@ -1743,7 +1744,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 				KVStore:           kv.Config{Mock: kvStore},
 				HeartbeatTimeout:  60 * time.Minute,
 				ReplicationFactor: 1,
-			}, ring.IngesterRingKey, ring.IngesterRingKey, log.NewNopLogger(), nil)
+			}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
 			require.NoError(b, err)
 			require.NoError(b, services.StartAndAwaitRunning(context.Background(), ingestersRing))
 			b.Cleanup(func() {
@@ -2587,7 +2588,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 	kvStore, closer := consul.NewInMemoryClient(ring.GetCodec(), log.NewNopLogger(), nil)
 	t.Cleanup(func() { assert.NoError(t, closer.Close()) })
 
-	err := kvStore.CAS(context.Background(), ring.IngesterRingKey,
+	err := kvStore.CAS(context.Background(), ingester.IngesterRingKey,
 		func(_ interface{}) (interface{}, bool, error) {
 			return &ring.Desc{
 				Ingesters: ingesterDescs,
@@ -2609,7 +2610,7 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		HeartbeatTimeout:     60 * time.Minute,
 		ReplicationFactor:    rf,
 		ZoneAwarenessEnabled: len(cfg.ingesterZones) > 0,
-	}, ring.IngesterRingKey, ring.IngesterRingKey, log.NewNopLogger(), nil)
+	}, ingester.IngesterRingKey, ingester.IngesterRingKey, log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ingestersRing))
 
