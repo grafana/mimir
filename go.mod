@@ -60,7 +60,7 @@ require (
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	google.golang.org/api v0.61.0
-	google.golang.org/grpc v1.40.0
+	google.golang.org/grpc v1.41.0
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	sigs.k8s.io/yaml v1.2.0
@@ -210,9 +210,6 @@ replace github.com/prometheus/prometheus => github.com/grafana/prometheus-privat
 replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
-
-// TODO review the change introduced by https://github.com/grpc/grpc-go/pull/4416 before upgrading to 1.39.0
-replace google.golang.org/grpc => google.golang.org/grpc v1.38.0
 
 replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211229180107-bf14049d5745
 

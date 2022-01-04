@@ -26,6 +26,7 @@ import (
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/hierarchy"
+	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/internal/wrr"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
@@ -36,20 +37,20 @@ import (
 // Name is the name of the weighted_target balancer.
 const Name = "weighted_target_experimental"
 
-// newRandomWRR is the WRR constructor used to pick sub-pickers from
+// NewRandomWRR is the WRR constructor used to pick sub-pickers from
 // sub-balancers. It's to be modified in tests.
-var newRandomWRR = wrr.NewRandom
+var NewRandomWRR = wrr.NewRandom
 
 func init() {
-	balancer.Register(&weightedTargetBB{})
+	balancer.Register(bb{})
 }
 
-type weightedTargetBB struct{}
+type bb struct{}
 
-func (wt *weightedTargetBB) Build(cc balancer.ClientConn, bOpts balancer.BuildOptions) balancer.Balancer {
+func (bb) Build(cc balancer.ClientConn, bOpts balancer.BuildOptions) balancer.Balancer {
 	b := &weightedTargetBalancer{}
 	b.logger = prefixLogger(b)
-	b.stateAggregator = weightedaggregator.New(cc, b.logger, newRandomWRR)
+	b.stateAggregator = weightedaggregator.New(cc, b.logger, NewRandomWRR)
 	b.stateAggregator.Start()
 	b.bg = balancergroup.New(cc, bOpts, b.stateAggregator, nil, b.logger)
 	b.bg.Start()
@@ -57,11 +58,11 @@ func (wt *weightedTargetBB) Build(cc balancer.ClientConn, bOpts balancer.BuildOp
 	return b
 }
 
-func (wt *weightedTargetBB) Name() string {
+func (bb) Name() string {
 	return Name
 }
 
-func (wt *weightedTargetBB) ParseConfig(c json.RawMessage) (serviceconfig.LoadBalancingConfig, error) {
+func (bb) ParseConfig(c json.RawMessage) (serviceconfig.LoadBalancingConfig, error) {
 	return parseConfig(c)
 }
 
@@ -80,9 +81,10 @@ type weightedTargetBalancer struct {
 }
 
 // UpdateClientConnState takes the new targets in balancer group,
-// creates/deletes sub-balancers and sends them update. Addresses are split into
+// creates/deletes sub-balancers and sends them update. addresses are split into
 // groups based on hierarchy path.
-func (w *weightedTargetBalancer) UpdateClientConnState(s balancer.ClientConnState) error {
+func (b *weightedTargetBalancer) UpdateClientConnState(s balancer.ClientConnState) error {
+	b.logger.Infof("Received update from resolver, balancer config: %+v", pretty.ToJSON(s.BalancerConfig))
 	newConfig, ok := s.BalancerConfig.(*LBConfig)
 	if !ok {
 		return fmt.Errorf("unexpected balancer config with type: %T", s.BalancerConfig)
@@ -92,10 +94,10 @@ func (w *weightedTargetBalancer) UpdateClientConnState(s balancer.ClientConnStat
 	var rebuildStateAndPicker bool
 
 	// Remove sub-pickers and sub-balancers that are not in the new config.
-	for name := range w.targets {
+	for name := range b.targets {
 		if _, ok := newConfig.Targets[name]; !ok {
-			w.stateAggregator.Remove(name)
-			w.bg.Remove(name)
+			b.stateAggregator.Remove(name)
+			b.bg.Remove(name)
 			// Trigger a state/picker update, because we don't want `ClientConn`
 			// to pick this sub-balancer anymore.
 			rebuildStateAndPicker = true
@@ -108,39 +110,39 @@ func (w *weightedTargetBalancer) UpdateClientConnState(s balancer.ClientConnStat
 	//
 	// For all sub-balancers, forward the address/balancer config update.
 	for name, newT := range newConfig.Targets {
-		oldT, ok := w.targets[name]
+		oldT, ok := b.targets[name]
 		if !ok {
 			// If this is a new sub-balancer, add weights to the picker map.
-			w.stateAggregator.Add(name, newT.Weight)
+			b.stateAggregator.Add(name, newT.Weight)
 			// Then add to the balancer group.
-			w.bg.Add(name, balancer.Get(newT.ChildPolicy.Name))
+			b.bg.Add(name, balancer.Get(newT.ChildPolicy.Name))
 			// Not trigger a state/picker update. Wait for the new sub-balancer
 			// to send its updates.
 		} else if newT.ChildPolicy.Name != oldT.ChildPolicy.Name {
 			// If the child policy name is differet, remove from balancer group
 			// and re-add.
-			w.stateAggregator.Remove(name)
-			w.bg.Remove(name)
-			w.stateAggregator.Add(name, newT.Weight)
-			w.bg.Add(name, balancer.Get(newT.ChildPolicy.Name))
+			b.stateAggregator.Remove(name)
+			b.bg.Remove(name)
+			b.stateAggregator.Add(name, newT.Weight)
+			b.bg.Add(name, balancer.Get(newT.ChildPolicy.Name))
 			// Trigger a state/picker update, because we don't want `ClientConn`
 			// to pick this sub-balancer anymore.
 			rebuildStateAndPicker = true
 		} else if newT.Weight != oldT.Weight {
 			// If this is an existing sub-balancer, update weight if necessary.
-			w.stateAggregator.UpdateWeight(name, newT.Weight)
+			b.stateAggregator.UpdateWeight(name, newT.Weight)
 			// Trigger a state/picker update, because we don't want `ClientConn`
 			// should do picks with the new weights now.
 			rebuildStateAndPicker = true
 		}
 
 		// Forwards all the update:
-		// - Addresses are from the map after splitting with hierarchy path,
+		// - addresses are from the map after splitting with hierarchy path,
 		// - Top level service config and attributes are the same,
 		// - Balancer config comes from the targets map.
 		//
 		// TODO: handle error? How to aggregate errors and return?
-		_ = w.bg.UpdateClientConnState(name, balancer.ClientConnState{
+		_ = b.bg.UpdateClientConnState(name, balancer.ClientConnState{
 			ResolverState: resolver.State{
 				Addresses:     addressesSplit[name],
 				ServiceConfig: s.ResolverState.ServiceConfig,
@@ -150,23 +152,27 @@ func (w *weightedTargetBalancer) UpdateClientConnState(s balancer.ClientConnStat
 		})
 	}
 
-	w.targets = newConfig.Targets
+	b.targets = newConfig.Targets
 
 	if rebuildStateAndPicker {
-		w.stateAggregator.BuildAndUpdate()
+		b.stateAggregator.BuildAndUpdate()
 	}
 	return nil
 }
 
-func (w *weightedTargetBalancer) ResolverError(err error) {
-	w.bg.ResolverError(err)
+func (b *weightedTargetBalancer) ResolverError(err error) {
+	b.bg.ResolverError(err)
 }
 
-func (w *weightedTargetBalancer) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
-	w.bg.UpdateSubConnState(sc, state)
+func (b *weightedTargetBalancer) UpdateSubConnState(sc balancer.SubConn, state balancer.SubConnState) {
+	b.bg.UpdateSubConnState(sc, state)
 }
 
-func (w *weightedTargetBalancer) Close() {
-	w.stateAggregator.Stop()
-	w.bg.Close()
+func (b *weightedTargetBalancer) Close() {
+	b.stateAggregator.Stop()
+	b.bg.Close()
+}
+
+func (b *weightedTargetBalancer) ExitIdle() {
+	b.bg.ExitIdle()
 }

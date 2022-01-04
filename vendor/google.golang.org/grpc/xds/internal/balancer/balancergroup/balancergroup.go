@@ -24,7 +24,7 @@ import (
 	"time"
 
 	orcapb "github.com/cncf/udpa/go/udpa/data/orca/v1"
-	"google.golang.org/grpc/xds/internal/client/load"
+	"google.golang.org/grpc/xds/internal/xdsclient/load"
 
 	"google.golang.org/grpc/balancer"
 	"google.golang.org/grpc/connectivity"
@@ -101,6 +101,22 @@ func (sbc *subBalancerWrapper) startBalancer() {
 	sbc.balancer = b
 	if sbc.ccState != nil {
 		b.UpdateClientConnState(*sbc.ccState)
+	}
+}
+
+func (sbc *subBalancerWrapper) exitIdle() {
+	b := sbc.balancer
+	if b == nil {
+		return
+	}
+	if ei, ok := b.(balancer.ExitIdler); ok {
+		ei.ExitIdle()
+		return
+	}
+	for sc, b := range sbc.group.scToSubBalancer {
+		if b == sbc {
+			sc.Connect()
+		}
 	}
 }
 
@@ -183,7 +199,7 @@ type BalancerGroup struct {
 	cc        balancer.ClientConn
 	buildOpts balancer.BuildOptions
 	logger    *grpclog.PrefixLogger
-	loadStore load.PerClusterReporter
+	loadStore load.PerClusterReporter // TODO: delete this, no longer needed. It was used by EDS.
 
 	// stateAggregator is where the state/picker updates will be sent to. It's
 	// provided by the parent balancer, to build a picker with all the
@@ -489,6 +505,17 @@ func (bg *BalancerGroup) Close() {
 		for _, config := range bg.idToBalancerConfig {
 			config.stopBalancer()
 		}
+	}
+	bg.outgoingMu.Unlock()
+}
+
+// ExitIdle should be invoked when the parent LB policy's ExitIdle is invoked.
+// It will trigger this on all sub-balancers, or reconnect their subconns if
+// not supported.
+func (bg *BalancerGroup) ExitIdle() {
+	bg.outgoingMu.Lock()
+	for _, config := range bg.idToBalancerConfig {
+		config.exitIdle()
 	}
 	bg.outgoingMu.Unlock()
 }

@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc/grpclog"
 	internalgrpclog "google.golang.org/grpc/internal/grpclog"
 	"google.golang.org/grpc/internal/hierarchy"
+	"google.golang.org/grpc/internal/pretty"
 	"google.golang.org/grpc/resolver"
 	"google.golang.org/grpc/serviceconfig"
 	"google.golang.org/grpc/xds/internal/balancer/balancergroup"
@@ -35,12 +36,12 @@ import (
 const balancerName = "xds_cluster_manager_experimental"
 
 func init() {
-	balancer.Register(builder{})
+	balancer.Register(bb{})
 }
 
-type builder struct{}
+type bb struct{}
 
-func (builder) Build(cc balancer.ClientConn, opts balancer.BuildOptions) balancer.Balancer {
+func (bb) Build(cc balancer.ClientConn, opts balancer.BuildOptions) balancer.Balancer {
 	b := &bal{}
 	b.logger = prefixLogger(b)
 	b.stateAggregator = newBalancerStateAggregator(cc, b.logger)
@@ -51,11 +52,11 @@ func (builder) Build(cc balancer.ClientConn, opts balancer.BuildOptions) balance
 	return b
 }
 
-func (builder) Name() string {
+func (bb) Name() string {
 	return balancerName
 }
 
-func (builder) ParseConfig(c json.RawMessage) (serviceconfig.LoadBalancingConfig, error) {
+func (bb) ParseConfig(c json.RawMessage) (serviceconfig.LoadBalancingConfig, error) {
 	return parseConfig(c)
 }
 
@@ -115,7 +116,7 @@ func (b *bal) UpdateClientConnState(s balancer.ClientConnState) error {
 	if !ok {
 		return fmt.Errorf("unexpected balancer config with type: %T", s.BalancerConfig)
 	}
-	b.logger.Infof("update with config %+v, resolver state %+v", s.BalancerConfig, s.ResolverState)
+	b.logger.Infof("update with config %+v, resolver state %+v", pretty.ToJSON(s.BalancerConfig), s.ResolverState)
 
 	b.updateChildren(s, newConfig)
 	return nil
@@ -133,6 +134,10 @@ func (b *bal) Close() {
 	b.stateAggregator.close()
 	b.bg.Close()
 	b.logger.Infof("Shutdown")
+}
+
+func (b *bal) ExitIdle() {
+	b.bg.ExitIdle()
 }
 
 const prefix = "[xds-cluster-manager-lb %p] "
