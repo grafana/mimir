@@ -504,7 +504,7 @@ overrides:
 				return c.QueryRangeRaw(`http_requests_total @ start()`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusBadRequest,
-			expBody:       `{"error":"@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it", "errorType":"bad_data", "status":"error"}`,
+			expBody:       `{"error":"@ modifier is disabled, use -querier.at-modifier-enabled to enable it", "errorType":"bad_data", "status":"error"}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

@@ -202,7 +202,7 @@ func NewQuerierHandler(
 	}, []string{"method", "route"})
 
 	api := v1.NewAPI(
-		engine,
+		errorTranslateQueryEngine{engine},
 		querier.NewErrorTranslateSampleAndChunkQueryable(queryable), // Translate errors to errors expected by API.
 		nil, // No remote write support.
 		exemplarQueryable,
