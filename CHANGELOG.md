@@ -184,6 +184,7 @@
 * [BUGFIX] Distributor: fix bug in query-exemplar where some results would get dropped. #583
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 * [BUGFIX] Ruler: fix formatting of rule groups in `/ruler/rule_groups` endpoint. #655
+* [BUGFIX] Querier: Disable query scheduler SRV DNS lookup. #689
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
