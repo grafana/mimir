@@ -13,109 +13,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestHorizontalAggregation tests a scenario where two series get horizontally aggregated by using the function "max",
-// each of them has 6 points within the aggregation bucket.
-func TestHorizontalAggregation(t *testing.T) {
-	// Aggregating to an output interval of 1min
-	from := time.Minute * 5
-	to := time.Minute * 6
-
-	inputSeries1 := promql.Series{
-		Metric: labels.Labels([]labels.Label{
-			{Name: "__name__", Value: "test_series"},
-			{Name: "other", Value: "foo"},
-		}),
-		Points: []promql.Point{
-			{V: 3, T: time.Duration(from + 10*time.Second).Milliseconds()},
-			{V: 3.5, T: time.Duration(from + 20*time.Second).Milliseconds()},
-			{V: 3.2, T: time.Duration(from + 30*time.Second).Milliseconds()},
-			{V: 2.8, T: time.Duration(from + 40*time.Second).Milliseconds()},
-			{V: 2.7, T: time.Duration(from + 50*time.Second).Milliseconds()},
-			{V: 3.4, T: time.Duration(from + 60*time.Second).Milliseconds()},
-		},
-	}
-	inputSeries2 := promql.Series{
-		Metric: labels.Labels([]labels.Label{
-			{Name: "__name__", Value: "test_series"},
-			{Name: "other", Value: "bar"},
-		}),
-		Points: []promql.Point{
-			{V: 7.3, T: time.Duration(from + 10*time.Second).Milliseconds()},
-			{V: 7.9, T: time.Duration(from + 20*time.Second).Milliseconds()},
-			{V: 7.3, T: time.Duration(from + 30*time.Second).Milliseconds()},
-			{V: 6.7, T: time.Duration(from + 40*time.Second).Milliseconds()},
-			{V: 6.8, T: time.Duration(from + 50*time.Second).Milliseconds()},
-			{V: 7.95, T: time.Duration(from + 60*time.Second).Milliseconds()},
-		},
-	}
-
-	query, err := getPromqlEngine().NewInstantQuery(
-		storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &querierMock{
-				series: []*promql.StorageSeries{
-					promql.NewStorageSeries(inputSeries1),
-					promql.NewStorageSeries(inputSeries2),
-				},
-			}, nil
-		}),
-		"max_over_time(test_series1[60s])",
-		util.TimeFromMillis(to.Milliseconds()),
-	)
-	require.NoError(t, err)
-
-	result := query.Exec(context.Background())
-	require.NoError(t, result.Err)
-
-	vector, err := result.Vector()
-	require.NoError(t, err)
-	require.Equal(
-		t,
-		promql.Vector{
-			promql.Sample{
-				Point: promql.Point{
-					T: to.Milliseconds(),
-					V: float64(3.5),
-				},
-				Metric: labels.Labels{
-					{
-						Name:  "other",
-						Value: "foo",
-					},
-				},
-			},
-
-			promql.Sample{
-				Point: promql.Point{
-					T: to.Milliseconds(),
-					V: float64(7.95),
-				},
-				Metric: labels.Labels{
-					{
-						Name:  "other",
-						Value: "bar",
-					},
-				},
-			},
-		},
-		vector,
-	)
-}
-
-// TestVerticalAggregation tests a scenario where 7 series get vertically aggregated together at one single time stamp,
-// so from each series only a single point is taken into account. The aggregation function used is median/p50.
+// TestAggregation tests a scenario where 7 series get aggregated together at one single time stamp,
+// from each input series the last sample is taken into account.
+// The aggregation function used is median/p50.
 func TestVerticalAggregation(t *testing.T) {
-	// Vertically aggregating multiple series at ts=5min
+	// Aggregating multiple series at ts=5min
 	ts := time.Minute * 5
 
 	inputValues := []float64{3, 18, 2, -1.5, 22, 22, 22}
-	inputSeries := make([]*promql.StorageSeries, 0, len(inputValues))
+
+	// inputValuesBySeries is the datastructure based on which the Aggregator would generate a sample.
+	inputValuesBySeries := make(map[uint64]float64, len(inputValues))
 	for inputValueIdx, inputValue := range inputValues {
+		labelHash := labels.Labels([]labels.Label{
+			{Name: "__name__", Value: "test_series"},
+			{Name: "enum", Value: fmt.Sprintf("series%d", inputValueIdx)},
+		}).Hash()
+
+		inputValuesBySeries[labelHash] = inputValue
+	}
+
+	// Generate anonymous series from the inputValuesBySeries to pass to the mock querier.
+	inputSeries := make([]*promql.StorageSeries, 0, len(inputValuesBySeries))
+	for _, inputValue := range inputValuesBySeries {
 		inputSeries = append(inputSeries, promql.NewStorageSeries(
 			promql.Series{
-				Metric: labels.Labels([]labels.Label{
-					{Name: "__name__", Value: "test_series"},
-					{Name: "enum", Value: fmt.Sprintf("series%d", inputValueIdx)},
-				}),
 				Points: []promql.Point{
 					{V: inputValue, T: time.Duration(ts).Milliseconds()},
 				},
@@ -144,74 +66,6 @@ func TestVerticalAggregation(t *testing.T) {
 				Point: promql.Point{
 					T: ts.Milliseconds(),
 					V: float64(18),
-				},
-				Metric: labels.Labels{},
-			},
-		},
-		vector,
-	)
-}
-
-// TestHorizontalAndVerticalAggregationCombined tests a scenario where the input are 4 series of which each have 6
-// points in the horizontal aggregation bucket. Each of them first gets horizontally aggregated using the function "avg"
-// and then the 4 results get vertically aggregated using the function "sum".
-func TestHorizontalAndVerticalAggregationCombined(t *testing.T) {
-	// Aggregating to an output interval of 1min
-	from := time.Minute * 5
-	to := time.Minute * 6
-
-	// 4 series where each has 6 points within the 1min aggregation bucket
-	inputValues := [][]float64{
-		{3, 18, 2, -1.5, 22, 22},     // avg = 10.91666
-		{4, 32.1, 4, 32, 35, 37},     // avg = 24.01666
-		{7, 112, 234, 222, 199, 150}, // avg = 154
-		{2, 32, 14, -1.5, -103, 12},  // avg = -7.41666
-	}
-	// sum(10.91666, 24.01666, 154, -7.41666) = 181.51666
-
-	inputSeries := make([]*promql.StorageSeries, 0, len(inputValues))
-	for inputSeriesIdx := 0; inputSeriesIdx < len(inputValues); inputSeriesIdx++ {
-		points := make([]promql.Point, 0, len(inputValues))
-
-		for inputValueIdx, inputValue := range inputValues[inputSeriesIdx] {
-			points = append(points, promql.Point{
-				T: from.Milliseconds() + int64(inputValueIdx+1)*10*time.Second.Milliseconds(),
-				V: inputValue,
-			})
-		}
-
-		inputSeries = append(inputSeries, promql.NewStorageSeries(
-			promql.Series{
-				Metric: labels.Labels([]labels.Label{
-					{Name: "__name__", Value: "test_series"},
-					{Name: "enum", Value: fmt.Sprintf("series%d", inputSeriesIdx)},
-				}),
-				Points: points,
-			},
-		))
-	}
-
-	query, err := getPromqlEngine().NewInstantQuery(
-		storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &querierMock{series: inputSeries}, nil
-		}),
-		"sum(avg_over_time(test_series[1m]))",
-		util.TimeFromMillis(to.Milliseconds()),
-	)
-	require.NoError(t, err)
-
-	result := query.Exec(context.Background())
-	require.NoError(t, result.Err)
-
-	vector, err := result.Vector()
-	require.NoError(t, err)
-	require.Equal(
-		t,
-		promql.Vector{
-			promql.Sample{
-				Point: promql.Point{
-					T: to.Milliseconds(),
-					V: float64(181.51666666666668),
 				},
 				Metric: labels.Labels{},
 			},
