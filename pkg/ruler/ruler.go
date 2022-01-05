@@ -54,7 +54,7 @@ var (
 
 const (
 	// RulerRingKey is the key under which we store the rulers ring in the KVStore.
-	RulerRingKey = "ruler"
+	RulerRingKey = "ring"
 )
 
 const (
