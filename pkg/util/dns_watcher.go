@@ -38,7 +38,8 @@ func NewDNSWatcher(address string, dnsLookupPeriod time.Duration, notifications 
 		return nil, err
 	}
 
-	watcher, err := resolver.Resolve(address)
+	// Pass empty string for service argument, since we don't intend to lookup any SRV record
+	watcher, err := resolver.Resolve(address, "")
 	if err != nil {
 		return nil, err
 	}
