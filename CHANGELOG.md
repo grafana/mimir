@@ -186,6 +186,7 @@
 * [BUGFIX] Azure storage: only create HTTP client once, to reduce memory utilization. #605
 * [BUGFIX] Ruler: fix formatting of rule groups in `/ruler/rule_groups` endpoint. #655
 * [BUGFIX] Querier: Disable query scheduler SRV DNS lookup. #689
+* [BUGFIX] Query-frontend: fix API error messages that were mentioning Prometheus `--enable-feature=promql-negative-offset` and `--enable-feature=promql-at-modifier` flags. #688
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
