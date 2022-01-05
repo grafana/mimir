@@ -3266,10 +3266,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
-# Enforce every sample has a metric name.
-# CLI flag: -validation.enforce-metric-name
-[enforce_metric_name: <boolean> | default = true]
-
 # The tenant's shard size when the shuffle-sharding strategy is used. Must be
 # set both on ingesters and distributors. When this setting is specified in the
 # per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.

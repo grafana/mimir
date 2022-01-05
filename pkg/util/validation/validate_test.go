@@ -22,14 +22,9 @@ import (
 )
 
 type validateLabelsCfg struct {
-	enforceMetricName      bool
 	maxLabelNamesPerSeries int
 	maxLabelNameLength     int
 	maxLabelValueLength    int
-}
-
-func (v validateLabelsCfg) EnforceMetricName(userID string) bool {
-	return v.enforceMetricName
 }
 
 func (v validateLabelsCfg) MaxLabelNamesPerSeries(userID string) int {
@@ -64,7 +59,6 @@ func TestValidateLabels(t *testing.T) {
 	cfg.maxLabelValueLength = 25
 	cfg.maxLabelNameLength = 25
 	cfg.maxLabelNamesPerSeries = 2
-	cfg.enforceMetricName = true
 
 	for _, c := range []struct {
 		metric                  model.Metric
