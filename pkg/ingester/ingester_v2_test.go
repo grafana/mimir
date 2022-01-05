@@ -827,7 +827,7 @@ func TestIngester_Push_DecreaseInactiveSeries(t *testing.T) {
 		}
 	}
 
-	// Update active series for metrics check in the after the idle timeout.
+	// Update active series the after the idle timeout (in the future).
 	// This will remove inactive series.
 	i.updateActiveSeries(time.Now().Add(cfg.ActiveSeriesMetricsIdleTimeout))
 
