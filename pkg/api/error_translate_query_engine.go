@@ -12,7 +12,8 @@ import (
 )
 
 var (
-	errValidationAtModifierDisabled = errors.New("@ modifier is disabled, use -querier.at-modifier-enabled to enable it")
+	errValidationAtModifierDisabled     = errors.New("@ modifier is disabled, use -querier.at-modifier-enabled to enable it")
+	errValidationNegativeOffsetDisabled = errors.New("negative offsets are not supported yet in Mimir")
 )
 
 type errorTranslateQueryEngine struct {
@@ -37,6 +38,8 @@ func (qe errorTranslateQueryEngine) translate(err error) error {
 	switch err {
 	case promql.ErrValidationAtModifierDisabled:
 		return errValidationAtModifierDisabled
+	case promql.ErrValidationNegativeOffsetDisabled:
+		return errValidationNegativeOffsetDisabled
 	default:
 		// includes err == nil
 		return err
