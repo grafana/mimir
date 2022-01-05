@@ -28,7 +28,7 @@ func TestLimiter_maxSeriesPerMetric(t *testing.T) {
 		return limiter.maxSeriesPerMetric("test")
 	}
 
-	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, true)
+	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
 }
 
 func TestLimiter_maxMetadataPerMetric(t *testing.T) {
@@ -41,7 +41,7 @@ func TestLimiter_maxMetadataPerMetric(t *testing.T) {
 		return limiter.maxMetadataPerMetric("test")
 	}
 
-	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, true)
+	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
 }
 
 func TestLimiter_maxSeriesPerUser(t *testing.T) {
@@ -54,7 +54,7 @@ func TestLimiter_maxSeriesPerUser(t *testing.T) {
 		return limiter.maxSeriesPerUser("test")
 	}
 
-	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, false)
+	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
 }
 
 func TestLimiter_maxMetadataPerUser(t *testing.T) {
@@ -67,14 +67,13 @@ func TestLimiter_maxMetadataPerUser(t *testing.T) {
 		return limiter.maxMetadataPerUser("test")
 	}
 
-	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn, false)
+	runLimiterMaxFunctionTest(t, applyLimits, runMaxFn)
 }
 
 func runLimiterMaxFunctionTest(
 	t *testing.T,
 	applyLimits func(limits *validation.Limits, localLimit, globalLimit int),
 	runMaxFn func(limiter *Limiter) int,
-	globalLimitShardByMetricNameSupport bool,
 ) {
 	tests := map[string]struct {
 		localLimit               int
@@ -83,7 +82,6 @@ func runLimiterMaxFunctionTest(
 		ringZoneAwarenessEnabled bool
 		ringIngesterCount        int
 		ringZonesCount           int
-		shardByAllLabels         bool
 		shardSize                int
 		expectedDefaultSharding  int
 		expectedShuffleSharding  int
@@ -94,7 +92,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:   1,
 			ringIngesterCount:       1,
 			ringZonesCount:          1,
-			shardByAllLabels:        false,
 			expectedDefaultSharding: math.MaxInt32,
 			expectedShuffleSharding: math.MaxInt32,
 		},
@@ -104,49 +101,25 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:   1,
 			ringIngesterCount:       1,
 			ringZonesCount:          1,
-			shardByAllLabels:        false,
 			expectedDefaultSharding: 1000,
 			expectedShuffleSharding: 1000,
 		},
-		"only global limit is enabled with shard-by-all-labels=false and replication-factor=1": {
-			localLimit:            0,
-			globalLimit:           1000,
-			ringReplicationFactor: 1,
-			ringIngesterCount:     10,
-			ringZonesCount:        1,
-			shardByAllLabels:      false,
-			shardSize:             5,
-			expectedDefaultSharding: func() int {
-				if globalLimitShardByMetricNameSupport {
-					return 1000
-				}
-				return math.MaxInt32
-			}(),
-			expectedShuffleSharding: func() int {
-				if globalLimitShardByMetricNameSupport {
-					return 1000
-				}
-				return math.MaxInt32
-			}(),
-		},
-		"only global limit is enabled with shard-by-all-labels=true and replication-factor=1": {
+		"only global limit is enabled with replication-factor=1": {
 			localLimit:              0,
 			globalLimit:             1000,
 			ringReplicationFactor:   1,
 			ringIngesterCount:       10,
 			ringZonesCount:          1,
-			shardByAllLabels:        true,
 			shardSize:               5,
 			expectedDefaultSharding: 100,
 			expectedShuffleSharding: 200,
 		},
-		"only global limit is enabled with shard-by-all-labels=true and replication-factor=3": {
+		"only global limit is enabled with replication-factor=3": {
 			localLimit:              0,
 			globalLimit:             1000,
 			ringReplicationFactor:   3,
 			ringIngesterCount:       10,
 			ringZonesCount:          1,
-			shardByAllLabels:        true,
 			shardSize:               5,
 			expectedDefaultSharding: 300,
 			expectedShuffleSharding: 600,
@@ -157,7 +130,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:   3,
 			ringIngesterCount:       10,
 			ringZonesCount:          1,
-			shardByAllLabels:        true,
 			shardSize:               5,
 			expectedDefaultSharding: 150,
 			expectedShuffleSharding: 150,
@@ -168,7 +140,6 @@ func runLimiterMaxFunctionTest(
 			ringReplicationFactor:   3,
 			ringIngesterCount:       10,
 			ringZonesCount:          1,
-			shardByAllLabels:        true,
 			shardSize:               5,
 			expectedDefaultSharding: 300,
 			expectedShuffleSharding: 600,
@@ -180,7 +151,6 @@ func runLimiterMaxFunctionTest(
 			ringZoneAwarenessEnabled: true,
 			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardByAllLabels:         true,
 			shardSize:                5, // Not divisible by number of zones.
 			expectedDefaultSharding:  300,
 			expectedShuffleSharding:  450, // (900 / 6) * 3
@@ -192,7 +162,6 @@ func runLimiterMaxFunctionTest(
 			ringZoneAwarenessEnabled: true,
 			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardByAllLabels:         true,
 			shardSize:                6, // Divisible by number of zones.
 			expectedDefaultSharding:  300,
 			expectedShuffleSharding:  450, // (900 / 6) * 3
@@ -204,7 +173,6 @@ func runLimiterMaxFunctionTest(
 			ringZoneAwarenessEnabled: true,
 			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardByAllLabels:         true,
 			shardSize:                20, // Greater than number of ingesters.
 			expectedDefaultSharding:  300,
 			expectedShuffleSharding:  300,
@@ -228,12 +196,12 @@ func runLimiterMaxFunctionTest(
 			require.NoError(t, err)
 
 			// Assert on default sharding strategy.
-			limiter := NewLimiter(overrides, ring, util.ShardingStrategyDefault, testData.shardByAllLabels, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
+			limiter := NewLimiter(overrides, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
 			actual := runMaxFn(limiter)
 			assert.Equal(t, testData.expectedDefaultSharding, actual)
 
 			// Assert on shuffle sharding strategy.
-			limiter = NewLimiter(overrides, ring, util.ShardingStrategyShuffle, testData.shardByAllLabels, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
+			limiter = NewLimiter(overrides, ring, util.ShardingStrategyShuffle, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
 			actual = runMaxFn(limiter)
 			assert.Equal(t, testData.expectedShuffleSharding, actual)
 		})
@@ -246,7 +214,6 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 		maxGlobalSeriesPerMetric int
 		ringReplicationFactor    int
 		ringIngesterCount        int
-		shardByAllLabels         bool
 		series                   int
 		expected                 error
 	}{
@@ -255,7 +222,6 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			maxGlobalSeriesPerMetric: 0,
 			ringReplicationFactor:    1,
 			ringIngesterCount:        1,
-			shardByAllLabels:         false,
 			series:                   100,
 			expected:                 nil,
 		},
@@ -264,7 +230,6 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			maxGlobalSeriesPerMetric: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
-			shardByAllLabels:         true,
 			series:                   299,
 			expected:                 nil,
 		},
@@ -273,7 +238,6 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			maxGlobalSeriesPerMetric: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
-			shardByAllLabels:         true,
 			series:                   300,
 			expected:                 errMaxSeriesPerMetricLimitExceeded,
 		},
@@ -295,7 +259,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.shardByAllLabels, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxSeriesPerMetric("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -308,7 +272,6 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 		maxGlobalMetadataPerMetric int
 		ringReplicationFactor      int
 		ringIngesterCount          int
-		shardByAllLabels           bool
 		metadata                   int
 		expected                   error
 	}{
@@ -317,7 +280,6 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			maxGlobalMetadataPerMetric: 0,
 			ringReplicationFactor:      1,
 			ringIngesterCount:          1,
-			shardByAllLabels:           false,
 			metadata:                   100,
 			expected:                   nil,
 		},
@@ -326,7 +288,6 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			maxGlobalMetadataPerMetric: 1000,
 			ringReplicationFactor:      3,
 			ringIngesterCount:          10,
-			shardByAllLabels:           true,
 			metadata:                   299,
 			expected:                   nil,
 		},
@@ -335,7 +296,6 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			maxGlobalMetadataPerMetric: 1000,
 			ringReplicationFactor:      3,
 			ringIngesterCount:          10,
-			shardByAllLabels:           true,
 			metadata:                   300,
 			expected:                   errMaxMetadataPerMetricLimitExceeded,
 		},
@@ -357,7 +317,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.shardByAllLabels, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxMetadataPerMetric("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -371,7 +331,6 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 		maxGlobalSeriesPerUser int
 		ringReplicationFactor  int
 		ringIngesterCount      int
-		shardByAllLabels       bool
 		series                 int
 		expected               error
 	}{
@@ -380,7 +339,6 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			maxGlobalSeriesPerUser: 0,
 			ringReplicationFactor:  1,
 			ringIngesterCount:      1,
-			shardByAllLabels:       false,
 			series:                 100,
 			expected:               nil,
 		},
@@ -389,7 +347,6 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
-			shardByAllLabels:       true,
 			series:                 299,
 			expected:               nil,
 		},
@@ -398,7 +355,6 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			maxGlobalSeriesPerUser: 1000,
 			ringReplicationFactor:  3,
 			ringIngesterCount:      10,
-			shardByAllLabels:       true,
 			series:                 300,
 			expected:               errMaxSeriesPerUserLimitExceeded,
 		},
@@ -420,7 +376,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.shardByAllLabels, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxSeriesPerUser("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -434,7 +390,6 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 		maxGlobalMetadataPerUser int
 		ringReplicationFactor    int
 		ringIngesterCount        int
-		shardByAllLabels         bool
 		metadata                 int
 		expected                 error
 	}{
@@ -443,7 +398,6 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			maxGlobalMetadataPerUser: 0,
 			ringReplicationFactor:    1,
 			ringIngesterCount:        1,
-			shardByAllLabels:         false,
 			metadata:                 100,
 			expected:                 nil,
 		},
@@ -452,7 +406,6 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			maxGlobalMetadataPerUser: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
-			shardByAllLabels:         true,
 			metadata:                 299,
 			expected:                 nil,
 		},
@@ -461,7 +414,6 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			maxGlobalMetadataPerUser: 1000,
 			ringReplicationFactor:    3,
 			ringIngesterCount:        10,
-			shardByAllLabels:         true,
 			metadata:                 300,
 			expected:                 errMaxMetadataPerUserLimitExceeded,
 		},
@@ -483,7 +435,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.shardByAllLabels, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxMetricsWithMetadataPerUser("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -506,7 +458,7 @@ func TestLimiter_FormatError(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, true, 3, false)
+	limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, 3, false)
 
 	actual := limiter.FormatError("user-1", errMaxSeriesPerUserLimitExceeded)
 	assert.EqualError(t, actual, "per-user series limit of 100 exceeded, please contact administrator to raise it (local limit: 0 global limit: 100 actual local limit: 100)")

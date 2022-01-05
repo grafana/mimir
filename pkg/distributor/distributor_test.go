@@ -313,37 +313,34 @@ func TestDistributor_Push(t *testing.T) {
 			`,
 		},
 	} {
-		for _, shardByAllLabels := range []bool{true, false} {
-			t.Run(fmt.Sprintf("[%s](shardByAllLabels=%v)", name, shardByAllLabels), func(t *testing.T) {
-				limits := &validation.Limits{}
-				flagext.DefaultValues(limits)
-				limits.IngestionRate = 20
-				limits.IngestionBurstSize = 20
+		t.Run(name, func(t *testing.T) {
+			limits := &validation.Limits{}
+			flagext.DefaultValues(limits)
+			limits.IngestionRate = 20
+			limits.IngestionBurstSize = 20
 
-				ds, _, regs := prepare(t, prepConfig{
-					numIngesters:     tc.numIngesters,
-					happyIngesters:   tc.happyIngesters,
-					numDistributors:  1,
-					shardByAllLabels: shardByAllLabels,
-					limits:           limits,
-				})
-
-				request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata)
-				response, err := ds[0].Push(ctx, request)
-				assert.Equal(t, tc.expectedResponse, response)
-				assert.Equal(t, tc.expectedError, err)
-
-				// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
-				// is reached, when we reach this point the 3rd ingester may not have received series/metadata
-				// yet. To avoid flaky test we retry metrics assertion until we hit the desired state (no error)
-				// within a reasonable timeout.
-				if tc.expectedMetrics != "" {
-					test.Poll(t, time.Second, nil, func() interface{} {
-						return testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), tc.metricNames...)
-					})
-				}
+			ds, _, regs := prepare(t, prepConfig{
+				numIngesters:    tc.numIngesters,
+				happyIngesters:  tc.happyIngesters,
+				numDistributors: 1,
+				limits:          limits,
 			})
-		}
+
+			request := makeWriteRequest(tc.samples.startTimestampMs, tc.samples.num, tc.metadata)
+			response, err := ds[0].Push(ctx, request)
+			assert.Equal(t, tc.expectedResponse, response)
+			assert.Equal(t, tc.expectedError, err)
+
+			// Check tracked Prometheus metrics. Since the Push() response is sent as soon as the quorum
+			// is reached, when we reach this point the 3rd ingester may not have received series/metadata
+			// yet. To avoid flaky test we retry metrics assertion until we hit the desired state (no error)
+			// within a reasonable timeout.
+			if tc.expectedMetrics != "" {
+				test.Poll(t, time.Second, nil, func() interface{} {
+					return testutil.GatherAndCompare(regs[0], strings.NewReader(tc.expectedMetrics), tc.metricNames...)
+				})
+			}
+		})
 	}
 }
 
@@ -526,11 +523,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 			// Start all expected distributors
 			distributors, _, _ := prepare(t, prepConfig{
-				numIngesters:     3,
-				happyIngesters:   3,
-				numDistributors:  testData.distributors,
-				shardByAllLabels: true,
-				limits:           limits,
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: testData.distributors,
+				limits:          limits,
 			})
 
 			// Push samples in multiple requests to the first distributor
@@ -668,7 +664,6 @@ func TestDistributor_PushInstanceLimits(t *testing.T) {
 				numIngesters:        3,
 				happyIngesters:      3,
 				numDistributors:     1,
-				shardByAllLabels:    true,
 				limits:              limits,
 				maxInflightRequests: testData.inflightLimit,
 				maxIngestionRate:    testData.ingestionRateLimit,
@@ -754,41 +749,38 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 			expectedCode:     400,
 		},
 	} {
-		for _, shardByAllLabels := range []bool{true, false} {
-			t.Run(fmt.Sprintf("[%d](shardByAllLabels=%v)", i, shardByAllLabels), func(t *testing.T) {
-				var limits validation.Limits
-				flagext.DefaultValues(&limits)
-				limits.AcceptHASamples = true
-				limits.MaxLabelValueLength = 15
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			var limits validation.Limits
+			flagext.DefaultValues(&limits)
+			limits.AcceptHASamples = true
+			limits.MaxLabelValueLength = 15
 
-				ds, _, _ := prepare(t, prepConfig{
-					numIngesters:     3,
-					happyIngesters:   3,
-					numDistributors:  1,
-					shardByAllLabels: shardByAllLabels,
-					limits:           &limits,
-					enableTracker:    tc.enableTracker,
-				})
-
-				d := ds[0]
-
-				userID, err := tenant.TenantID(ctx)
-				assert.NoError(t, err)
-				err = d.HATracker.checkReplica(ctx, userID, tc.cluster, tc.acceptedReplica, time.Now())
-				assert.NoError(t, err)
-
-				request := makeWriteRequestHA(tc.samples, tc.testReplica, tc.cluster)
-				response, err := d.Push(ctx, request)
-				assert.Equal(t, tc.expectedResponse, response)
-
-				httpResp, ok := httpgrpc.HTTPResponseFromError(err)
-				if ok {
-					assert.Equal(t, tc.expectedCode, httpResp.Code)
-				} else if tc.expectedCode != 0 {
-					assert.Fail(t, "expected HTTP status code", tc.expectedCode)
-				}
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          &limits,
+				enableTracker:   tc.enableTracker,
 			})
-		}
+
+			d := ds[0]
+
+			userID, err := tenant.TenantID(ctx)
+			assert.NoError(t, err)
+			err = d.HATracker.checkReplica(ctx, userID, tc.cluster, tc.acceptedReplica, time.Now())
+			assert.NoError(t, err)
+
+			request := makeWriteRequestHA(tc.samples, tc.testReplica, tc.cluster)
+			response, err := d.Push(ctx, request)
+			assert.Equal(t, tc.expectedResponse, response)
+
+			httpResp, ok := httpgrpc.HTTPResponseFromError(err)
+			if ok {
+				assert.Equal(t, tc.expectedCode, httpResp.Code)
+			} else if tc.expectedCode != 0 {
+				assert.Fail(t, "expected HTTP status code", tc.expectedCode)
+			}
+		})
 	}
 }
 
@@ -809,7 +801,6 @@ func TestDistributor_PushQuery(t *testing.T) {
 		expectedIngesters   int
 		expectedResponse    model.Matrix
 		expectedError       error
-		shardByAllLabels    bool
 		shuffleShardEnabled bool
 	}
 
@@ -817,107 +808,86 @@ func TestDistributor_PushQuery(t *testing.T) {
 	// coverage along quite a few different axis.
 	testcases := []testcase{}
 
-	// Run every test in both sharding modes.
-	for _, shardByAllLabels := range []bool{true, false} {
+	// Test with between 2 and 10 ingesters.
+	for numIngesters := 2; numIngesters < 10; numIngesters++ {
 
-		// Test with between 2 and 10 ingesters.
-		for numIngesters := 2; numIngesters < 10; numIngesters++ {
+		// Test with between 0 and numIngesters "happy" ingesters.
+		for happyIngesters := 0; happyIngesters <= numIngesters; happyIngesters++ {
 
-			// Test with between 0 and numIngesters "happy" ingesters.
-			for happyIngesters := 0; happyIngesters <= numIngesters; happyIngesters++ {
+			// Test either with shuffle-sharding enabled or disabled.
+			for _, shuffleShardEnabled := range []bool{false, true} {
+				scenario := fmt.Sprintf("numIngester=%d, happyIngester=%d, shuffleSharding=%v)", numIngesters, happyIngesters, shuffleShardEnabled)
 
-				// Test either with shuffle-sharding enabled or disabled.
-				for _, shuffleShardEnabled := range []bool{false, true} {
-					scenario := fmt.Sprintf("shardByAllLabels=%v, numIngester=%d, happyIngester=%d, shuffleSharding=%v)", shardByAllLabels, numIngesters, happyIngesters, shuffleShardEnabled)
+				var expectedIngesters int
+				if shuffleShardEnabled {
+					expectedIngesters = util_math.Min(shuffleShardSize, numIngesters)
+				} else {
+					expectedIngesters = numIngesters
+				}
 
-					// The number of ingesters we expect to query depends whether shuffle sharding and/or
-					// shard by all labels are enabled.
-					var expectedIngesters int
-					if shuffleShardEnabled {
-						expectedIngesters = util_math.Min(shuffleShardSize, numIngesters)
-					} else if shardByAllLabels {
-						expectedIngesters = numIngesters
-					} else {
-						expectedIngesters = 3 // Replication factor
-					}
-
-					// When we're not sharding by metric name, queriers with more than one
-					// failed ingester should fail.
-					if shardByAllLabels && numIngesters-happyIngesters > 1 {
-						testcases = append(testcases, testcase{
-							name:                fmt.Sprintf("ExpectFail(%s)", scenario),
-							numIngesters:        numIngesters,
-							happyIngesters:      happyIngesters,
-							matchers:            []*labels.Matcher{nameMatcher, barMatcher},
-							expectedError:       errFail,
-							shardByAllLabels:    shardByAllLabels,
-							shuffleShardEnabled: shuffleShardEnabled,
-						})
-						continue
-					}
-
-					// When we have less ingesters than replication factor, any failed ingester
-					// will cause a failure.
-					if numIngesters < 3 && happyIngesters < 2 {
-						testcases = append(testcases, testcase{
-							name:                fmt.Sprintf("ExpectFail(%s)", scenario),
-							numIngesters:        numIngesters,
-							happyIngesters:      happyIngesters,
-							matchers:            []*labels.Matcher{nameMatcher, barMatcher},
-							expectedError:       errFail,
-							shardByAllLabels:    shardByAllLabels,
-							shuffleShardEnabled: shuffleShardEnabled,
-						})
-						continue
-					}
-
-					// If we're sharding by metric name and we have failed ingesters, we can't
-					// tell ahead of time if the query will succeed, as we don't know which
-					// ingesters will hold the results for the query.
-					if !shardByAllLabels && numIngesters-happyIngesters > 1 {
-						continue
-					}
-
-					// Reading all the samples back should succeed.
+				// Queriers with more than one failed ingester should fail.
+				if numIngesters-happyIngesters > 1 {
 					testcases = append(testcases, testcase{
-						name:                fmt.Sprintf("ReadAll(%s)", scenario),
+						name:                fmt.Sprintf("ExpectFail(%s)", scenario),
 						numIngesters:        numIngesters,
 						happyIngesters:      happyIngesters,
-						samples:             10,
 						matchers:            []*labels.Matcher{nameMatcher, barMatcher},
-						expectedResponse:    expectedResponse(0, 10),
-						expectedIngesters:   expectedIngesters,
-						shardByAllLabels:    shardByAllLabels,
+						expectedError:       errFail,
 						shuffleShardEnabled: shuffleShardEnabled,
 					})
+					continue
+				}
 
-					// As should reading none of the samples back.
+				// When we have less ingesters than replication factor, any failed ingester
+				// will cause a failure.
+				if numIngesters < 3 && happyIngesters < 2 {
 					testcases = append(testcases, testcase{
-						name:                fmt.Sprintf("ReadNone(%s)", scenario),
+						name:                fmt.Sprintf("ExpectFail(%s)", scenario),
+						numIngesters:        numIngesters,
+						happyIngesters:      happyIngesters,
+						matchers:            []*labels.Matcher{nameMatcher, barMatcher},
+						expectedError:       errFail,
+						shuffleShardEnabled: shuffleShardEnabled,
+					})
+					continue
+				}
+
+				// Reading all the samples back should succeed.
+				testcases = append(testcases, testcase{
+					name:                fmt.Sprintf("ReadAll(%s)", scenario),
+					numIngesters:        numIngesters,
+					happyIngesters:      happyIngesters,
+					samples:             10,
+					matchers:            []*labels.Matcher{nameMatcher, barMatcher},
+					expectedResponse:    expectedResponse(0, 10),
+					expectedIngesters:   expectedIngesters,
+					shuffleShardEnabled: shuffleShardEnabled,
+				})
+
+				// As should reading none of the samples back.
+				testcases = append(testcases, testcase{
+					name:                fmt.Sprintf("ReadNone(%s)", scenario),
+					numIngesters:        numIngesters,
+					happyIngesters:      happyIngesters,
+					samples:             10,
+					matchers:            []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
+					expectedResponse:    expectedResponse(0, 0),
+					expectedIngesters:   expectedIngesters,
+					shuffleShardEnabled: shuffleShardEnabled,
+				})
+
+				// And reading each sample individually.
+				for i := 0; i < 10; i++ {
+					testcases = append(testcases, testcase{
+						name:                fmt.Sprintf("ReadOne(%s, sample=%d)", scenario, i),
 						numIngesters:        numIngesters,
 						happyIngesters:      happyIngesters,
 						samples:             10,
-						matchers:            []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
-						expectedResponse:    expectedResponse(0, 0),
+						matchers:            []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
+						expectedResponse:    expectedResponse(i, i+1),
 						expectedIngesters:   expectedIngesters,
-						shardByAllLabels:    shardByAllLabels,
 						shuffleShardEnabled: shuffleShardEnabled,
 					})
-
-					// And reading each sample individually.
-					for i := 0; i < 10; i++ {
-						testcases = append(testcases, testcase{
-							name:                fmt.Sprintf("ReadOne(%s, sample=%d)", scenario, i),
-							numIngesters:        numIngesters,
-							happyIngesters:      happyIngesters,
-							samples:             10,
-							matchers:            []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
-							expectedResponse:    expectedResponse(i, i+1),
-							expectedIngesters:   expectedIngesters,
-							shardByAllLabels:    shardByAllLabels,
-							shuffleShardEnabled: shuffleShardEnabled,
-						})
-					}
 				}
 			}
 		}
@@ -929,7 +899,6 @@ func TestDistributor_PushQuery(t *testing.T) {
 				numIngesters:        tc.numIngesters,
 				happyIngesters:      tc.happyIngesters,
 				numDistributors:     1,
-				shardByAllLabels:    tc.shardByAllLabels,
 				shuffleShardEnabled: tc.shuffleShardEnabled,
 				shuffleShardSize:    shuffleShardSize,
 			})
@@ -972,11 +941,10 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunksPerQueryLimitIsReac
 
 	// Prepare distributors.
 	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:     3,
-		happyIngesters:   3,
-		numDistributors:  1,
-		shardByAllLabels: true,
-		limits:           limits,
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
 	})
 
 	ctx = limiter.AddQueryLimiterToContext(ctx, limiter.NewQueryLimiter(0, 0, maxChunksLimit))
@@ -1028,11 +996,10 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxSeriesPerQueryLimitIsReac
 
 	// Prepare distributors.
 	ds, _, _ := prepare(t, prepConfig{
-		numIngesters:     3,
-		happyIngesters:   3,
-		numDistributors:  1,
-		shardByAllLabels: true,
-		limits:           limits,
+		numIngesters:    3,
+		happyIngesters:  3,
+		numDistributors: 1,
+		limits:          limits,
 	})
 
 	// Push a number of series below the max series limit.
@@ -1084,7 +1051,6 @@ func TestDistributor_QueryStream_ShouldReturnErrorIfMaxChunkBytesPerQueryLimitIs
 		numIngesters:      2,
 		happyIngesters:    2,
 		numDistributors:   1,
-		shardByAllLabels:  true,
 		limits:            limits,
 		replicationFactor: 2,
 	})
@@ -1203,11 +1169,10 @@ func TestDistributor_Push_LabelRemoval(t *testing.T) {
 		limits.AcceptHASamples = tc.removeReplica
 
 		ds, ingesters, _ := prepare(t, prepConfig{
-			numIngesters:     2,
-			happyIngesters:   2,
-			numDistributors:  1,
-			shardByAllLabels: true,
-			limits:           &limits,
+			numIngesters:    2,
+			happyIngesters:  2,
+			numDistributors: 1,
+			limits:          &limits,
 		})
 
 		// Push the series to the distributor
@@ -1307,11 +1272,10 @@ func TestDistributor_Push_ShouldGuaranteeShardingTokenConsistencyOverTheTime(t *
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			ds, ingesters, _ := prepare(t, prepConfig{
-				numIngesters:     2,
-				happyIngesters:   2,
-				numDistributors:  1,
-				shardByAllLabels: true,
-				limits:           &limits,
+				numIngesters:    2,
+				happyIngesters:  2,
+				numDistributors: 1,
+				limits:          &limits,
 			})
 
 			// Push the series to the distributor
@@ -1764,7 +1728,6 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			limits.IngestionRate = 0 // Unlimited.
 			testData.prepareConfig(&limits)
 
-			distributorCfg.ShardByAllLabels = true
 			distributorCfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
 				return &noopIngester{}, nil
 			}
@@ -1806,26 +1769,23 @@ func TestSlowQueries(t *testing.T) {
 	ctx := user.InjectOrgID(context.Background(), "user")
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	nIngesters := 3
-	for _, shardByAllLabels := range []bool{true, false} {
-		for happy := 0; happy <= nIngesters; happy++ {
-			t.Run(fmt.Sprintf("%t/%d", shardByAllLabels, happy), func(t *testing.T) {
-				var expectedErr error
-				if nIngesters-happy > 1 {
-					expectedErr = errFail
-				}
+	for happy := 0; happy <= nIngesters; happy++ {
+		t.Run(fmt.Sprintf("%d", happy), func(t *testing.T) {
+			var expectedErr error
+			if nIngesters-happy > 1 {
+				expectedErr = errFail
+			}
 
-				ds, _, _ := prepare(t, prepConfig{
-					numIngesters:     nIngesters,
-					happyIngesters:   happy,
-					numDistributors:  1,
-					queryDelay:       100 * time.Millisecond,
-					shardByAllLabels: shardByAllLabels,
-				})
-
-				_, err := ds[0].QueryStream(ctx, 0, 10, nameMatcher)
-				assert.Equal(t, expectedErr, err)
+			ds, _, _ := prepare(t, prepConfig{
+				numIngesters:    nIngesters,
+				happyIngesters:  happy,
+				numDistributors: 1,
+				queryDelay:      100 * time.Millisecond,
 			})
-		}
+
+			_, err := ds[0].QueryStream(ctx, 0, 10, nameMatcher)
+			assert.Equal(t, expectedErr, err)
+		})
 	}
 }
 
@@ -1924,7 +1884,6 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				numIngesters:        numIngesters,
 				happyIngesters:      numIngesters,
 				numDistributors:     1,
-				shardByAllLabels:    true,
 				shuffleShardEnabled: testData.shuffleShardEnabled,
 				shuffleShardSize:    testData.shuffleShardSize,
 			})
@@ -2022,7 +1981,6 @@ func TestDistributor_LabelNames(t *testing.T) {
 				numIngesters:        numIngesters,
 				happyIngesters:      numIngesters,
 				numDistributors:     1,
-				shardByAllLabels:    true,
 				shuffleShardEnabled: testData.shuffleShardEnabled,
 				shuffleShardSize:    testData.shuffleShardSize,
 			})
@@ -2080,7 +2038,6 @@ func TestDistributor_MetricsMetadata(t *testing.T) {
 				numIngesters:        numIngesters,
 				happyIngesters:      numIngesters,
 				numDistributors:     1,
-				shardByAllLabels:    true,
 				shuffleShardEnabled: testData.shuffleShardEnabled,
 				shuffleShardSize:    testData.shuffleShardSize,
 				limits:              nil,
@@ -2139,11 +2096,10 @@ func TestDistributor_LabelNamesAndValuesLimitTest(t *testing.T) {
 			flagext.DefaultValues(&limits)
 			limits.LabelNamesAndValuesResultsMaxSizeBytes = testData.sizeLimitBytes
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:     3,
-				happyIngesters:   3,
-				numDistributors:  1,
-				shardByAllLabels: true,
-				limits:           &limits})
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          &limits})
 			t.Cleanup(func() {
 				require.NoError(t, services.StopAndAwaitTerminated(ctx, ds[0]))
 			})
@@ -2209,7 +2165,6 @@ func TestDistributor_LabelNamesAndValues(t *testing.T) {
 				numIngesters:       12,
 				happyIngesters:     12,
 				numDistributors:    1,
-				shardByAllLabels:   true,
 				replicationFactor:  3,
 				ingesterZones:      testData.zones,
 				zonesResponseDelay: testData.zonesResponseDelay,
@@ -2276,7 +2231,6 @@ func prepareWithZoneAwarenessAndZoneDelay(t *testing.T, fixtures []series) (cont
 		numIngesters:      150,
 		happyIngesters:    150,
 		numDistributors:   1,
-		shardByAllLabels:  true,
 		replicationFactor: 3,
 		ingesterZones:     []string{"ZONE-A", "ZONE-B", "ZONE-C"},
 		zonesResponseDelay: map[string]time.Duration{
@@ -2528,7 +2482,6 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 type prepConfig struct {
 	numIngesters, happyIngesters int
 	queryDelay                   time.Duration
-	shardByAllLabels             bool
 	shuffleShardEnabled          bool
 	shuffleShardSize             int
 	limits                       *validation.Limits
@@ -2635,7 +2588,6 @@ func prepare(t *testing.T, cfg prepConfig) ([]*Distributor, []mockIngester, []*p
 		flagext.DefaultValues(&distributorCfg, &clientConfig)
 
 		distributorCfg.IngesterClientFactory = factory
-		distributorCfg.ShardByAllLabels = cfg.shardByAllLabels
 		distributorCfg.ExtraQueryDelay = 50 * time.Millisecond
 		distributorCfg.DistributorRing.HeartbeatPeriod = 100 * time.Millisecond
 		distributorCfg.DistributorRing.InstanceID = strconv.Itoa(i)
@@ -3324,11 +3276,10 @@ func TestDistributorValidation(t *testing.T) {
 			limits.MaxLabelNamesPerSeries = 2
 
 			ds, _, _ := prepare(t, prepConfig{
-				numIngesters:     3,
-				happyIngesters:   3,
-				numDistributors:  1,
-				shardByAllLabels: true,
-				limits:           &limits,
+				numIngesters:    3,
+				happyIngesters:  3,
+				numDistributors: 1,
+				limits:          &limits,
 			})
 
 			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.metadata, mimirpb.API))
@@ -3474,11 +3425,10 @@ func TestDistributor_Push_Relabel(t *testing.T) {
 		limits.MetricRelabelConfigs = tc.metricRelabelConfigs
 
 		ds, ingesters, _ := prepare(t, prepConfig{
-			numIngesters:     2,
-			happyIngesters:   2,
-			numDistributors:  1,
-			shardByAllLabels: true,
-			limits:           &limits,
+			numIngesters:    2,
+			happyIngesters:  2,
+			numDistributors: 1,
+			limits:          &limits,
 		})
 
 		// Push the series to the distributor
