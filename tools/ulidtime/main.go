@@ -22,7 +22,7 @@ func main() {
 		if err != nil {
 			log.Printf("failed to parse %q: %v", v, err)
 		} else {
-			fmt.Println(ulid.Time(id.Time()).UTC().Format(time.RFC3339Nano))
+			fmt.Println(id.String(), ulid.Time(id.Time()).UTC().Format(time.RFC3339Nano))
 		}
 	}
 }
