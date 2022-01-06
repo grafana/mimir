@@ -56,13 +56,14 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 // NewPromQLEngineOptions returns the PromQL engine options based on the provided config.
 func NewPromQLEngineOptions(cfg Config, logger log.Logger, reg prometheus.Registerer) promql.EngineOpts {
 	return promql.EngineOpts{
-		Logger:             logger,
-		Reg:                reg,
-		ActiveQueryTracker: createActiveQueryTracker(cfg, logger),
-		MaxSamples:         cfg.MaxSamples,
-		Timeout:            cfg.Timeout,
-		LookbackDelta:      cfg.LookbackDelta,
-		EnableAtModifier:   cfg.AtModifierEnabled,
+		Logger:               logger,
+		Reg:                  reg,
+		ActiveQueryTracker:   createActiveQueryTracker(cfg, logger),
+		MaxSamples:           cfg.MaxSamples,
+		Timeout:              cfg.Timeout,
+		LookbackDelta:        cfg.LookbackDelta,
+		EnableAtModifier:     cfg.AtModifierEnabled,
+		EnableNegativeOffset: false, // If this can be enabled, please change the error mapping in errorTranslateQueryEngine.
 		NoStepSubqueryIntervalFn: func(int64) int64 {
 			return cfg.DefaultEvaluationInterval.Milliseconds()
 		},
