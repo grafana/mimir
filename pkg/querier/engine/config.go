@@ -69,7 +69,7 @@ func NewPromQLEngineOptions(cfg Config, logger log.Logger, reg prometheus.Regist
 	}
 }
 
-func createActiveQueryTracker(cfg Config, logger log.Logger) *promql.ActiveQueryTracker {
+func createActiveQueryTracker(cfg Config, logger log.Logger) promql.QueryTracker {
 	dir := cfg.ActiveQueryTrackerDir
 
 	if dir != "" {
