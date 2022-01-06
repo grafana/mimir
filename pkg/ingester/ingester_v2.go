@@ -57,6 +57,11 @@ import (
 )
 
 const (
+	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
+	IngesterRingKey = "ring"
+)
+
+const (
 	errTSDBCreateIncompatibleState = "cannot create a new TSDB while the ingester is not in active state (current state: %s)"
 	errTSDBIngest                  = "err: %v. timestamp=%s, series=%s" // Using error.Wrap puts the message before the error and if the series is too long, its truncated.
 	errTSDBIngestExemplar          = "err: %v. timestamp=%s, series=%s, exemplar=%s"
@@ -539,7 +544,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", ring.IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
 	if err != nil {
 		return nil, err
 	}

@@ -38,6 +38,11 @@ import (
 )
 
 const (
+	// CompactorRingKey is the key under which we store the compactors ring in the KVStore.
+	CompactorRingKey = "compactor"
+)
+
+const (
 	blocksMarkedForDeletionName = "cortex_compactor_blocks_marked_for_deletion_total"
 	blocksMarkedForDeletionHelp = "Total number of blocks marked for deletion in compactor."
 
@@ -406,12 +411,12 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 	// Initialize the compactors ring if sharding is enabled.
 	if c.compactorCfg.ShardingEnabled {
 		lifecyclerCfg := c.compactorCfg.ShardingRing.ToLifecyclerConfig()
-		c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", ring.CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+		c.ringLifecycler, err = ring.NewLifecycler(lifecyclerCfg, ring.NewNoopFlushTransferer(), "compactor", CompactorRingKey, false, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
 		if err != nil {
 			return errors.Wrap(err, "unable to initialize compactor ring lifecycler")
 		}
 
-		c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", ring.CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
+		c.ring, err = ring.New(lifecyclerCfg.RingConfig, "compactor", CompactorRingKey, c.logger, prometheus.WrapRegistererWithPrefix("cortex_", c.registerer))
 		if err != nil {
 			return errors.Wrap(err, "unable to initialize compactor ring")
 		}
