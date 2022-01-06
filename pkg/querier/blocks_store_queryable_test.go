@@ -1761,7 +1761,7 @@ func (m *blocksStoreLimitsMock) MaxLabelsQueryLength(_ string) time.Duration {
 	return m.maxLabelsQueryLength
 }
 
-func (m *blocksStoreLimitsMock) MaxChunksPerQueryFromStore(_ string) int {
+func (m *blocksStoreLimitsMock) MaxChunksPerQuery(_ string) int {
 	return m.maxChunksPerQuery
 }
 

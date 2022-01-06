@@ -77,7 +77,6 @@ type Limits struct {
 	MaxGlobalExemplarsPerUser int `yaml:"max_global_exemplars_per_user" json:"max_global_exemplars_per_user"`
 
 	// Querier enforced limits.
-	MaxChunksPerQueryFromStore     int            `yaml:"max_chunks_per_query" json:"max_chunks_per_query"` // TODO Remove in Cortex 1.12.
 	MaxChunksPerQuery              int            `yaml:"max_fetched_chunks_per_query" json:"max_fetched_chunks_per_query"`
 	MaxFetchedSeriesPerQuery       int            `yaml:"max_fetched_series_per_query" json:"max_fetched_series_per_query"`
 	MaxFetchedChunkBytesPerQuery   int            `yaml:"max_fetched_chunk_bytes_per_query" json:"max_fetched_chunk_bytes_per_query"`
@@ -168,8 +167,7 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, "ingester.max-global-metadata-per-metric", 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
 
-	f.IntVar(&l.MaxChunksPerQueryFromStore, "store.query-chunk-limit", 2e6, "Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its respective YAML config option instead. Maximum number of chunks that can be fetched in a single query. This limit is enforced when fetching chunks from the long-term storage only. When using chunks storage, this limit is enforced in the querier and ruler, while when using blocks storage this limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
-	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 0, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. Takes precedence over the deprecated -store.query-chunk-limit. 0 to disable.")
+	f.IntVar(&l.MaxChunksPerQuery, "querier.max-fetched-chunks-per-query", 2e6, "Maximum number of chunks that can be fetched in a single query from ingesters and long-term storage. This limit is enforced in the querier, ruler and store-gateway. 0 to disable.")
 	f.IntVar(&l.MaxFetchedSeriesPerQuery, "querier.max-fetched-series-per-query", 0, "The maximum number of unique series for which a query can fetch samples from each ingesters and blocks storage. This limit is enforced in the querier only when running with blocks storage. 0 to disable")
 	f.IntVar(&l.MaxFetchedChunkBytesPerQuery, "querier.max-fetched-chunk-bytes-per-query", 0, "The maximum size of all chunks in bytes that a query can fetch from each ingester and storage. This limit is enforced in the querier and ruler only when running with blocks storage. 0 to disable.")
 	f.Var(&l.MaxQueryLength, "store.max-query-length", "Limit the query time range (end - start time). This limit is enforced in the query-frontend (on the received query), in the querier (on the query possibly split by the query-frontend) and in the chunks storage. 0 to disable.")
@@ -420,18 +418,6 @@ func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 // MaxGlobalSeriesPerMetric returns the maximum number of series allowed per metric across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerMetric(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerMetric
-}
-
-// MaxChunksPerQueryFromStore returns the maximum number of chunks allowed per query when fetching
-// chunks from the long-term storage.
-func (o *Overrides) MaxChunksPerQueryFromStore(userID string) int {
-	// If the new config option is set, then it should take precedence.
-	if value := o.getOverridesForUser(userID).MaxChunksPerQuery; value > 0 {
-		return value
-	}
-
-	// Fallback to the deprecated config option.
-	return o.getOverridesForUser(userID).MaxChunksPerQueryFromStore
 }
 
 func (o *Overrides) MaxChunksPerQuery(userID string) int {
