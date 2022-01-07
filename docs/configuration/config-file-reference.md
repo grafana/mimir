@@ -917,14 +917,6 @@ store_gateway_client:
 # CLI flag: -querier.default-evaluation-interval
 [default_evaluation_interval: <duration> | default = 1m]
 
-# Active query tracker monitors active queries, and writes them to the file in
-# given directory. If any queries are discovered in this file during startup, it
-# will log them to the log file. Setting to empty value disables active query
-# tracker, which also disables -querier.max-concurrent option. This config
-# option should be set on query-frontend too when query sharding is enabled.
-# CLI flag: -querier.active-query-tracker-dir
-[active_query_tracker_dir: <string> | default = "./active-query-tracker"]
-
 # Time since the last sample after which a time series is considered stale and
 # ignored by expression evaluations. This config option should be set on
 # query-frontend too when query sharding is enabled.
