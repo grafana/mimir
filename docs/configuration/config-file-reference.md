@@ -3335,21 +3335,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-exemplars-per-user
 [max_global_exemplars_per_user: <int> | default = 0]
 
-# Deprecated. Use -querier.max-fetched-chunks-per-query CLI flag and its
-# respective YAML config option instead. Maximum number of chunks that can be
-# fetched in a single query. This limit is enforced when fetching chunks from
-# the long-term storage only. When using chunks storage, this limit is enforced
-# in the querier and ruler, while when using blocks storage this limit is
-# enforced in the querier, ruler and store-gateway. 0 to disable.
-# CLI flag: -store.query-chunk-limit
-[max_chunks_per_query: <int> | default = 2000000]
-
 # Maximum number of chunks that can be fetched in a single query from ingesters
 # and long-term storage. This limit is enforced in the querier, ruler and
-# store-gateway. Takes precedence over the deprecated -store.query-chunk-limit.
-# 0 to disable.
+# store-gateway. 0 to disable.
 # CLI flag: -querier.max-fetched-chunks-per-query
-[max_fetched_chunks_per_query: <int> | default = 0]
+[max_fetched_chunks_per_query: <int> | default = 2000000]
 
 # The maximum number of unique series for which a query can fetch samples from
 # each ingesters and blocks storage. This limit is enforced in the querier only
