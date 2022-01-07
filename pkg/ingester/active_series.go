@@ -101,6 +101,8 @@ func (c *ActiveSeries) clear() {
 	}
 }
 
+// Active returns the total number of active series, as well as a slice of active series matching each one of the
+// custom trackers provided (in the same order as custom trackers are defined)
 func (c *ActiveSeries) Active() (int, []int) {
 	total := 0
 	totalMatching := makeIntSliceIfNotEmpty(len(c.asm.MatcherNames()))

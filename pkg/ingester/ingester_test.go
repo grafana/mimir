@@ -684,15 +684,9 @@ func TestIngesterActiveSeries(t *testing.T) {
 				// Sleep another millisecond to make sure that secondPushTime is strictly less than the append time of the second push.
 				time.Sleep(time.Millisecond)
 
-				for _, req := range []*mimirpb.WriteRequest{
-					req(metricLabelsBoolTrue, secondPushTime),
-					req(metricLabelsBoolTrue, secondPushTime),
-					// metricLabelsBoolFalse became inactive so we're not pushing it anymore
-				} {
-					ctx := user.InjectOrgID(context.Background(), userID)
-					_, err := ingester.Push(ctx, req)
-					require.NoError(t, err)
-				}
+				ctx := user.InjectOrgID(context.Background(), userID)
+				_, err := ingester.Push(ctx, req(metricLabelsBoolTrue, secondPushTime))
+				require.NoError(t, err)
 
 				// Update active series for metrics check in the future.
 				// We update them in the exact moment in time where append time of the first push is already considered idle,
@@ -710,6 +704,10 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 				// Check tracked Prometheus metrics
 				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(expectedMetrics), metricNames...))
+
+				// Update active series again in a further future where no series are active anymore.
+				ingester.updateActiveSeries(time.Now().Add(ingester.cfg.ActiveSeriesMetricsIdleTimeout))
+				require.NoError(t, testutil.GatherAndCompare(gatherer, strings.NewReader(""), metricNames...))
 			},
 		},
 		"successful push, active series disabled": {

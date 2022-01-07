@@ -743,7 +743,11 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 
 		userDB.activeSeries.Purge(purgeTime)
 		allActive, activeMatching := userDB.activeSeries.Active()
-		i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+		if allActive > 0 {
+			i.metrics.activeSeriesPerUser.WithLabelValues(userID).Set(float64(allActive))
+		} else {
+			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
+		}
 		for idx, name := range i.activeSeriesMatcher.MatcherNames() {
 			// We only set the metrics for matchers that actually exist, to avoid increasing cardinality with zero valued metrics.
 			if activeMatching[idx] > 0 {
