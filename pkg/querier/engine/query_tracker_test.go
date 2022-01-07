@@ -14,7 +14,7 @@ import (
 	"github.com/uber/jaeger-client-go"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/util/activitytracker"
+	"github.com/grafana/mimir/pkg/util/activitytracker" //lint:ignore faillint queryTracker uses activitytracker
 )
 
 func setupActivityTracker(t *testing.T, maxEntries int) *activitytracker.ActivityTracker {
