@@ -121,7 +121,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 		if err != nil {
 			return err
 		}
-		streams[idx] = resStreams
+		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
 
 		q.responseHeaders.mergeHeaders(resp.(*PrometheusResponse).Headers)
 		return nil
