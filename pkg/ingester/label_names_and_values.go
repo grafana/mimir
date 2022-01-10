@@ -3,6 +3,8 @@
 package ingester
 
 import (
+	"context"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -131,7 +133,7 @@ func labelValuesCardinality(
 			// Get total series count applying label matchers.
 			lblValMatchers[len(lblValMatchers)-1] = labels.MustNewMatcher(labels.MatchEqual, lbName, lbValue)
 
-			seriesCount, err := countLabelValueSeries(idxReader, postingsForMatchersFn, lblValMatchers)
+			seriesCount, err := countLabelValueSeries(ctx, idxReader, postingsForMatchersFn, lblValMatchers)
 			if err != nil {
 				return err
 			}
@@ -158,6 +160,7 @@ func labelValuesCardinality(
 }
 
 func countLabelValueSeries(
+	ctx context.Context,
 	idxReader tsdb.IndexReader,
 	postingsForMatchersFn func(tsdb.IndexPostingsReader, ...*labels.Matcher) (index.Postings, error),
 	lblValMatchers []*labels.Matcher,
@@ -169,6 +172,9 @@ func countLabelValueSeries(
 		return 0, err
 	}
 	for p.Next() {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
 		count++
 	}
 	if p.Err() != nil {
