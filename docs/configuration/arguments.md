@@ -483,7 +483,7 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 - `max_metadata_per_user` / `-ingester.max-metadata-per-user`
 - `max_metadata_per_metric` / `-ingester.max-metadata-per-metric`
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. Due to sharding, the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
+  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit used by the ingesters will be N/RF times higher to account for the effects of sharding and replication, where N is number of ingester replicas and RF is configured replication factor.
 
 - `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
   When running Cortex with blocks storage this limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
