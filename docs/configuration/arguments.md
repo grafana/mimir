@@ -127,18 +127,6 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 ## Distributor
 
-- `-distributor.shard-by-all-labels`
-
-  In the original Cortex design, samples were sharded amongst distributors by the combination of (userid, metric name). Sharding by metric name was designed to reduce the number of ingesters you need to hit on the read path; the downside was that you could hotspot the write path.
-
-  In hindsight, this seems like the wrong choice: we do many orders of magnitude more writes than reads, and ingester reads are in-memory and cheap. It seems the right thing to do is to use all the labels to shard, improving load balancing and support for very high cardinality metrics.
-
-  Set this flag to `true` for the new behaviour.
-
-  Important to note is that when setting this flag to `true`, it has to be set on both the distributor and the querier (called `-distributor.shard-by-all-labels` on Querier as well). If the flag is only set on the distributor and not on the querier, you will get incomplete query results because not all ingesters are queried.
-
-  **Upgrade notes**: As this flag also makes all queries always read from all ingesters, the upgrade path is pretty trivial; just enable the flag. When you do enable it, you'll see a spike in the number of active series as the writes are "reshuffled" amongst the ingesters, but over the next stale period all the old series will be flushed, and you should end up with much better load balancing. With this flag enabled in the queriers, reads will always catch all the data from all ingesters.
-
 - `-distributor.extra-query-delay`
   This is used by a component with an embedded distributor (Querier and Ruler) to control how long to wait until sending more than the minimum amount of queries needed for a successful response.
 
@@ -478,16 +466,14 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_series_per_user` / `-ingester.max-series-per-user`
 - `max_series_per_metric` / `-ingester.max-series-per-metric`
 
-  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have. When running with `-distributor.shard-by-all-labels=false` (the default), this limit will enforce the maximum number of series a metric can have 'globally', as all series for a single metric will be sent to the same replication set of ingesters. This is not the case when running with `-distributor.shard-by-all-labels=true`, so the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
-
-  An active series is a series to which a sample has been written in the last `-ingester.max-chunk-idle` duration, which defaults to 5 minutes.
+  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have. An active series is a series to which a sample has been written in the last `-ingester.max-chunk-idle` duration, which defaults to 5 minutes.
 
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 
-  Like `max_series_per_user` and `max_series_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor, the `-distributor.shard-by-all-labels` setting and the current number of healthy ingesters, and is kept updated whenever the number of ingesters change.
+  Like `max_series_per_user` and `max_series_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
-  Requires `-distributor.replication-factor`, `-distributor.shard-by-all-labels`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+  Requires `-distributor.replication-factor`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
 - `max_series_per_query` / `-ingester.max-series-per-query`
 
@@ -497,7 +483,7 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 - `max_metadata_per_user` / `-ingester.max-metadata-per-user`
 - `max_metadata_per_metric` / `-ingester.max-metadata-per-metric`
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. When running with `-distributor.shard-by-all-labels=false` (the default), this limit will enforce the maximum number of metadata a metric can have 'globally', as all metadata for a single metric will be sent to the same replication set of ingesters. This is not the case when running with `-distributor.shard-by-all-labels=true`, so the actual limit will be N/RF times higher, where N is number of ingester replicas and RF is configured replication factor.
+  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit used by the ingesters will be N/RF times higher to account for the effects of sharding and replication, where N is number of ingester replicas and RF is configured replication factor.
 
 - `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
   When running Cortex with blocks storage this limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
@@ -505,9 +491,9 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
-  Like `max_metadata_per_user` and `max_metadata_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor, the `-distributor.shard-by-all-labels` setting and the current number of healthy ingesters, and is kept updated whenever the number of ingesters change.
+  Like `max_metadata_per_user` and `max_metadata_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
-  Requires `-distributor.replication-factor`, `-distributor.shard-by-all-labels`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+  Requires `-distributor.replication-factor`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
 ## Ingester Instance Limits
 

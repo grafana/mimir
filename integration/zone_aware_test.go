@@ -31,7 +31,6 @@ func TestZoneAwareReplication(t *testing.T) {
 	defer s.Close()
 
 	flags := BlocksStorageFlags()
-	flags["-distributor.shard-by-all-labels"] = "true"
 	flags["-distributor.replication-factor"] = "3"
 	flags["-distributor.zone-awareness-enabled"] = "true"
 

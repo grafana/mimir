@@ -37,7 +37,6 @@ type Limiter struct {
 	ring                   RingCount
 	replicationFactor      int
 	shuffleShardingEnabled bool
-	shardByAllLabels       bool
 	zoneAwarenessEnabled   bool
 }
 
@@ -46,7 +45,6 @@ func NewLimiter(
 	limits *validation.Overrides,
 	ring RingCount,
 	shardingStrategy string,
-	shardByAllLabels bool,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
 ) *Limiter {
@@ -55,7 +53,6 @@ func NewLimiter(
 		ring:                   ring,
 		replicationFactor:      replicationFactor,
 		shuffleShardingEnabled: shardingStrategy == util.ShardingStrategyShuffle,
-		shardByAllLabels:       shardByAllLabels,
 		zoneAwarenessEnabled:   zoneAwarenessEnabled,
 	}
 }
@@ -163,20 +160,12 @@ func (l *Limiter) maxSeriesPerMetric(userID string) int {
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
 	if globalLimit > 0 {
-		if l.shardByAllLabels {
-			// We can assume that series are evenly distributed across ingesters
-			// so we do convert the global limit into a local limit
-			localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
-		} else {
-			// Given a metric is always pushed to the same set of ingesters (based on
-			// the replication factor), we can configure the per-ingester local limit
-			// equal to the global limit.
-			localLimit = minNonZero(localLimit, globalLimit)
-		}
+		// We can assume that series are evenly distributed across ingesters
+		// so we convert the global limit into a local limit
+		localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
 	}
 
-	// If both the local and global limits are disabled, we just
-	// use the largest int value
+	// If both the local and global limits are disabled
 	if localLimit == 0 {
 		localLimit = math.MaxInt32
 	}
@@ -189,11 +178,7 @@ func (l *Limiter) maxMetadataPerMetric(userID string) int {
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
 	if globalLimit > 0 {
-		if l.shardByAllLabels {
-			localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
-		} else {
-			localLimit = minNonZero(localLimit, globalLimit)
-		}
+		localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
 	}
 
 	if localLimit == 0 {
@@ -220,20 +205,11 @@ func (l *Limiter) maxMetadataPerUser(userID string) int {
 }
 
 func (l *Limiter) maxByLocalAndGlobal(userID string, localLimitFn, globalLimitFn func(string) int) int {
-	localLimit := localLimitFn(userID)
+	// We can assume that series/metadata are evenly distributed across ingesters
+	globalLimit := globalLimitFn(userID)
+	localLimit := minNonZero(localLimitFn(userID), l.convertGlobalToLocalLimit(userID, globalLimit))
 
-	// The global limit is supported only when shard-by-all-labels is enabled,
-	// otherwise we wouldn't get an even split of series/metadata across ingesters and
-	// can't take a "local decision" without any centralized coordination.
-	if l.shardByAllLabels {
-		// We can assume that series/metadata are evenly distributed across ingesters
-		// so we do convert the global limit into a local limit
-		globalLimit := globalLimitFn(userID)
-		localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
-	}
-
-	// If both the local and global limits are disabled, we just
-	// use the largest int value
+	// If both the local and global limits are disabled
 	if localLimit == 0 {
 		localLimit = math.MaxInt32
 	}

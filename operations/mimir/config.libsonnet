@@ -158,7 +158,6 @@
     // Some distributor config is shared with the querier.
     distributorConfig: {
       'distributor.replication-factor': $._config.replication_factor,
-      'distributor.shard-by-all-labels': true,
       'distributor.health-check-ingesters': true,
       'ring.heartbeat-timeout': '10m',
     },

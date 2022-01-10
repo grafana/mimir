@@ -68,7 +68,6 @@ type Config struct {
 	// Injected at runtime and read from the distributor config, required
 	// to accurately apply global limits.
 	DistributorShardingStrategy string `yaml:"-"`
-	DistributorShardByAllLabels bool   `yaml:"-"`
 
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
