@@ -8,6 +8,8 @@ package integration
 
 import (
 	"fmt"
+	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,13 +26,34 @@ var (
 	// If you change the image tag, remember to update it in the preloading done
 	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
 	//nolint:unused
-	previousVersionImages = map[string]func(map[string]string) map[string]string{
+	defaultPreviousVersionImages = map[string]func(map[string]string) map[string]string{
 		"quay.io/cortexproject/cortex:v1.11.0": nil,
 	}
 )
 
+// previousVersionImages returns a list of previous image version to test backwards
+// compatibility against. If MIMIR_PREVIOIS_IMAGES is set to a comma separted list of image versions,
+// then those will be used instead of the default versions. Note that the overriding of flags
+// is not currently possible when overriding the previous image versions via the environment variable.
+func previousVersionImages() map[string]func(map[string]string) map[string]string {
+	if os.Getenv("MIMIR_PREVIOUS_IMAGES") != "" {
+		overrideImageVersions := os.Getenv("MIMIR_PREVIOUS_IMAGES")
+		previousVersionImages := map[string]func(map[string]string) map[string]string{}
+
+		// Overriding of flags is not currently supported when overriding the list of images,
+		// so set all override functions to nil
+		for _, image := range strings.Split(overrideImageVersions, ",") {
+			previousVersionImages[image] = nil
+		}
+
+		return previousVersionImages
+	}
+
+	return defaultPreviousVersionImages
+}
+
 func TestBackwardCompatibility(t *testing.T) {
-	for previousImage, flagsFn := range previousVersionImages {
+	for previousImage, flagsFn := range previousVersionImages() {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := BlocksStorageFlags()
 			if flagsFn != nil {
@@ -43,7 +66,7 @@ func TestBackwardCompatibility(t *testing.T) {
 }
 
 func TestNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T) {
-	for previousImage, flagsFn := range previousVersionImages {
+	for previousImage, flagsFn := range previousVersionImages() {
 		t.Run(fmt.Sprintf("Backward compatibility upgrading from %s", previousImage), func(t *testing.T) {
 			flags := BlocksStorageFlags()
 			if flagsFn != nil {
