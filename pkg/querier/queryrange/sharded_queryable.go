@@ -249,7 +249,7 @@ func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *sto
 			// we don't want the outer query to apply the lookback at the end of the embedded query results. To keep it
 			// simple, it's safe always to add an extra stale marker at the end of the query results.
 			//
-			// This could result into an extra sample (stale marker) after the end of the query time range, but that's
+			// This could result in an extra sample (stale marker) after the end of the query time range, but that's
 			// not a problem when running the outer query because it will just be discarded.
 			if len(samples) > 0 && step > 0 {
 				samples = append(samples, model.SamplePair{
