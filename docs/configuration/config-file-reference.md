@@ -535,11 +535,6 @@ ha_tracker:
 # CLI flag: -distributor.sharding-strategy
 [sharding_strategy: <string> | default = "default"]
 
-# Distribute samples based on all labels, as opposed to solely by user and
-# metric name.
-# CLI flag: -distributor.shard-by-all-labels
-[shard_by_all_labels: <boolean> | default = false]
-
 # Try writing to an additional ingester in the presence of an ingester not in
 # the ACTIVE state. It is useful to disable this along with
 # -ingester.unregister-on-shutdown=false in order to not spread samples to extra
@@ -3287,8 +3282,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_series_per_metric: <int> | default = 50000]
 
 # The maximum number of active series per user, across the cluster before
-# replication. 0 to disable. Supported only if -distributor.shard-by-all-labels
-# is true.
+# replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
 [max_global_series_per_user: <int> | default = 0]
 
@@ -3313,8 +3307,7 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_metadata_per_metric: <int> | default = 10]
 
 # The maximum number of active metrics with metadata per user, across the
-# cluster. 0 to disable. Supported only if -distributor.shard-by-all-labels is
-# true.
+# cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
 [max_global_metadata_per_user: <int> | default = 0]
 

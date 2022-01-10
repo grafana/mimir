@@ -28,9 +28,7 @@ The Cortex time-series replication is used to hold multiple (typically 3) replic
 2. Rollout ingesters to apply the configured zone
 3. Enable time-series zone-aware replication via the `-distributor.zone-awareness-enabled` CLI flag (or its respective YAML config option). Please be aware this configuration option should be set to distributors, queriers and rulers.
 
-The `-distributor.shard-by-all-labels` setting has an impact on read availability. When enabled, a metric is sharded across all ingesters and querier needs to fetch series from all ingesters while, when disabled, a metric is sharded only across `<replication factor>` ingesters.
-
-In the event of a large outage impacting ingesters in more than 1 zone, when `-distributor.shard-by-all-labels=true` all queries will fail, while when disabled some queries may still succeed if the ingesters holding the required metric are not impacted by the outage.
+A metric is sharded across all ingesters and querier needs to fetch series from all ingesters. In the event of a large outage impacting ingesters in more than 1 zone, all queries will fail.
 
 ## Store-gateways: blocks replication
 

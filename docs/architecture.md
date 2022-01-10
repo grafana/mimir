@@ -112,12 +112,9 @@ For more information, please refer to [config for sending HA pairs data to Corte
 
 Distributors use consistent hashing, in conjunction with a configurable replication factor, to determine which ingester instance(s) should receive a given series.
 
-Cortex supports two hashing strategies:
+The hash is calculated using the metric name, labels and tenant ID.
 
-1. Hash the metric name and tenant ID (default)
-2. Hash the metric name, labels and tenant ID (enabled with `-distributor.shard-by-all-labels=true`)
-
-The trade-off associated with the latter is that writes are more balanced across ingesters but each query needs to talk to all ingesters since a metric could be spread across multiple ingesters given different label sets.
+There is a trade-off associated with including labels in the hash. Writes are more balanced across ingesters, but each query needs to talk to all ingesters since a metric could be spread across multiple ingesters given different label sets.
 
 #### The hash ring
 

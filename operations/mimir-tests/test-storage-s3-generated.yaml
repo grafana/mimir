@@ -761,7 +761,6 @@ spec:
         - -distributor.replication-factor=3
         - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.ring.prefix=
-        - -distributor.shard-by-all-labels=true
         - -mem-ballast-size-bytes=1073741824
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
@@ -851,7 +850,6 @@ spec:
         - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
-        - -distributor.shard-by-all-labels=true
         - -log.level=debug
         - -mem-ballast-size-bytes=268435456
         - -querier.frontend-client.grpc-max-send-msg-size=104857600
@@ -1101,7 +1099,6 @@ spec:
         - -distributor.extend-writes=true
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
-        - -distributor.shard-by-all-labels=true
         - -experimental.ruler.enable-api=true
         - -querier.query-ingesters-within=13h
         - -querier.query-store-after=12h
@@ -1375,7 +1372,6 @@ spec:
         - -consul.hostname=consul.default.svc.cluster.local:8500
         - -distributor.health-check-ingesters=true
         - -distributor.replication-factor=3
-        - -distributor.shard-by-all-labels=true
         - -ingester.chunk-encoding=3
         - -ingester.heartbeat-period=15s
         - -ingester.join-after=0s

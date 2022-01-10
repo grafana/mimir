@@ -25,7 +25,6 @@
     target: 'overrides-exporter',
 
     'runtime-config.file': '/etc/cortex/overrides.yaml',
-    'distributor.shard-by-all-labels': $._config.distributorConfig['distributor.shard-by-all-labels'],  // Required for ingester.max-global-series-per-user to work.
   } + $._config.limitsConfig,
 
   local container = $.core.v1.container,

@@ -556,7 +556,6 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		limits,
 		i.lifecycler,
 		cfg.DistributorShardingStrategy,
-		cfg.DistributorShardByAllLabels,
 		cfg.LifecyclerConfig.RingConfig.ReplicationFactor,
 		cfg.LifecyclerConfig.RingConfig.ZoneAwarenessEnabled)
 
