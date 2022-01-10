@@ -2,6 +2,7 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Changed `-ingester.stream_chunks_when_using_blocks` default value from `false` to `true` #717
 * [CHANGE] Removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
 * [CHANGE] Ruler: endpoints for listing rules (`/api/v1/rules`, `/api/v1/rules/{namespace}`) now return HTTP status code 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. #456
 * [CHANGE] Compactor: Removed support for block deletion marks migration. If you're upgrading from Cortex < 1.7.0 to Mimir, you should upgrade the compactor to Cortex >= 1.7.0 first, run it at least once and then upgrade to Mimir. #122
