@@ -2237,9 +2237,9 @@ func TestIngester_QueryStream(t *testing.T) {
 		numShards          int
 		expectedStreamType QueryStreamType
 	}{
-		"should query samples by default": {
+		"should query chunks by default": {
 			streamType:         QueryStreamDefault,
-			expectedStreamType: QueryStreamSamples,
+			expectedStreamType: QueryStreamChunks,
 		},
 		"should query samples when configured with QueryStreamSamples": {
 			streamType:         QueryStreamSamples,
@@ -2382,7 +2382,10 @@ func TestIngester_QueryStream(t *testing.T) {
 
 func TestIngester_QueryStreamManySamples(t *testing.T) {
 	// Create ingester.
-	i, err := prepareIngesterWithBlocksStorage(t, defaultIngesterTestConfig(t), nil)
+	cfg := defaultIngesterTestConfig(t)
+	cfg.StreamChunksWhenUsingBlocks = false
+
+	i, err := prepareIngesterWithBlocksStorage(t, cfg, nil)
 	require.NoError(t, err)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
