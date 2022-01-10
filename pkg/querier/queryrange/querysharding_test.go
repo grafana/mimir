@@ -666,6 +666,7 @@ func labelsForShardsGenerator(base labels.Labels, shards uint64) func(shard uint
 			copy(ls, base)
 			ls[len(ls)-1] = labels.Label{Name: "__test_shard_adjuster__", Value: fmt.Sprintf("adjusted to be %s by %d", sharding.FormatShardIDLabelValue(shard, shards), i)}
 			sort.Sort(ls)
+			// If this label value makes this labels combination fall into the desired shard, return it, otherwise keep trying.
 			if ls.Hash()%shards == shard {
 				return ls
 			}
