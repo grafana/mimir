@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	memcachedDefaultTTL = 24 * time.Hour
+	memcachedDefaultTTL = 7 * 24 * time.Hour
 )
 
 // MemcachedIndexCache is a memcached-based index cache.
