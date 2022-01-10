@@ -1789,7 +1789,7 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			b.ResetTimer()
 
 			for n := 0; n < b.N; n++ {
-				_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, mimirpb.API))
+				_, err := distributor.Push(ctx, mimirpb.ToWriteRequest(metrics, samples, nil, nil, mimirpb.API))
 
 				if testData.expectedErr == "" && err != nil {
 					b.Fatalf("no error expected but got %v", err)
@@ -2522,7 +2522,7 @@ func mockWriteRequest(lbls labels.Labels, value float64, timestampMs int64) *mim
 		},
 	}
 
-	return mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, mimirpb.API)
+	return mimirpb.ToWriteRequest([]labels.Labels{lbls}, samples, nil, nil, mimirpb.API)
 }
 
 type prepConfig struct {
@@ -3331,7 +3331,7 @@ func TestDistributorValidation(t *testing.T) {
 				limits:           &limits,
 			})
 
-			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.metadata, mimirpb.API))
+			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, nil, tc.metadata, mimirpb.API))
 			require.Equal(t, tc.err, err)
 		})
 	}
