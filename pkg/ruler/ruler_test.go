@@ -7,7 +7,6 @@ package ruler
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"math/rand"
@@ -168,7 +167,7 @@ func newMockClientsPool(cfg Config, logger log.Logger, reg prometheus.Registerer
 	}
 }
 
-func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler, authorizer RuleGroupAuthorizer) *Ruler {
+func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddrMap map[string]*Ruler) *Ruler {
 	engine, noopQueryable, pusher, logger, overrides := testSetup(t)
 
 	reg := prometheus.NewRegistry()
@@ -176,22 +175,13 @@ func buildRuler(t *testing.T, cfg Config, storage rulestore.RuleStore, rulerAddr
 	manager, err := NewDefaultMultiTenantManager(cfg, managerFactory, reg, log.NewNopLogger())
 	require.NoError(t, err)
 
-	ruler, err := newRuler(
-		cfg,
-		manager,
-		reg,
-		logger,
-		storage,
-		overrides,
-		newMockClientsPool(cfg, logger, reg, rulerAddrMap),
-		authorizer,
-	)
+	ruler, err := newRuler(cfg, manager, reg, logger, storage, overrides, newMockClientsPool(cfg, logger, reg, rulerAddrMap))
 	require.NoError(t, err)
 	return ruler
 }
 
 func newTestRuler(t *testing.T, cfg Config, storage rulestore.RuleStore) *Ruler {
-	ruler := buildRuler(t, cfg, storage, nil, nil)
+	ruler := buildRuler(t, cfg, storage, nil)
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), ruler))
 
 	// Ensure all rules are loaded before usage
@@ -318,71 +308,6 @@ func compareRuleGroupDescToStateDesc(t *testing.T, expected *rulespb.RuleGroupDe
 	}
 }
 
-func TestRuler_Authorizer(t *testing.T) {
-	require.Contains(t, mockRules, "user1", "test data has changed, refactor this test too")
-	require.Contains(t, mockRules, "user2", "test data has changed, refactor this test too")
-
-	testCases := map[string]struct {
-		allRules        map[string]rulespb.RuleGroupList
-		authorizedRules []rulespb.RuleGroupList
-		authorizerErr   error
-
-		expectedRulesPerUser map[string]int
-	}{
-		"happy flow": {
-			allRules:        mockRules,
-			authorizedRules: []rulespb.RuleGroupList{mockRules["user2"]},
-
-			expectedRulesPerUser: map[string]int{
-				"user1": 0,
-				"user2": len(mockRules["user2"]),
-			},
-		},
-		"no authorized groups": {
-			allRules:        mockRules,
-			authorizedRules: nil,
-			authorizerErr:   nil,
-
-			expectedRulesPerUser: map[string]int{
-				"user1": 0,
-				"user2": 0,
-			},
-		},
-		"group is treated as non-authorized when authorizer returns an error": {
-			allRules:        mockRules,
-			authorizedRules: []rulespb.RuleGroupList{mockRules["user1"], mockRules["user2"]},
-			authorizerErr:   errors.New("boom"),
-
-			expectedRulesPerUser: map[string]int{
-				"user1": 0,
-				"user2": 0,
-			},
-		},
-	}
-
-	for name, tc := range testCases {
-		tc := tc
-		t.Run(name, func(t *testing.T) {
-			cfg := defaultRulerConfig(t)
-
-			authorizer := newMockAuthorizer(tc.authorizerErr, tc.authorizedRules...)
-			r := buildRuler(t, cfg, newMockRuleStore(tc.allRules), nil, authorizer)
-
-			// Start the ruler and prep cleanup
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r)) })
-
-			r.syncRules(context.Background(), rulerSyncReasonInitial)
-
-			for userID, expectedResults := range tc.expectedRulesPerUser {
-				loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID))
-				require.NoError(t, err)
-				require.Len(t, loadedGroups, expectedResults)
-			}
-		})
-	}
-}
-
 func TestGetRules(t *testing.T) {
 	// ruler ID -> (user ID -> list of groups).
 	type expectedRulesMap map[string]map[string]rulespb.RuleGroupList
@@ -462,7 +387,7 @@ func TestGetRules(t *testing.T) {
 					},
 				}
 
-				r := buildRuler(t, cfg, storage, rulerAddrMap, nil)
+				r := buildRuler(t, cfg, storage, rulerAddrMap)
 				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
 				rulerAddrMap[id] = r
 				if r.ring != nil {
@@ -963,7 +888,7 @@ func TestSharding(t *testing.T) {
 					DisabledTenants:  tc.disabledUsers,
 				}
 
-				r := buildRuler(t, cfg, newMockRuleStore(allRules), nil, nil)
+				r := buildRuler(t, cfg, newMockRuleStore(allRules), nil)
 				r.limits = ruleLimits{evalDelay: 0, tenantShard: tc.shuffleShardSize}
 
 				if forceRing != nil {
@@ -1069,7 +994,7 @@ func TestDeleteTenantRuleGroups(t *testing.T) {
 
 	require.Equal(t, 3, len(obj.Objects()))
 
-	api, err := NewRuler(Config{}, nil, nil, log.NewNopLogger(), rs, nil, nil)
+	api, err := NewRuler(Config{}, nil, nil, log.NewNopLogger(), rs, nil)
 	require.NoError(t, err)
 
 	{

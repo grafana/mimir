@@ -657,7 +657,6 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		util_log.Logger,
 		t.RulerStorage,
 		t.Overrides,
-		nil,
 	)
 	if err != nil {
 		return

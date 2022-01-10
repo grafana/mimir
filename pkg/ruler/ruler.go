@@ -203,15 +203,6 @@ type MultiTenantManager interface {
 	ValidateRuleGroup(rulefmt.RuleGroup) []error
 }
 
-// RuleGroupAuthorizer is the interface for authorizing rule groups after syncing them from storage.
-// It can be injected into the Ruler to prevent rule groups from running if they have insufficient privileges.
-type RuleGroupAuthorizer interface {
-	// IsAuthorized should return whether the passed rule group is authorized to be evaluated.
-	// If false or a non-nil error is returned, the rule group is not going to be evaluated.
-	// This method will be called again with the same rule group in the next Config.PollInterval
-	IsAuthorized(context.Context, *rulespb.RuleGroupDesc) (bool, error)
-}
-
 // Ruler evaluates rules.
 //	+---------------------------------------------------------------+
 //	|                                                               |
@@ -254,23 +245,21 @@ type Ruler struct {
 	// Pool of clients used to connect to other ruler replicas.
 	clientsPool ClientsPool
 
-	ringCheckErrors        prometheus.Counter
-	rulerSync              *prometheus.CounterVec
-	syncUnauthorizedGroups *prometheus.GaugeVec
+	ringCheckErrors prometheus.Counter
+	rulerSync       *prometheus.CounterVec
 
 	allowedTenants *util.AllowedTenants
-	authorizer     RuleGroupAuthorizer
 
 	registry prometheus.Registerer
 	logger   log.Logger
 }
 
 // NewRuler creates a new ruler from a distributor and chunk store.
-func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, authorizer RuleGroupAuthorizer) (*Ruler, error) {
-	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg), authorizer)
+func NewRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits) (*Ruler, error) {
+	return newRuler(cfg, manager, reg, logger, ruleStore, limits, newRulerClientPool(cfg.ClientTLSConfig, logger, reg))
 }
 
-func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool, authorizer RuleGroupAuthorizer) (*Ruler, error) {
+func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer, logger log.Logger, ruleStore rulestore.RuleStore, limits RulesLimits, clientPool ClientsPool) (*Ruler, error) {
 	ruler := &Ruler{
 		cfg:            cfg,
 		store:          ruleStore,
@@ -279,7 +268,6 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 		logger:         logger,
 		limits:         limits,
 		clientsPool:    clientPool,
-		authorizer:     authorizer,
 		allowedTenants: util.NewAllowedTenants(cfg.EnabledTenants, cfg.DisabledTenants),
 
 		ringCheckErrors: promauto.With(reg).NewCounter(prometheus.CounterOpts{
@@ -291,11 +279,6 @@ func newRuler(cfg Config, manager MultiTenantManager, reg prometheus.Registerer,
 			Name: "cortex_ruler_sync_rules_total",
 			Help: "Total number of times the ruler sync operation triggered.",
 		}, []string{"reason"}),
-
-		syncUnauthorizedGroups: promauto.With(reg).NewGaugeVec(prometheus.GaugeOpts{
-			Name: "cortex_ruler_sync_unauthorized_groups",
-			Help: "Current number of unauthorized (and skipped) rule groups during last sync.",
-		}, []string{"user"}),
 	}
 
 	if len(cfg.EnabledTenants) > 0 {
@@ -516,43 +499,8 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
-	r.removeUnauthorizedGroups(ctx, configs)
-
 	// This will also delete local group files for users that are no longer in 'configs' map.
 	r.manager.SyncRuleGroups(ctx, configs)
-}
-
-// TODO remove along with the authorizer
-func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[string]rulespb.RuleGroupList) {
-	if r.authorizer == nil {
-		return
-	}
-
-	for userID, groups := range userGroups {
-		var (
-			amendedList  rulespb.RuleGroupList
-			unauthorized int
-		)
-		for _, g := range groups {
-			isAuthorized, err := r.authorizer.IsAuthorized(ctx, g)
-			switch {
-			case err != nil:
-				level.Error(r.logger).Log("msg", "unable to authorize rule group; will skip it instead",
-					"err", err,
-					"user", userID,
-					"namespace", g.GetNamespace(),
-					"name", g.GetName(),
-				)
-				fallthrough
-			case !isAuthorized:
-				unauthorized++
-			default:
-				amendedList = append(amendedList, g)
-			}
-		}
-		userGroups[userID] = amendedList
-		r.syncUnauthorizedGroups.WithLabelValues(userID).Set(float64(unauthorized))
-	}
 }
 
 func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
