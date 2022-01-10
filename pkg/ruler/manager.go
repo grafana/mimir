@@ -102,6 +102,10 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 	r.userManagerMtx.Lock()
 	defer r.userManagerMtx.Unlock()
 
+	if !r.cfg.TenantFederation.Enabled {
+		removeFederatedRuleGroups(ruleGroups)
+	}
+
 	for userID, ruleGroup := range ruleGroups {
 		r.syncRulesToManager(ctx, userID, ruleGroup)
 	}

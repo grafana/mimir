@@ -6,11 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/grafana/dskit/services"
-	"github.com/stretchr/testify/require"
-	"github.com/weaveworks/common/user"
-
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
+	"github.com/stretchr/testify/require"
 )
 
 // TestRuler_TenantFederationFlag tests the case where Config.TenantFederation.Enabled = true but there are
@@ -78,20 +75,16 @@ func TestRuler_TenantFederationFlag(t *testing.T) {
 			cfg.TenantFederation.Enabled = tc.tenantFederationEnabled
 			existingRules := map[string]rulespb.RuleGroupList{userID: tc.existingRules}
 
-			r := buildRuler(t, cfg, newMockRuleStore(existingRules), nil, nil)
+			r := newManager(t, cfg)
+			t.Cleanup(r.Stop)
 
-			require.NoError(t, services.StartAndAwaitRunning(context.Background(), r))
-			t.Cleanup(func() { require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r)) })
+			r.SyncRuleGroups(context.Background(), existingRules)
 
-			r.syncRules(context.Background(), rulerSyncReasonInitial)
-
-			loadedGroups, err := r.GetRules(user.InjectOrgID(context.Background(), userID))
-			require.NoError(t, err)
-
-			loadedGroupsNames := make([]string, len(loadedGroups))
-			for i, g := range loadedGroups {
-				loadedGroupsNames[i] = g.Group.Name
+			var loadedGroupsNames []string
+			for _, g := range r.GetRules(userID) {
+				loadedGroupsNames = append(loadedGroupsNames, g.Name())
 			}
+
 			require.ElementsMatch(t, tc.expectedRunningGroupsNames, loadedGroupsNames)
 		})
 	}

@@ -516,16 +516,13 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 		return
 	}
 
-	if !r.cfg.TenantFederation.Enabled {
-		removeFederatedRuleGroups(configs)
-	}
-
 	r.removeUnauthorizedGroups(ctx, configs)
 
 	// This will also delete local group files for users that are no longer in 'configs' map.
 	r.manager.SyncRuleGroups(ctx, configs)
 }
 
+// TODO remove along with the authorizer
 func (r *Ruler) removeUnauthorizedGroups(ctx context.Context, userGroups map[string]rulespb.RuleGroupList) {
 	if r.authorizer == nil {
 		return
