@@ -96,7 +96,7 @@ func NewDefaultMultiTenantManager(cfg Config, managerFactory ManagerFactory, reg
 	}, nil
 }
 
-func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) []string {
+func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGroups map[string]rulespb.RuleGroupList) {
 	// A lock is taken to ensure if this function is called concurrently, then each call
 	// returns after the call map files and check for updates
 	r.userManagerMtx.Lock()
@@ -106,7 +106,6 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 		r.syncRulesToManager(ctx, userID, ruleGroup)
 	}
 
-	var deletedUsers []string
 	// Check for deleted users and remove them
 	for userID, mngr := range r.userManagers {
 		if _, exists := ruleGroups[userID]; !exists {
@@ -118,13 +117,11 @@ func (r *DefaultMultiTenantManager) SyncRuleGroups(ctx context.Context, ruleGrou
 			r.lastReloadSuccessfulTimestamp.DeleteLabelValues(userID)
 			r.configUpdatesTotal.DeleteLabelValues(userID)
 			r.userManagerMetrics.RemoveUserRegistry(userID)
-			deletedUsers = append(deletedUsers, userID)
 			level.Info(r.logger).Log("msg", "deleted rule manager and local rule files", "user", userID)
 		}
 	}
 
 	r.managersTotal.Set(float64(len(r.userManagers)))
-	return deletedUsers
 }
 
 // syncRulesToManager maps the rule files to disk, detects any changes and will create/update the
