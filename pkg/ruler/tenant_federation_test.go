@@ -6,8 +6,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/grafana/mimir/pkg/ruler/rulespb"
 )
 
 // TestRuler_TenantFederationFlag tests the case where Config.TenantFederation.Enabled = true but there are
