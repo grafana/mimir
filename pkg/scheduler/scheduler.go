@@ -68,6 +68,7 @@ type Scheduler struct {
 	connectedQuerierClients  prometheus.GaugeFunc
 	connectedFrontendClients prometheus.GaugeFunc
 	queueDuration            prometheus.Histogram
+	inflightRequests         prometheus.Summary
 }
 
 type requestKey struct {
@@ -131,6 +132,14 @@ func NewScheduler(cfg Config, limits Limits, log log.Logger, registerer promethe
 		Name: "cortex_query_scheduler_connected_frontend_clients",
 		Help: "Number of query-frontend worker clients currently connected to the query-scheduler.",
 	}, s.getConnectedFrontendClientsMetric)
+
+	s.inflightRequests = promauto.With(registerer).NewSummary(prometheus.SummaryOpts{
+		Name:       "cortex_query_scheduler_inflight_requests",
+		Help:       "Number of inflight requests (either queued or processing) sampled at a regular interval. Quantile buckets keep track of inflight requests over the last 60s.",
+		Objectives: map[float64]float64{0.5: 0.05, 0.75: 0.02, 0.8: 0.02, 0.9: 0.01, 0.95: 0.01, 0.99: 0.001},
+		MaxAge:     time.Minute,
+		AgeBuckets: 6,
+	})
 
 	s.activeUsers = util.NewActiveUsersCleanupWithDefaultValues(s.cleanupMetricsForInactiveUser)
 
@@ -316,8 +325,8 @@ func (s *Scheduler) enqueueRequest(frontendContext context.Context, frontendAddr
 		shouldCancel = false
 
 		s.pendingRequestsMu.Lock()
-		defer s.pendingRequestsMu.Unlock()
 		s.pendingRequests[requestKey{frontendAddr: frontendAddr, queryID: msg.QueryID}] = req
+		s.pendingRequestsMu.Unlock()
 	})
 }
 
@@ -331,6 +340,7 @@ func (s *Scheduler) cancelRequestAndRemoveFromPending(frontendAddr string, query
 	if req != nil {
 		req.ctxCancel()
 	}
+
 	delete(s.pendingRequests, key)
 }
 
@@ -491,8 +501,21 @@ func (s *Scheduler) starting(ctx context.Context) error {
 }
 
 func (s *Scheduler) running(ctx context.Context) error {
+	// We observe inflight requests frequently and at regular intervals, to have a good
+	// approximation of max inflight requests over percentiles of time. We also do it with
+	// a ticker so that we keep tracking it even if we have no new queries but stuck inflight
+	// requests (eg. queriers are all crashing).
+	inflightRequestsTicker := time.NewTicker(250 * time.Millisecond)
+	defer inflightRequestsTicker.Stop()
+
 	for {
 		select {
+		case <-inflightRequestsTicker.C:
+			s.pendingRequestsMu.Lock()
+			inflight := len(s.pendingRequests)
+			s.pendingRequestsMu.Unlock()
+
+			s.inflightRequests.Observe(float64(inflight))
 		case <-ctx.Done():
 			return nil
 		case err := <-s.subservicesWatcher.Chan():
