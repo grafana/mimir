@@ -251,7 +251,6 @@ metadata:
 apiVersion: v1
 data:
   overrides.yaml: |
-    ingester_stream_chunks_when_using_blocks: true
     overrides: {}
 kind: ConfigMap
 metadata:
