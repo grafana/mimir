@@ -281,15 +281,12 @@ func TestRuler_Rules(t *testing.T) {
 			r := newTestRuler(t, cfg, newMockRuleStore(tc.mockRules))
 			defer services.StopAndAwaitTerminated(context.Background(), r) //nolint:errcheck
 
-			ctx := user.InjectOrgID(context.Background(), "user1")
+			ctx := user.InjectOrgID(context.Background(), tc.userID)
 			rls, err := r.Rules(ctx, &RulesRequest{})
 			require.NoError(t, err)
 			require.Len(t, rls.Groups, len(mockRules[tc.userID]))
 
 			for i, rg := range rls.Groups {
-				if rg.Group.User != tc.userID {
-					continue
-				}
 				expectedRg := tc.mockRules[tc.userID][i]
 				compareRuleGroupDescToStateDesc(t, expectedRg, rg)
 			}
