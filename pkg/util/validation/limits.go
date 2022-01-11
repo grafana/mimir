@@ -21,12 +21,6 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// Supported values for enum limits
-const (
-	LocalIngestionRateStrategy  = "local"
-	GlobalIngestionRateStrategy = "global"
-)
-
 // LimitError are errors that do not comply with the limits specified.
 type LimitError string
 
@@ -59,14 +53,10 @@ type Limits struct {
 	// Ingester enforced limits.
 	// Series
 	MaxSeriesPerQuery        int `yaml:"max_series_per_query" json:"max_series_per_query"`
-	MaxLocalSeriesPerUser    int `yaml:"max_series_per_user" json:"max_series_per_user"`
-	MaxLocalSeriesPerMetric  int `yaml:"max_series_per_metric" json:"max_series_per_metric"`
 	MaxGlobalSeriesPerUser   int `yaml:"max_global_series_per_user" json:"max_global_series_per_user"`
 	MaxGlobalSeriesPerMetric int `yaml:"max_global_series_per_metric" json:"max_global_series_per_metric"`
 	MinChunkLength           int `yaml:"min_chunk_length" json:"min_chunk_length"`
 	// Metadata
-	MaxLocalMetricsWithMetadataPerUser  int `yaml:"max_metadata_per_user" json:"max_metadata_per_user"`
-	MaxLocalMetadataPerMetric           int `yaml:"max_metadata_per_metric" json:"max_metadata_per_metric"`
 	MaxGlobalMetricsWithMetadataPerUser int `yaml:"max_global_metadata_per_user" json:"max_global_metadata_per_user"`
 	MaxGlobalMetadataPerMetric          int `yaml:"max_global_metadata_per_metric" json:"max_global_metadata_per_metric"`
 	// Exemplars
@@ -150,14 +140,10 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxSeriesPerQuery, "ingester.max-series-per-query", 100000, "The maximum number of series for which a query can fetch samples from each ingester. This limit is enforced only in the ingesters (when querying samples not flushed to the storage yet) and it's a per-instance limit. This limit is ignored when using blocks storage. When running with blocks storage use -querier.max-fetched-series-per-query limit instead.")
 	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
 	flagext.DeprecatedFlag(f, "ingester.max-samples-per-query", "This option is no longer used, and will be removed.", util_log.Logger)
-	f.IntVar(&l.MaxLocalSeriesPerUser, "ingester.max-series-per-user", 5000000, "The maximum number of active series per user, per ingester. 0 to disable.")
-	f.IntVar(&l.MaxLocalSeriesPerMetric, "ingester.max-series-per-metric", 50000, "The maximum number of active series per metric name, per ingester. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 0, "The maximum number of active series per user, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 0, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MinChunkLength, "ingester.min-chunk-length", 0, "Minimum number of samples in an idle chunk to flush it to the store. Use with care, if chunks are less than this size they will be discarded. This option is ignored when using blocks storage. 0 to disable.")
 
-	f.IntVar(&l.MaxLocalMetricsWithMetadataPerUser, "ingester.max-metadata-per-user", 8000, "The maximum number of active metrics with metadata per user, per ingester. 0 to disable.")
-	f.IntVar(&l.MaxLocalMetadataPerMetric, "ingester.max-metadata-per-metric", 10, "The maximum number of metadata per metric, per ingester. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per user, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalMetadataPerMetric, "ingester.max-global-metadata-per-metric", 0, "The maximum number of metadata per metric, across the cluster. 0 to disable.")
 	f.IntVar(&l.MaxGlobalExemplarsPerUser, "ingester.max-global-exemplars-per-user", 0, "The maximum number of exemplars in memory, across the cluster. 0 to disable exemplars ingestion.")
@@ -376,16 +362,6 @@ func (o *Overrides) MaxSeriesPerQuery(userID string) int {
 	return o.getOverridesForUser(userID).MaxSeriesPerQuery
 }
 
-// MaxLocalSeriesPerUser returns the maximum number of series a user is allowed to store in a single ingester.
-func (o *Overrides) MaxLocalSeriesPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalSeriesPerUser
-}
-
-// MaxLocalSeriesPerMetric returns the maximum number of series allowed per metric in a single ingester.
-func (o *Overrides) MaxLocalSeriesPerMetric(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalSeriesPerMetric
-}
-
 // MaxGlobalSeriesPerUser returns the maximum number of series a user is allowed to store across the cluster.
 func (o *Overrides) MaxGlobalSeriesPerUser(userID string) int {
 	return o.getOverridesForUser(userID).MaxGlobalSeriesPerUser
@@ -469,16 +445,6 @@ func (o *Overrides) CardinalityLimit(userID string) int {
 // MinChunkLength returns the minimum size of chunk that will be saved by ingesters
 func (o *Overrides) MinChunkLength(userID string) int {
 	return o.getOverridesForUser(userID).MinChunkLength
-}
-
-// MaxLocalMetricsWithMetadataPerUser returns the maximum number of metrics with metadata a user is allowed to store in a single ingester.
-func (o *Overrides) MaxLocalMetricsWithMetadataPerUser(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalMetricsWithMetadataPerUser
-}
-
-// MaxLocalMetadataPerMetric returns the maximum number of metadata allowed per metric in a single ingester.
-func (o *Overrides) MaxLocalMetadataPerMetric(userID string) int {
-	return o.getOverridesForUser(userID).MaxLocalMetadataPerMetric
 }
 
 // MaxGlobalMetricsWithMetadataPerUser returns the maximum number of metrics with metadata a user is allowed to store across the cluster.

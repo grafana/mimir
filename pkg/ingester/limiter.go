@@ -121,51 +121,46 @@ func (l *Limiter) FormatError(userID string, err error) error {
 
 func (l *Limiter) formatMaxSeriesPerUserError(userID string) error {
 	actualLimit := l.maxSeriesPerUser(userID)
-	localLimit := l.limits.MaxLocalSeriesPerUser(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerUser(userID)
 
-	return fmt.Errorf("per-user series limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-user series limit of %d exceeded, please contact administrator to raise it (global limit: %d actual local limit: %d)",
+		globalLimit, globalLimit, actualLimit)
 }
 
 func (l *Limiter) formatMaxSeriesPerMetricError(userID string) error {
 	actualLimit := l.maxSeriesPerMetric(userID)
-	localLimit := l.limits.MaxLocalSeriesPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
-	return fmt.Errorf("per-metric series limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-metric series limit of %d exceeded, please contact administrator to raise it (global limit: %d actual local limit: %d)",
+		globalLimit, globalLimit, actualLimit)
 }
 
 func (l *Limiter) formatMaxMetadataPerUserError(userID string) error {
 	actualLimit := l.maxMetadataPerUser(userID)
-	localLimit := l.limits.MaxLocalMetricsWithMetadataPerUser(userID)
 	globalLimit := l.limits.MaxGlobalMetricsWithMetadataPerUser(userID)
 
-	return fmt.Errorf("per-user metric metadata limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-user metric metadata limit of %d exceeded, please contact administrator to raise it (global limit: %d actual local limit: %d)",
+		globalLimit, globalLimit, actualLimit)
 }
 
 func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
 	actualLimit := l.maxMetadataPerMetric(userID)
-	localLimit := l.limits.MaxLocalMetadataPerMetric(userID)
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
-	return fmt.Errorf("per-metric metadata limit of %d exceeded, please contact administrator to raise it (local limit: %d global limit: %d actual local limit: %d)",
-		minNonZero(localLimit, globalLimit), localLimit, globalLimit, actualLimit)
+	return fmt.Errorf("per-metric metadata limit of %d exceeded, please contact administrator to raise it (global limit: %d actual local limit: %d)",
+		globalLimit, globalLimit, actualLimit)
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	localLimit := l.limits.MaxLocalSeriesPerMetric(userID)
+	var localLimit int
 	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
 
 	if globalLimit > 0 {
 		// We can assume that series are evenly distributed across ingesters
 		// so we convert the global limit into a local limit
-		localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
+		localLimit = l.convertGlobalToLocalLimit(userID, globalLimit)
 	}
 
-	// If both the local and global limits are disabled
 	if localLimit == 0 {
 		localLimit = math.MaxInt32
 	}
@@ -174,11 +169,11 @@ func (l *Limiter) maxSeriesPerMetric(userID string) int {
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {
-	localLimit := l.limits.MaxLocalMetadataPerMetric(userID)
+	var localLimit int
 	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
 
 	if globalLimit > 0 {
-		localLimit = minNonZero(localLimit, l.convertGlobalToLocalLimit(userID, globalLimit))
+		localLimit = l.convertGlobalToLocalLimit(userID, globalLimit)
 	}
 
 	if localLimit == 0 {
@@ -191,7 +186,6 @@ func (l *Limiter) maxMetadataPerMetric(userID string) int {
 func (l *Limiter) maxSeriesPerUser(userID string) int {
 	return l.maxByLocalAndGlobal(
 		userID,
-		l.limits.MaxLocalSeriesPerUser,
 		l.limits.MaxGlobalSeriesPerUser,
 	)
 }
@@ -199,15 +193,15 @@ func (l *Limiter) maxSeriesPerUser(userID string) int {
 func (l *Limiter) maxMetadataPerUser(userID string) int {
 	return l.maxByLocalAndGlobal(
 		userID,
-		l.limits.MaxLocalMetricsWithMetadataPerUser,
 		l.limits.MaxGlobalMetricsWithMetadataPerUser,
 	)
 }
 
-func (l *Limiter) maxByLocalAndGlobal(userID string, localLimitFn, globalLimitFn func(string) int) int {
+//TODO(poyarzun): remove if unused.
+func (l *Limiter) maxByLocalAndGlobal(userID string, globalLimitFn func(string) int) int {
 	// We can assume that series/metadata are evenly distributed across ingesters
 	globalLimit := globalLimitFn(userID)
-	localLimit := minNonZero(localLimitFn(userID), l.convertGlobalToLocalLimit(userID, globalLimit))
+	localLimit := l.convertGlobalToLocalLimit(userID, globalLimit)
 
 	// If both the local and global limits are disabled
 	if localLimit == 0 {
@@ -258,12 +252,4 @@ func (l *Limiter) getNumZones() int {
 		return util_math.Max(l.ring.ZonesCount(), 1)
 	}
 	return 1
-}
-
-func minNonZero(first, second int) int {
-	if first == 0 || (second != 0 && first > second) {
-		return second
-	}
-
-	return first
 }

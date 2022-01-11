@@ -1020,7 +1020,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 		},
 		"per-user series limit reached": {
 			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
-				limits.MaxLocalSeriesPerUser = 1
+				limits.MaxGlobalSeriesPerUser = 1
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
@@ -1045,7 +1045,7 @@ func Benchmark_Ingester_PushOnError(b *testing.B) {
 		},
 		"per-metric series limit reached": {
 			prepareConfig: func(limits *validation.Limits, instanceLimits *InstanceLimits) bool {
-				limits.MaxLocalSeriesPerMetric = 1
+				limits.MaxGlobalSeriesPerMetric = 1
 				return true
 			},
 			beforeBenchmark: func(b *testing.B, ingester *Ingester, numSeriesPerRequest int) {
@@ -2616,8 +2616,6 @@ func BenchmarkIngester_V2QueryStream(b *testing.B) {
 
 	cfg := defaultIngesterTestConfig(b)
 	limits := defaultLimitsTestConfig()
-	limits.MaxLocalSeriesPerMetric = 0
-	limits.MaxLocalSeriesPerUser = 0
 	limits.MaxGlobalSeriesPerMetric = 0
 	limits.MaxGlobalSeriesPerUser = 0
 
