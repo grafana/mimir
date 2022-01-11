@@ -756,7 +756,6 @@ spec:
         - -distributor.health-check-ingesters=true
         - -distributor.ingestion-burst-size=200000
         - -distributor.ingestion-rate-limit=10000
-        - -distributor.ingestion-rate-limit-strategy=global
         - -distributor.remote-timeout=20s
         - -distributor.replication-factor=3
         - -distributor.ring.consul.hostname=consul.default.svc.cluster.local:8500
@@ -1370,9 +1369,7 @@ spec:
         - -ingester.join-after=0s
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.max-series-per-metric=0
         - -ingester.max-series-per-query=100000
-        - -ingester.max-series-per-user=0
         - -ingester.num-tokens=512
         - -ingester.tokens-file-path=/data/tokens
         - -ingester.unregister-on-shutdown=true

@@ -239,8 +239,6 @@
       'distributor.ingestion-burst-size': $._config.limits.ingestion_burst_size,
     },
     ingesterLimitsConfig: {
-      'ingester.max-series-per-user': $._config.limits.max_series_per_user,
-      'ingester.max-series-per-metric': $._config.limits.max_series_per_metric,
       'ingester.max-global-series-per-user': $._config.limits.max_global_series_per_user,
       'ingester.max-global-series-per-metric': $._config.limits.max_global_series_per_metric,
       'ingester.max-series-per-query': $._config.limits.max_series_per_query,
@@ -259,9 +257,6 @@
 
     overrides: {
       extra_small_user:: {
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-
         // Our limit should be 100k, but we need some room of about ~50% to take rollouts into account
         max_global_series_per_user: 150000,
         max_global_series_per_metric: 20000,
@@ -280,9 +275,6 @@
       },
 
       medium_small_user:: {
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-
         max_global_series_per_user: 300000,
         max_global_series_per_metric: 30000,
 
@@ -297,9 +289,6 @@
       },
 
       small_user:: {
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-
         max_global_series_per_user: 1000000,
         max_global_series_per_metric: 100000,
 
@@ -314,9 +303,6 @@
       },
 
       medium_user:: {
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-
         max_global_series_per_user: 3000000,  // 3M
         max_global_series_per_metric: 300000,  // 300K
 
@@ -331,9 +317,6 @@
       },
 
       big_user:: {
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-
         max_series_per_query: 100000,
 
         max_global_series_per_user: 6000000,  // 6M
@@ -348,9 +331,6 @@
       },
 
       super_user:: {
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-
         max_global_series_per_user: 12000000,  // 12M
         max_global_series_per_metric: 1200000,  // 1.2M
 
@@ -366,9 +346,6 @@
 
       // This user class has limits increased by +50% compared to the previous one.
       mega_user+:: {
-        max_series_per_metric: 0,  // Disabled in favour of the max global limit
-        max_series_per_user: 0,  // Disabled in favour of the max global limit
-
         max_global_series_per_user: 16000000,  // 16M
         max_global_series_per_metric: 1600000,  // 1.6M
 
