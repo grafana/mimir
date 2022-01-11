@@ -1,58 +1,31 @@
 ---
-title: "Cortex Architecture"
+title: "Mimir architecture"
 linkTitle: "Architecture"
 weight: 2
 slug: architecture
 ---
 
-Cortex consists of multiple horizontally scalable microservices. Each microservice uses the most appropriate technique for horizontal scaling; most are stateless and can handle requests for any users while some (namely the [ingesters](#ingester)) are semi-stateful and depend on consistent hashing. This document provides a basic overview of Cortex's architecture.
+Mimir consists of multiple horizontally scalable microservices. Each microservice uses the most appropriate technique for horizontal scaling; most are stateless and can handle requests for any users while some (namely the [ingesters](#ingester)) are semi-stateful and depend on consistent hashing. This document provides a basic overview of Mimir’s architecture.
 
-<p align="center"><img src="../images/architecture.png" alt="Cortex Architecture"></p>
+<p align="center"><img src="../images/architecture.png" alt="Mimir architecture"></p>
 
 ## The role of Prometheus
 
-Prometheus instances scrape samples from various targets and then push them to Cortex (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)). That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
+Prometheus instances scrape samples from various targets and then push them to Mimir (using Prometheus' [remote write API](https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations)). That remote write API emits batched [Snappy](https://google.github.io/snappy/)-compressed [Protocol Buffer](https://developers.google.com/protocol-buffers/) messages inside the body of an HTTP `PUT` request.
 
-Cortex requires that each HTTP request bear a header specifying a tenant ID for the request. Request authentication and authorization are handled by an external reverse proxy.
+Mimir requires that each HTTP request bear a header specifying a tenant ID for the request. Request authentication and authorization are handled by an external reverse proxy.
 
 Incoming samples (writes from Prometheus) are handled by the [distributor](#distributor) while incoming reads (PromQL queries) are handled by the [querier](#querier) or optionally by the [query frontend](#query-frontend).
 
-## Storage
+## Blocks storage
 
-Cortex currently supports two storage engines to store and query the time series:
+Mimir supports a block storage engine that stores and queries the time series.
 
-- Chunks (deprecated)
-- Blocks
+The blocks storage is based on [Prometheus TSDB](https://prometheus.io/docs/prometheus/latest/storage/): it stores each tenant's time series into their own TSDB which write out their series to a on-disk block (defaults to 2h block range periods). Each block is composed by a few files storing the blocks and the block index.
 
-The two engines mostly share the same Cortex architecture with few differences outlined in the rest of the document.
+The TSDB block files contain the samples for multiple series. The series inside the blocks are then indexed by a per-block index, which indexes metric names and labels to time series in the block files.
 
-### Chunks storage (deprecated)
-
-The chunks storage stores each single time series into a separate object called _Chunk_. Each Chunk contains the samples for a given period (defaults to 12 hours). Chunks are then indexed by time range and labels, in order to provide a fast lookup across many (over millions) Chunks.
-
-For this reason, the chunks storage consists of:
-
-- An index for the Chunks. This index can be backed by:
-  - [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
-  - [Google Bigtable](https://cloud.google.com/bigtable)
-  - [Apache Cassandra](https://cassandra.apache.org)
-- An object store for the Chunk data itself, which can be:
-  - [Amazon DynamoDB](https://aws.amazon.com/dynamodb)
-  - [Google Bigtable](https://cloud.google.com/bigtable)
-  - [Apache Cassandra](https://cassandra.apache.org)
-  - [Amazon S3](https://aws.amazon.com/s3)
-  - [Google Cloud Storage](https://cloud.google.com/storage/)
-  - [Microsoft Azure Storage](https://azure.microsoft.com/en-us/services/storage/)
-
-For more information, please check out the [Chunks storage](./chunks-storage/_index.md) documentation.
-
-### Blocks storage
-
-The blocks storage is based on [Prometheus TSDB](https://prometheus.io/docs/prometheus/latest/storage/): it stores each tenant's time series into their own TSDB which write out their series to a on-disk Block (defaults to 2h block range periods). Each Block is composed by a few files storing the chunks and the block index.
-
-The TSDB chunk files contain the samples for multiple series. The series inside the Chunks are then indexed by a per-block index, which indexes metric names and labels to time series in the chunk files.
-
-The blocks storage doesn't require a dedicated storage backend for the index. The only requirement is an object store for the Block files, which can be:
+The blocks storage doesn't require a dedicated storage backend for the index. The only requirement is an object store for the block files, which can be:
 
 - [Amazon S3](https://aws.amazon.com/s3)
 - [Google Cloud Storage](https://cloud.google.com/storage/)
@@ -60,15 +33,15 @@ The blocks storage doesn't require a dedicated storage backend for the index. Th
 - [OpenStack Swift](https://wiki.openstack.org/wiki/Swift) (experimental)
 - [Local Filesystem](https://thanos.io/storage.md/#filesystem) (single node only)
 
-For more information, please check out the [Blocks storage](./blocks-storage/_index.md) documentation.
+For more information, see [Blocks storage](./blocks-storage/_index.md).
 
 ## Services
 
-Cortex has a service-based architecture, in which the overall system is split up into a variety of components that perform a specific task. These components run separately and in parallel. Cortex can alternatively run in a single process mode, where all components are executed within a single process. The single process mode is particularly handy for local testing and development.
+Mimir has a service-based architecture, in which the overall system is split up into a variety of components that perform a specific task. These components run separately and in parallel. Mimir can alternatively run in a single process mode, where all components are executed within a single process. The single process mode is particularly handy for local testing and development.
 
-Cortex is, for the most part, a shared-nothing system. Each layer of the system can run multiple instances of each component and they don't coordinate or communicate with each other within that layer.
+Mimir is, for the most part, a shared-nothing system. Each layer of the system can run multiple instances of each component and they don't coordinate or communicate with each other within that layer.
 
-The Cortex services are:
+The Mimir services are:
 
 - [Distributor](#distributor)
 - [Ingester](#ingester)
@@ -93,7 +66,7 @@ Distributors are **stateless** and can be scaled up and down as needed.
 
 #### High Availability Tracker
 
-The distributor features a **High Availability (HA) Tracker**. When enabled, the distributor deduplicates incoming samples from redundant Prometheus servers. This allows you to have multiple HA replicas of the same Prometheus servers, writing the same series to Cortex and then deduplicate these series in the Cortex distributor.
+The distributor features a **High Availability (HA) Tracker**. When enabled, the distributor deduplicates incoming samples from redundant Prometheus servers. This allows you to have multiple HA replicas of the same Prometheus servers, writing the same series to Mimir and then deduplicate these series in the Mimir distributor.
 
 The HA Tracker deduplicates incoming samples based on a cluster and replica label. The cluster label uniquely identifies the cluster of redundant Prometheus servers for a given tenant, while the replica label uniquely identifies the replica within the Prometheus cluster. Incoming samples are considered duplicated (and thus dropped) if received by any replica which is not the current primary within a cluster.
 
@@ -106,7 +79,7 @@ The supported KV stores for the HA tracker are:
 
 Note: Memberlist is not supported. Memberlist-based KV store propagates updates using gossip, which is very slow for HA purposes: result is that different distributors may see different Prometheus server as elected HA replica, which is definitely not desirable.
 
-For more information, please refer to [config for sending HA pairs data to Cortex](guides/ha-pair-handling.md) in the documentation.
+For more information, please refer to [config for sending HA pairs data to Mimir](guides/ha-pair-handling.md) in the documentation.
 
 #### Hashing
 
@@ -134,11 +107,11 @@ The supported KV stores for the hash ring are:
 
 Since all distributors share access to the same hash ring, write requests can be sent to any distributor and you can setup a stateless load balancer in front of it.
 
-To ensure consistent query results, Cortex uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes. This means that the distributor will wait for a positive response of at least one half plus one of the ingesters to send the sample to before successfully responding to the Prometheus write request.
+To ensure consistent query results, Mimir uses [Dynamo-style](https://www.allthingsdistributed.com/files/amazon-dynamo-sosp2007.pdf) quorum consistency on reads and writes. This means that the distributor will wait for a positive response of at least one half plus one of the ingesters to send the sample to before successfully responding to the Prometheus write request.
 
 #### Load balancing across distributors
 
-We recommend randomly load balancing write requests across distributor instances. For example, if you're running Cortex in a Kubernetes cluster, you could run the distributors as a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/).
+We recommend randomly load balancing write requests across distributor instances. For example, if you're running Mimir in a Kubernetes cluster, you could run the distributors as a Kubernetes [Service](https://kubernetes.io/docs/concepts/services-networking/service/).
 
 ### Ingester
 
@@ -170,7 +143,7 @@ If an ingester process crashes or exits abruptly, all the in-memory series that 
 1. Replication
 2. Write-ahead log (WAL)
 
-The **replication** is used to hold multiple (typically 3) replicas of each time series in the ingesters. If the Cortex cluster looses an ingester, the in-memory series hold by the lost ingester are also replicated at least to another ingester. In the event of a single ingester failure, no time series samples will be lost while, in the event of multiple ingesters failure, time series may be potentially lost if failure affects all the ingesters holding the replicas of a specific time series.
+The **replication** is used to hold multiple (typically 3) replicas of each time series in the ingesters. If the Mimir cluster looses an ingester, the in-memory series hold by the lost ingester are also replicated at least to another ingester. In the event of a single ingester failure, no time series samples will be lost while, in the event of multiple ingesters failure, time series may be potentially lost if failure affects all the ingesters holding the replicas of a specific time series.
 
 The **write-ahead log** (WAL) is used to write to a persistent disk all incoming series samples until they're flushed to the long-term storage. In the event of an ingester failure, a subsequent process restart will replay the WAL and recover the in-memory series samples.
 
@@ -182,7 +155,7 @@ The WAL for the chunks storage is disabled by default, while it's always enabled
 
 Ingesters store recently received samples in-memory in order to perform write de-amplification. If the ingesters would immediately write received samples to the long-term storage, the system would be very difficult to scale due to the very high pressure on the storage. For this reason, the ingesters batch and compress samples in-memory and periodically flush them out to the storage.
 
-Write de-amplification is the main source of Cortex's low total cost of ownership (TCO).
+Write de-amplification is the main source of Mimir's low total cost of ownership (TCO).
 
 ### Querier
 
@@ -221,7 +194,7 @@ The query frontend splits multi-day queries into multiple single-day queries, ex
 
 #### Caching
 
-The query frontend supports caching query results and reuses them on subsequent queries. If the cached results are incomplete, the query frontend calculates the required subqueries and executes them in parallel on downstream queriers. The query frontend can optionally align queries with their step parameter to improve the cacheability of the query results. The result cache is compatible with any cortex caching backend (currently memcached, redis, and an in-memory cache).
+The query frontend supports caching query results and reuses them on subsequent queries. If the cached results are incomplete, the query frontend calculates the required subqueries and executes them in parallel on downstream queriers. The query frontend can optionally align queries with their step parameter to improve the cacheability of the query results. The result cache is compatible with any Mimir caching backend (currently memcached, redis, and an in-memory cache).
 
 ### Query Scheduler
 
@@ -256,7 +229,7 @@ However, there would be gaps in the series generated by the recording rules.
 
 The **alertmanager** is an **optional service** responsible for accepting alert notifications from the [ruler](#ruler), deduplicating and grouping them, and routing them to the correct notification channel, such as email, PagerDuty or OpsGenie.
 
-The Cortex alertmanager is built on top of the [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/), adding multi-tenancy support. Like the [ruler](#ruler), the alertmanager requires a database storing the per-tenant configuration.
+The Mimir alertmanager is built on top of the [Prometheus Alertmanager](https://prometheus.io/docs/alerting/alertmanager/), adding multi-tenancy support. Like the [ruler](#ruler), the alertmanager requires a database storing the per-tenant configuration.
 
 Alertmanager is **semi-stateful**.
 The Alertmanager persists information about silences and active alerts to its disk.

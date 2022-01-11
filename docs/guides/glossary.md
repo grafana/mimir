@@ -9,19 +9,9 @@ slug: glossary
 
 The blocks storage is a Cortex storage engine based on Prometheus TSDB, which only requires an object store (eg. AWS S3, Google GCS, ...) as backend storage.
 
-For more information, please refer to the [Cortex blocks storage](../blocks-storage/_index.md) documentation.
+While when running Cortex with the [blocks storage](#blocks-storage) a single chunk contains timestamp-value pairs for several series.
 
-### Chunks storage (deprecated)
-
-The chunks storage is a Cortex storage engine which requires both an index store (eg. AWS DynamoDB, Google BigTable, Cassandra, ...) and an object store (eg. AWS S3, Google GCS, ...) as backend storage.
-
-The chunks storage is deprecated. You're encouraged to use the [blocks storage](#blocks-storage) instead.
-
-### Chunk
-
-A chunk is an object containing compressed timestamp-value pairs.
-
-When running Cortex with the chunks storage, a single chunk object contains timestamp-value pairs for a single series, while when running Cortex with the [blocks storage](#blocks-storage) a single chunk contains timestamp-value pairs for several series.
+For more information, see the [Cortex blocks storage](../blocks-storage/_index.md) documentation.
 
 ### Churn
 
@@ -74,12 +64,6 @@ For example, given the series `node_cpu_seconds_total{instance="10.0.0.1",mode="
 11834 @1603812194
 ```
 
-### Schema config
-
-The schema (or schema config) is a configuration file used by the Cortex chunks storage to configure the backend index and chunks store, and manage storage version upgrades. The schema config is **not** used by the Cortex [blocks storage](#blocks-storage).
-
-For more information, please refer to the [Schema config reference](../chunks-storage/schema-config.md).
-
 ### Series
 
 In the Prometheus ecosystem, a series (or time series) is a single stream of timestamped values belonging to the same metric, with the same set of label key-value pairs.
@@ -112,9 +96,6 @@ _See [Tenant](#tenant)._
 
 ### WAL
 
-The Write-Ahead Log (WAL) is an append only log stored on disk used by ingesters to recover their in-memory state after the process gets restarted, either after a clear shutdown or an abruptly termination. Despite the implementation is different, the WAL is supported both by Cortex chunks and blocks storage engines.
+The Write-Ahead Log (WAL) is an append only log stored on disk used by ingesters to recover their in-memory state after the process gets restarted, either after a clear shutdown or an abruptly termination. The WAL is supported by blocks storage engines.
 
-For more information, please refer to:
-
-- [Ingesters with WAL](../chunks-storage/ingesters-with-wal.md) when running **chunks storage**.
-- [Ingesters with WAL](../blocks-storage/_index.md#the-write-path) when running **blocks storage**.
+For more information, see [Ingesters with WAL](../blocks-storage/_index.md#the-write-path) when running **blocks storage**.

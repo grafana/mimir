@@ -1,17 +1,15 @@
 ---
-title: "Cortex Arguments"
-linkTitle: "Cortex Arguments Explained"
+title: "Mimir arguments"
+linkTitle: "Mimir arguments explained"
 weight: 2
 slug: arguments
 ---
 
-## General Notes
+## General notes
 
-Cortex has evolved over several years, and the command-line options sometimes reflect this heritage. In some cases the default value for options is not the recommended value, and in some cases names do not reflect the true meaning. We do intend to clean this up, but it requires a lot of care to avoid breaking existing installations. In the meantime we regret the inconvenience.
+Mimir has evolved over several years, and the command-line options sometimes reflect this heritage. In some cases the default value for options is not the recommended value, and in some cases names do not reflect the true meaning. We do intend to clean this up, but it requires a lot of care to avoid breaking existing installations. In the meantime we regret the inconvenience.
 
 Duration arguments should be specified with a unit like `5s` or `3h`. Valid time units are "ms", "s", "m", "h".
-
-**Warning: some of the following config options apply only to chunks storage, which has been deprecated. You're encouraged to use the [blocks storage](../blocks-storage/_index.md).**
 
 ## Querier
 
@@ -22,7 +20,7 @@ Duration arguments should be specified with a unit like `5s` or `3h`. Valid time
 
 - `-querier.query-parallelism`
 
-  This refers to database queries against the store when running the deprecated Cortex chunks storage (e.g. Bigtable or DynamoDB). This is the max subqueries run in parallel per higher-level query.
+  This refers to database queries against the store when running the deprecated Mimir chunks storage (e.g. Bigtable or DynamoDB). This is the max subqueries run in parallel per higher-level query.
 
 - `-querier.timeout`
 
@@ -208,7 +206,7 @@ If you find the propagation to be too slow, there are some tuning possibilities 
 - Decrease push/pull sync interval (default 30s)
 - Increase retransmit multiplication factor (default 4)
 
-To find propagation delay, you can use `cortex_ring_oldest_member_timestamp{state="ACTIVE"}` metric.
+To find propagation delay, you can use `mimir_ring_oldest_member_timestamp{state="ACTIVE"}` metric.
 
 Flags for configuring KV store based on memberlist library:
 
@@ -259,9 +257,9 @@ This is a special key-value implementation that uses two different KV stores (eg
 For example, migration from Consul to Etcd would look like this:
 
 - Set `ring.store` to use `multi` store. Set `-multi.primary=consul` and `-multi.secondary=etcd`. All consul and etcd settings must still be specified.
-- Start all Cortex microservices. They will still use Consul as primary KV, but they will also write share ring via etcd.
+- Start all Mimir microservices. They will still use Consul as primary KV, but they will also write share ring via etcd.
 - Operator can now use "runtime config" mechanism to switch primary store to etcd.
-- After all Cortex microservices have picked up new primary store, and everything looks correct, operator can now shut down Consul, and modify Cortex configuration to use `-ring.store=etcd` only.
+- After all Mimir microservices have picked up new primary store, and everything looks correct, operator can now shut down Consul, and modify Mimir configuration to use `-ring.store=etcd` only.
 - At this point, Consul can be shut down.
 
 Multi KV has following parameters:
@@ -269,7 +267,7 @@ Multi KV has following parameters:
 - `multi.primary` - name of primary KV store. Same values as in `ring.store` are supported, except `multi`.
 - `multi.secondary` - name of secondary KV store.
 - `multi.mirror-enabled` - enable mirroring of values to secondary store, defaults to true
-- `multi.mirror-timeout` - wait max this time to write to secondary store to finish. Default to 2 seconds. Errors writing to secondary store are not reported to caller, but are logged and also reported via `cortex_multikv_mirror_write_errors_total` metric.
+- `multi.mirror-timeout` - wait max this time to write to secondary store to finish. Default to 2 seconds. Errors writing to secondary store are not reported to caller, but are logged and also reported via `mimir_multikv_mirror_write_errors_total` metric.
 
 Multi KV also reacts on changes done via runtime configuration. It uses this section:
 
@@ -332,21 +330,13 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 
   Makes the ingester flush each timeseries at a specific point in the `max-chunk-age` cycle. This means multiple replicas of a chunk are very likely to contain the same contents which cuts chunk storage space by up to 66%. Set `-ingester.chunk-age-jitter` to `0` when using this option. If a chunk cache is configured (via `-store.chunks-cache.memcached.hostname`) then duplicate chunk writes are skipped which cuts write IOPs.
 
-- `-ingester.join-after`
-
-  How long to wait in PENDING state during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). (default 0s)
-
-- `-ingester.max-transfer-retries`
-
-  How many times a LEAVING ingester tries to find a PENDING ingester during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). Negative value or zero disables hand-over process completely. (default 10)
-
 - `-ingester.normalise-tokens`
 
   Deprecated. New ingesters always write "normalised" tokens to the ring. Normalised tokens consume less memory to encode and decode; as the ring is unmarshalled regularly, this significantly reduces memory usage of anything that watches the ring.
 
-  Cortex 0.4.0 is the last version that can _write_ denormalised tokens. Cortex 0.5.0 and above always write normalised tokens.
+  Mimir 0.4.0 is the last version that can _write_ denormalised tokens. Mimir 0.5.0 and above always write normalised tokens.
 
-  Cortex 0.6.0 is the last version that can _read_ denormalised tokens. Starting with Cortex 0.7.0 only normalised tokens are supported, and ingesters writing denormalised tokens to the ring (running Cortex 0.4.0 or earlier with `-ingester.normalise-tokens=false`) are ignored by distributors. Such ingesters should either switch to using normalised tokens, or be upgraded to Cortex 0.5.0 or later.
+  Mimir 0.6.0 is the last version that can _read_ denormalised tokens. Starting with Mimir 0.7.0 only normalised tokens are supported, and ingesters writing denormalised tokens to the ring (running Mimir 0.4.0 or earlier with `-ingester.normalise-tokens=false`) are ignored by distributors. Such ingesters should either switch to using normalised tokens, or be upgraded to Mimir 0.5.0 or later.
 
 - `-ingester.chunk-encoding`
 
@@ -387,9 +377,9 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 - `-flusher.flush-op-timeout`
   Duration after which a flush should timeout.
 
-## Runtime Configuration file
+## Runtime configuration file
 
-Cortex has a concept of "runtime config" file, which is simply a file that is reloaded while Cortex is running. It is used by some Cortex components to allow operator to change some aspects of Cortex configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
+Mimir has a concept of "runtime config" file, which is simply a file that is reloaded while Mimir is running. It is used by some Mimir components to allow operator to change some aspects of Mimir configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
 
 At the moment runtime configuration may contain per-user limits, multi KV store, and ingester instance limits.
 
@@ -415,13 +405,13 @@ ingester_limits:
   max_inflight_push_requests: 10000
 ```
 
-When running Cortex on Kubernetes, store this file in a config map and mount it in each services' containers. When changing the values there is no need to restart the services, unless otherwise specified.
+When running Mimir on Kubernetes, store this file in a config map and mount it in each services' containers. When changing the values there is no need to restart the services, unless otherwise specified.
 
 The `/runtime_config` endpoint returns the whole runtime configuration, including the overrides. In case you want to get only the non-default values of the configuration you can pass the `mode` parameter with the `diff` value.
 
-## Ingester, Distributor & Querier limits.
+## Ingester, distributor, and querier limits.
 
-Cortex implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster. There are various default global limits which apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
+Mimir implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster. There are various default global limits which apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
 
 The `overrides` field is a map of tenant ID (same values as passed in the `X-Scope-OrgID` header) to the various limits. An example could look like:
 
@@ -483,9 +473,9 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
   This limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
 
-## Ingester Instance Limits
+## Ingester instance limits
 
-Cortex ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-user limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
+Mimir ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-user limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
 
 An example as part of the runtime configuration file:
 
@@ -521,9 +511,9 @@ Valid ingester instance limits are (with their corresponding flags):
 
   Set this to `true` to force the request to use path-style addressing (`http://s3.amazonaws.com/BUCKET/KEY`). By default, the S3 client will use virtual hosted bucket addressing when possible (`http://BUCKET.s3.amazonaws.com/KEY`).
 
-## DNS Service Discovery
+## DNS service discovery
 
-Some clients in Cortex support service discovery via DNS to find addresses of backend servers to connect to (ie. caching servers). The clients supporting it are:
+Some clients in Mimir support service discovery via DNS to find addresses of backend servers to connect to (ie. caching servers). The clients supporting it are:
 
 - [Blocks storage's memcached cache](../blocks-storage/store-gateway.md#caching)
 - [All caching memcached servers](./config-file-reference.md#memcached-client-config)
@@ -544,11 +534,11 @@ If **no prefix** is provided, the provided IP or hostname will be used straighta
 
 ## Logging of IP of reverse proxy
 
-If a reverse proxy is used in front of Cortex it might be diffult to troubleshoot errors. The following 3 settings can be used to log the IP address passed along by the reverse proxy in headers like X-Forwarded-For.
+If a reverse proxy is used in front of Mimir it might be diffult to troubleshoot errors. The following 3 settings can be used to log the IP address passed along by the reverse proxy in headers like X-Forwarded-For.
 
 - `-server.log_source_ips_enabled`
 
-  Set this to `true` to add logging of the IP when a Forwarded, X-Real-IP or X-Forwarded-For header is used. A field called `sourceIPs` will be added to error logs when data is pushed into Cortex.
+  Set this to `true` to add logging of the IP when a Forwarded, X-Real-IP or X-Forwarded-For header is used. A field called `sourceIPs` will be added to error logs when data is pushed into Mimir.
 
 - `-server.log-source-ips-header`
 
