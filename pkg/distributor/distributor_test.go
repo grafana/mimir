@@ -461,31 +461,15 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user")
 	tests := map[string]struct {
-		distributors          int
-		ingestionRateStrategy string
-		ingestionRate         float64
-		ingestionBurstSize    int
-		pushes                []testPush
+		distributors       int
+		ingestionRate      float64
+		ingestionBurstSize int
+		pushes             []testPush
 	}{
-		"local strategy: limit should be set to each distributor": {
-			distributors:          2,
-			ingestionRateStrategy: validation.LocalIngestionRateStrategy,
-			ingestionRate:         10,
-			ingestionBurstSize:    10,
-			pushes: []testPush{
-				{samples: 4, expectedError: nil},
-				{metadata: 1, expectedError: nil},
-				{samples: 6, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "ingestion rate limit (10) exceeded while adding 6 samples and 0 metadata")},
-				{samples: 4, metadata: 1, expectedError: nil},
-				{samples: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "ingestion rate limit (10) exceeded while adding 1 samples and 0 metadata")},
-				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "ingestion rate limit (10) exceeded while adding 0 samples and 1 metadata")},
-			},
-		},
-		"global strategy: limit should be evenly shared across distributors": {
-			distributors:          2,
-			ingestionRateStrategy: validation.GlobalIngestionRateStrategy,
-			ingestionRate:         10,
-			ingestionBurstSize:    5,
+		"limit should be evenly shared across distributors": {
+			distributors:       2,
+			ingestionRate:      10,
+			ingestionBurstSize: 5,
 			pushes: []testPush{
 				{samples: 2, expectedError: nil},
 				{samples: 1, expectedError: nil},
@@ -495,11 +479,10 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 				{metadata: 1, expectedError: httpgrpc.Errorf(http.StatusTooManyRequests, "ingestion rate limit (5) exceeded while adding 0 samples and 1 metadata")},
 			},
 		},
-		"global strategy: burst should set to each distributor": {
-			distributors:          2,
-			ingestionRateStrategy: validation.GlobalIngestionRateStrategy,
-			ingestionRate:         10,
-			ingestionBurstSize:    20,
+		"burst should set to each distributor": {
+			distributors:       2,
+			ingestionRate:      10,
+			ingestionBurstSize: 20,
 			pushes: []testPush{
 				{samples: 10, expectedError: nil},
 				{samples: 5, expectedError: nil},
@@ -517,7 +500,6 @@ func TestDistributor_PushIngestionRateLimiter(t *testing.T) {
 		t.Run(testName, func(t *testing.T) {
 			limits := &validation.Limits{}
 			flagext.DefaultValues(limits)
-			limits.IngestionRateStrategy = testData.ingestionRateStrategy
 			limits.IngestionRate = testData.ingestionRate
 			limits.IngestionBurstSize = testData.ingestionBurstSize
 

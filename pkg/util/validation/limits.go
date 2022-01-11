@@ -39,7 +39,6 @@ func (e LimitError) Error() string {
 type Limits struct {
 	// Distributor enforced limits.
 	IngestionRate             float64             `yaml:"ingestion_rate" json:"ingestion_rate"`
-	IngestionRateStrategy     string              `yaml:"ingestion_rate_strategy" json:"ingestion_rate_strategy"`
 	IngestionBurstSize        int                 `yaml:"ingestion_burst_size" json:"ingestion_burst_size"`
 	AcceptHASamples           bool                `yaml:"accept_ha_samples" json:"accept_ha_samples"`
 	HAClusterLabel            string              `yaml:"ha_cluster_label" json:"ha_cluster_label"`
@@ -131,7 +130,6 @@ type Limits struct {
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size when the shuffle-sharding strategy is used. Must be set both on ingesters and distributors. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
 	f.Float64Var(&l.IngestionRate, "distributor.ingestion-rate-limit", 25000, "Per-user ingestion rate limit in samples per second.")
-	f.StringVar(&l.IngestionRateStrategy, "distributor.ingestion-rate-limit-strategy", "local", "Whether the ingestion rate limit should be applied individually to each distributor instance (local), or evenly shared across the cluster (global).")
 	f.IntVar(&l.IngestionBurstSize, "distributor.ingestion-burst-size", 50000, "Per-user allowed ingestion burst size (in number of samples).")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
@@ -307,13 +305,6 @@ func (o *Overrides) CardinalityAnalysisEnabled(userID string) bool {
 // LabelValuesMaxCardinalityLabelNamesPerRequest returns the maximum number of label names per cardinality request.
 func (o *Overrides) LabelValuesMaxCardinalityLabelNamesPerRequest(userID string) int {
 	return o.getOverridesForUser(userID).LabelValuesMaxCardinalityLabelNamesPerRequest
-}
-
-// IngestionRateStrategy returns whether the ingestion rate limit should be individually applied
-// to each distributor instance (local) or evenly shared across the cluster (global).
-func (o *Overrides) IngestionRateStrategy() string {
-	// The ingestion rate strategy can't be overridden on a per-tenant basis
-	return o.defaultLimits.IngestionRateStrategy
 }
 
 // IngestionBurstSize returns the burst size for ingestion rate.

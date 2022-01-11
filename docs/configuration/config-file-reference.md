@@ -3192,11 +3192,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -distributor.ingestion-rate-limit
 [ingestion_rate: <float> | default = 25000]
 
-# Whether the ingestion rate limit should be applied individually to each
-# distributor instance (local), or evenly shared across the cluster (global).
-# CLI flag: -distributor.ingestion-rate-limit-strategy
-[ingestion_rate_strategy: <string> | default = "local"]
-
 # Per-user allowed ingestion burst size (in number of samples).
 # CLI flag: -distributor.ingestion-burst-size
 [ingestion_burst_size: <int> | default = 50000]

@@ -29,6 +29,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
+	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -87,6 +88,14 @@ func TestMimir(t *testing.T) {
 			},
 		},
 		Compactor: compactor.Config{CompactionJobsOrder: compactor.CompactionOrderOldestFirst},
+		Distributor: distributor.Config{
+			DistributorRing: distributor.RingConfig{
+				KVStore: kv.Config{
+					Store: "inmemory",
+				},
+				InstanceInterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
+			},
+		},
 
 		Target: []string{All, Compactor},
 	}

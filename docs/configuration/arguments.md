@@ -439,17 +439,14 @@ overrides:
 
 Valid per-tenant limits are (with their corresponding flags for default values):
 
-- `ingestion_rate_strategy` / `-distributor.ingestion-rate-limit-strategy`
 - `ingestion_rate` / `-distributor.ingestion-rate-limit`
 - `ingestion_burst_size` / `-distributor.ingestion-burst-size`
 
-  The per-tenant rate limit (and burst size), in samples per second. It supports two strategies: `local` (default) and `global`.
+  The per-tenant rate limit (and burst size), in samples per second.
 
-  The `local` strategy enforces the limit on a per distributor basis, actual effective rate limit will be N times higher, where N is the number of distributor replicas.
+  The limit is enforced globally, configuring a per-distributor local rate limiter as `ingestion_rate / N`, where N is the number of distributor replicas (it's automatically adjusted if the number of replicas change). The `ingestion_burst_size` refers to the per-distributor local rate limiter and should be set at least to the maximum number of samples expected in a single push request. For this reason, the ingestion rate limit requires that push requests are evenly distributed across the pool of distributors; if you use a load balancer in front of the distributors you should be already covered, while if you have a custom setup (ie. an authentication gateway in front) make sure traffic is evenly balanced across distributors.
 
-  The `global` strategy enforces the limit globally, configuring a per-distributor local rate limiter as `ingestion_rate / N`, where N is the number of distributor replicas (it's automatically adjusted if the number of replicas change). The `ingestion_burst_size` refers to the per-distributor local rate limiter (even in the case of the `global` strategy) and should be set at least to the maximum number of samples expected in a single push request. For this reason, the `global` strategy requires that push requests are evenly distributed across the pool of distributors; if you use a load balancer in front of the distributors you should be already covered, while if you have a custom setup (ie. an authentication gateway in front) make sure traffic is evenly balanced across distributors.
-
-  The `global` strategy requires the distributors to form their own ring, which is used to keep track of the current number of healthy distributor replicas. The ring is configured by `distributor: { ring: {}}` / `-distributor.ring.*`.
+  The ingestion rate limit requires the distributors to form their own ring, which is used to keep track of the current number of healthy distributor replicas. The ring is configured by `distributor: { ring: {}}` / `-distributor.ring.*`.
 
 - `max_label_name_length` / `-validation.max-length-label-name`
 - `max_label_value_length` / `-validation.max-length-label-value`

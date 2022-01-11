@@ -235,7 +235,6 @@
 
     // These are all the flags for the default limits.
     distributorLimitsConfig: {
-      'distributor.ingestion-rate-limit-strategy': 'global',
       'distributor.ingestion-rate-limit': $._config.limits.ingestion_rate,
       'distributor.ingestion-burst-size': $._config.limits.ingestion_burst_size,
     },
