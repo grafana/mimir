@@ -47,7 +47,7 @@ func tenantFederationQueryFunc(regularQueryable, federatedQueryable rules.QueryF
 	}
 }
 
-func removeFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
+func RemoveFederatedRuleGroups(groups map[string]rulespb.RuleGroupList) {
 	for userID, groupList := range groups {
 		var amended rulespb.RuleGroupList
 		for _, group := range groupList {
