@@ -11,13 +11,12 @@ import (
 	"math"
 	"sync"
 
-	"github.com/prometheus/prometheus/promql"
-
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
@@ -152,7 +151,7 @@ func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) (
 
 // LabelNames implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, promql.ErrStorage{errNotImplemented}
+	return nil, nil, promql.ErrStorage{Err: errNotImplemented}
 }
 
 // Close implements storage.LabelQuerier.
