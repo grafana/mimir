@@ -7,12 +7,12 @@ import (
 	"flag"
 	"time"
 
-	"github.com/grafana/mimir/pkg/tenant"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/rules"
 	"github.com/weaveworks/common/user"
 
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/rules"
+	"github.com/grafana/mimir/pkg/tenant"
 )
 
 type TenantFederationConfig struct {
