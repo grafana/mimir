@@ -152,66 +152,35 @@ func (l *Limiter) formatMaxMetadataPerMetricError(userID string) error {
 }
 
 func (l *Limiter) maxSeriesPerMetric(userID string) int {
-	var localLimit int
-	globalLimit := l.limits.MaxGlobalSeriesPerMetric(userID)
-
-	if globalLimit > 0 {
-		// We can assume that series are evenly distributed across ingesters
-		// so we convert the global limit into a local limit
-		localLimit = l.convertGlobalToLocalLimit(userID, globalLimit)
-	}
-
-	if localLimit == 0 {
-		localLimit = math.MaxInt32
-	}
-
-	return localLimit
+	return l.convertGlobalToActualLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerMetric)
 }
 
 func (l *Limiter) maxMetadataPerMetric(userID string) int {
-	var localLimit int
-	globalLimit := l.limits.MaxGlobalMetadataPerMetric(userID)
-
-	if globalLimit > 0 {
-		localLimit = l.convertGlobalToLocalLimit(userID, globalLimit)
-	}
-
-	if localLimit == 0 {
-		localLimit = math.MaxInt32
-	}
-
-	return localLimit
+	return l.convertGlobalToActualLimitOrUnlimited(userID, l.limits.MaxGlobalMetadataPerMetric)
 }
 
 func (l *Limiter) maxSeriesPerUser(userID string) int {
-	return l.maxByLocalAndGlobal(
-		userID,
-		l.limits.MaxGlobalSeriesPerUser,
-	)
+	return l.convertGlobalToActualLimitOrUnlimited(userID, l.limits.MaxGlobalSeriesPerUser)
 }
 
 func (l *Limiter) maxMetadataPerUser(userID string) int {
-	return l.maxByLocalAndGlobal(
-		userID,
-		l.limits.MaxGlobalMetricsWithMetadataPerUser,
-	)
+	return l.convertGlobalToActualLimitOrUnlimited(userID, l.limits.MaxGlobalMetricsWithMetadataPerUser)
 }
 
-//TODO(poyarzun): remove if unused.
-func (l *Limiter) maxByLocalAndGlobal(userID string, globalLimitFn func(string) int) int {
+func (l *Limiter) convertGlobalToActualLimitOrUnlimited(userID string, globalLimitFn func(string) int) int {
 	// We can assume that series/metadata are evenly distributed across ingesters
 	globalLimit := globalLimitFn(userID)
-	localLimit := l.convertGlobalToLocalLimit(userID, globalLimit)
+	actualLimit := l.convertGlobalToActualLimit(userID, globalLimit)
 
-	// If both the local and global limits are disabled
-	if localLimit == 0 {
-		localLimit = math.MaxInt32
+	// If the limit is disabled
+	if actualLimit == 0 {
+		actualLimit = math.MaxInt32
 	}
 
-	return localLimit
+	return actualLimit
 }
 
-func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int {
+func (l *Limiter) convertGlobalToActualLimit(userID string, globalLimit int) int {
 	if globalLimit == 0 {
 		return 0
 	}
