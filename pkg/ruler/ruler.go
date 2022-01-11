@@ -124,6 +124,8 @@ type Config struct {
 	RingCheckPeriod time.Duration `yaml:"-"`
 
 	EnableQueryStats bool `yaml:"query_stats_enabled"`
+
+	TenantFederation TenantFederationConfig `yaml:"tenant_federation"`
 }
 
 // Validate config and returns error on failure
@@ -147,6 +149,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ClientTLSConfig.RegisterFlagsWithPrefix("ruler.client", f)
 	cfg.Ring.RegisterFlags(f)
 	cfg.Notifier.RegisterFlags(f)
+	cfg.TenantFederation.RegisterFlags(f)
 
 	// Deprecated Flags that will be maintained to avoid user disruption
 
@@ -674,10 +677,11 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 
 		groupDesc := &GroupStateDesc{
 			Group: &rulespb.RuleGroupDesc{
-				Name:      group.Name(),
-				Namespace: string(decodedNamespace),
-				Interval:  interval,
-				User:      userID,
+				Name:          group.Name(),
+				Namespace:     decodedNamespace,
+				Interval:      interval,
+				User:          userID,
+				SourceTenants: group.SourceTenants(),
 			},
 
 			EvaluationTimestamp: group.GetLastEvaluation(),

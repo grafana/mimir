@@ -73,6 +73,7 @@ type RuleGroup struct {
 	Interval       float64   `json:"interval"`
 	LastEvaluation time.Time `json:"lastEvaluation"`
 	EvaluationTime float64   `json:"evaluationTime"`
+	SourceTenants  []string  `json:"sourceTenants"`
 }
 
 type rule interface{}
@@ -168,6 +169,7 @@ func (a *API) PrometheusRules(w http.ResponseWriter, req *http.Request) {
 			Interval:       g.Group.Interval.Seconds(),
 			LastEvaluation: g.GetEvaluationTimestamp(),
 			EvaluationTime: g.GetEvaluationDuration().Seconds(),
+			SourceTenants:  g.Group.GetSourceTenants(),
 		}
 
 		for i, rl := range g.ActiveRules {

@@ -19,11 +19,12 @@ import (
 // ToProto transforms a formatted prometheus rulegroup to a rule group protobuf
 func ToProto(user string, namespace string, rl rulefmt.RuleGroup) *RuleGroupDesc {
 	rg := RuleGroupDesc{
-		Name:      rl.Name,
-		Namespace: namespace,
-		Interval:  time.Duration(rl.Interval),
-		Rules:     formattedRuleToProto(rl.Rules),
-		User:      user,
+		Name:          rl.Name,
+		Namespace:     namespace,
+		Interval:      time.Duration(rl.Interval),
+		Rules:         formattedRuleToProto(rl.Rules),
+		User:          user,
+		SourceTenants: rl.SourceTenants,
 	}
 	return &rg
 }
@@ -47,9 +48,10 @@ func formattedRuleToProto(rls []rulefmt.RuleNode) []*RuleDesc {
 // FromProto generates a rulefmt RuleGroup
 func FromProto(rg *RuleGroupDesc) rulefmt.RuleGroup {
 	formattedRuleGroup := rulefmt.RuleGroup{
-		Name:     rg.GetName(),
-		Interval: model.Duration(rg.Interval),
-		Rules:    make([]rulefmt.RuleNode, len(rg.GetRules())),
+		Name:          rg.GetName(),
+		Interval:      model.Duration(rg.Interval),
+		Rules:         make([]rulefmt.RuleNode, len(rg.GetRules())),
+		SourceTenants: rg.GetSourceTenants(),
 	}
 
 	for i, rl := range rg.GetRules() {

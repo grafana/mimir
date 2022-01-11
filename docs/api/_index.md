@@ -629,6 +629,8 @@ _Requires [authentication](#authentication)._
 <namespace1>:
 - name: <string>
   interval: <duration;optional>
+  source_tenants:
+    - <string>
   rules:
   - record: <string>
       expr: <string>
@@ -636,11 +638,13 @@ _Requires [authentication](#authentication)._
       expr: <string>
       for: <duration>
       annotations:
-      <annotation_name>: <string>
+        <annotation_name>: <string>
       labels:
-      <label_name>: <string>
+        <label_name>: <string>
 - name: <string>
   interval: <duration;optional>
+  source_tenants:
+    - <string>
   rules:
   - record: <string>
       expr: <string>
@@ -648,12 +652,14 @@ _Requires [authentication](#authentication)._
       expr: <string>
       for: <duration>
       annotations:
-      <annotation_name>: <string>
+        <annotation_name>: <string>
       labels:
-      <label_name>: <string>
+        <label_name>: <string>
 <namespace2>:
 - name: <string>
   interval: <duration;optional>
+  source_tenants:
+    - <string>
   rules:
   - record: <string>
       expr: <string>
@@ -661,9 +667,9 @@ _Requires [authentication](#authentication)._
       expr: <string>
       for: <duration>
       annotations:
-      <annotation_name>: <string>
+        <annotation_name>: <string>
       labels:
-      <label_name>: <string>
+        <label_name>: <string>
 ```
 
 ### Get rule groups by namespace
@@ -686,6 +692,8 @@ _Requires [authentication](#authentication)._
 ```yaml
 name: <string>
 interval: <duration;optional>
+source_tenants:
+  - <string>
 rules:
   - record: <string>
     expr: <string>
@@ -722,11 +730,41 @@ POST /api/v1/rules/{namespace}
 POST <legacy-http-prefix>/rules/{namespace}
 ```
 
-Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the rules **YAML** definition in the request body, and returns `202` on success.
+Creates or updates a rule group. This endpoint expects a request with `Content-Type: application/yaml` header and the
+rules **YAML** definition in the request body, and returns `202` on success.
 
 _This experimental endpoint is disabled by default and can be enabled via the `-experimental.ruler.enable-api` CLI flag (or its respective YAML config option)._
 
 _Requires [authentication](#authentication)._
+
+#### Federated rule groups
+
+A federated rule groups is a rule group with a non-empty `source_tenants`.
+
+The `source_tenants` field allows aggregating data from multiple tenants while evaluating a rule group. The expressions
+of each rule in the group will be evaluated against the data of all tenants in `source_tenants`. If `source_tenants` is
+empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`.
+
+Federated rule groups are skipped during evaluation by default. This feature depends on
+the [cross-tenant query federation](../proposals/cross-tenant-query-federation.md) feature. To enable federated rules
+set `-ruler.tenant-federation.enabled=true` and `-tenant-federation.enabled=true` CLI flags (or their respective YAML
+config options).
+
+During evaluation query limits applied to single tenants are also applied to each query in the rule group. For example,
+if `tenant-a` has a federated rule group with `source_tenants: [tenant-b, tenant-c]`, then query limits for `tenant-b`
+and `tenant-c` will be applied. If any of these limits is exceeded, the whole evaluation will fail. No partial results
+will be saved. The same "no partial results" guarantee applies to queries failing for other reasons (e.g. ingester
+unavailability).
+
+The time series used during evaluation of federated rules will have the `__tenant_id__` label, similar to how it is
+present on series returned with [cross-tenant query federation](../proposals/cross-tenant-query-federation.md).
+
+**Considerations:** Federated rule groups allow data from multiple source tenants to be written into a single
+destination tenant. This makes the existing separation of tenants' data less clear. For example, `tenant-a` has a
+federated rule group that aggregates over `tenant-b`'s data (e.g. `sum(metric_b)`) and writes the result back
+into `tenant-a`'s storage (e.g. as metric `sum:metric_b`). Now part of `tenant-b`'s data is copied to `tenant-a` (albeit
+aggregated). Have this in mind when configuring the access control layer in front of mimir and when enabling federated
+rules via `-ruler.tenant-federation.enabled`.
 
 #### Example request
 
@@ -739,6 +777,8 @@ Request body:
 ```yaml
 name: <string>
 interval: <duration;optional>
+source_tenants:
+  - <string>
 rules:
   - record: <string>
     expr: <string>

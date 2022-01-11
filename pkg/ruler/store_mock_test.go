@@ -164,10 +164,11 @@ func (m *mockRuleStore) ListRuleGroupsForUserAndNamespace(_ context.Context, use
 		}
 
 		result = append(result, &rulespb.RuleGroupDesc{
-			Namespace: r.Namespace,
-			Name:      r.Name,
-			User:      userID,
-			Interval:  r.Interval,
+			Namespace:     r.Namespace,
+			Name:          r.Name,
+			User:          userID,
+			Interval:      r.Interval,
+			SourceTenants: r.SourceTenants,
 		})
 	}
 	return result, nil

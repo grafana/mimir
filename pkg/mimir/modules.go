@@ -279,7 +279,7 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
-		byPassForSingleQuerier := true
+		const byPassForSingleQuerier = true
 		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, byPassForSingleQuerier, util_log.Logger))
 	}
 	return nil, nil
@@ -627,10 +627,23 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 
 	t.Cfg.Ruler.Ring.ListenPort = t.Cfg.Server.GRPCListenPort
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
+	var queryable, federatedQueryable prom_storage.Queryable
 	// TODO: Consider wrapping logger to differentiate from querier module logger
-	queryable, _, engine := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 
-	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, engine, t.Overrides, prometheus.DefaultRegisterer)
+	if t.Cfg.Ruler.TenantFederation.Enabled {
+		if !t.Cfg.TenantFederation.Enabled {
+			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
+		}
+		// Setting byPassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
+		// This makes this label more consistent and hopefully less confusing to users.
+		const byPassForSingleQuerier = false
+
+		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
+	}
+
+	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
 	manager, err := ruler.NewDefaultMultiTenantManager(t.Cfg.Ruler, managerFactory, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return nil, err
