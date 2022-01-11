@@ -460,15 +460,10 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Also enforce by the distributor, limits on how far in the past (and future) timestamps that we accept can be.
 
-- `max_series_per_user` / `-ingester.max-series-per-user`
-- `max_series_per_metric` / `-ingester.max-series-per-metric`
-
-  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have. An active series is a series to which a sample has been written in the last `-ingester.max-chunk-idle` duration, which defaults to 5 minutes.
-
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 
-  Like `max_series_per_user` and `max_series_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have. An active series is a series to which a sample has been written in the last `-ingester.max-chunk-idle` duration, which defaults to 5 minutes. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-distributor.replication-factor`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
@@ -478,19 +473,15 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Limits on the number of timeseries and samples returns by a single ingester during a query.
 
-- `max_metadata_per_user` / `-ingester.max-metadata-per-user`
-- `max_metadata_per_metric` / `-ingester.max-metadata-per-metric`
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit used by the ingesters will be N/RF times higher to account for the effects of sharding and replication, where N is number of ingester replicas and RF is configured replication factor.
-
-- `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
-  When running Cortex with blocks storage this limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
-
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
-  Like `max_metadata_per_user` and `max_metadata_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-distributor.replication-factor`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+
+- `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
+  When running Cortex with blocks storage this limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
 
 ## Ingester Instance Limits
 
