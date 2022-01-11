@@ -12,6 +12,8 @@ import (
 	"github.com/grafana/mimir/pkg/ingester/client"
 )
 
+const checkContextErrorSeriesCount = 1000 // series count interval in which context cancellation must be checked.
+
 // labelNamesAndValues streams the messages with the labels and values of the labels matching the `matchers` param.
 // Messages are immediately sent as soon they reach message size threshold defined in `messageSizeThreshold` param.
 func labelNamesAndValues(
@@ -172,10 +174,12 @@ func countLabelValueSeries(
 		return 0, err
 	}
 	for p.Next() {
-		if err := ctx.Err(); err != nil {
-			return 0, err
-		}
 		count++
+		if count%checkContextErrorSeriesCount == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 	}
 	if p.Err() != nil {
 		return 0, p.Err()
