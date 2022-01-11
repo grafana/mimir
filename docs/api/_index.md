@@ -743,9 +743,12 @@ A federated rule groups is a rule group with a non-empty `source_tenants`.
 
 The `source_tenants` field allows aggregating data from multiple tenants while evaluating a rule group. The expressions
 of each rule in the group will be evaluated against the data of all tenants in `source_tenants`. If `source_tenants` is
-empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`. Federated
-rule groups are skipped during evaluation by default; use the `-ruler.tenant-federation.enabled=true` CLI flag (or its
-respective YAML config option) to change this.
+empty or omitted, then the tenant under which the group is created will be treated as the `source_tenant`.
+
+Federated rule groups are skipped during evaluation by default. This feature depends on
+the [cross-tenant query federation](../proposals/cross-tenant-query-federation.md) feature. To enable federated rules
+set `-ruler.tenant-federation.enabled=true` and `-tenant-federation.enabled=true` CLI flags (or their respective YAML
+config options).
 
 During evaluation query limits applied to single tenants are also applied to each query in the rule group. For example,
 if `tenant-a` has a federated rule group with `source_tenants: [tenant-b, tenant-c]`, then query limits for `tenant-b`
