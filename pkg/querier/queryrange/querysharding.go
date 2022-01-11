@@ -188,9 +188,12 @@ func mapEngineError(err error) error {
 	// By default, all errors returned by engine.Eval() are execution errors,
 	// This is the same as Prometheus API does: http://github.com/prometheus/prometheus/blob/076109fa1910ad2198bf2c447a174fee31114982/web/api/v1/api.go#L550-L550
 	errorType := apierror.TypeExec
-	// However, some of our errors may come from the shardedQueryable, those are internal unless explicitly signalled to be something else.
-	if errors.As(err, &shardedStorageError{}) {
+	// However, some of our errors may come from the shardedQueryable,
+	// those are internal unless explicitly signalled to be something else.
+	if storageErr := (promql.ErrStorage{}); errors.As(err, &storageErr) {
 		errorType = apierror.TypeInternal
+		// Unwrap the underlying error, so we can get its cause and see if it was a timeout, etc.
+		err = storageErr.Err
 	}
 
 	// This is the common part:

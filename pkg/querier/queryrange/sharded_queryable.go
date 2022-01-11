@@ -11,6 +11,8 @@ import (
 	"math"
 	"sync"
 
+	"github.com/prometheus/prometheus/promql"
+
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -145,12 +147,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 
 // LabelValues implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, wrapShardedStorageError(errNotImplemented)
+	return nil, nil, promql.ErrStorage{Err: errNotImplemented}
 }
 
 // LabelNames implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, wrapShardedStorageError(errNotImplemented)
+	return nil, nil, promql.ErrStorage{errNotImplemented}
 }
 
 // Close implements storage.LabelQuerier.
@@ -285,23 +287,12 @@ func responseToSamples(resp Response) ([]SampleStream, error) {
 	)
 }
 
-// shardedStorageError is used to signal the mapEngineError method that this error is coming from the sharded storage,
-// which means that this is not an execution error.
-type shardedStorageError struct{ cause error }
-
-func (e shardedStorageError) Error() string { return e.cause.Error() }
-func (e shardedStorageError) Unwrap() error { return e.cause }
-func (e shardedStorageError) Cause() error  { return e.cause }
-
-// wrapShardedStorageError wraps the error with shardedStorageError if it's not nil.
-func wrapShardedStorageError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return shardedStorageError{err}
-}
-
-// errorWrapperSeriesSet wraps the Err() calls with shardedStorageerror when the returned error is not nil.
+// errorWrapperSeriesSet wraps the Err() call results with promql.ErrStorage when the returned error is not nil.
 type errorWrapperSeriesSet struct{ storage.SeriesSet }
 
-func (ss errorWrapperSeriesSet) Err() error { return wrapShardedStorageError(ss.SeriesSet.Err()) }
+func (ss errorWrapperSeriesSet) Err() error {
+	if err := ss.SeriesSet.Err(); err != nil {
+		return promql.ErrStorage{Err: err}
+	}
+	return nil
+}
