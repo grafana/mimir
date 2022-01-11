@@ -51,8 +51,7 @@ func newShardedQueryable(req Request, next Handler) *shardedQueryable {
 
 // Querier implements storage.Queryable.
 func (q *shardedQueryable) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	querier := &shardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}
-	return querier, nil
+	return &shardedQuerier{ctx: ctx, req: q.req, handler: q.handler, responseHeaders: q.responseHeaders}, nil
 }
 
 // getResponseHeaders returns the merged response headers received by the downstream
@@ -75,7 +74,10 @@ type shardedQuerier struct {
 
 // Select implements storage.Querier.
 // The sorted bool is ignored because the series is always sorted.
-func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...*labels.Matcher) (ss storage.SeriesSet) {
+	// Whatever we return, decorate it with the error wrapper, to track the errors coming from here.
+	defer func() { ss = errorWrapperSeriesSet{ss} }()
+
 	var embeddedQuery string
 	var isEmbedded bool
 	for _, matcher := range matchers {
@@ -143,12 +145,12 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 
 // LabelValues implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, errNotImplemented
+	return nil, nil, wrapShardedStorageError(errNotImplemented)
 }
 
 // LabelNames implements storage.LabelQuerier.
 func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, errNotImplemented
+	return nil, nil, wrapShardedStorageError(errNotImplemented)
 }
 
 // Close implements storage.LabelQuerier.
@@ -282,3 +284,24 @@ func responseToSamples(resp Response) ([]SampleStream, error) {
 		parser.ValueTypeMatrix,
 	)
 }
+
+// shardedStorageError is used to signal the mapEngineError method that this error is coming from the sharded storage,
+// which means that this is not an execution error.
+type shardedStorageError struct{ cause error }
+
+func (e shardedStorageError) Error() string { return e.cause.Error() }
+func (e shardedStorageError) Unwrap() error { return e.cause }
+func (e shardedStorageError) Cause() error  { return e.cause }
+
+// wrapShardedStorageError wraps the error with shardedStorageError if it's not nil.
+func wrapShardedStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return shardedStorageError{err}
+}
+
+// errorWrapperSeriesSet wraps the Err() calls with shardedStorageerror when the returned error is not nil.
+type errorWrapperSeriesSet struct{ storage.SeriesSet }
+
+func (ss errorWrapperSeriesSet) Err() error { return wrapShardedStorageError(ss.SeriesSet.Err()) }

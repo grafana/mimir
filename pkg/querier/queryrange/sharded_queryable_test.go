@@ -36,7 +36,7 @@ func TestShardedQuerier_Select(t *testing.T) {
 			),
 			fn: func(t *testing.T, q *shardedQuerier) {
 				set := q.Select(false, nil)
-				require.Equal(t, set.Err(), errNoEmbeddedQueries)
+				require.ErrorIs(t, set.Err(), errNoEmbeddedQueries)
 			},
 		},
 		{
