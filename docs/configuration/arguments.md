@@ -18,10 +18,6 @@ Duration arguments should be specified with a unit like `5s` or `3h`. Valid time
   The maximum number of top-level PromQL queries that will execute at the same time, per querier process.
   If using the query frontend, this should be set to at least (`-querier.worker-parallelism` \* number of query frontend replicas). Otherwise queries may queue in the queriers and not the frontend, which will affect QoS. Alternatively, consider using `-querier.worker-match-max-concurrent` to force worker parallelism to match `-querier.max-concurrent`.
 
-- `-querier.query-parallelism`
-
-  This refers to database queries against the store when running the deprecated Mimir chunks storage (e.g. Bigtable or DynamoDB). This is the max subqueries run in parallel per higher-level query.
-
 - `-querier.timeout`
 
   The timeout for a top-level PromQL query.
@@ -329,14 +325,6 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 - `-ingester.spread-flushes`
 
   Makes the ingester flush each timeseries at a specific point in the `max-chunk-age` cycle. This means multiple replicas of a chunk are very likely to contain the same contents which cuts chunk storage space by up to 66%. Set `-ingester.chunk-age-jitter` to `0` when using this option. If a chunk cache is configured (via `-store.chunks-cache.memcached.hostname`) then duplicate chunk writes are skipped which cuts write IOPs.
-
-- `-ingester.normalise-tokens`
-
-  Deprecated. New ingesters always write "normalised" tokens to the ring. Normalised tokens consume less memory to encode and decode; as the ring is unmarshalled regularly, this significantly reduces memory usage of anything that watches the ring.
-
-  Mimir 0.4.0 is the last version that can _write_ denormalised tokens. Mimir 0.5.0 and above always write normalised tokens.
-
-  Mimir 0.6.0 is the last version that can _read_ denormalised tokens. Starting with Mimir 0.7.0 only normalised tokens are supported, and ingesters writing denormalised tokens to the ring (running Mimir 0.4.0 or earlier with `-ingester.normalise-tokens=false`) are ignored by distributors. Such ingesters should either switch to using normalised tokens, or be upgraded to Mimir 0.5.0 or later.
 
 - `-ingester.chunk-encoding`
 
