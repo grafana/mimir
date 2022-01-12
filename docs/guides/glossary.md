@@ -7,11 +7,11 @@ slug: glossary
 
 ### Blocks storage
 
-The blocks storage is a Cortex storage engine based on Prometheus TSDB, which only requires an object store (eg. AWS S3, Google GCS, ...) as backend storage.
+The blocks storage is a Mimir storage engine based on Prometheus TSDB, which only requires an object store (eg. AWS S3, Google GCS, ...) as backend storage.
 
-While when running Cortex with the [blocks storage](#blocks-storage) a single chunk contains timestamp-value pairs for several series.
+While when running Mimir with the [blocks storage](#blocks-storage) a single chunk contains timestamp-value pairs for several series.
 
-For more information, see the [Cortex blocks storage](../blocks-storage/_index.md) documentation.
+For more information, see the [Mimir blocks storage](../blocks-storage/_index.md) documentation.
 
 ### Churn
 
@@ -25,19 +25,19 @@ Series flushing is the operation run by ingesters to offload time series from me
 
 ### HA Tracker
 
-The HA Tracker is a feature of Cortex distributor which is used to deduplicate received series coming from two (or more) Prometheus servers configured in HA pairs.
+The HA Tracker is a feature of Mimir distributor which is used to deduplicate received series coming from two (or more) Prometheus servers configured in HA pairs.
 
-For more information, please refer to the guide "[Config for sending HA Pairs data to Cortex](../guides/ha-pair-handling.md)".
+For more information, please refer to the guide "[Config for sending HA Pairs data to Mimir](../guides/ha-pair-handling.md)".
 
 ### Hand-over
 
-Series hand-over is an operation supported by ingesters to transfer their state, on shutdown, to a new ingester in the `JOINING` state. Hand-over is typically used during [ingesters rollouts](./ingesters-rolling-updates.md) and is only supported by the Cortex chunks storage.
+Series hand-over is an operation supported by ingesters to transfer their state, on shutdown, to a new ingester in the `JOINING` state. Hand-over is typically used during [ingesters rollouts](./ingesters-rolling-updates.md) and is only supported by the Mimir chunks storage.
 
 For more information, please refer to the guide "[Ingesters rolling updates](./ingesters-rolling-updates.md)".
 
 ### Hash ring
 
-The hash ring is a distributed data structure used by Cortex for sharding, replication and service discovery. The hash ring data structure gets shared across Cortex replicas via gossip or a key-value store.
+The hash ring is a distributed data structure used by Mimir for sharding, replication and service discovery. The hash ring data structure gets shared across Mimir replicas via gossip or a key-value store.
 
 For more information, please refer to the [Architecture](../architecture.md#the-hash-ring) documentation.
 
@@ -79,7 +79,7 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 ### Tenant
 
-A tenant (also called "user" or "org") is the owner of a set of series written to and queried from Cortex. Cortex multi-tenancy support allows you to isolate series belonging to different tenants. For example, if you have two tenants `team-A` and `team-B`, `team-A` series will be isolated from `team-B`, and each team will be able to query only their own series.
+A tenant (also called "user" or "org") is the owner of a set of series written to and queried from Mimir. Mimir multi-tenancy support allows you to isolate series belonging to different tenants. For example, if you have two tenants `team-A` and `team-B`, `team-A` series will be isolated from `team-B`, and each team will be able to query only their own series.
 
 For more information, please refer to:
 
