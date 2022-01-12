@@ -91,7 +91,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
   - `querier.max-concurrent`
   - `server.grpc-max-concurrent-streams` (for both query-frontends and queriers)
 
-  Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded). It's recommended to align this with `ingester.max-chunk-age`.
+  Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded).
 
   Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
 
@@ -304,56 +304,6 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 - `distributor.ha-tracker.update-timeout`
   Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
 
-## Ingester
-
-- `-ingester.max-chunk-age`
-
-  The maximum duration of a timeseries chunk in memory. If a timeseries runs for longer than this the current chunk will be flushed to the store and a new chunk created. (default 12h)
-
-- `-ingester.max-chunk-idle`
-
-  If a series doesn't receive a sample for this duration, it is flushed and removed from memory.
-
-- `-ingester.max-stale-chunk-idle`
-
-  If a series receives a [staleness marker](https://www.robustperception.io/staleness-and-promql), then we wait for this duration to get another sample before we close and flush this series, removing it from memory. You want it to be at least 2x the scrape interval as you don't want a single failed scrape to cause a chunk flush.
-
-- `-ingester.chunk-age-jitter`
-
-  To reduce load on the database exactly 12 hours after starting, the age limit is reduced by a varying amount up to this. Don't enable this along with `-ingester.spread-flushes` (default 0m)
-
-- `-ingester.spread-flushes`
-
-  Makes the ingester flush each timeseries at a specific point in the `max-chunk-age` cycle. This means multiple replicas of a chunk are very likely to contain the same contents which cuts chunk storage space by up to 66%. Set `-ingester.chunk-age-jitter` to `0` when using this option. If a chunk cache is configured (via `-store.chunks-cache.memcached.hostname`) then duplicate chunk writes are skipped which cuts write IOPs.
-
-- `-ingester.chunk-encoding`
-
-  Pick one of the encoding formats for timeseries data, which have different performance characteristics.
-  `Bigchunk` uses the Prometheus V2 code, and expands in memory to arbitrary length.
-  `Varbit`, `Delta` and `DoubleDelta` use Prometheus V1 code, and are fixed at 1K per chunk.
-  Defaults to `Bigchunk` starting version 0.7.0.
-
-- `-store.bigchunk-size-cap-bytes`
-
-  When using bigchunks, start a new bigchunk and flush the old one if the old one reaches this size. Use this setting to limit memory growth of ingesters with a lot of timeseries that last for days.
-
-- `-ingester-client.expected-timeseries`
-
-  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. This should match the `max_samples_per_send` in your `queue_config` for Prometheus.
-
-- `-ingester-client.expected-samples-per-series`
-
-  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. Under normal conditions, Prometheus scrapes should arrive with one sample per series.
-
-- `-ingester-client.expected-labels`
-
-  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. The optimum value will depend on how many labels are sent with your timeseries samples.
-
-- `-store.chunk-cache.cache-stubs`
-
-  Where you don't want to cache every chunk written by ingesters, but you do want to take advantage of chunk write deduplication, this option will make ingesters write a placeholder to the cache for each chunk.
-  Make sure you configure ingesters with a different cache to queriers, which need the whole value.
-
 #### Flusher
 
 - `-flusher.wal-dir`
@@ -434,7 +384,6 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 - `reject_old_samples` / `-validation.reject-old-samples`
 - `reject_old_samples_max_age` / `-validation.reject-old-samples.max-age`
-- `creation_grace_period` / `-validation.create-grace-period`
 
   Also enforce by the distributor, limits on how far in the past (and future) timestamps that we accept can be.
 
@@ -492,12 +441,6 @@ Valid ingester instance limits are (with their corresponding flags):
 - `max_inflight_push_requests` \ `-ingester.instance-limits.max-inflight-push-requests`
 
   Limit the maximum number of requests being handled by an ingester at once. This setting is critical for preventing ingesters from using an excessive amount of memory during high load or temporary slow downs. When this limit is reached, new requests will fail with an HTTP 500 error.
-
-## Storage
-
-- `s3.force-path-style`
-
-  Set this to `true` to force the request to use path-style addressing (`http://s3.amazonaws.com/BUCKET/KEY`). By default, the S3 client will use virtual hosted bucket addressing when possible (`http://BUCKET.s3.amazonaws.com/KEY`).
 
 ## DNS service discovery
 
