@@ -406,6 +406,7 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 			// Wait until Mimir replicas have updated the ring state.
 			for _, replica := range cluster.Instances() {
 				numTokensPerInstance := 512 // Ingesters ring.
+				numTokensPerInstance += 1   // Distributors ring
 				if testCfg.blocksShardingEnabled {
 					numTokensPerInstance += 512 * 2 // Store-gateway ring (read both by the querier and store-gateway).
 				}
