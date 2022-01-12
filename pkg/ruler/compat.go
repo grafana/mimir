@@ -277,9 +277,9 @@ func DefaultTenantManagerFactory(cfg Config, p Pusher, queryable, federatedQuery
 		return rules.NewManager(&rules.ManagerOptions{
 			Appendable:                 NewPusherAppendable(p, userID, overrides, totalWrites, failedWrites),
 			Queryable:                  queryable,
-			QueryFunc:                  tenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc),
+			QueryFunc:                  TenantFederationQueryFunc(regularQueryFunc, federatedQueryFunc),
 			Context:                    user.InjectOrgID(ctx, userID),
-			GroupEvaluationContextFunc: federatedGroupContextFunc,
+			GroupEvaluationContextFunc: FederatedGroupContextFunc,
 			ExternalURL:                cfg.ExternalURL.URL,
 			NotifyFunc:                 SendAlerts(notifier, cfg.ExternalURL.URL.String()),
 			Logger:                     log.With(logger, "user", userID),
