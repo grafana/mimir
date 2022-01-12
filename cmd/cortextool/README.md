@@ -223,7 +223,7 @@ cortextool analyse grafana --address=<grafana-address> --key=<API-Key>
   "metricsUsed": [
     "apiserver_request:availability30d",
     "workqueue_depth",
-    "workqueue_queue_duration_seconds_bucket", 
+    "workqueue_queue_duration_seconds_bucket",
     ...
   ],
   "dashboards": [

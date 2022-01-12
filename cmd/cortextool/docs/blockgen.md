@@ -2,15 +2,15 @@
 
 The `blockgen` is a tool which generates Prometheus blocks of mock data. These
 blocks can be uploaded to an object store used by Cortex, which may be useful
-to profile and benchmark Cortex components when querying or compacting the 
+to profile and benchmark Cortex components when querying or compacting the
 generated blocks.
 
 ## Config file
 
-The blockgen command requires a config file to be specified. 
+The blockgen command requires a config file to be specified.
 It uses the same syntax to define what metrics should be generated like the
-`benchtool` which is documented [here](benchtool.md). 
- 
+`benchtool` which is documented [here](benchtool.md).
+
 This is an example config file:
 
 ```yaml
@@ -49,7 +49,7 @@ series:
 
 ## Running it
 
-Assuming the config is in a file named `blockgen.conf` the command could 
+Assuming the config is in a file named `blockgen.conf` the command could
 be run like this:
 
 ```
