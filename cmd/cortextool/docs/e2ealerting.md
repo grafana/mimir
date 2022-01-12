@@ -58,9 +58,8 @@ An example `e2ealerting` configuration would look like:
 -configs.sync-interval=2h
 ```
 
-
-
 ## [optional] Alertmanager and Ruler Configuration
+
 Please note the both the `alertmanager` and `ruler` configuration are optional. If not defined as part of the config, the syncing process is disabled.
 
 The Alertmanager configuration file `alertmanger_config.yaml` can be defined as:
@@ -72,10 +71,10 @@ receivers:
     webhook_configs:
       - url: <e2ealerting-url>/api/v1/receiver
 route:
-    group_interval: 1s
-    group_wait: 1s
-    receiver: e2e-alerting
-    repeat_interval: 1s
+  group_interval: 1s
+  group_wait: 1s
+  receiver: e2e-alerting
+  repeat_interval: 1s
 ```
 
 Finally, the rule configuration file `ruler_config.yaml`:
@@ -85,7 +84,7 @@ name: e2ealerting
 rules:
   - alert: E2EAlertingAlwaysFiring
     annotations:
-        time: '{{ $value }}'
+      time: "{{ $value }}"
     expr: e2ealerting_now_in_seconds > 0
     for: 10s
 ```

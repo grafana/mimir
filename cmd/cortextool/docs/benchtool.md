@@ -69,21 +69,21 @@ Series types are used in both the series and queries section of the workload.
 The denote the character and properties of the data of the generated or queried
 series. The following series types are supported.
 
-- *gauge-zero*: correlates to a gauge series that will contantly be zero. This
+- _gauge-zero_: correlates to a gauge series that will contantly be zero. This
   is a commonly seen pattern in Prometheus info metrics.
-- *gauge-random*: correlates to a gauge series that constant changes to a random
+- _gauge-random_: correlates to a gauge series that constant changes to a random
   value. The values is chosen using `rand.Float64`.
-- *counter-one* correlates to a counter that increases by 1 at every interval.
-- *counter-random* correlates to a counter that increases by a random amount
+- _counter-one_ correlates to a counter that increases by 1 at every interval.
+- _counter-random_ correlates to a counter that increases by a random amount
   every interval. The random amount is not constant and is currently chosen
   using `rand.Int()`.
 
 ### Global options
 
 - **replicas**: Replicas is meant to be a stand in for the host label. For each
-value between 0 and the configured replica value, a `bench_replica` label will
-be added and appended to each generated series. This label will also be used for
-queries configured to use regular expressions.
+  value between 0 and the configured replica value, a `bench_replica` label will
+  be added and appended to each generated series. This label will also be used for
+  queries configured to use regular expressions.
 
 ### Queries
 
@@ -142,7 +142,7 @@ series:
         value_prefix: label_value_02
     name: metric_gauge_random_01
     static_labels:
-        static: "true"
+      static: "true"
     type: gauge-random
   - labels:
       - name: label_01
@@ -153,11 +153,11 @@ series:
         value_prefix: label_value_02
     name: metric_gauge_zero_01
     static_labels:
-        static: "true"
+      static: "true"
     type: gauge-zero
 write_options:
-    batch_size: 1000
-    interval: 15s
+  batch_size: 1000
+  interval: 15s
 ```
 
 ## Consistency
@@ -168,4 +168,3 @@ value of the benchtool instance.
 
 This will ensure two `benchtool` processes run with the same id and workload
 config file will result in the same behavior between runs.
-

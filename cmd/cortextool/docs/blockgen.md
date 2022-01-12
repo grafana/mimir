@@ -31,7 +31,7 @@ series:
         value_prefix: label_value_02
     name: metric_gauge_random_01
     static_labels:
-        static: "true"
+      static: "true"
     type: gauge-random
   - labels:
       - name: label_01
@@ -42,10 +42,9 @@ series:
         value_prefix: label_value_02
     name: metric_gauge_zero_01
     static_labels:
-        static: "true"
+      static: "true"
     type: gauge-zero
 ```
-
 
 ## Running it
 

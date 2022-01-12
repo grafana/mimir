@@ -2,13 +2,12 @@
 
 This repo contains tools used for interacting with [Cortex](https://github.com/cortexproject/cortex).
 
-* [benchtool](docs/benchtool.md): A powerful YAML driven tool for benchmarking
+- [benchtool](docs/benchtool.md): A powerful YAML driven tool for benchmarking
   Cortex write and query API.
-* [cortextool](#cortextool): Interacts with user-facing Cortex APIs and backend storage components
-* [chunktool](#chunktool): Interacts with chunks stored and indexed in Cortex storage backends.
-* [logtool](#logtool): Tool which parses Cortex query-frontend logs and formats them for easy analysis.
-* [e2ealerting](docs/e2ealerting.md): Tool that helps measure how long an alerts takes from scrape of sample to Alertmanager notifcation delivery.
-
+- [cortextool](#cortextool): Interacts with user-facing Cortex APIs and backend storage components
+- [chunktool](#chunktool): Interacts with chunks stored and indexed in Cortex storage backends.
+- [logtool](#logtool): Tool which parses Cortex query-frontend logs and formats them for easy analysis.
+- [e2ealerting](docs/e2ealerting.md): Tool that helps measure how long an alerts takes from scrape of sample to Alertmanager notifcation delivery.
 
 # Installation
 
@@ -36,12 +35,12 @@ Config commands interact with the Cortex api and read/create/update/delete user 
 
 #### Configuration
 
-| Env Variables     | Flag      | Description                                                                                                   |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| CORTEX_ADDRESS    | `address` | Address of the API of the desired Cortex cluster.                                                              |
-| CORTEX_API_USER   | `user`    | In cases where the Cortex API is set behind a basic auth gateway, a user can be set as a basic auth user. If empty and CORTEX_API_KEY is set, CORTEX_TENANT_ID will be used instead. |
-| CORTEX_API_KEY    | `key`     | In cases where the Cortex API is set behind a basic auth gateway, a key can be set as a basic auth password. |
-| CORTEX_TENANT_ID | `id`      | The tenant ID of the Cortex instance to interact with.                                                        |
+| Env Variables    | Flag      | Description                                                                                                                                                                          |
+| ---------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CORTEX_ADDRESS   | `address` | Address of the API of the desired Cortex cluster.                                                                                                                                    |
+| CORTEX_API_USER  | `user`    | In cases where the Cortex API is set behind a basic auth gateway, a user can be set as a basic auth user. If empty and CORTEX_API_KEY is set, CORTEX_TENANT_ID will be used instead. |
+| CORTEX_API_KEY   | `key`     | In cases where the Cortex API is set behind a basic auth gateway, a key can be set as a basic auth password.                                                                         |
+| CORTEX_TENANT_ID | `id`      | The tenant ID of the Cortex instance to interact with.                                                                                                                               |
 
 #### Alertmanager
 
@@ -104,6 +103,7 @@ This command prepares a rules file for upload to Cortex. It lints all your PromQ
     cortextool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
 
 There are two flags of note for this command:
+
 - `-i` which allows you to edit in place, otherwise a a new file with a `.output` extension is created with the results of the run.
 - `-l` which allows you specify the label you want you add for your aggregations, it is `cluster` by default.
 
@@ -119,12 +119,11 @@ This commands checks rules against the recommended [best practices](https://prom
 
     cortextool rules check ./example_rules_one.yaml
 
-
 #### Remote Read
 
 Cortex exposes a [Remote Read API] which allows access to the stored series. The `remote-read` subcommand of `cortextool` allows to interact with its API, to find out which series are stored.
 
-[Remote Read API]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
+[remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 
 ##### Remote Read show statistics
 
@@ -148,6 +147,7 @@ cortextool remote-read dump --selector 'up{job="node"}' --address http://demo.ro
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} NaN 1609336924709 # StaleNaN
 [...]
 ```
+
 ##### Remote Read export series into local TSDB
 
 The `remote-read export` command exports all series and samples matching the selector into a local TSDB. This TSDB can then be further analysed with local tooling like `prometheus` and `promtool`.
@@ -181,9 +181,9 @@ The Overrides Exporter allows to continuously export [per tenant configuration o
 
     cortextool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
 
-[override config file]:./pkg/commands/testdata/overrides.yaml
-[presets file]:./pkg/commands/testdata/presets.yaml
-[runtime-config]:https://cortexmetrics.io/docs/configuration/arguments/#runtime-configuration-file
+[override config file]: ./pkg/commands/testdata/overrides.yaml
+[presets file]: ./pkg/commands/testdata/presets.yaml
+[runtime-config]: https://cortexmetrics.io/docs/configuration/arguments/#runtime-configuration-file
 
 #### Generate ACL Headers
 
@@ -204,11 +204,11 @@ This command will run against your Grafana instance and will download its dashbo
 
 ###### Configuration
 
-| Env Variables     | Flag      | Description                                                                                                   |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| GRAFANA_ADDRESS    | `address` | Address of the Grafana instance.                                                              |
-| GRAFANA_API_KEY    | `key`     | The API Key for the Grafana instance. Create a key using the following instructions: https://grafana.com/docs/grafana/latest/http_api/auth/ |
-| __ | `output`      | The output file path. metrics-in-grafana.json by default.  |
+| Env Variables   | Flag      | Description                                                                                                                                 |
+| --------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| GRAFANA_ADDRESS | `address` | Address of the Grafana instance.                                                                                                            |
+| GRAFANA_API_KEY | `key`     | The API Key for the Grafana instance. Create a key using the following instructions: https://grafana.com/docs/grafana/latest/http_api/auth/ |
+| \_\_            | `output`  | The output file path. metrics-in-grafana.json by default.                                                                                   |
 
 ###### Running the command
 
@@ -251,12 +251,12 @@ This command will run against your Grafana Cloud Prometheus instance and will fe
 
 ###### Configuration
 
-| Env Variables     | Flag      | Description                                                                                                   |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| CORTEX_ADDRESS    | `address` | Address of the Prometheus  instance.                                                              |
-| CORTEX_TENANT_ID  | `id`   |  If you're using Grafana Cloud this is your instance ID. |
-|  CORTEX_API_KEY   | `key`   |  If you're using Grafana Cloud this is your API Key. |
-| __ | `output`      | The output file path. metrics-in-ruler.json by default.  |
+| Env Variables    | Flag      | Description                                             |
+| ---------------- | --------- | ------------------------------------------------------- |
+| CORTEX_ADDRESS   | `address` | Address of the Prometheus instance.                     |
+| CORTEX_TENANT_ID | `id`      | If you're using Grafana Cloud this is your instance ID. |
+| CORTEX_API_KEY   | `key`     | If you're using Grafana Cloud this is your API Key.     |
+| \_\_             | `output`  | The output file path. metrics-in-ruler.json by default. |
 
 ###### Running the command
 
@@ -295,14 +295,14 @@ This command will run against your Prometheus / Cloud Prometheus instance. It wi
 
 ###### Configuration
 
-| Env Variables     | Flag      | Description                                                                                                   |
-| ----------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| CORTEX_ADDRESS    | `address` | Address of the Prometheus  instance.                                                              |
-| CORTEX_TENANT_ID  | `id`   |  If you're using Grafana Cloud this is your instance ID. |
-|  CORTEX_API_KEY   | `key`   |  If you're using Grafana Cloud this is your API Key. |
-| __ | `grafana-metrics-file`      | The dashboard metrics input file path. `metrics-in-grafana.json` by default.  |
-| __ | `ruler-metrics-file`      | The rules metrics input file path. `metrics-in-ruler.json` by default.  |
-| __ | `output`      | The output file path. `prometheus-metrics.json` by default.  |
+| Env Variables    | Flag                   | Description                                                                  |
+| ---------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| CORTEX_ADDRESS   | `address`              | Address of the Prometheus instance.                                          |
+| CORTEX_TENANT_ID | `id`                   | If you're using Grafana Cloud this is your instance ID.                      |
+| CORTEX_API_KEY   | `key`                  | If you're using Grafana Cloud this is your API Key.                          |
+| \_\_             | `grafana-metrics-file` | The dashboard metrics input file path. `metrics-in-grafana.json` by default. |
+| \_\_             | `ruler-metrics-file`   | The rules metrics input file path. `metrics-in-ruler.json` by default.       |
+| \_\_             | `output`               | The output file path. `prometheus-metrics.json` by default.                  |
 
 ###### Running the command
 
@@ -410,6 +410,7 @@ Options:
 Feed logs into it using [`logcli`](https://github.com/grafana/loki/blob/master/docs/getting-started/logcli.md) from Loki, [`kubectl`](https://kubernetes.io/docs/reference/kubectl/overview/) for Kubernetes, `cat` from a file, or any other way to get raw logs:
 
 Loki `logcli` example:
+
 ```
 $ logcli query '{cluster="us-central1", name="query-frontend", namespace="dev"}' --limit=5000 --since=3h --forward -o raw | ./logtool -dur 5s
 https://logs-dev-ops-tools1.grafana.net/loki/api/v1/query_range?direction=FORWARD&end=1591119479093405000&limit=5000&query=%7Bcluster%3D%22us-central1%22%2C+name%3D%22query-frontend%22%2C+namespace%3D%22dev%22%7D&start=1591108679093405000
@@ -428,6 +429,7 @@ Timestamp                                TraceID           Length    Duration   
 2020-05-26 13:52:15.771988849 -0400 EDT  2e7473ab10160630  10h33m0s  7.472855362s   (200)   /api/prom/api/v1/query_range
 2020-05-26 13:53:46.712563497 -0400 EDT  761f3221dcdd85de  10h33m0s  11.874296689s  (200)   /api/prom/api/v1/query_range
 ```
+
 ## benchtool
 
 A tool for benchmarking a Prometheus remote-write backend and PromQL compatible
