@@ -25,7 +25,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/middleware"
@@ -558,11 +557,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	}
 
 	// Create a queryable on the fixtures.
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return &querierMock{
-			series: series,
-		}, nil
-	})
+	queryable := storageSeriesQueryable(series)
 
 	// Create a downstream handler serving range queries based on the provided queryable.
 	downstream := &downstreamHandler{

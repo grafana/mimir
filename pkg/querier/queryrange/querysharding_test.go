@@ -97,6 +97,7 @@ func approximatelyEquals(t *testing.T, a, b *PrometheusResponse) {
 		}
 	}
 }
+
 func TestQueryShardingCorrectness(t *testing.T) {
 	var (
 		numSeries          = 1000
@@ -477,11 +478,7 @@ func TestQueryShardingCorrectness(t *testing.T) {
 	}
 
 	// Create a queryable on the fixtures.
-	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return &querierMock{
-			series: series,
-		}, nil
-	})
+	queryable := storageSeriesQueryable(series)
 
 	for testName, testData := range tests {
 		// Change scope to ensure it work fine when test cases are executed concurrently.
@@ -600,6 +597,83 @@ func (b byLabels) Less(i, j int) bool {
 	) < 0
 }
 
+func TestQueryshardingDeterminism(t *testing.T) {
+	const shards = 16
+
+	// These are "evil" floats found in production which are the result of a rate of 1 and 3 requests per 1m5s.
+	// We push them as a gauge here to simplify the test scenario.
+	const (
+		evilFloatA = 0.03298
+		evilFloatB = 0.09894
+	)
+	require.NotEqualf(t,
+		evilFloatA+evilFloatA+evilFloatA,
+		evilFloatA+evilFloatB+evilFloatA,
+		"This test is based on the fact that given a=%f and b=%f, then a+a+b != a+b+a. If that is not true, this test is not testing anything.", evilFloatA, evilFloatB,
+	)
+
+	var (
+		from = time.Date(2022, 1, 1, 0, 0, 0, 0, time.UTC)
+		step = 30 * time.Second
+		to   = from.Add(step)
+	)
+
+	labelsForShard := labelsForShardsGenerator(labels.FromStrings(labels.MetricName, "metric"), shards)
+	storageSeries := []*promql.StorageSeries{
+		newSeries(labelsForShard(0), from, to, step, constant(evilFloatA)),
+		newSeries(labelsForShard(1), from, to, step, constant(evilFloatA)),
+		newSeries(labelsForShard(2), from, to, step, constant(evilFloatB)),
+	}
+
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), newEngine(), mockLimits{totalShards: shards}, prometheus.NewPedanticRegistry())
+	downstream := &downstreamHandler{engine: newEngine(), queryable: storageSeriesQueryable(storageSeries)}
+
+	req := &PrometheusInstantQueryRequest{
+		Path:  "/query",
+		Time:  to.UnixMilli(),
+		Query: `sum(metric)`,
+	}
+
+	var lastVal float64
+	for i := 0; i <= 100; i++ {
+		shardedRes, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+		require.NoError(t, err)
+
+		shardedPrometheusRes := shardedRes.(*PrometheusResponse)
+
+		sampleStreams, err := responseToSamples(shardedPrometheusRes)
+		require.NoError(t, err)
+
+		require.Lenf(t, sampleStreams, 1, "There should be 1 samples stream (query %d)", i)
+		require.Lenf(t, sampleStreams[0].Samples, 1, "There should be 1 sample in the first stream (query %d)", i)
+		val := sampleStreams[0].Samples[0].Value
+
+		if i > 0 {
+			require.Equalf(t, lastVal, val, "Value differs on query %d", i)
+		}
+		lastVal = val
+	}
+}
+
+// labelsForShardsGenerator returns a function that provides labels.Labels for the shard requested
+// A single generator instance generates different label sets.
+func labelsForShardsGenerator(base labels.Labels, shards uint64) func(shard uint64) labels.Labels {
+	i := 0
+	return func(shard uint64) labels.Labels {
+		for {
+			i++
+			ls := make(labels.Labels, len(base)+1)
+			copy(ls, base)
+			ls[len(ls)-1] = labels.Label{Name: "__test_shard_adjuster__", Value: fmt.Sprintf("adjusted to be %s by %d", sharding.FormatShardIDLabelValue(shard, shards), i)}
+			sort.Sort(ls)
+			// If this label value makes this labels combination fall into the desired shard, return it, otherwise keep trying.
+			if ls.Hash()%shards == shard {
+				return ls
+			}
+		}
+	}
+}
+
 // TestQuerySharding_FunctionCorrectness is the old test that probably at some point inspired the TestQuerySharding_Correctness,
 // we keep it here since it adds more test cases.
 func TestQuerySharding_FunctionCorrectness(t *testing.T) {
@@ -700,17 +774,13 @@ func TestQuerySharding_FunctionCorrectness(t *testing.T) {
 		const numShards = 4
 		for _, query := range mkQueries(tc.tpl, tc.fn, tc.rangeQuery, tc.args) {
 			t.Run(query, func(t *testing.T) {
-				queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-					return &querierMock{
-						series: []*promql.StorageSeries{
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, step, factor(5)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, factor(7)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(12)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, step, factor(11)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(8)),
-							newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
-						},
-					}, nil
+				queryable := storageSeriesQueryable([]*promql.StorageSeries{
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "barr"}}, start.Add(-lookbackDelta), end, step, factor(5)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, factor(7)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(12)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bozz"}}, start.Add(-lookbackDelta), end, step, factor(11)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blop"}, {Name: "foo", Value: "buzz"}}, start.Add(-lookbackDelta), end, step, factor(8)),
+					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}, {Name: "baz", Value: "blip"}, {Name: "bar", Value: "blap"}, {Name: "foo", Value: "bazz"}}, start.Add(-lookbackDelta), end, step, arithmeticSequence(10)),
 				})
 
 				req := &PrometheusRangeQueryRequest{
@@ -1050,12 +1120,8 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 		queryableErr = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 			return nil, errors.New("fatal queryable error")
 		})
-		queryable = storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-			return &querierMock{
-				series: []*promql.StorageSeries{
-					newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
-				},
-			}, nil
+		queryable = storageSeriesQueryable([]*promql.StorageSeries{
+			newSeries(labels.Labels{{Name: "__name__", Value: "bar1"}}, start.Add(-lookbackDelta), end, step, factor(5)),
 		})
 		queryableSlow = newMockShardedQueryable(
 			2,
@@ -1465,6 +1531,12 @@ func (h *downstreamHandler) Do(ctx context.Context, r Request) (Response, error)
 	}, nil
 }
 
+func storageSeriesQueryable(series []*promql.StorageSeries) storage.Queryable {
+	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return &querierMock{series: series}, nil
+	})
+}
+
 type querierMock struct {
 	series []*promql.StorageSeries
 }
@@ -1622,6 +1694,13 @@ func stale(from, to time.Time, wrap generator) generator {
 		}
 
 		return v
+	}
+}
+
+// constant returns a generator that generates a constant value
+func constant(value float64) generator {
+	return func(ts int64) float64 {
+		return value
 	}
 }
 

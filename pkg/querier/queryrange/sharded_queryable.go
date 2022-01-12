@@ -107,15 +107,12 @@ func (q *shardedQuerier) Select(_ bool, hints *storage.SelectHints, matchers ...
 // handleEmbeddedQueries concurrently executes the provided queries through the downstream handler.
 // The returned storage.SeriesSet contains sorted series.
 func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.SelectHints) storage.SeriesSet {
-	var (
-		jobs      = concurrency.CreateJobsFromStrings(queries)
-		streamsMx sync.Mutex
-		streams   []SampleStream
-	)
+	streams := make([][]SampleStream, len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
-	err := concurrency.ForEach(q.ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
-		resp, err := q.handler.Do(ctx, q.req.WithQuery(job.(string)))
+	err := concurrency.ForEach(q.ctx, createJobIndexes(len(queries)), len(queries), func(ctx context.Context, job interface{}) error {
+		idx := job.(int)
+		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
 		if err != nil {
 			return err
 		}
@@ -124,13 +121,9 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 		if err != nil {
 			return err
 		}
+		streams[idx] = resStreams // No mutex is needed since each job writes its own index. This is like writing separate variables.
 
 		q.responseHeaders.mergeHeaders(resp.(*PrometheusResponse).Headers)
-
-		streamsMx.Lock()
-		streams = append(streams, resStreams...)
-		streamsMx.Unlock()
-
 		return nil
 	})
 
@@ -154,6 +147,14 @@ func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, stor
 // Close implements storage.LabelQuerier.
 func (q *shardedQuerier) Close() error {
 	return nil
+}
+
+func createJobIndexes(l int) []interface{} {
+	jobs := make([]interface{}, l)
+	for j := 0; j < l; j++ {
+		jobs[j] = j
+	}
+	return jobs
 }
 
 type responseHeadersTracker struct {
@@ -199,9 +200,14 @@ func (t *responseHeadersTracker) getHeaders() []*PrometheusResponseHeader {
 // results.
 //
 // The returned storage.SeriesSet series is sorted.
-func newSeriesSetFromEmbeddedQueriesResults(results []SampleStream, hints *storage.SelectHints) storage.SeriesSet {
+func newSeriesSetFromEmbeddedQueriesResults(results [][]SampleStream, hints *storage.SelectHints) storage.SeriesSet {
+	totalLen := 0
+	for _, r := range results {
+		totalLen += len(r)
+	}
+
 	var (
-		set  = make([]storage.Series, 0, len(results))
+		set  = make([]storage.Series, 0, totalLen)
 		step int64
 	)
 
@@ -210,48 +216,50 @@ func newSeriesSetFromEmbeddedQueriesResults(results []SampleStream, hints *stora
 		step = hints.Step
 	}
 
-	for _, stream := range results {
-		// We add an extra 10 items to account for some stale markers that could be injected.
-		// We're trading a lower chance of reallocation in case stale markers are added for a
-		// slightly higher memory utilisation.
-		samples := make([]model.SamplePair, 0, len(stream.Samples)+10)
+	for _, result := range results {
+		for _, stream := range result {
+			// We add an extra 10 items to account for some stale markers that could be injected.
+			// We're trading a lower chance of reallocation in case stale markers are added for a
+			// slightly higher memory utilisation.
+			samples := make([]model.SamplePair, 0, len(stream.Samples)+10)
 
-		for idx, sample := range stream.Samples {
-			// When an embedded query is executed by PromQL engine, any stale marker in the time-series
-			// data is used the engine to stop applying the lookback delta but the stale marker is removed
-			// from the query results. The result of embedded queries, which we are processing in this function,
-			// is then used as input to run an outer query in the PromQL engine. This data will not contain
-			// the stale marker (because has been removed when running the embedded query) but we still need
-			// the PromQL engine to not apply the lookback delta when there are gaps in the embedded queries
-			// results. For this reason, here we do inject a stale marker at the beginning of each gap in the
-			// embedded queries results.
-			if step > 0 && idx > 0 && sample.TimestampMs > stream.Samples[idx-1].TimestampMs+step {
+			for idx, sample := range stream.Samples {
+				// When an embedded query is executed by PromQL engine, any stale marker in the time-series
+				// data is used the engine to stop applying the lookback delta but the stale marker is removed
+				// from the query results. The result of embedded queries, which we are processing in this function,
+				// is then used as input to run an outer query in the PromQL engine. This data will not contain
+				// the stale marker (because has been removed when running the embedded query) but we still need
+				// the PromQL engine to not apply the lookback delta when there are gaps in the embedded queries
+				// results. For this reason, here we do inject a stale marker at the beginning of each gap in the
+				// embedded queries results.
+				if step > 0 && idx > 0 && sample.TimestampMs > stream.Samples[idx-1].TimestampMs+step {
+					samples = append(samples, model.SamplePair{
+						Timestamp: model.Time(stream.Samples[idx-1].TimestampMs + step),
+						Value:     model.SampleValue(math.Float64frombits(value.StaleNaN)),
+					})
+				}
+
 				samples = append(samples, model.SamplePair{
-					Timestamp: model.Time(stream.Samples[idx-1].TimestampMs + step),
+					Timestamp: model.Time(sample.TimestampMs),
+					Value:     model.SampleValue(sample.Value),
+				})
+			}
+
+			// In case the embedded query processed series which all ended before the end of the query time range,
+			// we don't want the outer query to apply the lookback at the end of the embedded query results. To keep it
+			// simple, it's safe always to add an extra stale marker at the end of the query results.
+			//
+			// This could result in an extra sample (stale marker) after the end of the query time range, but that's
+			// not a problem when running the outer query because it will just be discarded.
+			if len(samples) > 0 && step > 0 {
+				samples = append(samples, model.SamplePair{
+					Timestamp: samples[len(samples)-1].Timestamp + model.Time(step),
 					Value:     model.SampleValue(math.Float64frombits(value.StaleNaN)),
 				})
 			}
 
-			samples = append(samples, model.SamplePair{
-				Timestamp: model.Time(sample.TimestampMs),
-				Value:     model.SampleValue(sample.Value),
-			})
+			set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples))
 		}
-
-		// In case the embedded query processed series which all ended before the end of the query time range,
-		// we don't want the outer query to apply the lookback at the end of the embedded query results. To keep it
-		// simple, it's safe always to add an extra stale marker at the end of the query results.
-		//
-		// This could result into an extra sample (stale marker) after the end of the query time range, but that's
-		// not a problem when running the outer query because it will just be discarded.
-		if len(samples) > 0 && step > 0 {
-			samples = append(samples, model.SamplePair{
-				Timestamp: samples[len(samples)-1].Timestamp + model.Time(step),
-				Value:     model.SampleValue(math.Float64frombits(value.StaleNaN)),
-			})
-		}
-
-		set = append(set, series.NewConcreteSeries(mimirpb.FromLabelAdaptersToLabels(stream.Labels), samples))
 	}
 	return series.NewConcreteSeriesSet(set)
 }
