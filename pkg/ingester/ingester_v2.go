@@ -763,7 +763,7 @@ func (i *Ingester) updateActiveSeries(now time.Time) {
 func (i *Ingester) applyExemplarsSettings() {
 	for _, userID := range i.getTSDBUsers() {
 		globalValue := i.limits.MaxGlobalExemplarsPerUser(userID)
-		localValue := i.limiter.convertGlobalToActualLimit(userID, globalValue)
+		localValue := i.limiter.convertGlobalToLocalLimit(userID, globalValue)
 		// We populate a Config struct with just one value, which is OK
 		// because Head.ApplyConfig only looks at one value.
 		// The other fields in Config are things like Rules, Scrape
@@ -1737,7 +1737,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		instanceSeriesCount: &i.TSDBState.seriesCount,
 	}
 
-	maxExemplars := i.limiter.convertGlobalToActualLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
+	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
 	// Create a new user database
 	db, err := tsdb.Open(udir, userLogger, tsdbPromReg, &tsdb.Options{
 		RetentionDuration:              i.cfg.BlocksStorageConfig.TSDB.Retention.Milliseconds(),
