@@ -4,8 +4,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/grafana/cortex-tools/pkg/analyse"
-	"github.com/grafana/cortex-tools/pkg/rules"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

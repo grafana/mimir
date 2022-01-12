@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/rulefmt"
 
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 )
 
 func TestParseFiles(t *testing.T) {

@@ -3,7 +3,7 @@ package analyse
 import (
 	"sort"
 
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"

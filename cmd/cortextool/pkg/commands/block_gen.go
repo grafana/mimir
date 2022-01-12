@@ -9,9 +9,9 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/cortex-tools/pkg/bench"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/bench"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/tsdb"
 	"gopkg.in/alecthomas/kingpin.v2"

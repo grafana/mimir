@@ -1,6 +1,6 @@
 package rwrulefmt
 
-import "github.com/prometheus/prometheus/pkg/rulefmt"
+import "github.com/prometheus/prometheus/model/rulefmt"
 
 // Wrapper around Prometheus rulefmt.
 

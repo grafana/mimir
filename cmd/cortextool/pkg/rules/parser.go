@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/grafana/loki/pkg/ruler"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
 	yaml "gopkg.in/yaml.v3"
 )

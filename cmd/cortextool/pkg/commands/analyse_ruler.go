@@ -10,8 +10,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/cortex-tools/pkg/analyse"
-	"github.com/grafana/cortex-tools/pkg/client"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/client"
 )
 
 type RulerAnalyseCommand struct {

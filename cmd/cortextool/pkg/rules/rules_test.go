@@ -3,12 +3,12 @@ package rules
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v3"
 	"gotest.tools/assert"
 
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 )
 
 func TestAggregateBy(t *testing.T) {

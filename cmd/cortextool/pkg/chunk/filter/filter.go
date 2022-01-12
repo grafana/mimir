@@ -4,7 +4,7 @@ import (
 	"math"
 	"strings"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/prometheus/common/model"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"

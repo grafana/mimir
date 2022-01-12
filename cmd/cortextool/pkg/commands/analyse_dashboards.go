@@ -8,7 +8,7 @@ import (
 	"github.com/grafana-tools/sdk"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/cortex-tools/pkg/analyse"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
 )
 
 type DashboardAnalyseCommand struct {

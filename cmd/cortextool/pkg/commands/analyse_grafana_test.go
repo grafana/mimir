@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/cortex-tools/pkg/analyse"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
 )
 
 var dashboardMetrics = []string{

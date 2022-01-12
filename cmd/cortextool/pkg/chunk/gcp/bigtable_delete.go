@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 
 	"cloud.google.com/go/bigtable"
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/gcp"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/gcp"
 	ot "github.com/opentracing/opentracing-go"
 	"github.com/sirupsen/logrus"
 
-	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
+	chunkTool "github.com/grafana/mimir/cmd/cortextool/pkg/chunk"
 )
 
 const (

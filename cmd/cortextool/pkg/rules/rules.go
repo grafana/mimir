@@ -5,11 +5,11 @@ import (
 	"strings"
 
 	"github.com/grafana/loki/pkg/logql"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
 
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 )
 
 // RuleNamespace is used to parse a slightly modified prometheus

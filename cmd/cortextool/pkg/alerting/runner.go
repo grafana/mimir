@@ -11,8 +11,8 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/grafana/cortex-tools/pkg/client"
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/client"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 	"github.com/prometheus/client_golang/prometheus"
 	yaml "gopkg.in/yaml.v3"
 )

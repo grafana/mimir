@@ -11,15 +11,15 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 	yamlv3 "gopkg.in/yaml.v3"
 
-	"github.com/grafana/cortex-tools/pkg/client"
-	"github.com/grafana/cortex-tools/pkg/printer"
-	"github.com/grafana/cortex-tools/pkg/rules"
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/client"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/printer"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 )
 
 const (

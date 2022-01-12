@@ -3,7 +3,7 @@ package chunk
 import (
 	"context"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 type Deleter interface {

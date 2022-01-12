@@ -1,7 +1,7 @@
 package writer
 
 import (
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 )
 
 // Map Config File

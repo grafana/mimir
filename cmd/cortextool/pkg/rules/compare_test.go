@@ -3,8 +3,8 @@ package rules
 import (
 	"testing"
 
-	"github.com/grafana/cortex-tools/pkg/rules/rwrulefmt"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	yaml "gopkg.in/yaml.v3"
 )
 

@@ -3,12 +3,12 @@ package migrate
 import (
 	"context"
 
-	"github.com/cortexproject/cortex/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 
-	"github.com/grafana/cortex-tools/pkg/chunk/migrate/reader"
-	"github.com/grafana/cortex-tools/pkg/chunk/migrate/writer"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/chunk/migrate/reader"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/chunk/migrate/writer"
 )
 
 const chunkBufferSize = 1000

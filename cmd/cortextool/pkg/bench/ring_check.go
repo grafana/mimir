@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	ingester_client "github.com/cortexproject/cortex/pkg/ingester/client"
+	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/grafana/dskit/kv/codec"

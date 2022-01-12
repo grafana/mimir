@@ -4,8 +4,8 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/cortex-tools/pkg/analyse"
-	"github.com/grafana/cortex-tools/pkg/rules"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules"
 )
 
 type RuleFileAnalyseCommand struct {

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"sync"
 
-	cortex_chunk "github.com/cortexproject/cortex/pkg/chunk"
-	cortex_storage "github.com/cortexproject/cortex/pkg/chunk/storage"
+	cortex_chunk "github.com/grafana/mimir/pkg/chunk"
+	cortex_storage "github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/sirupsen/logrus"
 
-	"github.com/grafana/cortex-tools/pkg/chunk"
-	"github.com/grafana/cortex-tools/pkg/chunk/storage"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/chunk"
+	"github.com/grafana/mimir/cmd/cortextool/pkg/chunk/storage"
 )
 
 var (

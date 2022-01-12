@@ -6,13 +6,13 @@ import (
 	"io/ioutil"
 
 	"cloud.google.com/go/storage"
-	"github.com/cortexproject/cortex/pkg/chunk"
-	"github.com/cortexproject/cortex/pkg/chunk/gcp"
+	"github.com/grafana/mimir/pkg/chunk"
+	"github.com/grafana/mimir/pkg/chunk/gcp"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"google.golang.org/api/iterator"
 
-	chunkTool "github.com/grafana/cortex-tools/pkg/chunk"
+	chunkTool "github.com/grafana/mimir/cmd/cortextool/pkg/chunk"
 )
 
 type gcsScanner struct {
