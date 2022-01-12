@@ -4,11 +4,12 @@
 
 * [CHANGE] Removed local limit-related flags in favor of global limits. #725
   This removes the following flags:
-  * `distributor.ingestion-rate-strategy` -> use "global" always
-  * `ingester.max-series-per-user` -> use `ingester.max-global-series-per-user` instead
-  * `ingester.max-series-per-metric` -> use `ingester.max-global-series-per-metric` instead
-  * `ingester.max-metadata-per-user` -> use `ingester.max-global-metadata-per-user` instead
-  * `ingester.max-metadata-per-metric` -> use `ingester.max-global-metadata-per-metric` instead
+  * `distributor.ingestion-rate-strategy` -> will now always use the "global" strategy
+  * `ingester.max-series-per-user` -> set `ingester.max-global-series-per-user` to `N` times the existing value of `ingester.max-series-per-user` instead
+  * `ingester.max-series-per-metric` -> set `ingester.max-global-series-per-metric`  to `N` times the existing value of `ingester.max-series-per-metric` instead
+  * `ingester.max-metadata-per-user` -> set `ingester.max-global-metadata-per-user` to `N` times the existing value of `ingester.max-metadata-per-user` instead
+  * `ingester.max-metadata-per-metric` -> set `ingester.max-global-metadata-per-metric` to `N` times the existing value of `ingester.max-metadata-per-metric` instead
+  * In the above notes, `N` refers to the number of ingester replicas
 * [CHANGE] Changed `-ingester.stream-chunks-when-using-blocks` default value from `false` to `true`. #717
 * [CHANGE] Removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
 * [CHANGE] Ruler: endpoints for listing rules (`/api/v1/rules`, `/api/v1/rules/{namespace}`) now return HTTP status code 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. #456
