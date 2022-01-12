@@ -335,7 +335,7 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 	newIngester := func() *Ingester {
 		cfg := defaultIngesterTestConfig(t)
-		// Global limits are computed based on replication factor
+		// Global Ingester limits are computed based on replication factor
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.LifecyclerConfig.RingConfig.ReplicationFactor = 1
@@ -440,7 +440,7 @@ func TestIngesterMetricLimitExceeded(t *testing.T) {
 
 	newIngester := func() *Ingester {
 		cfg := defaultIngesterTestConfig(t)
-		// Global limits are computed based on replication factor
+		// Global Ingester limits are computed based on replication factor
 		// Set RF=1 here to ensure the series and metadata limits
 		// are actually set to 1 instead of 3.
 		cfg.LifecyclerConfig.RingConfig.ReplicationFactor = 1
