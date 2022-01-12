@@ -19,8 +19,6 @@ Incoming samples (writes from Prometheus) are handled by the [distributor](#dist
 
 ## Blocks storage
 
-Mimir supports a block storage engine that stores and queries the time series.
-
 The blocks storage is based on [Prometheus TSDB](https://prometheus.io/docs/prometheus/latest/storage/): it stores each tenant's time series into their own TSDB which write out their series to a on-disk block (defaults to 2h block range periods). Each block is composed by a few files storing the blocks and the block index.
 
 The TSDB block files contain the samples for multiple series. The series inside the blocks are then indexed by a per-block index, which indexes metric names and labels to time series in the block files.

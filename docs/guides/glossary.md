@@ -98,4 +98,4 @@ _See [Tenant](#tenant)._
 
 The Write-Ahead Log (WAL) is an append only log stored on disk used by ingesters to recover their in-memory state after the process gets restarted, either after a clear shutdown or an abruptly termination. The WAL is supported by blocks storage engines.
 
-For more information, see [Ingesters with WAL](../blocks-storage/_index.md#the-write-path) when running **blocks storage**.
+For more information, see [Ingesters with WAL](../blocks-storage/_index.md#the-write-path).
