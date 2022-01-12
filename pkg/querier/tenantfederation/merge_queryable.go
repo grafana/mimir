@@ -7,7 +7,6 @@ package tenantfederation
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 
@@ -228,8 +227,7 @@ type stringSliceFuncJob struct {
 // It doesn't require the output of the stringSliceFunc to be sorted, as results
 // of LabelValues are not sorted.
 func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, tenants map[string]struct{}) ([]string, storage.Warnings, error) {
-	var jobs []interface{}
-
+	jobs := make([]*stringSliceFuncJob, 0, len(m.ids))
 	for pos, id := range m.ids {
 		if tenants != nil {
 			if _, matched := tenants[id]; !matched {
@@ -243,13 +241,8 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 		})
 	}
 
-	run := func(ctx context.Context, jobIntf interface{}) error {
-		job, ok := jobIntf.(*stringSliceFuncJob)
-		if !ok {
-			return fmt.Errorf("unexpected type %T", jobIntf)
-		}
-
-		var err error
+	run := func(ctx context.Context, idx int) (err error) {
+		job := jobs[idx]
 		job.result, job.warnings, err = f(ctx, job.querier)
 		if err != nil {
 			return errors.Wrapf(err, "error querying %s %s", rewriteLabelName(m.idLabelName), job.id)
@@ -258,7 +251,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 		return nil
 	}
 
-	err := concurrency.ForEach(m.ctx, jobs, maxConcurrency, run)
+	err := concurrency.ForEachJob(m.ctx, len(jobs), maxConcurrency, run)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -266,12 +259,7 @@ func (m *mergeQuerier) mergeDistinctStringSliceWithTenants(f stringSliceFunc, te
 	// aggregate warnings and deduplicate string results
 	var warnings storage.Warnings
 	resultMap := make(map[string]struct{})
-	for _, jobIntf := range jobs {
-		job, ok := jobIntf.(*stringSliceFuncJob)
-		if !ok {
-			return nil, nil, fmt.Errorf("unexpected type %T", jobIntf)
-		}
-
+	for _, job := range jobs {
 		for _, e := range job.result {
 			resultMap[e] = struct{}{}
 		}
@@ -312,7 +300,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 	log, ctx := spanlogger.NewWithLogger(m.ctx, m.logger, "mergeQuerier.Select")
 	defer log.Span.Finish()
 	matchedValues, filteredMatchers := filterValuesByMatchers(m.idLabelName, m.ids, matchers...)
-	var jobs = make([]interface{}, len(matchedValues))
+	var jobs = make([]*selectJob, len(matchedValues))
 	var seriesSets = make([]storage.SeriesSet, len(matchedValues))
 	var jobPos int
 	for labelPos := range m.ids {
@@ -327,11 +315,8 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 		jobPos++
 	}
 
-	run := func(ctx context.Context, jobIntf interface{}) error {
-		job, ok := jobIntf.(*selectJob)
-		if !ok {
-			return fmt.Errorf("unexpected type %T", jobIntf)
-		}
+	run := func(ctx context.Context, idx int) error {
+		job := jobs[idx]
 		seriesSets[job.pos] = &addLabelsSeriesSet{
 			upstream: job.querier.Select(sortSeries, hints, filteredMatchers...),
 			labels: labels.Labels{
@@ -344,7 +329,7 @@ func (m *mergeQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 		return nil
 	}
 
-	err := concurrency.ForEach(ctx, jobs, maxConcurrency, run)
+	err := concurrency.ForEachJob(ctx, len(jobs), maxConcurrency, run)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}

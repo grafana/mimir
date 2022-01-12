@@ -772,9 +772,9 @@ func (r *Ruler) getShardedRules(ctx context.Context, userID string) ([]*GroupSta
 
 	// Concurrently fetch rules from all rulers. Since rules are not replicated,
 	// we need all requests to succeed.
-	jobs := concurrency.CreateJobsFromStrings(rulers.GetAddresses())
-	err = concurrency.ForEach(ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
-		addr := job.(string)
+	addrs := rulers.GetAddresses()
+	err = concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
+		addr := addrs[idx]
 
 		rulerClient, err := r.clientsPool.GetClientFor(addr)
 		if err != nil {

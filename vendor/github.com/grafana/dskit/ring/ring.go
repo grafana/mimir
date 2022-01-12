@@ -29,18 +29,6 @@ import (
 const (
 	unhealthy = "Unhealthy"
 
-	// IngesterRingKey is the key under which we store the ingesters ring in the KVStore.
-	IngesterRingKey = "ring"
-
-	// RulerRingKey is the key under which we store the rulers ring in the KVStore.
-	RulerRingKey = "ring"
-
-	// DistributorRingKey is the key under which we store the distributors ring in the KVStore.
-	DistributorRingKey = "distributor"
-
-	// CompactorRingKey is the key under which we store the compactors ring in the KVStore.
-	CompactorRingKey = "compactor"
-
 	// GetBufferSize is the suggested size of buffers passed to Ring.Get(). It's based on
 	// a typical replication factor 3, plus extra room for a JOINING + LEAVING instance.
 	GetBufferSize = 5

@@ -364,8 +364,8 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	// Once we have a plan we need to download the actual data.
 	downloadBegin := time.Now()
 
-	err = concurrency.ForEach(ctx, convertBlocksToForEachJobs(toCompact), c.blockSyncConcurrency, func(ctx context.Context, job interface{}) error {
-		meta := job.(*metadata.Meta)
+	err = concurrency.ForEachJob(ctx, len(toCompact), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		meta := toCompact[idx]
 
 		// Must be the same as in blocksToCompactDirs.
 		bdir := filepath.Join(subDir, meta.ULID.String())
@@ -442,19 +442,19 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	uploadBegin := time.Now()
 	uploadedBlocks := atomic.NewInt64(0)
 
-	err = concurrency.ForEach(ctx, convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger), c.blockSyncConcurrency, func(ctx context.Context, j interface{}) error {
-		shardID := j.(ulidWithShardIndex).shardIndex
-		compID := j.(ulidWithShardIndex).ulid
+	blocksToUpload := convertCompactionResultToForEachJobs(compIDs, job.UseSplitting(), jobLogger)
+	err = concurrency.ForEachJob(ctx, len(blocksToUpload), c.blockSyncConcurrency, func(ctx context.Context, idx int) error {
+		blockToUpload := blocksToUpload[idx]
 
 		uploadedBlocks.Inc()
 
-		bdir := filepath.Join(subDir, compID.String())
+		bdir := filepath.Join(subDir, blockToUpload.ulid.String())
 		index := filepath.Join(bdir, block.IndexFilename)
 
 		// When splitting is enabled, we need to inject the shard ID as external label.
 		newLabels := job.Labels().Map()
 		if job.UseSplitting() {
-			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(shardID), uint64(job.SplittingShards()))
+			newLabels[mimit_tsdb.CompactorShardIDExternalLabel] = sharding.FormatShardIDLabelValue(uint64(blockToUpload.shardIndex), uint64(job.SplittingShards()))
 		}
 
 		newMeta, err := metadata.InjectThanos(jobLogger, bdir, metadata.Thanos{
@@ -478,11 +478,11 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 
 		begin := time.Now()
 		if err := block.Upload(ctx, jobLogger, c.bkt, bdir, job.hashFunc); err != nil {
-			return errors.Wrapf(err, "upload of %s failed", compID)
+			return errors.Wrapf(err, "upload of %s failed", blockToUpload.ulid)
 		}
 
 		elapsed := time.Since(begin)
-		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", compID, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
+		level.Info(jobLogger).Log("msg", "uploaded block", "result_block", blockToUpload.ulid, "duration", elapsed, "duration_ms", elapsed.Milliseconds(), "external_labels", labels.FromMap(newLabels))
 		return nil
 	})
 	if err != nil {
@@ -505,18 +505,10 @@ func (c *BucketCompactor) runCompactionJob(ctx context.Context, job *Job) (shoul
 	return true, compIDs, nil
 }
 
-func convertBlocksToForEachJobs(input []*metadata.Meta) []interface{} {
-	result := make([]interface{}, len(input))
-	for ix := range input {
-		result[ix] = input[ix]
-	}
-	return result
-}
-
-// Converts ULIDs from compaction to interface{}, and also filters out empty ULIDs. When handling result of split
-// compactions, shard index is index in the slice returned by compaction.
-func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob bool, jobLogger log.Logger) []interface{} {
-	result := make([]interface{}, 0, len(compactedBlocks))
+// convertCompactionResultToForEachJobs filters out empty ULIDs.
+// When handling result of split compactions, shard index is index in the slice returned by compaction.
+func convertCompactionResultToForEachJobs(compactedBlocks []ulid.ULID, splitJob bool, jobLogger log.Logger) []ulidWithShardIndex {
+	result := make([]ulidWithShardIndex, 0, len(compactedBlocks))
 
 	for ix, id := range compactedBlocks {
 		// Skip if it's an empty block.

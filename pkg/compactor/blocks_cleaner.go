@@ -364,7 +364,7 @@ const deleteBlocksConcurrency = 16
 
 // Concurrently deletes blocks marked for deletion, and removes blocks from index.
 func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *bucketindex.Index, userBucket objstore.Bucket, userLogger log.Logger) {
-	blocksToDelete := make([]interface{}, 0, len(idx.BlockDeletionMarks))
+	blocksToDelete := make([]ulid.ULID, 0, len(idx.BlockDeletionMarks))
 
 	// Collect blocks marked for deletion into buffered channel.
 	for _, mark := range idx.BlockDeletionMarks {
@@ -377,8 +377,8 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 	var mu sync.Mutex
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
-	_ = concurrency.ForEach(ctx, blocksToDelete, deleteBlocksConcurrency, func(ctx context.Context, job interface{}) error {
-		blockID := job.(ulid.ULID)
+	_ = concurrency.ForEachJob(ctx, len(blocksToDelete), deleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
+		blockID := blocksToDelete[jobIdx]
 
 		if err := block.Delete(ctx, userLogger, userBucket, blockID); err != nil {
 			c.blocksFailedTotal.Inc()
@@ -401,7 +401,7 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 // and index are updated accordingly.
 func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map[ulid.ULID]error, idx *bucketindex.Index, userBucket objstore.InstrumentedBucket, userLogger log.Logger) {
 	// Collect all blocks with missing meta.json into buffered channel.
-	blocks := make([]interface{}, 0, len(partials))
+	blocks := make([]ulid.ULID, 0, len(partials))
 
 	for blockID, blockErr := range partials {
 		// We can safely delete only blocks which are partial because the meta.json is missing.
@@ -415,8 +415,8 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	var mu sync.Mutex
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
-	_ = concurrency.ForEach(ctx, blocks, deleteBlocksConcurrency, func(ctx context.Context, job interface{}) error {
-		blockID := job.(ulid.ULID)
+	_ = concurrency.ForEachJob(ctx, len(blocks), deleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
+		blockID := blocks[jobIdx]
 
 		// We can safely delete only partial blocks with a deletion mark.
 		err := metadata.ReadMarker(ctx, userLogger, userBucket, blockID.String(), &metadata.DeletionMark{})

@@ -1141,9 +1141,8 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 	)
 
 	// Note that the jobs swallow the errors - this is because we want to give each replica a chance to respond.
-	jobs := concurrency.CreateJobsFromStrings(addrs)
-	err = concurrency.ForEach(ctx, jobs, len(jobs), func(ctx context.Context, job interface{}) error {
-		addr := job.(string)
+	err = concurrency.ForEachJob(ctx, len(addrs), len(addrs), func(ctx context.Context, idx int) error {
+		addr := addrs[idx]
 		level.Debug(am.logger).Log("msg", "contacting replica for full state", "user", userID, "addr", addr)
 
 		c, err := am.alertmanagerClientsPool.GetClientFor(addr)
@@ -1180,7 +1179,7 @@ func (am *MultitenantAlertmanager) ReadFullStateForUser(ctx context.Context, use
 	}
 
 	// If all replicas do not know the user, propagate that outcome for the client to decide what to do.
-	if notFound == len(jobs) {
+	if notFound == len(addrs) {
 		return nil, errAllReplicasUserNotFound
 	}
 
