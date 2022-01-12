@@ -51,7 +51,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_query_frontend_queue_duration_seconds', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_series', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_chunks', ['cluster', 'job']) +
-          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']),
+          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']) +
+          utils.histogramRules('cortex_ingester_queried_exemplars', ['cluster', 'job']),
       },
       {
         name: 'cortex_received_samples',
@@ -60,6 +61,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
             record: '%(group_prefix_jobs)s:cortex_distributor_received_samples:rate5m' % _config,
             expr: |||
               sum by (%(group_by_job)s) (rate(cortex_distributor_received_samples_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'cortex_received_exemplars',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_distributor_received_exemplars_total[5m]))
             ||| % _config,
           },
         ],
