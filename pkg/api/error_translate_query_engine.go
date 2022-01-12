@@ -13,7 +13,7 @@ import (
 
 var (
 	errValidationAtModifierDisabled     = errors.New("@ modifier is disabled, use -querier.at-modifier-enabled to enable it")
-	errValidationNegativeOffsetDisabled = errors.New("negative offsets are not supported in Mimir")
+	errValidationNegativeOffsetDisabled = errors.New("negative offsets are not supported")
 )
 
 type errorTranslateQueryEngine struct {
