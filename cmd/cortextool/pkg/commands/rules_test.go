@@ -3,10 +3,11 @@ package commands
 import (
 	"testing"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/stretchr/testify/assert"
 	"gopkg.in/yaml.v3"
+
+	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
 )
 
 func TestCheckDuplicates(t *testing.T) {
