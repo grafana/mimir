@@ -110,8 +110,7 @@ func (q *shardedQuerier) handleEmbeddedQueries(queries []string, hints *storage.
 	streams := make([][]SampleStream, len(queries))
 
 	// Concurrently run each query. It breaks and cancels each worker context on first error.
-	err := concurrency.ForEach(q.ctx, createJobIndexes(len(queries)), len(queries), func(ctx context.Context, job interface{}) error {
-		idx := job.(int)
+	err := concurrency.ForEachJob(q.ctx, len(queries), len(queries), func(ctx context.Context, idx int) error {
 		resp, err := q.handler.Do(ctx, q.req.WithQuery(queries[idx]))
 		if err != nil {
 			return err
@@ -147,14 +146,6 @@ func (q *shardedQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, stor
 // Close implements storage.LabelQuerier.
 func (q *shardedQuerier) Close() error {
 	return nil
-}
-
-func createJobIndexes(l int) []interface{} {
-	jobs := make([]interface{}, l)
-	for j := 0; j < l; j++ {
-		jobs[j] = j
-	}
-	return jobs
 }
 
 type responseHeadersTracker struct {

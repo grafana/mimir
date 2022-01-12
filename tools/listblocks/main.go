@@ -149,8 +149,8 @@ func fetchDeletionTimes(ctx context.Context, bkt objstore.Bucket, deletionMarker
 	mu := sync.Mutex{}
 	times := map[ulid.ULID]time.Time{}
 
-	return times, concurrency.ForEach(ctx, concurrency.CreateJobsFromStrings(deletionMarkers), concurrencyLimit, func(ctx context.Context, job interface{}) error {
-		r, err := bkt.Get(ctx, job.(string))
+	return times, concurrency.ForEachJob(ctx, len(deletionMarkers), concurrencyLimit, func(ctx context.Context, idx int) error {
+		r, err := bkt.Get(ctx, deletionMarkers[idx])
 		if err != nil {
 			if bkt.IsObjNotFoundErr(err) {
 				return nil
@@ -179,8 +179,8 @@ func fetchMetas(ctx context.Context, bkt objstore.Bucket, metaFiles []string) (m
 	mu := sync.Mutex{}
 	metas := map[ulid.ULID]*metadata.Meta{}
 
-	return metas, concurrency.ForEach(ctx, concurrency.CreateJobsFromStrings(metaFiles), concurrencyLimit, func(ctx context.Context, job interface{}) error {
-		r, err := bkt.Get(ctx, job.(string))
+	return metas, concurrency.ForEachJob(ctx, len(metaFiles), concurrencyLimit, func(ctx context.Context, idx int) error {
+		r, err := bkt.Get(ctx, metaFiles[idx])
 		if err != nil {
 			if bkt.IsObjNotFoundErr(err) {
 				return nil

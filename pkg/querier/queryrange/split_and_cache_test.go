@@ -566,7 +566,7 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	}
 
 	// Generate some random requests.
-	reqs := make([]interface{}, 0, numQueries)
+	reqs := make([]Request, 0, numQueries)
 	for q := 0; q < numQueries; q++ {
 		// Generate a random time range within min/max time.
 		startTime := minTime.Add(time.Duration(rand.Int63n(maxTime.Sub(minTime).Milliseconds())) * time.Millisecond)
@@ -585,15 +585,14 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 	// Run the query without the split and cache middleware and store it as expected result.
 	expectedResMx := sync.Mutex{}
 	expectedRes := make(map[int64]Response, len(reqs))
-	require.NoError(t, concurrency.ForEach(ctx, reqs, len(reqs), func(ctx context.Context, job interface{}) error {
-		req := job.(Request)
-		res, err := downstream.Do(ctx, req)
+	require.NoError(t, concurrency.ForEachJob(ctx, len(reqs), len(reqs), func(ctx context.Context, idx int) error {
+		res, err := downstream.Do(ctx, reqs[idx])
 		if err != nil {
 			return err
 		}
 
 		expectedResMx.Lock()
-		expectedRes[req.GetId()] = res
+		expectedRes[reqs[idx].GetId()] = res
 		expectedResMx.Unlock()
 
 		return nil
@@ -628,12 +627,10 @@ func TestSplitAndCacheMiddleware_ResultsCacheFuzzy(t *testing.T) {
 				).Wrap(downstream)
 
 				// Run requests honoring concurrency.
-				require.NoError(t, concurrency.ForEach(ctx, reqs, maxConcurrency, func(ctx context.Context, job interface{}) error {
-					req := job.(Request)
-
-					actual, err := mw.Do(ctx, req)
+				require.NoError(t, concurrency.ForEachJob(ctx, len(reqs), maxConcurrency, func(ctx context.Context, idx int) error {
+					actual, err := mw.Do(ctx, reqs[idx])
 					require.NoError(t, err)
-					require.Equal(t, expectedRes[req.GetId()], actual)
+					require.Equal(t, expectedRes[reqs[idx].GetId()], actual)
 
 					return nil
 				}))
