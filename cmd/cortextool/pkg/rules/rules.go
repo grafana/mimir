@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/grafana/loki/pkg/logql"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql/parser"
 	log "github.com/sirupsen/logrus"
@@ -34,11 +33,6 @@ func (r RuleNamespace) LintExpressions(backend string) (int, int, error) {
 		queryLanguage = "PromQL"
 		parseFn = func(s string) (fmt.Stringer, error) {
 			return parser.ParseExpr(s)
-		}
-	case LokiBackend:
-		queryLanguage = "LogQL"
-		parseFn = func(s string) (fmt.Stringer, error) {
-			return logql.ParseExpr(s)
 		}
 	default:
 		return 0, 0, errInvalidBackend

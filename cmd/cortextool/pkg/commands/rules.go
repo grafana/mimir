@@ -38,8 +38,8 @@ var (
 		Help:      "The timestamp of the last successful rule load.",
 	})
 
-	backends = []string{rules.CortexBackend, rules.LokiBackend} // list of supported backend types
-	formats  = []string{"json", "yaml", "table"}                // list of supported formats for the list command
+	backends = []string{rules.CortexBackend}     // list of supported backend types
+	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
 
 // RuleCommand configures and executes rule related cortex operations
@@ -239,11 +239,6 @@ func (r *RuleCommand) setup(k *kingpin.ParseContext) error {
 		ruleLoadTimestamp,
 		ruleLoadSuccessTimestamp,
 	)
-
-	// Loki's non-legacy route does not match Cortex, but the legacy one does.
-	if r.Backend == rules.LokiBackend {
-		r.ClientConfig.UseLegacyRoutes = true
-	}
 
 	cli, err := client.New(r.ClientConfig)
 	if err != nil {
