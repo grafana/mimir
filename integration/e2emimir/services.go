@@ -76,6 +76,8 @@ func NewDistributorWithConfigFile(name, consulAddress, configFile string, flags 
 				// Configure the ingesters ring backend
 				"-ring.store":      "consul",
 				"-consul.hostname": consulAddress,
+				// Configure the distributor ring backend
+				"-distributor.ring.store": "memberlist",
 			}, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
@@ -337,6 +339,7 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 			"-querier.worker-parallelism":                 "1",
 			// Distributor.
 			"-distributor.replication-factor": "1",
+			"-distributor.ring.store":         "memberlist",
 			// Ingester.
 			"-ingester.final-sleep":        "0s",
 			"-ingester.join-after":         "0s",
