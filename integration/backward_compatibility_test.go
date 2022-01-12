@@ -2,6 +2,7 @@
 // Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/backward_compatibility_test.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
+//go:build requires_docker
 // +build requires_docker
 
 package integration
@@ -108,7 +109,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 	assert.NoError(t, s.StartAndWaitReady(distributor, ingester))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
 	now := time.Now()
@@ -128,7 +130,8 @@ func runBackwardCompatibilityTest(t *testing.T, previousImage string, flagsForOl
 	require.NoError(t, s.StartAndWaitReady(ingester))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 
 	checkQueries(t,
 		consul,
@@ -165,7 +168,8 @@ func runNewDistributorsCanPushToOldIngestersWithReplication(t *testing.T, previo
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester1, ingester2, ingester3))
 
 	// Wait until the distributor has updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(1536), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for each ingester and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(3*512+1), "cortex_ring_tokens_total"))
 
 	// Push some series to Mimir.
 	now := time.Now()
