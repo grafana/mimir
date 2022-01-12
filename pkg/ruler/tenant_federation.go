@@ -27,16 +27,16 @@ type contextKey int
 
 const federatedGroupSourceTenants contextKey = 1
 
-// federatedGroupContextFunc prepares the context for federated rules.
+// FederatedGroupContextFunc prepares the context for federated rules.
 // It injects g.SourceTenants() in to the context to be used by mergeQuerier.
-func federatedGroupContextFunc(ctx context.Context, g *rules.Group) context.Context {
+func FederatedGroupContextFunc(ctx context.Context, g *rules.Group) context.Context {
 	if len(g.SourceTenants()) == 0 {
 		return ctx
 	}
 	return context.WithValue(ctx, federatedGroupSourceTenants, g.SourceTenants())
 }
 
-func tenantFederationQueryFunc(regularQueryable, federatedQueryable rules.QueryFunc) rules.QueryFunc {
+func TenantFederationQueryFunc(regularQueryable, federatedQueryable rules.QueryFunc) rules.QueryFunc {
 	return func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
 		if sourceTenants, _ := ctx.Value(federatedGroupSourceTenants).([]string); len(sourceTenants) > 0 {
 			ctx = user.InjectOrgID(ctx, tenant.JoinTenantIDs(sourceTenants))
