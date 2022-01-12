@@ -759,8 +759,9 @@ func TestRulerFederatedRules(t *testing.T) {
 	querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 	require.NoError(t, s.StartAndWaitReady(distributor, ingester, ruler, querier))
 
-	// Wait until both the distributor and ruler are ready.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// Wait until both the distributor and ruler are ready
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor rin
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, ruler.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 
 	// isolatedTestCase prefixes all the tenant IDs in the testCase with "run-<n>-"
