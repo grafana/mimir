@@ -45,6 +45,17 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
+        $.panel('Exemplars / sec') +
+        $.statPanel(
+          'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})' % (
+            $._config {
+              job: $.jobMatcher($._config.job_names.distributor),
+            }
+          ),
+          format='short'
+        )
+      )
+      .addPanel(
         local title = 'In-memory Series';
         $.panel(title) +
         $.statPanel(|||
