@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/mimir/pkg/storage/lazyquery"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/flagext"
@@ -31,7 +33,6 @@ import (
 	"github.com/grafana/mimir/pkg/querier/chunkstore"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/iterators"
-	"github.com/grafana/mimir/pkg/querier/lazyquery"
 	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
