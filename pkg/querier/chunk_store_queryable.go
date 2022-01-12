@@ -8,6 +8,8 @@ package querier
 import (
 	"context"
 
+	seriesset "github.com/grafana/mimir/pkg/storage/series"
+
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -16,7 +18,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/chunkstore"
-	seriesset "github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/tenant"
 )
 

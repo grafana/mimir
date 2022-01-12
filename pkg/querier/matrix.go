@@ -9,8 +9,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/grafana/mimir/pkg/storage/series"
+
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/util"
 )
 

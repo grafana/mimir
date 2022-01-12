@@ -11,6 +11,8 @@ import (
 	"math"
 	"sync"
 
+	"github.com/grafana/mimir/pkg/storage/series"
+
 	"github.com/grafana/dskit/concurrency"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
@@ -21,7 +23,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/queryrange/astmapper"
-	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/util"
 )
 

@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/grafana/mimir/pkg/storage/series"
+
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -24,7 +26,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/series"
 )
 
 func TestRemoteReadHandler(t *testing.T) {

@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/grafana/mimir/pkg/storage/series"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/types"
@@ -37,7 +39,6 @@ import (
 	grpc_metadata "google.golang.org/grpc/metadata"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/querier/series"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/sharding"
