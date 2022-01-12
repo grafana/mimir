@@ -206,7 +206,7 @@ If you find the propagation to be too slow, there are some tuning possibilities 
 - Decrease push/pull sync interval (default 30s)
 - Increase retransmit multiplication factor (default 4)
 
-To find propagation delay, you can use `mimir_ring_oldest_member_timestamp{state="ACTIVE"}` metric.
+To find propagation delay, you can use `cortex_ring_oldest_member_timestamp{state="ACTIVE"}` metric.
 
 Flags for configuring KV store based on memberlist library:
 
@@ -267,7 +267,7 @@ Multi KV has following parameters:
 - `multi.primary` - name of primary KV store. Same values as in `ring.store` are supported, except `multi`.
 - `multi.secondary` - name of secondary KV store.
 - `multi.mirror-enabled` - enable mirroring of values to secondary store, defaults to true
-- `multi.mirror-timeout` - wait max this time to write to secondary store to finish. Default to 2 seconds. Errors writing to secondary store are not reported to caller, but are logged and also reported via `mimir_multikv_mirror_write_errors_total` metric.
+- `multi.mirror-timeout` - wait max this time to write to secondary store to finish. Default to 2 seconds. Errors writing to secondary store are not reported to caller, but are logged and also reported via `cortex_multikv_mirror_write_errors_total` metric.
 
 Multi KV also reacts on changes done via runtime configuration. It uses this section:
 
