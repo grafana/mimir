@@ -51,7 +51,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           utils.histogramRules('cortex_query_frontend_queue_duration_seconds', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_series', ['cluster', 'job']) +
           utils.histogramRules('cortex_ingester_queried_chunks', ['cluster', 'job']) +
-          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']),
+          utils.histogramRules('cortex_ingester_queried_samples', ['cluster', 'job']) +
+          utils.histogramRules('cortex_ingester_queried_exemplars', ['cluster', 'job']),
       },
       {
         name: 'cortex_received_samples',

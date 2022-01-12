@@ -138,6 +138,11 @@ local utils = import 'mixin-utils/utils.libsonnet';
         utils.latencyRecordingRulePanel('cortex_ingester_queried_samples', $.jobSelector($._config.job_names.ingester), multiplier=1) +
         { yaxes: $.yaxes('short') },
       )
+      .addPanel(
+        $.panel('Exemplars per Query') +
+        utils.latencyRecordingRulePanel('cortex_ingester_queried_exemplars', $.jobSelector($._config.job_names.ingester), multiplier=1) +
+        { yaxes: $.yaxes('short') },
+      )
     )
     .addRow(
       $.row('Querier')
