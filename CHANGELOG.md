@@ -3,6 +3,7 @@
 ## Mimir - main / unreleased
 
 * [CHANGE] Removed local limit-related flags in favor of global limits. #725
+  The distributor ring is now required, and can be configured via the `distributor.ring.*` flags.
   This removes the following flags:
   * `distributor.ingestion-rate-strategy` -> will now always use the "global" strategy
   * `ingester.max-series-per-user` -> set `ingester.max-global-series-per-user` to `N` times the existing value of `ingester.max-series-per-user` instead
