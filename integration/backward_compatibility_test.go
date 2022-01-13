@@ -22,15 +22,6 @@ import (
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 
-var (
-	// If you change the image tag, remember to update it in the preloading done
-	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
-	//nolint:unused
-	defaultPreviousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.11.0": nil,
-	}
-)
-
 // previousVersionImages returns a list of previous image version to test backwards
 // compatibility against. If MIMIR_PREVIOIS_IMAGES is set to a comma separted list of image versions,
 // then those will be used instead of the default versions. Note that the overriding of flags
@@ -49,7 +40,7 @@ func previousVersionImages() map[string]func(map[string]string) map[string]strin
 		return previousVersionImages
 	}
 
-	return defaultPreviousVersionImages
+	return DefaultPreviousVersionImages
 }
 
 func TestBackwardCompatibility(t *testing.T) {
