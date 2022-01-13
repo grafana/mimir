@@ -2021,43 +2021,6 @@ aws:
     # CLI flag: -dynamodb.throttle-limit
     [throttle_limit: <float> | default = 10]
 
-    metrics:
-      # Use metrics-based autoscaling, via this query URL
-      # CLI flag: -metrics.url
-      [url: <string> | default = ""]
-
-      # Queue length above which we will scale up capacity
-      # CLI flag: -metrics.target-queue-length
-      [target_queue_length: <int> | default = 100000]
-
-      # Scale up capacity by this multiple
-      # CLI flag: -metrics.scale-up-factor
-      [scale_up_factor: <float> | default = 1.3]
-
-      # Ignore throttling below this level (rate per second)
-      # CLI flag: -metrics.ignore-throttle-below
-      [ignore_throttle_below: <float> | default = 1]
-
-      # query to fetch ingester queue length
-      # CLI flag: -metrics.queue-length-query
-      [queue_length_query: <string> | default = "sum(avg_over_time(cortex_ingester_flush_queue_length{job=\"cortex/ingester\"}[2m]))"]
-
-      # query to fetch throttle rates per table
-      # CLI flag: -metrics.write-throttle-query
-      [write_throttle_query: <string> | default = "sum(rate(cortex_dynamo_throttled_total{operation=\"DynamoDB.BatchWriteItem\"}[1m])) by (table) > 0"]
-
-      # query to fetch write capacity usage per table
-      # CLI flag: -metrics.usage-query
-      [write_usage_query: <string> | default = "sum(rate(cortex_dynamo_consumed_capacity_total{operation=\"DynamoDB.BatchWriteItem\"}[15m])) by (table) > 0"]
-
-      # query to fetch read capacity usage per table
-      # CLI flag: -metrics.read-usage-query
-      [read_usage_query: <string> | default = "sum(rate(cortex_dynamo_consumed_capacity_total{operation=\"DynamoDB.QueryPages\"}[1h])) by (table) > 0"]
-
-      # query to fetch read errors per table
-      # CLI flag: -metrics.read-error-query
-      [read_error_query: <string> | default = "sum(increase(cortex_dynamo_failures_total{operation=\"DynamoDB.QueryPages\",error=\"ProvisionedThroughputExceededException\"}[1m])) by (table) > 0"]
-
     # Number of chunks to group together to parallelize fetches (zero to
     # disable)
     # CLI flag: -dynamodb.chunk-gang-size

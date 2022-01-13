@@ -12,7 +12,6 @@
     ingester: self.cortex,
     querier: self.cortex,
     query_frontend: self.cortex,
-    tableManager: self.cortex,
     compactor: self.cortex,
     flusher: self.cortex,
     ruler: self.cortex,

@@ -5,18 +5,6 @@
 
 package chunk
 
-import "context"
-
-// TableClient is a client for telling Dynamo what to do with tables.
-type TableClient interface {
-	ListTables(ctx context.Context) ([]string, error)
-	CreateTable(ctx context.Context, desc TableDesc) error
-	DeleteTable(ctx context.Context, name string) error
-	DescribeTable(ctx context.Context, name string) (desc TableDesc, isActive bool, err error)
-	UpdateTable(ctx context.Context, current, expected TableDesc) error
-	Stop()
-}
-
 // TableDesc describes a table.
 type TableDesc struct {
 	Name              string
@@ -59,9 +47,3 @@ func (desc TableDesc) Equals(other TableDesc) bool {
 
 	return true
 }
-
-type byName []TableDesc
-
-func (a byName) Len() int           { return len(a) }
-func (a byName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a byName) Less(i, j int) bool { return a[i].Name < a[j].Name }
