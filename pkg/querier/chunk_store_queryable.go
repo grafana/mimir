@@ -16,7 +16,7 @@ import (
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/querier/chunkstore"
-	seriesset "github.com/grafana/mimir/pkg/querier/series"
+	seriesset "github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/tenant"
 )
 
