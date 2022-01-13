@@ -1156,7 +1156,7 @@ func TestQuerySharding_EngineErrorMapping(t *testing.T) {
 		Start: util.TimeToMillis(start),
 		End:   util.TimeToMillis(end),
 		Step:  step.Milliseconds(),
-		Query: `sum by (group_1) (metric_counter) - on(group_1) group_right(group_2) (sum by (group_1,group_2) (metric_counter))`,
+		Query: `sum by (group_1) (metric_counter) - on(group_1) group_right(unique) (sum by (group_1,unique) (metric_counter))`,
 	}
 
 	downstream := &downstreamHandler{engine: newEngine(), queryable: queryable}
