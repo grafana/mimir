@@ -389,7 +389,9 @@ func TestQuerierWithBlocksStorageRunningInSingleBinaryMode(t *testing.T) {
 				"-ring.store":      "consul",
 				"-consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Distributor.
-				"-distributor.replication-factor": strconv.FormatInt(seriesReplicationFactor, 10),
+				"-distributor.replication-factor":   strconv.FormatInt(seriesReplicationFactor, 10),
+				"-distributor.ring.store":           "consul",
+				"-distributor.ring.consul.hostname": consul.NetworkHTTPEndpoint(),
 				// Store-gateway.
 				"-store-gateway.sharding-enabled":                 strconv.FormatBool(testCfg.blocksShardingEnabled),
 				"-store-gateway.sharding-ring.store":              "consul",
