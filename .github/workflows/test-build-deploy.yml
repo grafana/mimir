@@ -202,12 +202,7 @@ jobs:
         # We download docker images used by integration tests so that all images are available
         # locally and the download time doesn't account in the test execution time, which is subject
         # to a timeout
-        run: |
-          docker pull minio/minio:RELEASE.2021-10-13T00-23-17Z
-          docker pull consul:1.8.15
-          docker pull gcr.io/etcd-development/etcd:v3.4.13
-          docker pull quay.io/cortexproject/cortex:v1.11.0
-          docker pull memcached:1.6.12
+        run: go run ./tools/pre-pull-images | xargs -n1 docker pull
       - name: Integration Tests
         run: |
           export IMAGE_TAG=$(make image-tag)
