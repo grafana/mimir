@@ -77,9 +77,6 @@ storage:
   delete_store:
     store: boltdb
 
-purger:
-  object_store_type: filesystem
-
 frontend_worker:
   # Configure the frontend worker in the querier to match worker count
   # to max_concurrent on the queriers.

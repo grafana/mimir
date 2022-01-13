@@ -168,7 +168,7 @@ func NewQuerierHandler(
 	exemplarQueryable storage.ExemplarQueryable,
 	engine *promql.Engine,
 	distributor Distributor,
-	tombstonesLoader *purger.TombstonesLoader,
+	tombstonesLoader *purger.NoopTombstonesLoader,
 	reg prometheus.Registerer,
 	logger log.Logger,
 	limits *validation.Overrides,
