@@ -14,14 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 

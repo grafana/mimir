@@ -16,12 +16,12 @@ import (
 	"time"
 
 	"github.com/grafana/dskit/backoff"
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/integration/ca"
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 

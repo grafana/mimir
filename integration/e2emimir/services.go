@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grafana/mimir/integration/e2e"
+	"github.com/grafana/e2e"
 )
 
 const (

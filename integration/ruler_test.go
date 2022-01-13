@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -31,8 +33,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/integration/ca"
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 

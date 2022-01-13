@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2ecache "github.com/grafana/e2e/cache"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2ecache "github.com/grafana/mimir/integration/e2e/cache"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 

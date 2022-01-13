@@ -12,11 +12,11 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/grafana/e2e"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/runutil"
 
-	"github.com/grafana/mimir/integration/e2e"
 	"github.com/grafana/mimir/integration/e2emimir"
 )
 

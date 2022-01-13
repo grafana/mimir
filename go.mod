@@ -29,6 +29,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/dskit v0.0.0-20220112093026-95274ccc858d
+	github.com/grafana/e2e v0.1.0
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/json-iterator/go v1.1.12
 	github.com/leanovate/gopter v0.2.4
@@ -44,12 +45,12 @@ require (
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.32.1
-	github.com/prometheus/prometheus v1.8.2-0.20211119115433-692a54649ed7
+	github.com/prometheus/prometheus v1.8.2-0.20211217191541-41f1a8125e66
 	github.com/segmentio/fasthash v0.0.0-20180216231524-a72b379d632e
 	github.com/sony/gobreaker v0.4.1
 	github.com/spf13/afero v1.6.0
 	github.com/stretchr/testify v1.7.0
-	github.com/thanos-io/thanos v0.22.0
+	github.com/thanos-io/thanos v0.24.0
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/weaveworks/common v0.0.0-20211109170639-0684aab3d884
 	go.etcd.io/bbolt v1.3.6
@@ -213,7 +214,7 @@ replace github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immut
 
 replace github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 
-replace github.com/thanos-io/thanos v0.22.0 => github.com/thanos-io/thanos v0.19.1-0.20211229180107-bf14049d5745
+replace github.com/thanos-io/thanos v0.24.0 => github.com/thanos-io/thanos v0.19.1-0.20211229180107-bf14049d5745
 
 // Replace memberlist with our fork which includes some fixes that haven't been
 // merged upstream yet.
