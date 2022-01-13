@@ -343,7 +343,7 @@ overrides:
 	flags = mergeFlags(flags, map[string]string{
 		"-querier.cache-results":             "true",
 		"-querier.split-queries-by-interval": "24h",
-		"-querier.max-samples":               "2", // Very low limit so that we can easily hit it.
+		"-querier.max-samples":               "20", // Very low limit so that we can easily hit it, but high enough to test other features.
 
 		"-query-frontend.parallelize-shardable-queries": "true",                                               // Allow queries to be parallized (query-sharding)
 		"-frontend.query-sharding-total-shards":         "0",                                                  // Disable query-sharding by default
@@ -377,8 +377,13 @@ overrides:
 	cWriteWithQuerySharding, err := e2emimir.NewClient(distributor.HTTPEndpoint(), "", "", "", "query-sharding")
 	require.NoError(t, err)
 
-	for i := 0; i < 10; i++ {
-		series, _ := generateSeries(fmt.Sprintf("series_%d", i), now)
+	for i := 0; i < 50; i++ {
+		series, _ := generateSeries(
+			"metric",
+			now,
+			prompb.Label{Name: "unique", Value: strconv.Itoa(i)},
+			prompb.Label{Name: "group_1", Value: strconv.Itoa(i % 2)},
+		)
 
 		res, err := cWrite.Push(series)
 		require.NoError(t, err)
@@ -477,10 +482,18 @@ overrides:
 		{
 			name: "max samples limit hit",
 			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
-				return c.QueryRangeRaw(`{__name__=~"series_.+"}`, now.Add(-time.Minute), now, time.Minute)
+				return c.QueryRangeRaw(`metric`, now.Add(-time.Minute), now, time.Minute)
 			},
 			expStatusCode: http.StatusUnprocessableEntity,
 			expBody:       `{"error":"query processing would load too many samples into memory in query execution", "errorType":"execution", "status":"error"}`,
+		},
+		{
+			name: "execution error",
+			query: func(c *e2emimir.Client) (*http.Response, []byte, error) {
+				return c.QueryRangeRaw(`sum by (group_1) (metric{unique=~"0|1|2|3"}) * on(group_1) group_right(unique) (sum by (group_1,unique) (metric{unique=~"0|1|2|3"}))`, now.Add(-time.Minute), now, time.Minute)
+			},
+			expStatusCode: http.StatusUnprocessableEntity,
+			expBody:       `{"error":"multiple matches for labels: grouping labels must ensure unique matches", "errorType":"execution", "status":"error"}`,
 		},
 		{
 			name: "range query with range vector",

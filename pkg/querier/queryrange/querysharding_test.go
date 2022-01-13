@@ -1199,6 +1199,41 @@ func TestQuerySharding_ShouldReturnErrorInCorrectFormat(t *testing.T) {
 	}
 }
 
+func TestQuerySharding_EngineErrorMapping(t *testing.T) {
+	const (
+		numSeries = 30
+		numShards = 8
+	)
+	var (
+		engine = newEngine()
+	)
+
+	series := make([]*promql.StorageSeries, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		series = append(series, newSeries(newTestCounterLabels(i), start.Add(-lookbackDelta), end, step, factor(float64(i)*0.1)))
+	}
+
+	queryable := storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+		return &querierMock{series: series}, nil
+	})
+
+	req := &PrometheusRangeQueryRequest{
+		Path:  "/query_range",
+		Start: util.TimeToMillis(start),
+		End:   util.TimeToMillis(end),
+		Step:  step.Milliseconds(),
+		Query: `sum by (group_1) (metric_counter) - on(group_1) group_right(unique) (sum by (group_1,unique) (metric_counter))`,
+	}
+
+	downstream := &downstreamHandler{engine: newEngine(), queryable: queryable}
+	reg := prometheus.NewPedanticRegistry()
+	shardingware := newQueryShardingMiddleware(log.NewNopLogger(), engine, mockLimits{totalShards: numShards}, reg)
+
+	// Run the query with sharding.
+	_, err := shardingware.Wrap(downstream).Do(user.InjectOrgID(context.Background(), "test"), req)
+	assert.Equal(t, apierror.New(apierror.TypeExec, "multiple matches for labels: grouping labels must ensure unique matches"), err)
+}
+
 func TestQuerySharding_WrapMultipleTime(t *testing.T) {
 	req := &PrometheusRangeQueryRequest{
 		Path:  "/query_range",
@@ -1645,7 +1680,7 @@ func newTestCounterLabels(id int) labels.Labels {
 		{Name: "const", Value: "fixed"},                 // A constant label.
 		{Name: "unique", Value: strconv.Itoa(id)},       // A unique label.
 		{Name: "group_1", Value: strconv.Itoa(id % 10)}, // A first grouping label.
-		{Name: "group_2", Value: strconv.Itoa(id % 5)},  // A second grouping label.
+		{Name: "group_2", Value: strconv.Itoa(id % 3)},  // A second grouping label.
 	}
 }
 
