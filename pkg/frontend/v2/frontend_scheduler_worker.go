@@ -278,6 +278,8 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 	ctx := loop.Context()
 
 	for {
+		// First check if we're closing or there are canceled requests.
+		// These are more important than handling new requests.
 		select {
 		case <-ctx.Done():
 			// No need to report error if our internal context is canceled. This can happen during shutdown,
@@ -287,6 +289,21 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			// Reporting error here would delay reopening the stream (if the worker context is not done yet).
 			level.Debug(w.log).Log("msg", "stream context finished", "err", ctx.Err())
 			return nil
+
+		case reqID := <-w.cancelCh:
+			if err := w.handleCancel(loop, reqID); err != nil {
+				return err
+			}
+			// Start over, maybe there are more cancellations pending.
+			continue
+
+		default:
+			// No high-priority events, lets see if there are new requests or just wait for the first event otherwise.
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil // Not an error, see above.
 
 		case req := <-w.requestCh:
 			err := loop.Send(&schedulerpb.FrontendToScheduler{
@@ -344,24 +361,31 @@ func (w *frontendSchedulerWorker) schedulerLoop(loop schedulerpb.SchedulerForFro
 			}
 
 		case reqID := <-w.cancelCh:
-			err := loop.Send(&schedulerpb.FrontendToScheduler{
-				Type:    schedulerpb.CANCEL,
-				QueryID: reqID,
-			})
-
-			if err != nil {
+			if err := w.handleCancel(loop, reqID); err != nil {
 				return err
-			}
-
-			resp, err := loop.Recv()
-			if err != nil {
-				return err
-			}
-
-			// Scheduler may be shutting down, report that.
-			if resp.Status != schedulerpb.OK {
-				return errors.Errorf("unexpected status received for cancellation: %v", resp.Status)
 			}
 		}
 	}
+}
+
+func (w *frontendSchedulerWorker) handleCancel(loop schedulerpb.SchedulerForFrontend_FrontendLoopClient, reqID uint64) error {
+	err := loop.Send(&schedulerpb.FrontendToScheduler{
+		Type:    schedulerpb.CANCEL,
+		QueryID: reqID,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	resp, err := loop.Recv()
+	if err != nil {
+		return err
+	}
+
+	// Scheduler may be shutting down, report that.
+	if resp.Status != schedulerpb.OK {
+		return errors.Errorf("unexpected status received for cancellation: %v", resp.Status)
+	}
+	return nil
 }
