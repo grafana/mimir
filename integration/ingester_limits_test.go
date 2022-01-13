@@ -56,8 +56,6 @@ func TestIngesterGlobalLimits(t *testing.T) {
 			flags["-distributor.replication-factor"] = "1"
 			flags["-distributor.sharding-strategy"] = testData.shardingStrategy
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
-			flags["-ingester.max-series-per-user"] = "0"
-			flags["-ingester.max-series-per-metric"] = "0"
 			flags["-ingester.max-global-series-per-user"] = strconv.Itoa(testData.maxGlobalSeriesPerTenant)
 			flags["-ingester.max-global-series-per-metric"] = strconv.Itoa(testData.maxGlobalSeriesPerMetric)
 			flags["-ingester.heartbeat-period"] = "1s"

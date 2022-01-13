@@ -63,7 +63,8 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, queryFrontendUnaligned.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
 
 	// Wait until the distributor and queriers have updated the ring.
-	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
+	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
+	require.NoError(t, distributor.WaitSumMetrics(e2e.Equals(512+1), "cortex_ring_tokens_total"))
 	require.NoError(t, querierAligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 	require.NoError(t, querierUnaligned.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
 

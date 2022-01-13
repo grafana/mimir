@@ -439,17 +439,14 @@ overrides:
 
 Valid per-tenant limits are (with their corresponding flags for default values):
 
-- `ingestion_rate_strategy` / `-distributor.ingestion-rate-limit-strategy`
 - `ingestion_rate` / `-distributor.ingestion-rate-limit`
 - `ingestion_burst_size` / `-distributor.ingestion-burst-size`
 
-  The per-tenant rate limit (and burst size), in samples per second. It supports two strategies: `local` (default) and `global`.
+  The per-tenant rate limit (and burst size), in samples per second.
 
-  The `local` strategy enforces the limit on a per distributor basis, actual effective rate limit will be N times higher, where N is the number of distributor replicas.
+  The limit is enforced globally, configuring a per-distributor local rate limiter as `ingestion_rate / N`, where N is the number of distributor replicas (it's automatically adjusted if the number of replicas change). The `ingestion_burst_size` refers to the per-distributor local rate limiter and should be set at least to the maximum number of samples expected in a single push request. For this reason, the ingestion rate limit requires that push requests are evenly distributed across the pool of distributors; if you use a load balancer in front of the distributors you should be already covered, while if you have a custom setup (ie. an authentication gateway in front) make sure traffic is evenly balanced across distributors.
 
-  The `global` strategy enforces the limit globally, configuring a per-distributor local rate limiter as `ingestion_rate / N`, where N is the number of distributor replicas (it's automatically adjusted if the number of replicas change). The `ingestion_burst_size` refers to the per-distributor local rate limiter (even in the case of the `global` strategy) and should be set at least to the maximum number of samples expected in a single push request. For this reason, the `global` strategy requires that push requests are evenly distributed across the pool of distributors; if you use a load balancer in front of the distributors you should be already covered, while if you have a custom setup (ie. an authentication gateway in front) make sure traffic is evenly balanced across distributors.
-
-  The `global` strategy requires the distributors to form their own ring, which is used to keep track of the current number of healthy distributor replicas. The ring is configured by `distributor: { ring: {}}` / `-distributor.ring.*`.
+  The ingestion rate limit requires the distributors to form their own ring, which is used to keep track of the current number of healthy distributor replicas. The ring is configured by `distributor: { ring: {}}` / `-distributor.ring.*`.
 
 - `max_label_name_length` / `-validation.max-length-label-name`
 - `max_label_value_length` / `-validation.max-length-label-value`
@@ -463,15 +460,10 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Also enforce by the distributor, limits on how far in the past (and future) timestamps that we accept can be.
 
-- `max_series_per_user` / `-ingester.max-series-per-user`
-- `max_series_per_metric` / `-ingester.max-series-per-metric`
-
-  Enforced by the ingesters; limits the number of active series a user (or a given metric) can have. An active series is a series to which a sample has been written in the last `-ingester.max-chunk-idle` duration, which defaults to 5 minutes.
-
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 
-  Like `max_series_per_user` and `max_series_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of in-memory series a user (or a given metric) can have. A series is kept in memory if a sample has been written since the last TSDB head compaction (occurring every 2h) or in the last 1h (regardless when the last TSDB head compaction occurred). The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-distributor.replication-factor`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
 
@@ -481,19 +473,15 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Limits on the number of timeseries and samples returns by a single ingester during a query.
 
-- `max_metadata_per_user` / `-ingester.max-metadata-per-user`
-- `max_metadata_per_metric` / `-ingester.max-metadata-per-metric`
-  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit used by the ingesters will be N/RF times higher to account for the effects of sharding and replication, where N is number of ingester replicas and RF is configured replication factor.
-
-- `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
-  When running Cortex with blocks storage this limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
-
 - `max_global_metadata_per_user` / `-ingester.max-global-metadata-per-user`
 - `max_global_metadata_per_metric` / `-ingester.max-global-metadata-per-metric`
 
-  Like `max_metadata_per_user` and `max_metadata_per_metric`, but the limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
+  Enforced by the ingesters; limits the number of active metadata a user (or a given metric) can have. The limit is enforced across the cluster. Each ingester is configured with a local limit based on the replication factor and the current number of healthy ingesters. The local limit is updated whenever the number of ingesters change.
 
   Requires `-distributor.replication-factor`, `-distributor.sharding-strategy` and `-distributor.zone-awareness-enabled` set for the ingesters too.
+
+- `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
+  This limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
 
 ## Ingester Instance Limits
 

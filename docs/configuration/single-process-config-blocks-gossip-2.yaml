@@ -17,6 +17,9 @@ server:
   grpc_server_max_concurrent_streams: 1000
 
 distributor:
+  ring:
+    kvstore:
+      store: memberlist
   pool:
     health_check_ingesters: true
 

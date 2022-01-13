@@ -785,10 +785,9 @@ instance_limits:
   # CLI flag: -ingester.instance-limits.max-inflight-push-requests
   [max_inflight_push_requests: <int> | default = 30000]
 
-# Comma-separated list of metric names, for which
-# -ingester.max-series-per-metric and -ingester.max-global-series-per-metric
-# limits will be ignored. Does not affect max-series-per-user or
-# max-global-series-per-metric limits.
+# Comma-separated list of metric names, for which the
+# -ingester.max-global-series-per-metric limit will be ignored. Does not affect
+# the -ingester.max-global-series-per-user limit.
 # CLI flag: -ingester.ignore-series-limit-for-metric-names
 [ignore_series_limit_for_metric_names: <string> | default = ""]
 ```
@@ -3190,16 +3189,11 @@ The `limits_config` configures default and per-tenant limits imposed by services
 ```yaml
 # Per-user ingestion rate limit in samples per second.
 # CLI flag: -distributor.ingestion-rate-limit
-[ingestion_rate: <float> | default = 25000]
-
-# Whether the ingestion rate limit should be applied individually to each
-# distributor instance (local), or evenly shared across the cluster (global).
-# CLI flag: -distributor.ingestion-rate-limit-strategy
-[ingestion_rate_strategy: <string> | default = "local"]
+[ingestion_rate: <float> | default = 10000]
 
 # Per-user allowed ingestion burst size (in number of samples).
 # CLI flag: -distributor.ingestion-burst-size
-[ingestion_burst_size: <int> | default = 50000]
+[ingestion_burst_size: <int> | default = 200000]
 
 # Flag to enable, for all users, handling of samples with external labels
 # identifying replicas in an HA Prometheus setup.
@@ -3279,39 +3273,21 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-series-per-query
 [max_series_per_query: <int> | default = 100000]
 
-# The maximum number of active series per user, per ingester. 0 to disable.
-# CLI flag: -ingester.max-series-per-user
-[max_series_per_user: <int> | default = 5000000]
-
-# The maximum number of active series per metric name, per ingester. 0 to
-# disable.
-# CLI flag: -ingester.max-series-per-metric
-[max_series_per_metric: <int> | default = 50000]
-
 # The maximum number of active series per user, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-user
-[max_global_series_per_user: <int> | default = 0]
+[max_global_series_per_user: <int> | default = 150000]
 
 # The maximum number of active series per metric name, across the cluster before
 # replication. 0 to disable.
 # CLI flag: -ingester.max-global-series-per-metric
-[max_global_series_per_metric: <int> | default = 0]
+[max_global_series_per_metric: <int> | default = 20000]
 
 # Minimum number of samples in an idle chunk to flush it to the store. Use with
 # care, if chunks are less than this size they will be discarded. This option is
 # ignored when using blocks storage. 0 to disable.
 # CLI flag: -ingester.min-chunk-length
 [min_chunk_length: <int> | default = 0]
-
-# The maximum number of active metrics with metadata per user, per ingester. 0
-# to disable.
-# CLI flag: -ingester.max-metadata-per-user
-[max_metadata_per_user: <int> | default = 8000]
-
-# The maximum number of metadata per metric, per ingester. 0 to disable.
-# CLI flag: -ingester.max-metadata-per-metric
-[max_metadata_per_metric: <int> | default = 10]
 
 # The maximum number of active metrics with metadata per user, across the
 # cluster. 0 to disable.

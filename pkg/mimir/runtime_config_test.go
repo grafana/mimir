@@ -26,9 +26,7 @@ overrides:
     ingestion_rate: 1500
     max_global_series_per_metric: 7000
     max_global_series_per_user: 15000
-    max_series_per_metric: 0
     max_series_per_query: 30000
-    max_series_per_user: 0
     ruler_max_rule_groups_per_tenant: 20
     ruler_max_rules_per_rule_group: 20
   '1235': *id001

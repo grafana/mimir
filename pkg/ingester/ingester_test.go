@@ -327,14 +327,19 @@ func TestIngester_Push_SeriesWithBlankLabel(t *testing.T) {
 
 func TestIngesterUserLimitExceeded(t *testing.T) {
 	limits := defaultLimitsTestConfig()
-	limits.MaxLocalSeriesPerUser = 1
-	limits.MaxLocalMetricsWithMetadataPerUser = 1
+	limits.MaxGlobalSeriesPerUser = 1
+	limits.MaxGlobalMetricsWithMetadataPerUser = 1
 
 	// create a data dir that survives an ingester restart
 	dataDir := t.TempDir()
 
 	newIngester := func() *Ingester {
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, dataDir, nil)
+		cfg := defaultIngesterTestConfig(t)
+		// Global Ingester limits are computed based on replication factor
+		// Set RF=1 here to ensure the series and metadata limits
+		// are actually set to 1 instead of 3.
+		cfg.LifecyclerConfig.RingConfig.ReplicationFactor = 1
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
@@ -427,14 +432,19 @@ func TestIngesterUserLimitExceeded(t *testing.T) {
 
 func TestIngesterMetricLimitExceeded(t *testing.T) {
 	limits := defaultLimitsTestConfig()
-	limits.MaxLocalSeriesPerMetric = 1
-	limits.MaxLocalMetadataPerMetric = 1
+	limits.MaxGlobalSeriesPerMetric = 1
+	limits.MaxGlobalMetadataPerMetric = 1
 
 	// create a data dir that survives an ingester restart
 	dataDir := t.TempDir()
 
 	newIngester := func() *Ingester {
-		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, defaultIngesterTestConfig(t), limits, dataDir, nil)
+		cfg := defaultIngesterTestConfig(t)
+		// Global Ingester limits are computed based on replication factor
+		// Set RF=1 here to ensure the series and metadata limits
+		// are actually set to 1 instead of 3.
+		cfg.LifecyclerConfig.RingConfig.ReplicationFactor = 1
+		ing, err := prepareIngesterWithBlocksStorageAndLimits(t, cfg, limits, dataDir, nil)
 		require.NoError(t, err)
 		require.NoError(t, services.StartAndAwaitRunning(context.Background(), ing))
 
