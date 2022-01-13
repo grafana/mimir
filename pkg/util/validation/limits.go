@@ -119,8 +119,8 @@ type Limits struct {
 // RegisterFlags adds the flags required to config this to the given FlagSet
 func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.IngestionTenantShardSize, "distributor.ingestion-tenant-shard-size", 0, "The tenant's shard size when the shuffle-sharding strategy is used. Must be set both on ingesters and distributors. When this setting is specified in the per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.")
-	f.Float64Var(&l.IngestionRate, "distributor.ingestion-rate-limit", 25000, "Per-user ingestion rate limit in samples per second.")
-	f.IntVar(&l.IngestionBurstSize, "distributor.ingestion-burst-size", 50000, "Per-user allowed ingestion burst size (in number of samples).")
+	f.Float64Var(&l.IngestionRate, "distributor.ingestion-rate-limit", 10000, "Per-user ingestion rate limit in samples per second.")
+	f.IntVar(&l.IngestionBurstSize, "distributor.ingestion-burst-size", 200000, "Per-user allowed ingestion burst size (in number of samples).")
 	f.BoolVar(&l.AcceptHASamples, "distributor.ha-tracker.enable-for-all-users", false, "Flag to enable, for all users, handling of samples with external labels identifying replicas in an HA Prometheus setup.")
 	f.StringVar(&l.HAClusterLabel, "distributor.ha-tracker.cluster", "cluster", "Prometheus label to look for in samples to identify a Prometheus HA cluster.")
 	f.StringVar(&l.HAReplicaLabel, "distributor.ha-tracker.replica", "__replica__", "Prometheus label to look for in samples to identify a Prometheus HA replica.")
@@ -140,8 +140,8 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxSeriesPerQuery, "ingester.max-series-per-query", 100000, "The maximum number of series for which a query can fetch samples from each ingester. This limit is enforced only in the ingesters (when querying samples not flushed to the storage yet) and it's a per-instance limit. This limit is ignored when using blocks storage. When running with blocks storage use -querier.max-fetched-series-per-query limit instead.")
 	//lint:ignore faillint Need to pass the global logger like this for warning on deprecated methods
 	flagext.DeprecatedFlag(f, "ingester.max-samples-per-query", "This option is no longer used, and will be removed.", util_log.Logger)
-	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 0, "The maximum number of active series per user, across the cluster before replication. 0 to disable.")
-	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 0, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerUser, "ingester.max-global-series-per-user", 150000, "The maximum number of active series per user, across the cluster before replication. 0 to disable.")
+	f.IntVar(&l.MaxGlobalSeriesPerMetric, "ingester.max-global-series-per-metric", 20000, "The maximum number of active series per metric name, across the cluster before replication. 0 to disable.")
 	f.IntVar(&l.MinChunkLength, "ingester.min-chunk-length", 0, "Minimum number of samples in an idle chunk to flush it to the store. Use with care, if chunks are less than this size they will be discarded. This option is ignored when using blocks storage. 0 to disable.")
 
 	f.IntVar(&l.MaxGlobalMetricsWithMetadataPerUser, "ingester.max-global-metadata-per-user", 0, "The maximum number of active metrics with metadata per user, across the cluster. 0 to disable.")

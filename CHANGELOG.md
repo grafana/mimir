@@ -10,6 +10,11 @@
   * `ingester.max-metadata-per-user` -> set `ingester.max-global-metadata-per-user` to `N` times the existing value of `ingester.max-metadata-per-user` instead
   * `ingester.max-metadata-per-metric` -> set `ingester.max-global-metadata-per-metric` to `N` times the existing value of `ingester.max-metadata-per-metric` instead
   * In the above notes, `N` refers to the number of ingester replicas
+  Additionally, default values for the following flags have changed:
+  * `ingester.max-global-series-per-user` from `0` to `150000`
+  * `ingester.max-global-series-per-metric` from `0` to `20000`
+  * `distributor.ingestion-rate-limit` from `25000` to `10000`
+  * `distributor.ingestion-burst-size` from `50000` to `200000`
 * [CHANGE] Changed `-ingester.stream-chunks-when-using-blocks` default value from `false` to `true`. #717
 * [CHANGE] Removed limit `enforce_metric_name`, now behave as if set to `true` always. #686
 * [CHANGE] Ruler: endpoints for listing rules (`/api/v1/rules`, `/api/v1/rules/{namespace}`) now return HTTP status code 200 and an empty map when there are no rules instead of an HTTP 404 and plain text error message. #456
