@@ -30,7 +30,6 @@ const (
 	schedulerAddressLabel = "scheduler_address"
 	// schedulerWorkerCancelChanCapacity should be at least as big as the number of sub-queries issued by a single query
 	// per scheduler (after splitting and sharding) in order to allow all of them being canceled while scheduler worker is busy.
-	// Since the channel holds uint64, this is 8KB per scheduler worker.
 	schedulerWorkerCancelChanCapacity = 1000
 )
 
