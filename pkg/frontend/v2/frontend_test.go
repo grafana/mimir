@@ -228,8 +228,8 @@ func TestFrontendCancellation(t *testing.T) {
 	})
 }
 
-// If FrontendWorkers are busy, cancellation passed by Query frontend may not reach
-// all the frontend workers thus not reaching the scheduler as well.
+// When frontendWorker that processed the request is busy (processing a new request or cancelling a previous one)
+// we still need to make sure that the cancellation reach the scheduler at some point.
 // Issue: https://github.com/grafana/mimir/issues/740
 func TestFrontendWorkerCancellation(t *testing.T) {
 	f, ms := setupFrontend(t, nil, nil)
