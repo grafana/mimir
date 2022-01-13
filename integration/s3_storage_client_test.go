@@ -14,10 +14,10 @@ import (
 	"testing"
 
 	"github.com/grafana/dskit/flagext"
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	s3 "github.com/grafana/mimir/pkg/chunk/aws"
 	mimir_s3 "github.com/grafana/mimir/pkg/storage/bucket/s3"
 )

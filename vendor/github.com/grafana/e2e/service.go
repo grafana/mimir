@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/e2e/service.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package e2e
 
 import (
@@ -200,7 +195,7 @@ func (s *ConcreteService) Endpoint(port int) string {
 		return ""
 	}
 
-	// Do not use "localhost" cause it may not work with some clients.
+	// Do not use "localhost" cause it doesn't work with the AWS DynamoDB client.
 	return fmt.Sprintf("127.0.0.1:%d", localPort)
 }
 

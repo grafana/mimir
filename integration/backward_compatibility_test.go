@@ -14,22 +14,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/grafana/e2e"
+	e2edb "github.com/grafana/e2e/db"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/integration/e2e"
-	e2edb "github.com/grafana/mimir/integration/e2e/db"
 	"github.com/grafana/mimir/integration/e2emimir"
-)
-
-var (
-	// If you change the image tag, remember to update it in the preloading done
-	// by GitHub Actions too (see .github/workflows/test-build-deploy.yml).
-	//nolint:unused
-	defaultPreviousVersionImages = map[string]func(map[string]string) map[string]string{
-		"quay.io/cortexproject/cortex:v1.11.0": nil,
-	}
 )
 
 // previousVersionImages returns a list of previous image version to test backwards
@@ -50,7 +41,7 @@ func previousVersionImages() map[string]func(map[string]string) map[string]strin
 		return previousVersionImages
 	}
 
-	return defaultPreviousVersionImages
+	return DefaultPreviousVersionImages
 }
 
 func TestBackwardCompatibility(t *testing.T) {

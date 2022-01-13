@@ -1,8 +1,3 @@
-// SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/integration/e2e/db/db.go
-// Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Cortex Authors.
-
 package e2edb
 
 import (
@@ -10,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/grafana/mimir/integration/e2e"
-	"github.com/grafana/mimir/integration/e2e/images"
+	"github.com/grafana/e2e"
+	"github.com/grafana/e2e/images"
 )
 
 const (
@@ -46,7 +41,7 @@ func newMinio(port int, envVars map[string]string, bktNames ...string) *e2e.HTTP
 	m := e2e.NewHTTPService(
 		fmt.Sprintf("minio-%v", port),
 		images.Minio,
-		// Create the "mimir" bucket before starting minio
+		// Create the buckets before starting minio
 		e2e.NewCommandWithoutEntrypoint("sh", "-c", strings.Join(commands, " && ")),
 		e2e.NewHTTPReadinessProbe(port, "/minio/health/ready", 200, 200),
 		port,
@@ -98,5 +93,16 @@ func NewETCD() *e2e.HTTPService {
 		e2e.NewHTTPReadinessProbe(9000, "/health", 200, 204),
 		2379,
 		9000, // Metrics
+	)
+}
+
+func NewDynamoDB() *e2e.HTTPService {
+	return e2e.NewHTTPService(
+		"dynamodb",
+		images.DynamoDB,
+		e2e.NewCommand("-jar", "DynamoDBLocal.jar", "-inMemory", "-sharedDb"),
+		// DynamoDB doesn't have a readiness probe, so we check if the / works even if returns 400
+		e2e.NewHTTPReadinessProbe(8000, "/", 400, 400),
+		8000,
 	)
 }
