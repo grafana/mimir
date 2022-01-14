@@ -23,7 +23,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -182,11 +181,6 @@ var (
 			name:       "store_gateway_config",
 			structType: reflect.TypeOf(storegateway.Config{}),
 			desc:       "The store_gateway_config configures the store-gateway service used by the blocks storage.",
-		},
-		{
-			name:       "purger_config",
-			structType: reflect.TypeOf(purger.Config{}),
-			desc:       "The purger_config configures the purger which takes care of delete requests.",
 		},
 		{
 			name:       "s3_sse_config",

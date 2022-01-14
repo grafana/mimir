@@ -144,9 +144,6 @@ api:
 # blocks storage.
 [store_gateway: <store_gateway_config>]
 
-# The purger_config configures the purger which takes care of delete requests.
-[purger: <purger_config>]
-
 tenant_federation:
   # If enabled on all services, queries can be federated across multiple
   # tenants. The tenant IDs involved need to be specified separated by a `|`
@@ -2547,93 +2544,6 @@ index_queries_cache_config:
   # The CLI flags prefix for this block config is: store.index-cache-read
   [fifocache: <fifo_cache_config>]
 
-delete_store:
-  # Store for keeping delete request
-  # CLI flag: -deletes.store
-  [store: <string> | default = ""]
-
-  # Name of the table which stores delete requests
-  # CLI flag: -deletes.requests-table-name
-  [requests_table_name: <string> | default = "delete_requests"]
-
-  table_provisioning:
-    # Enables on demand throughput provisioning for the storage provider (if
-    # supported). Applies only to tables which are not autoscaled. Supported by
-    # DynamoDB
-    # CLI flag: -deletes.table.enable-ondemand-throughput-mode
-    [enable_ondemand_throughput_mode: <boolean> | default = false]
-
-    # Table default write throughput. Supported by DynamoDB
-    # CLI flag: -deletes.table.write-throughput
-    [provisioned_write_throughput: <int> | default = 1]
-
-    # Table default read throughput. Supported by DynamoDB
-    # CLI flag: -deletes.table.read-throughput
-    [provisioned_read_throughput: <int> | default = 300]
-
-    write_scale:
-      # Should we enable autoscale for the table.
-      # CLI flag: -deletes.table.write-throughput.scale.enabled
-      [enabled: <boolean> | default = false]
-
-      # AWS AutoScaling role ARN
-      # CLI flag: -deletes.table.write-throughput.scale.role-arn
-      [role_arn: <string> | default = ""]
-
-      # DynamoDB minimum provision capacity.
-      # CLI flag: -deletes.table.write-throughput.scale.min-capacity
-      [min_capacity: <int> | default = 3000]
-
-      # DynamoDB maximum provision capacity.
-      # CLI flag: -deletes.table.write-throughput.scale.max-capacity
-      [max_capacity: <int> | default = 6000]
-
-      # DynamoDB minimum seconds between each autoscale up.
-      # CLI flag: -deletes.table.write-throughput.scale.out-cooldown
-      [out_cooldown: <int> | default = 1800]
-
-      # DynamoDB minimum seconds between each autoscale down.
-      # CLI flag: -deletes.table.write-throughput.scale.in-cooldown
-      [in_cooldown: <int> | default = 1800]
-
-      # DynamoDB target ratio of consumed capacity to provisioned capacity.
-      # CLI flag: -deletes.table.write-throughput.scale.target-value
-      [target: <float> | default = 80]
-
-    read_scale:
-      # Should we enable autoscale for the table.
-      # CLI flag: -deletes.table.read-throughput.scale.enabled
-      [enabled: <boolean> | default = false]
-
-      # AWS AutoScaling role ARN
-      # CLI flag: -deletes.table.read-throughput.scale.role-arn
-      [role_arn: <string> | default = ""]
-
-      # DynamoDB minimum provision capacity.
-      # CLI flag: -deletes.table.read-throughput.scale.min-capacity
-      [min_capacity: <int> | default = 3000]
-
-      # DynamoDB maximum provision capacity.
-      # CLI flag: -deletes.table.read-throughput.scale.max-capacity
-      [max_capacity: <int> | default = 6000]
-
-      # DynamoDB minimum seconds between each autoscale up.
-      # CLI flag: -deletes.table.read-throughput.scale.out-cooldown
-      [out_cooldown: <int> | default = 1800]
-
-      # DynamoDB minimum seconds between each autoscale down.
-      # CLI flag: -deletes.table.read-throughput.scale.in-cooldown
-      [in_cooldown: <int> | default = 1800]
-
-      # DynamoDB target ratio of consumed capacity to provisioned capacity.
-      # CLI flag: -deletes.table.read-throughput.scale.target-value
-      [target: <float> | default = 80]
-
-    # Tag (of the form key=value) to be added to the tables. Supported by
-    # DynamoDB
-    # CLI flag: -deletes.table.tags
-    [tags: <map of string to string> | default = ]
-
 grpc_store:
   # Hostname or IP of the gRPC store instance.
   # CLI flag: -grpc-store.server-address
@@ -4613,31 +4523,6 @@ sharding_ring:
 # The sharding strategy to use. Supported values are: default, shuffle-sharding.
 # CLI flag: -store-gateway.sharding-strategy
 [sharding_strategy: <string> | default = "default"]
-```
-
-### `purger_config`
-
-The `purger_config` configures the purger which takes care of delete requests.
-
-```yaml
-# Enable purger to allow deletion of series. Be aware that Delete series feature
-# is still experimental
-# CLI flag: -purger.enable
-[enable: <boolean> | default = false]
-
-# Number of workers executing delete plans in parallel
-# CLI flag: -purger.num-workers
-[num_workers: <int> | default = 2]
-
-# Name of the object store to use for storing delete plans
-# CLI flag: -purger.object-store-type
-[object_store_type: <string> | default = ""]
-
-# Allow cancellation of delete request until duration after they are created.
-# Data would be deleted only after delete requests have been older than this
-# duration. Ideally this should be set to at least 24h.
-# CLI flag: -purger.delete-request-cancel-period
-[delete_request_cancel_period: <duration> | default = 24h]
 ```
 
 ### `s3_sse_config`
