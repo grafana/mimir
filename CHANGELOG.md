@@ -216,6 +216,7 @@
 * [BUGFIX] Ruler: fix formatting of rule groups in `/ruler/rule_groups` endpoint. #655
 * [BUGFIX] Querier: Disable query scheduler SRV DNS lookup. #689
 * [BUGFIX] Query-frontend: fix API error messages that were mentioning Prometheus `--enable-feature=promql-negative-offset` and `--enable-feature=promql-at-modifier` flags. #688
+* [BUGFIX] Query-frontend: worker's cancellation channels are now buffered to ensure that all request cancellations are properly handled. #741
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
