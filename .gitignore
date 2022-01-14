@@ -1,3 +1,4 @@
+cmd/cortextool/cortextool
 cmd/test-exporter/test-exporter
 cmd/mimir/mimir
 cmd/query-tee/query-tee
