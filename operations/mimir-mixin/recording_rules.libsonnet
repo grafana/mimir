@@ -66,12 +66,45 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ],
       },
       {
+        name: 'cortex_exemplars_in',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_distributor_exemplars_in:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_distributor_exemplars_in_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
         name: 'cortex_received_exemplars',
         rules: [
           {
             record: '%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m' % _config,
             expr: |||
               sum by (%(group_by_job)s) (rate(cortex_distributor_received_exemplars_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'cortex_received_exemplars_by_user',
+        rules: [
+          {
+            record: '%(group_prefix_users)s:cortex_distributor_received_exemplars:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_user)s) (rate(cortex_distributor_received_exemplars_total[5m]))
+            ||| % _config,
+          },
+        ],
+      },
+      {
+        name: 'cortex_exemplars_appended',
+        rules: [
+          {
+            record: '%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m' % _config,
+            expr: |||
+              sum by (%(group_by_job)s) (rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total[5m]))
             ||| % _config,
           },
         ],
