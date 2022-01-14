@@ -136,17 +136,3 @@ func NewForEncoding(encoding Encoding) (Chunk, error) {
 
 	return enc.New(), nil
 }
-
-// MustRegisterEncoding add a new chunk encoding.  There is no locking, so this
-// must be called in init().
-func MustRegisterEncoding(enc Encoding, name string, f func() Chunk) {
-	_, ok := encodings[enc]
-	if ok {
-		panic("double register encoding")
-	}
-
-	encodings[enc] = encoding{
-		Name: name,
-		New:  f,
-	}
-}

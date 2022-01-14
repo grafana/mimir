@@ -57,28 +57,30 @@
 * [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor with `split-and-merge` strategy, but are correctly handled by compactor. #494
 * [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
-* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748
-  This removes the following flags:
-  * `-ingester.checkpoint-duration`
-  * `-ingester.checkpoint-enabled`
-  * `-ingester.chunk-age-jitter`
-  * `-ingester.concurrent-flushes`
-  * `-ingester.flush-on-shutdown-with-wal-enabled`
-  * `-ingester.flush-op-timeout`
-  * `-ingester.flush-period`
-  * `-ingester.max-chunk-age`
-  * `-ingester.max-chunk-idle`
-  * `-ingester.max-stale-chunk-idle`
-  * `-ingester.max-transfer-retries`
-  * `-ingester.recover-from-wal`
-  * `-ingester.retain-period`
-  * `-ingester.spread-flushes`
-  * `-ingester.wal-dir`
-  * `-ingester.wal-enabled`
-  * All `-table-manager.*` flags
-  * All `-deletes.*` flags
-  * All `-purger.*` flags
-  * All `-metrics.*` flags
+* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753
+  * The following CLI flags (and their respective YAML config options) have been removed:
+    * `-ingester.checkpoint-duration`
+    * `-ingester.checkpoint-enabled`
+    * `-ingester.chunk-age-jitter`
+    * `-ingester.concurrent-flushes`
+    * `-ingester.flush-on-shutdown-with-wal-enabled`
+    * `-ingester.flush-op-timeout`
+    * `-ingester.flush-period`
+    * `-ingester.max-chunk-age`
+    * `-ingester.max-chunk-idle`
+    * `-ingester.max-stale-chunk-idle`
+    * `-ingester.max-transfer-retries`
+    * `-ingester.recover-from-wal`
+    * `-ingester.retain-period`
+    * `-ingester.spread-flushes`
+    * `-ingester.wal-dir`
+    * `-ingester.wal-enabled`
+    * All `-table-manager.*` flags
+    * All `-deletes.*` flags
+    * All `-purger.*` flags
+    * All `-metrics.*` flags
+  * The following API endpoints have been removed:
+    * `/api/v1/chunks` and `/chunks`
 * [CHANGE] Compactor: compactor now uses deletion marks from `<tenant>/markers` location in the bucket. Marker files are no longer fetched, only listed. #550
 * [CHANGE] Compactor: Default value of `-compactor.block-sync-concurrency` has changed from 20 to 8. This flag is now only used to control number of goroutines for downloading and uploading blocks during compaction. #552
 * [CHANGE] Memberlist: changed probe interval from `1s` to `5s` and probe timeout from `500ms` to `2s`. #563

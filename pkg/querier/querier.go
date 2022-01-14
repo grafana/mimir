@@ -27,7 +27,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/querier/batch"
-	"github.com/grafana/mimir/pkg/querier/chunkstore"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
@@ -124,11 +123,6 @@ func getChunksIteratorFunction(cfg Config) chunkIteratorFunc {
 		return iterators.NewChunkMergeIterator
 	}
 	return mergeChunks
-}
-
-// NewChunkStoreQueryable returns the storage.Queryable implementation against the chunks store.
-func NewChunkStoreQueryable(cfg Config, chunkStore chunkstore.ChunkStore) storage.Queryable {
-	return newChunkStoreQueryable(chunkStore, getChunksIteratorFunction(cfg))
 }
 
 // New builds a queryable and promql engine.
