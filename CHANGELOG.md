@@ -75,6 +75,7 @@
     * `-ingester.spread-flushes`
     * `-ingester.wal-dir`
     * `-ingester.wal-enabled`
+    * `-querier.query-parallelism`
     * All `-table-manager.*` flags
     * All `-deletes.*` flags
     * All `-purger.*` flags
