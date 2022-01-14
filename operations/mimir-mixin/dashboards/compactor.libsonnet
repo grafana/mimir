@@ -1,8 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-  'cortex-compactor.json':
-    ($.dashboard('Cortex / Compactor') + { uid: '9c408e1d55681ecb8a22c9fab46875cc' })
+  'mimir-compactor.json':
+    ($.dashboard('Mimir / Compactor') + { uid: '9c408e1d55681ecb8a22c9fab46875cc' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Summary')
