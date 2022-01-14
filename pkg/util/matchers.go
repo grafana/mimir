@@ -105,7 +105,7 @@ func MergeMatchers(input []*labels.Matcher, logger log.Logger) []*labels.Matcher
 // The result integer is the length of the merged span, which has been replaced on the same slice.
 func mergeSortedMatchersForSameLabelSpan(span []*labels.Matcher) (int, error) {
 	out := 0
-	// Rewind through MatchEqual labels.
+	// Rewind through MatchEqual and MatchRegexp matchers.
 	for out < len(span) && (span[out].Type == labels.MatchEqual || span[out].Type == labels.MatchRegexp) {
 		out++
 	}
