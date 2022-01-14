@@ -15,7 +15,7 @@ For more information, see the [Mimir blocks storage](../blocks-storage/_index.md
 
 ### Chunk
 
-A chunk is an object containing encoded timestamp-value pairs for series.
+A chunk is an object containing encoded timestamp-value pairs for one series.
 
 ### Churn
 
