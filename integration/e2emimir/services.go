@@ -202,33 +202,6 @@ func getBinaryNameForBackwardsCompatibility(image string) string {
 	return "mimir"
 }
 
-func NewTableManager(name string, flags map[string]string, image string) *MimirService {
-	return NewTableManagerWithConfigFile(name, "", flags, image)
-}
-
-func NewTableManagerWithConfigFile(name, configFile string, flags map[string]string, image string) *MimirService {
-	if configFile != "" {
-		flags["-config.file"] = filepath.Join(e2e.ContainerSharedDir, configFile)
-	}
-
-	if image == "" {
-		image = GetDefaultImage()
-	}
-	binaryName := getBinaryNameForBackwardsCompatibility(image)
-
-	return NewMimirService(
-		name,
-		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":    "table-manager",
-			"-log.level": "warn",
-		}, flags)))...),
-		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
-		httpPort,
-		grpcPort,
-	)
-}
-
 func NewQueryFrontend(name string, flags map[string]string, image string) *MimirService {
 	return NewQueryFrontendWithConfigFile(name, "", flags, image)
 }

@@ -57,22 +57,12 @@ const (
 
 type indexStoreFactories struct {
 	indexClientFactoryFunc IndexClientFactoryFunc
-	tableClientFactoryFunc TableClientFactoryFunc
 }
 
 // IndexClientFactoryFunc defines signature of function which creates chunk.IndexClient for managing index in index store
 type IndexClientFactoryFunc func() (chunk.IndexClient, error)
 
-// TableClientFactoryFunc defines signature of function which creates chunk.TableClient for managing tables in index store
-type TableClientFactoryFunc func() (chunk.TableClient, error)
-
 var customIndexStores = map[string]indexStoreFactories{}
-
-// RegisterIndexStore is used for registering a custom index type.
-// When an index type is registered here with same name as existing types, the registered one takes the precedence.
-func RegisterIndexStore(name string, indexClientFactory IndexClientFactoryFunc, tableClientFactory TableClientFactoryFunc) {
-	customIndexStores[name] = indexStoreFactories{indexClientFactory, tableClientFactory}
-}
 
 // StoreLimits helps get Limits specific to Queries for Stores
 type StoreLimits interface {
@@ -309,48 +299,6 @@ func newChunkClientFromStore(store chunk.ObjectClient, err error) (chunk.Client,
 		return nil, err
 	}
 	return objectclient.NewClient(store, nil), nil
-}
-
-// NewTableClient makes a new table client based on the configuration.
-func NewTableClient(name string, cfg Config, registerer prometheus.Registerer) (chunk.TableClient, error) {
-	if indexClientFactory, ok := customIndexStores[name]; ok {
-		if indexClientFactory.tableClientFactoryFunc != nil {
-			return indexClientFactory.tableClientFactoryFunc()
-		}
-	}
-
-	switch name {
-	case StorageTypeInMemory:
-		return chunk.NewMockStorage(), nil
-	case StorageTypeAWS, StorageTypeAWSDynamo:
-		if cfg.AWSStorageConfig.DynamoDB.URL == nil {
-			return nil, fmt.Errorf("Must set -dynamodb.url in aws mode")
-		}
-		path := strings.TrimPrefix(cfg.AWSStorageConfig.DynamoDB.URL.Path, "/")
-		if len(path) > 0 {
-			level.Warn(util_log.Logger).Log("msg", "ignoring DynamoDB URL path", "path", path)
-		}
-		return aws.NewDynamoDBTableClient(cfg.AWSStorageConfig.DynamoDBConfig, registerer)
-	case StorageTypeGCP, StorageTypeGCPColumnKey, StorageTypeBigTable, StorageTypeBigTableHashed:
-		return gcp.NewTableClient(context.Background(), cfg.GCPStorageConfig)
-	case StorageTypeCassandra:
-		return cassandra.NewTableClient(context.Background(), cfg.CassandraStorageConfig, registerer)
-	case StorageTypeBoltDB:
-		return local.NewTableClient(cfg.BoltDBConfig.Directory)
-	case StorageTypeGrpc:
-		return grpc.NewTableClient(cfg.GrpcConfig)
-	default:
-		return nil, fmt.Errorf("Unrecognized storage client %v, choose one of: %v, %v, %v, %v, %v, %v, %v", name, StorageTypeAWS, StorageTypeCassandra, StorageTypeInMemory, StorageTypeGCP, StorageTypeBigTable, StorageTypeBigTableHashed, StorageTypeGrpc)
-	}
-}
-
-// NewBucketClient makes a new bucket client based on the configuration.
-func NewBucketClient(storageConfig Config) (chunk.BucketClient, error) {
-	if storageConfig.FSConfig.Directory != "" {
-		return local.NewFSObjectClient(storageConfig.FSConfig)
-	}
-
-	return nil, nil
 }
 
 // NewObjectClient makes a new StorageClient of the desired types.

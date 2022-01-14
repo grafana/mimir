@@ -7,23 +7,6 @@ package chunk
 
 import "flag"
 
-// ProvisionConfig holds config for provisioning capacity for index and chunk tables (on DynamoDB for now)
-type ProvisionConfig struct {
-	ActiveTableProvisionConfig   `yaml:",inline"`
-	InactiveTableProvisionConfig `yaml:",inline"`
-}
-
-// RegisterFlags adds the flags required to config this to the given FlagSet.
-func (cfg *ProvisionConfig) RegisterFlags(argPrefix string, f *flag.FlagSet) {
-	// defaults for ActiveTableProvisionConfig
-	cfg.ProvisionedWriteThroughput = 1000
-	cfg.ProvisionedReadThroughput = 300
-	cfg.ProvisionedThroughputOnDemandMode = false
-
-	cfg.ActiveTableProvisionConfig.RegisterFlags(argPrefix, f)
-	cfg.InactiveTableProvisionConfig.RegisterFlags(argPrefix, f)
-}
-
 type ActiveTableProvisionConfig struct {
 	ProvisionedThroughputOnDemandMode bool  `yaml:"enable_ondemand_throughput_mode"`
 	ProvisionedWriteThroughput        int64 `yaml:"provisioned_write_throughput"`

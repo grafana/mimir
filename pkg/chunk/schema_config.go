@@ -13,12 +13,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
-	"github.com/weaveworks/common/mtime"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/math"
 )
 
@@ -370,63 +367,6 @@ func (cfg *AutoScalingConfig) RegisterFlags(argPrefix string, f *flag.FlagSet) {
 	f.Int64Var(&cfg.OutCooldown, argPrefix+".out-cooldown", 1800, "DynamoDB minimum seconds between each autoscale up.")
 	f.Int64Var(&cfg.InCooldown, argPrefix+".in-cooldown", 1800, "DynamoDB minimum seconds between each autoscale down.")
 	f.Float64Var(&cfg.TargetValue, argPrefix+".target-value", 80, "DynamoDB target ratio of consumed capacity to provisioned capacity.")
-}
-
-func (cfg *PeriodicTableConfig) periodicTables(from, through model.Time, pCfg ProvisionConfig, beginGrace, endGrace time.Duration, retention time.Duration) []TableDesc {
-	var (
-		periodSecs     = int64(cfg.Period / time.Second)
-		beginGraceSecs = int64(beginGrace / time.Second)
-		endGraceSecs   = int64(endGrace / time.Second)
-		firstTable     = from.Unix() / periodSecs
-		lastTable      = through.Unix() / periodSecs
-		tablesToKeep   = int64(int64(retention/time.Second) / periodSecs)
-		now            = mtime.Now().Unix()
-		nowWeek        = now / periodSecs
-		result         = []TableDesc{}
-	)
-	// If interval ends exactly on a period boundary, don’t include the upcoming period
-	if through.Unix()%periodSecs == 0 {
-		lastTable--
-	}
-	// Don't make tables further back than the configured retention
-	if retention > 0 && lastTable > tablesToKeep && lastTable-firstTable >= tablesToKeep {
-		firstTable = lastTable - tablesToKeep
-	}
-	for i := firstTable; i <= lastTable; i++ {
-		tableName := cfg.tableForPeriod(i)
-		table := TableDesc{}
-
-		// if now is within table [start - grace, end + grace), then we need some write throughput
-		if (i*periodSecs)-beginGraceSecs <= now && now < (i*periodSecs)+periodSecs+endGraceSecs {
-			table = pCfg.ActiveTableProvisionConfig.BuildTableDesc(tableName, cfg.Tags)
-
-			level.Debug(log.Logger).Log("msg", "Table is Active",
-				"tableName", table.Name,
-				"provisionedRead", table.ProvisionedRead,
-				"provisionedWrite", table.ProvisionedWrite,
-				"useOnDemandMode", table.UseOnDemandIOMode,
-				"useWriteAutoScale", table.WriteScale.Enabled,
-				"useReadAutoScale", table.ReadScale.Enabled)
-
-		} else {
-			// Autoscale last N tables
-			// this is measured against "now", since the lastWeek is the final week in the schema config range
-			// the N last tables in that range will always be set to the inactive scaling settings.
-			disableAutoscale := i < (nowWeek - pCfg.InactiveWriteScaleLastN)
-			table = pCfg.InactiveTableProvisionConfig.BuildTableDesc(tableName, cfg.Tags, disableAutoscale)
-
-			level.Debug(log.Logger).Log("msg", "Table is Inactive",
-				"tableName", table.Name,
-				"provisionedRead", table.ProvisionedRead,
-				"provisionedWrite", table.ProvisionedWrite,
-				"useOnDemandMode", table.UseOnDemandIOMode,
-				"useWriteAutoScale", table.WriteScale.Enabled,
-				"useReadAutoScale", table.ReadScale.Enabled)
-		}
-
-		result = append(result, table)
-	}
-	return result
 }
 
 // ChunkTableFor calculates the chunk table shard for a given point in time.

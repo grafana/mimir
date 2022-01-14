@@ -59,13 +59,12 @@ const (
 
 // DynamoDBConfig specifies config for a DynamoDB database.
 type DynamoDBConfig struct {
-	DynamoDB               flagext.URLValue         `yaml:"dynamodb_url"`
-	APILimit               float64                  `yaml:"api_limit"`
-	ThrottleLimit          float64                  `yaml:"throttle_limit"`
-	Metrics                MetricsAutoScalingConfig `yaml:"metrics"`
-	ChunkGangSize          int                      `yaml:"chunk_gang_size"`
-	ChunkGetMaxParallelism int                      `yaml:"chunk_get_max_parallelism"`
-	BackoffConfig          backoff.Config           `yaml:"backoff_config"`
+	DynamoDB               flagext.URLValue `yaml:"dynamodb_url"`
+	APILimit               float64          `yaml:"api_limit"`
+	ThrottleLimit          float64          `yaml:"throttle_limit"`
+	ChunkGangSize          int              `yaml:"chunk_gang_size"`
+	ChunkGetMaxParallelism int              `yaml:"chunk_get_max_parallelism"`
+	BackoffConfig          backoff.Config   `yaml:"backoff_config"`
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
@@ -79,7 +78,6 @@ func (cfg *DynamoDBConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.BackoffConfig.MinBackoff, "dynamodb.min-backoff", 100*time.Millisecond, "Minimum backoff time")
 	f.DurationVar(&cfg.BackoffConfig.MaxBackoff, "dynamodb.max-backoff", 50*time.Second, "Maximum backoff time")
 	f.IntVar(&cfg.BackoffConfig.MaxRetries, "dynamodb.max-retries", 20, "Maximum number of times to retry an operation")
-	cfg.Metrics.RegisterFlags(f)
 }
 
 // StorageConfig specifies config for storing data on AWS.

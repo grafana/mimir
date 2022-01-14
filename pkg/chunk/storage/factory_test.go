@@ -6,9 +6,6 @@
 package storage
 
 import (
-	"io/ioutil"
-	"os"
-	"reflect"
 	"testing"
 
 	"github.com/go-kit/log"
@@ -17,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/local"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -49,118 +45,4 @@ func TestFactoryStop(t *testing.T) {
 	require.NoError(t, err)
 
 	store.Stop()
-}
-
-type customBoltDBIndexClient struct {
-	*local.BoltIndexClient
-}
-
-func newBoltDBCustomIndexClient(cfg local.BoltDBConfig) (chunk.IndexClient, error) {
-	boltdbClient, err := local.NewBoltDBIndexClient(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &customBoltDBIndexClient{boltdbClient}, nil
-}
-
-type customBoltDBTableClient struct {
-	chunk.TableClient
-}
-
-func newBoltDBCustomTableClient(directory string) (chunk.TableClient, error) {
-	tableClient, err := local.NewTableClient(directory)
-	if err != nil {
-		return nil, err
-	}
-
-	return &customBoltDBTableClient{tableClient}, nil
-}
-
-func TestCustomIndexClient(t *testing.T) {
-	cfg := Config{}
-	schemaCfg := chunk.SchemaConfig{}
-
-	dirname, err := ioutil.TempDir(os.TempDir(), "boltdb")
-	if err != nil {
-		return
-	}
-	cfg.BoltDBConfig.Directory = dirname
-
-	for _, tc := range []struct {
-		indexClientName         string
-		indexClientFactories    indexStoreFactories
-		errorExpected           bool
-		expectedIndexClientType reflect.Type
-		expectedTableClientType reflect.Type
-	}{
-		{
-			indexClientName:         "boltdb",
-			expectedIndexClientType: reflect.TypeOf(&local.BoltIndexClient{}),
-			expectedTableClientType: reflect.TypeOf(&local.TableClient{}),
-		},
-		{
-			indexClientName: "boltdb",
-			indexClientFactories: indexStoreFactories{
-				indexClientFactoryFunc: func() (client chunk.IndexClient, e error) {
-					return newBoltDBCustomIndexClient(cfg.BoltDBConfig)
-				},
-			},
-			expectedIndexClientType: reflect.TypeOf(&customBoltDBIndexClient{}),
-			expectedTableClientType: reflect.TypeOf(&local.TableClient{}),
-		},
-		{
-			indexClientName: "boltdb",
-			indexClientFactories: indexStoreFactories{
-				tableClientFactoryFunc: func() (client chunk.TableClient, e error) {
-					return newBoltDBCustomTableClient(cfg.BoltDBConfig.Directory)
-				},
-			},
-			expectedIndexClientType: reflect.TypeOf(&local.BoltIndexClient{}),
-			expectedTableClientType: reflect.TypeOf(&customBoltDBTableClient{}),
-		},
-		{
-			indexClientName: "boltdb",
-			indexClientFactories: indexStoreFactories{
-				indexClientFactoryFunc: func() (client chunk.IndexClient, e error) {
-					return newBoltDBCustomIndexClient(cfg.BoltDBConfig)
-				},
-				tableClientFactoryFunc: func() (client chunk.TableClient, e error) {
-					return newBoltDBCustomTableClient(cfg.BoltDBConfig.Directory)
-				},
-			},
-			expectedIndexClientType: reflect.TypeOf(&customBoltDBIndexClient{}),
-			expectedTableClientType: reflect.TypeOf(&customBoltDBTableClient{}),
-		},
-		{
-			indexClientName: "boltdb1",
-			errorExpected:   true,
-		},
-	} {
-		if tc.indexClientFactories.indexClientFactoryFunc != nil || tc.indexClientFactories.tableClientFactoryFunc != nil {
-			RegisterIndexStore(tc.indexClientName, tc.indexClientFactories.indexClientFactoryFunc, tc.indexClientFactories.tableClientFactoryFunc)
-		}
-
-		indexClient, err := NewIndexClient(tc.indexClientName, cfg, schemaCfg, nil)
-		if tc.errorExpected {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedIndexClientType, reflect.TypeOf(indexClient))
-		}
-
-		tableClient, err := NewTableClient(tc.indexClientName, cfg, nil)
-		if tc.errorExpected {
-			require.Error(t, err)
-		} else {
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedTableClientType, reflect.TypeOf(tableClient))
-		}
-		unregisterAllCustomIndexStores()
-	}
-}
-
-// useful for cleaning up state after tests
-func unregisterAllCustomIndexStores() {
-	customIndexStores = map[string]indexStoreFactories{}
 }
