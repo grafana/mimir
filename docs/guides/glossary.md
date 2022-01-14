@@ -7,21 +7,15 @@ slug: glossary
 
 ### Blocks storage
 
-The blocks storage is a Cortex storage engine based on Prometheus TSDB, which only requires an object store (eg. AWS S3, Google GCS, ...) as backend storage.
+The blocks storage is a Mimir storage engine based on Prometheus TSDB, which only requires an object store (eg. AWS S3, Google GCS, ...) as backend storage.
 
-For more information, please refer to the [Cortex blocks storage](../blocks-storage/_index.md) documentation.
+While when running Mimir with the [blocks storage](#blocks-storage) a single chunk contains timestamp-value pairs for several series.
 
-### Chunks storage (deprecated)
-
-The chunks storage is a Cortex storage engine which requires both an index store (eg. AWS DynamoDB, Google BigTable, Cassandra, ...) and an object store (eg. AWS S3, Google GCS, ...) as backend storage.
-
-The chunks storage is deprecated. You're encouraged to use the [blocks storage](#blocks-storage) instead.
+For more information, see the [Mimir blocks storage](../blocks-storage/_index.md) documentation.
 
 ### Chunk
 
-A chunk is an object containing compressed timestamp-value pairs.
-
-When running Cortex with the chunks storage, a single chunk object contains timestamp-value pairs for a single series, while when running Cortex with the [blocks storage](#blocks-storage) a single chunk contains timestamp-value pairs for several series.
+A chunk is an object containing encoded timestamp-value pairs for one series.
 
 ### Churn
 
@@ -35,19 +29,19 @@ Series flushing is the operation run by ingesters to offload time series from me
 
 ### HA Tracker
 
-The HA Tracker is a feature of Cortex distributor which is used to deduplicate received series coming from two (or more) Prometheus servers configured in HA pairs.
+The HA Tracker is a feature of Mimir distributor which is used to deduplicate received series coming from two (or more) Prometheus servers configured in HA pairs.
 
-For more information, please refer to the guide "[Config for sending HA Pairs data to Cortex](../guides/ha-pair-handling.md)".
+For more information, please refer to the guide "[Config for sending HA Pairs data to Mimir](../guides/ha-pair-handling.md)".
 
 ### Hand-over
 
-Series hand-over is an operation supported by ingesters to transfer their state, on shutdown, to a new ingester in the `JOINING` state. Hand-over is typically used during [ingesters rollouts](./ingesters-rolling-updates.md) and is only supported by the Cortex chunks storage.
+Series hand-over is an operation supported by ingesters to transfer their state, on shutdown, to a new ingester in the `JOINING` state. Hand-over is typically used during [ingesters rollouts](./ingesters-rolling-updates.md) and is only supported by the Mimir chunks storage.
 
 For more information, please refer to the guide "[Ingesters rolling updates](./ingesters-rolling-updates.md)".
 
 ### Hash ring
 
-The hash ring is a distributed data structure used by Cortex for sharding, replication and service discovery. The hash ring data structure gets shared across Cortex replicas via gossip or a key-value store.
+The hash ring is a distributed data structure used by Mimir for sharding, replication and service discovery. The hash ring data structure gets shared across Mimir replicas via gossip or a key-value store.
 
 For more information, please refer to the [Architecture](../architecture.md#the-hash-ring) documentation.
 
@@ -74,12 +68,6 @@ For example, given the series `node_cpu_seconds_total{instance="10.0.0.1",mode="
 11834 @1603812194
 ```
 
-### Schema config
-
-The schema (or schema config) is a configuration file used by the Cortex chunks storage to configure the backend index and chunks store, and manage storage version upgrades. The schema config is **not** used by the Cortex [blocks storage](#blocks-storage).
-
-For more information, please refer to the [Schema config reference](../chunks-storage/schema-config.md).
-
 ### Series
 
 In the Prometheus ecosystem, a series (or time series) is a single stream of timestamped values belonging to the same metric, with the same set of label key-value pairs.
@@ -95,7 +83,7 @@ node_cpu_seconds_total{instance="10.0.0.2",mode="user"}
 
 ### Tenant
 
-A tenant (also called "user" or "org") is the owner of a set of series written to and queried from Cortex. Cortex multi-tenancy support allows you to isolate series belonging to different tenants. For example, if you have two tenants `team-A` and `team-B`, `team-A` series will be isolated from `team-B`, and each team will be able to query only their own series.
+A tenant (also called "user" or "org") is the owner of a set of series written to and queried from Mimir. Mimir multi-tenancy support allows you to isolate series belonging to different tenants. For example, if you have two tenants `team-A` and `team-B`, `team-A` series will be isolated from `team-B`, and each team will be able to query only their own series.
 
 For more information, please refer to:
 
@@ -112,9 +100,6 @@ _See [Tenant](#tenant)._
 
 ### WAL
 
-The Write-Ahead Log (WAL) is an append only log stored on disk used by ingesters to recover their in-memory state after the process gets restarted, either after a clear shutdown or an abruptly termination. Despite the implementation is different, the WAL is supported both by Cortex chunks and blocks storage engines.
+The Write-Ahead Log (WAL) is an append only log stored on disk used by ingesters to recover their in-memory state after the process gets restarted, either after a clear shutdown or an abruptly termination. The WAL is supported by blocks storage engines.
 
-For more information, please refer to:
-
-- [Ingesters with WAL](../chunks-storage/ingesters-with-wal.md) when running **chunks storage**.
-- [Ingesters with WAL](../blocks-storage/_index.md#the-write-path) when running **blocks storage**.
+For more information, see [Ingesters with WAL](../blocks-storage/_index.md#the-write-path).

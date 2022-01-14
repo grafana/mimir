@@ -23,7 +23,6 @@ The Cortex maintainers commit to ensuring future version of Cortex can read data
 
 Cortex strives to be 100% API compatible with Prometheus (under `/prometheus/*` and `/api/prom/*`); any deviation from this is considered a bug, except:
 
-- Requiring the `__name__` label on queries when querying the [chunks storage](../chunks-storage/_index.md) (queries to ingesters or clusters running the blocks storage are not affected).
 - Additional API endpoints for creating, removing and modifying alerts and recording rules.
 - Additional API around pushing metrics (under `/api/push`).
 - Additional API endpoints for management of Cortex itself, such as the ring. These APIs are not part of the any compatibility guarantees.

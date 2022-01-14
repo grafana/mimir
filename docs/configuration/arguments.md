@@ -1,17 +1,15 @@
 ---
-title: "Cortex Arguments"
-linkTitle: "Cortex Arguments Explained"
+title: "Mimir arguments"
+linkTitle: "Mimir arguments explained"
 weight: 2
 slug: arguments
 ---
 
-## General Notes
+## General notes
 
-Cortex has evolved over several years, and the command-line options sometimes reflect this heritage. In some cases the default value for options is not the recommended value, and in some cases names do not reflect the true meaning. We do intend to clean this up, but it requires a lot of care to avoid breaking existing installations. In the meantime we regret the inconvenience.
+Mimir has evolved over several years, and the command-line options sometimes reflect this heritage. In some cases the default value for options is not the recommended value, and in some cases names do not reflect the true meaning. We do intend to clean this up, but it requires a lot of care to avoid breaking existing installations. In the meantime we regret the inconvenience.
 
 Duration arguments should be specified with a unit like `5s` or `3h`. Valid time units are "ms", "s", "m", "h".
-
-**Warning: some of the following config options apply only to chunks storage, which has been deprecated. You're encouraged to use the [blocks storage](../blocks-storage/_index.md).**
 
 ## Querier
 
@@ -19,10 +17,6 @@ Duration arguments should be specified with a unit like `5s` or `3h`. Valid time
 
   The maximum number of top-level PromQL queries that will execute at the same time, per querier process.
   If using the query frontend, this should be set to at least (`-querier.worker-parallelism` \* number of query frontend replicas). Otherwise queries may queue in the queriers and not the frontend, which will affect QoS. Alternatively, consider using `-querier.worker-match-max-concurrent` to force worker parallelism to match `-querier.max-concurrent`.
-
-- `-querier.query-parallelism`
-
-  This refers to database queries against the store when running the deprecated Cortex chunks storage (e.g. Bigtable or DynamoDB). This is the max subqueries run in parallel per higher-level query.
 
 - `-querier.timeout`
 
@@ -97,7 +91,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
   - `querier.max-concurrent`
   - `server.grpc-max-concurrent-streams` (for both query-frontends and queriers)
 
-  Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded). It's recommended to align this with `ingester.max-chunk-age`.
+  Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded).
 
   Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
 
@@ -259,9 +253,9 @@ This is a special key-value implementation that uses two different KV stores (eg
 For example, migration from Consul to Etcd would look like this:
 
 - Set `ring.store` to use `multi` store. Set `-multi.primary=consul` and `-multi.secondary=etcd`. All consul and etcd settings must still be specified.
-- Start all Cortex microservices. They will still use Consul as primary KV, but they will also write share ring via etcd.
+- Start all Mimir microservices. They will still use Consul as primary KV, but they will also write share ring via etcd.
 - Operator can now use "runtime config" mechanism to switch primary store to etcd.
-- After all Cortex microservices have picked up new primary store, and everything looks correct, operator can now shut down Consul, and modify Cortex configuration to use `-ring.store=etcd` only.
+- After all Mimir microservices have picked up new primary store, and everything looks correct, operator can now shut down Consul, and modify Mimir configuration to use `-ring.store=etcd` only.
 - At this point, Consul can be shut down.
 
 Multi KV has following parameters:
@@ -310,72 +304,6 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 - `distributor.ha-tracker.update-timeout`
   Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
 
-## Ingester
-
-- `-ingester.max-chunk-age`
-
-  The maximum duration of a timeseries chunk in memory. If a timeseries runs for longer than this the current chunk will be flushed to the store and a new chunk created. (default 12h)
-
-- `-ingester.max-chunk-idle`
-
-  If a series doesn't receive a sample for this duration, it is flushed and removed from memory.
-
-- `-ingester.max-stale-chunk-idle`
-
-  If a series receives a [staleness marker](https://www.robustperception.io/staleness-and-promql), then we wait for this duration to get another sample before we close and flush this series, removing it from memory. You want it to be at least 2x the scrape interval as you don't want a single failed scrape to cause a chunk flush.
-
-- `-ingester.chunk-age-jitter`
-
-  To reduce load on the database exactly 12 hours after starting, the age limit is reduced by a varying amount up to this. Don't enable this along with `-ingester.spread-flushes` (default 0m)
-
-- `-ingester.spread-flushes`
-
-  Makes the ingester flush each timeseries at a specific point in the `max-chunk-age` cycle. This means multiple replicas of a chunk are very likely to contain the same contents which cuts chunk storage space by up to 66%. Set `-ingester.chunk-age-jitter` to `0` when using this option. If a chunk cache is configured (via `-store.chunks-cache.memcached.hostname`) then duplicate chunk writes are skipped which cuts write IOPs.
-
-- `-ingester.join-after`
-
-  How long to wait in PENDING state during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). (default 0s)
-
-- `-ingester.max-transfer-retries`
-
-  How many times a LEAVING ingester tries to find a PENDING ingester during the [hand-over process](../guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) (supported only by the [chunks storage](../chunks-storage/_index.md)). Negative value or zero disables hand-over process completely. (default 10)
-
-- `-ingester.normalise-tokens`
-
-  Deprecated. New ingesters always write "normalised" tokens to the ring. Normalised tokens consume less memory to encode and decode; as the ring is unmarshalled regularly, this significantly reduces memory usage of anything that watches the ring.
-
-  Cortex 0.4.0 is the last version that can _write_ denormalised tokens. Cortex 0.5.0 and above always write normalised tokens.
-
-  Cortex 0.6.0 is the last version that can _read_ denormalised tokens. Starting with Cortex 0.7.0 only normalised tokens are supported, and ingesters writing denormalised tokens to the ring (running Cortex 0.4.0 or earlier with `-ingester.normalise-tokens=false`) are ignored by distributors. Such ingesters should either switch to using normalised tokens, or be upgraded to Cortex 0.5.0 or later.
-
-- `-ingester.chunk-encoding`
-
-  Pick one of the encoding formats for timeseries data, which have different performance characteristics.
-  `Bigchunk` uses the Prometheus V2 code, and expands in memory to arbitrary length.
-  `Varbit`, `Delta` and `DoubleDelta` use Prometheus V1 code, and are fixed at 1K per chunk.
-  Defaults to `Bigchunk` starting version 0.7.0.
-
-- `-store.bigchunk-size-cap-bytes`
-
-  When using bigchunks, start a new bigchunk and flush the old one if the old one reaches this size. Use this setting to limit memory growth of ingesters with a lot of timeseries that last for days.
-
-- `-ingester-client.expected-timeseries`
-
-  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. This should match the `max_samples_per_send` in your `queue_config` for Prometheus.
-
-- `-ingester-client.expected-samples-per-series`
-
-  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. Under normal conditions, Prometheus scrapes should arrive with one sample per series.
-
-- `-ingester-client.expected-labels`
-
-  When `push` requests arrive, pre-allocate this many slots to decode them. Tune this setting to reduce memory allocations and garbage. The optimum value will depend on how many labels are sent with your timeseries samples.
-
-- `-store.chunk-cache.cache-stubs`
-
-  Where you don't want to cache every chunk written by ingesters, but you do want to take advantage of chunk write deduplication, this option will make ingesters write a placeholder to the cache for each chunk.
-  Make sure you configure ingesters with a different cache to queriers, which need the whole value.
-
 #### Flusher
 
 - `-flusher.wal-dir`
@@ -387,9 +315,9 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 - `-flusher.flush-op-timeout`
   Duration after which a flush should timeout.
 
-## Runtime Configuration file
+## Runtime configuration file
 
-Cortex has a concept of "runtime config" file, which is simply a file that is reloaded while Cortex is running. It is used by some Cortex components to allow operator to change some aspects of Cortex configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
+Mimir has a concept of "runtime config" file, which is simply a file that is reloaded while Mimir is running. It is used by some Mimir components to allow operator to change some aspects of Mimir configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
 
 At the moment runtime configuration may contain per-user limits, multi KV store, and ingester instance limits.
 
@@ -415,13 +343,13 @@ ingester_limits:
   max_inflight_push_requests: 10000
 ```
 
-When running Cortex on Kubernetes, store this file in a config map and mount it in each services' containers. When changing the values there is no need to restart the services, unless otherwise specified.
+When running Mimir on Kubernetes, store this file in a config map and mount it in each services' containers. When changing the values there is no need to restart the services, unless otherwise specified.
 
 The `/runtime_config` endpoint returns the whole runtime configuration, including the overrides. In case you want to get only the non-default values of the configuration you can pass the `mode` parameter with the `diff` value.
 
-## Ingester, Distributor & Querier limits.
+## Ingester, distributor, and querier limits.
 
-Cortex implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster. There are various default global limits which apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
+Mimir implements various limits on the requests it can process, in order to prevent a single tenant overwhelming the cluster. There are various default global limits which apply to all tenants which can be set on the command line. These limits can also be overridden on a per-tenant basis by using `overrides` field of runtime configuration file.
 
 The `overrides` field is a map of tenant ID (same values as passed in the `X-Scope-OrgID` header) to the various limits. An example could look like:
 
@@ -456,7 +384,6 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
 - `reject_old_samples` / `-validation.reject-old-samples`
 - `reject_old_samples_max_age` / `-validation.reject-old-samples.max-age`
-- `creation_grace_period` / `-validation.create-grace-period`
 
   Also enforce by the distributor, limits on how far in the past (and future) timestamps that we accept can be.
 
@@ -483,9 +410,9 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 - `max_fetched_series_per_query` / `querier.max-fetched-series-per-query`
   This limit is enforced in the queriers on unique series fetched from ingesters and store-gateways (long-term storage).
 
-## Ingester Instance Limits
+## Ingester instance limits
 
-Cortex ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-user limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
+Mimir ingesters support limits that are applied per-instance, meaning they apply to each ingester process. These can be used to ensure individual ingesters are not overwhelmed regardless of any per-user limits. These limits can be set under the `ingester.instance_limits` block in the global configuration file, with command line flags, or under the `ingester_limits` field in the runtime configuration file.
 
 An example as part of the runtime configuration file:
 
@@ -515,15 +442,9 @@ Valid ingester instance limits are (with their corresponding flags):
 
   Limit the maximum number of requests being handled by an ingester at once. This setting is critical for preventing ingesters from using an excessive amount of memory during high load or temporary slow downs. When this limit is reached, new requests will fail with an HTTP 500 error.
 
-## Storage
+## DNS service discovery
 
-- `s3.force-path-style`
-
-  Set this to `true` to force the request to use path-style addressing (`http://s3.amazonaws.com/BUCKET/KEY`). By default, the S3 client will use virtual hosted bucket addressing when possible (`http://BUCKET.s3.amazonaws.com/KEY`).
-
-## DNS Service Discovery
-
-Some clients in Cortex support service discovery via DNS to find addresses of backend servers to connect to (ie. caching servers). The clients supporting it are:
+Some clients in Mimir support service discovery via DNS to find addresses of backend servers to connect to (ie. caching servers). The clients supporting it are:
 
 - [Blocks storage's memcached cache](../blocks-storage/store-gateway.md#caching)
 - [All caching memcached servers](./config-file-reference.md#memcached-client-config)
@@ -544,11 +465,11 @@ If **no prefix** is provided, the provided IP or hostname will be used straighta
 
 ## Logging of IP of reverse proxy
 
-If a reverse proxy is used in front of Cortex it might be diffult to troubleshoot errors. The following 3 settings can be used to log the IP address passed along by the reverse proxy in headers like X-Forwarded-For.
+If a reverse proxy is used in front of Mimir it might be diffult to troubleshoot errors. The following 3 settings can be used to log the IP address passed along by the reverse proxy in headers like X-Forwarded-For.
 
 - `-server.log_source_ips_enabled`
 
-  Set this to `true` to add logging of the IP when a Forwarded, X-Real-IP or X-Forwarded-For header is used. A field called `sourceIPs` will be added to error logs when data is pushed into Cortex.
+  Set this to `true` to add logging of the IP when a Forwarded, X-Real-IP or X-Forwarded-For header is used. A field called `sourceIPs` will be added to error logs when data is pushed into Mimir.
 
 - `-server.log-source-ips-header`
 
