@@ -22,10 +22,10 @@ define docs_docker_run
 	done; \
 	docker logs $${id}; \
 	echo ; \
-	echo *-----------------------------------------------------------*; \
+	echo ------------------------- ; \
 	echo Serving documentation at: ; \
 	echo http://$(DOCS_BASE_URL)/docs/$(DOCS_PROJECT)/$(DOCS_VERSION)/; \
-	echo *-----------------------------------------------------------*; \
+	echo ------------------------- ; \
 	echo ; \
 	docker attach $${id}
 endef
