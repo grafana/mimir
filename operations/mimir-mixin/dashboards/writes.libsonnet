@@ -81,7 +81,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Exemplars in storage';
+        local title = 'Exemplars in ingesters';
         $.panel(title) +
         $.statPanel(|||
           sum(cortex_ingester_tsdb_exemplar_exemplars_in_storage{%(ingester)s}
