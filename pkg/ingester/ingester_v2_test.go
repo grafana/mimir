@@ -231,7 +231,7 @@ func TestIngester_Push(t *testing.T) {
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
-				cortex_ingester_tsdb_exemplar_exemplars_appended_total 1
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 1
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
@@ -548,7 +548,7 @@ func TestIngester_Push(t *testing.T) {
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_appended_total Total number of TSDB exemplars appended.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_appended_total counter
-				cortex_ingester_tsdb_exemplar_exemplars_appended_total 0
+				cortex_ingester_tsdb_exemplar_exemplars_appended_total{user="test"} 0
 
 				# HELP cortex_ingester_tsdb_exemplar_exemplars_in_storage Number of TSDB exemplars currently in storage.
 				# TYPE cortex_ingester_tsdb_exemplar_exemplars_in_storage gauge
