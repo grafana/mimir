@@ -26,13 +26,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/querier/batch"
 	"github.com/grafana/mimir/pkg/querier/chunkstore"
 	"github.com/grafana/mimir/pkg/querier/engine"
 	"github.com/grafana/mimir/pkg/querier/iterators"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
-	"github.com/grafana/mimir/pkg/storage/series"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
@@ -134,7 +132,7 @@ func NewChunkStoreQueryable(cfg Config, chunkStore chunkstore.ChunkStore) storag
 }
 
 // New builds a queryable and promql engine.
-func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, tombstonesLoader *purger.NoopTombstonesLoader, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
+func New(cfg Config, limits *validation.Overrides, distributor Distributor, stores []QueryableWithFilter, reg prometheus.Registerer, logger log.Logger, tracker *activitytracker.ActivityTracker) (storage.SampleAndChunkQueryable, storage.ExemplarQueryable, *promql.Engine) {
 	iteratorFunc := getChunksIteratorFunction(cfg)
 
 	distributorQueryable := newDistributorQueryable(distributor, iteratorFunc, cfg.QueryIngestersWithin, cfg.QueryLabelNamesWithMatchers, logger)
@@ -146,7 +144,7 @@ func New(cfg Config, limits *validation.Overrides, distributor Distributor, stor
 			QueryStoreAfter:     cfg.QueryStoreAfter,
 		}
 	}
-	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, tombstonesLoader, logger)
+	queryable := NewQueryable(distributorQueryable, ns, iteratorFunc, cfg, limits, logger)
 	exemplarQueryable := newDistributorExemplarQueryable(distributor, logger)
 
 	lazyQueryable := storage.QueryableFunc(func(ctx context.Context, mint int64, maxt int64) (storage.Querier, error) {
@@ -185,7 +183,7 @@ type QueryableWithFilter interface {
 }
 
 // NewQueryable creates a new Queryable for mimir.
-func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, tombstonesLoader *purger.NoopTombstonesLoader, logger log.Logger) storage.Queryable {
+func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter, chunkIterFn chunkIteratorFunc, cfg Config, limits *validation.Overrides, logger log.Logger) storage.Queryable {
 	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
 		now := time.Now()
 
@@ -208,7 +206,6 @@ func NewQueryable(distributor QueryableWithFilter, stores []QueryableWithFilter,
 			mint:               mint,
 			maxt:               maxt,
 			chunkIterFn:        chunkIterFn,
-			tombstonesLoader:   tombstonesLoader,
 			limits:             limits,
 			maxQueryIntoFuture: cfg.MaxQueryIntoFuture,
 			logger:             logger,
@@ -247,7 +244,6 @@ type querier struct {
 	ctx         context.Context
 	mint, maxt  int64
 
-	tombstonesLoader   *purger.NoopTombstonesLoader
 	limits             *validation.Overrides
 	maxQueryIntoFuture time.Duration
 	logger             log.Logger
@@ -307,19 +303,8 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 		return storage.ErrSeriesSet(limitErr)
 	}
 
-	tombstones, err := q.tombstonesLoader.GetPendingTombstonesForInterval(userID, startTime, endTime)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
 	if len(q.queriers) == 1 {
-		seriesSet := q.queriers[0].Select(true, sp, matchers...)
-
-		if tombstones.Len() != 0 {
-			seriesSet = series.NewDeletedSeriesSet(seriesSet, tombstones, model.Interval{Start: startTime, End: endTime})
-		}
-
-		return seriesSet
+		return q.queriers[0].Select(true, sp, matchers...)
 	}
 
 	sets := make(chan storage.SeriesSet, len(q.queriers))
@@ -342,12 +327,7 @@ func (q querier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Mat
 	// we have all the sets from different sources (chunk from store, chunks from ingesters,
 	// time series from store and time series from ingesters).
 	// mergeSeriesSets will return sorted set.
-	seriesSet := q.mergeSeriesSets(result)
-
-	if tombstones.Len() != 0 {
-		seriesSet = series.NewDeletedSeriesSet(seriesSet, tombstones, model.Interval{Start: startTime, End: endTime})
-	}
-	return seriesSet
+	return q.mergeSeriesSets(result)
 }
 
 // LabelsValue implements storage.Querier.

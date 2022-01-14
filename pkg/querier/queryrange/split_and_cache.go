@@ -67,7 +67,6 @@ type splitAndCacheMiddleware struct {
 	cache                  cache.Cache
 	splitter               CacheSplitter
 	extractor              Extractor
-	cacheGenNumberLoader   CacheGenNumberLoader
 	shouldCacheReq         shouldCacheFn
 }
 
@@ -82,7 +81,6 @@ func newSplitAndCacheMiddleware(
 	cache cache.Cache,
 	splitter CacheSplitter,
 	extractor Extractor,
-	cacheGenNumberLoader CacheGenNumberLoader,
 	shouldCacheReq shouldCacheFn,
 	logger log.Logger,
 	reg prometheus.Registerer) Middleware {
@@ -101,7 +99,6 @@ func newSplitAndCacheMiddleware(
 			cache:                  cache,
 			splitter:               splitter,
 			extractor:              extractor,
-			cacheGenNumberLoader:   cacheGenNumberLoader,
 			shouldCacheReq:         shouldCacheReq,
 			logger:                 logger,
 		}
@@ -127,11 +124,6 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 	// Lookup the results cache.
 	if isCacheEnabled {
-		// Inject the cache generation number into the context (if provided).
-		if s.cacheGenNumberLoader != nil {
-			ctx = cache.InjectCacheGenNumber(ctx, s.cacheGenNumberLoader.GetResultsCacheGenNumber(tenantIDs))
-		}
-
 		// Build the cache keys for all requests to try to fetch from cache.
 		lookupReqs := make([]*splitRequest, 0, len(splitReqs))
 		lookupKeys := make([]string, 0, len(splitReqs))
@@ -221,7 +213,7 @@ func (s *splitAndCacheMiddleware) Do(ctx context.Context, req Request) (Response
 
 			for downstreamIdx, downstreamReq := range splitReq.downstreamRequests {
 				downstreamRes := splitReq.downstreamResponses[downstreamIdx]
-				if !isResponseCachable(ctx, downstreamRes, s.cacheGenNumberLoader, s.logger) {
+				if !isResponseCachable(downstreamRes, s.logger) {
 					continue
 				}
 

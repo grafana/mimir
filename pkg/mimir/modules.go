@@ -74,7 +74,6 @@ const (
 	QueryFrontend            string = "query-frontend"
 	QueryFrontendTripperware string = "query-frontend-tripperware"
 	Store                    string = "store"
-	DeleteRequestsStore      string = "delete-requests-store"
 	RulerStorage             string = "ruler-storage"
 	Ruler                    string = "ruler"
 	AlertManager             string = "alertmanager"
@@ -264,7 +263,7 @@ func (t *Mimir) initQueryable() (serv services.Service, err error) {
 	querierRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "querier"}, prometheus.DefaultRegisterer)
 
 	// Create a querier queryable and PromQL engine
-	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, querierRegisterer, util_log.Logger, t.ActivityTracker)
+	t.QuerierQueryable, t.ExemplarQueryable, t.QuerierEngine = querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, querierRegisterer, util_log.Logger, t.ActivityTracker)
 
 	// Register the default endpoints that are always enabled for the querier module
 	t.API.RegisterQueryable(t.QuerierQueryable, t.Distributor)
@@ -343,7 +342,6 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 		t.ExemplarQueryable,
 		t.QuerierEngine,
 		t.Distributor,
-		t.TombstonesLoader,
 		prometheus.DefaultRegisterer,
 		util_log.Logger,
 		t.Overrides,
@@ -512,7 +510,7 @@ func (t *Mimir) initChunkStore() (serv services.Service, err error) {
 		return
 	}
 
-	t.Store, err = storage.NewStore(t.Cfg.Storage, t.Cfg.ChunkStore, t.Cfg.Schema, t.Overrides, prometheus.DefaultRegisterer, t.TombstonesLoader, util_log.Logger)
+	t.Store, err = storage.NewStore(t.Cfg.Storage, t.Cfg.ChunkStore, t.Cfg.Schema, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
 	if err != nil {
 		return
 	}
@@ -521,12 +519,6 @@ func (t *Mimir) initChunkStore() (serv services.Service, err error) {
 		t.Store.Stop()
 		return nil
 	}), nil
-}
-
-func (t *Mimir) initDeleteRequestsStore() (serv services.Service, err error) {
-	// until we need to explicitly enable delete series support we need to do create NoopTombstonesLoader without DeleteStore which acts as noop
-	t.TombstonesLoader = purger.NewNoopTombstonesLoader()
-	return
 }
 
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
@@ -541,7 +533,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Cfg.Storage.Engine,
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, prometheus.DefaultRegisterer),
 		prometheus.DefaultRegisterer,
-		t.TombstonesLoader,
 	)
 	if err != nil {
 		return nil, err
@@ -608,7 +599,7 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 	rulerRegisterer := prometheus.WrapRegistererWith(prometheus.Labels{"engine": "ruler"}, prometheus.DefaultRegisterer)
 	var queryable, federatedQueryable prom_storage.Queryable
 	// TODO: Consider wrapping logger to differentiate from querier module logger
-	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, t.TombstonesLoader, rulerRegisterer, util_log.Logger, t.ActivityTracker)
+	queryable, _, eng := querier.New(t.Cfg.Querier, t.Overrides, t.Distributor, t.StoreQueryables, rulerRegisterer, util_log.Logger, t.ActivityTracker)
 
 	if t.Cfg.Ruler.TenantFederation.Enabled {
 		if !t.Cfg.TenantFederation.Enabled {
@@ -771,7 +762,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
 	mm.RegisterModule(Store, t.initChunkStore, modules.UserInvisibleModule)
-	mm.RegisterModule(DeleteRequestsStore, t.initDeleteRequestsStore, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(Flusher, t.initFlusher)
@@ -802,14 +792,14 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:        {Overrides},
 		Distributor:              {DistributorService, API},
 		DistributorService:       {Ring, Overrides},
-		Store:                    {Overrides, DeleteRequestsStore},
+		Store:                    {Overrides},
 		Ingester:                 {IngesterService, API},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
 		Flusher:                  {Store, API},
 		Queryable:                {Overrides, DistributorService, Store, Ring, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation},
 		StoreQueryable:           {Overrides, Store, MemberlistKV},
-		QueryFrontendTripperware: {API, Overrides, DeleteRequestsStore},
+		QueryFrontendTripperware: {API, Overrides},
 		QueryFrontend:            {QueryFrontendTripperware},
 		QueryScheduler:           {API, Overrides},
 		Ruler:                    {DistributorService, Store, StoreQueryable, RulerStorage},

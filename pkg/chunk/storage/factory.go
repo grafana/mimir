@@ -140,7 +140,6 @@ func NewStore(
 	schemaCfg chunk.SchemaConfig,
 	limits StoreLimits,
 	reg prometheus.Registerer,
-	cacheGenNumLoader chunk.CacheGenNumLoader,
 	logger log.Logger,
 ) (chunk.Store, error) {
 	chunkMetrics := newChunkClientMetrics(reg)
@@ -168,17 +167,11 @@ func NewStore(
 	chunksCache = cache.StopOnce(chunksCache)
 	writeDedupeCache = cache.StopOnce(writeDedupeCache)
 
-	// Lets wrap all caches except chunksCache with CacheGenMiddleware to facilitate cache invalidation using cache generation numbers.
-	// chunksCache is not wrapped because chunks content can't be anyways modified without changing its ID so there is no use of
-	// invalidating chunks cache. Also chunks can be fetched only by their ID found in index and we are anyways removing the index and invalidating index cache here.
-	indexReadCache = cache.NewCacheGenNumMiddleware(indexReadCache)
-	writeDedupeCache = cache.NewCacheGenNumMiddleware(writeDedupeCache)
-
 	err = schemaCfg.Load()
 	if err != nil {
 		return nil, errors.Wrap(err, "error loading schema config")
 	}
-	stores := chunk.NewCompositeStore(cacheGenNumLoader)
+	stores := chunk.NewCompositeStore()
 
 	for _, s := range schemaCfg.Configs {
 		indexClientReg := prometheus.WrapRegistererWith(

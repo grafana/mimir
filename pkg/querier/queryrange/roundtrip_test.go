@@ -77,7 +77,6 @@ func TestRangeTripperware(t *testing.T) {
 			Timeout:    time.Minute,
 		},
 		nil,
-		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -128,7 +127,6 @@ func TestInstantTripperware(t *testing.T) {
 			MaxSamples: 1000,
 			Timeout:    time.Minute,
 		},
-		nil,
 		nil,
 	)
 	require.NoError(t, err)
@@ -236,7 +234,6 @@ func TestTripperware_Metrics(t *testing.T) {
 					Timeout:    time.Minute,
 				},
 				reg,
-				nil,
 			)
 			require.NoError(t, err)
 
@@ -286,7 +283,6 @@ func Test_ShardingConfigError(t *testing.T) {
 		nil,
 		storage.StorageEngineChunks,
 		promql.EngineOpts{},
-		nil,
 		nil,
 	)
 
