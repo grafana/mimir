@@ -37,6 +37,7 @@ import (
 	"github.com/weaveworks/common/httpgrpc"
 	"github.com/weaveworks/common/mtime"
 	"github.com/weaveworks/common/user"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
@@ -1706,8 +1707,9 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			var clientConfig client.Config
 			limits := validation.Limits{}
 			flagext.DefaultValues(&distributorCfg, &clientConfig, &limits)
+			distributorCfg.DistributorRing.KVStore.Store = "inmemory"
 
-			limits.IngestionRate = 0 // Unlimited.
+			limits.IngestionRate = float64(rate.Inf) // Unlimited.
 			testData.prepareConfig(&limits)
 
 			distributorCfg.IngesterClientFactory = func(addr string) (ring_client.PoolClient, error) {
