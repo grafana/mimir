@@ -17,9 +17,7 @@ DOCS_DOCKER_RUN_FLAGS = -ti -v $(CURDIR)/$(DOCS_DIR):/hugo/content/docs/$(DOCS_P
 # through versioning.
 define docs_docker_run
 	@id=$$(docker run -d $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && exec $(1)'); \
-	until curl -sLw '%{http_code}' http://localhost:$(DOCS_HOST_PORT)/docs/$(DOCS_PROJECT)/ | grep -q 200; do \
-	sleep 1; \
-	done; \
+	until curl -sLw '%{http_code}' http://localhost:$(DOCS_HOST_PORT)/docs/$(DOCS_PROJECT)/ | grep -q 200; do sleep 1; done; \
 	docker logs $${id}; \
 	echo ; \
 	echo ------------------------- ; \
