@@ -6,7 +6,6 @@
 package queryrange
 
 import (
-	"context"
 	"fmt"
 	"testing"
 	"time"
@@ -16,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -66,11 +64,10 @@ func TestIsRequestCachable(t *testing.T) {
 	maxCacheTime := int64(150 * 1000)
 
 	for _, tc := range []struct {
-		name                   string
-		request                Request
-		cacheGenNumberToInject string
-		expected               bool
-		cacheStepUnaligned     bool
+		name               string
+		request            Request
+		expected           bool
+		cacheStepUnaligned bool
 	}{
 		// @ modifier on vector selectors.
 		{
@@ -195,10 +192,9 @@ func TestIsRequestCachable(t *testing.T) {
 
 func TestIsResponseCachable(t *testing.T) {
 	for _, tc := range []struct {
-		name                   string
-		response               Response
-		cacheGenNumberToInject string
-		expected               bool
+		name     string
+		response Response
+		expected bool
 	}{
 		// Tests only for cacheControlHeader
 		{
@@ -256,94 +252,10 @@ func TestIsResponseCachable(t *testing.T) {
 			}),
 			expected: true,
 		},
-
-		// Tests only for cacheGenNumber header
-		{
-			name: "cacheGenNumber not set in both header and store",
-			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
-					{
-						Name:   "meaninglessheader",
-						Values: []string{},
-					},
-				},
-			}),
-			expected: true,
-		},
-		{
-			name: "cacheGenNumber set in store but not in header",
-			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
-					{
-						Name:   "meaninglessheader",
-						Values: []string{},
-					},
-				},
-			}),
-			cacheGenNumberToInject: "1",
-			expected:               false,
-		},
-		{
-			name: "cacheGenNumber set in header but not in store",
-			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
-					{
-						Name:   resultsCacheGenNumberHeaderName,
-						Values: []string{"1"},
-					},
-				},
-			}),
-			expected: false,
-		},
-		{
-			name: "cacheGenNumber in header and store are the same",
-			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
-					{
-						Name:   resultsCacheGenNumberHeaderName,
-						Values: []string{"1", "1"},
-					},
-				},
-			}),
-			cacheGenNumberToInject: "1",
-			expected:               true,
-		},
-		{
-			name: "inconsistency between cacheGenNumber in header and store",
-			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
-					{
-						Name:   resultsCacheGenNumberHeaderName,
-						Values: []string{"1", "2"},
-					},
-				},
-			}),
-			cacheGenNumberToInject: "1",
-			expected:               false,
-		},
-		{
-			name: "cacheControl header says not to catch and cacheGenNumbers in store and headers have consistency",
-			response: Response(&PrometheusResponse{
-				Headers: []*PrometheusResponseHeader{
-					{
-						Name:   cacheControlHeader,
-						Values: []string{noStoreValue},
-					},
-					{
-						Name:   resultsCacheGenNumberHeaderName,
-						Values: []string{"1", "1"},
-					},
-				},
-			}),
-			cacheGenNumberToInject: "1",
-			expected:               false,
-		},
 	} {
 		{
 			t.Run(tc.name, func(t *testing.T) {
-				ctx := cache.InjectCacheGenNumber(context.Background(), tc.cacheGenNumberToInject)
-				cacheGenLoader := newMockCacheGenNumberLoader()
-				ret := isResponseCachable(ctx, tc.response, cacheGenLoader, log.NewNopLogger())
+				ret := isResponseCachable(tc.response, log.NewNopLogger())
 				require.Equal(t, tc.expected, ret)
 			})
 		}
@@ -564,14 +476,4 @@ func TestConstSplitter_generateCacheKey(t *testing.T) {
 
 func toMs(t time.Duration) int64 {
 	return int64(t / time.Millisecond)
-}
-
-type mockCacheGenNumberLoader struct{}
-
-func newMockCacheGenNumberLoader() CacheGenNumberLoader {
-	return mockCacheGenNumberLoader{}
-}
-
-func (mockCacheGenNumberLoader) GetResultsCacheGenNumber(tenantIDs []string) string {
-	return ""
 }

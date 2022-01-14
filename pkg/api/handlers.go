@@ -13,8 +13,6 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/grafana/mimir/pkg/querier/queryrange"
-
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
 	"github.com/pkg/errors"
@@ -29,7 +27,6 @@ import (
 	"github.com/weaveworks/common/instrument"
 	"github.com/weaveworks/common/middleware"
 
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/util"
@@ -168,7 +165,6 @@ func NewQuerierHandler(
 	exemplarQueryable storage.ExemplarQueryable,
 	engine *promql.Engine,
 	distributor Distributor,
-	tombstonesLoader *purger.NoopTombstonesLoader,
 	reg prometheus.Registerer,
 	logger log.Logger,
 	limits *validation.Overrides,
@@ -231,16 +227,14 @@ func NewQuerierHandler(
 
 	// Use a separate metric for the querier in order to differentiate requests from the query-frontend when
 	// running Mimir as a single binary.
-	inst := middleware.Instrument{
+	instrumentMiddleware := middleware.Instrument{
 		RouteMatcher:     router,
 		Duration:         querierRequestDuration,
 		RequestBodySize:  receivedMessageSize,
 		ResponseBodySize: sentMessageSize,
 		InflightRequests: inflightRequests,
 	}
-	cacheGenHeaderMiddleware := queryrange.NewHTTPCacheGenNumberHeaderSetterMiddleware(tombstonesLoader)
-	middlewares := middleware.Merge(inst, cacheGenHeaderMiddleware)
-	router.Use(middlewares.Wrap)
+	router.Use(instrumentMiddleware.Wrap)
 
 	// Define the prefixes for all routes
 	prefix := path.Join(cfg.ServerPrefix, cfg.PrometheusHTTPPrefix)

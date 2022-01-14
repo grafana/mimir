@@ -23,10 +23,6 @@ type StoreLimits interface {
 	MaxQueryLength(userID string) time.Duration
 }
 
-type CacheGenNumLoader interface {
-	GetStoreCacheGenNumber(tenantIDs []string) string
-}
-
 // Store for chunks.
 type Store interface {
 	Put(ctx context.Context, chunks []Chunk) error
@@ -54,8 +50,7 @@ type CompositeStore struct {
 }
 
 type compositeStore struct {
-	cacheGenNumLoader CacheGenNumLoader
-	stores            []compositeStoreEntry
+	stores []compositeStoreEntry
 }
 
 type compositeStoreEntry struct {
@@ -65,8 +60,8 @@ type compositeStoreEntry struct {
 
 // NewCompositeStore creates a new Store which delegates to different stores depending
 // on time.
-func NewCompositeStore(cacheGenNumLoader CacheGenNumLoader) CompositeStore {
-	return CompositeStore{compositeStore{cacheGenNumLoader: cacheGenNumLoader}}
+func NewCompositeStore() CompositeStore {
+	return CompositeStore{compositeStore{}}
 }
 
 // AddPeriod adds the configuration for a period of time to the CompositeStore
@@ -222,8 +217,6 @@ func (c compositeStore) forStores(ctx context.Context, userID string, from, thro
 		return nil
 	}
 
-	ctx = c.injectCacheGen(ctx, []string{userID})
-
 	// first, find the schema with the highest start _before or at_ from
 	i := sort.Search(len(c.stores), func(i int) bool {
 		return c.stores[i].start > from
@@ -265,12 +258,4 @@ func (c compositeStore) forStores(ctx context.Context, userID string, from, thro
 	}
 
 	return nil
-}
-
-func (c compositeStore) injectCacheGen(ctx context.Context, tenantIDs []string) context.Context {
-	if c.cacheGenNumLoader == nil {
-		return ctx
-	}
-
-	return cache.InjectCacheGenNumber(ctx, c.cacheGenNumLoader.GetStoreCacheGenNumber(tenantIDs))
 }

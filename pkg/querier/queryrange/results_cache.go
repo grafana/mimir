@@ -29,19 +29,12 @@ import (
 )
 
 const (
-	// resultsCacheGenNumberHeaderName holds name of the header we want to set in http response
-	resultsCacheGenNumberHeaderName = "Results-Cache-Gen-Number"
-
 	// cacheControlHeader is the name of the cache control header.
 	cacheControlHeader = "Cache-Control"
 
 	// noStoreValue is the value that cacheControlHeader has if the response indicates that the results should not be cached.
 	noStoreValue = "no-store"
 )
-
-type CacheGenNumberLoader interface {
-	GetResultsCacheGenNumber(tenantIDs []string) string
-}
 
 // ResultsCacheConfig is the config for the results cache.
 type ResultsCacheConfig struct {
@@ -161,30 +154,11 @@ func isRequestCachable(req Request, maxCacheTime int64, cacheUnalignedRequests b
 }
 
 // isResponseCachable says whether the response should be cached or not.
-func isResponseCachable(ctx context.Context, r Response, cacheGenNumberLoader CacheGenNumberLoader, logger log.Logger) bool {
+func isResponseCachable(r Response, logger log.Logger) bool {
 	headerValues := getHeaderValuesWithName(r, cacheControlHeader)
 	for _, v := range headerValues {
 		if v == noStoreValue {
 			level.Debug(logger).Log("msg", fmt.Sprintf("%s header in response is equal to %s, not caching the response", cacheControlHeader, noStoreValue))
-			return false
-		}
-	}
-
-	if cacheGenNumberLoader == nil {
-		return true
-	}
-
-	genNumbersFromResp := getHeaderValuesWithName(r, resultsCacheGenNumberHeaderName)
-	genNumberFromCtx := cache.ExtractCacheGenNumber(ctx)
-
-	if len(genNumbersFromResp) == 0 && genNumberFromCtx != "" {
-		level.Debug(logger).Log("msg", fmt.Sprintf("we found results cache gen number %s set in store but none in headers", genNumberFromCtx))
-		return false
-	}
-
-	for _, gen := range genNumbersFromResp {
-		if gen != genNumberFromCtx {
-			level.Debug(logger).Log("msg", fmt.Sprintf("inconsistency in results cache gen numbers %s (GEN-FROM-RESPONSE) != %s (GEN-FROM-STORE), not caching the response", gen, genNumberFromCtx))
 			return false
 		}
 	}
