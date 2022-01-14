@@ -21,9 +21,12 @@ define docs_docker_run
 	sleep 1; \
 	done; \
 	docker logs $${id}; \
-	echo *------------------------------------------------------------------------------------*; \
-	echo Serving documentation at http://$(DOCS_BASE_URL)/docs/$(DOCS_PROJECT)/$(DOCS_VERSION)/; \
-	echo *------------------------------------------------------------------------------------*; \
+	echo ; \
+	echo *-----------------------------------------------------------*; \
+	echo Serving documentation at: ; \
+	echo http://$(DOCS_BASE_URL)/docs/$(DOCS_PROJECT)/$(DOCS_VERSION)/; \
+	echo *-----------------------------------------------------------*; \
+	echo ; \
 	docker attach $${id}
 endef
 
