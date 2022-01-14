@@ -286,5 +286,67 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
         },
       )
+    )
+    .addRow(
+      $.row('Exemplars')
+      .addPanel(
+        local title = 'Distributor exemplars incoming rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum(%(group_prefix_jobs)s:cortex_distributor_exemplars_in:rate5m{%(job)s})'
+          % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
+          'incoming exemplars',
+        ) +
+        { yaxes: $.yaxes('ex/s') } +
+        $.panelDescription(
+          title,
+          |||
+            The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Distributor exemplars received rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})'
+          % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_jobs: $._config.group_prefix_jobs },
+          'received exemplars',
+        ) +
+        { yaxes: $.yaxes('ex/s') } +
+        $.panelDescription(
+          title,
+          |||
+            The total number of received exemplars, excluding rejected and deduped exemplars.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Ingester appended exemplars rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum(%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(job)s})'
+          % { job: $.jobMatcher($._config.job_names.ingester), group_prefix_jobs: $._config.group_prefix_jobs },
+          'appended exemplars',
+        ) +
+        { yaxes: $.yaxes('ex/s') } +
+        $.panelDescription(
+          title,
+          |||
+            Total number of TSDB exemplars appended in the ingesters.
+          |||
+        ),
+      )
+      .addPanel(
+        $.panel('Top 10 users by received exemplars rate in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk(10, sum by (user) (%(group_prefix_users)s:cortex_distributor_received_exemplars:rate5m{%(job)s}))'
+            % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
+          ],
+          { 'Value #A': { alias: 'exemplars/s' } }
+        )
+      ),
     ),
 }
