@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/ruler/rulespb"
 	"github.com/grafana/mimir/pkg/ruler/rulestore"
@@ -241,10 +240,6 @@ func TestDelete(t *testing.T) {
 }
 
 func getSortedObjectKeys(bucketClient interface{}) []string {
-	if typed, ok := bucketClient.(*chunk.MockStorage); ok {
-		return typed.GetSortedObjectKeys()
-	}
-
 	if typed, ok := bucketClient.(*objstore.InMemBucket); ok {
 		var keys []string
 		for key := range typed.Objects() {

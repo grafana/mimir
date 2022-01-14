@@ -36,10 +36,8 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/chunk/storage"
-	chunk_util "github.com/grafana/mimir/pkg/chunk/util"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -102,8 +100,6 @@ type Config struct {
 	Ingester         ingester.Config                 `yaml:"ingester"`
 	Flusher          flusher.Config                  `yaml:"flusher"`
 	Storage          storage.Config                  `yaml:"storage"`
-	ChunkStore       chunk.StoreConfig               `yaml:"chunk_store"`
-	Schema           chunk.SchemaConfig              `yaml:"schema" doc:"hidden"` // Doc generation tool doesn't support it because part of the SchemaConfig doesn't support CLI flags (needs manual documentation)
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
@@ -149,8 +145,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Ingester.RegisterFlags(f)
 	c.Flusher.RegisterFlags(f)
 	c.Storage.RegisterFlags(f)
-	c.ChunkStore.RegisterFlags(f)
-	c.Schema.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Prealloc.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
@@ -170,9 +164,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.MemberlistKV.RegisterFlags(f)
 	c.ActivityTracker.RegisterFlags(f)
 	c.QueryScheduler.RegisterFlags(f)
-
-	// These don't seem to have a home.
-	f.IntVar(&chunk_util.QueryParallelism, "querier.query-parallelism", 100, "Max subqueries run in parallel per higher-level query.")
 }
 
 // Validate the mimir config and return an error if the validation
@@ -186,17 +177,11 @@ func (c *Config) Validate(log log.Logger) error {
 		return errInvalidHTTPPrefix
 	}
 
-	if err := c.Schema.Validate(); err != nil {
-		return errors.Wrap(err, "invalid schema config")
-	}
 	if err := c.Encoding.Validate(); err != nil {
 		return errors.Wrap(err, "invalid encoding config")
 	}
 	if err := c.Storage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid storage config")
-	}
-	if err := c.ChunkStore.Validate(log); err != nil {
-		return errors.Wrap(err, "invalid chunk store config")
 	}
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")
@@ -233,10 +218,6 @@ func (c *Config) Validate(log log.Logger) error {
 	}
 	if err := c.Alertmanager.Validate(c.AlertmanagerStorage); err != nil {
 		return errors.Wrap(err, "invalid alertmanager config")
-	}
-
-	if c.Storage.Engine == storage.StorageEngineBlocks && c.Querier.SecondStoreEngine != storage.StorageEngineChunks && len(c.Schema.Configs) > 0 {
-		level.Warn(log).Log("schema configuration is not used by the blocks storage engine, and will have no effect")
 	}
 
 	return nil
@@ -310,7 +291,6 @@ type Mimir struct {
 	Distributor              *distributor.Distributor
 	Ingester                 *ingester.Ingester
 	Flusher                  *flusher.Flusher
-	Store                    chunk.Store
 	Frontend                 *frontendv1.Frontend
 	RuntimeConfig            *runtimeconfig.Manager
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable

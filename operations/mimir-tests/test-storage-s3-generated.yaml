@@ -868,7 +868,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.cardinality-limit=1000000
         - -store.engine=blocks
         - -store.max-query-length=768h
         - -target=querier
@@ -1122,7 +1121,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.cardinality-limit=1000000
         - -store.engine=blocks
         - -store.max-query-length=768h
         - -target=ruler

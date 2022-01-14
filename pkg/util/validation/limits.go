@@ -70,7 +70,6 @@ type Limits struct {
 	MaxQueryLength                 model.Duration `yaml:"max_query_length" json:"max_query_length"`
 	MaxQueryParallelism            int            `yaml:"max_query_parallelism" json:"max_query_parallelism"`
 	MaxLabelsQueryLength           model.Duration `yaml:"max_labels_query_length" json:"max_labels_query_length"`
-	CardinalityLimit               int            `yaml:"cardinality_limit" json:"cardinality_limit"`
 	MaxCacheFreshness              model.Duration `yaml:"max_cache_freshness" json:"max_cache_freshness"`
 	MaxQueriersPerTenant           int            `yaml:"max_queriers_per_tenant" json:"max_queriers_per_tenant"`
 	QueryShardingTotalShards       int            `yaml:"query_sharding_total_shards" json:"query_sharding_total_shards"`
@@ -158,7 +157,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.LabelNamesAndValuesResultsMaxSizeBytes, "querier.label-names-and-values-results-max-size-bytes", 400*1024*1024, "Maximum size in bytes of distinct label names and values. When querier receives response from ingester, it merges the response with responses from other ingesters. This maximum size limit is applied to the merged(distinct) results. If the limit is reached, an error is returned.")
 	f.BoolVar(&l.CardinalityAnalysisEnabled, "querier.cardinality-analysis-enabled", false, "Enables endpoints used for cardinality analysis.")
 	f.IntVar(&l.LabelValuesMaxCardinalityLabelNamesPerRequest, "querier.label-values-max-cardinality-label-names-per-request", 100, "Maximum number of label names allowed to be queried in a single /api/v1/cardinality/label_values API call.")
-	f.IntVar(&l.CardinalityLimit, "store.cardinality-limit", 1e5, "Cardinality limit for index queries. This limit is ignored when using blocks storage. 0 to disable.")
 	_ = l.MaxCacheFreshness.Set("1m")
 	f.Var(&l.MaxCacheFreshness, "frontend.max-cache-freshness", "Most recent allowed cacheable result per-tenant, to prevent caching very recent results that might still be in flux.")
 	f.IntVar(&l.MaxQueriersPerTenant, "frontend.max-queriers-per-tenant", 0, "Maximum number of queriers that can handle requests for a single tenant. If set to 0 or value higher than number of available queriers, *all* queriers will handle requests for the tenant. Each frontend (or query-scheduler, if used) will select the same set of queriers for the same tenant (given that all queriers are connected to all frontends / query-schedulers). This option only works with queriers connecting to the query-frontend / query-scheduler, not when using downstream URL.")
@@ -435,11 +433,6 @@ func (o *Overrides) QueryShardingMaxShardedQueries(userID string) int {
 // EnforceMetadataMetricName whether to enforce the presence of a metric name on metadata.
 func (o *Overrides) EnforceMetadataMetricName(userID string) bool {
 	return o.getOverridesForUser(userID).EnforceMetadataMetricName
-}
-
-// CardinalityLimit returns the maximum number of timeseries allowed in a query.
-func (o *Overrides) CardinalityLimit(userID string) int {
-	return o.getOverridesForUser(userID).CardinalityLimit
 }
 
 // MinChunkLength returns the minimum size of chunk that will be saved by ingesters

@@ -44,7 +44,6 @@ type Flusher struct {
 
 	cfg            Config
 	ingesterConfig ingester.Config
-	chunkStore     ingester.ChunkStore
 	limits         *validation.Overrides
 	registerer     prometheus.Registerer
 	logger         log.Logger
@@ -59,7 +58,6 @@ const (
 func New(
 	cfg Config,
 	ingesterConfig ingester.Config,
-	chunkStore ingester.ChunkStore,
 	limits *validation.Overrides,
 	registerer prometheus.Registerer,
 	logger log.Logger,
@@ -68,7 +66,6 @@ func New(
 	f := &Flusher{
 		cfg:            cfg,
 		ingesterConfig: ingesterConfig,
-		chunkStore:     chunkStore,
 		limits:         limits,
 		registerer:     registerer,
 		logger:         logger,

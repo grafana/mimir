@@ -79,6 +79,17 @@
     * All `-deletes.*` flags
     * All `-purger.*` flags
     * All `-metrics.*` flags
+    * All `-dynamodb.*` flags
+    * All `-s3.*` flags
+    * All `-azure.*` flags
+    * All `-bigtable.*` flags
+    * All `-gcs.*` flags
+    * All `-cassandra.*` flags
+    * All `-boltdb.*` flags
+    * All `-local.*` flags
+    * All `-swift.*` flags
+    * All `-store.*` flags except `-store.engine`, `-store.max-query-length`, `-store.max-labels-query-length`
+    * All `-grpc-store.*` flags
   * The following API endpoints have been removed:
     * `/api/v1/chunks` and `/chunks`
 * [CHANGE] Compactor: compactor now uses deletion marks from `<tenant>/markers` location in the bucket. Marker files are no longer fetched, only listed. #550
