@@ -6,8 +6,6 @@
 package querier
 
 import (
-	"context"
-
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -15,54 +13,10 @@ import (
 
 	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/ingester/client"
-	"github.com/grafana/mimir/pkg/querier/chunkstore"
 	seriesset "github.com/grafana/mimir/pkg/storage/series"
-	"github.com/grafana/mimir/pkg/tenant"
 )
 
 type chunkIteratorFunc func(chunks []chunk.Chunk, from, through model.Time) chunkenc.Iterator
-
-func newChunkStoreQueryable(store chunkstore.ChunkStore, chunkIteratorFunc chunkIteratorFunc) storage.Queryable {
-	return storage.QueryableFunc(func(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-		return &chunkStoreQuerier{
-			store:             store,
-			chunkIteratorFunc: chunkIteratorFunc,
-			ctx:               ctx,
-			mint:              mint,
-			maxt:              maxt,
-		}, nil
-	})
-}
-
-type chunkStoreQuerier struct {
-	store             chunkstore.ChunkStore
-	chunkIteratorFunc chunkIteratorFunc
-	ctx               context.Context
-	mint, maxt        int64
-}
-
-// Select implements storage.Querier interface.
-// The bool passed is ignored because the series is always sorted.
-func (q *chunkStoreQuerier) Select(_ bool, sp *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	userID, err := tenant.TenantID(q.ctx)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
-	// We will hit this for /series lookup when -querier.query-store-for-labels-enabled is set.
-	// If we don't skip here, it'll make /series lookups extremely slow as all the chunks will be loaded.
-	// That flag is only to be set with blocks storage engine, and this is a protective measure.
-	if sp == nil || sp.Func == "series" {
-		return storage.EmptySeriesSet()
-	}
-
-	chunks, err := q.store.Get(q.ctx, userID, model.Time(sp.Start), model.Time(sp.End), matchers...)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
-	return partitionChunks(chunks, q.mint, q.maxt, q.chunkIteratorFunc)
-}
 
 // Series in the returned set are sorted alphabetically by labels.
 func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkIteratorFunc) storage.SeriesSet {
@@ -84,18 +38,6 @@ func partitionChunks(chunks []chunk.Chunk, mint, maxt int64, iteratorFunc chunkI
 	}
 
 	return seriesset.NewConcreteSeriesSet(series)
-}
-
-func (q *chunkStoreQuerier) LabelValues(name string, labels ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, nil
-}
-
-func (q *chunkStoreQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
-	return nil, nil, nil
-}
-
-func (q *chunkStoreQuerier) Close() error {
-	return nil
 }
 
 // Implements SeriesWithChunks

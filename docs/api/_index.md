@@ -43,7 +43,6 @@ For the sake of clarity, in this document we have grouped API endpoints by servi
 | [Label names cardinality](#label-names-cardinality)                                   | Querier, Query-frontend  | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_names`  |
 | [Label values cardinality](#label-values-cardinality)                                 | Querier, Query-frontend  | `GET, POST <prometheus-http-prefix>/api/v1/cardinality/label_values` |
 | [Get tenant ingestion stats](#get-tenant-ingestion-stats)                             | Querier                  | `GET /api/v1/user_stats`                                             |
-| [Get tenant chunks](#get-tenant-chunks)                                               | Querier                  | `GET /api/v1/chunks`                                                 |
 | [Ruler ring status](#ruler-ring-status)                                               | Ruler                    | `GET /ruler/ring`                                                    |
 | [Ruler rules ](#ruler-rule-groups)                                                    | Ruler                    | `GET /ruler/rule_groups`                                             |
 | [List rules](#list-rules)                                                             | Ruler                    | `GET <prometheus-http-prefix>/api/v1/rules`                          |
@@ -525,25 +524,6 @@ GET <legacy-http-prefix>/user_stats
 ```
 
 Returns realtime ingestion rate, for the authenticated tenant, in `JSON` format.
-
-_Requires [authentication](#authentication)._
-
-### Get tenant chunks
-
-```
-GET /api/v1/chunks
-
-# Legacy
-GET <legacy-http-prefix>/chunks
-```
-
-Fetch a compressed tar of all the chunks containing samples for the given time range and label matchers. This endpoint is supported only by the **chunks storage** and should **not be exposed to users** but just used for debugging purposes.
-
-| URL query parameter | Description                                                               |
-| ------------------- | ------------------------------------------------------------------------- |
-| `start`             | Start timestamp, in RFC3339 format or unix epoch.                         |
-| `end`               | End timestamp, in RFC3339 format or unix epoch.                           |
-| `matcher`           | Label matcher that selects the series for which chunks should be fetched. |
 
 _Requires [authentication](#authentication)._
 
