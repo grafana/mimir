@@ -45,7 +45,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
         )
       )
       .addPanel(
-        $.panel('Exemplars / sec') +
+        local title = 'Exemplars / sec';
+        $.panel(title) +
         $.statPanel(
           'sum(%(group_prefix_jobs)s:cortex_distributor_received_exemplars:rate5m{%(job)s})' % (
             $._config {
@@ -53,10 +54,16 @@ local utils = import 'mixin-utils/utils.libsonnet';
             }
           ),
           format='short'
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            The total number of received exemplars by the distributors, excluding rejected and deduped exemplars, but not necessarily ingested by the ingesters.
+          |||
         )
       )
       .addPanel(
-        local title = 'In-memory Series';
+        local title = 'In-memory series';
         $.panel(title) +
         $.statPanel(|||
           sum(cortex_ingester_memory_series{%(ingester)s}
@@ -72,7 +79,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
             The number of series not yet flushed to object storage that are held in ingester memory.
           |||
         ),
-
+      )
+      .addPanel(
+        local title = 'Exemplars in storage';
+        $.panel(title) +
+        $.statPanel(|||
+          sum(cortex_ingester_tsdb_exemplar_exemplars_in_storage{%(ingester)s}
+          / on(%(group_by_cluster)s) group_left
+          max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s}))
+        ||| % ($._config) {
+          ingester: $.jobMatcher($._config.job_names.ingester),
+          distributor: $.jobMatcher($._config.job_names.distributor),
+        }, format='short') +
+        $.panelDescription(
+          title,
+          |||
+            Number of TSDB exemplars currently in ingesters' storage.
+          |||
+        ),
       )
       .addPanel(
         $.panel('Tenants') +
