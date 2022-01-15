@@ -7,8 +7,6 @@ cloud.google.com/go/internal
 cloud.google.com/go/internal/optional
 cloud.google.com/go/internal/trace
 cloud.google.com/go/internal/version
-# cloud.google.com/go/bigtable v1.3.0
-## explicit; go 1.11
 # cloud.google.com/go/storage v1.10.0
 ## explicit; go 1.11
 cloud.google.com/go/storage
@@ -43,6 +41,8 @@ github.com/Azure/go-autorest/logger
 # github.com/Azure/go-autorest/tracing v0.6.0
 ## explicit; go 1.12
 github.com/Azure/go-autorest/tracing
+# github.com/HdrHistogram/hdrhistogram-go v1.1.2
+## explicit; go 1.14
 # github.com/NYTimes/gziphandler v1.1.1
 ## explicit; go 1.11
 github.com/NYTimes/gziphandler
@@ -128,18 +128,12 @@ github.com/bradfitz/gomemcache/memcache
 # github.com/cenkalti/backoff/v4 v4.1.1
 ## explicit; go 1.13
 github.com/cenkalti/backoff/v4
-# github.com/census-instrumentation/opencensus-proto v0.2.1
-## explicit
 # github.com/cespare/xxhash v1.1.0
 ## explicit
 github.com/cespare/xxhash
 # github.com/cespare/xxhash/v2 v2.1.2
 ## explicit; go 1.11
 github.com/cespare/xxhash/v2
-# github.com/cncf/udpa/go v0.0.0-20201120205902-5459f2c99403
-## explicit; go 1.11
-# github.com/cncf/xds/go v0.0.0-20211001041855-01bcc9b48dfe
-## explicit; go 1.11
 # github.com/coreos/etcd v3.3.25+incompatible
 ## explicit
 github.com/coreos/etcd/pkg/fileutil
@@ -177,10 +171,6 @@ github.com/dustin/go-humanize
 # github.com/edsrzf/mmap-go v1.1.0
 ## explicit; go 1.17
 github.com/edsrzf/mmap-go
-# github.com/envoyproxy/go-control-plane v0.10.1
-## explicit; go 1.11
-# github.com/envoyproxy/protoc-gen-validate v0.6.2
-## explicit; go 1.12
 # github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 ## explicit
 github.com/facette/natsort
@@ -193,8 +183,6 @@ github.com/felixge/fgprof
 # github.com/felixge/httpsnoop v1.0.1
 ## explicit; go 1.13
 github.com/felixge/httpsnoop
-# github.com/go-kit/kit v0.12.0
-## explicit; go 1.17
 # github.com/go-kit/log v0.2.0
 ## explicit; go 1.17
 github.com/go-kit/log
@@ -253,8 +241,6 @@ github.com/go-redis/redis/v8/internal/util
 # github.com/go-stack/stack v1.8.0
 ## explicit
 github.com/go-stack/stack
-# github.com/gocql/gocql v0.0.0-20200526081602-cd04bd7f22a7 => github.com/grafana/gocql v0.0.0-20200605141915-ba5dc39ece85
-## explicit; go 1.13
 # github.com/gofrs/uuid v4.0.0+incompatible
 ## explicit
 github.com/gofrs/uuid
@@ -292,8 +278,6 @@ github.com/golang/snappy
 # github.com/google/btree v1.0.1
 ## explicit; go 1.12
 github.com/google/btree
-# github.com/google/go-cmp v0.5.6
-## explicit; go 1.8
 # github.com/google/pprof v0.0.0-20211214055906-6f57359322fd
 ## explicit; go 1.14
 github.com/google/pprof/profile
@@ -354,8 +338,6 @@ github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors
 github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/tags
 github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/tracing
 github.com/grpc-ecosystem/go-grpc-middleware/v2/util/metautils
-# github.com/hailocab/go-hostpool v0.0.0-20160125115350-e80d13ce29ed
-## explicit
 # github.com/hashicorp/consul/api v1.12.0
 ## explicit; go 1.12
 github.com/hashicorp/consul/api
@@ -756,8 +738,6 @@ github.com/yuin/gopher-lua
 github.com/yuin/gopher-lua/ast
 github.com/yuin/gopher-lua/parse
 github.com/yuin/gopher-lua/pm
-# go.etcd.io/bbolt v1.3.6
-## explicit; go 1.12
 # go.etcd.io/etcd v3.3.25+incompatible
 ## explicit
 go.etcd.io/etcd/pkg/transport
@@ -1030,8 +1010,6 @@ google.golang.org/protobuf/types/known/timestamppb
 # gopkg.in/alecthomas/kingpin.v2 v2.2.6
 ## explicit
 gopkg.in/alecthomas/kingpin.v2
-# gopkg.in/inf.v0 v0.9.1
-## explicit
 # gopkg.in/ini.v1 v1.57.0
 ## explicit
 gopkg.in/ini.v1
