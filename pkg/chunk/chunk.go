@@ -35,9 +35,6 @@ type Chunk struct {
 	// missing, we default to DoubleDelta.
 	Encoding prom_chunk.Encoding `json:"encoding"`
 	Data     prom_chunk.Chunk    `json:"-"`
-
-	// The encoded version of the chunk, held so we don't need to re-encode it
-	encoded []byte
 }
 
 // NewChunk creates a new chunk
