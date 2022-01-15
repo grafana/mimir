@@ -70,6 +70,7 @@
     * `-ingester.max-chunk-idle`
     * `-ingester.max-stale-chunk-idle`
     * `-ingester.max-transfer-retries`
+    * `-ingester.min-chunk-length`
     * `-ingester.recover-from-wal`
     * `-ingester.retain-period`
     * `-ingester.spread-flushes`

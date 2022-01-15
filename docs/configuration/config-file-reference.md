@@ -2554,12 +2554,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ingester.max-global-series-per-metric
 [max_global_series_per_metric: <int> | default = 20000]
 
-# Minimum number of samples in an idle chunk to flush it to the store. Use with
-# care, if chunks are less than this size they will be discarded. This option is
-# ignored when using blocks storage. 0 to disable.
-# CLI flag: -ingester.min-chunk-length
-[min_chunk_length: <int> | default = 0]
-
 # The maximum number of active metrics with metadata per user, across the
 # cluster. 0 to disable.
 # CLI flag: -ingester.max-global-metadata-per-user
@@ -2601,8 +2595,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_query_lookback: <duration> | default = 0s]
 
 # Limit the query time range (end - start time). This limit is enforced in the
-# query-frontend (on the received query), in the querier (on the query possibly
-# split by the query-frontend) and in the chunks storage. 0 to disable.
+# query-frontend (on the received query) and in the querier (on the query
+# possibly split by the query-frontend). 0 to disable.
 # CLI flag: -store.max-query-length
 [max_query_length: <duration> | default = 0s]
 
