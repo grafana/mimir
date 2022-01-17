@@ -3782,7 +3782,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 1
-    `), memSeriesCreatedTotalName, memSeriesRemovedTotalName, "cortex_ingester_memory_users"))
+    `), "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users"))
 
 	// wait one second (plus maximum jitter) -- TSDB is now idle.
 	time.Sleep(time.Duration(float64(cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout) * (1 + compactionIdleTimeoutJitter)))
@@ -3801,7 +3801,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 1
-    `), memSeriesCreatedTotalName, memSeriesRemovedTotalName, "cortex_ingester_memory_users"))
+    `), "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users"))
 
 	// Pushing another sample still works.
 	pushSingleSampleWithMetadata(t, i)
@@ -3819,7 +3819,7 @@ func TestIngesterCompactIdleBlock(t *testing.T) {
 		# HELP cortex_ingester_memory_users The current number of users in memory.
 		# TYPE cortex_ingester_memory_users gauge
 		cortex_ingester_memory_users 1
-    `), memSeriesCreatedTotalName, memSeriesRemovedTotalName, "cortex_ingester_memory_users"))
+    `), "cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users"))
 }
 
 func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
@@ -3853,7 +3853,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
 
-	metricsToCheck := []string{memSeriesCreatedTotalName, memSeriesRemovedTotalName, "cortex_ingester_memory_users", "cortex_ingester_active_series",
+	metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
 		"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
 
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`
