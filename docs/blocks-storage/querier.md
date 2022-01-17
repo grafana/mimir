@@ -119,10 +119,9 @@ querier:
   [query_label_names_with_matchers_enabled: <boolean> | default = false]
 
   # The time after which a metric should be queried from storage and not just
-  # ingesters. 0 means all queries are sent to store. When running the blocks
-  # storage, if this option is enabled, the time range of the query sent to the
-  # store will be manipulated to ensure the query end is not more recent than
-  # 'now - query-store-after'.
+  # ingesters. 0 means all queries are sent to store. If this option is enabled,
+  # the time range of the query sent to the store-gateway will be manipulated to
+  # ensure the query end is not more recent than 'now - query-store-after'.
   # CLI flag: -querier.query-store-after
   [query_store_after: <duration> | default = 0s]
 
@@ -131,9 +130,9 @@ querier:
   [max_query_into_future: <duration> | default = 10m]
 
   # Comma separated list of store-gateway addresses in DNS Service Discovery
-  # format. This option should be set when using the blocks storage and the
-  # store-gateway sharding is disabled (when enabled, the store-gateway
-  # instances form a ring and addresses are picked from the ring).
+  # format. This option should be set when the store-gateway sharding is
+  # disabled (when enabled, the store-gateway instances form a ring and
+  # addresses are picked from the ring).
   # CLI flag: -querier.store-gateway-addresses
   [store_gateway_addresses: <string> | default = ""]
 

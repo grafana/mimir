@@ -57,7 +57,7 @@
 * [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor with `split-and-merge` strategy, but are correctly handled by compactor. #494
 * [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
-* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #762
+* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #762 #764
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-store.engine`
     * `-ingester.checkpoint-duration`
@@ -70,6 +70,7 @@
     * `-ingester.flush-period`
     * `-ingester.max-chunk-age`
     * `-ingester.max-chunk-idle`
+    * `-ingester.max-series-per-query`
     * `-ingester.max-stale-chunk-idle`
     * `-ingester.max-transfer-retries`
     * `-ingester.min-chunk-length`
