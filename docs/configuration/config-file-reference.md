@@ -2575,14 +2575,14 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_fetched_chunks_per_query: <int> | default = 2000000]
 
 # The maximum number of unique series for which a query can fetch samples from
-# each ingesters and blocks storage. This limit is enforced in the querier only
-# when running with blocks storage. 0 to disable
+# each ingesters and storage. This limit is enforced in the querier and ruler. 0
+# to disable
 # CLI flag: -querier.max-fetched-series-per-query
 [max_fetched_series_per_query: <int> | default = 0]
 
 # The maximum size of all chunks in bytes that a query can fetch from each
-# ingester and storage. This limit is enforced in the querier and ruler only
-# when running with blocks storage. 0 to disable.
+# ingester and storage. This limit is enforced in the querier and ruler. 0 to
+# disable.
 # CLI flag: -querier.max-fetched-chunk-bytes-per-query
 [max_fetched_chunk_bytes_per_query: <int> | default = 0]
 
@@ -2595,8 +2595,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [max_query_lookback: <duration> | default = 0s]
 
 # Limit the query time range (end - start time). This limit is enforced in the
-# query-frontend (on the received query) and in the querier (on the query
-# possibly split by the query-frontend). 0 to disable.
+# query-frontend (on the received query), in the querier (on the query possibly
+# split by the query-frontend) and ruler. 0 to disable.
 # CLI flag: -store.max-query-length
 [max_query_length: <duration> | default = 0s]
 
