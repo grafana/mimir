@@ -97,7 +97,7 @@ func TestRulerAPI(t *testing.T) {
 	require.Equal(t, retrievedNamespace[0].Name, ruleGroup.Name)
 
 	// Test compression by inspecting the response Headers
-	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/api/prom/rules", ruler.HTTPEndpoint()), nil)
+	req, err := http.NewRequest("GET", fmt.Sprintf("http://%s/api/v1/rules", ruler.HTTPEndpoint()), nil)
 	require.NoError(t, err)
 
 	req.Header.Set("X-Scope-OrgID", "user-1")

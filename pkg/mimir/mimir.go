@@ -13,7 +13,6 @@ import (
 	"net/http"
 	"os"
 	"reflect"
-	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -61,10 +60,6 @@ import (
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
-var (
-	errInvalidHTTPPrefix = errors.New("HTTP prefix should be empty or start with /")
-)
-
 // The design pattern for Mimir is a series of config objects, which are
 // registered for command line flags, and then a series of components that
 // are instantiated and composed.  Some rules of thumb:
@@ -88,7 +83,6 @@ type Config struct {
 	MultitenancyEnabled bool                   `yaml:"multitenancy_enabled"`
 	NoAuthTenant        string                 `yaml:"no_auth_tenant" category:"advanced"`
 	PrintConfig         bool                   `yaml:"-"`
-	HTTPPrefix          string                 `yaml:"http_prefix" category:"advanced"`
 
 	API              api.Config                      `yaml:"api"`
 	Server           server.Config                   `yaml:"server"`
@@ -130,7 +124,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	f.BoolVar(&c.MultitenancyEnabled, "auth.multitenancy-enabled", true, "When set to true, incoming HTTP requests must specify tenant ID in HTTP X-Scope-OrgId header. When set to false, tenant ID from -auth.no-auth-tenant is used instead.")
 	f.StringVar(&c.NoAuthTenant, "auth.no-auth-tenant", "anonymous", "Tenant ID to use when multitenancy is disabled.")
 	f.BoolVar(&c.PrintConfig, "print.config", false, "Print the config and exit.")
-	f.StringVar(&c.HTTPPrefix, "http.prefix", "/api/prom", "HTTP path prefix for API.")
 
 	c.API.RegisterFlags(f)
 	c.registerServerFlagsWithChangedDefaultValues(f)
@@ -162,10 +155,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 func (c *Config) Validate(log log.Logger) error {
 	if err := c.validateYAMLEmptyNodes(); err != nil {
 		return err
-	}
-
-	if c.HTTPPrefix != "" && !strings.HasPrefix(c.HTTPPrefix, "/") {
-		return errInvalidHTTPPrefix
 	}
 
 	if err := c.RulerStorage.Validate(); err != nil {

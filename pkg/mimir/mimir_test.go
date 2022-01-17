@@ -227,24 +227,6 @@ func TestConfigValidation(t *testing.T) {
 			},
 			expectedError: nil,
 		},
-		{
-			name: "should pass validation if the http prefix starts with /",
-			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				configuration.HTTPPrefix = "/test"
-				return configuration
-			},
-			expectedError: nil,
-		},
-		{
-			name: "should fail validation for invalid prefix",
-			getTestConfig: func() *Config {
-				configuration := newDefaultConfig()
-				configuration.HTTPPrefix = "test"
-				return configuration
-			},
-			expectedError: errInvalidHTTPPrefix,
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.getTestConfig().Validate(nil)
