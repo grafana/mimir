@@ -23,7 +23,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertmanagerpb"
-	"github.com/grafana/mimir/pkg/chunk/purger"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/distributor/distributorpb"
@@ -33,6 +32,7 @@ import (
 	"github.com/grafana/mimir/pkg/frontend/v2/frontendv2pb"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/purger"
 	"github.com/grafana/mimir/pkg/querier"
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
