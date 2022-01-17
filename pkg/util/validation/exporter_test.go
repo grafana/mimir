@@ -21,7 +21,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 	assert.Equal(t, 0, count)
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 11, count)
+	assert.Equal(t, 10, count)
 }
 
 func TestOverridesExporter_withConfig(t *testing.T) {
