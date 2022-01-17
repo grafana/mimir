@@ -72,7 +72,6 @@ const (
 	StoreQueryable           string = "store-queryable"
 	QueryFrontend            string = "query-frontend"
 	QueryFrontendTripperware string = "query-frontend-tripperware"
-	Store                    string = "store"
 	RulerStorage             string = "ruler-storage"
 	Ruler                    string = "ruler"
 	AlertManager             string = "alertmanager"
@@ -482,7 +481,6 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	t.Flusher, err = flusher.New(
 		t.Cfg.Flusher,
 		t.Cfg.Ingester,
-		t.Store,
 		t.Overrides,
 		prometheus.DefaultRegisterer,
 		util_log.Logger,
@@ -492,26 +490,6 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 	}
 
 	return t.Flusher, nil
-}
-
-func (t *Mimir) initChunkStore() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineChunks && t.Cfg.Querier.SecondStoreEngine != storage.StorageEngineChunks {
-		return nil, nil
-	}
-	err = t.Cfg.Schema.Load()
-	if err != nil {
-		return
-	}
-
-	t.Store, err = storage.NewStore(t.Cfg.Storage, t.Cfg.ChunkStore, t.Cfg.Schema, t.Overrides, prometheus.DefaultRegisterer, util_log.Logger)
-	if err != nil {
-		return
-	}
-
-	return services.NewIdleService(nil, func(_ error) error {
-		t.Store.Stop()
-		return nil
-	}), nil
 }
 
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
@@ -754,7 +732,6 @@ func (t *Mimir) setupModuleManager() error {
 	mm.RegisterModule(OverridesExporter, t.initOverridesExporter)
 	mm.RegisterModule(Distributor, t.initDistributor)
 	mm.RegisterModule(DistributorService, t.initDistributorService, modules.UserInvisibleModule)
-	mm.RegisterModule(Store, t.initChunkStore, modules.UserInvisibleModule)
 	mm.RegisterModule(Ingester, t.initIngester)
 	mm.RegisterModule(IngesterService, t.initIngesterService, modules.UserInvisibleModule)
 	mm.RegisterModule(Flusher, t.initFlusher)
@@ -785,22 +762,21 @@ func (t *Mimir) setupModuleManager() error {
 		OverridesExporter:        {Overrides},
 		Distributor:              {DistributorService, API},
 		DistributorService:       {Ring, Overrides},
-		Store:                    {Overrides},
 		Ingester:                 {IngesterService, API},
 		IngesterService:          {Overrides, RuntimeConfig, MemberlistKV},
-		Flusher:                  {Store, API},
-		Queryable:                {Overrides, DistributorService, Store, Ring, API, StoreQueryable, MemberlistKV},
+		Flusher:                  {API},
+		Queryable:                {Overrides, DistributorService, Ring, API, StoreQueryable, MemberlistKV},
 		Querier:                  {TenantFederation},
-		StoreQueryable:           {Overrides, Store, MemberlistKV},
+		StoreQueryable:           {Overrides, MemberlistKV},
 		QueryFrontendTripperware: {API, Overrides},
 		QueryFrontend:            {QueryFrontendTripperware},
 		QueryScheduler:           {API, Overrides},
-		Ruler:                    {DistributorService, Store, StoreQueryable, RulerStorage},
+		Ruler:                    {DistributorService, StoreQueryable, RulerStorage},
 		RulerStorage:             {Overrides},
 		AlertManager:             {API, MemberlistKV, Overrides},
 		Compactor:                {API, MemberlistKV, Overrides},
 		StoreGateway:             {API, Overrides, MemberlistKV},
-		TenantDeletion:           {Store, API, Overrides},
+		TenantDeletion:           {API, Overrides},
 		Purger:                   {TenantDeletion},
 		TenantFederation:         {Queryable},
 		All:                      {QueryFrontend, Querier, Ingester, Distributor, Purger, StoreGateway, Ruler},

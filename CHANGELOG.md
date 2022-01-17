@@ -57,7 +57,7 @@
 * [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor with `split-and-merge` strategy, but are correctly handled by compactor. #494
 * [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
-* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753
+* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-ingester.checkpoint-duration`
     * `-ingester.checkpoint-enabled`
@@ -70,15 +70,28 @@
     * `-ingester.max-chunk-idle`
     * `-ingester.max-stale-chunk-idle`
     * `-ingester.max-transfer-retries`
+    * `-ingester.min-chunk-length`
     * `-ingester.recover-from-wal`
     * `-ingester.retain-period`
     * `-ingester.spread-flushes`
     * `-ingester.wal-dir`
     * `-ingester.wal-enabled`
+    * `-querier.query-parallelism`
     * All `-table-manager.*` flags
     * All `-deletes.*` flags
     * All `-purger.*` flags
     * All `-metrics.*` flags
+    * All `-dynamodb.*` flags
+    * All `-s3.*` flags
+    * All `-azure.*` flags
+    * All `-bigtable.*` flags
+    * All `-gcs.*` flags
+    * All `-cassandra.*` flags
+    * All `-boltdb.*` flags
+    * All `-local.*` flags
+    * All `-swift.*` flags
+    * All `-store.*` flags except `-store.engine`, `-store.max-query-length`, `-store.max-labels-query-length`
+    * All `-grpc-store.*` flags
   * The following API endpoints have been removed:
     * `/api/v1/chunks` and `/chunks`
 * [CHANGE] Compactor: compactor now uses deletion marks from `<tenant>/markers` location in the bucket. Marker files are no longer fetched, only listed. #550

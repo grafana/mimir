@@ -71,7 +71,7 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
 - `-query-frontend.parallelize-shardable-queries`
 
-  If set to true, will cause the query frontend to mutate incoming queries when possible by turning `sum` operations into sharded `sum` operations. This requires a shard-compatible schema (v10+). An abridged example:
+  If set to true, will cause the query frontend to mutate incoming queries when possible by turning `sum` operations into sharded `sum` operations. An abridged example:
   `sum by (foo) (rate(bar{baz=”blip”}[1m]))` ->
 
   ```
@@ -83,15 +83,12 @@ The ingester query API was improved over time, but defaults to the old behaviour
   )
   ```
 
-  When enabled, the query-frontend requires a schema config to determine how/when to shard queries, either from a file or from flags (i.e. by the `-schema-config-file` CLI flag). This is the same schema config the queriers consume.
-  It's also advised to increase downstream concurrency controls as well to account for more queries of smaller sizes:
+  It's advised to increase downstream concurrency controls as well to account for more queries of smaller sizes:
 
   - `querier.max-outstanding-requests-per-tenant`
   - `querier.max-query-parallelism`
   - `querier.max-concurrent`
   - `server.grpc-max-concurrent-streams` (for both query-frontends and queriers)
-
-  Furthermore, both querier and query-frontend components require the `querier.query-ingesters-within` parameter to know when to start sharding requests (ingester queries are not sharded).
 
   Instrumentation (traces) also scale with the number of sharded queries and it's suggested to account for increased throughput there as well (for instance via `JAEGER_REPORTER_MAX_QUEUE_SIZE`).
 

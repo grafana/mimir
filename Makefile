@@ -141,14 +141,12 @@ pkg/frontend/v1/frontendv1pb/frontend.pb.go: pkg/frontend/v1/frontendv1pb/fronte
 pkg/frontend/v2/frontendv2pb/frontend.pb.go: pkg/frontend/v2/frontendv2pb/frontend.proto
 pkg/querier/queryrange/model.pb.go: pkg/querier/queryrange/model.proto
 pkg/querier/stats/stats.pb.go: pkg/querier/stats/stats.proto
-pkg/chunk/storage/caching_index_client.pb.go: pkg/chunk/storage/caching_index_client.proto
 pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
 pkg/ruler/ruler.pb.go: pkg/ruler/ruler.proto
 pkg/ring/kv/memberlist/kv.pb.go: pkg/ring/kv/memberlist/kv.proto
 pkg/scheduler/schedulerpb/scheduler.pb.go: pkg/scheduler/schedulerpb/scheduler.proto
 pkg/storegateway/storegatewaypb/gateway.pb.go: pkg/storegateway/storegatewaypb/gateway.proto
-pkg/chunk/grpc/grpc.pb.go: pkg/chunk/grpc/grpc.proto
 pkg/alertmanager/alertmanagerpb/alertmanager.pb.go: pkg/alertmanager/alertmanagerpb/alertmanager.proto
 pkg/alertmanager/alertspb/alerts.pb.go: pkg/alertmanager/alertspb/alerts.proto
 

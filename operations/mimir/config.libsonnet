@@ -129,9 +129,6 @@
     queryConfig: {
       'runtime-config.file': '/etc/cortex/overrides.yaml',
 
-      // Limit the size of the rows we read from the index.
-      'store.cardinality-limit': 1e6,
-
       // Don't allow individual queries of longer than 32days.  Due to day query
       // splitting in the frontend, the reality is this only limits rate(foo[32d])
       // type queries. 32 days to allow for comparision over the last month (31d) and

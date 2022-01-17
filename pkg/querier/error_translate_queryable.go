@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -42,7 +41,7 @@ func TranslateToPromqlAPIError(err error) error {
 	case promql.ErrStorage, promql.ErrTooManySamples, promql.ErrQueryCanceled, promql.ErrQueryTimeout:
 		// Don't translate those, just in case we use them internally.
 		return err
-	case chunk.QueryError, validation.LimitError:
+	case validation.LimitError:
 		// This will be returned with status code 422 by Prometheus API.
 		return err
 	default:

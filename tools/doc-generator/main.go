@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/chunk"
 	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
@@ -111,11 +110,6 @@ var (
 			name:       "flusher_config",
 			structType: reflect.TypeOf(flusher.Config{}),
 			desc:       "The flusher_config configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
-		},
-		{
-			name:       "chunk_store_config",
-			structType: reflect.TypeOf(chunk.StoreConfig{}),
-			desc:       "The chunk_store_config configures how the data is stored (chunks storage engine).",
 		},
 		{
 			name:       "ingester_client_config",
