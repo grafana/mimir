@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-kit/log"
@@ -48,6 +49,8 @@ type BasicLifecyclerConfig struct {
 	Zone string
 
 	HeartbeatPeriod     time.Duration
+	HeartbeatTimeout    time.Duration
+	MinReadyDuration    time.Duration
 	TokensObservePeriod time.Duration
 	NumTokens           int
 
@@ -81,6 +84,13 @@ type BasicLifecycler struct {
 	// The current instance state.
 	currState        sync.RWMutex
 	currInstanceDesc *InstanceDesc
+
+	ready      bool
+	readySince time.Time
+
+	// Keeps stats updated at every heartbeat period
+	healthyInstancesCount int64
+	zonesCount            int64
 }
 
 // NewBasicLifecycler makes a new BasicLifecycler.
@@ -247,9 +257,11 @@ heartbeatLoop:
 // depends on the OnRingInstanceRegister() delegate function.
 func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 	var instanceDesc InstanceDesc
+	var desc *Desc
 
 	err := l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := GetOrCreateRingDesc(in)
+		desc = ringDesc
 
 		var exists bool
 		instanceDesc, exists = ringDesc.Ingesters[l.cfg.ID]
@@ -294,6 +306,8 @@ func (l *BasicLifecycler) registerInstance(ctx context.Context) error {
 	l.currState.Lock()
 	l.currInstanceDesc = &instanceDesc
 	l.currState.Unlock()
+
+	l.updateCounters(desc)
 
 	return nil
 }
@@ -394,6 +408,7 @@ func (l *BasicLifecycler) unregisterInstance(ctx context.Context) error {
 
 func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc, *InstanceDesc) bool) error {
 	var instanceDesc InstanceDesc
+	var desc *Desc
 
 	err := l.store.CAS(ctx, l.ringKey, func(in interface{}) (out interface{}, retry bool, err error) {
 		ringDesc := GetOrCreateRingDesc(in)
@@ -421,6 +436,7 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 		}
 
 		ringDesc.Ingesters[l.cfg.ID] = instanceDesc
+		desc = ringDesc
 		return ringDesc, true, nil
 	})
 
@@ -432,7 +448,32 @@ func (l *BasicLifecycler) updateInstance(ctx context.Context, update func(*Desc,
 	l.currInstanceDesc = &instanceDesc
 	l.currState.Unlock()
 
+	fmt.Println("Doing update of counters")
+	l.updateCounters(desc)
+
 	return nil
+}
+
+func (l *BasicLifecycler) updateCounters(ringDesc *Desc) {
+	healthyInstancesCount := 0
+	zones := map[string]struct{}{}
+
+	if ringDesc != nil {
+		now := time.Now()
+
+		for _, ingester := range ringDesc.Ingesters {
+			zones[ingester.Zone] = struct{}{}
+
+			// Count the number of healthy instances for Write operation.
+			if ingester.IsHealthy(Write, l.cfg.HeartbeatTimeout, now) {
+				healthyInstancesCount++
+			}
+		}
+	}
+
+	// Update counters
+	atomic.StoreInt64(&(l.healthyInstancesCount), int64(healthyInstancesCount))
+	atomic.StoreInt64(&(l.zonesCount),int64(len(zones)))
 }
 
 // heartbeat updates the instance timestamp within the ring. This function is guaranteed
@@ -490,4 +531,85 @@ func (l *BasicLifecycler) run(fn func() error) error {
 	case l.actorChan <- wrappedFn:
 		return <-errCh
 	}
+}
+
+// CheckReady is used to rate limit the number of ingesters that can be coming or
+// going at any one time, by only returning true if all ingesters are active.
+// The state latches: once we have gone ready we don't go un-ready
+func (l *BasicLifecycler) CheckReady(ctx context.Context) error {
+	l.currState.Lock()
+	defer l.currState.Unlock()
+
+	if l.ready {
+		return nil
+	}
+
+	if err := l.checkRingHealthForReadiness(ctx); err != nil {
+		// Reset the min ready duration counter.
+		l.readySince = time.Time{}
+
+		return err
+	}
+
+	// Honor the min ready duration. The duration counter start after all readiness checks have
+	// passed.
+	if l.readySince.IsZero() {
+		l.readySince = time.Now()
+	}
+	if time.Since(l.readySince) < l.cfg.MinReadyDuration {
+		return fmt.Errorf("waiting for %v after being ready", l.cfg.MinReadyDuration)
+	}
+
+	l.ready = true
+	return nil
+}
+
+func (l *BasicLifecycler) checkRingHealthForReadiness(ctx context.Context) error {
+	// Ensure the instance holds some tokens.
+	if l.currInstanceDesc == nil || len(l.currInstanceDesc.GetTokens()) == 0 {
+		return fmt.Errorf("this instance owns no tokens")
+	}
+
+	// If ring health checking is enabled we make sure all instances in the ring are ACTIVE and healthy,
+	// otherwise we just check this instance.
+	desc, err := l.store.Get(ctx, l.ringKey)
+	if err != nil {
+		level.Error(l.logger).Log("msg", "error talking to the KV store", "ring", l.ringName, "err", err)
+		return fmt.Errorf("error talking to the KV store: %s", err)
+	}
+
+	ringDesc, ok := desc.(*Desc)
+	if !ok || ringDesc == nil {
+		return fmt.Errorf("no ring returned from the KV store")
+	}
+
+	// if i.cfg.ReadinessCheckRingHealth {
+	// 	if err := ringDesc.IsReady(time.Now(), i.cfg.RingConfig.HeartbeatTimeout); err != nil {
+	// 		level.Warn(i.logger).Log("msg", "found an existing instance(s) with a problem in the ring, "+
+	// 			"this instance cannot become ready until this problem is resolved. "+
+	// 			"The /ring http endpoint on the distributor (or single binary) provides visibility into the ring.",
+	// 			"ring", i.RingName, "err", err)
+	// 		return err
+	// 	}
+	// } else {
+	// instance, ok := ringDesc.Ingesters[i.ID]
+	// if !ok {
+	// 	return fmt.Errorf("instance %s not found in the ring", i.ID)
+	// }
+
+	if err := l.currInstanceDesc.IsReady(time.Now(), time.Minute); err != nil {  // i.cfg.HeartbeatTimeout
+		return err
+	}
+	// }
+
+	return nil
+}
+
+func (l *BasicLifecycler) HealthyInstancesCount() int {
+	return int(atomic.LoadInt64(&(l.healthyInstancesCount)))
+	
+}
+
+func (l *BasicLifecycler) ZonesCount() int {
+	return int(atomic.LoadInt64(&(l.zonesCount)))
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/dskit/concurrency"
+	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/oklog/ulid"
@@ -544,7 +545,24 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		}, i.getOldestUnshippedBlockMetric)
 	}
 
-	i.lifecycler, err = ring.NewLifecycler(cfg.LifecyclerConfig, i, "ingester", IngesterRingKey, cfg.BlocksStorageConfig.TSDB.FlushBlocksOnShutdown, logger, prometheus.WrapRegistererWithPrefix("cortex_", registerer))
+	codec := ring.GetCodec()
+	store, err := kv.NewClient(
+		i.cfg.LifecyclerConfig.RingConfig.KVStore,
+		codec,
+		kv.RegistererWithKVName(registerer, "ingester-lifecycler"),
+		logger,
+	)
+	if err != nil {
+		return nil, err
+	}
+	delegate := ring.BasicLifecyclerDelegate(i)
+
+	lifecyclerConfig, err := i.cfg.LifecyclerConfig.ToLifecyclerConfig(logger)
+	if err != nil {
+		return nil, err
+	}
+
+	i.lifecycler, err = ring.NewBasicLifecycler(lifecyclerConfig, "ingester", IngesterRingKey, store, delegate, logger, registerer)
 	if err != nil {
 		return nil, err
 	}
@@ -559,7 +577,7 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		cfg.LifecyclerConfig.RingConfig.ReplicationFactor,
 		cfg.LifecyclerConfig.RingConfig.ZoneAwarenessEnabled)
 
-	i.TSDBState.shipperIngesterID = i.lifecycler.ID
+	i.TSDBState.shipperIngesterID = i.lifecycler.GetInstanceID()
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
 	i.TSDBState.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)

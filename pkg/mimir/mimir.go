@@ -140,7 +140,7 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.Distributor.RegisterFlags(f)
 	c.Querier.RegisterFlags(f, logger)
 	c.IngesterClient.RegisterFlags(f)
-	c.Ingester.RegisterFlags(f)
+	c.Ingester.RegisterFlags(f, logger)
 	c.Flusher.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Prealloc.RegisterFlags(f)

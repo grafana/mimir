@@ -181,8 +181,6 @@ func NewIngesterWithConfigFile(name, consulAddress, configFile string, flags map
 		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
 			"-target":                      "ingester",
 			"-log.level":                   "warn",
-			"-ingester.final-sleep":        "0s",
-			"-ingester.join-after":         "0s",
 			"-ingester.min-ready-duration": "0s",
 			"-ingester.num-tokens":         "512",
 			// Configure the ingesters ring backend

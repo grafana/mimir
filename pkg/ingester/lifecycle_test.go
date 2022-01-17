@@ -43,7 +43,7 @@ func defaultIngesterTestConfig(t testing.TB) Config {
 	cfg.LifecyclerConfig.ListenPort = 0
 	cfg.LifecyclerConfig.Addr = "localhost"
 	cfg.LifecyclerConfig.ID = "localhost"
-	cfg.LifecyclerConfig.FinalSleep = 0
+	// cfg.LifecyclerConfig.FinalSleep = 0
 	cfg.ActiveSeriesMetricsEnabled = true
 
 	return cfg
