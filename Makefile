@@ -516,3 +516,5 @@ packaging/deb/debian-systemd/$(UPTODATE): packaging/deb/debian-systemd/Dockerfil
 .PHONY: test-packages
 test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/debian-systemd/$(UPTODATE)
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
+
+include docs.mk
