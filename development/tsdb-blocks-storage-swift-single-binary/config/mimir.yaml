@@ -57,9 +57,6 @@ blocks_storage:
     region_name:       RegionOne
     container_name:    mimir-tsdb
 
-storage:
-  engine: blocks
-
 ruler:
   enable_api: true
   enable_sharding: true

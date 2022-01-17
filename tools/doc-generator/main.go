@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -102,11 +101,6 @@ var (
 			desc:       "The alertmanager_storage_config configures the alertmanager storage backend.",
 		},
 		{
-			name:       "storage_config",
-			structType: reflect.TypeOf(storage.Config{}),
-			desc:       "The storage_config configures where the data is stored (chunks storage engine).",
-		},
-		{
 			name:       "flusher_config",
 			structType: reflect.TypeOf(flusher.Config{}),
 			desc:       "The flusher_config configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.",
@@ -169,12 +163,12 @@ var (
 		{
 			name:       "compactor_config",
 			structType: reflect.TypeOf(compactor.Config{}),
-			desc:       "The compactor_config configures the compactor for the blocks storage.",
+			desc:       "The compactor_config configures the compactor service.",
 		},
 		{
 			name:       "store_gateway_config",
 			structType: reflect.TypeOf(storegateway.Config{}),
-			desc:       "The store_gateway_config configures the store-gateway service used by the blocks storage.",
+			desc:       "The store_gateway_config configures the store-gateway service.",
 		},
 		{
 			name:       "s3_sse_config",

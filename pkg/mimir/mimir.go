@@ -37,7 +37,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
 	"github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -99,7 +98,6 @@ type Config struct {
 	IngesterClient   client.Config                   `yaml:"ingester_client"`
 	Ingester         ingester.Config                 `yaml:"ingester"`
 	Flusher          flusher.Config                  `yaml:"flusher"`
-	Storage          storage.Config                  `yaml:"storage"`
 	LimitsConfig     validation.Limits               `yaml:"limits"`
 	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
@@ -144,7 +142,6 @@ func (c *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
 	c.IngesterClient.RegisterFlags(f)
 	c.Ingester.RegisterFlags(f)
 	c.Flusher.RegisterFlags(f)
-	c.Storage.RegisterFlags(f)
 	c.LimitsConfig.RegisterFlags(f)
 	c.Prealloc.RegisterFlags(f)
 	c.Worker.RegisterFlags(f)
@@ -179,9 +176,6 @@ func (c *Config) Validate(log log.Logger) error {
 
 	if err := c.Encoding.Validate(); err != nil {
 		return errors.Wrap(err, "invalid encoding config")
-	}
-	if err := c.Storage.Validate(); err != nil {
-		return errors.Wrap(err, "invalid storage config")
 	}
 	if err := c.RulerStorage.Validate(); err != nil {
 		return errors.Wrap(err, "invalid rulestore config")

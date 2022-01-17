@@ -117,9 +117,6 @@ alertmanager_storage:
     secret_access_key: supersecret
     insecure:          true
 
-storage:
-  engine: blocks
-
 compactor:
   compaction_interval: 30s
   data_dir:            /tmp/mimir-compactor

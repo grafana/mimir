@@ -27,7 +27,6 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
@@ -42,9 +41,6 @@ import (
 
 func TestMimir(t *testing.T) {
 	cfg := Config{
-		Storage: storage.Config{
-			Engine: storage.StorageEngineBlocks, // makes config easier
-		},
 		Ingester: ingester.Config{
 			BlocksStorageConfig: tsdb.BlocksStorageConfig{
 				Bucket: bucket.Config{

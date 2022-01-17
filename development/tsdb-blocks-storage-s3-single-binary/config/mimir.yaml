@@ -56,9 +56,6 @@ blocks_storage:
     secret_access_key: supersecret
     insecure:          true
 
-storage:
-  engine: blocks
-
 ruler:
   enable_api: true
   enable_sharding: true

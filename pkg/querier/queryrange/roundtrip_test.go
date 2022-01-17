@@ -29,7 +29,6 @@ import (
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
 
@@ -69,7 +68,6 @@ func TestRangeTripperware(t *testing.T) {
 		mockLimits{},
 		PrometheusCodec,
 		nil,
-		storage.StorageEngineBlocks,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
 			Reg:        nil,
@@ -120,7 +118,6 @@ func TestInstantTripperware(t *testing.T) {
 		mockLimits{totalShards: totalShards},
 		PrometheusCodec,
 		nil,
-		storage.StorageEngineBlocks,
 		promql.EngineOpts{
 			Logger:     log.NewNopLogger(),
 			Reg:        nil,
@@ -226,7 +223,6 @@ func TestTripperware_Metrics(t *testing.T) {
 				mockLimits{},
 				PrometheusCodec,
 				nil,
-				storage.StorageEngineBlocks,
 				promql.EngineOpts{
 					Logger:     log.NewNopLogger(),
 					Reg:        nil,
@@ -272,19 +268,4 @@ func (s singleHostRoundTripper) RoundTrip(r *http.Request) (*http.Response, erro
 	r.URL.Scheme = "http"
 	r.URL.Host = s.host
 	return s.next.RoundTrip(r)
-}
-
-func Test_ShardingConfigError(t *testing.T) {
-	_, _, err := NewTripperware(
-		Config{ShardedQueries: true},
-		log.NewNopLogger(),
-		nil,
-		nil,
-		nil,
-		storage.StorageEngineChunks,
-		promql.EngineOpts{},
-		nil,
-	)
-
-	require.EqualError(t, err, errInvalidShardingStorage.Error())
 }

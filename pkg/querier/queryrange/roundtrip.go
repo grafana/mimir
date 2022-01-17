@@ -21,7 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/grafana/mimir/pkg/chunk/cache"
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -30,10 +29,6 @@ const (
 	day                    = 24 * time.Hour
 	queryRangePathSuffix   = "/query_range"
 	instantQueryPathSuffix = "/query"
-)
-
-var (
-	errInvalidShardingStorage = errors.New("query sharding support is only available for blocks storage")
 )
 
 // Config for query_range middleware chain.
@@ -137,11 +132,10 @@ func NewTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
-	storageEngine string,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
 ) (Tripperware, cache.Cache, error) {
-	queryRangeTripperware, cache, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, storageEngine, engineOpts, registerer)
+	queryRangeTripperware, cache, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -157,7 +151,6 @@ func newQueryTripperware(
 	limits Limits,
 	codec Codec,
 	cacheExtractor Extractor,
-	storageEngine string,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
 ) (Tripperware, cache.Cache, error) {
@@ -212,13 +205,6 @@ func newQueryTripperware(
 	queryInstantMiddleware := []Middleware{newLimitsMiddleware(limits, log)}
 
 	if cfg.ShardedQueries {
-		if storageEngine != storage.StorageEngineBlocks {
-			if c != nil {
-				c.Stop()
-			}
-			return nil, nil, errInvalidShardingStorage
-		}
-
 		// Disable concurrency limits for sharded queries.
 		engineOpts.ActiveQueryTracker = nil
 		queryshardingMiddleware := newQueryShardingMiddleware(
