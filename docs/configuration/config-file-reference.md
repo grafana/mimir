@@ -110,10 +110,6 @@ api:
 # one-time flushes when scaling down ingesters.
 [flusher: <flusher_config>]
 
-# The storage_config configures where the data is stored (chunks storage
-# engine).
-[storage: <storage_config>]
-
 # The limits_config configures default and per-tenant limits imposed by services
 # (ie. distributor, ingester, ...).
 [limits: <limits_config>]
@@ -133,11 +129,10 @@ api:
 # The blocks_storage_config configures the blocks storage.
 [blocks_storage: <blocks_storage_config>]
 
-# The compactor_config configures the compactor for the blocks storage.
+# The compactor_config configures the compactor service.
 [compactor: <compactor_config>]
 
-# The store_gateway_config configures the store-gateway service used by the
-# blocks storage.
+# The store_gateway_config configures the store-gateway service.
 [store_gateway: <store_gateway_config>]
 
 tenant_federation:
@@ -1979,16 +1974,6 @@ local:
   [path: <string> | default = ""]
 ```
 
-### `storage_config`
-
-The `storage_config` configures where the data is stored (chunks storage engine).
-
-```yaml
-# The storage engine to use: chunks (deprecated) or blocks.
-# CLI flag: -store.engine
-[engine: <string> | default = "chunks"]
-```
-
 ### `flusher_config`
 
 The `flusher_config` configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
@@ -3556,7 +3541,7 @@ tsdb:
 
 ### `compactor_config`
 
-The `compactor_config` configures the compactor for the blocks storage.
+The `compactor_config` configures the compactor service.
 
 ```yaml
 # List of compaction time ranges.
@@ -3736,7 +3721,7 @@ sharding_ring:
 
 ### `store_gateway_config`
 
-The `store_gateway_config` configures the store-gateway service used by the blocks storage.
+The `store_gateway_config` configures the store-gateway service.
 
 ```yaml
 # Shard blocks across multiple store gateway instances. This option needs be set

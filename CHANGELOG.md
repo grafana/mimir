@@ -59,6 +59,7 @@
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
 * [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757
   * The following CLI flags (and their respective YAML config options) have been removed:
+    * `-store.engine`
     * `-ingester.checkpoint-duration`
     * `-ingester.checkpoint-enabled`
     * `-ingester.chunk-age-jitter`

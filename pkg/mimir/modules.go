@@ -32,7 +32,6 @@ import (
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/api"
-	"github.com/grafana/mimir/pkg/chunk/storage"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -396,7 +395,7 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
 	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer); err != nil {
-		return nil, fmt.Errorf("failed to initialize querier for engine '%s': %v", t.Cfg.Storage.Engine, err)
+		return nil, fmt.Errorf("failed to initialize querier: %v", err)
 	} else {
 		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
 		servs = append(servs, q)
@@ -421,10 +420,6 @@ func (t *Mimir) tsdbIngesterConfig() {
 }
 
 func (t *Mimir) initIngesterService() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		return nil, fmt.Errorf("ingesters do not support the '%s' store engine", t.Cfg.Storage.Engine)
-	}
-
 	t.Cfg.Ingester.LifecyclerConfig.RingConfig.KVStore.Multi.ConfigProvider = multiClientRuntimeConfigChannel(t.RuntimeConfig)
 	t.Cfg.Ingester.LifecyclerConfig.ListenPort = t.Cfg.Server.GRPCListenPort
 	t.Cfg.Ingester.DistributorShardingStrategy = t.Cfg.Distributor.ShardingStrategy
@@ -472,7 +467,6 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 		t.Overrides,
 		queryrange.PrometheusCodec,
 		queryrange.PrometheusResponseExtractor{},
-		t.Cfg.Storage.Engine,
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, prometheus.DefaultRegisterer),
 		prometheus.DefaultRegisterer,
 	)
@@ -615,13 +609,6 @@ func (t *Mimir) initCompactor() (serv services.Service, err error) {
 }
 
 func (t *Mimir) initStoreGateway() (serv services.Service, err error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		if !t.Cfg.isModuleEnabled(All) {
-			return nil, fmt.Errorf("storage engine must be set to blocks to enable the store-gateway")
-		}
-		return nil, nil
-	}
-
 	t.Cfg.StoreGateway.ShardingRing.ListenPort = t.Cfg.Server.GRPCListenPort
 
 	t.StoreGateway, err = storegateway.NewStoreGateway(t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, t.Cfg.Server.LogLevel, util_log.Logger, prometheus.DefaultRegisterer, t.ActivityTracker)
@@ -664,10 +651,6 @@ func (t *Mimir) initMemberlistKV() (services.Service, error) {
 }
 
 func (t *Mimir) initTenantDeletionAPI() (services.Service, error) {
-	if t.Cfg.Storage.Engine != storage.StorageEngineBlocks {
-		return nil, nil
-	}
-
 	// t.RulerStorage can be nil when running in single-binary mode, and rule storage is not configured.
 	tenantDeletionAPI, err := purger.NewTenantDeletionAPI(t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer)
 	if err != nil {

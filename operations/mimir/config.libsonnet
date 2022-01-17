@@ -88,9 +88,7 @@
     storageConfig:
       { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
 
-    genericBlocksStorageConfig:: {
-      'store.engine': 'blocks',
-    },
+    genericBlocksStorageConfig:: {},
     queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
       'blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',

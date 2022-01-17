@@ -47,9 +47,6 @@ ingester:
         store: inmemory
       replication_factor: 1
 
-storage:
-  engine: blocks
-
 blocks_storage:
   tsdb:
     dir: /tmp/cortex/tsdb

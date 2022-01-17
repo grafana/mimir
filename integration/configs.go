@@ -26,7 +26,6 @@ const (
 	rulestoreBucketName = "mimir-rules"
 	alertsBucketName    = "mimir-alerts"
 	mimirConfigFile     = "config.yaml"
-	blocksStorageEngine = "blocks"
 	clientCertFile      = "certs/client.crt"
 	clientKeyFile       = "certs/client.key"
 	caCertFile          = "certs/root.crt"
@@ -151,7 +150,6 @@ var (
 
 	BlocksStorageFlags = func() map[string]string {
 		return map[string]string{
-			"-store.engine":                                 blocksStorageEngine,
 			"-blocks-storage.backend":                       "s3",
 			"-blocks-storage.tsdb.block-ranges-period":      "1m",
 			"-blocks-storage.bucket-store.sync-interval":    "5s",
@@ -167,9 +165,6 @@ var (
 	}
 
 	BlocksStorageConfig = buildConfigFromTemplate(`
-storage:
-  engine: blocks
-
 blocks_storage:
   backend:             s3
 

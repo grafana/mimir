@@ -868,7 +868,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.engine=blocks
         - -store.max-query-length=768h
         - -target=querier
         env:
@@ -1121,7 +1120,6 @@ spec:
         - -store-gateway.sharding-ring.prefix=
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
-        - -store.engine=blocks
         - -store.max-query-length=768h
         - -target=ruler
         image: cortexproject/cortex:v1.9.0
@@ -1281,7 +1279,6 @@ spec:
         - -schema-config-file=/etc/cortex/schema/config.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -store.engine=blocks
         - -target=compactor
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
@@ -1386,7 +1383,6 @@ spec:
         - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
-        - -store.engine=blocks
         - -target=ingester
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
@@ -1715,7 +1711,6 @@ spec:
         - -store-gateway.sharding-ring.replication-factor=3
         - -store-gateway.sharding-ring.store=consul
         - -store-gateway.sharding-ring.tokens-file-path=/data/tokens
-        - -store.engine=blocks
         - -target=store-gateway
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
