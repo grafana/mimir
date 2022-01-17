@@ -137,7 +137,8 @@ func TestIngesterStreaming(t *testing.T) {
 	require.NoError(t, err)
 
 	// Ensure at least 1 sample is appended to the chunk otherwise it can't be marshalled.
-	promChunk.Add(model.SamplePair{Timestamp: mint, Value: 0})
+	_, err = promChunk.Add(model.SamplePair{Timestamp: mint, Value: 0})
+	require.NoError(t, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
 		chunk.NewChunk("", 0, nil, promChunk, model.Earliest, model.Earliest),
