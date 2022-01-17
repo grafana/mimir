@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
     .addRowIf(
-      $._config.show_dashboard_descriptions.writes,
+      $._config.show_dashboard_descriptions.tenants,
       ($.row('Tenants dashboard description') { height: '25px', showTitle: false })
       .addPanel(
         $.textPanel('', |||

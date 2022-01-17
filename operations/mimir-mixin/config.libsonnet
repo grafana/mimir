@@ -59,6 +59,7 @@
       writes: true,
       reads: true,
       tenants: true,
+      top_tenants: true,
     },
 
     // The routes to exclude from alerts.
