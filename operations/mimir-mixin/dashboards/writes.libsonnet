@@ -325,8 +325,18 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Ingester appended exemplars rate';
         $.panel(title) +
         $.queryPanel(
-          'sum(%(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(job)s})'
-          % { job: $.jobMatcher($._config.job_names.ingester), group_prefix_jobs: $._config.group_prefix_jobs },
+          |||
+            sum(
+              %(group_prefix_jobs)s:cortex_ingester_tsdb_exemplar_exemplars_appended:rate5m{%(ingester)s}
+              / on(%(group_by_cluster)s) group_left
+              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+            )
+          ||| % {
+            ingester: $.jobMatcher($._config.job_names.ingester),
+            distributor: $.jobMatcher($._config.job_names.distributor),
+            group_by_cluster: $._config.group_by_cluster,
+            group_prefix_jobs: $._config.group_prefix_jobs,
+          },
           'appended exemplars',
         ) +
         { yaxes: $.yaxes('ex/s') } +
