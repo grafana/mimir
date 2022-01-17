@@ -301,7 +301,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The total number of exemplars that have come in to the distributor, including rejected or deduped exemplars.
+            The rate of exemplars that have come in to the distributor, including rejected or deduped exemplars.
           |||
         ),
       )
@@ -317,7 +317,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The total number of received exemplars, excluding rejected and deduped exemplars.
+            The rate of received exemplars, excluding rejected and deduped exemplars.
+            This number can be sensibly lower than incoming rate because we dedupe the HA sent exemplars, and then reject based on time, see `cortex_discarded_exemplars_total` for specific reasons rates.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Ingester ingested exemplars rate';
+        $.panel(title) +
+        $.queryPanel(
+          |||
+            sum(
+              %(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m{%(ingester)s}
+              / on(%(group_by_cluster)s) group_left
+              max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+            )
+          ||| % {
+            ingester: $.jobMatcher($._config.job_names.ingester),
+            distributor: $.jobMatcher($._config.job_names.distributor),
+            group_by_cluster: $._config.group_by_cluster,
+            group_prefix_jobs: $._config.group_prefix_jobs,
+          },
+          'ingested exemplars',
+        ) +
+        { yaxes: $.yaxes('ex/s') } +
+        $.panelDescription(
+          title,
+          |||
+            The rate of TSDB exemplars ingested in the ingesters.
+            Every exemplar is sent to the replication factor number of ingesters, so the sum of rates from all ingesters is divided by the replication factor.
+            This ingested exemplars rate should match the distributor's received exemplars rate.
           |||
         ),
       )
@@ -343,20 +372,10 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            Total number of TSDB exemplars appended in the ingesters.
+            The rate of TSDB exemplars appended in the ingesters.
+            This can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.
           |||
         ),
       )
-      .addPanel(
-        $.panel('Top 10 users by received exemplars rate in last 5m') +
-        { sort: { col: 2, desc: true } } +
-        $.tablePanel(
-          [
-            'topk(10, sum by (user) (%(group_prefix_users)s:cortex_distributor_received_exemplars:rate5m{%(job)s}))'
-            % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
-          ],
-          { 'Value #A': { alias: 'exemplars/s' } }
-        )
-      ),
     ),
 }

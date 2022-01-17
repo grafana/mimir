@@ -61,6 +61,36 @@ local utils = import 'mixin-utils/utils.libsonnet';
           else d
                .addTemplate('cluster', 'cortex_build_info', 'cluster')
                .addTemplate('namespace', 'cortex_build_info{cluster=~"$cluster"}', 'namespace'),
+
+      addActiveUserSelectorTemplates()::
+        self.addTemplate('user', 'cortex_ingester_active_series{cluster=~"$cluster", namespace=~"$namespace"}', 'user'),
+
+      addCustomTemplate(name, values, defaultIndex=0):: self {
+        templating+: {
+          list+: [
+            {
+              name: name,
+              options: [
+                {
+                  selected: v == values[defaultIndex],
+                  text: v,
+                  value: v,
+                }
+                for v in values
+              ],
+              current: {
+                selected: true,
+                text: values[defaultIndex],
+                value: values[defaultIndex],
+              },
+              type: 'custom',
+              hide: 0,
+              includeAll: false,
+              multi: false,
+            },
+          ],
+        },
+      },
     },
 
   // The mixin allow specialism of the job selector depending on if its a single binary

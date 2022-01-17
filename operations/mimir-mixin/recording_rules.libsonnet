@@ -88,12 +88,12 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ],
       },
       {
-        name: 'cortex_received_exemplars_by_user',
+        name: 'cortex_exemplars_ingested',
         rules: [
           {
-            record: '%(group_prefix_users)s:cortex_distributor_received_exemplars:rate5m' % _config,
+            record: '%(group_prefix_jobs)s:cortex_ingester_ingested_exemplars:rate5m' % _config,
             expr: |||
-              sum by (%(group_by_user)s) (rate(cortex_distributor_received_exemplars_total[5m]))
+              sum by (%(group_by_job)s) (rate(cortex_ingester_ingested_exemplars_total[5m]))
             ||| % _config,
           },
         ],
