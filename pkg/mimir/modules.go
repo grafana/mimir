@@ -388,31 +388,18 @@ func (t *Mimir) initQuerier() (serv services.Service, err error) {
 func (t *Mimir) initStoreQueryables() (services.Service, error) {
 	var servs []services.Service
 
+	// When running in single binary, if the blocks sharding is disabled and no custom
+	// store-gateway address has been configured, we can set it to the running process.
+	if t.Cfg.isModuleEnabled(All) && !t.Cfg.StoreGateway.ShardingEnabled && t.Cfg.Querier.StoreGatewayAddresses == "" {
+		t.Cfg.Querier.StoreGatewayAddresses = fmt.Sprintf("127.0.0.1:%d", t.Cfg.Server.GRPCListenPort)
+	}
+
 	//nolint:golint // I prefer this form over removing 'else', because it allows q to have smaller scope.
-	if q, err := initQueryableForEngine(t.Cfg.Storage.Engine, t.Cfg, t.Overrides, prometheus.DefaultRegisterer); err != nil {
+	if q, err := querier.NewBlocksStoreQueryableFromConfig(t.Cfg.Querier, t.Cfg.StoreGateway, t.Cfg.BlocksStorage, t.Overrides, util_log.Logger, prometheus.DefaultRegisterer); err != nil {
 		return nil, fmt.Errorf("failed to initialize querier for engine '%s': %v", t.Cfg.Storage.Engine, err)
 	} else {
 		t.StoreQueryables = append(t.StoreQueryables, querier.UseAlwaysQueryable(q))
-		if s, ok := q.(services.Service); ok {
-			servs = append(servs, s)
-		}
-	}
-
-	if t.Cfg.Querier.SecondStoreEngine != "" {
-		if t.Cfg.Querier.SecondStoreEngine == t.Cfg.Storage.Engine {
-			return nil, fmt.Errorf("second store engine used by querier '%s' must be different than primary engine '%s'", t.Cfg.Querier.SecondStoreEngine, t.Cfg.Storage.Engine)
-		}
-
-		sq, err := initQueryableForEngine(t.Cfg.Querier.SecondStoreEngine, t.Cfg, t.Overrides, prometheus.DefaultRegisterer)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize querier for engine '%s': %v", t.Cfg.Querier.SecondStoreEngine, err)
-		}
-
-		t.StoreQueryables = append(t.StoreQueryables, querier.UseBeforeTimestampQueryable(sq, time.Time(t.Cfg.Querier.UseSecondStoreBeforeTime)))
-
-		if s, ok := sq.(services.Service); ok {
-			servs = append(servs, s)
-		}
+		servs = append(servs, q)
 	}
 
 	// Return service, if any.
@@ -426,22 +413,6 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 		// When we get there, we will need a wrapper service, that starts all subservices, and will also monitor them for failures.
 		// Not difficult, but also not necessary right now.
 		return nil, fmt.Errorf("too many services")
-	}
-}
-
-func initQueryableForEngine(engine string, cfg Config, limits *validation.Overrides, reg prometheus.Registerer) (prom_storage.Queryable, error) {
-	switch engine {
-	case storage.StorageEngineBlocks:
-		// When running in single binary, if the blocks sharding is disabled and no custom
-		// store-gateway address has been configured, we can set it to the running process.
-		if cfg.isModuleEnabled(All) && !cfg.StoreGateway.ShardingEnabled && cfg.Querier.StoreGatewayAddresses == "" {
-			cfg.Querier.StoreGatewayAddresses = fmt.Sprintf("127.0.0.1:%d", cfg.Server.GRPCListenPort)
-		}
-
-		return querier.NewBlocksStoreQueryableFromConfig(cfg.Querier, cfg.StoreGateway, cfg.BlocksStorage, limits, util_log.Logger, reg)
-
-	default:
-		return nil, fmt.Errorf("unknown storage engine '%s'", engine)
 	}
 }
 
