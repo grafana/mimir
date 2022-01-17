@@ -1979,19 +1979,6 @@ local:
 The `flusher_config` configures the WAL flusher target, used to manually run one-time flushes when scaling down ingesters.
 
 ```yaml
-# Directory to read WAL from (chunks storage engine only).
-# CLI flag: -flusher.wal-dir
-[wal_dir: <string> | default = "wal"]
-
-# Number of concurrent goroutines flushing to storage (chunks storage engine
-# only).
-# CLI flag: -flusher.concurrent-flushes
-[concurrent_flushes: <int> | default = 50]
-
-# Timeout for individual flush operations (chunks storage engine only).
-# CLI flag: -flusher.flush-op-timeout
-[flush_op_timeout: <duration> | default = 2m]
-
 # Stop after flush has finished. If false, process will keep running, doing
 # nothing.
 # CLI flag: -flusher.exit-after-flush

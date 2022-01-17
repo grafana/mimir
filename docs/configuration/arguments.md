@@ -301,17 +301,6 @@ It also talks to a KVStore and has it's own copies of the same flags used by the
 - `distributor.ha-tracker.update-timeout`
   Update the timestamp in the KV store for a given cluster/replica only after this amount of time has passed since the current stored timestamp. (default 15s)
 
-#### Flusher
-
-- `-flusher.wal-dir`
-  Directory where the WAL data should be recovered from.
-
-- `-flusher.concurrent-flushes`
-  Number of concurrent flushes.
-
-- `-flusher.flush-op-timeout`
-  Duration after which a flush should timeout.
-
 ## Runtime configuration file
 
 Mimir has a concept of "runtime config" file, which is simply a file that is reloaded while Mimir is running. It is used by some Mimir components to allow operator to change some aspects of Mimir configuration without restarting it. File is specified by using `-runtime-config.file=<filename>` flag and reload period (which defaults to 10 seconds) can be changed by `-runtime-config.reload-period=<duration>` flag. Previously this mechanism was only used by limits overrides, and flags were called `-limits.per-user-override-config=<filename>` and `-limits.per-user-override-period=10s` respectively. These are still used, if `-runtime-config.file=<filename>` is not specified.
