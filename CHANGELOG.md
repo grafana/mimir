@@ -77,6 +77,8 @@
     * `-ingester.wal-dir`
     * `-ingester.wal-enabled`
     * `-querier.query-parallelism`
+    * `-querier.second-store-engine`
+    * `-querier.use-second-store-before-time`
     * All `-table-manager.*` flags
     * All `-deletes.*` flags
     * All `-purger.*` flags

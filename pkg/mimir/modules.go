@@ -398,23 +398,6 @@ func (t *Mimir) initStoreQueryables() (services.Service, error) {
 		}
 	}
 
-	if t.Cfg.Querier.SecondStoreEngine != "" {
-		if t.Cfg.Querier.SecondStoreEngine == t.Cfg.Storage.Engine {
-			return nil, fmt.Errorf("second store engine used by querier '%s' must be different than primary engine '%s'", t.Cfg.Querier.SecondStoreEngine, t.Cfg.Storage.Engine)
-		}
-
-		sq, err := initQueryableForEngine(t.Cfg.Querier.SecondStoreEngine, t.Cfg, t.Overrides, prometheus.DefaultRegisterer)
-		if err != nil {
-			return nil, fmt.Errorf("failed to initialize querier for engine '%s': %v", t.Cfg.Querier.SecondStoreEngine, err)
-		}
-
-		t.StoreQueryables = append(t.StoreQueryables, querier.UseBeforeTimestampQueryable(sq, time.Time(t.Cfg.Querier.UseSecondStoreBeforeTime)))
-
-		if s, ok := sq.(services.Service); ok {
-			servs = append(servs, s)
-		}
-	}
-
 	// Return service, if any.
 	switch len(servs) {
 	case 0:
