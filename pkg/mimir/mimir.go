@@ -305,8 +305,7 @@ type Mimir struct {
 	MemberlistKV             *memberlist.KVInitService
 	ActivityTracker          *activitytracker.ActivityTracker
 
-	// Queryables that the querier should use to query the long
-	// term storage. It depends on the storage engine used.
+	// Queryables that the querier should use to query the long term storage.
 	StoreQueryables []querier.QueryableWithFilter
 }
 
