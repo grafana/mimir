@@ -1,0 +1,152 @@
+before:
+  hooks:
+    - go mod download
+    # you may remove this if you don't need go generate
+    - go generate ./...
+project_name: cortextool
+builds:
+  - id: cortextool-darwin
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: cortextool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/cortextool/main.go
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: cortextool-linux
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: cortextool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/cortextool/main.go
+    goos:
+      - linux
+    goarch:
+      - amd64
+  - id: cortextool-windows
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: cortextool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/cortextool/main.go
+    goos:
+      - windows
+    goarch:
+      - amd64
+      - 386
+  - id: benchtool-darwin
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: benchtool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/benchtool/
+    goos:
+      - darwin
+    goarch:
+      - amd64
+      - arm64
+  - id: benchtool-linux
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: benchtool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/benchtool/
+    goos:
+      - linux
+    goarch:
+      - amd64
+  - id: benchtool-windows
+    ldflags:
+      -s -w -X github.com/grafana/cortex-tools/pkg/version.Version={{.Version}}
+    binary: benchtool
+    env:
+      - CGO_ENABLED=0
+    main: ./cmd/benchtool/
+    goos:
+      - windows
+    goarch:
+      - amd64
+      - 386
+archives:
+  - replacements:
+      darwin: mac-os
+      linux: linux
+      windows: windows
+      386: i386
+      amd64: x86_64
+    format_overrides:
+      - goos: windows
+        format: zip
+    files:
+      - none*
+    format: binary
+  - id: needed-for-homebrew
+    builds:
+      - cortextool-linux
+      - cortextool-darwin
+    format: 'tar.gz'
+checksum:
+  name_template: 'checksums.txt'
+snapshot:
+  name_template: "{{ .Tag }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+dockers:
+  - goos: linux
+    goarch: amd64
+    ids:
+      - cortextool-linux
+    dockerfile: cmd/cortextool/GR.Dockerfile
+    image_templates:
+      - "grafana/cortex-tools:latest"
+      - "grafana/cortex-tools:{{ .Tag }}"
+    build_flag_templates:
+    - "--pull"
+    - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--label=org.opencontainers.image.name={{.ProjectName}}"
+    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+    - "--label=org.opencontainers.image.version={{.Version}}"
+    - "--label=repository=https://github.com/grafana/cortex-tools"
+    - "--label=homepage=https://grafana.com"
+  - goos: linux
+    goarch: amd64
+    ids:
+      - benchtool-linux
+    dockerfile: cmd/benchtool/GR.Dockerfile
+    image_templates:
+      - "grafana/benchtool:latest"
+      - "grafana/benchtool:{{ .Tag }}"
+    build_flag_templates:
+    - "--pull"
+    - "--label=org.opencontainers.image.created={{.Date}}"
+    - "--label=org.opencontainers.image.name=benchtool"
+    - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+    - "--label=org.opencontainers.image.version={{.Version}}"
+    - "--label=repository=https://github.com/grafana/cortex-tools/tree/main/cmd/benchtool"
+    - "--label=homepage=https://grafana.com"
+brews:
+  -
+    ids:
+    - needed-for-homebrew
+    tap:
+      owner: grafana
+      name: homebrew-grafana
+    commit_author:
+      name: cortex-tools-ci
+      email: support@grafana.com
+    homepage:  https://grafana.com
+    description: Tools for interacting with Cortex
+    install: |
+      bin.install "cortextool"

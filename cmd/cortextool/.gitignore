@@ -1,0 +1,15 @@
+cmd/cortextool/cortextool
+cmd/chunktool/chunktool
+cmd/logtool/logtool
+cmd/rules-migrator/rules-migrator
+cmd/e2ealerting/e2ealerting
+.uptodate
+.pkg
+.cache
+images/
+dist/
+.DS_STORE
+/cortextool
+/metrics-in-grafana.json
+/prometheus-metrics.json
+/metrics-in-ruler.json
