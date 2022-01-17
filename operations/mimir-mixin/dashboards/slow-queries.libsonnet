@@ -1,8 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-  'cortex-slow-queries.json':
-    ($.dashboard('Cortex / Slow Queries') + { uid: 'e6f3091e29d2636e3b8393447e925668' })
+  'mimir-slow-queries.json':
+    ($.dashboard('Mimir / Slow Queries') + { uid: 'e6f3091e29d2636e3b8393447e925668' })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('')

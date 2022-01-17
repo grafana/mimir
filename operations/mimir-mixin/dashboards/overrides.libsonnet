@@ -1,8 +1,8 @@
 local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
-  'cortex-overrides.json':
-    ($.dashboard('Cortex / Overrides') + { uid: 'b5c95fee2e5e7c4b5930826ff6e89a12' })
+  'mimir-overrides.json':
+    ($.dashboard('Mimir / Overrides') + { uid: 'b5c95fee2e5e7c4b5930826ff6e89a12' })
     .addClusterSelectorTemplates(false)
     .addRow(
       $.row('')

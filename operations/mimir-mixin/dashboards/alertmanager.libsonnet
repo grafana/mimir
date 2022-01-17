@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'alertmanager.json':
-    ($.dashboard('Cortex / Alertmanager') + { uid: 'a76bee5913c97c918d9e56a3cc88cc28' })
+    ($.dashboard('Mimir / Alertmanager') + { uid: 'a76bee5913c97c918d9e56a3cc88cc28' })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {

@@ -43,7 +43,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               keepTime: true,
               tags: $._config.tags,
               targetBlank: false,
-              title: 'Cortex Dashboards',
+              title: 'Mimir Dashboards',
               type: 'dashboards',
             },
           ],
