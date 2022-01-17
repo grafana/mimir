@@ -6,8 +6,7 @@ package integration
 // to be in a non `_test.go` file.
 var DefaultPreviousVersionImages = map[string]func(map[string]string) map[string]string{
 	"quay.io/cortexproject/cortex:v1.11.0": func(flags map[string]string) map[string]string {
-		return mergeFlags(flags, map[string]string{
-			"-store.engine": "blocks",
-		})
+		flags["-store.engine"] = "blocks"
+		return flags
 	},
 }
