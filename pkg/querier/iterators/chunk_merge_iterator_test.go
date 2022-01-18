@@ -19,11 +19,6 @@ import (
 	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
 )
 
-const (
-	userID = "0"
-	fp     = 0
-)
-
 func TestChunkMergeIterator(t *testing.T) {
 	for i, tc := range []struct {
 		chunks     []chunk.Chunk
@@ -114,5 +109,5 @@ func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, enco
 		require.NoError(t, err)
 		require.Nil(t, npc)
 	}
-	return chunk.NewChunk(userID, fp, metric, pc, mint, maxt)
+	return chunk.NewChunk(metric, pc, mint, maxt)
 }
