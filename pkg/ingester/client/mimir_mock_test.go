@@ -67,11 +67,6 @@ func (m *IngesterServerMock) MetricsMetadata(ctx context.Context, r *MetricsMeta
 	return args.Get(0).(*MetricsMetadataResponse), args.Error(1)
 }
 
-func (m *IngesterServerMock) TransferChunks(s Ingester_TransferChunksServer) error {
-	args := m.Called(s)
-	return args.Error(0)
-}
-
 func (m *IngesterServerMock) LabelNamesAndValues(req *LabelNamesAndValuesRequest, srv Ingester_LabelNamesAndValuesServer) error {
 	args := m.Called(req, srv)
 	return args.Error(0)

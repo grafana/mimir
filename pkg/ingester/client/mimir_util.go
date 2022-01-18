@@ -17,14 +17,6 @@ func SendQueryStream(s Ingester_QueryStreamServer, m *QueryStreamResponse) error
 	})
 }
 
-// SendTimeSeriesChunk wraps the stream's Send() checking if the context is done
-// before calling Send().
-func SendTimeSeriesChunk(s Ingester_TransferChunksClient, m *TimeSeriesChunk) error {
-	return sendWithContextErrChecking(s.Context(), func() error {
-		return s.Send(m)
-	})
-}
-
 // SendLabelNamesAndValuesResponse wraps the stream's Send() checking if the context is done
 // before calling Send().
 func SendLabelNamesAndValuesResponse(s Ingester_LabelNamesAndValuesServer, response *LabelNamesAndValuesResponse) error {

@@ -2266,6 +2266,11 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	return tsdbIdleClosed
 }
 
+// TransferOut implements ring.FlushTransferer.
+func (i *Ingester) TransferOut(_ context.Context) error {
+	return ring.ErrTransferDisabled
+}
+
 // This method will flush all data. It is called as part of Lifecycler's shutdown (if flush on shutdown is configured), or from the flusher.
 //
 // When called as during Lifecycler shutdown, this happens as part of normal Ingester shutdown (see stopping method).
