@@ -131,7 +131,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
@@ -147,7 +147,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
@@ -163,7 +163,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}: {{ reason }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
@@ -183,7 +183,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
@@ -199,7 +199,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
           '{{ user }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
@@ -217,7 +217,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}: {{ reason }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
@@ -242,7 +242,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
           },
           '{{ user }}',
         ) +
-        { yaxes: $.yaxes('ex/s') } +
+        { yaxes: $.yaxes('hertz') } +
         $.panelDescription(
           title,
           |||
