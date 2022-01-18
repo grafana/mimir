@@ -15,7 +15,6 @@ import (
 )
 
 type ingesterMetrics struct {
-	flushQueueLength        prometheus.Gauge
 	ingestedSamples         prometheus.Counter
 	ingestedExemplars       prometheus.Counter
 	ingestedMetadata        prometheus.Counter
@@ -26,31 +25,10 @@ type ingesterMetrics struct {
 	queriedSamples          prometheus.Histogram
 	queriedExemplars        prometheus.Histogram
 	queriedSeries           prometheus.Histogram
-	queriedChunks           prometheus.Histogram
-	memSeries               prometheus.Gauge
 	memMetadata             prometheus.Gauge
 	memUsers                prometheus.Gauge
 	memMetadataCreatedTotal *prometheus.CounterVec
 	memMetadataRemovedTotal *prometheus.CounterVec
-	createdChunks           prometheus.Counter
-	walReplayDuration       prometheus.Gauge
-	walCorruptionsTotal     prometheus.Counter
-
-	// Chunks transfer.
-	sentChunks     prometheus.Counter
-	receivedChunks prometheus.Counter
-
-	// Chunks flushing.
-	flushSeriesInProgress         prometheus.Gauge
-	chunkUtilization              prometheus.Histogram
-	chunkLength                   prometheus.Histogram
-	chunkSize                     prometheus.Histogram
-	chunkAge                      prometheus.Histogram
-	memoryChunks                  prometheus.Gauge
-	seriesEnqueuedForFlush        *prometheus.CounterVec
-	seriesDequeuedOutcome         *prometheus.CounterVec
-	droppedChunks                 prometheus.Counter
-	oldestUnflushedChunkTimestamp prometheus.Gauge
 
 	activeSeriesPerUser               *prometheus.GaugeVec
 	activeSeriesCustomTrackersPerUser *prometheus.GaugeVec
