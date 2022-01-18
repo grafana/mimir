@@ -1,0 +1,46 @@
+presets:
+  "small_user":
+    ingestion_rate: 100000
+    ingestion_burst_size: 1000000
+    max_series_per_user: 0
+    max_series_per_metric: 0
+    max_global_series_per_user: 1000000
+    max_global_series_per_metric: 100000
+    max_series_per_query: 10000
+    max_samples_per_query: 100000
+  "medium_user":
+    max_series_per_metric: 0
+    max_series_per_user: 0
+    max_global_series_per_user: 3000000
+    max_global_series_per_metric: 300000
+    max_series_per_query: 100000
+    max_samples_per_query: 1000000
+    ingestion_rate: 350000
+    ingestion_burst_size: 3500000
+  "big_user":
+    max_series_per_metric: 0
+    max_series_per_user: 0
+    max_series_per_query: 100000
+    max_samples_per_query: 1000000
+    max_global_series_per_user: 6000000
+    max_global_series_per_metric: 600000
+    ingestion_rate: 700000
+    ingestion_burst_size: 7000000
+  "super_user":
+    max_series_per_metric: 0
+    max_series_per_user: 0
+    max_global_series_per_user: 12000000
+    max_global_series_per_metric: 1200000
+    max_series_per_query: 100000
+    max_samples_per_query: 1000000
+    ingestion_rate: 1500000
+    ingestion_burst_size: 15000000
+  "mega_user":
+    max_series_per_metric: 0
+    max_series_per_user: 0
+    max_global_series_per_user: 16000000
+    max_global_series_per_metric: 1600000
+    max_series_per_query: 100000
+    max_samples_per_query: 1000000
+    ingestion_rate: 2250000
+    ingestion_burst_size: 22500000
