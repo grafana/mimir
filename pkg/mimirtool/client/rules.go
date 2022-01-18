@@ -15,7 +15,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 // CreateRuleGroup creates a new rule group

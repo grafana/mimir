@@ -22,7 +22,7 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/analyse"
 )
 
 type PrometheusAnalyseCommand struct {

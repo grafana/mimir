@@ -28,8 +28,8 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/client"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/printer"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/mimirtool/printer"
 )
 
 var (

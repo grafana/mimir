@@ -9,8 +9,8 @@ import (
 	"github.com/pkg/errors"
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/analyse"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules"
+	"github.com/grafana/mimir/pkg/mimirtool/analyse"
+	"github.com/grafana/mimir/pkg/mimirtool/rules"
 )
 
 type RuleFileAnalyseCommand struct {

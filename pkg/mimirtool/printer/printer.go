@@ -18,8 +18,8 @@ import (
 	"github.com/mitchellh/colorstring"
 	"gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/rules"
+	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 // Printer is  used for printing formatted output from the cortextool

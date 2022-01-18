@@ -21,10 +21,10 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	yamlv3 "gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/client"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/printer"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/client"
+	"github.com/grafana/mimir/pkg/mimirtool/printer"
+	"github.com/grafana/mimir/pkg/mimirtool/rules"
+	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 const (

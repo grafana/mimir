@@ -15,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 var (

@@ -11,8 +11,8 @@ import (
 
 	"gopkg.in/alecthomas/kingpin.v2"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/commands"
-	"github.com/grafana/mimir/cmd/cortextool/pkg/version"
+	"github.com/grafana/mimir/pkg/mimirtool/commands"
+	"github.com/grafana/mimir/pkg/mimirtool/version"
 )
 
 var (

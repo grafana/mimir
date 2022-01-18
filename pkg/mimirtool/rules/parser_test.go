@@ -11,7 +11,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/rulefmt"
 
-	"github.com/grafana/mimir/cmd/cortextool/pkg/rules/rwrulefmt"
+	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
 func TestParseFiles(t *testing.T) {
