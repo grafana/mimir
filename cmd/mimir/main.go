@@ -26,7 +26,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/mimir/pkg/mimir"
-	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
@@ -64,7 +63,6 @@ var testMode = false
 func main() {
 	var (
 		cfg                  mimir.Config
-		eventSampleRate      int
 		ballastBytes         int
 		mutexProfileFraction int
 		blockProfileRate     int
@@ -92,7 +90,6 @@ func main() {
 	flagext.IgnoredFlag(flag.CommandLine, configFileOption, "Configuration file to load.")
 	_ = flag.CommandLine.Bool(configExpandENV, false, "Expands ${var} or $var in config according to the values of the environment variables.")
 
-	flag.IntVar(&eventSampleRate, "event.sample-rate", 0, "How often to sample observability events (0 = never).")
 	flag.IntVar(&ballastBytes, "mem-ballast-size-bytes", 0, "Size of memory ballast to allocate.")
 	flag.IntVar(&mutexProfileFraction, "debug.mutex-profile-fraction", 0, "Fraction of mutex contention events that are reported in the mutex profile. On average 1/rate events are reported. 0 to disable.")
 	flag.IntVar(&blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
@@ -151,8 +148,6 @@ func main() {
 
 	// Allocate a block of memory to alter GC behaviour. See https://github.com/golang/go/issues/23044
 	ballast := make([]byte, ballastBytes)
-
-	util.InitEvents(eventSampleRate)
 
 	// In testing mode skip JAEGER setup to avoid panic due to
 	// "duplicate metrics collector registration attempted"
