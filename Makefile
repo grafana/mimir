@@ -135,7 +135,6 @@ $(foreach exe, $(EXES), $(eval $(call dep_exe, $(exe))))
 pkg/mimirpb/mimir.pb.go: pkg/mimirpb/mimir.proto
 pkg/ingester/client/ingester.pb.go: pkg/ingester/client/ingester.proto
 pkg/distributor/distributorpb/distributor.pb.go: pkg/distributor/distributorpb/distributor.proto
-pkg/ingester/wal.pb.go: pkg/ingester/wal.proto
 pkg/ring/ring.pb.go: pkg/ring/ring.proto
 pkg/frontend/v1/frontendv1pb/frontend.pb.go: pkg/frontend/v1/frontendv1pb/frontend.proto
 pkg/frontend/v2/frontendv2pb/frontend.pb.go: pkg/frontend/v2/frontendv2pb/frontend.proto
