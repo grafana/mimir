@@ -9,17 +9,24 @@ import (
 	"bytes"
 	"context"
 	"flag"
+	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,6 +44,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	"github.com/grafana/mimir/pkg/storage/bucket/s3"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
+	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
 func TestMimir(t *testing.T) {
@@ -111,6 +119,55 @@ func TestMimir(t *testing.T) {
 
 	// check that compactor is configured which is not part of Target=All
 	require.NotNil(t, serviceMap[Compactor])
+}
+
+func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
+	prepareGlobalMetricsRegistry(t)
+
+	cfg := Config{}
+
+	// This sets default values from flags to the config.
+	flagext.RegisterFlagsWithLogger(log.NewNopLogger(), &cfg)
+
+	tmpDir := t.TempDir()
+	cfg.ActivityTracker.Filepath = filepath.Join(tmpDir, "activity.log") // Enable activity tracker
+
+	cfg.Target = []string{API}
+	cfg.Server = getServerConfig(t)
+	require.NoError(t, cfg.Server.LogFormat.Set("logfmt"))
+	require.NoError(t, cfg.Server.LogLevel.Set("debug"))
+
+	util_log.InitLogger(&cfg.Server)
+
+	c, err := New(cfg)
+	require.NoError(t, err)
+
+	errCh := make(chan error)
+	go func() {
+		errCh <- c.Run()
+	}()
+
+	test.Poll(t, 10*time.Second, true, func() interface{} {
+		r, err := http.Get(fmt.Sprintf("http://%s:%d/ready", cfg.Server.HTTPListenAddress, cfg.Server.HTTPListenPort))
+		if err != nil {
+			t.Log("Got error when checking /ready:", err)
+			return false
+		}
+		return r.StatusCode == 200
+	})
+
+	proc, err := os.FindProcess(os.Getpid())
+	require.NoError(t, err)
+
+	// Mimir reacts on SIGINT and does shutdown.
+	require.NoError(t, proc.Signal(syscall.SIGINT))
+
+	select {
+	case <-time.After(5 * time.Second):
+		require.Fail(t, "Mimir didn't stop in time")
+	case err := <-errCh:
+		require.NoError(t, err)
+	}
 }
 
 func TestConfigValidation(t *testing.T) {
@@ -257,6 +314,21 @@ func TestFlagDefaults(t *testing.T) {
 
 // Generates server config, with gRPC listening on random port.
 func getServerConfig(t *testing.T) server.Config {
+	grpcHost, grpcPortNum := getHostnameAndRandomPort(t)
+	httpHost, httpPortNum := getHostnameAndRandomPort(t)
+
+	return server.Config{
+		HTTPListenAddress: httpHost,
+		HTTPListenPort:    httpPortNum,
+
+		GRPCListenAddress: grpcHost,
+		GRPCListenPort:    grpcPortNum,
+
+		GPRCServerMaxRecvMsgSize: 1024,
+	}
+}
+
+func getHostnameAndRandomPort(t *testing.T) (string, int) {
 	listen, err := net.Listen("tcp", "localhost:0")
 	require.NoError(t, err)
 
@@ -266,13 +338,7 @@ func getServerConfig(t *testing.T) server.Config {
 
 	portNum, err := strconv.Atoi(port)
 	require.NoError(t, err)
-
-	return server.Config{
-		GRPCListenAddress: host,
-		GRPCListenPort:    portNum,
-
-		GPRCServerMaxRecvMsgSize: 1024,
-	}
+	return host, portNum
 }
 
 type mockGrpcServiceHandler struct {
