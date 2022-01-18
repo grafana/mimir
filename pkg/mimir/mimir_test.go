@@ -127,6 +127,8 @@ func TestMimir(t *testing.T) {
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {
+	prepareGlobalMetricsRegistry(t)
+
 	cfg := Config{}
 
 	// This sets default values from flags to the config.
