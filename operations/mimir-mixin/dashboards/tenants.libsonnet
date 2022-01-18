@@ -139,7 +139,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor samples received rate';
+        local title = 'Distributor samples received (accepted) rate';
         $.panel(title) +
         $.queryPanel(
           'sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s, user=~"$user"}[5m]))'
@@ -217,7 +217,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor exemplars received rate';
+        local title = 'Distributor exemplars received (accepted) rate';
         $.panel(title) +
         $.queryPanel(
           'sum by (user) (rate(cortex_distributor_received_exemplars_total{%(job)s, user=~"$user"}[5m]))'
