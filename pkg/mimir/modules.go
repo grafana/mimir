@@ -47,6 +47,7 @@ import (
 	"github.com/grafana/mimir/pkg/ruler"
 	"github.com/grafana/mimir/pkg/scheduler"
 	"github.com/grafana/mimir/pkg/storegateway"
+	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/activitytracker"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -159,11 +160,20 @@ func (t *Mimir) initServer() (services.Service, error) {
 
 	servicesToWaitFor := func() []services.Service {
 		svs := []services.Service(nil)
+
+		serverDeps := t.ModuleManager.DependenciesForModule(Server)
+
 		for m, s := range t.ServiceMap {
-			// Server should not wait for itself.
-			if m != Server {
-				svs = append(svs, s)
+			// Server should not wait for itself or for any of its dependencies.
+			if m == Server {
+				continue
 			}
+
+			if util.StringsContain(serverDeps, m) {
+				continue
+			}
+
+			svs = append(svs, s)
 		}
 		return svs
 	}
