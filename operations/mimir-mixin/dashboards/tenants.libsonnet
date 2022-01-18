@@ -5,6 +5,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Mimir / Tenants') + { uid: '35fa247ce651ba189debf33d7ae41611' })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
+    .addCustomTemplate('limit', ['10', '50', '100', '500', '1000'])
     .addRowIf(
       $._config.show_dashboard_descriptions.tenants,
       ($.row('Tenants dashboard description') { height: '25px', showTitle: false })
@@ -309,5 +310,83 @@ local utils = import 'mixin-utils/utils.libsonnet';
           |||
         ),
       ),
+    )
+
+    .addRow(
+      ($.row('Rules') + { collapse: true })
+      .addPanel(
+        local title = 'Number of groups';
+        $.panel(title) +
+        $.queryPanel(
+          'count by (user) (sum by (user, rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}))'
+          % { job: $.jobMatcher($._config.job_names.ruler) },
+          '{{ user }}',
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Total number of rule groups for a tenant.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Number of rules';
+        $.panel(title) +
+        $.queryPanel(
+          'sum by (user) (cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"})'
+          % { job: $.jobMatcher($._config.job_names.ruler) },
+          '{{ user }}',
+        ) +
+        $.panelDescription(
+          title,
+          |||
+            Total number of rules for a tenant.
+          |||
+        ),
+      )
+      .addPanel(
+        local title = 'Total evaluations rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum by (user) (rate(cortex_prometheus_rule_evaluations_total{%(job)s, user=~"$user"}[5m]))'
+          % { job: $.jobMatcher($._config.job_names.ruler) },
+          '{{ user }}',
+        ),
+      )
+      .addPanel(
+        local title = 'Failed evaluations rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum by (user, rule_group) (rate(cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}[5m]))'
+          % { job: $.jobMatcher($._config.job_names.ruler) },
+          '{{ user }}: {{ rule_group }}',
+        ) + { stack: true },
+      )
+    )
+
+    .addRow(
+      ($.row('Top rules') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit biggest groups') +
+        { sort: { col: 3, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}))'
+            % { job: $.jobMatcher($._config.job_names.ruler) },
+          ],
+          { 'Value #A': { alias: 'rules' } }
+        )
+      )
+      .addPanel(
+        $.panel('Top $limit slowest groups (last evaluation)') +
+        { sort: { col: 3, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_last_duration_seconds{%(job)s}))'
+            % { job: $.jobMatcher($._config.job_names.ruler) },
+          ],
+          { 'Value #A': { alias: 'seconds' } }
+        )
+      )
     ),
 }
