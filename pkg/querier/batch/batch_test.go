@@ -22,30 +22,22 @@ func BenchmarkNewChunkMergeIterator_CreateAndIterate(b *testing.B) {
 		numChunks          int
 		numSamplesPerChunk int
 		duplicationFactor  int
-		enc                promchunk.Encoding
 	}{
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.Bigchunk},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.Bigchunk},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.Varbit},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.Varbit},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.DoubleDelta},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.DoubleDelta},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1, enc: promchunk.PrometheusXorChunk},
-		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3, enc: promchunk.PrometheusXorChunk},
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1000, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 100, numSamplesPerChunk: 100, duplicationFactor: 3},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 1},
+		{numChunks: 1, numSamplesPerChunk: 100, duplicationFactor: 3},
 	}
 
 	for _, scenario := range scenarios {
-		name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d encoding: %s",
+		name := fmt.Sprintf("chunks: %d samples per chunk: %d duplication factor: %d",
 			scenario.numChunks,
 			scenario.numSamplesPerChunk,
-			scenario.duplicationFactor,
-			scenario.enc.String())
+			scenario.duplicationFactor)
 
-		chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, scenario.enc)
+		chunks := createChunks(b, scenario.numChunks, scenario.numSamplesPerChunk, scenario.duplicationFactor, promchunk.PrometheusXorChunk)
 
 		b.Run(name, func(b *testing.B) {
 			b.ReportAllocs()

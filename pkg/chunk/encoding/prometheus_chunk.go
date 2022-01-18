@@ -75,31 +75,11 @@ func (p *prometheusXorChunk) Encoding() Encoding {
 	return PrometheusXorChunk
 }
 
-func (p *prometheusXorChunk) Utilization() float64 {
-	// Used for reporting when chunk is used to store new data.
-	return 0
-}
-
-func (p *prometheusXorChunk) Slice(_, _ model.Time) Chunk {
-	return p
-}
-
-func (p *prometheusXorChunk) Rebound(from, to model.Time) (Chunk, error) {
-	return nil, errors.New("Rebound not supported by PrometheusXorChunk")
-}
-
 func (p *prometheusXorChunk) Len() int {
 	if p.chunk == nil {
 		return 0
 	}
 	return p.chunk.NumSamples()
-}
-
-func (p *prometheusXorChunk) Size() int {
-	if p.chunk == nil {
-		return 0
-	}
-	return len(p.chunk.Bytes())
 }
 
 type prometheusChunkIterator struct {

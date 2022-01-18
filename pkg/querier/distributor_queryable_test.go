@@ -133,7 +133,11 @@ func TestIngesterStreaming(t *testing.T) {
 
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	promChunk, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
+	require.NoError(t, err)
+
+	// Ensure at least 1 sample is appended to the chunk otherwise it can't be marshalled.
+	_, err = promChunk.Add(model.SamplePair{Timestamp: mint, Value: 0})
 	require.NoError(t, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
@@ -310,7 +314,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	promChunk, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
 	require.NoError(b, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
@@ -372,7 +376,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.Bigchunk)
+	promChunk, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
 	require.NoError(t, err)
 
 	for _, s := range samples {

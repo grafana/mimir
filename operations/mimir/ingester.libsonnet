@@ -21,8 +21,6 @@
       'ingester.heartbeat-period': '15s',
       'ingester.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
-      'ingester.chunk-encoding': 3,
-
       // Limits config.
       'runtime-config.file': '/etc/cortex/overrides.yaml',
       'server.grpc-max-concurrent-streams': 10000,
