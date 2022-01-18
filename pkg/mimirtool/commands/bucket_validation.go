@@ -164,7 +164,7 @@ which may be specified in the string that gets
 passed to "-bucket-config".
 
 Example:
-cortextool bucket-validation --bucket-config='-backend=s3 -s3.endpoint=localhost:9000 -s3.bucket-name=example-bucket'
+mimirtool bucket-validation --bucket-config='-backend=s3 -s3.endpoint=localhost:9000 -s3.bucket-name=example-bucket'
 
 `)
 	fs.Usage()

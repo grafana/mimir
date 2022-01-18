@@ -22,7 +22,7 @@ import (
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
 
-// Printer is  used for printing formatted output from the cortextool
+// Printer is  used for printing formatted output from the mimirtool
 type Printer struct {
 	disableColor bool
 	colorizer    colorstring.Colorize

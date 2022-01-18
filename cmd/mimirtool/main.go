@@ -29,7 +29,7 @@ var (
 )
 
 func main() {
-	app := kingpin.New("cortextool", "A command-line tool to manage cortex.")
+	app := kingpin.New("mimirtool", "A command-line tool to manage cortex.")
 	logConfig.Register(app)
 	alertCommand.Register(app)
 	alertmanagerCommand.Register(app)
@@ -41,7 +41,7 @@ func main() {
 	analyseCommand.Register(app)
 	bucketValidateCommand.Register(app)
 
-	app.Command("version", "Get the version of the cortextool CLI").Action(func(k *kingpin.ParseContext) error {
+	app.Command("version", "Get the version of the mimirtool CLI").Action(func(k *kingpin.ParseContext) error {
 		fmt.Print(version.Template)
 		version.CheckLatest()
 

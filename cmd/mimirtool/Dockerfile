@@ -8,5 +8,5 @@ ARG        TARGETARCH
 ARG        BINARY_SUFFIX="_${TARGETOS}_${TARGETARCH}"
 # Set to non-empty value to use ${TARGET_SUFFIX} when copying mimir binary, leave unset to use no suffix.
 ARG        USE_BINARY_SUFFIX
-COPY       cortextool${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/cortextool
-ENTRYPOINT [ "/bin/cortextool" ]
+COPY       mimirtool${USE_BINARY_SUFFIX:+${BINARY_SUFFIX}} /bin/mimirtool
+ENTRYPOINT [ "/bin/mimirtool" ]

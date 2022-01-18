@@ -36,7 +36,7 @@ func CheckLatest() {
 
 		version := Version
 		if latest != "" && (strings.TrimPrefix(latest, "v") != strings.TrimPrefix(version, "v")) {
-			fmt.Printf("A newer version of cortextool is available, please update to %s\n", latest)
+			fmt.Printf("A newer version of mimirtool is available, please update to %s\n", latest)
 		} else {
 			fmt.Println("You are on the latest version")
 		}

@@ -390,7 +390,7 @@ func (c *RemoteReadCommand) export(k *kingpin.ParseContext) error {
 	}
 
 	if c.tsdbPath == "" {
-		c.tsdbPath, err = ioutil.TempDir("", "cortextool-tsdb")
+		c.tsdbPath, err = ioutil.TempDir("", "mimirtool-tsdb")
 		if err != nil {
 			return err
 		}

@@ -35,7 +35,7 @@ import (
 var (
 	nonDuplicateAlerts = prometheus.NewGauge(
 		prometheus.GaugeOpts{
-			Name: "cortextool_alerts_single_source",
+			Name: "mimirtool_alerts_single_source",
 			Help: "Alerts found by the alerts verify command that are coming from a single source rather than multiple sources..",
 		},
 	)
@@ -155,7 +155,7 @@ func (a *AlertCommand) Register(app *kingpin.Application) {
 	verifyAlertsCmd.Flag("ignore-alerts", "A comma separated list of Alert names to ignore in deduplication checks.").StringVar(&a.IgnoreString)
 	verifyAlertsCmd.Flag("source-label", "Label to look for when deciding if two alerts are duplicates of eachother from separate sources.").Default("prometheus").StringVar(&a.SourceLabel)
 	verifyAlertsCmd.Flag("grace-period", "Grace period, don't consider alert groups with the incorrect amount of alert replicas erroneous unless the alerts have existed for more than this amount of time, in minutes.").Default("2").IntVar(&a.GracePeriod)
-	verifyAlertsCmd.Flag("frequency", "Setting this value will turn cortextool into a long-running process, running the alerts verify check every # of minutes specified").IntVar(&a.CheckFrequency)
+	verifyAlertsCmd.Flag("frequency", "Setting this value will turn mimirtool into a long-running process, running the alerts verify check every # of minutes specified").IntVar(&a.CheckFrequency)
 }
 
 func (a *AlertCommand) setup(k *kingpin.ParseContext) error {
