@@ -35,7 +35,10 @@ func previousVersionImages() map[string]func(map[string]string) map[string]strin
 		// Overriding of flags is not currently supported when overriding the list of images,
 		// so set all override functions to nil
 		for _, image := range strings.Split(overrideImageVersions, ",") {
-			previousVersionImages[image] = nil
+			previousVersionImages[image] = func(flags map[string]string) map[string]string {
+				flags["-store.engine"] = "blocks"
+				return flags
+			}
 		}
 
 		return previousVersionImages
