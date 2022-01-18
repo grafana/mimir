@@ -21,7 +21,7 @@ func TestOverridesExporter_noConfig(t *testing.T) {
 	assert.Equal(t, 0, count)
 	// The defaults should exist though
 	count = testutil.CollectAndCount(exporter, "cortex_limits_defaults")
-	assert.Equal(t, 11, count)
+	assert.Equal(t, 10, count)
 }
 
 func TestOverridesExporter_withConfig(t *testing.T) {
@@ -35,7 +35,6 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 			MaxChunksPerQuery:            15,
 			MaxFetchedSeriesPerQuery:     16,
 			MaxFetchedChunkBytesPerQuery: 17,
-			MaxSeriesPerQuery:            18,
 			RulerMaxRulesPerRuleGroup:    19,
 			RulerMaxRuleGroupsPerTenant:  20,
 		},
@@ -50,7 +49,6 @@ func TestOverridesExporter_withConfig(t *testing.T) {
 		MaxChunksPerQuery:            27,
 		MaxFetchedSeriesPerQuery:     28,
 		MaxFetchedChunkBytesPerQuery: 29,
-		MaxSeriesPerQuery:            30,
 		RulerMaxRulesPerRuleGroup:    31,
 		RulerMaxRuleGroupsPerTenant:  32,
 	}, newMockTenantLimits(tenantLimits))
@@ -65,7 +63,6 @@ cortex_limits_overrides{limit_name="max_global_exemplars_per_user",user="tenant-
 cortex_limits_overrides{limit_name="max_fetched_chunks_per_query",user="tenant-a"} 15
 cortex_limits_overrides{limit_name="max_fetched_series_per_query",user="tenant-a"} 16
 cortex_limits_overrides{limit_name="max_fetched_chunk_bytes_per_query",user="tenant-a"} 17
-cortex_limits_overrides{limit_name="max_series_per_query",user="tenant-a"} 18
 cortex_limits_overrides{limit_name="ruler_max_rules_per_rule_group",user="tenant-a"} 19
 cortex_limits_overrides{limit_name="ruler_max_rule_groups_per_tenant",user="tenant-a"} 20
 `
@@ -85,7 +82,6 @@ cortex_limits_defaults{limit_name="max_global_exemplars_per_user"} 26
 cortex_limits_defaults{limit_name="max_fetched_chunks_per_query"} 27
 cortex_limits_defaults{limit_name="max_fetched_series_per_query"} 28
 cortex_limits_defaults{limit_name="max_fetched_chunk_bytes_per_query"} 29
-cortex_limits_defaults{limit_name="max_series_per_query"} 30
 cortex_limits_defaults{limit_name="ruler_max_rules_per_rule_group"} 31
 cortex_limits_defaults{limit_name="ruler_max_rule_groups_per_tenant"} 32
 `

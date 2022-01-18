@@ -808,10 +808,9 @@ The `querier_config` configures the querier.
 [query_label_names_with_matchers_enabled: <boolean> | default = false]
 
 # The time after which a metric should be queried from storage and not just
-# ingesters. 0 means all queries are sent to store. When running the blocks
-# storage, if this option is enabled, the time range of the query sent to the
-# store will be manipulated to ensure the query end is not more recent than 'now
-# - query-store-after'.
+# ingesters. 0 means all queries are sent to store. If this option is enabled,
+# the time range of the query sent to the store-gateway will be manipulated to
+# ensure the query end is not more recent than 'now - query-store-after'.
 # CLI flag: -querier.query-store-after
 [query_store_after: <duration> | default = 0s]
 
@@ -820,9 +819,9 @@ The `querier_config` configures the querier.
 [max_query_into_future: <duration> | default = 10m]
 
 # Comma separated list of store-gateway addresses in DNS Service Discovery
-# format. This option should be set when using the blocks storage and the
-# store-gateway sharding is disabled (when enabled, the store-gateway instances
-# form a ring and addresses are picked from the ring).
+# format. This option should be set when the store-gateway sharding is disabled
+# (when enabled, the store-gateway instances form a ring and addresses are
+# picked from the ring).
 # CLI flag: -querier.store-gateway-addresses
 [store_gateway_addresses: <string> | default = ""]
 
@@ -1082,8 +1081,7 @@ results_cache:
 # CLI flag: -querier.max-retries-per-request
 [max_retries: <int> | default = 5]
 
-# Perform query parallelizations based on storage sharding configuration and
-# query ASTs. This feature is supported only by the blocks storage engine.
+# True to enable query sharding.
 # CLI flag: -query-frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
@@ -2498,14 +2496,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # more effective to use metrics relabeling directly in the Prometheus server,
 # e.g. remote_write.write_relabel_configs.
 [metric_relabel_configs: <relabel_config...> | default = ]
-
-# The maximum number of series for which a query can fetch samples from each
-# ingester. This limit is enforced only in the ingesters (when querying samples
-# not flushed to the storage yet) and it's a per-instance limit. This limit is
-# ignored when using blocks storage. When running with blocks storage use
-# -querier.max-fetched-series-per-query limit instead.
-# CLI flag: -ingester.max-series-per-query
-[max_series_per_query: <int> | default = 100000]
 
 # The maximum number of active series per user, across the cluster before
 # replication. 0 to disable.
