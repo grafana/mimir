@@ -188,7 +188,9 @@ func TestRuler_alerts(t *testing.T) {
 	cfg := defaultRulerConfig(t)
 
 	r := newTestRuler(t, cfg, newMockRuleStore(mockRules))
-	defer r.StopAsync()
+	t.Cleanup(func() {
+		require.NoError(t, services.StopAndAwaitTerminated(context.Background(), r))
+	})
 
 	a := NewAPI(r, r.store, log.NewNopLogger())
 

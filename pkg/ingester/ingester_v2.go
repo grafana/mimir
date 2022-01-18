@@ -526,13 +526,11 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
 		activeSeriesMatcher: asm,
 	}
-	i.metrics = newIngesterMetrics(registerer, false, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
 	if registerer != nil {
-		registerer.Unregister(i.metrics.memSeries)
-
 		promauto.With(registerer).NewGaugeFunc(prometheus.GaugeOpts{
 			Name: "cortex_ingester_memory_series",
 			Help: "The current number of series in memory.",
@@ -585,7 +583,7 @@ func NewForFlusher(cfg Config, limits *validation.Overrides, registerer promethe
 		logger:              logger,
 		activeSeriesMatcher: &ActiveSeriesMatchers{},
 	}
-	i.metrics = newIngesterMetrics(registerer, false, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
+	i.metrics = newIngesterMetrics(registerer, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
 	i.TSDBState.shipperIngesterID = "flusher"
 

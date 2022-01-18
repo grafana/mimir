@@ -57,7 +57,7 @@
 * [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor with `split-and-merge` strategy, but are correctly handled by compactor. #494
 * [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
-* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #762 #764
+* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #760 #762 #764
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-store.engine`
     * `-ingester.checkpoint-duration`
@@ -103,6 +103,23 @@
   * The following API endpoints have been removed:
     * `/api/v1/chunks` and `/chunks`
   * The following metrics have been removed:
+    * `cortex_ingester_flush_queue_length`
+    * `cortex_ingester_queried_chunks`
+    * `cortex_ingester_chunks_created_total`
+    * `cortex_ingester_wal_replay_duration_seconds`
+    * `cortex_ingester_wal_corruptions_total`
+    * `cortex_ingester_sent_chunks`
+    * `cortex_ingester_received_chunks`
+    * `cortex_ingester_flush_series_in_progress`
+    * `cortex_ingester_chunk_utilization`
+    * `cortex_ingester_chunk_length`
+    * `cortex_ingester_chunk_size_bytes`
+    * `cortex_ingester_chunk_age_seconds`
+    * `cortex_ingester_memory_chunks`
+    * `cortex_ingester_flushing_enqueued_series_total`
+    * `cortex_ingester_flushing_dequeued_series_total`
+    * `cortex_ingester_dropped_chunks_total`
+    * `cortex_oldest_unflushed_chunk_timestamp_seconds`
     * `prometheus_local_storage_chunk_ops_total`
     * `prometheus_local_storage_chunkdesc_ops_total`
     * `prometheus_local_storage_memory_chunkdescs`
