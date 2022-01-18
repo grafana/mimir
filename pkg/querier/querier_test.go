@@ -38,7 +38,6 @@ import (
 )
 
 const (
-	userID          = "userID"
 	chunkOffset     = 1 * time.Hour
 	chunkLength     = 3 * time.Hour
 	sampleRate      = 15 * time.Second
