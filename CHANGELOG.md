@@ -144,6 +144,21 @@
 * [CHANGE] Distributor: removed the `-distributor.shard-by-all-labels` configuration option. It is now assumed to be true. #698
 * [CHANGE] Store-gateway: increased memcached index caching TTL from 1 day to 7 days. #718
 * [CHANGE] Alertmanager: set default value for `-alertmanager.web.external-url=http://localhost`. #808
+* [CHANGE] Query-frontend: removed in-memory and Redis cache support. Reason is that these caching backends were just supported by query-frontend, while all other Mimir services only support memcached. #796
+  * The following CLI flags (and their respective YAML config options) have been removed:
+    * `-frontend.cache.enable-fifocache`
+    * `-frontend.redis.*`
+    * `-frontend.fifocache.*`
+  * The following metrics have been removed:
+    * `querier_cache_added_total`
+    * `querier_cache_added_new_total`
+    * `querier_cache_evicted_total`
+    * `querier_cache_entries`
+    * `querier_cache_gets_total`
+    * `querier_cache_misses_total`
+    * `querier_cache_stale_gets_total`
+    * `querier_cache_memory_bytes`
+    * `cortex_rediscache_request_duration_seconds`
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
