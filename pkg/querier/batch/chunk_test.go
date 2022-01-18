@@ -26,26 +26,14 @@ const (
 )
 
 func TestChunkIter(t *testing.T) {
-	forEncodings(t, func(t *testing.T, enc promchunk.Encoding) {
-		chunk := mkGenericChunk(t, 0, 100, enc)
-		iter := &chunkIterator{}
+	chunk := mkGenericChunk(t, 0, 100, promchunk.PrometheusXorChunk)
+	iter := &chunkIterator{}
 
-		iter.reset(chunk)
-		testIter(t, 100, newIteratorAdapter(iter))
+	iter.reset(chunk)
+	testIter(t, 100, newIteratorAdapter(iter))
 
-		iter.reset(chunk)
-		testSeek(t, 100, newIteratorAdapter(iter))
-	})
-}
-
-func forEncodings(t *testing.T, f func(t *testing.T, enc promchunk.Encoding)) {
-	for _, enc := range []promchunk.Encoding{
-		promchunk.PrometheusXorChunk,
-	} {
-		t.Run(enc.String(), func(t *testing.T) {
-			f(t, enc)
-		})
-	}
+	iter.reset(chunk)
+	testSeek(t, 100, newIteratorAdapter(iter))
 }
 
 func mkChunk(t require.TestingT, from model.Time, points int, enc promchunk.Encoding) chunk.Chunk {

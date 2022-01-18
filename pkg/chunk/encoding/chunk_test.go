@@ -20,28 +20,22 @@ import (
 )
 
 func TestLen(t *testing.T) {
-	chunks := []Chunk{}
-	for _, encoding := range []Encoding{PrometheusXorChunk} {
-		c, err := NewForEncoding(encoding)
-		if err != nil {
-			t.Fatal(err)
-		}
-		chunks = append(chunks, c)
+	c, err := NewForEncoding(PrometheusXorChunk)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	for _, c := range chunks {
-		for i := 0; i <= 10; i++ {
-			if c.Len() != i {
-				t.Errorf("chunk type %s should have %d samples, had %d", c.Encoding(), i, c.Len())
-			}
-
-			cs, err := c.Add(model.SamplePair{
-				Timestamp: model.Time(i),
-				Value:     model.SampleValue(i),
-			})
-			require.NoError(t, err)
-			require.Nil(t, cs)
+	for i := 0; i <= 10; i++ {
+		if c.Len() != i {
+			t.Errorf("chunk type %s should have %d samples, had %d", c.Encoding(), i, c.Len())
 		}
+
+		cs, err := c.Add(model.SamplePair{
+			Timestamp: model.Time(i),
+			Value:     model.SampleValue(i),
+		})
+		require.NoError(t, err)
+		require.Nil(t, cs)
 	}
 }
 
