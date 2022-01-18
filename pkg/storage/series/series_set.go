@@ -12,8 +12,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 )
 
 // ConcreteSeriesSet implements storage.SeriesSet.
@@ -152,11 +150,11 @@ func MatrixToSeriesSet(m model.Matrix) storage.SeriesSet {
 }
 
 // MetricsToSeriesSet creates a storage.SeriesSet from a []metric.Metric
-func MetricsToSeriesSet(ms []metric.Metric) storage.SeriesSet {
+func MetricsToSeriesSet(ms []model.Metric) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(ms))
 	for _, m := range ms {
 		series = append(series, &ConcreteSeries{
-			labels:  metricToLabels(m.Metric),
+			labels:  metricToLabels(m),
 			samples: nil,
 		})
 	}

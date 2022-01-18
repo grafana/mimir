@@ -9,8 +9,6 @@ import (
 	"io"
 
 	"github.com/prometheus/common/model"
-
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 )
 
 const (
@@ -80,7 +78,7 @@ type Batch struct {
 
 // RangeValues is a utility function that retrieves all values within the given
 // range from an Iterator.
-func RangeValues(it Iterator, in metric.Interval) ([]model.SamplePair, error) {
+func RangeValues(it Iterator, in Interval) ([]model.SamplePair, error) {
 	result := []model.SamplePair{}
 	if !it.FindAtOrAfter(in.OldestInclusive) {
 		return result, it.Err()
@@ -92,4 +90,10 @@ func RangeValues(it Iterator, in metric.Interval) ([]model.SamplePair, error) {
 		}
 	}
 	return result, it.Err()
+}
+
+// Interval describes the inclusive interval between two Timestamps.
+type Interval struct {
+	OldestInclusive model.Time
+	NewestInclusive model.Time
 }
