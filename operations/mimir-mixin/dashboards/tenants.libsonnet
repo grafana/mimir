@@ -128,7 +128,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Distributor samples incoming rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user) (rate(cortex_distributor_samples_in_total{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user) (rate(cortex_distributor_samples_in_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}',
         ) +
@@ -143,7 +143,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Distributor samples received (accepted) rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}',
         ) +
@@ -159,9 +159,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum by (user) (rate(cortex_distributor_deduped_samples_total{%(job)s, user=~"$user"}[5m]))'
+            'sum by (user) (rate(cortex_distributor_deduped_samples_total{%(job)s, user=~"$user"}[$__rate_interval]))'
             % { job: $.jobMatcher($._config.job_names.distributor) },
-            'sum by (user) (rate(cortex_distributor_non_ha_samples_received_total{%(job)s, user=~"$user"}[5m]))'
+            'sum by (user) (rate(cortex_distributor_non_ha_samples_received_total{%(job)s, user=~"$user"}[$__rate_interval]))'
             % { job: $.jobMatcher($._config.job_names.distributor) },
           ],
           [
@@ -181,9 +181,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[5m]))'
+            'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[$__rate_interval]))'
             % { job: $.jobMatcher($._config.job_names.distributor) },
-            'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[5m]))'
+            'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[$__rate_interval]))'
             % { job: $.jobMatcher($._config.job_names.ingester) },
           ],
           [
@@ -206,7 +206,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Distributor exemplars incoming rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user) (rate(cortex_distributor_exemplars_in_total{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user) (rate(cortex_distributor_exemplars_in_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}',
         ) +
@@ -221,7 +221,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Distributor exemplars received (accepted) rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user) (rate(cortex_distributor_received_exemplars_total{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user) (rate(cortex_distributor_received_exemplars_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
           '{{ user }}',
         ) +
@@ -238,7 +238,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Distributor discarded exemplars rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user, reason) (rate(cortex_discarded_exemplars_total{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user, reason) (rate(cortex_discarded_exemplars_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.distributor) },
           '{{ user }}: {{ reason }}',
         ) +
@@ -255,7 +255,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.queryPanel(
           |||
             sum by (user) (
-              rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user=~"$user"}[5m])
+              rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{%(ingester)s, user=~"$user"}[$__rate_interval])
               / on(%(group_by_cluster)s) group_left
               max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
             )
@@ -348,7 +348,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Total evaluations rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user) (rate(cortex_prometheus_rule_evaluations_total{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user) (rate(cortex_prometheus_rule_evaluations_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ user }}',
         ),
@@ -357,7 +357,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Failed evaluations rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user, rule_group) (rate(cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}[5m]))'
+          'sum by (user, rule_group) (rate(cortex_prometheus_rule_group_rules{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ user }}: {{ rule_group }}',
         ) + { stack: true },
