@@ -98,29 +98,35 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":                         "querier",
+		"-log.level":                      "warn",
+		"-distributor.replication-factor": "1",
+		// Ingesters ring backend.
+		"-ring.store":      "consul",
+		"-consul.hostname": consulAddress,
+		// Query-frontend worker.
+		"-querier.frontend-client.backoff-min-period": "100ms",
+		"-querier.frontend-client.backoff-max-period": "100ms",
+		"-querier.frontend-client.backoff-retries":    "1",
+		"-querier.worker-parallelism":                 "1",
+		// Quickly detect query-frontend and query-scheduler when running it.
+		"-querier.dns-lookup-period": "1s",
+		// Store-gateway ring backend.
+		"-store-gateway.sharding-enabled":                 "true",
+		"-store-gateway.sharding-ring.store":              "consul",
+		"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
+		"-store-gateway.sharding-ring.replication-factor": "1",
+	}
+
+	if binaryName != "cortex" {
+		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
+	}
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":                         "querier",
-			"-log.level":                      "warn",
-			"-distributor.replication-factor": "1",
-			// Ingesters ring backend.
-			"-ring.store":      "consul",
-			"-consul.hostname": consulAddress,
-			// Query-frontend worker.
-			"-querier.frontend-client.backoff-min-period": "100ms",
-			"-querier.frontend-client.backoff-max-period": "100ms",
-			"-querier.frontend-client.backoff-retries":    "1",
-			"-querier.worker-parallelism":                 "1",
-			// Quickly detect query-frontend and query-scheduler when running it.
-			"-querier.dns-lookup-period": "1s",
-			// Store-gateway ring backend.
-			"-store-gateway.sharding-enabled":                 "true",
-			"-store-gateway.sharding-ring.store":              "consul",
-			"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
-			"-store-gateway.sharding-ring.replication-factor": "1",
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -141,21 +147,26 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":    "store-gateway",
+		"-log.level": "warn",
+		// Store-gateway ring backend.
+		"-store-gateway.sharding-enabled":                 "true",
+		"-store-gateway.sharding-ring.store":              "consul",
+		"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
+		"-store-gateway.sharding-ring.replication-factor": "1",
+		// Startup quickly.
+		"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
+		"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
+	}
+	if binaryName != "cortex" {
+		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
+	}
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":    "store-gateway",
-			"-log.level": "warn",
-			// Store-gateway ring backend.
-			"-store-gateway.sharding-enabled":                 "true",
-			"-store-gateway.sharding-ring.store":              "consul",
-			"-store-gateway.sharding-ring.consul.hostname":    consulAddress,
-			"-store-gateway.sharding-ring.replication-factor": "1",
-			// Startup quickly.
-			"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
-			"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -216,15 +227,20 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":    "query-frontend",
+		"-log.level": "warn",
+		// Quickly detect query-scheduler when running it.
+		"-frontend.scheduler-dns-lookup-period": "1s",
+	}
+	if binaryName != "cortex" {
+		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
+	}
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":    "query-frontend",
-			"-log.level": "warn",
-			// Quickly detect query-scheduler when running it.
-			"-frontend.scheduler-dns-lookup-period": "1s",
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -298,30 +314,35 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":       "all",
+		"-log.level":    "warn",
+		"-auth.enabled": "true",
+		// Query-frontend worker.
+		"-querier.frontend-client.backoff-min-period": "100ms",
+		"-querier.frontend-client.backoff-max-period": "100ms",
+		"-querier.frontend-client.backoff-retries":    "1",
+		"-querier.worker-parallelism":                 "1",
+		// Distributor.
+		"-distributor.replication-factor": "1",
+		"-distributor.ring.store":         "memberlist",
+		// Ingester.
+		"-ingester.final-sleep":        "0s",
+		"-ingester.join-after":         "0s",
+		"-ingester.min-ready-duration": "0s",
+		"-ingester.num-tokens":         "512",
+		// Startup quickly.
+		"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
+		"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
+	}
+	if binaryName != "cortex" {
+		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
+	}
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":       "all",
-			"-log.level":    "warn",
-			"-auth.enabled": "true",
-			// Query-frontend worker.
-			"-querier.frontend-client.backoff-min-period": "100ms",
-			"-querier.frontend-client.backoff-max-period": "100ms",
-			"-querier.frontend-client.backoff-retries":    "1",
-			"-querier.worker-parallelism":                 "1",
-			// Distributor.
-			"-distributor.replication-factor": "1",
-			"-distributor.ring.store":         "memberlist",
-			// Ingester.
-			"-ingester.final-sleep":        "0s",
-			"-ingester.join-after":         "0s",
-			"-ingester.min-ready-duration": "0s",
-			"-ingester.num-tokens":         "512",
-			// Startup quickly.
-			"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
-			"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -335,15 +356,20 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		// Do not pass any extra default flags because the config should be drive by the config file.
+		"-target":      "all",
+		"-log.level":   "warn",
+		"-config.file": filepath.Join(e2e.ContainerSharedDir, configFile),
+	}
+	if binaryName != "cortex" {
+		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
+	}
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			// Do not pass any extra default flags because the config should be drive by the config file.
-			"-target":      "all",
-			"-log.level":   "warn",
-			"-config.file": filepath.Join(e2e.ContainerSharedDir, configFile),
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
@@ -397,16 +423,21 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 	}
 	binaryName := getBinaryNameForBackwardsCompatibility(image)
 
+	defaultFlags := map[string]string{
+		"-target":    "ruler",
+		"-log.level": "warn",
+		// Configure the ingesters ring backend
+		"-ring.store":      "consul",
+		"-consul.hostname": consulAddress,
+	}
+	if binaryName != "cortex" {
+		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
+	}
+
 	return NewMimirService(
 		name,
 		image,
-		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(map[string]string{
-			"-target":    "ruler",
-			"-log.level": "warn",
-			// Configure the ingesters ring backend
-			"-ring.store":      "consul",
-			"-consul.hostname": consulAddress,
-		}, flags)))...),
+		e2e.NewCommandWithoutEntrypoint(binaryName, buildArgsWithExtra(e2e.BuildArgs(e2e.MergeFlags(defaultFlags, flags)))...),
 		e2e.NewHTTPReadinessProbe(httpPort, "/ready", 200, 299),
 		httpPort,
 		grpcPort,
