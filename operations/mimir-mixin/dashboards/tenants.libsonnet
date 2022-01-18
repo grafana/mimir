@@ -158,9 +158,9 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panel(title) +
         $.queryPanel(
           [
-            'sum by (user) (rate(distributor_deduped_samples_total{%(job)s, user=~"$user"}[5m]))'
+            'sum by (user) (rate(cortex_distributor_deduped_samples_total{%(job)s, user=~"$user"}[5m]))'
             % { job: $.jobMatcher($._config.job_names.distributor) },
-            'sum by (user) (rate(distributor_non_ha_samples_received_total{%(job)s, user=~"$user"}[5m]))'
+            'sum by (user) (rate(cortex_distributor_non_ha_samples_received_total{%(job)s, user=~"$user"}[5m]))'
             % { job: $.jobMatcher($._config.job_names.distributor) },
           ],
           [
