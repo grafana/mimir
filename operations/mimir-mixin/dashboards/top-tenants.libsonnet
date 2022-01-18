@@ -55,7 +55,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.tablePanel(
           [
             'topk($n, sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[5m])))'
-            % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
+            % { job: $.jobMatcher($._config.job_names.distributor) },
           ],
           { 'Value #A': { alias: 'samples/s' } }
         )
@@ -96,7 +96,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.tablePanel(
           [
             'topk($n, sum by (user) (rate(cortex_distributor_received_exemplars_total{%(job)s}[5m])))'
-            % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
+            % { job: $.jobMatcher($._config.job_names.distributor) },
           ],
           { 'Value #A': { alias: 'exemplars/s' } }
         )
