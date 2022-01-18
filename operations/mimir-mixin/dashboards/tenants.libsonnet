@@ -176,12 +176,19 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor samples discarded rate';
+        local title = 'Distributor/Ingester discarded samples rate';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[5m]))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
-          '{{ user }}: {{ reason }}',
+          [
+            'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[5m]))'
+            % { job: $.jobMatcher($._config.job_names.distributor) },
+            'sum by (user, reason) (rate(cortex_discarded_samples_total{%(job)s, user=~"$user"}[5m]))'
+            % { job: $.jobMatcher($._config.job_names.ingester) },
+          ],
+          [
+            '{{ user }}: {{ reason }} (distributor)',
+            '{{ user }}: {{ reason }} (ingester)',
+          ]
         ) +
         $.panelDescription(
           title,
@@ -227,7 +234,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor exemplars discarded rate';
+        local title = 'Distributor discarded exemplars rate';
         $.panel(title) +
         $.queryPanel(
           'sum by (user, reason) (rate(cortex_discarded_exemplars_total{%(job)s, user=~"$user"}[5m]))'
