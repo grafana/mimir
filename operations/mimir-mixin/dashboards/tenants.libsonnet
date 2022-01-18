@@ -388,5 +388,27 @@ local utils = import 'mixin-utils/utils.libsonnet';
           { 'Value #A': { alias: 'seconds' } }
         )
       )
+    )
+
+    .addRow(
+      $.row('Notifications')
+      .addPanel(
+        local title = 'Sent notifications rate';
+        $.panel(title) +
+        $.queryPanel(
+          'sum by(user) (rate(cortex_prometheus_notifications_sent_total{%(job)s, user=~"$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.ruler) },
+          '{{ user }}',
+        ),
+      )
+      .addPanel(
+        local title = 'Failed notifications rate';
+        $.panel(title) +
+        $.queryPanel(
+        'sum by(user) (rate(cortex_prometheus_notifications_errors_total{%(job)s, user=~"$user"}[$__rate_interval]))'
+          % { job: $.jobMatcher($._config.job_names.ruler) },
+          '{{ user }}',
+        ),
+      )
     ),
 }
