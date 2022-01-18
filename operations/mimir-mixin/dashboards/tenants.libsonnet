@@ -313,7 +313,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     )
 
     .addRow(
-      ($.row('Rules') + { collapse: true })
+      $.row('Rules')
       .addPanel(
         local title = 'Number of groups';
         $.panel(title) +
