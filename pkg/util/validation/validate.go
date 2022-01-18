@@ -102,8 +102,6 @@ func init() {
 
 // SampleValidationConfig helps with getting required config to validate sample.
 type SampleValidationConfig interface {
-	RejectOldSamples(userID string) bool
-	RejectOldSamplesMaxAge(userID string) time.Duration
 	CreationGracePeriod(userID string) time.Duration
 }
 
@@ -112,11 +110,6 @@ type SampleValidationConfig interface {
 // It uses the passed 'now' time to measure the relative time of the sample.
 func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-
-	if cfg.RejectOldSamples(userID) && model.Time(s.TimestampMs) < now.Add(-cfg.RejectOldSamplesMaxAge(userID)) {
-		DiscardedSamples.WithLabelValues(greaterThanMaxSampleAge, userID).Inc()
-		return newSampleTimestampTooOldError(unsafeMetricName, s.TimestampMs)
-	}
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		DiscardedSamples.WithLabelValues(tooFarInFuture, userID).Inc()

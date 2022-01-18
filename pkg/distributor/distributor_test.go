@@ -1618,32 +1618,6 @@ func BenchmarkDistributor_Push(b *testing.B) {
 			},
 			expectedErr: "label value too long",
 		},
-		"timestamp too old": {
-			prepareConfig: func(limits *validation.Limits) {
-				limits.RejectOldSamples = true
-				limits.RejectOldSamplesMaxAge = model.Duration(time.Hour)
-			},
-			prepareSeries: func() ([]labels.Labels, []mimirpb.Sample) {
-				metrics := make([]labels.Labels, numSeriesPerRequest)
-				samples := make([]mimirpb.Sample, numSeriesPerRequest)
-
-				for i := 0; i < numSeriesPerRequest; i++ {
-					lbls := labels.NewBuilder(labels.Labels{{Name: model.MetricNameLabel, Value: "foo"}})
-					for i := 0; i < 10; i++ {
-						lbls.Set(fmt.Sprintf("name_%d", i), fmt.Sprintf("value_%d", i))
-					}
-
-					metrics[i] = lbls.Labels()
-					samples[i] = mimirpb.Sample{
-						Value:       float64(i),
-						TimestampMs: time.Now().Add(-2*time.Hour).UnixNano() / int64(time.Millisecond),
-					}
-				}
-
-				return metrics, samples
-			},
-			expectedErr: "timestamp too old",
-		},
 		"timestamp too new": {
 			prepareConfig: func(limits *validation.Limits) {
 				limits.CreationGracePeriod = model.Duration(time.Minute)
@@ -3259,8 +3233,6 @@ func TestDistributorValidation(t *testing.T) {
 			flagext.DefaultValues(&limits)
 
 			limits.CreationGracePeriod = model.Duration(2 * time.Hour)
-			limits.RejectOldSamples = true
-			limits.RejectOldSamplesMaxAge = model.Duration(24 * time.Hour)
 			limits.MaxLabelNamesPerSeries = 2
 
 			ds, _, _ := prepare(t, prepConfig{
