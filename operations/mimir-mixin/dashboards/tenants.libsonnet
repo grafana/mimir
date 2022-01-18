@@ -154,17 +154,24 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
-        local title = 'Distributor deduplicated samples';
+        local title = 'Distributor deduplicated/non-HA';
         $.panel(title) +
         $.queryPanel(
-          'sum by (user, reason) (rate(distributor_deduped_samples_total{%(job)s, user=~"$user"}[5m]))'
-          % { job: $.jobMatcher($._config.job_names.distributor) },
-          '{{ user }}: {{ reason }}',
+          [
+            'sum by (user) (rate(distributor_deduped_samples_total{%(job)s, user=~"$user"}[5m]))'
+            % { job: $.jobMatcher($._config.job_names.distributor) },
+            'sum by (user) (rate(distributor_non_ha_samples_received_total{%(job)s, user=~"$user"}[5m]))'
+            % { job: $.jobMatcher($._config.job_names.distributor) },
+          ],
+          [
+            '{{ user }}: deduplicated',
+            '{{ user }}: non-HA',
+          ]
         ) +
         $.panelDescription(
           title,
           |||
-            The rate of deduplicated samples.
+            The rate of deduplicated samples and the rate of received samples for a user that has HA tracking turned on, but the sample didn't contain both HA labels.
           |||
         ),
       )
