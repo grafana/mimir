@@ -160,10 +160,11 @@ func (t *Mimir) initServer() (services.Service, error) {
 	servicesToWaitFor := func() []services.Service {
 		svs := []services.Service(nil)
 		for m, s := range t.ServiceMap {
-			// Server should not wait for itself.
-			if m != Server {
-				svs = append(svs, s)
+			// Server should not wait for itself or for ActivityTracker, which is stopped as very last service.
+			if m == Server || m == ActivityTracker {
+				continue
 			}
+			svs = append(svs, s)
 		}
 		return svs
 	}
