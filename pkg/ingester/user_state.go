@@ -10,8 +10,6 @@ import (
 
 	"github.com/prometheus/common/model"
 	"github.com/segmentio/fasthash/fnv1a"
-
-	"github.com/grafana/mimir/pkg/util"
 )
 
 // DiscardedSamples metric labels
@@ -61,7 +59,7 @@ func (m *metricCounter) decreaseSeriesForMetric(metricName string) {
 }
 
 func (m *metricCounter) getShard(metricName string) *metricCounterShard {
-	shard := &m.shards[util.HashFP(model.Fingerprint(fnv1a.HashString64(metricName)))%numMetricCounterShards]
+	shard := &m.shards[hashFP(model.Fingerprint(fnv1a.HashString64(metricName)))%numMetricCounterShards]
 	return shard
 }
 
@@ -82,4 +80,15 @@ func (m *metricCounter) increaseSeriesForMetric(metric string) {
 	shard.mtx.Lock()
 	shard.m[metric]++
 	shard.mtx.Unlock()
+}
+
+// hashFP simply moves entropy from the most significant 48 bits of the
+// fingerprint into the least significant 16 bits (by XORing) so that a simple
+// MOD on the result can be used to pick a mutex while still making use of
+// changes in more significant bits of the fingerprint. (The fast fingerprinting
+// function we use is prone to only change a few bits for similar metrics. We
+// really want to make use of every change in the fingerprint to vary mutex
+// selection.)
+func hashFP(fp model.Fingerprint) uint32 {
+	return uint32(fp ^ (fp >> 32) ^ (fp >> 16))
 }
