@@ -19,7 +19,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
       )
     )
 
-
     .addRow(
       ($.row('By active series') + { collapse: true })
       .addPanel(
@@ -46,6 +45,35 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
 
+    .addRow(
+      ($.row('By in-memory series') + { collapse: true })
+      .addPanel(
+        $.panel('Top $limit users by in-memory series (series created - series removed)') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            |||
+              topk($limit,
+                sum by (user) (
+                  (
+                      sum by (user, %(group_by_cluster)s) (cortex_ingester_memory_series_created_total{%(ingester)s})
+                      -
+                      sum by (user, %(group_by_cluster)s) (cortex_ingester_memory_series_removed_total{%(ingester)s})
+                  )
+                  / on(%(group_by_cluster)s) group_left
+                  max by (%(group_by_cluster)s) (cortex_distributor_replication_factor{%(distributor)s})
+                )
+              )
+            ||| % {
+              ingester: $.jobMatcher($._config.job_names.ingester),
+              distributor: $.jobMatcher($._config.job_names.distributor),
+              group_by_cluster: $._config.group_by_cluster,
+            },
+          ],
+          { 'Value #A': { alias: 'series' } }
+        )
+      ),
+    )
 
     .addRow(
       ($.row('By samples rate') + { collapse: true })
