@@ -11,7 +11,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.textPanel('', |||
           <p>
-            This dashboard shows various metrics for detailed by tenant (user) selected above.
+            This dashboard shows various metrics detailed by tenant (user) selected above.
           </p>
         |||),
       )
@@ -80,7 +80,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            Number of TSDB series with exemplars currently in storage.
+            Number of series with exemplars currently in storage.
           |||
         ),
       )
@@ -268,7 +268,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            Total number of TSDB exemplars appended in the ingesters.
+            Total number of exemplars appended in the ingesters.
             This can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.
           |||
         ),

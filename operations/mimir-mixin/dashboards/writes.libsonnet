@@ -344,7 +344,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The rate of TSDB exemplars ingested in the ingesters.
+            The rate of exemplars ingested in the ingesters.
             Every exemplar is sent to the replication factor number of ingesters, so the sum of rates from all ingesters is divided by the replication factor.
             This ingested exemplars rate should match the distributor's received exemplars rate.
           |||
@@ -372,7 +372,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           title,
           |||
-            The rate of TSDB exemplars appended in the ingesters.
+            The rate of exemplars appended in the ingesters.
             This can be lower than ingested exemplars rate since TSDB does not append the same exemplar twice, and those can be frequent.
           |||
         ),
