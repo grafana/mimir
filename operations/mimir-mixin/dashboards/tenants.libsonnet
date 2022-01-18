@@ -156,6 +156,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
         ),
       )
       .addPanel(
+        local title = 'Distributor deduplicated samples';
+        $.panel(title) +
+        $.queryPanel(
+          'sum by (user, reason) (rate(distributor_deduped_samples_total{%(job)s, user=~"$user"}[5m]))'
+          % { job: $.jobMatcher($._config.job_names.distributor) },
+          '{{ user }}: {{ reason }}',
+        ) +
+        { yaxes: $.yaxes('hertz') } +
+        $.panelDescription(
+          title,
+          |||
+            The rate of deduplicated samples.
+          |||
+        ),
+      )
+      .addPanel(
         local title = 'Distributor samples discarded rate';
         $.panel(title) +
         $.queryPanel(
