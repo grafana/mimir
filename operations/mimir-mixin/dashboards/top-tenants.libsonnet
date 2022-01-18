@@ -46,6 +46,22 @@ local utils = import 'mixin-utils/utils.libsonnet';
       ),
     )
 
+
+    .addRow(
+      ($.row('By samples rate') + { collapse: true })
+      .addPanel(
+        $.panel('Top $n users by received samples rate in last 5m') +
+        { sort: { col: 2, desc: true } } +
+        $.tablePanel(
+          [
+            'topk($n, sum by (user) (rate(cortex_distributor_received_samples_total{%(job)s}[5m])))'
+            % { job: $.jobMatcher($._config.job_names.distributor), group_prefix_users: $._config.group_prefix_users },
+          ],
+          { 'Value #A': { alias: 'samples/s' } }
+        )
+      ),
+    )
+
     .addRow(
       ($.row('By series with exemplars') + { collapse: true })
       .addPanel(
