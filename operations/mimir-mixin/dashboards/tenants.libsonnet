@@ -405,7 +405,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         local title = 'Failed notifications rate';
         $.panel(title) +
         $.queryPanel(
-        'sum by(user) (rate(cortex_prometheus_notifications_errors_total{%(job)s, user=~"$user"}[$__rate_interval]))'
+          'sum by(user) (rate(cortex_prometheus_notifications_errors_total{%(job)s, user=~"$user"}[$__rate_interval]))'
           % { job: $.jobMatcher($._config.job_names.ruler) },
           '{{ user }}',
         ),
