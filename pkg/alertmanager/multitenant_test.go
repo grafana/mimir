@@ -98,22 +98,27 @@ func mockAlertmanagerConfig(t *testing.T) *MultitenantAlertmanagerConfig {
 }
 
 func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
+	validExternalURL := flagext.URLValue{}
+	require.NoError(t, validExternalURL.Set("http://localhost/prefix"))
+
 	tests := map[string]struct {
 		setup    func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config)
 		expected error
 	}{
-		"should pass with default config": {
+		"should fail if external URL is not set": {
 			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {},
-			expected: nil,
+			expected: errMissingExternalURL,
 		},
 		"should fail if persistent interval is 0": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				cfg.ExternalURL = validExternalURL
 				cfg.Persister.Interval = 0
 			},
 			expected: errInvalidPersistInterval,
 		},
 		"should fail if persistent interval is negative": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				cfg.ExternalURL = validExternalURL
 				cfg.Persister.Interval = -1
 			},
 			expected: errInvalidPersistInterval,
@@ -132,6 +137,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 		},
 		"should succeed if sharding enabled and new storage configuration given with bucket client": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				cfg.ExternalURL = validExternalURL
 				cfg.ShardingEnabled = true
 				storageCfg.Backend = "s3"
 			},
@@ -139,6 +145,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 		},
 		"should fail if sharding enabled and new storage store configuration given with local type": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				cfg.ExternalURL = validExternalURL
 				cfg.ShardingEnabled = true
 				storageCfg.Backend = "local"
 			},
@@ -146,6 +153,7 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 		},
 		"should fail if zone aware is enabled but zone is not set": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				cfg.ExternalURL = validExternalURL
 				cfg.ShardingEnabled = true
 				cfg.ShardingRing.ZoneAwarenessEnabled = true
 			},
