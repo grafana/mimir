@@ -46,7 +46,6 @@ import (
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -1793,23 +1792,23 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 		shuffleShardEnabled bool
 		shuffleShardSize    int
 		matchers            []*labels.Matcher
-		expectedResult      []metric.Metric
+		expectedResult      []model.Metric
 		expectedIngesters   int
 	}{
 		"should return an empty response if no metric match": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "unknown"),
 			},
-			expectedResult:    []metric.Metric{},
+			expectedResult:    []model.Metric{},
 			expectedIngesters: numIngesters,
 		},
 		"should filter metrics by single matcher": {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []metric.Metric{
-				{Metric: util.LabelsToMetric(fixtures[0].lbls)},
-				{Metric: util.LabelsToMetric(fixtures[1].lbls)},
+			expectedResult: []model.Metric{
+				util.LabelsToMetric(fixtures[0].lbls),
+				util.LabelsToMetric(fixtures[1].lbls),
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -1818,8 +1817,8 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 				mustNewMatcher(labels.MatchEqual, "status", "200"),
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []metric.Metric{
-				{Metric: util.LabelsToMetric(fixtures[0].lbls)},
+			expectedResult: []model.Metric{
+				util.LabelsToMetric(fixtures[0].lbls),
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -1827,9 +1826,9 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "fast_fingerprint_collision"),
 			},
-			expectedResult: []metric.Metric{
-				{Metric: util.LabelsToMetric(fixtures[3].lbls)},
-				{Metric: util.LabelsToMetric(fixtures[4].lbls)},
+			expectedResult: []model.Metric{
+				util.LabelsToMetric(fixtures[3].lbls),
+				util.LabelsToMetric(fixtures[4].lbls),
 			},
 			expectedIngesters: numIngesters,
 		},
@@ -1839,9 +1838,9 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []metric.Metric{
-				{Metric: util.LabelsToMetric(fixtures[0].lbls)},
-				{Metric: util.LabelsToMetric(fixtures[1].lbls)},
+			expectedResult: []model.Metric{
+				util.LabelsToMetric(fixtures[0].lbls),
+				util.LabelsToMetric(fixtures[1].lbls),
 			},
 			expectedIngesters: 3,
 		},
@@ -1851,9 +1850,9 @@ func TestDistributor_MetricsForLabelMatchers(t *testing.T) {
 			matchers: []*labels.Matcher{
 				mustNewMatcher(labels.MatchEqual, model.MetricNameLabel, "test_1"),
 			},
-			expectedResult: []metric.Metric{
-				{Metric: util.LabelsToMetric(fixtures[0].lbls)},
-				{Metric: util.LabelsToMetric(fixtures[1].lbls)},
+			expectedResult: []model.Metric{
+				util.LabelsToMetric(fixtures[0].lbls),
+				util.LabelsToMetric(fixtures[1].lbls),
 			},
 			expectedIngesters: numIngesters,
 		},

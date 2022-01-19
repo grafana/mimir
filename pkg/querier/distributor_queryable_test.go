@@ -27,7 +27,6 @@ import (
 	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
@@ -86,7 +85,7 @@ func TestDistributorQuerier_SelectShouldHonorQueryIngestersWithin(t *testing.T) 
 			distributor := &mockDistributor{}
 			distributor.On("Query", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(model.Matrix{}, nil)
 			distributor.On("QueryStream", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(&client.QueryStreamResponse{}, nil)
-			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]metric.Metric{}, nil)
+			distributor.On("MetricsForLabelMatchers", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return([]model.Metric{}, nil)
 
 			ctx := user.InjectOrgID(context.Background(), "test")
 			queryable := newDistributorQueryable(distributor, nil, testData.queryIngestersWithin, true, log.NewNopLogger())
@@ -285,10 +284,10 @@ func TestDistributorQuerier_LabelNames(t *testing.T) {
 		})
 
 		t.Run("queryLabelNamesWithMatchers=false", func(t *testing.T) {
-			metrics := []metric.Metric{
-				{Metric: model.Metric{"foo": "bar"}},
-				{Metric: model.Metric{"job": "baz"}},
-				{Metric: model.Metric{"job": "baz", "foo": "boom"}},
+			metrics := []model.Metric{
+				{"foo": "bar"},
+				{"job": "baz"},
+				{"job": "baz", "foo": "boom"},
 			}
 			d := &mockDistributor{}
 			d.On("MetricsForLabelMatchers", mock.Anything, model.Time(mint), model.Time(maxt), someMatchers).
@@ -413,9 +412,9 @@ func (m *mockDistributor) LabelNames(ctx context.Context, from, to model.Time, m
 	args := m.Called(ctx, from, to, matchers)
 	return args.Get(0).([]string), args.Error(1)
 }
-func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
+func (m *mockDistributor) MetricsForLabelMatchers(ctx context.Context, from, to model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
 	args := m.Called(ctx, from, to, matchers)
-	return args.Get(0).([]metric.Metric), args.Error(1)
+	return args.Get(0).([]model.Metric), args.Error(1)
 }
 
 func (m *mockDistributor) MetricsMetadata(ctx context.Context) ([]scrape.MetricMetadata, error) {

@@ -40,7 +40,6 @@ import (
 
 	ingester_client "github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	util_log "github.com/grafana/mimir/pkg/util/log"
@@ -1229,7 +1228,7 @@ func (d *Distributor) LabelNames(ctx context.Context, from, to model.Time, match
 }
 
 // MetricsForLabelMatchers gets the metrics that match said matchers
-func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]metric.Metric, error) {
+func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through model.Time, matchers ...*labels.Matcher) ([]model.Metric, error) {
 	replicationSet, err := d.GetIngestersForMetadata(ctx)
 	if err != nil {
 		return nil, err
@@ -1255,11 +1254,9 @@ func (d *Distributor) MetricsForLabelMatchers(ctx context.Context, from, through
 		}
 	}
 
-	result := make([]metric.Metric, 0, len(metrics))
+	result := make([]model.Metric, 0, len(metrics))
 	for _, m := range metrics {
-		result = append(result, metric.Metric{
-			Metric: m,
-		})
+		result = append(result, m)
 	}
 	return result, nil
 }

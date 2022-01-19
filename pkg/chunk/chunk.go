@@ -10,7 +10,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	prom_chunk "github.com/grafana/mimir/pkg/chunk/encoding"
-	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 )
 
 // Chunk contains encoded timeseries data
@@ -34,6 +33,6 @@ func NewChunk(metric labels.Labels, c prom_chunk.Chunk, from, through model.Time
 // Samples returns all SamplePairs for the chunk.
 func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
 	it := c.Data.NewIterator(nil)
-	interval := metric.Interval{OldestInclusive: from, NewestInclusive: through}
+	interval := prom_chunk.Interval{OldestInclusive: from, NewestInclusive: through}
 	return prom_chunk.RangeValues(it, interval)
 }
