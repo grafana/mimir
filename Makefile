@@ -107,6 +107,8 @@ push-multiarch-build-image:
 # 'make: Entering directory '/go/src/github.com/grafana/mimir' phase.
 DONT_FIND := -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o -name packaging -prune -o
 
+MAKEFILES = $(shell find . $(DONT_FIND) \( -name 'Makefile' -o -name '*.mk' \) -print)
+
 # Get a list of directories containing Dockerfiles
 DOCKERFILES := $(shell find . $(DONT_FIND) -type f -name 'Dockerfile' -print)
 UPTODATE_FILES := $(patsubst %/Dockerfile,%/$(UPTODATE),$(DOCKERFILES))
@@ -200,7 +202,7 @@ protos: $(PROTO_GOS)
 lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
 	shellcheck $?
 
-lint: lint-packaging-scripts
+lint: lint-packaging-scripts check-makefiles
 	misspell -error docs
 
 	# Configured via .golangci.yml.
@@ -321,6 +323,15 @@ check-license: license
 	@git diff --exit-code || (echo "Please add the license header running 'make BUILD_IN_CONTAINER=false license'" && false)
 
 endif
+
+.PHONY: check-makefiles
+check-makefiles: format-makefiles
+	@git diff --exit-code -- $(MAKEFILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
+
+.PHONY: format-makefiles
+format-makefiles: ## Format all Makefiles.
+format-makefiles: $(MAKEFILES)
+	sed -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
