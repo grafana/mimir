@@ -62,6 +62,7 @@ const (
 )
 
 var (
+	errEmptyExternalURL                    = errors.New("-alertmanager.web.external-url cannot be empty")
 	errInvalidExternalURL                  = errors.New("the configured external URL is invalid: should not end with /")
 	errShardingUnsupportedStorage          = errors.New("the configured alertmanager storage backend is not supported when sharding is enabled")
 	errZoneAwarenessEnabledWithoutZoneInfo = errors.New("the configured alertmanager has zone awareness enabled but zone is not set")
@@ -143,6 +144,10 @@ func (cfg *ClusterConfig) RegisterFlags(f *flag.FlagSet) {
 
 // Validate config and returns error on failure
 func (cfg *MultitenantAlertmanagerConfig) Validate(storageCfg alertstore.Config) error {
+	if cfg.ExternalURL.String() == "" {
+		return errEmptyExternalURL
+	}
+
 	if strings.HasSuffix(cfg.ExternalURL.Path, "/") {
 		return errInvalidExternalURL
 	}

@@ -106,6 +106,12 @@ func TestMultitenantAlertmanagerConfig_Validate(t *testing.T) {
 			setup:    func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {},
 			expected: nil,
 		},
+		"should fail with empty external URL": {
+			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
+				require.NoError(t, cfg.ExternalURL.Set(""))
+			},
+			expected: errEmptyExternalURL,
+		},
 		"should fail if persistent interval is 0": {
 			setup: func(t *testing.T, cfg *MultitenantAlertmanagerConfig, storageCfg *alertstore.Config) {
 				cfg.Persister.Interval = 0
