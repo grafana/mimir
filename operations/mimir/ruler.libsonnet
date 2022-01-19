@@ -54,8 +54,7 @@
       deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
       deployment.mixin.spec.template.spec.withTerminationGracePeriodSeconds(600) +
       (if $._config.cortex_ruler_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
-      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
-      $.storage_config_mixin
+      $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex')
     else {},
 
   local service = $.core.v1.service,

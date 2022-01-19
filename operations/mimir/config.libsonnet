@@ -86,7 +86,7 @@
     },
 
     storageConfig:
-      { 'schema-config-file': '/etc/cortex/schema/config.yaml' },
+      {},
 
     genericBlocksStorageConfig:: {},
     queryBlocksStorageConfig:: {
@@ -343,9 +343,6 @@
     // if not empty, passed to overrides.yaml as another top-level field
     multi_kv_config: {},
 
-    // TODO This should be removed but we're still keeping the schema for backward compatibility.
-    schemaID: std.md5(std.toString([])),
-
     enable_pod_priorities: true,
 
     alertmanager_enabled: false,
@@ -380,19 +377,6 @@
         + (if $._config.ingester_instance_limits != null then { ingester_limits: $._config.ingester_instance_limits } else {}),
       ),
     }),
-
-  storage_config:
-    configMap.new('schema-' + $._config.schemaID) +
-    configMap.withData({
-      'config.yaml': $.util.manifestYaml({
-        configs: [],
-      }),
-    }),
-
-  local deployment = $.apps.v1.deployment,
-  storage_config_mixin::
-    deployment.mixin.spec.template.metadata.withAnnotationsMixin({ schemaID: $._config.schemaID },) +
-    $.util.configVolumeMount('schema-' + $._config.schemaID, '/etc/cortex/schema'),
 
   // This removed the CPU limit from the config.  NB won't show up in subset
   // diffs, but ks apply will do the right thing.
