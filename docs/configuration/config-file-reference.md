@@ -1589,7 +1589,7 @@ The `alertmanager_config` configures the alertmanager.
 # absolute links back to Alertmanager itself. If the URL has a path portion, it
 # will be used to prefix all HTTP endpoints served by Alertmanager.
 # CLI flag: -alertmanager.web.external-url
-[external_url: <url> | default = ]
+[external_url: <url> | default = http://localhost]
 
 # How frequently to poll Alertmanager configs.
 # CLI flag: -alertmanager.configs.poll-interval
