@@ -11,21 +11,22 @@ DOCS_BASE_URL    ?= "localhost:$(DOCS_HOST_PORT)"
 DOCS_VERSION = next
 
 DOCS_DOCKER_RUN_FLAGS = -ti -v $(CURDIR)/$(DOCS_DIR):/hugo/content/docs/$(DOCS_PROJECT)/$(DOCS_VERSION):ro,z -p $(DOCS_HOST_PORT):$(DOCS_LISTEN_PORT) --rm $(DOCS_IMAGE)
+DOCS_DOCKER_CONTAINER = $(DOCS_PROJECT)-docs
 
 # This wrapper will delete the pre-existing Grafana and Loki docs, which
 # significantly slows down the build process, due to the duplication of pages
 # through versioning.
 define docs_docker_run
-	@id=$$(docker run -d $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && exec $(1)'); \
+	@docker run --name $(DOCS_DOCKER_CONTAINER) -d $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && exec $(1)'; \
 	until curl -sLw '%{http_code}' http://localhost:$(DOCS_HOST_PORT)/docs/$(DOCS_PROJECT)/ | grep -q 200; do sleep 1; done; \
-	docker logs $${id}; \
+	docker logs $(DOCS_DOCKER_CONTAINER); \
 	echo ; \
 	echo ------------------------- ; \
 	echo Serving documentation at: ; \
 	echo http://$(DOCS_BASE_URL)/docs/$(DOCS_PROJECT)/$(DOCS_VERSION)/; \
 	echo ------------------------- ; \
 	echo ; \
-	docker attach $${id}
+	docker attach $(DOCS_DOCKER_CONTAINER)
 endef
 
 .PHONY: docs-pull
