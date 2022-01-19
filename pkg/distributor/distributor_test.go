@@ -3176,15 +3176,6 @@ func TestDistributorValidation(t *testing.T) {
 				Value:       1,
 			}},
 		},
-		// Test validation fails for very old samples.
-		{
-			labels: []labels.Labels{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
-			samples: []mimirpb.Sample{{
-				TimestampMs: int64(past),
-				Value:       2,
-			}},
-			err: httpgrpc.Errorf(http.StatusBadRequest, `timestamp too old: %d metric: "testmetric"`, past),
-		},
 
 		// Test validation fails for samples from the future.
 		{
