@@ -27,7 +27,6 @@
 
     // Grouping labels, to uniquely identify and group by {jobs, clusters}
     job_labels: ['cluster', 'namespace', 'job'],
-    user_labels: ['cluster', 'namespace', 'job', 'user'],
     cluster_labels: ['cluster', 'namespace'],
 
     cortex_p99_latency_threshold_seconds: 2.5,
@@ -59,6 +58,8 @@
     show_dashboard_descriptions: {
       writes: true,
       reads: true,
+      tenants: true,
+      top_tenants: true,
     },
 
     // The routes to exclude from alerts.

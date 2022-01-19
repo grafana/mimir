@@ -314,6 +314,7 @@
 * [CHANGE] Raised `CortexKVStoreFailure` alert severity from warning to critical. #493
 * [CHANGE] Increase `CortexRolloutStuck` alert "for" duration from 15m to 30m. #493 #573
 * [FEATURE] Added `Cortex / Overrides` dashboard, displaying default limits and per-tenant overrides applied to Mimir. #673
+* [FEATURE] Added `Mimir / Tenants` and `Mimir / Top tenants` dashboards, displaying user-based metrics. #776
 * [ENHANCEMENT] cortex-mixin: Make `cluster_namespace_deployment:kube_pod_container_resource_requests_{cpu_cores,memory_bytes}:sum` backwards compatible with `kube-state-metrics` v2.0.0. [#317](https://github.com/grafana/cortex-jsonnet/pull/317)
 * [ENHANCEMENT] Cortex-mixin: Include `cortex-gw-internal` naming variation in default `gateway` job names. [#328](https://github.com/grafana/cortex-jsonnet/pull/328)
 * [ENHANCEMENT] Ruler dashboard: added object storage metrics. [#354](https://github.com/grafana/cortex-jsonnet/pull/354)
