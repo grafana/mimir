@@ -36,7 +36,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
-	"github.com/grafana/mimir/pkg/frontend/queryrange"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/purger"
@@ -471,12 +471,12 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	tripperware, cache, err := queryrange.NewTripperware(
+	tripperware, cache, err := querymiddleware.NewTripperware(
 		t.Cfg.QueryRange,
 		util_log.Logger,
 		t.Overrides,
-		queryrange.PrometheusCodec,
-		queryrange.PrometheusResponseExtractor{},
+		querymiddleware.PrometheusCodec,
+		querymiddleware.PrometheusResponseExtractor{},
 		engine.NewPromQLEngineOptions(t.Cfg.Querier.EngineConfig, t.ActivityTracker, util_log.Logger, prometheus.DefaultRegisterer),
 		prometheus.DefaultRegisterer,
 	)

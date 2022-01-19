@@ -40,7 +40,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
-	"github.com/grafana/mimir/pkg/frontend/queryrange"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	frontendv1 "github.com/grafana/mimir/pkg/frontend/v1"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
@@ -101,7 +101,7 @@ type Config struct {
 	Prealloc         mimirpb.PreallocConfig          `yaml:"prealloc" doc:"hidden"`
 	Worker           querier_worker.Config           `yaml:"frontend_worker"`
 	Frontend         frontend.CombinedFrontendConfig `yaml:"frontend"`
-	QueryRange       queryrange.Config               `yaml:"query_range"`
+	QueryRange       querymiddleware.Config          `yaml:"query_range"`
 	BlocksStorage    tsdb.BlocksStorageConfig        `yaml:"blocks_storage"`
 	Compactor        compactor.Config                `yaml:"compactor"`
 	StoreGateway     storegateway.Config             `yaml:"store_gateway"`
@@ -284,7 +284,7 @@ type Mimir struct {
 	QuerierQueryable         prom_storage.SampleAndChunkQueryable
 	ExemplarQueryable        prom_storage.ExemplarQueryable
 	QuerierEngine            *promql.Engine
-	QueryFrontendTripperware queryrange.Tripperware
+	QueryFrontendTripperware querymiddleware.Tripperware
 	Ruler                    *ruler.Ruler
 	RulerStorage             rulestore.RuleStore
 	Alertmanager             *alertmanager.MultitenantAlertmanager

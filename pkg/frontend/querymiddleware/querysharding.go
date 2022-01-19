@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package queryrange
+package querymiddleware
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/frontend/queryrange/astmapper"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware/astmapper"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/storage/lazyquery"
