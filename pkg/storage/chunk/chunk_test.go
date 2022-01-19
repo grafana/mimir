@@ -7,7 +7,7 @@
 // it may make sense to split those out later, but given that the tests are
 // near-identical and share a helper, this feels simpler for now.
 
-package encoding
+package chunk
 
 import (
 	"bytes"

@@ -9,9 +9,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/encoding"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // GenericChunk is a generic chunk used by the batch iterator, in order to make the batch
@@ -20,10 +18,10 @@ type GenericChunk struct {
 	MinTime int64
 	MaxTime int64
 
-	iterator func(reuse encoding.Iterator) encoding.Iterator
+	iterator func(reuse chunk.Iterator) chunk.Iterator
 }
 
-func NewGenericChunk(minTime, maxTime int64, iterator func(reuse encoding.Iterator) encoding.Iterator) GenericChunk {
+func NewGenericChunk(minTime, maxTime int64, iterator func(reuse chunk.Iterator) chunk.Iterator) GenericChunk {
 	return GenericChunk{
 		MinTime:  minTime,
 		MaxTime:  maxTime,
@@ -31,7 +29,7 @@ func NewGenericChunk(minTime, maxTime int64, iterator func(reuse encoding.Iterat
 	}
 }
 
-func (c GenericChunk) Iterator(reuse encoding.Iterator) encoding.Iterator {
+func (c GenericChunk) Iterator(reuse chunk.Iterator) chunk.Iterator {
 	return c.iterator(reuse)
 }
 
@@ -49,7 +47,7 @@ type iterator interface {
 
 	// Batch returns the current batch.  Must only be called after Seek or Next
 	// have returned true.
-	Batch() promchunk.Batch
+	Batch() chunk.Batch
 
 	Err() error
 }
@@ -75,7 +73,7 @@ func NewGenericChunkMergeIterator(chunks []GenericChunk) chunkenc.Iterator {
 // call to Next; on calls to Seek, resets batch size to 1.
 type iteratorAdapter struct {
 	batchSize  int
-	curr       promchunk.Batch
+	curr       chunk.Batch
 	underlying iterator
 }
 
@@ -120,8 +118,8 @@ func (a *iteratorAdapter) Next() bool {
 	for a.curr.Index >= a.curr.Length && a.underlying.Next(a.batchSize) {
 		a.curr = a.underlying.Batch()
 		a.batchSize = a.batchSize * 2
-		if a.batchSize > promchunk.BatchSize {
-			a.batchSize = promchunk.BatchSize
+		if a.batchSize > chunk.BatchSize {
+			a.batchSize = chunk.BatchSize
 		}
 	}
 	return a.curr.Index < a.curr.Length

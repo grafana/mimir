@@ -8,13 +8,12 @@ package iterators
 import (
 	"github.com/prometheus/common/model"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 type chunkIterator struct {
 	chunk.Chunk
-	it promchunk.Iterator
+	it chunk.Iterator
 
 	// At() is called often in the heap code, so caching its result seems like
 	// a good idea.

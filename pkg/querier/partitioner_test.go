@@ -15,18 +15,17 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 // Make sure that chunkSeries implements SeriesWithChunks
 var _ SeriesWithChunks = &chunkSeries{}
 
-func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding promchunk.Encoding) chunk.Chunk {
+func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding chunk.Encoding) chunk.Chunk {
 	metric := labels.Labels{
 		{Name: model.MetricNameLabel, Value: "foo"},
 	}
-	pc, err := promchunk.NewForEncoding(encoding)
+	pc, err := chunk.NewForEncoding(encoding)
 	require.NoError(t, err)
 	for i := mint; i.Before(maxt); i = i.Add(step) {
 		nc, err := pc.Add(model.SamplePair{
@@ -45,7 +44,7 @@ func TestPartitionChunksOutputIsSortedByLabels(t *testing.T) {
 	const count = 10
 	// go down, to add series in reversed order
 	for i := count; i > 0; i-- {
-		ch := mkChunk(t, model.Time(0), model.Time(1000), time.Millisecond, promchunk.PrometheusXorChunk)
+		ch := mkChunk(t, model.Time(0), model.Time(1000), time.Millisecond, chunk.PrometheusXorChunk)
 		// mkChunk uses `foo` as metric name, so we rename metric to be unique
 		ch.Metric[0].Value = fmt.Sprintf("%02d", i)
 

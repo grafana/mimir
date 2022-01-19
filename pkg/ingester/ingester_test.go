@@ -52,9 +52,9 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 
-	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -2566,7 +2566,7 @@ func TestIngester_QueryStreamManySamplesChunks(t *testing.T) {
 
 		for _, ts := range resp.Chunkseries {
 			for _, c := range ts.Chunks {
-				ch, err := encoding.NewForEncoding(encoding.Encoding(c.Encoding))
+				ch, err := chunk.NewForEncoding(chunk.Encoding(c.Encoding))
 				require.NoError(t, err)
 				require.NoError(t, ch.UnmarshalFromBuf(c.Data))
 
@@ -2814,11 +2814,11 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 		},
 	}
 
-	chunk := chunkenc.NewXORChunk()
-	app, err := chunk.Appender()
+	chk := chunkenc.NewXORChunk()
+	app, err := chk.Appender()
 	require.NoError(t, err)
 	app.Append(timestampMs, value)
-	chunk.Compact()
+	chk.Compact()
 
 	expectedQueryStreamResChunks := &client.QueryStreamResponse{
 		Chunkseries: []client.TimeSeriesChunk{
@@ -2828,8 +2828,8 @@ func mockWriteRequest(t testing.TB, lbls labels.Labels, value float64, timestamp
 					{
 						StartTimestampMs: timestampMs,
 						EndTimestampMs:   timestampMs,
-						Encoding:         int32(encoding.PrometheusXorChunk),
-						Data:             chunk.Bytes(),
+						Encoding:         int32(chunk.PrometheusXorChunk),
+						Data:             chk.Bytes(),
 					},
 				},
 			},

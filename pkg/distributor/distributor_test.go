@@ -42,10 +42,10 @@ import (
 	"google.golang.org/grpc/health/grpc_health_v1"
 	"google.golang.org/grpc/status"
 
-	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
@@ -2865,12 +2865,12 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			continue
 		}
 
-		c, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
+		c, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 		if err != nil {
 			return nil, err
 		}
 
-		chunks := []encoding.EncodedChunk{c}
+		chunks := []chunk.EncodedChunk{c}
 		for _, sample := range ts.Samples {
 			newChunk, err := c.Add(model.SamplePair{
 				Timestamp: model.Time(sample.TimestampMs),
