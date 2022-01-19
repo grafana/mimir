@@ -257,9 +257,9 @@ GET,POST /flush
 
 Triggers a flush of the in-memory time series data (chunks or blocks) to the long-term storage. This endpoint triggers the flush also when `-ingester.flush-on-shutdown-with-wal-enabled` or `-blocks-storage.tsdb.flush-blocks-on-shutdown` are disabled.
 
-When using blocks storage, this endpoint accepts `tenant` parameter to specify tenant whose blocks are compacted and shipped. This parameter may be specified multiple times to select more tenants. If no tenant is specified, all tenants are flushed.
+This endpoint accepts `tenant` parameter to specify tenant whose blocks are compacted and shipped. This parameter may be specified multiple times to select more tenants. If no tenant is specified, all tenants are flushed.
 
-Flush endpoint now also accepts `wait=true` parameter, which makes the call synchronous – it will only return after flushing has finished. Note that returned status code does not reflect the result of flush operation. This parameter is only available when using blocks storage.
+Flush endpoint also accepts `wait=true` parameter, which makes the call synchronous – it will only return after flushing has finished. Note that returned status code does not reflect the result of flush operation.
 
 ### Shutdown
 
@@ -343,8 +343,6 @@ GET,POST <prometheus-http-prefix>/api/v1/series
 GET,POST <legacy-http-prefix>/api/v1/series
 ```
 
-Find series by label matchers. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the series from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the _blocks_ storage engine when `-querier.query-store-for-labels-enabled` is set.
-
 _For more information, please check out the Prometheus [series endpoint](https://prometheus.io/docs/prometheus/latest/querying/api/#finding-series-by-label-matchers) documentation._
 
 _Requires [authentication](#authentication)._
@@ -358,8 +356,6 @@ GET,POST <prometheus-http-prefix>/api/v1/labels
 GET,POST <legacy-http-prefix>/api/v1/labels
 ```
 
-Get label names of ingested series. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the label names from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the _blocks_ storage engine when `-querier.query-store-for-labels-enabled` is set.
-
 _For more information, please check out the Prometheus [get label names](https://prometheus.io/docs/prometheus/latest/querying/api/#getting-label-names) documentation._
 
 _Requires [authentication](#authentication)._
@@ -372,8 +368,6 @@ GET <prometheus-http-prefix>/api/v1/label/{name}/values
 # Legacy
 GET <legacy-http-prefix>/api/v1/label/{name}/values
 ```
-
-Get label values for a given label name. Differently than Prometheus and due to scalability and performances reasons, Cortex currently ignores the `start` and `end` request parameters and always fetches the label values from in-memory data stored in the ingesters. There is experimental support to query the long-term store with the _blocks_ storage engine when `-querier.query-store-for-labels-enabled` is set.
 
 _For more information, please check out the Prometheus [get label values](https://prometheus.io/docs/prometheus/latest/querying/api/#querying-label-values) documentation._
 
@@ -420,7 +414,6 @@ GET,POST <legacy-http-prefix>/api/v1/cardinality/label_names
 
 Returns realtime label names cardinality across all ingesters, for the authenticated tenant, in `JSON` format.
 It counts distinct label values per label name.
-Works only with blocks storage.
 
 As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
 cutting between the calls.
@@ -464,7 +457,6 @@ GET,POST <legacy-http-prefix>/api/v1/cardinality/label_values
 
 Returns realtime label values cardinality associated to request param `label_names[]` across all ingesters, for the authenticated tenant, in `JSON` format.
 It returns the series count per label value associated to request param `label_names[]`.
-Works only with blocks storage.
 
 As far as this endpoint generates cardinality report using only values from currently opened TSDBs in ingesters, two subsequent calls may return completely different results, if ingester did a block
 cutting between the calls.
@@ -940,7 +932,7 @@ The Purger service provides APIs for requesting tenant deletion.
 POST /purger/delete_tenant
 ```
 
-Request deletion of ALL tenant data. Only works with blocks storage. Experimental.
+Request deletion of ALL tenant data. Experimental.
 
 _Requires [authentication](#authentication)._
 

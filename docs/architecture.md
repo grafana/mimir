@@ -115,22 +115,20 @@ We recommend randomly load balancing write requests across distributor instances
 
 The **ingester** service is responsible for writing incoming series to a [long-term storage backend](#storage) on the write path and returning in-memory series samples for queries on the read path.
 
-Incoming series are not immediately written to the storage but kept in memory and periodically flushed to the storage (by default, 12 hours for the chunks storage and 2 hours for the blocks storage). For this reason, the [queriers](#querier) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
+Incoming series are not immediately written to the storage but kept in memory and periodically flushed to the storage (2 hours by default). For this reason, the [queriers](#querier) may need to fetch samples both from ingesters and long-term storage while executing a query on the read path.
 
 Ingesters contain a **lifecycler** which manages the lifecycle of an ingester and stores the **ingester state** in the [hash ring](#the-hash-ring). Each ingester could be in one of the following states:
 
 - **`PENDING`**<br />
-  The ingester has just started. While in this state, the ingester doesn't receive neither write and read requests, and could be waiting for time series data transfer from another ingester if running the chunks storage and the [hand-over](guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) is enabled.
+  The ingester has just started. While in this state, the ingester doesn't receive neither write and read requests.
 - **`JOINING`**<br />
-  The ingester is starting up and joining the ring. While in this state the ingester doesn't receive neither write and read requests. The ingester will join the ring using tokens received by a leaving ingester as part of the [hand-over](guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) process (if enabled), otherwise it could load tokens from disk (if `-ingester.tokens-file-path` is configured) or generate a set of new random ones. Finally, the ingester optionally observes the ring for tokens conflicts and then, once any conflict is resolved, will move to `ACTIVE` state.
+  The ingester is starting up and joining the ring. While in this state the ingester doesn't receive neither write and read requests. The ingester will load tokens from disk (if `-ingester.tokens-file-path` is configured) or generate a set of new random ones. Finally, the ingester optionally observes the ring for tokens conflicts and then, once any conflict is resolved, will move to `ACTIVE` state.
 - **`ACTIVE`**<br />
   The ingester is up and running. While in this state the ingester can receive both write and read requests.
 - **`LEAVING`**<br />
   The ingester is shutting down and leaving the ring. While in this state the ingester doesn't receive write requests, while it could receive read requests.
 - **`UNHEALTHY`**<br />
   The ingester has failed to heartbeat to the ring's KV Store. While in this state, distributors skip the ingester while building the replication set for incoming series and the ingester does not receive write or read requests.
-
-_The ingester states are internally used for different purposes, including the series hand-over process supported by the chunks storage. For more information about it, please check out the [Ingester hand-over](guides/ingesters-rolling-updates.md#chunks-storage-with-wal-disabled-hand-over) documentation._
 
 Ingesters are **semi-stateful**.
 
@@ -146,8 +144,6 @@ The **replication** is used to hold multiple (typically 3) replicas of each time
 The **write-ahead log** (WAL) is used to write to a persistent disk all incoming series samples until they're flushed to the long-term storage. In the event of an ingester failure, a subsequent process restart will replay the WAL and recover the in-memory series samples.
 
 Contrary to the sole replication and given the persistent disk data is not lost, in the event of multiple ingesters failure each ingester will recover the in-memory series samples from WAL upon subsequent restart. The replication is still recommended in order to ensure no temporary failures on the read path in the event of a single ingester failure.
-
-The WAL for the chunks storage is disabled by default, while it's always enabled for the blocks storage.
 
 #### Ingesters write de-amplification
 
