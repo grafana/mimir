@@ -523,3 +523,4 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs.mk
+docs: doc
