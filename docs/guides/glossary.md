@@ -33,12 +33,6 @@ The HA Tracker is a feature of Mimir distributor which is used to deduplicate re
 
 For more information, please refer to the guide "[Config for sending HA Pairs data to Mimir](../guides/ha-pair-handling.md)".
 
-### Hand-over
-
-Series hand-over is an operation supported by ingesters to transfer their state, on shutdown, to a new ingester in the `JOINING` state. Hand-over is typically used during [ingesters rollouts](./ingesters-rolling-updates.md) and is only supported by the Mimir chunks storage.
-
-For more information, please refer to the guide "[Ingesters rolling updates](./ingesters-rolling-updates.md)".
-
 ### Hash ring
 
 The hash ring is a distributed data structure used by Mimir for sharding, replication and service discovery. The hash ring data structure gets shared across Mimir replicas via gossip or a key-value store.

@@ -49,7 +49,7 @@ Currently experimental features are:
 - gRPC Store.
 - TLS configuration in gRPC and HTTP clients.
 - TLS configuration in Etcd client.
-- OpenStack Swift storage support (both in blocks and chunks storage).
+- OpenStack Swift storage support.
 - Metric relabeling in the distributor.
 - Scalable query-frontend (when using query-scheduler)
 - Distributor: do not extend writes on unhealthy ingesters (`-distributor.extend-writes=false`)

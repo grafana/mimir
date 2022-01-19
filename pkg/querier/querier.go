@@ -53,7 +53,6 @@ type Config struct {
 	QueryStoreAfter    time.Duration `yaml:"query_store_after"`
 	MaxQueryIntoFuture time.Duration `yaml:"max_query_into_future"`
 
-	// Blocks storage only.
 	StoreGatewayAddresses string       `yaml:"store_gateway_addresses"`
 	StoreGatewayClient    ClientConfig `yaml:"store_gateway_client"`
 
