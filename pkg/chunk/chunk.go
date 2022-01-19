@@ -33,6 +33,21 @@ func NewChunk(metric labels.Labels, c prom_chunk.Chunk, from, through model.Time
 // Samples returns all SamplePairs for the chunk.
 func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
 	it := c.Data.NewIterator(nil)
-	interval := prom_chunk.Interval{OldestInclusive: from, NewestInclusive: through}
-	return prom_chunk.RangeValues(it, interval)
+	return rangeValues(it, from, through)
+}
+
+// rangeValues is a utility function that retrieves all values within the given
+// range from an Iterator.
+func rangeValues(it prom_chunk.Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, error) {
+	result := []model.SamplePair{}
+	if !it.FindAtOrAfter(oldestInclusive) {
+		return result, it.Err()
+	}
+	for !it.Value().Timestamp.After(newestInclusive) {
+		result = append(result, it.Value())
+		if !it.Scan() {
+			break
+		}
+	}
+	return result, it.Err()
 }

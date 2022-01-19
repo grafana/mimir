@@ -75,25 +75,3 @@ type Batch struct {
 	Index      int
 	Length     int
 }
-
-// RangeValues is a utility function that retrieves all values within the given
-// range from an Iterator.
-func RangeValues(it Iterator, in Interval) ([]model.SamplePair, error) {
-	result := []model.SamplePair{}
-	if !it.FindAtOrAfter(in.OldestInclusive) {
-		return result, it.Err()
-	}
-	for !it.Value().Timestamp.After(in.NewestInclusive) {
-		result = append(result, it.Value())
-		if !it.Scan() {
-			break
-		}
-	}
-	return result, it.Err()
-}
-
-// Interval describes the inclusive interval between two Timestamps.
-type Interval struct {
-	OldestInclusive model.Time
-	NewestInclusive model.Time
-}
