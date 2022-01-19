@@ -46,7 +46,7 @@ const (
 
 // Config for an Ingester.
 type Config struct {
-	LifecyclerConfig ring.LifecyclerConfig `yaml:"lifecycler"`
+	LifecyclerConfig LifecyclerConfig `yaml:"lifecycler"`
 
 	// Config for metadata purging.
 	MetadataRetainPeriod time.Duration `yaml:"metadata_retain_period"`
@@ -79,8 +79,8 @@ type Config struct {
 }
 
 // RegisterFlags adds the flags required to config this to the given FlagSet
-func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	cfg.LifecyclerConfig.RegisterFlags(f)
+func (cfg *Config) RegisterFlags(f *flag.FlagSet, logger log.Logger) {
+	cfg.LifecyclerConfig.RegisterFlags(f, logger)
 
 	f.DurationVar(&cfg.MetadataRetainPeriod, "ingester.metadata-retain-period", 10*time.Minute, "Period at which metadata we have not seen will remain in memory before being deleted.")
 
@@ -136,7 +136,7 @@ type Ingester struct {
 	activeSeriesMatcher *ActiveSeriesMatchers
 
 	chunkStore         ChunkStore
-	lifecycler         *ring.Lifecycler
+	lifecycler         *ring.BasicLifecycler
 	limits             *validation.Overrides
 	limiter            *Limiter
 	subservicesWatcher *services.FailureWatcher
@@ -163,20 +163,20 @@ type ChunkStore interface {
 //     * Change the state of ring to stop accepting writes.
 //     * Flush all the chunks.
 func (i *Ingester) ShutdownHandler(w http.ResponseWriter, r *http.Request) {
-	originalFlush := i.lifecycler.FlushOnShutdown()
-	// We want to flush the chunks if transfer fails irrespective of original flag.
-	i.lifecycler.SetFlushOnShutdown(true)
+	// originalFlush := i.lifecycler.FlushOnShutdown()
+	// // We want to flush the chunks if transfer fails irrespective of original flag.
+	// i.lifecycler.SetFlushOnShutdown(true)
 
-	// In the case of an HTTP shutdown, we want to unregister no matter what.
-	originalUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
-	i.lifecycler.SetUnregisterOnShutdown(true)
+	// // In the case of an HTTP shutdown, we want to unregister no matter what.
+	// originalUnregister := i.lifecycler.ShouldUnregisterOnShutdown()
+	// i.lifecycler.SetUnregisterOnShutdown(true)
 
-	_ = services.StopAndAwaitTerminated(context.Background(), i)
-	// Set state back to original.
-	i.lifecycler.SetFlushOnShutdown(originalFlush)
-	i.lifecycler.SetUnregisterOnShutdown(originalUnregister)
+	// _ = services.StopAndAwaitTerminated(context.Background(), i)
+	// // Set state back to original.
+	// i.lifecycler.SetFlushOnShutdown(originalFlush)
+	// i.lifecycler.SetUnregisterOnShutdown(originalUnregister)
 
-	w.WriteHeader(http.StatusNoContent)
+	// w.WriteHeader(http.StatusNoContent)
 }
 
 // Using block store, the ingester is only available when it is in a Running state. The ingester is not available
@@ -320,4 +320,28 @@ func (i *Ingester) CheckReady(ctx context.Context) error {
 		return fmt.Errorf("ingester not ready: %v", err)
 	}
 	return i.lifecycler.CheckReady(ctx)
+}
+
+func (i *Ingester) OnRingInstanceRegister(_ *ring.BasicLifecycler, ringDesc ring.Desc, instanceExists bool, instanceID string, instanceDesc ring.InstanceDesc) (ring.InstanceState, ring.Tokens) {
+	// When we initialize the store-gateway instance in the ring we want to start from
+	// a clean situation, so whatever is the state we set it ACTIVE, while we keep existing
+	// tokens (if any) or the ones loaded from file.
+	var tokens []uint32
+	if instanceExists {
+		tokens = instanceDesc.GetTokens()
+	}
+
+	takenTokens := ringDesc.GetTokens()
+	newTokens := ring.GenerateTokens(i.cfg.LifecyclerConfig.NumTokens-len(tokens), takenTokens)
+
+	// Tokens sorting will be enforced by the parent caller.
+	tokens = append(tokens, newTokens...)
+
+	// return ring.JOINING, tokens
+	return ring.ACTIVE, tokens
+}
+
+func (i *Ingester) OnRingInstanceTokens(_ *ring.BasicLifecycler, _ ring.Tokens) {}
+func (i *Ingester) OnRingInstanceStopping(_ *ring.BasicLifecycler)              {}
+func (i *Ingester) OnRingInstanceHeartbeat(_ *ring.BasicLifecycler, _ *ring.Desc, _ *ring.InstanceDesc) {
 }

@@ -773,7 +773,6 @@ func TestIngesterActiveSeries(t *testing.T) {
 
 			// Create a mocked ingester
 			cfg := defaultIngesterTestConfig(t)
-			cfg.LifecyclerConfig.JoinAfter = 0
 			cfg.ActiveSeriesMetricsEnabled = !testData.disableActiveSeries
 			cfg.ActiveSeriesCustomTrackers = map[string]string{
 				"bool_is_true":  `{bool="true"}`,

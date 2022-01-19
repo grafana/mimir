@@ -24,7 +24,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
-	"github.com/grafana/dskit/ring"
 	"github.com/grafana/dskit/services"
 	"github.com/grafana/dskit/test"
 	"github.com/prometheus/client_golang/prometheus"
@@ -58,14 +57,14 @@ func TestMimir(t *testing.T) {
 					},
 				},
 			},
-			LifecyclerConfig: ring.LifecyclerConfig{
-				RingConfig: ring.Config{
+			LifecyclerConfig: ingester.LifecyclerConfig{
+				RingConfig: ingester.RingConfig{
 					KVStore: kv.Config{
 						Store: "inmemory",
 					},
 					ReplicationFactor: 3,
 				},
-				InfNames: []string{"en0", "eth0", "lo0", "lo"},
+				InterfaceNames: []string{"en0", "eth0", "lo0", "lo"},
 			},
 		},
 		BlocksStorage: tsdb.BlocksStorageConfig{
