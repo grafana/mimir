@@ -8,6 +8,8 @@ package querymiddleware
 
 import (
 	"context"
+	"encoding/hex"
+	"hash/fnv"
 	"sync"
 	"time"
 
@@ -23,10 +25,15 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/chunk/cache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
+)
+
+const (
+	// Cache entries for 7 days. We're not disabling TTL because the backend client currently doesn't support it.
+	resultsCacheTTL = 7 * 24 * time.Hour
 )
 
 var (
@@ -295,20 +302,20 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 	hashedKeys := make([]string, 0, len(keys))
 	hashedKeysIdx := make(map[string]int, len(keys))
 	for idx, key := range keys {
-		hashed := cache.HashKey(key)
+		hashed := cacheHashKey(key)
 		hashedKeys = append(hashedKeys, hashed)
 		hashedKeysIdx[hashed] = idx
 
 		spanLog.LogKV("key", key, "hashedKey", hashed)
 	}
 
-	founds, bufs, _ := s.cache.Fetch(ctx, hashedKeys)
+	founds := s.cache.Fetch(ctx, hashedKeys)
 
 	// Decode all cached responses.
 	extents := make([][]Extent, len(keys))
 	returnedBytes := 0
 
-	for foundIdx, foundKey := range founds {
+	for foundKey, foundData := range founds {
 		// Find the index of this cache key.
 		keyIdx, ok := hashedKeysIdx[foundKey]
 		if !ok {
@@ -319,7 +326,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 		}
 
 		var resp CachedResponse
-		if err := proto.Unmarshal(bufs[foundIdx], &resp); err != nil {
+		if err := proto.Unmarshal(foundData, &resp); err != nil {
 			level.Error(spanLog).Log("msg", "error unmarshalling cached response", "err", err)
 			spanLog.Error(err)
 			continue
@@ -331,7 +338,7 @@ func (s *splitAndCacheMiddleware) fetchCacheExtents(ctx context.Context, keys []
 		}
 
 		extents[keyIdx] = resp.Extents
-		returnedBytes += len(bufs[foundIdx])
+		returnedBytes += len(foundData)
 	}
 
 	spanLog.LogKV("requested keys", len(hashedKeys))
@@ -352,7 +359,7 @@ func (s *splitAndCacheMiddleware) storeCacheExtents(ctx context.Context, key str
 		return
 	}
 
-	s.cache.Store(ctx, []string{cache.HashKey(key)}, [][]byte{buf})
+	s.cache.Store(ctx, map[string][]byte{cacheHashKey(key): buf}, resultsCacheTTL)
 }
 
 // splitRequest holds information about a split request.
@@ -564,4 +571,13 @@ func nextIntervalBoundary(t, step int64, interval time.Duration) int64 {
 		target -= step
 	}
 	return target
+}
+
+// cacheHashKey hashes key into something you can store in the results cache.
+func cacheHashKey(key string) string {
+	hasher := fnv.New64a()
+	_, _ = hasher.Write([]byte(key)) // This'll never error.
+
+	// Hex because memcache errors for the bytes produced by the hash.
+	return hex.EncodeToString(hasher.Sum(nil))
 }

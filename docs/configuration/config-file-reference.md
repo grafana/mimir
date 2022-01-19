@@ -1035,31 +1035,55 @@ The `query_range_config` configures the query splitting and caching in the query
 [align_queries_with_step: <boolean> | default = false]
 
 results_cache:
-  cache:
-    # The default validity of entries for caches unless overridden.
-    # CLI flag: -frontend.default-validity
-    [default_validity: <duration> | default = 0s]
+  # Backend for query-frontend results cache, if not empty. Supported values:
+  # [memcached].
+  # CLI flag: -frontend.results-cache.backend
+  [backend: <string> | default = ""]
 
-    background:
-      # At what concurrency to write back to cache.
-      # CLI flag: -frontend.background.write-back-concurrency
-      [writeback_goroutines: <int> | default = 10]
+  memcached:
+    # Comma separated list of memcached addresses. Supported prefixes are: dns+
+    # (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query,
+    # dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after
+    # that).
+    # CLI flag: -frontend.results-cache.memcached.addresses
+    [addresses: <string> | default = ""]
 
-      # How many key batches to buffer for background write-back.
-      # CLI flag: -frontend.background.write-back-buffer
-      [writeback_buffer: <int> | default = 10000]
+    # The socket read/write timeout.
+    # CLI flag: -frontend.results-cache.memcached.timeout
+    [timeout: <duration> | default = 100ms]
 
-    # The memcached_config block configures how data is stored in Memcached (ie.
-    # expiration).
-    [memcached: <memcached_config>]
+    # The maximum number of idle connections that will be maintained per
+    # address.
+    # CLI flag: -frontend.results-cache.memcached.max-idle-connections
+    [max_idle_connections: <int> | default = 16]
 
-    # The memcached_client_config configures the client used to connect to
-    # Memcached.
-    [memcached_client: <memcached_client_config>]
+    # The maximum number of concurrent asynchronous operations can occur.
+    # CLI flag: -frontend.results-cache.memcached.max-async-concurrency
+    [max_async_concurrency: <int> | default = 50]
 
-  # Use compression in results cache. Supported values are: 'snappy' and ''
-  # (disable compression).
-  # CLI flag: -frontend.compression
+    # The maximum number of enqueued asynchronous operations allowed.
+    # CLI flag: -frontend.results-cache.memcached.max-async-buffer-size
+    [max_async_buffer_size: <int> | default = 10000]
+
+    # The maximum number of concurrent connections running get operations. If
+    # set to 0, concurrency is unlimited.
+    # CLI flag: -frontend.results-cache.memcached.max-get-multi-concurrency
+    [max_get_multi_concurrency: <int> | default = 100]
+
+    # The maximum number of keys a single underlying get operation should run.
+    # If more keys are specified, internally keys are split into multiple
+    # batches and fetched concurrently, honoring the max concurrency. If set to
+    # 0, the max batch size is unlimited.
+    # CLI flag: -frontend.results-cache.memcached.max-get-multi-batch-size
+    [max_get_multi_batch_size: <int> | default = 0]
+
+    # The maximum size of an item stored in memcached. Bigger items are not
+    # stored. If set to 0, no maximum size is enforced.
+    # CLI flag: -frontend.results-cache.memcached.max-item-size
+    [max_item_size: <int> | default = 1048576]
+
+  # Enable cache compression, if not empty. Supported values are: snappy.
+  # CLI flag: -frontend.results-cache.compression
   [compression: <string> | default = ""]
 
 # Cache query results.
@@ -2721,79 +2745,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # alerts will fail with a log message and metric increment. 0 = no limit.
 # CLI flag: -alertmanager.max-alerts-size-bytes
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
-```
-
-### `memcached_config`
-
-The `memcached_config` block configures how data is stored in Memcached (ie. expiration).
-
-```yaml
-# How long keys stay in the memcache.
-# CLI flag: -frontend.memcached.expiration
-[expiration: <duration> | default = 0s]
-
-# How many keys to fetch in each batch.
-# CLI flag: -frontend.memcached.batchsize
-[batch_size: <int> | default = 1024]
-
-# Maximum active requests to memcache.
-# CLI flag: -frontend.memcached.parallelism
-[parallelism: <int> | default = 100]
-```
-
-### `memcached_client_config`
-
-The `memcached_client_config` configures the client used to connect to Memcached.
-
-```yaml
-# Hostname for memcached service to use. If empty and if addresses is unset, no
-# memcached will be used.
-# CLI flag: -frontend.memcached.hostname
-[host: <string> | default = ""]
-
-# SRV service used to discover memcache servers.
-# CLI flag: -frontend.memcached.service
-[service: <string> | default = "memcached"]
-
-# EXPERIMENTAL: Comma separated addresses list in DNS Service Discovery format:
-# https://cortexmetrics.io/docs/configuration/arguments/#dns-service-discovery
-# CLI flag: -frontend.memcached.addresses
-[addresses: <string> | default = ""]
-
-# Maximum time to wait before giving up on memcached requests.
-# CLI flag: -frontend.memcached.timeout
-[timeout: <duration> | default = 100ms]
-
-# Maximum number of idle connections in pool.
-# CLI flag: -frontend.memcached.max-idle-conns
-[max_idle_conns: <int> | default = 16]
-
-# The maximum size of an item stored in memcached. Bigger items are not stored.
-# If set to 0, no maximum size is enforced.
-# CLI flag: -frontend.memcached.max-item-size
-[max_item_size: <int> | default = 0]
-
-# Period with which to poll DNS for memcache servers.
-# CLI flag: -frontend.memcached.update-interval
-[update_interval: <duration> | default = 1m]
-
-# Use consistent hashing to distribute to memcache servers.
-# CLI flag: -frontend.memcached.consistent-hash
-[consistent_hash: <boolean> | default = true]
-
-# Trip circuit-breaker after this number of consecutive dial failures (if zero
-# then circuit-breaker is disabled).
-# CLI flag: -frontend.memcached.circuit-breaker-consecutive-failures
-[circuit_breaker_consecutive_failures: <int> | default = 10]
-
-# Duration circuit-breaker remains open after tripping (if zero then 60 seconds
-# is used).
-# CLI flag: -frontend.memcached.circuit-breaker-timeout
-[circuit_breaker_timeout: <duration> | default = 10s]
-
-# Reset circuit-breaker counts after this long (if zero then never reset).
-# CLI flag: -frontend.memcached.circuit-breaker-interval
-[circuit_breaker_interval: <duration> | default = 10s]
 ```
 
 ### `blocks_storage_config`

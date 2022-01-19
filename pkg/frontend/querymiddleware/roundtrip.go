@@ -20,7 +20,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/grafana/mimir/pkg/chunk/cache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -134,15 +134,15 @@ func NewTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
-) (Tripperware, cache.Cache, error) {
-	queryRangeTripperware, cache, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer)
+) (Tripperware, error) {
+	queryRangeTripperware, err := newQueryTripperware(cfg, log, limits, codec, cacheExtractor, engineOpts, registerer)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	return MergeTripperwares(
 		newActiveUsersTripperware(log, registerer),
 		queryRangeTripperware,
-	), cache, err
+	), err
 }
 
 func newQueryTripperware(
@@ -153,7 +153,7 @@ func newQueryTripperware(
 	cacheExtractor Extractor,
 	engineOpts promql.EngineOpts,
 	registerer prometheus.Registerer,
-) (Tripperware, cache.Cache, error) {
+) (Tripperware, error) {
 	// Metric used to keep track of each middleware execution duration.
 	metrics := newInstrumentMiddlewareMetrics(registerer)
 
@@ -166,21 +166,19 @@ func newQueryTripperware(
 		queryRangeMiddleware = append(queryRangeMiddleware, newInstrumentMiddleware("step_align", metrics, log), newStepAlignMiddleware())
 	}
 
-	var c cache.Cache
-
 	// Inject the middleware to split requests by interval + results cache (if at least one of the two is enabled).
 	if cfg.SplitQueriesByInterval > 0 || cfg.CacheResults {
+		var c cache.Cache
+
 		// Init the cache client.
 		if cfg.CacheResults {
 			var err error
 
-			c, err = cache.New(cfg.ResultsCacheConfig.CacheConfig, registerer, log)
+			c, err = newResultsCache(cfg.ResultsCacheConfig, log, registerer)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
-			if cfg.ResultsCacheConfig.Compression == "snappy" {
-				c = cache.NewSnappy(c, log)
-			}
+			c = cache.NewCompression(cfg.ResultsCacheConfig.Compression, c, log)
 		}
 
 		shouldCache := func(r Request) bool {
@@ -247,7 +245,7 @@ func newQueryTripperware(
 				return next.RoundTrip(r)
 			}
 		})
-	}, c, nil
+	}, nil
 }
 
 func newActiveUsersTripperware(logger log.Logger, registerer prometheus.Registerer) Tripperware {

@@ -12,11 +12,49 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/types"
+	"github.com/grafana/dskit/flagext"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/mimir/pkg/mimirpb"
+	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
+
+func TestResultsCacheConfig_Validate(t *testing.T) {
+	tests := map[string]struct {
+		cfg      ResultsCacheConfig
+		expected error
+	}{
+		"should pass with default config": {
+			cfg: func() ResultsCacheConfig {
+				cfg := ResultsCacheConfig{}
+				flagext.DefaultValues(&cfg)
+
+				return cfg
+			}(),
+		},
+		"should pass with memcached backend": {
+			cfg: ResultsCacheConfig{
+				Backend: "memcached",
+				Memcached: mimir_tsdb.MemcachedClientConfig{
+					Addresses: "localhost",
+				},
+			},
+		},
+		"should fail with unsupported backend": {
+			cfg: ResultsCacheConfig{
+				Backend: "unsupported",
+			},
+			expected: errUnsupportedResultsCacheBackend,
+		},
+	}
+
+	for testName, testData := range tests {
+		t.Run(testName, func(t *testing.T) {
+			assert.Equal(t, testData.expected, testData.cfg.Validate())
+		})
+	}
+}
 
 func mkAPIResponse(start, end, step int64) *PrometheusResponse {
 	var samples []mimirpb.Sample

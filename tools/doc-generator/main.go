@@ -21,7 +21,6 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
-	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -134,16 +133,6 @@ var (
 			name:       "limits_config",
 			structType: reflect.TypeOf(validation.Limits{}),
 			desc:       "The limits_config configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).",
-		},
-		{
-			name:       "memcached_config",
-			structType: reflect.TypeOf(cache.MemcachedConfig{}),
-			desc:       "The memcached_config block configures how data is stored in Memcached (ie. expiration).",
-		},
-		{
-			name:       "memcached_client_config",
-			structType: reflect.TypeOf(cache.MemcachedClientConfig{}),
-			desc:       "The memcached_client_config configures the client used to connect to Memcached.",
 		},
 		{
 			name:       "blocks_storage_config",

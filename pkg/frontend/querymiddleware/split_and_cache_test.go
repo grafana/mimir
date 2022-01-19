@@ -32,8 +32,8 @@ import (
 	"go.uber.org/atomic"
 
 	apierror "github.com/grafana/mimir/pkg/api/error"
-	"github.com/grafana/mimir/pkg/chunk/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -448,15 +448,15 @@ func TestSplitAndCacheMiddleware_ResultsCache_ShouldNotCacheRequestEarlierThanMa
 			require.Equal(t, testData.downstreamResponse, resp)
 
 			// Check if the response was cached.
-			cacheKey := cache.HashKey(cacheSplitter.GenerateCacheKey(userID, req))
-			_, bufs, _ := cacheBackend.Fetch(ctx, []string{cacheKey})
+			cacheKey := cacheHashKey(cacheSplitter.GenerateCacheKey(userID, req))
+			found := cacheBackend.Fetch(ctx, []string{cacheKey})
 
 			if len(testData.expectedCachedResponses) == 0 {
-				assert.Empty(t, bufs)
+				assert.Empty(t, found)
 			} else {
 				var actual CachedResponse
-				require.Len(t, bufs, 1)
-				require.NoError(t, proto.Unmarshal(bufs[0], &actual))
+				require.Len(t, found, 1)
+				require.NoError(t, proto.Unmarshal(found[cacheKey], &actual))
 
 				// Decode all extents.
 				actualCachedResponses := make([]Response, 0, len(actual.Extents))
@@ -922,7 +922,7 @@ func TestSplitAndCacheMiddleware_StoreAndFetchCacheExtents(t *testing.T) {
 		// Simulate an hash collision on "key-1".
 		buf, err := proto.Marshal(&CachedResponse{Key: "another", Extents: []Extent{mkExtent(10, 20)}})
 		require.NoError(t, err)
-		cacheBackend.Store(ctx, []string{cache.HashKey("key-1")}, [][]byte{buf})
+		cacheBackend.Store(ctx, map[string][]byte{cacheHashKey("key-1"): buf}, 0)
 
 		mw.storeCacheExtents(ctx, "key-3", []Extent{mkExtent(20, 30), mkExtent(40, 50)})
 

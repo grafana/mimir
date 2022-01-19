@@ -108,13 +108,13 @@ The ingester query API was improved over time, but defaults to the old behaviour
 
   When caching query results, it is desirable to prevent the caching of very recent results that might still be in flux. Use this parameter to configure the age of results that should be excluded.
 
-- `-frontend.memcached.{hostname, service, timeout}`
+- `-frontend.results-cache.backend`
 
-  Use these flags to specify the location and timeout of the memcached cluster used to cache query results.
+  Configures the caching backend used when query results caching is enabled (`-querier.cache-results=true`).
 
-- `-frontend.redis.{endpoint, timeout}`
+- `-frontend.results-cache.memcached.addresses`
 
-  Use these flags to specify the location and timeout of the Redis service used to cache query results.
+  Comma-separated list of memcached addresses. Each address can be specified using the [DNS service discovery](#dns-service-discovery) syntax.
 
 ## Distributor
 

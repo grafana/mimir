@@ -467,7 +467,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // initQueryFrontendTripperware instantiates the tripperware used by the query frontend
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
-	tripperware, cache, err := querymiddleware.NewTripperware(
+	tripperware, err := querymiddleware.NewTripperware(
 		t.Cfg.QueryRange,
 		util_log.Logger,
 		t.Overrides,
@@ -481,14 +481,7 @@ func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error
 	}
 
 	t.QueryFrontendTripperware = tripperware
-
-	return services.NewIdleService(nil, func(_ error) error {
-		if cache != nil {
-			cache.Stop()
-			cache = nil
-		}
-		return nil
-	}), nil
+	return nil, nil
 }
 
 func (t *Mimir) initQueryFrontend() (serv services.Service, err error) {
