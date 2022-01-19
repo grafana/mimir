@@ -29,6 +29,10 @@ define docs_docker_run
 	docker attach $(DOCS_DOCKER_CONTAINER)
 endef
 
+.PHONY: docs-docker-rm
+docs-docker-rm:
+	docker rm -f $(DOCS_DOCKER_CONTAINER)
+
 .PHONY: docs-pull
 docs-pull:
 	docker pull $(DOCS_IMAGE)
