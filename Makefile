@@ -431,16 +431,16 @@ dist/$(UPTODATE):
 	rm -fr ./dist
 	mkdir -p ./dist
 	for os in linux darwin; do \
-      for arch in amd64 arm64; do \
-        echo "Building Mimir for $$os/$$arch"; \
-        GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch ./cmd/mimir; \
-        sha256sum ./dist/mimir-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch-sha-256; \
-        echo "Building query-tee for $$os/$$arch"; \
-        GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch ./cmd/query-tee; \
-        sha256sum ./dist/query-tee-$$os-$$arch | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch-sha-256; \
-      done; \
-    done; \
-    touch $@
+		for arch in amd64 arm64; do \
+			echo "Building Mimir for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/mimir-$$os-$$arch ./cmd/mimir; \
+			sha256sum ./dist/mimir-$$os-$$arch | cut -d ' ' -f 1 > ./dist/mimir-$$os-$$arch-sha-256; \
+			echo "Building query-tee for $$os/$$arch"; \
+			GOOS=$$os GOARCH=$$arch CGO_ENABLED=0 go build $(GO_FLAGS) -o ./dist/query-tee-$$os-$$arch ./cmd/query-tee; \
+			sha256sum ./dist/query-tee-$$os-$$arch | cut -d ' ' -f 1 > ./dist/query-tee-$$os-$$arch-sha-256; \
+			done; \
+		done; \
+		touch $@
 
 # Generate packages for a Mimir release.
 FPM_OPTS := fpm -s dir -v $(VERSION) -n mimir -f \
@@ -466,11 +466,11 @@ packages: dist/$(UPTODATE)-packages
 
 dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packaging/rpm/**)
 	for arch in amd64 arm64; do \
-  		rpm_arch=x86_64; \
-  		deb_arch=x86_64; \
-  		if [ "$$arch" = "arm64" ]; then \
-		    rpm_arch=aarch64; \
-		    deb_arch=arm64; \
+		rpm_arch=x86_64; \
+		deb_arch=x86_64; \
+		if [ "$$arch" = "arm64" ]; then \
+			rpm_arch=aarch64; \
+			deb_arch=arm64; \
 		fi; \
 		$(FPM_OPTS) -t deb \
 			--architecture $$deb_arch \
@@ -492,9 +492,9 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 	done
 	for pkg in dist/*.deb dist/*.rpm; do \
-  		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
-  	done; \
-  	touch $@
+		sha256sum $$pkg | cut -d ' ' -f 1 > $${pkg}-sha-256; \
+	done; \
+	touch $@
 
 endif
 
