@@ -1366,7 +1366,6 @@ spec:
         - -ingester.join-after=0s
         - -ingester.max-global-series-per-metric=20000
         - -ingester.max-global-series-per-user=150000
-        - -ingester.max-series-per-query=100000
         - -ingester.num-tokens=512
         - -ingester.tokens-file-path=/data/tokens
         - -ingester.unregister-on-shutdown=true

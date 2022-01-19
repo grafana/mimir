@@ -6,6 +6,4 @@ overrides:
     ingestion_rate: 350000
     max_global_series_per_metric: 300000
     max_global_series_per_user: 300000
-    max_series_per_metric: 0
-    max_series_per_user: 0
     max_samples_per_query: 100000
