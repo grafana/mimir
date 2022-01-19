@@ -202,7 +202,7 @@ protos: $(PROTO_GOS)
 lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
 	shellcheck $?
 
-lint: lint-packaging-scripts
+lint: lint-packaging-scripts lint-makefiles
 	misspell -error docs
 
 	# Configured via .golangci.yml.
