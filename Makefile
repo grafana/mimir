@@ -202,7 +202,7 @@ protos: $(PROTO_GOS)
 lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/prerm packaging/rpm/control/post packaging/rpm/control/preun
 	shellcheck $?
 
-lint: lint-packaging-scripts lint-makefiles
+lint: lint-packaging-scripts check-makefiles
 	misspell -error docs
 
 	# Configured via .golangci.yml.
@@ -324,9 +324,14 @@ check-license: license
 
 endif
 
-.PHONY: lint-makefiles
-lint-makefiles: $(MAKEFILES)
-	sed -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' $? && git diff --exit-code $?
+.PHONY: check-makefiles
+check-makefiles: format-makefiles
+	@git diff --exit-code -- $(MAKEFILES) || (echo "Please format Makefiles by running 'make format-makefiles'" && false)
+
+.PHONY: format-makefiles
+format-makefiles: ## Format all Makefiles.
+format-makefiles: $(MAKEFILES)
+	sed -i -e 's/^\(\t*\)  /\1\t/g' -e 's/^\(\t*\) /\1/' -- $?
 
 clean:
 	$(SUDO) docker rmi $(IMAGE_NAMES) >/dev/null 2>&1 || true
