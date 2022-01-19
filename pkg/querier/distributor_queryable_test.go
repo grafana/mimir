@@ -141,7 +141,7 @@ func TestIngesterStreaming(t *testing.T) {
 	require.NoError(t, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk("", 0, nil, promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(t, err)
 
@@ -318,7 +318,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 	require.NoError(b, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk("", 0, nil, promChunk, model.Earliest, model.Earliest),
+		chunk.NewChunk(nil, promChunk, model.Earliest, model.Earliest),
 	})
 	require.NoError(b, err)
 
@@ -386,7 +386,7 @@ func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	}
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
-		chunk.NewChunk("", 0, nil, promChunk, model.Time(samples[0].TimestampMs), model.Time(samples[len(samples)-1].TimestampMs)),
+		chunk.NewChunk(nil, promChunk, model.Time(samples[0].TimestampMs), model.Time(samples[len(samples)-1].TimestampMs)),
 	})
 	require.NoError(t, err)
 

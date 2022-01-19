@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/prom1/storage/metric"
 	"github.com/grafana/mimir/pkg/storage/series"
-	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -121,11 +120,6 @@ func (q *distributorQuerier) Select(_ bool, sp *storage.SelectHints, matchers ..
 }
 
 func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int64, matchers []*labels.Matcher) storage.SeriesSet {
-	userID, err := tenant.TenantID(ctx)
-	if err != nil {
-		return storage.ErrSeriesSet(err)
-	}
-
 	results, err := q.distributor.QueryStream(ctx, model.Time(minT), model.Time(maxT), matchers...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -145,7 +139,7 @@ func (q *distributorQuerier) streamingSelect(ctx context.Context, minT, maxT int
 
 		ls := mimirpb.FromLabelAdaptersToLabels(result.Labels)
 
-		chunks, err := chunkcompat.FromChunks(userID, ls, result.Chunks)
+		chunks, err := chunkcompat.FromChunks(ls, result.Chunks)
 		if err != nil {
 			return storage.ErrSeriesSet(err)
 		}
