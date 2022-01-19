@@ -14,14 +14,14 @@ import (
 
 // Chunk contains encoded timeseries data
 type Chunk struct {
-	From    model.Time       `json:"from"`
-	Through model.Time       `json:"through"`
-	Metric  labels.Labels    `json:"metric"`
-	Data    prom_chunk.Chunk `json:"-"`
+	From    model.Time              `json:"from"`
+	Through model.Time              `json:"through"`
+	Metric  labels.Labels           `json:"metric"`
+	Data    prom_chunk.EncodedChunk `json:"-"`
 }
 
 // NewChunk creates a new chunk
-func NewChunk(metric labels.Labels, c prom_chunk.Chunk, from, through model.Time) Chunk {
+func NewChunk(metric labels.Labels, c prom_chunk.EncodedChunk, from, through model.Time) Chunk {
 	return Chunk{
 		From:    from,
 		Through: through,

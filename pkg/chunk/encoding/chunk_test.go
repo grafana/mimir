@@ -66,7 +66,7 @@ func TestChunk(t *testing.T) {
 	}
 }
 
-func mkChunk(t *testing.T, encoding Encoding, samples int) Chunk {
+func mkChunk(t *testing.T, encoding Encoding, samples int) EncodedChunk {
 	chunk, err := NewForEncoding(encoding)
 	require.NoError(t, err)
 

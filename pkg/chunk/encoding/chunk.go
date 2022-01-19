@@ -16,14 +16,14 @@ const (
 	ChunkLen = 1024
 )
 
-// Chunk is the interface for all chunks. Chunks are generally not
+// EncodedChunk is the interface for encoded chunks. Chunks are generally not
 // goroutine-safe.
-type Chunk interface {
+type EncodedChunk interface {
 	// Add adds a SamplePair to the chunks, performs any necessary
 	// re-encoding, and creates any necessary overflow chunk.
-	// The returned Chunk is the overflow chunk if it was created.
-	// The returned Chunk is nil if the sample got appended to the same chunk.
-	Add(sample model.SamplePair) (Chunk, error)
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the sample got appended to the same chunk.
+	Add(sample model.SamplePair) (EncodedChunk, error)
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
 	// the iterator can be re-used or a new iterator can be allocated.

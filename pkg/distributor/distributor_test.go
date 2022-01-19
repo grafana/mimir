@@ -2870,7 +2870,7 @@ func (i *mockIngester) QueryStream(ctx context.Context, req *client.QueryRequest
 			return nil, err
 		}
 
-		chunks := []encoding.Chunk{c}
+		chunks := []encoding.EncodedChunk{c}
 		for _, sample := range ts.Samples {
 			newChunk, err := c.Add(model.SamplePair{
 				Timestamp: model.Time(sample.TimestampMs),
