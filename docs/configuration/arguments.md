@@ -364,11 +364,6 @@ Valid per-tenant limits are (with their corresponding flags for default values):
 
   Also enforced by the distributor, limits on the on length of labels and their values, and the total number of labels allowed per series.
 
-- `reject_old_samples` / `-validation.reject-old-samples`
-- `reject_old_samples_max_age` / `-validation.reject-old-samples.max-age`
-
-  Also enforce by the distributor, limits on how far in the past (and future) timestamps that we accept can be.
-
 - `max_global_series_per_user` / `-ingester.max-global-series-per-user`
 - `max_global_series_per_metric` / `-ingester.max-global-series-per-metric`
 

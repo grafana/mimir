@@ -2469,14 +2469,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -validation.max-metadata-length
 [max_metadata_length: <int> | default = 1024]
 
-# Reject old samples.
-# CLI flag: -validation.reject-old-samples
-[reject_old_samples: <boolean> | default = false]
-
-# Maximum accepted sample age before rejecting.
-# CLI flag: -validation.reject-old-samples.max-age
-[reject_old_samples_max_age: <duration> | default = 2w]
-
 # Duration which table will be created/deleted before/after it's needed; we
 # won't accept sample from before this time.
 # CLI flag: -validation.create-grace-period
