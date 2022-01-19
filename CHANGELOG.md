@@ -265,7 +265,7 @@
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
-* [CHANGE] Removed chunks storage support from mixin. #641 #643 #645
+* [CHANGE] Removed chunks storage support from mixin. #641 #643 #645 #811
   * Removed `tsdb.libsonnet`: no need to import it anymore (its content is already automatically included when using Jsonnet)
   * Removed the following fields from `_config`:
     * `storage_engine` (defaults to `blocks`)

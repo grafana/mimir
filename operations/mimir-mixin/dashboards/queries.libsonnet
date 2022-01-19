@@ -111,14 +111,6 @@ local utils = import 'mixin-utils/utils.libsonnet';
         { yaxes: $.yaxes('ms') } +
         $.stack,
       )
-      .addPanel(
-        $.panel('Chunk cache misses') +
-        $.queryPanel('sum(rate(cortex_cache_fetched_keys{%s,name="chunksmemcache"}[1m])) - sum(rate(cortex_cache_hits{%s,name="chunksmemcache"}[1m]))' % [$.jobMatcher($._config.job_names.querier), $.jobMatcher($._config.job_names.querier)], 'Hit rate'),
-      )
-      .addPanel(
-        $.panel('Chunk cache corruptions') +
-        $.queryPanel('sum(rate(cortex_cache_corrupt_chunks_total{%s}[1m]))' % $.jobMatcher($._config.job_names.querier), 'Corrupt chunks'),
-      )
     )
     .addRow(
       $.row('Ingester')
