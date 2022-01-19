@@ -138,7 +138,7 @@ pkg/distributor/distributorpb/distributor.pb.go: pkg/distributor/distributorpb/d
 pkg/ring/ring.pb.go: pkg/ring/ring.proto
 pkg/frontend/v1/frontendv1pb/frontend.pb.go: pkg/frontend/v1/frontendv1pb/frontend.proto
 pkg/frontend/v2/frontendv2pb/frontend.pb.go: pkg/frontend/v2/frontendv2pb/frontend.proto
-pkg/frontend/queryrange/model.pb.go: pkg/frontend/queryrange/model.proto
+pkg/frontend/querymiddleware/model.pb.go: pkg/frontend/querymiddleware/model.proto
 pkg/querier/stats/stats.pb.go: pkg/querier/stats/stats.proto
 pkg/distributor/ha_tracker.pb.go: pkg/distributor/ha_tracker.proto
 pkg/ruler/rulespb/rules.pb.go: pkg/ruler/rulespb/rules.proto
@@ -231,7 +231,7 @@ lint: lint-packaging-scripts
 	faillint -paths "github.com/grafana/mimir/pkg/..." ./pkg/querier/engine/...
 
 	# Ensure all errors are report as APIError
-	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/queryrange/...
+	faillint -paths "github.com/weaveworks/common/httpgrpc.{Errorf}=github.com/grafana/mimir/pkg/api/error.Newf" ./pkg/frontend/querymiddleware/...
 
 	# Ensure the query path is supporting multiple tenants
 	faillint -paths "\
@@ -239,7 +239,7 @@ lint: lint-packaging-scripts
 		./pkg/scheduler/... \
 		./pkg/frontend/... \
 		./pkg/querier/tenantfederation/... \
-		./pkg/frontend/queryrange/...
+		./pkg/frontend/querymiddleware/...
 
 	# Ensure packages that no longer use a global logger don't reintroduce it
 	faillint -paths "github.com/grafana/mimir/pkg/util/log.{Logger}" \

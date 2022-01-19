@@ -26,7 +26,7 @@ import (
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
 	"github.com/grafana/mimir/pkg/frontend"
-	"github.com/grafana/mimir/pkg/frontend/queryrange"
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/ingester"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimir"
@@ -77,7 +77,7 @@ var (
 		},
 		{
 			name:       "query_range_config",
-			structType: reflect.TypeOf(queryrange.Config{}),
+			structType: reflect.TypeOf(querymiddleware.Config{}),
 			desc:       "The query_range_config configures the query splitting and caching in the query-frontend.",
 		},
 		{
