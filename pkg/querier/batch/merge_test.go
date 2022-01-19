@@ -11,15 +11,15 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 func TestMergeIter(t *testing.T) {
-	chunk1 := mkGenericChunk(t, 0, 100, promchunk.PrometheusXorChunk)
-	chunk2 := mkGenericChunk(t, model.TimeFromUnix(25), 100, promchunk.PrometheusXorChunk)
-	chunk3 := mkGenericChunk(t, model.TimeFromUnix(50), 100, promchunk.PrometheusXorChunk)
-	chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, promchunk.PrometheusXorChunk)
-	chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, promchunk.PrometheusXorChunk)
+	chunk1 := mkGenericChunk(t, 0, 100, chunk.PrometheusXorChunk)
+	chunk2 := mkGenericChunk(t, model.TimeFromUnix(25), 100, chunk.PrometheusXorChunk)
+	chunk3 := mkGenericChunk(t, model.TimeFromUnix(50), 100, chunk.PrometheusXorChunk)
+	chunk4 := mkGenericChunk(t, model.TimeFromUnix(75), 100, chunk.PrometheusXorChunk)
+	chunk5 := mkGenericChunk(t, model.TimeFromUnix(100), 100, chunk.PrometheusXorChunk)
 
 	iter := newMergeIterator([]GenericChunk{chunk1, chunk2, chunk3, chunk4, chunk5})
 	testIter(t, 200, newIteratorAdapter(iter))
@@ -37,7 +37,7 @@ func TestMergeHarder(t *testing.T) {
 		samples   = 100
 	)
 	for i := 0; i < numChunks; i++ {
-		chunks = append(chunks, mkGenericChunk(t, from, samples, promchunk.PrometheusXorChunk))
+		chunks = append(chunks, mkGenericChunk(t, from, samples, chunk.PrometheusXorChunk))
 		from = from.Add(time.Duration(offset) * time.Second)
 	}
 	iter := newMergeIterator(chunks)

@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package encoding
+package chunk
 
 import (
 	"fmt"
@@ -28,20 +28,20 @@ const (
 
 type encoding struct {
 	Name string
-	New  func() Chunk
+	New  func() EncodedChunk
 }
 
 var encodings = map[Encoding]encoding{
 	PrometheusXorChunk: {
 		Name: "PrometheusXorChunk",
-		New: func() Chunk {
+		New: func() EncodedChunk {
 			return newPrometheusXorChunk()
 		},
 	},
 }
 
 // NewForEncoding allows configuring what chunk type you want
-func NewForEncoding(encoding Encoding) (Chunk, error) {
+func NewForEncoding(encoding Encoding) (EncodedChunk, error) {
 	enc, ok := encodings[encoding]
 	if !ok {
 		return nil, fmt.Errorf("unknown chunk encoding: %v", encoding)

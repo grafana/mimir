@@ -15,8 +15,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 const (
@@ -24,7 +23,7 @@ const (
 )
 
 func TestChunkIter(t *testing.T) {
-	chunk := mkGenericChunk(t, 0, 100, promchunk.PrometheusXorChunk)
+	chunk := mkGenericChunk(t, 0, 100, chunk.PrometheusXorChunk)
 	iter := &chunkIterator{}
 
 	iter.reset(chunk)
@@ -34,11 +33,11 @@ func TestChunkIter(t *testing.T) {
 	testSeek(t, 100, newIteratorAdapter(iter))
 }
 
-func mkChunk(t require.TestingT, from model.Time, points int, enc promchunk.Encoding) chunk.Chunk {
+func mkChunk(t require.TestingT, from model.Time, points int, enc chunk.Encoding) chunk.Chunk {
 	metric := labels.Labels{
 		{Name: model.MetricNameLabel, Value: "foo"},
 	}
-	pc, err := promchunk.NewForEncoding(enc)
+	pc, err := chunk.NewForEncoding(enc)
 	require.NoError(t, err)
 	ts := from
 	for i := 0; i < points; i++ {
@@ -54,7 +53,7 @@ func mkChunk(t require.TestingT, from model.Time, points int, enc promchunk.Enco
 	return chunk.NewChunk(metric, pc, from, ts)
 }
 
-func mkGenericChunk(t require.TestingT, from model.Time, points int, enc promchunk.Encoding) GenericChunk {
+func mkGenericChunk(t require.TestingT, from model.Time, points int, enc chunk.Encoding) GenericChunk {
 	ck := mkChunk(t, from, points, enc)
 	return NewGenericChunk(int64(ck.From), int64(ck.Through), ck.Data.NewIterator)
 }
@@ -96,17 +95,17 @@ func TestSeek(t *testing.T) {
 	var it mockIterator
 	c := chunkIterator{
 		chunk: GenericChunk{
-			MaxTime: promchunk.BatchSize,
+			MaxTime: chunk.BatchSize,
 		},
 		it: &it,
 	}
 
-	for i := 0; i < promchunk.BatchSize-1; i++ {
+	for i := 0; i < chunk.BatchSize-1; i++ {
 		require.True(t, c.Seek(int64(i), 1))
 	}
 	require.Equal(t, 1, it.seeks)
 
-	require.True(t, c.Seek(int64(promchunk.BatchSize), 1))
+	require.True(t, c.Seek(int64(chunk.BatchSize), 1))
 	require.Equal(t, 2, it.seeks)
 }
 
@@ -127,11 +126,11 @@ func (i *mockIterator) Value() model.SamplePair {
 	return model.SamplePair{}
 }
 
-func (i *mockIterator) Batch(size int) promchunk.Batch {
-	batch := promchunk.Batch{
-		Length: promchunk.BatchSize,
+func (i *mockIterator) Batch(size int) chunk.Batch {
+	batch := chunk.Batch{
+		Length: chunk.BatchSize,
 	}
-	for i := 0; i < promchunk.BatchSize; i++ {
+	for i := 0; i < chunk.BatchSize; i++ {
 		batch.Timestamps[i] = int64(i)
 	}
 	return batch

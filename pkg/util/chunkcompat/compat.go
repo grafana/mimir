@@ -11,10 +11,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	prom_chunk "github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -102,7 +101,7 @@ func TimeseriesToMatrix(from, through model.Time, series []mimirpb.TimeSeries) (
 func FromChunks(metric labels.Labels, in []client.Chunk) ([]chunk.Chunk, error) {
 	out := make([]chunk.Chunk, 0, len(in))
 	for _, i := range in {
-		o, err := prom_chunk.NewForEncoding(prom_chunk.Encoding(byte(i.Encoding)))
+		o, err := chunk.NewForEncoding(chunk.Encoding(byte(i.Encoding)))
 		if err != nil {
 			return nil, err
 		}
@@ -129,7 +128,7 @@ func ToChunks(in []chunk.Chunk) ([]client.Chunk, error) {
 			Encoding:         int32(i.Data.Encoding()),
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, prom_chunk.ChunkLen))
+		buf := bytes.NewBuffer(make([]byte, 0, chunk.ChunkLen))
 		if err := i.Data.Marshal(buf); err != nil {
 			return nil, err
 		}

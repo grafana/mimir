@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package encoding
+package chunk
 
 import (
 	"io"
@@ -25,7 +25,7 @@ func newPrometheusXorChunk() *prometheusXorChunk {
 // Add adds another sample to the chunk. While Add works, it is only implemented
 // to make tests work, and should not be used in production. In particular, it appends
 // all samples to single chunk, and uses new Appender for each Add.
-func (p *prometheusXorChunk) Add(m model.SamplePair) (Chunk, error) {
+func (p *prometheusXorChunk) Add(m model.SamplePair) (EncodedChunk, error) {
 	if p.chunk == nil {
 		p.chunk = chunkenc.NewXORChunk()
 	}

@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-// Provenance-includes-location: https://github.com/prometheus/prometheus
+// Provenance-includes-location: https://github.com/cortexproject/cortex/blob/master/pkg/chunk/chunk.go
 // Provenance-includes-license: Apache-2.0
-// Provenance-includes-copyright: The Prometheus Authors.
+// Provenance-includes-copyright: The Cortex Authors.
 
-package encoding
+package chunk
 
 import (
 	"io"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 const (
@@ -16,14 +17,14 @@ const (
 	ChunkLen = 1024
 )
 
-// Chunk is the interface for all chunks. Chunks are generally not
+// EncodedChunk is the interface for encoded chunks. Chunks are generally not
 // goroutine-safe.
-type Chunk interface {
+type EncodedChunk interface {
 	// Add adds a SamplePair to the chunks, performs any necessary
 	// re-encoding, and creates any necessary overflow chunk.
-	// The returned Chunk is the overflow chunk if it was created.
-	// The returned Chunk is nil if the sample got appended to the same chunk.
-	Add(sample model.SamplePair) (Chunk, error)
+	// The returned EncodedChunk is the overflow chunk if it was created.
+	// The returned EncodedChunk is nil if the sample got appended to the same chunk.
+	Add(sample model.SamplePair) (EncodedChunk, error)
 	// NewIterator returns an iterator for the chunks.
 	// The iterator passed as argument is for re-use. Depending on implementation,
 	// the iterator can be re-used or a new iterator can be allocated.
@@ -76,24 +77,42 @@ type Batch struct {
 	Length     int
 }
 
-// RangeValues is a utility function that retrieves all values within the given
+// Chunk contains encoded timeseries data
+type Chunk struct {
+	From    model.Time    `json:"from"`
+	Through model.Time    `json:"through"`
+	Metric  labels.Labels `json:"metric"`
+	Data    EncodedChunk  `json:"-"`
+}
+
+// NewChunk creates a new chunk
+func NewChunk(metric labels.Labels, c EncodedChunk, from, through model.Time) Chunk {
+	return Chunk{
+		From:    from,
+		Through: through,
+		Metric:  metric,
+		Data:    c,
+	}
+}
+
+// Samples returns all SamplePairs for the chunk.
+func (c *Chunk) Samples(from, through model.Time) ([]model.SamplePair, error) {
+	it := c.Data.NewIterator(nil)
+	return rangeValues(it, from, through)
+}
+
+// rangeValues is a utility function that retrieves all values within the given
 // range from an Iterator.
-func RangeValues(it Iterator, in Interval) ([]model.SamplePair, error) {
+func rangeValues(it Iterator, oldestInclusive, newestInclusive model.Time) ([]model.SamplePair, error) {
 	result := []model.SamplePair{}
-	if !it.FindAtOrAfter(in.OldestInclusive) {
+	if !it.FindAtOrAfter(oldestInclusive) {
 		return result, it.Err()
 	}
-	for !it.Value().Timestamp.After(in.NewestInclusive) {
+	for !it.Value().Timestamp.After(newestInclusive) {
 		result = append(result, it.Value())
 		if !it.Scan() {
 			break
 		}
 	}
 	return result, it.Err()
-}
-
-// Interval describes the inclusive interval between two Timestamps.
-type Interval struct {
-	OldestInclusive model.Time
-	NewestInclusive model.Time
 }

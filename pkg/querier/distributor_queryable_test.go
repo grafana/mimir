@@ -23,10 +23,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"github.com/weaveworks/common/user"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/chunkcompat"
 )
@@ -132,7 +131,7 @@ func TestIngesterStreaming(t *testing.T) {
 
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(t, err)
 
 	// Ensure at least 1 sample is appended to the chunk otherwise it can't be marshalled.
@@ -313,7 +312,7 @@ func BenchmarkDistributorQueryable_Select(b *testing.B) {
 
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(b, err)
 
 	clientChunks, err := chunkcompat.ToChunks([]chunk.Chunk{
@@ -375,7 +374,7 @@ func verifySeries(t *testing.T, series storage.Series, l labels.Labels, samples 
 func convertToChunks(t *testing.T, samples []mimirpb.Sample) []client.Chunk {
 	// We need to make sure that there is at least one chunk present,
 	// else no series will be selected.
-	promChunk, err := encoding.NewForEncoding(encoding.PrometheusXorChunk)
+	promChunk, err := chunk.NewForEncoding(chunk.PrometheusXorChunk)
 	require.NoError(t, err)
 
 	for _, s := range samples {

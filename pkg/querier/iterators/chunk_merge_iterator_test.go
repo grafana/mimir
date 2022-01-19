@@ -15,8 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/chunk"
-	promchunk "github.com/grafana/mimir/pkg/chunk/encoding"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 )
 
 func TestChunkMergeIterator(t *testing.T) {
@@ -26,32 +25,32 @@ func TestChunkMergeIterator(t *testing.T) {
 	}{
 		{
 			chunks: []chunk.Chunk{
-				mkChunk(t, 0, 100, 1*time.Millisecond, promchunk.PrometheusXorChunk),
+				mkChunk(t, 0, 100, 1*time.Millisecond, chunk.PrometheusXorChunk),
 			},
 			maxt: 100,
 		},
 
 		{
 			chunks: []chunk.Chunk{
-				mkChunk(t, 0, 100, 1*time.Millisecond, promchunk.PrometheusXorChunk),
-				mkChunk(t, 0, 100, 1*time.Millisecond, promchunk.PrometheusXorChunk),
+				mkChunk(t, 0, 100, 1*time.Millisecond, chunk.PrometheusXorChunk),
+				mkChunk(t, 0, 100, 1*time.Millisecond, chunk.PrometheusXorChunk),
 			},
 			maxt: 100,
 		},
 
 		{
 			chunks: []chunk.Chunk{
-				mkChunk(t, 0, 100, 1*time.Millisecond, promchunk.PrometheusXorChunk),
-				mkChunk(t, 50, 150, 1*time.Millisecond, promchunk.PrometheusXorChunk),
-				mkChunk(t, 100, 200, 1*time.Millisecond, promchunk.PrometheusXorChunk),
+				mkChunk(t, 0, 100, 1*time.Millisecond, chunk.PrometheusXorChunk),
+				mkChunk(t, 50, 150, 1*time.Millisecond, chunk.PrometheusXorChunk),
+				mkChunk(t, 100, 200, 1*time.Millisecond, chunk.PrometheusXorChunk),
 			},
 			maxt: 200,
 		},
 
 		{
 			chunks: []chunk.Chunk{
-				mkChunk(t, 0, 100, 1*time.Millisecond, promchunk.PrometheusXorChunk),
-				mkChunk(t, 100, 200, 1*time.Millisecond, promchunk.PrometheusXorChunk),
+				mkChunk(t, 0, 100, 1*time.Millisecond, chunk.PrometheusXorChunk),
+				mkChunk(t, 100, 200, 1*time.Millisecond, chunk.PrometheusXorChunk),
 			},
 			maxt: 200,
 		},
@@ -72,9 +71,9 @@ func TestChunkMergeIterator(t *testing.T) {
 
 func TestChunkMergeIteratorSeek(t *testing.T) {
 	iter := NewChunkMergeIterator([]chunk.Chunk{
-		mkChunk(t, 0, 100, 1*time.Millisecond, promchunk.PrometheusXorChunk),
-		mkChunk(t, 50, 150, 1*time.Millisecond, promchunk.PrometheusXorChunk),
-		mkChunk(t, 100, 200, 1*time.Millisecond, promchunk.PrometheusXorChunk),
+		mkChunk(t, 0, 100, 1*time.Millisecond, chunk.PrometheusXorChunk),
+		mkChunk(t, 50, 150, 1*time.Millisecond, chunk.PrometheusXorChunk),
+		mkChunk(t, 100, 200, 1*time.Millisecond, chunk.PrometheusXorChunk),
 	}, 0, 0)
 
 	for i := int64(0); i < 10; i += 20 {
@@ -95,11 +94,11 @@ func TestChunkMergeIteratorSeek(t *testing.T) {
 	}
 }
 
-func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding promchunk.Encoding) chunk.Chunk {
+func mkChunk(t require.TestingT, mint, maxt model.Time, step time.Duration, encoding chunk.Encoding) chunk.Chunk {
 	metric := labels.Labels{
 		{Name: model.MetricNameLabel, Value: "foo"},
 	}
-	pc, err := promchunk.NewForEncoding(encoding)
+	pc, err := chunk.NewForEncoding(encoding)
 	require.NoError(t, err)
 	for i := mint; i.Before(maxt); i = i.Add(step) {
 		npc, err := pc.Add(model.SamplePair{

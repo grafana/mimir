@@ -47,10 +47,10 @@ import (
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc/codes"
 
-	"github.com/grafana/mimir/pkg/chunk/encoding"
 	"github.com/grafana/mimir/pkg/ingester/client"
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/storage/bucket"
+	"github.com/grafana/mimir/pkg/storage/chunk"
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/tenant"
@@ -1388,7 +1388,7 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 
 			switch meta.Chunk.Encoding() {
 			case chunkenc.EncXOR:
-				ch.Encoding = int32(encoding.PrometheusXorChunk)
+				ch.Encoding = int32(chunk.PrometheusXorChunk)
 			default:
 				return 0, 0, errors.Errorf("unknown chunk encoding from TSDB chunk querier: %v", meta.Chunk.Encoding())
 			}
