@@ -1,3 +1,9 @@
+# Adapted from https://suva.sh/posts/well-documented-makefiles/
+.PHONY: help
+help: ## Display this help.
+help:
+	@awk 'BEGIN {FS = ": ##"; printf "Usage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_\.\-\/%]+: ##/ { printf "  %-45s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
 # Local settings (optional). See Makefile.local.example for an example.
 # WARNING: do not commit to a repository!
 -include Makefile.local
