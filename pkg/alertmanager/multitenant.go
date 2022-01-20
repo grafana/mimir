@@ -1299,7 +1299,7 @@ func (am *MultitenantAlertmanager) getPerUserDirectories() map[string]string {
 	return result
 }
 
-// UpdateState implements the Alertmanager service.
+// ReadState implements the Alertmanager service.
 func (am *MultitenantAlertmanager) ReadState(ctx context.Context, req *alertmanagerpb.ReadStateRequest) (*alertmanagerpb.ReadStateResponse, error) {
 	userID, err := tenant.TenantID(ctx)
 	if err != nil {
