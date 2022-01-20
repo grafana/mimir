@@ -10,7 +10,7 @@ Following is the list of maintainers for `main`:
 - Peter Štibraný - [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid - [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
 
-Some parts of the codebase have other maintainers:
+Some parts of the codebase have other maintainers, the package paths also include all sub-packages:
 
 - `docs`:
   - Ursula Kallio - [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
