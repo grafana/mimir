@@ -1,3 +1,5 @@
+Following is the list of maintainers for `main`:
+
 - Arve Knudsen - [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham - [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
 - Christian Simon - [@simonswine](https://github.com/simonswine) ([Grafana Labs](https://grafana.com/))
@@ -10,3 +12,12 @@
 - Peter Štibraný - [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid - [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
+
+Some parts of the codebase have other maintainers:
+
+- `docs`:
+  - Ursula Kallio - [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
+- `pkg/ruler`:
+  - Josh Abreu Mesa - ([@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
+- `pkg/alertmanager`:
+  - Josh Abreu Mesa - ([@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
