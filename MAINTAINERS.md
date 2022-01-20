@@ -19,4 +19,4 @@ Some parts of the codebase have other maintainers, the package paths also includ
 - `pkg/alertmanager`:
   - Josh Abreu Mesa - [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - `pkg/frontend`:
-  - Cyril Tovena - [@cyriltovena](https://github.com/cyriltovena) ([Grafana Labs](https://grafana.com/))
+  - Cyril Tovena - [@cyriltovena](https://github.com/cyriltovena) ([Grafana Labs](https://grafana.com/)) # limited to reviews
