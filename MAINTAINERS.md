@@ -2,7 +2,6 @@ Following is the list of maintainers for `main`:
 
 - Arve Knudsen - [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham - [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
-- Christian Simon - [@simonswine](https://github.com/simonswine) ([Grafana Labs](https://grafana.com/))
 - Johanna Ratliff - [@johannaratliff](https://github.com/johannaratliff) ([Grafana Labs](https://grafana.com/))
 - Marco Pracucci - [@pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
 - Mauro Stettler - [@replay](https://github.com/replay) ([Grafana Labs](https://grafana.com/))
