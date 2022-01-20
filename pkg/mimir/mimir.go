@@ -370,6 +370,15 @@ func (t *Mimir) Run() error {
 
 	t.API.RegisterServiceMapHandler(http.HandlerFunc(t.servicesHandler))
 
+	// register ingester ring handlers, if they exists prefer the full ring
+	// implementation provided by module.Ring over the BasicLifecycler
+	// available in ingesters
+	if t.Ring != nil {
+		t.API.RegisterRing(t.Ring)
+	} else if t.Ingester != nil {
+		t.API.RegisterRing(t.Ingester.RingHandler())
+	}
+
 	// get all services, create service manager and tell it to start
 	servs := []services.Service(nil)
 	for _, s := range t.ServiceMap {

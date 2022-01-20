@@ -16,7 +16,6 @@ import (
 	"github.com/felixge/fgprof"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/grafana/dskit/ring"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/weaveworks/common/middleware"
 	"github.com/weaveworks/common/server"
@@ -319,7 +318,7 @@ func (a *API) RegisterRulerAPI(r *ruler.API) {
 }
 
 // RegisterRing registers the ring UI page associated with the distributor for writes.
-func (a *API) RegisterRing(r *ring.Ring) {
+func (a *API) RegisterRing(r http.Handler) {
 	a.indexPage.AddLink(SectionAdminEndpoints, "/ingester/ring", "Ingester Ring Status")
 	a.RegisterRoute("/ingester/ring", r, false, "GET", "POST")
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"sort"
 	"sync"
@@ -847,6 +848,23 @@ func (i *Lifecycler) processShutdown(ctx context.Context) {
 	// Sleep so the shutdownDuration metric can be collected.
 	level.Info(i.logger).Log("msg", "lifecycler entering final sleep before shutdown", "final_sleep", i.cfg.FinalSleep)
 	time.Sleep(i.cfg.FinalSleep)
+}
+
+func (i *Lifecycler) casRing(ctx context.Context, f func(in interface{}) (out interface{}, retry bool, err error)) error {
+	return i.KVStore.CAS(ctx, i.RingKey, f)
+}
+
+func (i *Lifecycler) getRing(ctx context.Context) (*Desc, error) {
+	obj, err := i.KVStore.Get(ctx, i.RingKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return GetOrCreateRingDesc(obj), nil
+}
+
+func (i *Lifecycler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	newRingPageHandler(i, i.cfg.HeartbeatPeriod).handle(w, req)
 }
 
 // unregister removes our entry from consul.

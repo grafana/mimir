@@ -2356,6 +2356,10 @@ func (i *Ingester) CheckReady(ctx context.Context) error {
 	return i.lifecycler.CheckReady(ctx)
 }
 
+func (i *Ingester) RingHandler() http.Handler {
+	return i.lifecycler
+}
+
 func initSelectHints(start, end int64) *storage.SelectHints {
 	return &storage.SelectHints{
 		Start: start,
