@@ -21,19 +21,29 @@ if [[ $# -ne 2 ]]; then
   exit 1
 fi
 
+# WEBSITE_DIR is the path to the grafana/website repository.
 readonly WEBSITE_DIR="$1"
 # TAG is the git tag for the release.
 readonly TAG="$2"
 # VERSION is TAG without the leading 'v'.
 readonly VERSION="${TAG/v/}"
 
+# DRY_RUN determines whether remote operations like `git push` are
+#performed.
 readonly DRY_RUN="${DRY_RUN:-0}"
 
+# MIMIR_DIR is the path to the grafana/mimir repository.
 readonly MIMIR_DIR="${MIMIR_DIR:-$(git rev-parse --show-toplevel)}"
 
+# WEBSITE_BRANCH is the name of the release branch created in the
+# grafana/website repository.
 readonly WEBSITE_BRANCH="${WEBSITE_BRANCH:-mimir-release-${VERSION}}"
+# WEBSITE_REMOTE is the name the configured remote in the
+# grafana/website repository.
 readonly WEBSITE_REMOTE="${WEBSITE_REMOTE:-origin}"
 
+# maybe_clone clones a repository $2 if it does not already exist
+# in directory $1.
 function maybe_clone {
   local dir="$1"
   local repo="$2"
