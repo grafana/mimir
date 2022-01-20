@@ -120,6 +120,7 @@ To publish a stable release:
      - Alternatively, this can be done locally by merging `merge-release-X.Y-to-master` branch into `master`, and pushing resulting `master` to upstream repository. This doesn't break `master` branch protection, since PR has been approved already, and it also doesn't require removing the protection.
 1. Open a PR to add the new version to the backward compatibility integration test (`integration/backward_compatibility_test.go`)
 1. Publish release documentation using `./tools/release-docs`:
+
 ```console
 $ ./tools/release-docs /tmp/grafana/website v1.12.0
 ```
