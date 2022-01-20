@@ -13,6 +13,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/grafana/mimir/pkg/frontend/querymiddleware"
 	"github.com/grafana/mimir/pkg/frontend/transport"
 	v1 "github.com/grafana/mimir/pkg/frontend/v1"
 	v2 "github.com/grafana/mimir/pkg/frontend/v2"
@@ -25,6 +26,8 @@ type CombinedFrontendConfig struct {
 	FrontendV1 v1.Config               `yaml:",inline"`
 	FrontendV2 v2.Config               `yaml:",inline"`
 
+	QueryMiddleware querymiddleware.Config `yaml:",inline"`
+
 	DownstreamURL string `yaml:"downstream_url"`
 }
 
@@ -32,6 +35,7 @@ func (cfg *CombinedFrontendConfig) RegisterFlags(f *flag.FlagSet) {
 	cfg.Handler.RegisterFlags(f)
 	cfg.FrontendV1.RegisterFlags(f)
 	cfg.FrontendV2.RegisterFlags(f)
+	cfg.QueryMiddleware.RegisterFlags(f)
 
 	f.StringVar(&cfg.DownstreamURL, "frontend.downstream-url", "", "URL of downstream Prometheus.")
 }

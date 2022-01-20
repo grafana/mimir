@@ -122,10 +122,6 @@ api:
 # The query_frontend_config configures the query-frontend.
 [frontend: <query_frontend_config>]
 
-# The query_range_config configures the query splitting and caching in the
-# query-frontend.
-[query_range: <query_range_config>]
-
 # The blocks_storage_config configures the blocks storage.
 [blocks_storage: <blocks_storage_config>]
 
@@ -1013,25 +1009,15 @@ grpc_client_config:
 # CLI flag: -frontend.instance-interface-names
 [instance_interface_names: <list of string> | default = [eth0 en0]]
 
-# URL of downstream Prometheus.
-# CLI flag: -frontend.downstream-url
-[downstream_url: <string> | default = ""]
-```
-
-### `query_range_config`
-
-The `query_range_config` configures the query splitting and caching in the query-frontend.
-
-```yaml
 # Split queries by an interval and execute in parallel, 0 disables it. You
 # should use an a multiple of 24 hours (same as the storage bucketing scheme),
 # to avoid queriers downloading and processing the same chunks. This also
-# determines how cache keys are chosen when result caching is enabled
-# CLI flag: -querier.split-queries-by-interval
+# determines how cache keys are chosen when result caching is enabled.
+# CLI flag: -frontend.split-queries-by-interval
 [split_queries_by_interval: <duration> | default = 0s]
 
 # Mutate incoming queries to align their start and end with their step.
-# CLI flag: -querier.align-querier-with-step
+# CLI flag: -frontend.align-querier-with-step
 [align_queries_with_step: <boolean> | default = false]
 
 results_cache:
@@ -1087,21 +1073,25 @@ results_cache:
   [compression: <string> | default = ""]
 
 # Cache query results.
-# CLI flag: -querier.cache-results
+# CLI flag: -frontend.cache-results
 [cache_results: <boolean> | default = false]
 
 # Maximum number of retries for a single request; beyond this, the downstream
 # error is returned.
-# CLI flag: -querier.max-retries-per-request
+# CLI flag: -frontend.max-retries-per-request
 [max_retries: <int> | default = 5]
 
 # True to enable query sharding.
-# CLI flag: -query-frontend.parallelize-shardable-queries
+# CLI flag: -frontend.parallelize-shardable-queries
 [parallelize_shardable_queries: <boolean> | default = false]
 
 # Cache requests that are not step-aligned.
-# CLI flag: -query-frontend.cache-unaligned-requests
+# CLI flag: -frontend.cache-unaligned-requests
 [cache_unaligned_requests: <boolean> | default = false]
+
+# URL of downstream Prometheus.
+# CLI flag: -frontend.downstream-url
+[downstream_url: <string> | default = ""]
 ```
 
 ### `ruler_config`

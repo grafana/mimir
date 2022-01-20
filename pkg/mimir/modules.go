@@ -468,7 +468,7 @@ func (t *Mimir) initFlusher() (serv services.Service, err error) {
 // to optimize Prometheus query requests.
 func (t *Mimir) initQueryFrontendTripperware() (serv services.Service, err error) {
 	tripperware, err := querymiddleware.NewTripperware(
-		t.Cfg.QueryRange,
+		t.Cfg.Frontend.QueryMiddleware,
 		util_log.Logger,
 		t.Overrides,
 		querymiddleware.PrometheusCodec,
