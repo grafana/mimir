@@ -1326,7 +1326,7 @@ The `ruler_storage_config` configures the ruler storage backend.
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
 # filesystem, local.
 # CLI flag: -ruler-storage.backend
-[backend: <string> | default = "s3"]
+[backend: <string> | default = "filesystem"]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -1726,7 +1726,7 @@ The `alertmanager_storage_config` configures the alertmanager storage backend.
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
 # filesystem, local.
 # CLI flag: -alertmanager-storage.backend
-[backend: <string> | default = "s3"]
+[backend: <string> | default = "filesystem"]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
@@ -2699,7 +2699,7 @@ The `blocks_storage_config` configures the blocks storage.
 # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
 # filesystem.
 # CLI flag: -blocks-storage.backend
-[backend: <string> | default = "s3"]
+[backend: <string> | default = "filesystem"]
 
 s3:
   # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at

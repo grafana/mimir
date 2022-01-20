@@ -296,7 +296,7 @@ blocks_storage:
   # Backend storage to use. Supported backends are: s3, gcs, azure, swift,
   # filesystem.
   # CLI flag: -blocks-storage.backend
-  [backend: <string> | default = "s3"]
+  [backend: <string> | default = "filesystem"]
 
   s3:
     # The S3 bucket endpoint. It could be an AWS S3 endpoint listed at
