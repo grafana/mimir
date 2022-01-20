@@ -7,6 +7,7 @@ import (
 	"flag"
 	"io"
 	"os"
+	"path"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -47,7 +48,7 @@ type Config struct {
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Filepath, "activity-tracker.filepath", "", "File where ongoing activities are stored. If empty, activity tracking is disabled.")
+	f.StringVar(&c.Filepath, "activity-tracker.filepath", path.Join(os.TempDir(), "metrics-activity.log"), "File where ongoing activities are stored. If empty, activity tracking is disabled.")
 	f.IntVar(&c.MaxEntries, "activity-tracker.max-entries", 1024, "Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored.")
 }
 

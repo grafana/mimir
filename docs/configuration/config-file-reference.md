@@ -146,7 +146,7 @@ activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
   # disabled.
   # CLI flag: -activity-tracker.filepath
-  [filepath: <string> | default = ""]
+  [filepath: <string> | default = "/tmp/metrics-activity.log"]
 
   # Max number of concurrent activities that can be tracked. Used to size the
   # file in advance. Additional activities are ignored.

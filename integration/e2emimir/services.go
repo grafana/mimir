@@ -119,10 +119,6 @@ func NewQuerierWithConfigFile(name, consulAddress, configFile string, flags map[
 		"-store-gateway.sharding-ring.replication-factor": "1",
 	}
 
-	if binaryName != "cortex" {
-		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
-	}
-
 	return NewMimirService(
 		name,
 		image,
@@ -158,9 +154,6 @@ func NewStoreGatewayWithConfigFile(name, consulAddress, configFile string, flags
 		// Startup quickly.
 		"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
 		"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
-	}
-	if binaryName != "cortex" {
-		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
 	}
 
 	return NewMimirService(
@@ -232,9 +225,6 @@ func NewQueryFrontendWithConfigFile(name, configFile string, flags map[string]st
 		"-log.level": "warn",
 		// Quickly detect query-scheduler when running it.
 		"-frontend.scheduler-dns-lookup-period": "1s",
-	}
-	if binaryName != "cortex" {
-		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
 	}
 
 	return NewMimirService(
@@ -335,9 +325,6 @@ func NewSingleBinary(name string, flags map[string]string, image string, otherPo
 		"-store-gateway.sharding-ring.wait-stability-min-duration": "0",
 		"-store-gateway.sharding-ring.wait-stability-max-duration": "0",
 	}
-	if binaryName != "cortex" {
-		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
-	}
 
 	return NewMimirService(
 		name,
@@ -361,9 +348,6 @@ func NewSingleBinaryWithConfigFile(name string, configFile string, flags map[str
 		"-target":      "all",
 		"-log.level":   "warn",
 		"-config.file": filepath.Join(e2e.ContainerSharedDir, configFile),
-	}
-	if binaryName != "cortex" {
-		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
 	}
 
 	return NewMimirService(
@@ -429,9 +413,6 @@ func NewRuler(name string, consulAddress string, flags map[string]string, image 
 		// Configure the ingesters ring backend
 		"-ring.store":      "consul",
 		"-consul.hostname": consulAddress,
-	}
-	if binaryName != "cortex" {
-		defaultFlags["-activity-tracker.filepath"] = "/tmp/activity.log"
 	}
 
 	return NewMimirService(
