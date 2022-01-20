@@ -16,6 +16,8 @@ Some parts of the codebase have other maintainers:
 - `docs`:
   - Ursula Kallio - [@osg-grafana](https://github.com/osg-grafana) ([Grafana Labs](https://grafana.com/))
 - `pkg/ruler`:
-  - Josh Abreu Mesa - ([@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
+  - Josh Abreu Mesa - [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
 - `pkg/alertmanager`:
-  - Josh Abreu Mesa - ([@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
+  - Josh Abreu Mesa - [@gotjosh](https://github.com/gotjosh) ([Grafana Labs](https://grafana.com/))
+- `pkg/frontend`:
+  - Cyril Tovena - [@cyriltovena](https://github.com/cyriltovena) ([Grafana Labs](https://grafana.com/))
