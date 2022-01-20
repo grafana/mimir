@@ -243,6 +243,10 @@ type Ingester struct {
 }
 
 func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	if cfg.BlocksStorageConfig.Bucket.Backend == bucket.Filesystem {
+		level.Warn(logger).Log("msg", "-blocks-storage.backend=filesystem is for development and testing only; you must switch to an external object store for production use")
+	}
+
 	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create the bucket client")
