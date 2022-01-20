@@ -297,10 +297,6 @@ func NewMultitenantAlertmanager(cfg *MultitenantAlertmanagerConfig, store alerts
 		return nil, fmt.Errorf("unable to create Alertmanager data directory %q: %s", cfg.DataDir, err)
 	}
 
-	if cfg.ExternalURL.URL == nil {
-		return nil, fmt.Errorf("unable to create Alertmanager because the external URL has not been configured")
-	}
-
 	var fallbackConfig []byte
 	if cfg.FallbackConfigFile != "" {
 		fallbackConfig, err = ioutil.ReadFile(cfg.FallbackConfigFile)

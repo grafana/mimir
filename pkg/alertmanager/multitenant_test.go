@@ -819,17 +819,6 @@ func createFile(t *testing.T, path string) string {
 	return path
 }
 
-func TestMultitenantAlertmanager_NoExternalURL(t *testing.T) {
-	amConfig := mockAlertmanagerConfig(t)
-	amConfig.ExternalURL = flagext.URLValue{} // no external URL
-
-	// Create the Multitenant Alertmanager.
-	reg := prometheus.NewPedanticRegistry()
-	_, err := NewMultitenantAlertmanager(amConfig, nil, nil, log.NewNopLogger(), reg)
-
-	require.EqualError(t, err, "unable to create Alertmanager because the external URL has not been configured")
-}
-
 func TestMultitenantAlertmanager_ServeHTTP(t *testing.T) {
 	// Run this test using a real storage client.
 	store := prepareInMemoryAlertStore()
