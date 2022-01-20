@@ -1036,10 +1036,6 @@ The `query_range_config` configures the query splitting and caching in the query
 
 results_cache:
   cache:
-    # Enable in-memory cache.
-    # CLI flag: -frontend.cache.enable-fifocache
-    [enable_fifocache: <boolean> | default = false]
-
     # The default validity of entries for caches unless overridden.
     # CLI flag: -frontend.default-validity
     [default_validity: <duration> | default = 0s]
@@ -1060,12 +1056,6 @@ results_cache:
     # The memcached_client_config configures the client used to connect to
     # Memcached.
     [memcached_client: <memcached_client_config>]
-
-    # The redis_config configures the Redis backend cache.
-    [redis: <redis_config>]
-
-    # The fifo_cache_config configures the local in-memory cache.
-    [fifocache: <fifo_cache_config>]
 
   # Use compression in results cache. Supported values are: 'snappy' and ''
   # (disable compression).
@@ -2733,59 +2723,6 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [alertmanager_max_alerts_size_bytes: <int> | default = 0]
 ```
 
-### `redis_config`
-
-The `redis_config` configures the Redis backend cache.
-
-```yaml
-# Redis Server endpoint to use for caching. A comma-separated list of endpoints
-# for Redis Cluster or Redis Sentinel. If empty, no redis will be used.
-# CLI flag: -frontend.redis.endpoint
-[endpoint: <string> | default = ""]
-
-# Redis Sentinel master name. An empty string for Redis Server or Redis Cluster.
-# CLI flag: -frontend.redis.master-name
-[master_name: <string> | default = ""]
-
-# Maximum time to wait before giving up on redis requests.
-# CLI flag: -frontend.redis.timeout
-[timeout: <duration> | default = 500ms]
-
-# How long keys stay in the redis.
-# CLI flag: -frontend.redis.expiration
-[expiration: <duration> | default = 0s]
-
-# Database index.
-# CLI flag: -frontend.redis.db
-[db: <int> | default = 0]
-
-# Maximum number of connections in the pool.
-# CLI flag: -frontend.redis.pool-size
-[pool_size: <int> | default = 0]
-
-# Password to use when connecting to redis.
-# CLI flag: -frontend.redis.password
-[password: <string> | default = ""]
-
-# Enable connecting to redis with TLS.
-# CLI flag: -frontend.redis.tls-enabled
-[tls_enabled: <boolean> | default = false]
-
-# Skip validating server certificate.
-# CLI flag: -frontend.redis.tls-insecure-skip-verify
-[tls_insecure_skip_verify: <boolean> | default = false]
-
-# Close connections after remaining idle for this duration. If the value is
-# zero, then idle connections are not closed.
-# CLI flag: -frontend.redis.idle-timeout
-[idle_timeout: <duration> | default = 0s]
-
-# Close connections older than this duration. If the value is zero, then the
-# pool does not close connections based on age.
-# CLI flag: -frontend.redis.max-connection-age
-[max_connection_age: <duration> | default = 0s]
-```
-
 ### `memcached_config`
 
 The `memcached_config` block configures how data is stored in Memcached (ie. expiration).
@@ -2857,25 +2794,6 @@ The `memcached_client_config` configures the client used to connect to Memcached
 # Reset circuit-breaker counts after this long (if zero then never reset).
 # CLI flag: -frontend.memcached.circuit-breaker-interval
 [circuit_breaker_interval: <duration> | default = 10s]
-```
-
-### `fifo_cache_config`
-
-The `fifo_cache_config` configures the local in-memory cache.
-
-```yaml
-# Maximum memory size of the cache in bytes. A unit suffix (KB, MB, GB) may be
-# applied.
-# CLI flag: -frontend.fifocache.max-size-bytes
-[max_size_bytes: <string> | default = ""]
-
-# Maximum number of entries in the cache.
-# CLI flag: -frontend.fifocache.max-size-items
-[max_size_items: <int> | default = 0]
-
-# The expiry duration for the cache.
-# CLI flag: -frontend.fifocache.duration
-[validity: <duration> | default = 0s]
 ```
 
 ### `blocks_storage_config`

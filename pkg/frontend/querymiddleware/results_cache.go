@@ -57,7 +57,7 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errors.Errorf("unsupported compression type: %s", cfg.Compression)
 	}
 
-	return cfg.CacheConfig.Validate()
+	return nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.

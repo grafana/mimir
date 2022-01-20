@@ -136,11 +136,6 @@ var (
 			desc:       "The limits_config configures default and per-tenant limits imposed by services (ie. distributor, ingester, ...).",
 		},
 		{
-			name:       "redis_config",
-			structType: reflect.TypeOf(cache.RedisConfig{}),
-			desc:       "The redis_config configures the Redis backend cache.",
-		},
-		{
 			name:       "memcached_config",
 			structType: reflect.TypeOf(cache.MemcachedConfig{}),
 			desc:       "The memcached_config block configures how data is stored in Memcached (ie. expiration).",
@@ -149,11 +144,6 @@ var (
 			name:       "memcached_client_config",
 			structType: reflect.TypeOf(cache.MemcachedClientConfig{}),
 			desc:       "The memcached_client_config configures the client used to connect to Memcached.",
-		},
-		{
-			name:       "fifo_cache_config",
-			structType: reflect.TypeOf(cache.FifoCacheConfig{}),
-			desc:       "The fifo_cache_config configures the local in-memory cache.",
 		},
 		{
 			name:       "blocks_storage_config",
