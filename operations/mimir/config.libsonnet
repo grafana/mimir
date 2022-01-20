@@ -85,9 +85,7 @@
       'server.grpc.keepalive.ping-without-stream-allowed': true,
     },
 
-    storageConfig:
-      {},
-
+    storageConfig:: {},
     genericBlocksStorageConfig:: {},
     queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
