@@ -1760,12 +1760,11 @@ const (
 
 func TestOwnUser(t *testing.T) {
 	type testCase struct {
-		compactors         int
-		compactionStrategy string
-		sharding           bool
-		enabledUsers       []string
-		disabledUsers      []string
-		compactorShards    map[string]int
+		compactors      int
+		sharding        bool
+		enabledUsers    []string
+		disabledUsers   []string
+		compactorShards map[string]int
 
 		check func(t *testing.T, comps []*MultitenantCompactor)
 	}
