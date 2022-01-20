@@ -55,8 +55,11 @@ function maybe_clone {
 maybe_clone "${MIMIR_DIR}" git@github.com:grafana/mimir.git
 maybe_clone "${WEBSITE_DIR}" git@github.com:grafana/website.git
 
-readonly MIMIR_PREV_HEAD="$(cd "${MIMIR_DIR}" && git rev-parse HEAD)"
-readonly WEBSITE_PREV_HEAD="$(cd "${MIMIR_DIR}" && git rev-parse HEAD)"
+MIMIR_PREV_HEAD="$(cd "${MIMIR_DIR}" && git rev-parse HEAD)"
+readonly MIMIR_PREV_HEAD
+
+WEBSITE_PREV_HEAD="$(cd "${MIMIR_DIR}" && git rev-parse HEAD)"
+readonly WEBSITE_PREV_HEAD
 
 # cleanup performs clean up after the script exits for any reason.
 function cleanup {
