@@ -70,7 +70,7 @@ Next we're going to show how you can run a scale out Mimir cluster using Docker.
 - A Docker network to put these containers on so they can resolve each other by name.
 - A single node Consul instance to coordinate the Mimir cluster.
 
-**Note**: If you chose to deploy the single instance, single process deployment using the `filesystem` storage backend, you must now switch to using an external 
+**Note**: If you chose to deploy the single instance, single process deployment using the `filesystem` storage backend, you must now switch to using an external
 object store. See the [blocks storage documentation](../blocks-storage/_index.md) for information on supported backends.
 
 ```sh
