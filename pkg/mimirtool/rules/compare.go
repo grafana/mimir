@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	errNameDiff      = errors.New("rule groups are named differently")
-	errIntervalDiff  = errors.New("rule groups have different intervals")
-	errDiffRuleLen   = errors.New("rule groups have a different number of rules")
-	errDiffRWConfigs = errors.New("rule groups has different remote write configs")
+	errNameDiff          = errors.New("rule groups are named differently")
+	errIntervalDiff      = errors.New("rule groups have different intervals")
+	errDiffRuleLen       = errors.New("rule groups have a different number of rules")
+	errDiffRWConfigs     = errors.New("rule groups have different remote write configs")
+	errDiffSourceTenants = errors.New("rule groups have different source tenants")
 )
 
 // NamespaceState is used to denote the difference between the staged namespace
@@ -94,6 +95,23 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 	for i := range groupOne.RWConfigs {
 		if groupOne.RWConfigs[i].URL != groupTwo.RWConfigs[i].URL {
 			return errDiffRWConfigs
+		}
+	}
+
+	// compare source tenants ignoring their order
+	if len(groupOne.SourceTenants) != len(groupTwo.SourceTenants) {
+		return errDiffSourceTenants
+	}
+
+	oneSourceTenants := make(map[string]struct{}, len(groupOne.SourceTenants))
+
+	for _, tenant := range groupOne.SourceTenants {
+		oneSourceTenants[tenant] = struct{}{}
+	}
+
+	for _, tenant := range groupTwo.SourceTenants {
+		if _, ok := oneSourceTenants[tenant]; !ok {
+			return errDiffSourceTenants
 		}
 	}
 
