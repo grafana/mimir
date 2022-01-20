@@ -32,8 +32,8 @@ func TestGettingStartedWithGossipedRing(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks-gossip-1.yaml", "config1.yaml"))
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks-gossip-1.yaml", "config1.yaml"))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks-gossip-2.yaml", "config2.yaml"))
 
 	// We don't care for storage part too much here. Both Mimir instances will write new blocks to /tmp, but that's fine.
 	flags := map[string]string{

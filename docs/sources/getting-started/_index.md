@@ -28,7 +28,7 @@ You can reconfigure the config to use GCS, Azure storage or local storage as sho
 
 ```sh
 $ go build ./cmd/mimir
-$ ./mimir -config.file=./docs/configuration/single-process-config-blocks.yaml
+$ ./mimir -config.file=./docs/sources/configuration/single-process-config-blocks.yaml
 ```
 
 Unless reconfigured this starts a single Mimir node storing blocks to S3 in bucket `mimir`.
@@ -87,14 +87,14 @@ Next we'll run a couple of Mimir instances pointed at that Consul. You'll note t
 
 ```sh
 $ docker run -d --name=mimir1 --network=mimir \
-    -v $(pwd)/docs/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
+    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9001:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
     -ring.store=consul \
     -consul.hostname=consul:8500
 $ docker run -d --name=mimir2 --network=mimir \
-    -v $(pwd)/docs/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
+    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9002:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
@@ -151,7 +151,7 @@ Then, launch 3 Mimir nodes with replication factor 3:
 
 ```sh
 $ docker run -d --name=mimir1 --network=mimir \
-    -v $(pwd)/docs/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
+    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9001:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
@@ -159,7 +159,7 @@ $ docker run -d --name=mimir1 --network=mimir \
     -consul.hostname=consul:8500 \
     -distributor.replication-factor=3
 $ docker run -d --name=mimir2 --network=mimir \
-    -v $(pwd)/docs/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
+    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9002:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
@@ -167,7 +167,7 @@ $ docker run -d --name=mimir2 --network=mimir \
     -consul.hostname=consul:8500 \
     -distributor.replication-factor=3
 $ docker run -d --name=mimir3 --network=mimir \
-    -v $(pwd)/docs/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
+    -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9003:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \

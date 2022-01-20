@@ -1,6 +1,6 @@
 DOCS_IMAGE   = grafana/docs-base:latest
 DOCS_PROJECT = mimir
-DOCS_DIR     = docs
+DOCS_DIR     = docs/sources
 
 # This allows ports and base URL to be overridden, so services like ngrok.io can
 # be used to share a local running docs instances.

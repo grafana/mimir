@@ -27,8 +27,8 @@ $ go build ./cmd/mimir
 Run two instances of Cortex, each one with its own dedicated config file:
 
 ```
-$ ./mimir -config.file docs/configuration/single-process-config-blocks-gossip-1.yaml
-$ ./mimir -config.file docs/configuration/single-process-config-blocks-gossip-2.yaml
+$ ./mimir -config.file docs/sources/configuration/single-process-config-blocks-gossip-1.yaml
+$ ./mimir -config.file docs/sources/configuration/single-process-config-blocks-gossip-2.yaml
 ```
 
 Download Prometheus and configure it to use our first Cortex instance for remote writes.
@@ -77,7 +77,7 @@ being ACTIVE and ready to receive samples.
 
 ## How to add another instance?
 
-To add another Cortex to the small cluster, copy `docs/configuration/single-process-config-blocks-gossip-1.yaml` to a new file,
+To add another Cortex to the small cluster, copy `docs/sources/configuration/single-process-config-blocks-gossip-1.yaml` to a new file,
 and make following modifications. We assume that third Cortex will run on the same machine again, so we change node name and ingester ID as well. Here
 is annotated diff:
 

@@ -175,7 +175,7 @@ overrides:
 			require.NoError(t, writeFileToSharedDir(s, overridesFile, []byte{}))
 
 			// Start Cortex in single binary mode, reading the config from file.
-			require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+			require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
 			flags := map[string]string{
 				"-runtime-config.reload-period":  "100ms",
