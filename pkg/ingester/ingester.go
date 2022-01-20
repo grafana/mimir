@@ -130,14 +130,6 @@ type TSDBState struct {
 
 	// Number of series in memory, across all tenants.
 	seriesCount atomic.Int64
-
-	// Head compactions metrics.
-	compactionsTriggered   prometheus.Counter
-	compactionsFailed      prometheus.Counter
-	walReplayTime          prometheus.Histogram
-	appenderAddDuration    prometheus.Histogram
-	appenderCommitDuration prometheus.Histogram
-	idleTsdbChecks         *prometheus.CounterVec
 }
 
 type requestWithUsersAndCallback struct {
@@ -146,21 +138,6 @@ type requestWithUsersAndCallback struct {
 }
 
 func newTSDBState(cfg Config, bucketClient objstore.Bucket, registerer prometheus.Registerer) TSDBState {
-	idleTsdbChecks := promauto.With(registerer).NewCounterVec(prometheus.CounterOpts{
-		Name: "cortex_ingester_idle_tsdb_checks_total",
-		Help: "The total number of various results for idle TSDB checks.",
-	}, []string{"result"})
-
-	idleTsdbChecks.WithLabelValues(string(tsdbShippingDisabled))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotIdle))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotCompacted))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotShipped))
-	idleTsdbChecks.WithLabelValues(string(tsdbCheckFailed))
-	idleTsdbChecks.WithLabelValues(string(tsdbCloseFailed))
-	idleTsdbChecks.WithLabelValues(string(tsdbNotActive))
-	idleTsdbChecks.WithLabelValues(string(tsdbDataRemovalFailed))
-	idleTsdbChecks.WithLabelValues(string(tsdbTenantMarkedForDeletion))
-	idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))
 
 	return TSDBState{
 		dbs:                 make(map[string]*userTSDB),
@@ -169,33 +146,6 @@ func newTSDBState(cfg Config, bucketClient objstore.Bucket, registerer prometheu
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
 		shipTrigger:         make(chan requestWithUsersAndCallback),
 		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-
-		compactionsTriggered: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_compactions_triggered_total",
-			Help: "Total number of triggered compactions.",
-		}),
-
-		compactionsFailed: promauto.With(registerer).NewCounter(prometheus.CounterOpts{
-			Name: "cortex_ingester_tsdb_compactions_failed_total",
-			Help: "Total number of compactions that failed.",
-		}),
-		walReplayTime: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_tsdb_wal_replay_duration_seconds",
-			Help:    "The total time it takes to open and replay a TSDB WAL.",
-			Buckets: prometheus.DefBuckets,
-		}),
-		appenderAddDuration: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_tsdb_appender_add_duration_seconds",
-			Help:    "The total time it takes for a push request to add samples to the TSDB appender.",
-			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
-		}),
-		appenderCommitDuration: promauto.With(registerer).NewHistogram(prometheus.HistogramOpts{
-			Name:    "cortex_ingester_tsdb_appender_commit_duration_seconds",
-			Help:    "The total time it takes for a push request to commit samples appended to TSDB.",
-			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
-		}),
-
-		idleTsdbChecks: idleTsdbChecks,
 	}
 }
 
@@ -816,7 +766,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	}
 
 	// At this point all samples have been added to the appender, so we can track the time it took.
-	i.TSDBState.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
+	i.metrics.appenderAddDuration.Observe(time.Since(startAppend).Seconds())
 
 	if span != nil {
 		span.LogFields(otlog.String("event", "start commit"),
@@ -830,7 +780,7 @@ func (i *Ingester) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReques
 	if err := app.Commit(); err != nil {
 		return nil, wrapWithUser(err, userID)
 	}
-	i.TSDBState.appenderCommitDuration.Observe(time.Since(startCommit).Seconds())
+	i.metrics.appenderCommitDuration.Observe(time.Since(startCommit).Seconds())
 
 	// If only invalid samples are pushed, don't change "last update", as TSDB was not modified.
 	if succeededSamplesCount > 0 {
@@ -1672,7 +1622,7 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				i.tsdbStateDBMtx.Unlock()
 				i.metrics.memUsers.Inc()
 
-				i.TSDBState.walReplayTime.Observe(time.Since(startTime).Seconds())
+				i.metrics.walReplayTime.Observe(time.Since(startTime).Seconds())
 			}
 
 			return nil
@@ -1927,7 +1877,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 
 		var err error
 
-		i.TSDBState.compactionsTriggered.Inc()
+		i.metrics.compactionsTriggered.Inc()
 
 		reason := ""
 		switch {
@@ -1946,7 +1896,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 		}
 
 		if err != nil {
-			i.TSDBState.compactionsFailed.Inc()
+			i.metrics.compactionsFailed.Inc()
 			level.Warn(i.logger).Log("msg", "TSDB blocks compaction for user has failed", "user", userID, "err", err, "compactReason", reason)
 		} else {
 			level.Debug(i.logger).Log("msg", "TSDB blocks compaction completed successfully", "user", userID, "compactReason", reason)
@@ -1964,7 +1914,7 @@ func (i *Ingester) closeAndDeleteIdleUserTSDBs(ctx context.Context) error {
 
 		result := i.closeAndDeleteUserTSDBIfIdle(userID)
 
-		i.TSDBState.idleTsdbChecks.WithLabelValues(string(result)).Inc()
+		i.metrics.idleTsdbChecks.WithLabelValues(string(result)).Inc()
 	}
 
 	return nil
