@@ -161,6 +161,12 @@ func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shar
 		jobs = append(jobs[:idx], jobs[idx+1:]...)
 	}
 
+	// Jobs will be sorted later using configured job sorting algorithm.
+	// Here we sort them by sharding key, to keep the output stable for testing.
+	sort.SliceStable(jobs, func(i, j int) bool {
+		return jobs[i].shardingKey() < jobs[j].shardingKey()
+	})
+
 	return jobs
 }
 

@@ -3683,14 +3683,8 @@ sharding_ring:
   # CLI flag: -compactor.ring.wait-active-instance-timeout
   [wait_active_instance_timeout: <duration> | default = 10m]
 
-# The compaction strategy to use. Supported values are: default,
-# split-and-merge.
-# CLI flag: -compactor.compaction-strategy
-[compaction_strategy: <string> | default = "default"]
-
 # The sorting to use when deciding which compaction jobs should run first for a
-# given tenant. Changing this setting is not supported by the default compaction
-# strategy. Supported values are: smallest-range-oldest-blocks-first,
+# given tenant. Supported values are: smallest-range-oldest-blocks-first,
 # newest-blocks-first.
 # CLI flag: -compactor.compaction-jobs-order
 [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
