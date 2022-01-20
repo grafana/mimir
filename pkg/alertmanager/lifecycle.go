@@ -9,7 +9,7 @@ import (
 	"github.com/grafana/dskit/ring"
 )
 
-func (r *MultitenantAlertmanager) OnRingInstanceRegister(_ *ring.BasicLifecycler, ringDesc ring.Desc, instanceExists bool, instanceID string, instanceDesc ring.InstanceDesc) (ring.InstanceState, ring.Tokens) {
+func (am *MultitenantAlertmanager) OnRingInstanceRegister(_ *ring.BasicLifecycler, ringDesc ring.Desc, instanceExists bool, instanceID string, instanceDesc ring.InstanceDesc) (ring.InstanceState, ring.Tokens) {
 	// When we initialize the alertmanager instance in the ring we want to start from
 	// a clean situation, so whatever is the state we set it JOINING, while we keep existing
 	// tokens (if any).
@@ -27,7 +27,7 @@ func (r *MultitenantAlertmanager) OnRingInstanceRegister(_ *ring.BasicLifecycler
 	return ring.JOINING, tokens
 }
 
-func (r *MultitenantAlertmanager) OnRingInstanceTokens(_ *ring.BasicLifecycler, _ ring.Tokens) {}
-func (r *MultitenantAlertmanager) OnRingInstanceStopping(_ *ring.BasicLifecycler)              {}
-func (r *MultitenantAlertmanager) OnRingInstanceHeartbeat(_ *ring.BasicLifecycler, _ *ring.Desc, _ *ring.InstanceDesc) {
+func (am *MultitenantAlertmanager) OnRingInstanceTokens(_ *ring.BasicLifecycler, _ ring.Tokens) {}
+func (am *MultitenantAlertmanager) OnRingInstanceStopping(_ *ring.BasicLifecycler)              {}
+func (am *MultitenantAlertmanager) OnRingInstanceHeartbeat(_ *ring.BasicLifecycler, _ *ring.Desc, _ *ring.InstanceDesc) {
 }
