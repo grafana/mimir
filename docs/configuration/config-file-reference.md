@@ -144,7 +144,8 @@ tenant_federation:
 
 activity_tracker:
   # File where ongoing activities are stored. If empty, activity tracking is
-  # disabled.
+  # disabled. Default location may differ depending on the OS setting for
+  # placing temporary files.
   # CLI flag: -activity-tracker.filepath
   [filepath: <string> | default = "/tmp/metrics-activity.log"]
 
