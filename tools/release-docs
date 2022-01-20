@@ -9,10 +9,10 @@ It is assumed that the documentation being released is the "latest" and the webs
 will be updated to reflect that.
 
 Usage:
-  $0 <website repository directory> <version>
+  $0 <website repository directory> <tag>
 
 Examples:
-  $0 ~/ext/grafana/website 1.12.0
+  $0 ~/ext/grafana/website v1.12.0
 EOF
 }
 
@@ -22,7 +22,10 @@ if [[ $# -ne 2 ]]; then
 fi
 
 readonly WEBSITE_DIR="$1"
-readonly VERSION="$2"
+# TAG is the git tag for the release.
+readonly TAG="$2"
+# VERSION is TAG without the leading 'v'.
+readonly VERSION="${TAG/v/}"
 
 readonly DRY_RUN="${DRY_RUN:-0}"
 
@@ -51,7 +54,7 @@ trap "cleanup" INT TERM EXIT
 
 cd "${MIMIR_DIR}"
 git fetch --tags
-git checkout "${VERSION}" || (echo "Release tag '${VERSION}' does not exist locally. Refusing to continue." && exit 1)
+git checkout "${TAG}" || (echo "Release tag '${TAG}' does not exist locally. Refusing to continue." && exit 1)
 
 cd "${WEBSITE_DIR}"
 # Create a new branch for the changes.
