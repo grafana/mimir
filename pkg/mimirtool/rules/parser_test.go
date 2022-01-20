@@ -94,6 +94,31 @@ func TestParseFiles(t *testing.T) {
 				},
 			},
 		},
+		{
+			name:    "federated_rule_groups",
+			backend: CortexBackend,
+			files: []string{
+				"testdata/mimir_federated_rules.yaml",
+			},
+			want: map[string]RuleNamespace{
+				"example_namespace": {
+					Namespace: "example_namespace",
+					Groups: []rwrulefmt.RuleGroup{
+						{
+							RuleGroup: rulefmt.RuleGroup{
+								SourceTenants: []string{"tenant-1", "tenant-2"},
+								Name:          "example_federated_rule_group",
+								Rules: []rulefmt.RuleNode{
+									{
+										// currently, the tests only check length
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -143,6 +168,14 @@ func compareNamespace(g, w RuleNamespace) error {
 		}
 		if len(g.Groups[i].Rules) != len(w.Groups[i].Rules) {
 			return fmt.Errorf("length of rules do not match, actual=%v expected=%v", len(g.Groups[i].Rules), len(w.Groups[i].Rules))
+		}
+		if len(g.Groups[i].SourceTenants) != len(w.Groups[i].SourceTenants) {
+			return fmt.Errorf("length of source tenants does not match, actual=%d, expected=%d", len(g.Groups[i].SourceTenants), len(w.Groups[i].SourceTenants))
+		}
+		for j, got := range g.Groups[i].SourceTenants {
+			if want := w.Groups[i].SourceTenants[j]; got != want {
+				return fmt.Errorf("tenant %d (0-indexed) is different, actual=%s, expected=%s", j, got, want)
+			}
 		}
 	}
 
