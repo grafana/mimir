@@ -147,7 +147,7 @@ activity_tracker:
   # disabled. Default location may differ depending on the OS setting for
   # placing temporary files.
   # CLI flag: -activity-tracker.filepath
-  [filepath: <string> | default = "/tmp/metrics-activity.log"]
+  [filepath: <string> | default = "<tempdir>/metrics-activity.log"]
 
   # Max number of concurrent activities that can be tracked. Used to size the
   # file in advance. Additional activities are ignored.
