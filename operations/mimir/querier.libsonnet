@@ -59,8 +59,7 @@
     (if $._config.cortex_querier_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
-    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1) +
-    $.storage_config_mixin,
+    deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 
   querier_deployment:
     self.newQuerierDeployment('querier', $.querier_container),

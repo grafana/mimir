@@ -57,9 +57,10 @@
 * [CHANGE] Compactor: removed overlapping sources detection. Overlapping sources may exist due to edge cases (timing issues) when horizontally sharding compactor with `split-and-merge` strategy, but are correctly handled by compactor. #494
 * [CHANGE] Rename metric `cortex_query_fetched_chunks_bytes_total` to `cortex_query_fetched_chunk_bytes_total` to be consistent with the limit name. #476
 * [CHANGE] The `status_code` label on gRPC client metrics has changed from '200' and '500' to '2xx', '5xx', '4xx', 'cancel' or 'error'. #537
-* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #760 #762 #764 #789 #813
+* [CHANGE] Remove chunks storage engine. #510 #545 #743 #744 #748 #753 #755 #757 #758 #759 #760 #762 #764 #789 #812 #813
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-store.engine`
+    * `-schema-config-file`
     * `-ingester.checkpoint-duration`
     * `-ingester.checkpoint-enabled`
     * `-ingester.chunk-encoding`
@@ -265,12 +266,13 @@
 
 ### Mixin (changes since `grafana/cortex-jsonnet` `1.9.0`)
 
-* [CHANGE] Removed chunks storage support from mixin. #641 #643 #645 #811 #813
+* [CHANGE] Removed chunks storage support from mixin. #641 #643 #645 #811 #812 #813
   * Removed `tsdb.libsonnet`: no need to import it anymore (its content is already automatically included when using Jsonnet)
   * Removed the following fields from `_config`:
     * `storage_engine` (defaults to `blocks`)
     * `chunk_index_backend`
     * `chunk_store_backend`
+  * Removed schema config map
   * Removed the following dashboards:
     * "Cortex / Chunks"
     * "Cortex / WAL"

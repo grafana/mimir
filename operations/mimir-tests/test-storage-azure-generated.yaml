@@ -257,15 +257,6 @@ metadata:
   name: overrides
   namespace: default
 ---
-apiVersion: v1
-data:
-  config.yaml: |
-    configs: []
-kind: ConfigMap
-metadata:
-  name: schema-fa9497f5acccafcc3e6019657bdc5eb1
-  namespace: default
----
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -817,8 +808,6 @@ spec:
       maxUnavailable: 1
   template:
     metadata:
-      annotations:
-        schemaID: fa9497f5acccafcc3e6019657bdc5eb1
       labels:
         name: querier
     spec:
@@ -860,7 +849,6 @@ spec:
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
         - -runtime-config.file=/etc/cortex/overrides.yaml
-        - -schema-config-file=/etc/cortex/schema/config.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-write-timeout=1m
@@ -897,15 +885,10 @@ spec:
         volumeMounts:
         - mountPath: /etc/cortex
           name: overrides
-        - mountPath: /etc/cortex/schema
-          name: schema-fa9497f5acccafcc3e6019657bdc5eb1
       volumes:
       - configMap:
           name: overrides
         name: overrides
-      - configMap:
-          name: schema-fa9497f5acccafcc3e6019657bdc5eb1
-        name: schema-fa9497f5acccafcc3e6019657bdc5eb1
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1063,8 +1046,6 @@ spec:
       maxUnavailable: 1
   template:
     metadata:
-      annotations:
-        schemaID: fa9497f5acccafcc3e6019657bdc5eb1
       labels:
         name: ruler
     spec:
@@ -1112,7 +1093,6 @@ spec:
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -runtime-config.file=/etc/cortex/overrides.yaml
-        - -schema-config-file=/etc/cortex/schema/config.yaml
         - -server.grpc-max-recv-msg-size-bytes=10485760
         - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1148,16 +1128,11 @@ spec:
         volumeMounts:
         - mountPath: /etc/cortex
           name: overrides
-        - mountPath: /etc/cortex/schema
-          name: schema-fa9497f5acccafcc3e6019657bdc5eb1
       terminationGracePeriodSeconds: 600
       volumes:
       - configMap:
           name: overrides
         name: overrides
-      - configMap:
-          name: schema-fa9497f5acccafcc3e6019657bdc5eb1
-        name: schema-fa9497f5acccafcc3e6019657bdc5eb1
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -1280,7 +1255,6 @@ spec:
         - -compactor.ring.store=consul
         - -compactor.sharding-enabled=true
         - -runtime-config.file=/etc/cortex/overrides.yaml
-        - -schema-config-file=/etc/cortex/schema/config.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -target=compactor
@@ -1380,7 +1354,6 @@ spec:
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
         - -runtime-config.file=/etc/cortex/overrides.yaml
-        - -schema-config-file=/etc/cortex/schema/config.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc-max-recv-msg-size-bytes=10485760
         - -server.grpc-max-send-msg-size-bytes=10485760
@@ -1706,7 +1679,6 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -runtime-config.file=/etc/cortex/overrides.yaml
-        - -schema-config-file=/etc/cortex/schema/config.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -store-gateway.sharding-enabled=true
