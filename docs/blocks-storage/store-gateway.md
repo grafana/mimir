@@ -499,7 +499,7 @@ blocks_storage:
   filesystem:
     # Local filesystem storage directory.
     # CLI flag: -blocks-storage.filesystem.dir
-    [dir: <string> | default = ""]
+    [dir: <string> | default = "blocks"]
 
   # This configures how the querier and store-gateway discover and synchronize
   # blocks stored in the bucket.

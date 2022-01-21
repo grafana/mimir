@@ -1529,7 +1529,7 @@ swift:
 filesystem:
   # Local filesystem storage directory.
   # CLI flag: -ruler-storage.filesystem.dir
-  [dir: <string> | default = ""]
+  [dir: <string> | default = "ruler"]
 
 local:
   # Directory to scan for rules
@@ -1929,7 +1929,7 @@ swift:
 filesystem:
   # Local filesystem storage directory.
   # CLI flag: -alertmanager-storage.filesystem.dir
-  [dir: <string> | default = ""]
+  [dir: <string> | default = "alertmanager"]
 
 local:
   # Path at which alertmanager configurations are stored.
@@ -2902,7 +2902,7 @@ swift:
 filesystem:
   # Local filesystem storage directory.
   # CLI flag: -blocks-storage.filesystem.dir
-  [dir: <string> | default = ""]
+  [dir: <string> | default = "blocks"]
 
 # This configures how the querier and store-gateway discover and synchronize
 # blocks stored in the bucket.
