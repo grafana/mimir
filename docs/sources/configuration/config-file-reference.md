@@ -2539,8 +2539,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # The amount of shards to use when doing parallelisation via query sharding by
 # tenant. 0 to disable query sharding for tenant. Query sharding implementation
 # will adjust the number of query shards based on compactor shards used by
-# split-and-merge compaction strategy. This allows querier to not search the
-# blocks which cannot possibly have the series for given query shard.
+# compactor. This allows querier to not search the blocks which cannot possibly
+# have the series for given query shard.
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 
@@ -2596,22 +2596,18 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -compactor.blocks-retention-period
 [compactor_blocks_retention_period: <duration> | default = 0s]
 
-# The number of shards to use when splitting blocks. This config option is used
-# only when split-and-merge compaction strategy is in use. 0 to disable
-# splitting but keep using the split-and-merge compaction strategy.
+# The number of shards to use when splitting blocks. 0 to disable splitting.
 # CLI flag: -compactor.split-and-merge-shards
 [compactor_split_and_merge_shards: <int> | default = 0]
 
 # Number of groups that blocks for splitting should be grouped into. Each group
 # of blocks is then split separately. Number of output split shards is
-# controlled by -compactor.split-and-merge-shards. Only used when
-# split-and-merge compaction strategy is in used.
+# controlled by -compactor.split-and-merge-shards.
 # CLI flag: -compactor.split-groups
 [compactor_split_groups: <int> | default = 1]
 
-# Max number of compactors that can compact blocks for single tenant. Only used
-# when split-and-merge compaction strategy is in use. 0 to disable the limit and
-# use all compactors.
+# Max number of compactors that can compact blocks for single tenant. 0 to
+# disable the limit and use all compactors.
 # CLI flag: -compactor.compactor-tenant-shard-size
 [compactor_tenant_shard_size: <int> | default = 0]
 

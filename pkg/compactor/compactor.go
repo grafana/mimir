@@ -185,17 +185,14 @@ type ConfigProvider interface {
 	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
 	CompactorBlocksRetentionPeriod(user string) time.Duration
 
-	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
-	// (used only when split-and-merge compaction strategy is enabled).
+	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
 
-	// CompactorSplitGroupsCount returns the number of groups that blocks used for splitting should
+	// CompactorSplitGroups returns the number of groups that blocks used for splitting should
 	// be grouped into. Different groups are then split by different jobs.
-	// Used only when split-and-merge compaction strategy is enabled.
 	CompactorSplitGroups(userID string) int
 
-	// CompactorTenantShardSize returns number of compactors that this user can use. Only used
-	// for split-and-merge compaction strategy. 0 = all compactors.
+	// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
 }
 
@@ -778,7 +775,7 @@ func (n *noShardingStrategy) ownJob(job *Job) (bool, error) {
 	return n.ownUser(job.UserID()), nil
 }
 
-// splitAndMergeShardingStrategy is used with split-and-merge compaction strategy.
+// splitAndMergeShardingStrategy is used by split-and-merge compactor when configured with sharding.
 // All compactors from user's shard own the user for compaction purposes, and plan jobs.
 // Each job is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
@@ -809,7 +806,7 @@ func (s *splitAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (boo
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, userID)
 }
 
-// When using split-and-merge compaction strategy, ALL compactors should plan jobs for all users.
+// ALL compactors should plan jobs for all users.
 func (s *splitAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, error) {
 	if !s.allowedTenants.IsAllowed(userID) {
 		return false, nil

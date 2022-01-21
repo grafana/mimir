@@ -49,8 +49,6 @@ type Limits interface {
 	QueryShardingMaxShardedQueries(userID string) int
 
 	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
-	// (used only when split-and-merge compaction strategy is enabled).
-	//
 	// This method is copied from compactor.ConfigProvider.
 	CompactorSplitAndMergeShards(userID string) int
 }
