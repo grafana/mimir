@@ -58,6 +58,12 @@ The current team members are:
 - Peter Štibraný - [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid - [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
 
+Previous team members:
+
+- Goutham Veeramachaneni - [@gouthamve](https://github.com/gouthamve) ([Grafana Labs](https://grafana.com/))
+- Jacob Lisi - [@jtlisi](https://github.com/jtlisi) ([Grafana Labs](https://grafana.com/))
+- Tom Wilkie - [@tomwilkie](https://github.com/tomwilkie) ([Grafana Labs](https://grafana.com/))
+
 ### Maintainers
 
 Maintainers lead one or more project(s) or parts thereof and serve as a point of conflict resolution amongst the contributors to this project. Ideally, maintainers are also team members, but exceptions are possible for suitable maintainers that, for whatever reason, are not yet team members.
