@@ -80,7 +80,7 @@ type BlocksCompactorFactory func(
 
 // Config holds the MultitenantCompactor config.
 type Config struct {
-	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges"`
+	BlockRanges           mimir_tsdb.DurationList `yaml:"block_ranges" category:"advanced"`
 	BlockSyncConcurrency  int                     `yaml:"block_sync_concurrency"`
 	MetaSyncConcurrency   int                     `yaml:"meta_sync_concurrency"`
 	ConsistencyDelay      time.Duration           `yaml:"consistency_delay"`
