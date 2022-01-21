@@ -5,7 +5,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     ($.dashboard('Scaling') + { uid: '88c041017b96856c9176e07cf557bdcf' })
     .addClusterSelectorTemplates()
     .addRow(
-      ($.row('Mimir Service Scaling') + { height: '200px' })
+      ($.row('Service Scaling') + { height: '200px' })
       .addPanel({
         type: 'text',
         title: '',
