@@ -36,7 +36,7 @@
   query_frontend_args+:: if !$._config.cortex_query_sharding_enabled then {} else
     // When sharding is enabled, query-frontend runs PromQL engine internally.
     $._config.queryEngineConfig {
-      'query-frontend.parallelize-shardable-queries': true,
+      'frontend.parallelize-shardable-queries': true,
       // disable query sharding by default for all tenants
       'frontend.query-sharding-total-shards': 0,
       // Adjust max query parallelism to 16x sharding, without sharding we can run a full 15d queries in parallel.

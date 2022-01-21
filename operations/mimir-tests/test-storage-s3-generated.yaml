@@ -920,15 +920,15 @@ spec:
       containers:
       - args:
         - -api.response-compression-enabled=true
+        - -frontend.align-querier-with-step=false
+        - -frontend.cache-results=true
         - -frontend.max-cache-freshness=10m
         - -frontend.results-cache.backend=memcached
         - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
         - -frontend.results-cache.memcached.timeout=500ms
         - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
+        - -frontend.split-queries-by-interval=24h
         - -log.level=debug
-        - -querier.align-querier-with-step=false
-        - -querier.cache-results=true
-        - -querier.split-queries-by-interval=24h
         - -runtime-config.file=/etc/cortex/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
