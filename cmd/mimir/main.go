@@ -96,7 +96,6 @@ func main() {
 	flag.BoolVar(&printVersion, "version", false, "Print application version and exit.")
 	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
 
-	usage := flag.CommandLine.Usage
 	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
 
@@ -104,7 +103,11 @@ func main() {
 	if err == flag.ErrHelp {
 		// Print available parameters to stdout, so that users can grep/less it easily.
 		flag.CommandLine.SetOutput(os.Stdout)
-		usage()
+		if err := usage(&cfg, categoryBasic); err != nil {
+			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
+			os.Exit(1)
+		}
+
 		if !testMode {
 			os.Exit(2)
 		}
