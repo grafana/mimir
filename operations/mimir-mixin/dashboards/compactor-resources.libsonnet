@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-compactor-resources.json':
-    ($.dashboard('Mimir / Compactor Resources') + { uid: 'df9added6f1f4332f95848cca48ebd99' })
+    ($.dashboard('Compactor Resources') + { uid: 'df9added6f1f4332f95848cca48ebd99' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('CPU and Memory')

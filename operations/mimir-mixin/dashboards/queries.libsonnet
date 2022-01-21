@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-queries.json':
-    ($.dashboard('Mimir / Queries') + { uid: 'd9931b1054053c8b972d320774bb8f1d' })
+    ($.dashboard('Queries') + { uid: 'd9931b1054053c8b972d320774bb8f1d' })
     .addClusterSelectorTemplates()
     .addRow(
       $.row('Query Frontend')

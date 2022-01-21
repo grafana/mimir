@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-tenants.json':
-    ($.dashboard('Mimir / Tenants') + { uid: '35fa247ce651ba189debf33d7ae41611' })
+    ($.dashboard('Tenants') + { uid: '35fa247ce651ba189debf33d7ae41611' })
     .addClusterSelectorTemplates()
     .addActiveUserSelectorTemplates()
     .addCustomTemplate('limit', ['10', '50', '100', '500', '1000'])

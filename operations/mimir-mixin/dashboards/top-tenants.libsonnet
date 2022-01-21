@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-top-tenants.json':
-    ($.dashboard('Mimir / Top tenants') + { uid: 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' })
+    ($.dashboard('Top tenants') + { uid: 'bc6e12d4fe540e4a1785b9d3ca0ffdd9' })
     .addClusterSelectorTemplates()
     .addCustomTemplate('limit', ['10', '50', '100'])
     .addRowIf(

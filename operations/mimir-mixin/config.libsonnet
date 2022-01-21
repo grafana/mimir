@@ -3,6 +3,9 @@
   grafanaDashboardShards: 4,
 
   _config+:: {
+    // The product name used when building dashboards.
+    product: 'Mimir',
+
     // Tags for dashboards.
     tags: ['cortex'],
 
