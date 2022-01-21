@@ -5,7 +5,7 @@ set -eu -o pipefail
 SCRIPT_DIR=$(realpath "$(dirname "${0}")")
 
 # List all alerts.
-ALERTS=$(yq eval '.groups.[].rules.[].alert' "${SCRIPT_DIR}/../out/alerts.yaml" 2> /dev/stdout)
+ALERTS=$(yq eval '.groups.[].rules.[].alert' "${SCRIPT_DIR}/../../mimir-mixin-compiled/alerts.yaml" 2> /dev/stdout)
 if [ $? -ne 0 ]; then
   echo "Unable to list alerts. Got output:"
   echo "$ALERTS"
