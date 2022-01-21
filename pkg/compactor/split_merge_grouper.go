@@ -164,7 +164,12 @@ func planCompaction(userID string, blocks []*metadata.Meta, ranges []int64, shar
 	// Jobs will be sorted later using configured job sorting algorithm.
 	// Here we sort them by sharding key, to keep the output stable for testing.
 	sort.SliceStable(jobs, func(i, j int) bool {
-		return jobs[i].shardingKey() < jobs[j].shardingKey()
+		if iKey, jKey := jobs[i].shardingKey(), jobs[j].shardingKey(); iKey != jKey {
+			return iKey < jKey
+		}
+
+		// The sharding key could be equal but external labels can still be different.
+		return defaultGroupKeyWithoutShardID(jobs[i].blocks[0].Thanos) < defaultGroupKeyWithoutShardID(jobs[j].blocks[0].Thanos)
 	})
 
 	return jobs
