@@ -34,8 +34,8 @@ import (
 )
 
 const (
-	// ResultsCacheBackendMemcached is the value for the memcached results cache backend.
-	ResultsCacheBackendMemcached = "memcached"
+	// resultsCacheBackendMemcached is the value for the memcached results cache backend.
+	resultsCacheBackendMemcached = "memcached"
 
 	// cacheControlHeader is the name of the cache control header.
 	cacheControlHeader = "Cache-Control"
@@ -45,9 +45,7 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{ResultsCacheBackendMemcached}
-
-	errUnsupportedResultsCacheBackend = errors.New("unsupported results cache backend")
+	supportedResultsCacheBackends = []string{resultsCacheBackendMemcached}
 )
 
 // ResultsCacheConfig is the config for the results cache.
@@ -66,29 +64,33 @@ func (cfg *ResultsCacheConfig) RegisterFlags(f *flag.FlagSet) {
 
 func (cfg *ResultsCacheConfig) Validate() error {
 	if cfg.Backend != "" && !util.StringsContain(supportedResultsCacheBackends, cfg.Backend) {
-		return errUnsupportedResultsCacheBackend
+		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == ResultsCacheBackendMemcached {
+	if cfg.Backend == resultsCacheBackendMemcached {
 		if err := cfg.Memcached.Validate(); err != nil {
-			return nil
+			return errors.Wrap(err, "query-frontend results cache")
 		}
 	}
 
 	if err := cfg.Compression.Validate(); err != nil {
-		return err
+		return errors.Wrap(err, "query-frontend results cache")
 	}
 
 	return nil
 }
 
+func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
+	return fmt.Errorf("unsupported cache backend: %q, supported values: %v", unsupportedBackend, supportedResultsCacheBackends)
+}
+
 // newResultsCache creates a new results cache based on the input configuration.
 func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	switch cfg.Backend {
-	case ResultsCacheBackendMemcached:
+	case resultsCacheBackendMemcached:
 		return newMemcachedResultsCache(cfg.Memcached, logger, reg)
 	default:
-		return nil, errUnsupportedResultsCacheBackend
+		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 }
 

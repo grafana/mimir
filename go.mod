@@ -58,7 +58,6 @@ require (
 	github.com/google/go-github/v32 v32.1.0
 	github.com/grafana-tools/sdk v0.0.0-20211220201350-966b3088eec9
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
-	github.com/sirupsen/logrus v1.8.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 

@@ -6,6 +6,7 @@
 package querymiddleware
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -41,17 +42,30 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 				},
 			},
 		},
+		"should fail with invalid memcached config": {
+			cfg: ResultsCacheConfig{
+				Backend: "memcached",
+				Memcached: mimir_tsdb.MemcachedClientConfig{
+					Addresses: "",
+				},
+			},
+			expected: errors.New("query-frontend results cache: no index cache backend addresses"),
+		},
 		"should fail with unsupported backend": {
 			cfg: ResultsCacheConfig{
 				Backend: "unsupported",
 			},
-			expected: errUnsupportedResultsCacheBackend,
+			expected: errUnsupportedResultsCacheBackend("unsupported"),
 		},
 	}
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			assert.Equal(t, testData.expected, testData.cfg.Validate())
+			if testData.expected != nil {
+				assert.EqualError(t, testData.cfg.Validate(), testData.expected.Error())
+			} else {
+				assert.NoError(t, testData.cfg.Validate())
+			}
 		})
 	}
 }

@@ -40,7 +40,7 @@ var (
 )
 
 // Cache is a generic interface. Re-mapping Thanos one for convenience (same packages name make it annoying to use).
-type Cache thanos_cache.Cache
+type Cache = thanos_cache.Cache
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {
