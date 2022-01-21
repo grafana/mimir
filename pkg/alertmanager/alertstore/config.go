@@ -24,7 +24,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.ExtraBackends = []string{local.Name}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
-	cfg.RegisterFlagsWithPrefix(prefix, f)
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "alertmanager", f)
 }
 
 // IsFullStateSupported returns if the given configuration supports access to FullState objects.
