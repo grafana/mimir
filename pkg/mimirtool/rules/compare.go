@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 
 	"github.com/mitchellh/colorstring"
@@ -103,14 +104,11 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 		return errDiffSourceTenants
 	}
 
-	oneSourceTenants := make(map[string]struct{}, len(groupOne.SourceTenants))
+	sort.Strings(groupOne.SourceTenants)
+	sort.Strings(groupTwo.SourceTenants)
 
-	for _, tenant := range groupOne.SourceTenants {
-		oneSourceTenants[tenant] = struct{}{}
-	}
-
-	for _, tenant := range groupTwo.SourceTenants {
-		if _, ok := oneSourceTenants[tenant]; !ok {
+	for i := range groupOne.SourceTenants {
+		if groupOne.SourceTenants[i] != groupTwo.SourceTenants[i] {
 			return errDiffSourceTenants
 		}
 	}
