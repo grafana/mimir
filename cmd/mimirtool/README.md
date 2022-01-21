@@ -115,9 +115,21 @@ It is important to note that a modification can be a PromQL expression lint or a
 
 ##### Rules Check
 
-This commands checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules. This command does not interact with your Cortex cluster.
+This command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules. This command does not interact with your Cortex cluster.
 
-    cortextool rules check ./example_rules_one.yaml
+    mimirtool rules check ./example_rules_one.yaml
+
+##### Rules Diff
+
+This command compares rules against the rules in your Mimir cluster.
+
+    mimirtool rules diff ./example_rules_one.yaml
+
+##### Rules Sync
+
+This command compares rules against the rules in your Mimir cluster. It applies any differences to your Mimir cluster.
+
+    mimirtool rules sync ./example_rules_one.yaml
 
 #### Remote Read
 
