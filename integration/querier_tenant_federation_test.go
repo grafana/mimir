@@ -65,11 +65,12 @@ func runQuerierTenantFederationTest(t *testing.T, cfg querierTenantFederationCon
 	require.NoError(t, s.StartAndWaitReady(consul, memcached))
 
 	flags := mergeFlags(BlocksStorageFlags(), map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "24h",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-tenant-federation.enabled":         "true",
+		"-querier.cache-results":                      "true",
+		"-querier.split-queries-by-interval":          "24h",
+		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-frontend.results-cache.backend":             "memcached",
+		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-tenant-federation.enabled":                  "true",
 	})
 
 	// Start the query-scheduler if enabled.

@@ -20,11 +20,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	"github.com/thanos-io/thanos/pkg/cache"
+	thanos_cache "github.com/thanos-io/thanos/pkg/cache"
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 )
 
 const (
@@ -116,7 +116,7 @@ func (cfg *MetadataCacheConfig) Validate() error {
 }
 
 func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
-	cfg := storecache.NewCachingBucketConfig()
+	cfg := cache.NewCachingBucketConfig()
 	cachingConfigured := false
 
 	chunksCache, err := createCache("chunks-cache", chunksConfig.Backend, chunksConfig.Memcached, logger, reg)
@@ -130,7 +130,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	}
 	if metadataCache != nil {
 		cachingConfigured = true
-		metadataCache = storecache.NewTracingCache(metadataCache, logger)
+		metadataCache = cache.NewTracingCache(metadataCache, logger)
 
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
@@ -138,7 +138,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
-		codec := snappyIterCodec{storecache.JSONIterCodec{}}
+		codec := snappyIterCodec{cache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
 		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
@@ -146,7 +146,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 
 	if chunksCache != nil {
 		cachingConfigured = true
-		chunksCache = storecache.NewTracingCache(chunksCache, logger)
+		chunksCache = cache.NewTracingCache(chunksCache, logger)
 
 		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
 		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.
@@ -156,7 +156,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		}
 		if chunksConfig.AttributesInMemoryMaxItems > 0 {
 			var err error
-			attributesCache, err = storecache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
+			attributesCache, err = cache.WrapWithLRUCache(attributesCache, "chunks-attributes-cache", reg, chunksConfig.AttributesInMemoryMaxItems, chunksConfig.AttributesTTL)
 			if err != nil {
 				return nil, errors.Wrapf(err, "wrap metadata cache with in-memory cache")
 			}
@@ -170,7 +170,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		return bkt, nil
 	}
 
-	return storecache.NewCachingBucket(bkt, cfg, logger, reg)
+	return cache.NewCachingBucket(bkt, cfg, logger, reg)
 }
 
 func createCache(cacheName string, backend string, memcached MemcachedClientConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
@@ -185,7 +185,7 @@ func createCache(cacheName string, backend string, memcached MemcachedClientConf
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to create memcached client")
 		}
-		return cache.NewMemcachedCache(cacheName, logger, client, reg), nil
+		return thanos_cache.NewMemcachedCache(cacheName, logger, client, reg), nil
 
 	default:
 		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, backend)
@@ -230,7 +230,7 @@ func isChunksDir(name string) bool {
 }
 
 type snappyIterCodec struct {
-	storecache.IterCodec
+	cache.IterCodec
 }
 
 func (i snappyIterCodec) Encode(files []string) ([]byte, error) {

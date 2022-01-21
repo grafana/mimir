@@ -155,6 +155,14 @@ frontend_worker:
 query_range:
   split_queries_by_interval: 24h
   parallelize_shardable_queries: true
+  align_queries_with_step: true
+  cache_results: true
+
+  results_cache:
+    backend:   "memcached"
+    memcached:
+      addresses: "dns+memcached:11211"
+    compression: snappy
 
 limits:
   # Limit max query time range to 31d

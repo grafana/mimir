@@ -8,57 +8,56 @@ package cache
 import (
 	"context"
 	"sync"
+	"time"
 
 	"go.uber.org/atomic"
 )
 
-type mockCache struct {
+type MockCache struct {
 	sync.Mutex
 	cache map[string][]byte
 }
 
-func (m *mockCache) Store(_ context.Context, keys []string, bufs [][]byte) {
-	m.Lock()
-	defer m.Unlock()
-	for i := range keys {
-		m.cache[keys[i]] = bufs[i]
-	}
-}
-
-func (m *mockCache) Fetch(ctx context.Context, keys []string) (found []string, bufs [][]byte, missing []string) {
-	m.Lock()
-	defer m.Unlock()
-	for _, key := range keys {
-		buf, ok := m.cache[key]
-		if ok {
-			found = append(found, key)
-			bufs = append(bufs, buf)
-		} else {
-			missing = append(missing, key)
-		}
-	}
-	return
-}
-
-func (m *mockCache) Stop() {
-}
-
 // NewMockCache makes a new MockCache.
-func NewMockCache() Cache {
-	return &mockCache{
+func NewMockCache() *MockCache {
+	return &MockCache{
 		cache: map[string][]byte{},
 	}
 }
 
-// NewNoopCache returns a no-op cache.
-func NewNoopCache() Cache {
-	return NewTiered(nil)
+func (m *MockCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
+	m.Lock()
+	defer m.Unlock()
+
+	for key, value := range data {
+		m.cache[key] = value
+	}
+}
+
+func (m *MockCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
+	found := make(map[string][]byte)
+
+	m.Lock()
+	defer m.Unlock()
+
+	for _, key := range keys {
+		buf, ok := m.cache[key]
+		if ok {
+			found[key] = buf
+		}
+	}
+
+	return found
+}
+
+func (m *MockCache) Name() string {
+	return "mock"
 }
 
 // InstrumentedMockCache is a mocked cache implementation which also tracks the number
 // of times its functions are called.
 type InstrumentedMockCache struct {
-	cache      Cache
+	cache      *MockCache
 	storeCount atomic.Int32
 	fetchCount atomic.Int32
 }
@@ -70,23 +69,24 @@ func NewInstrumentedMockCache() *InstrumentedMockCache {
 	}
 }
 
-func (m *InstrumentedMockCache) Store(ctx context.Context, keys []string, bufs [][]byte) {
+func (m *InstrumentedMockCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
 	m.storeCount.Inc()
-	m.cache.Store(ctx, keys, bufs)
+	m.cache.Store(ctx, data, ttl)
 }
 
-func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string) (found []string, bufs [][]byte, missing []string) {
+func (m *InstrumentedMockCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
 	m.fetchCount.Inc()
 	return m.cache.Fetch(ctx, keys)
 }
 
-func (m *InstrumentedMockCache) Stop() {
-	m.cache.Stop()
+func (m *InstrumentedMockCache) Name() string {
+	return m.cache.Name()
 }
 
 func (m *InstrumentedMockCache) CountStoreCalls() int {
 	return int(m.storeCount.Load())
 }
+
 func (m *InstrumentedMockCache) CountFetchCalls() int {
 	return int(m.fetchCount.Load())
 }

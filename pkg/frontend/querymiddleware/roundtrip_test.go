@@ -63,7 +63,7 @@ func TestRangeTripperware(t *testing.T) {
 		next: http.DefaultTransport,
 	}
 
-	tw, _, err := NewTripperware(Config{},
+	tw, err := NewTripperware(Config{},
 		log.NewNopLogger(),
 		mockLimits{},
 		PrometheusCodec,
@@ -110,7 +110,7 @@ func TestInstantTripperware(t *testing.T) {
 
 	ctx := user.InjectOrgID(context.Background(), "user-1")
 
-	tw, _, err := NewTripperware(
+	tw, err := NewTripperware(
 		Config{
 			ShardedQueries: true,
 		},
@@ -218,7 +218,7 @@ func TestTripperware_Metrics(t *testing.T) {
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
 			reg := prometheus.NewPedanticRegistry()
-			tw, _, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
+			tw, err := NewTripperware(Config{AlignQueriesWithStep: testData.stepAlignEnabled},
 				log.NewNopLogger(),
 				mockLimits{},
 				PrometheusCodec,

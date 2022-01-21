@@ -10,7 +10,6 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/thanos-io/thanos/pkg/cache"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
@@ -18,11 +17,11 @@ import (
 
 // TracingCache logs Fetch operation in the parent spans.
 type TracingCache struct {
-	c      cache.Cache
+	c      Cache
 	logger log.Logger
 }
 
-func NewTracingCache(cache cache.Cache, logger log.Logger) cache.Cache {
+func NewTracingCache(cache Cache, logger log.Logger) Cache {
 	return TracingCache{c: cache, logger: logger}
 }
 

@@ -9,7 +9,7 @@
       // Need log.level=debug so all queries are logged, needed for analyse.py.
       'log.level': 'debug',
 
-      // Increase HTTP server response write timeout, as we were seeing some
+      // Increase HTTP server response write timeout, as we were seeing some
       // queries that return a lot of data timeing out.
       'server.http-write-timeout': '1m',
 
@@ -19,9 +19,9 @@
       // Cache query results.
       'querier.align-querier-with-step': false,
       'querier.cache-results': true,
-      'frontend.memcached.hostname': 'memcached-frontend.%s.svc.cluster.local' % $._config.namespace,
-      'frontend.memcached.service': 'memcached-client',
-      'frontend.memcached.timeout': '500ms',
+      'frontend.results-cache.backend': 'memcached',
+      'frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
+      'frontend.results-cache.memcached.timeout': '500ms',
 
       // So that exporters like cloudwatch can still send in data and be un-cached.
       'frontend.max-cache-freshness': '10m',

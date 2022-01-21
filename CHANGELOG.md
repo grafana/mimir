@@ -159,6 +159,39 @@
     * `querier_cache_stale_gets_total`
     * `querier_cache_memory_bytes`
     * `cortex_rediscache_request_duration_seconds`
+* [CHANGE] Query-frontend: migrated memcached backend client to the same one used in other components (memcached config and metrics are now consistent across all Mimir services). #821
+  * The following CLI flags (and their respective YAML config options) have been added:
+    * `-frontend.results-cache.backend` (set it to `memcached` if `-querier.cache-results=true`)
+  * The following CLI flags (and their respective YAML config options) have been changed:
+    * `-frontend.memcached.hostname` and `-frontend.memcached.service`: use `-frontend.results-cache.memcached.addresses` instead
+  * The following CLI flags (and their respective YAML config options) have been renamed:
+    * `-frontend.background.write-back-concurrency` renamed to `-frontend.results-cache.memcached.max-async-concurrency`
+    * `-frontend.background.write-back-buffer` renamed to `-frontend.results-cache.memcached.max-async-buffer-size`
+    * `-frontend.memcached.batchsize` renamed to `-frontend.results-cache.memcached.max-get-multi-batch-size`
+    * `-frontend.memcached.parallelism` renamed to `-frontend.results-cache.memcached.max-get-multi-concurrency`
+    * `-frontend.memcached.timeout` renamed to `-frontend.results-cache.memcached.timeout`
+    * `-frontend.memcached.max-item-size` renamed to `-frontend.results-cache.memcached.max-item-size`
+    * `-frontend.memcached.max-idle-conns` renamed to `-frontend.results-cache.memcached.max-idle-connections`
+  * The following CLI flags (and their respective YAML config options) have been removed:
+    * `-frontend.memcached.circuit-breaker-consecutive-failures`: feature removed
+    * `-frontend.memcached.circuit-breaker-timeout`: feature removed
+    * `-frontend.memcached.circuit-breaker-interval`: feature removed
+    * `-frontend.memcached.update-interval`: new setting is hardcoded to 30s
+    * `-frontend.memcached.consistent-hash`: new setting is always enabled
+    * `-frontend.default-validity` and `-frontend.memcached.expiration`: new setting is hardcoded to 7 days
+  * The following metrics have been changed:
+    * `cortex_cache_dropped_background_writes_total{name}` changed to `thanos_memcached_operation_skipped_total{name, operation, reason}`
+    * `cortex_cache_value_size_bytes{name, method}` changed to `thanos_memcached_operation_data_size_bytes{name}`
+    * `cortex_cache_request_duration_seconds{name, method, status_code}` changed to `thanos_memcached_operation_duration_seconds{name, operation}`
+    * `cortex_cache_fetched_keys{name}` changed to `thanos_cache_memcached_requests_total{name}`
+    * `cortex_cache_hits{name}` changed to `thanos_cache_memcached_hits_total{name}`
+    * `cortex_memcache_request_duration_seconds{name, method, status_code}` changed to `thanos_memcached_operation_duration_seconds{name, operation}`
+    * `cortex_memcache_client_servers{name}` changed to `thanos_memcached_dns_provider_results{name, addr}`
+    * `cortex_memcache_client_set_skip_total{name}` changed to `thanos_memcached_operation_skipped_total{name, operation, reason}`
+    * `cortex_dns_lookups_total` changed to `thanos_memcached_dns_lookups_total`
+    * For all metrics the value of the "name" label has changed from `frontend.memcached` to `frontend-cache`
+  * The following metrics have been removed:
+    * `cortex_cache_background_queue_length{name}`
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-query-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:

@@ -168,11 +168,12 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	configFile, flags := cfg.setup(t, s)
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "24h",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
-		"-frontend.query-stats-enabled":      strconv.FormatBool(cfg.queryStatsEnabled),
+		"-querier.cache-results":                      "true",
+		"-querier.split-queries-by-interval":          "24h",
+		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-frontend.results-cache.backend":             "memcached",
+		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-frontend.query-stats-enabled":               strconv.FormatBool(cfg.queryStatsEnabled),
 	})
 
 	// Start the query-scheduler if enabled.
@@ -201,8 +202,8 @@ func runQueryFrontendTest(t *testing.T, cfg queryFrontendTestConfig) {
 	require.NoError(t, s.WaitReady(queryFrontend))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
-	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "cortex_dns_lookups_total"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
+	require.NoError(t, queryFrontend.WaitSumMetrics(e2e.Greater(0), "thanos_memcached_dns_lookups_total"))
 
 	// Wait until both the distributor and querier have updated the ring.
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring
@@ -342,7 +343,6 @@ overrides:
 `)))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.cache-results":             "true",
 		"-querier.split-queries-by-interval": "24h",
 		"-querier.max-samples":               "20", // Very low limit so that we can easily hit it, but high enough to test other features.
 

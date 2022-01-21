@@ -10,11 +10,10 @@ import (
 	lru "github.com/hashicorp/golang-lru/simplelru"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/cache"
 )
 
 type LRUCache struct {
-	c          cache.Cache
+	c          Cache
 	defaultTTL time.Duration
 	name       string
 
@@ -31,13 +30,13 @@ type cacheItem struct {
 	expiresAt time.Time
 }
 
-// WrapWithLRUCache wraps a given `cache.Cache` c with a LRU cache. The LRU cache will always store items in both caches.
+// WrapWithLRUCache wraps a given `Cache` c with a LRU cache. The LRU cache will always store items in both caches.
 // However it will only fetch items from the underlying cache if the LRU cache doesn't have the item.
 // Items fetched from the underlying cache will be stored in the LRU cache with a default TTL.
 // The LRU cache will also remove items from the underlying cache if they are expired.
 // The LRU cache is limited in number of items using `lruSize`. This means this cache is not tailored for large items or items that have a big
 // variation in size.
-func WrapWithLRUCache(c cache.Cache, name string, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (*LRUCache, error) {
+func WrapWithLRUCache(c Cache, name string, reg prometheus.Registerer, lruSize int, defaultTTL time.Duration) (*LRUCache, error) {
 	lru, err := lru.NewLRU(lruSize, nil)
 	if err != nil {
 		return nil, err

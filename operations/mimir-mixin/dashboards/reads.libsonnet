@@ -153,11 +153,31 @@ local utils = import 'mixin-utils/utils.libsonnet';
       $.row('Cache - Query Results')
       .addPanel(
         $.panel('Requests / sec') +
-        $.qpsPanel('cortex_cache_request_duration_seconds_count{method=~"frontend.+", %s}' % $.jobMatcher($._config.job_names.query_frontend))
+        $.queryPanel(
+          |||
+            # Query metrics before and after migration to new memcached backend.
+            sum (
+              rate(cortex_cache_request_duration_seconds_count{name=~"frontend.+", %(frontend)s}[$__rate_interval])
+              or
+              rate(thanos_memcached_operation_duration_seconds_count{name="frontend-cache", %(frontend)s}[$__rate_interval])
+            )
+          ||| % {
+            frontend: $.jobMatcher($._config.job_names.query_frontend),
+          },
+          'Requests/s'
+        ) +
+        { yaxes: $.yaxes('ops') },
       )
       .addPanel(
-        $.panel('Latency') +
+        $.panel('Latency (old)') +
         utils.latencyRecordingRulePanel('cortex_cache_request_duration_seconds', $.jobSelector($._config.job_names.query_frontend) + [utils.selector.re('method', 'frontend.+')])
+      )
+      .addPanel(
+        $.panel('Latency (new)') +
+        $.latencyPanel(
+          'thanos_memcached_operation_duration_seconds',
+          '{%s, name="frontend-cache"}' % $.jobMatcher($._config.job_names.query_frontend)
+        )
       )
     )
     .addRow(

@@ -922,9 +922,9 @@ spec:
       - args:
         - -api.response-compression-enabled=true
         - -frontend.max-cache-freshness=10m
-        - -frontend.memcached.hostname=memcached-frontend.default.svc.cluster.local
-        - -frontend.memcached.service=memcached-client
-        - -frontend.memcached.timeout=500ms
+        - -frontend.results-cache.backend=memcached
+        - -frontend.results-cache.memcached.addresses=dnssrvnoa+memcached-frontend.default.svc.cluster.local:11211
+        - -frontend.results-cache.memcached.timeout=500ms
         - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -log.level=debug
         - -querier.align-querier-with-step=false

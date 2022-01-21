@@ -33,12 +33,13 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	flags = mergeFlags(flags, map[string]string{
-		"-querier.cache-results":             "true",
-		"-querier.split-queries-by-interval": "2m",
-		"-querier.query-ingesters-within":    "12h", // Required by the test on query /series out of ingesters time range
-		"-querier.align-querier-with-step":   "true",
-		"-frontend.max-cache-freshness":      "0", // Cache everything.
-		"-frontend.memcached.addresses":      "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
+		"-querier.cache-results":                      "true",
+		"-querier.split-queries-by-interval":          "2m",
+		"-querier.query-ingesters-within":             "12h", // Required by the test on query /series out of ingesters time range
+		"-querier.align-querier-with-step":            "true",
+		"-frontend.max-cache-freshness":               "0", // Cache everything.
+		"-frontend.results-cache.backend":             "memcached",
+		"-frontend.results-cache.memcached.addresses": "dns+" + memcached.NetworkEndpoint(e2ecache.MemcachedPort),
 	})
 
 	// Start the query-frontend.
@@ -59,8 +60,8 @@ func TestQueryFrontendUnalignedQuery(t *testing.T) {
 	require.NoError(t, s.WaitReady(queryFrontendAligned, queryFrontendUnaligned))
 
 	// Check if we're discovering memcache or not.
-	require.NoError(t, queryFrontendAligned.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
-	require.NoError(t, queryFrontendUnaligned.WaitSumMetrics(e2e.Equals(1), "cortex_memcache_client_servers"))
+	require.NoError(t, queryFrontendAligned.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
+	require.NoError(t, queryFrontendUnaligned.WaitSumMetrics(e2e.Equals(1), "thanos_memcached_dns_provider_results"))
 
 	// Wait until the distributor and queriers have updated the ring.
 	// The distributor should have 512 tokens for the ingester ring and 1 for the distributor ring

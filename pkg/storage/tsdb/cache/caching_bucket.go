@@ -22,7 +22,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/thanos-io/thanos/pkg/cache"
 	"github.com/thanos-io/thanos/pkg/objstore"
 	"golang.org/x/sync/errgroup"
 )
@@ -198,7 +197,7 @@ func (cb *CachingBucket) Exists(ctx context.Context, name string) (bool, error) 
 	return ok, err
 }
 
-func storeExistsCacheEntry(ctx context.Context, cachingKey string, exists bool, ts time.Time, cache cache.Cache, existsTTL, doesntExistTTL time.Duration) {
+func storeExistsCacheEntry(ctx context.Context, cachingKey string, exists bool, ts time.Time, cache Cache, existsTTL, doesntExistTTL time.Duration) {
 	var ttl time.Duration
 	if exists {
 		ttl = existsTTL - time.Since(ts)
@@ -286,7 +285,7 @@ func (cb *CachingBucket) Attributes(ctx context.Context, name string) (objstore.
 	return cb.cachedAttributes(ctx, name, cfgName, cfg.cache, cfg.ttl)
 }
 
-func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache cache.Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
+func (cb *CachingBucket) cachedAttributes(ctx context.Context, name, cfgName string, cache Cache, ttl time.Duration) (objstore.ObjectAttributes, error) {
 	key := cachingKeyAttributes(name)
 
 	cb.operationRequests.WithLabelValues(objstore.OpAttributes, cfgName).Inc()
@@ -570,7 +569,7 @@ func (c *subrangesReader) subrangeAt(offset int64) ([]byte, error) {
 }
 
 type getReader struct {
-	c         cache.Cache
+	c         Cache
 	ctx       context.Context
 	r         io.ReadCloser
 	buf       *bytes.Buffer
