@@ -41,6 +41,14 @@ type ingesterMetrics struct {
 	ingestionRate           prometheus.GaugeFunc
 	maxInflightPushRequests prometheus.GaugeFunc
 	inflightRequests        prometheus.GaugeFunc
+
+	// Head compactions metrics.
+	compactionsTriggered   prometheus.Counter
+	compactionsFailed      prometheus.Counter
+	walReplayTime          prometheus.Histogram
+	appenderAddDuration    prometheus.Histogram
+	appenderCommitDuration prometheus.Histogram
+	idleTsdbChecks         *prometheus.CounterVec
 }
 
 func newIngesterMetrics(
@@ -56,6 +64,22 @@ func newIngesterMetrics(
 		instanceLimitsHelp = "Instance limits used by this ingester." // Must be same for all registrations.
 		limitLabel         = "limit"
 	)
+
+	idleTsdbChecks := promauto.With(r).NewCounterVec(prometheus.CounterOpts{
+		Name: "cortex_ingester_idle_tsdb_checks_total",
+		Help: "The total number of various results for idle TSDB checks.",
+	}, []string{"result"})
+
+	idleTsdbChecks.WithLabelValues(string(tsdbShippingDisabled))
+	idleTsdbChecks.WithLabelValues(string(tsdbNotIdle))
+	idleTsdbChecks.WithLabelValues(string(tsdbNotCompacted))
+	idleTsdbChecks.WithLabelValues(string(tsdbNotShipped))
+	idleTsdbChecks.WithLabelValues(string(tsdbCheckFailed))
+	idleTsdbChecks.WithLabelValues(string(tsdbCloseFailed))
+	idleTsdbChecks.WithLabelValues(string(tsdbNotActive))
+	idleTsdbChecks.WithLabelValues(string(tsdbDataRemovalFailed))
+	idleTsdbChecks.WithLabelValues(string(tsdbTenantMarkedForDeletion))
+	idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))
 
 	m := &ingesterMetrics{
 		ingestedSamples: promauto.With(r).NewCounter(prometheus.CounterOpts{
@@ -199,6 +223,33 @@ func newIngesterMetrics(
 		// activeSeriesCustomTrackerNames contains all the values for the `name` label of activeSeriesCustomTrackersPerUser,
 		// so we can delete all the labels for each user when needed.
 		activeSeriesCustomTrackerNames: activeSeriesCustomTrackerNames,
+
+		compactionsTriggered: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_compactions_triggered_total",
+			Help: "Total number of triggered compactions.",
+		}),
+
+		compactionsFailed: promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Name: "cortex_ingester_tsdb_compactions_failed_total",
+			Help: "Total number of compactions that failed.",
+		}),
+		walReplayTime: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_tsdb_wal_replay_duration_seconds",
+			Help:    "The total time it takes to open and replay a TSDB WAL.",
+			Buckets: prometheus.DefBuckets,
+		}),
+		appenderAddDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_tsdb_appender_add_duration_seconds",
+			Help:    "The total time it takes for a push request to add samples to the TSDB appender.",
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
+		appenderCommitDuration: promauto.With(r).NewHistogram(prometheus.HistogramOpts{
+			Name:    "cortex_ingester_tsdb_appender_commit_duration_seconds",
+			Help:    "The total time it takes for a push request to commit samples appended to TSDB.",
+			Buckets: []float64{.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10},
+		}),
+
+		idleTsdbChecks: idleTsdbChecks,
 	}
 
 	if activeSeriesEnabled && r != nil {

@@ -3892,7 +3892,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 		return len(i.TSDBState.dbs)
 	})
 
-	require.Greater(t, testutil.ToFloat64(i.TSDBState.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
+	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
 	i.updateActiveSeries(time.Now())
 	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load()) // Flushing removed all series from memory.
 
