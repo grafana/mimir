@@ -99,17 +99,26 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 		}
 	}
 
-	// compare source tenants ignoring their order
-	if len(groupOne.SourceTenants) != len(groupTwo.SourceTenants) {
-		return errDiffSourceTenants
-	}
-
-	sort.Strings(groupOne.SourceTenants)
-	sort.Strings(groupTwo.SourceTenants)
-
-	for i := range groupOne.SourceTenants {
-		if groupOne.SourceTenants[i] != groupTwo.SourceTenants[i] {
+	{
+		// compare source tenants
+		if len(groupOne.SourceTenants) != len(groupTwo.SourceTenants) {
 			return errDiffSourceTenants
+		}
+
+		copyAndSort := func(x []string) []string {
+			copied := make([]string, len(x))
+			copy(copied, x)
+			sort.Strings(copied)
+			return copied
+		}
+
+		g1SourceTenantsCopy := copyAndSort(groupOne.SourceTenants)
+		g2SourceTenantsCopy := copyAndSort(groupTwo.SourceTenants)
+
+		for i := range g2SourceTenantsCopy {
+			if g1SourceTenantsCopy[i] != g2SourceTenantsCopy[i] {
+				return errDiffSourceTenants
+			}
 		}
 	}
 
