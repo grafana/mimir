@@ -534,6 +534,10 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
+		if now.Unix()%10 == 0 && len(e.Labels) > 0 {
+			level.Info(d.log).Log("msg", "exemplar with non-empty labels", "labels", fmt.Sprintf("%+v", e.Labels))
+		}
+
 		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
