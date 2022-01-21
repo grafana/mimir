@@ -3002,12 +3002,6 @@ bucket_store:
     # CLI flag: -blocks-storage.bucket-store.index-cache.backend
     [backend: <string> | default = "inmemory"]
 
-    inmemory:
-      # Maximum size in bytes of in-memory index cache used to speed up blocks
-      # index lookups (shared between all tenants).
-      # CLI flag: -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes
-      [max_size_bytes: <int> | default = 1073741824]
-
     memcached:
       # Comma separated list of memcached addresses. Supported prefixes are:
       # dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query,
@@ -3049,6 +3043,12 @@ bucket_store:
       # stored. If set to 0, no maximum size is enforced.
       # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-item-size
       [max_item_size: <int> | default = 1048576]
+
+    inmemory:
+      # Maximum size in bytes of in-memory index cache used to speed up blocks
+      # index lookups (shared between all tenants).
+      # CLI flag: -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes
+      [max_size_bytes: <int> | default = 1073741824]
 
   chunks_cache:
     # Backend for chunks cache, if not empty. Supported values: memcached.

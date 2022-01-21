@@ -42,9 +42,8 @@ var (
 )
 
 type IndexCacheConfig struct {
-	Backend   string                   `yaml:"backend"`
-	InMemory  InMemoryIndexCacheConfig `yaml:"inmemory"`
-	Memcached cache.MemcachedConfig    `yaml:"memcached"`
+	cache.BackendConfig `yaml:",inline"`
+	InMemory            InMemoryIndexCacheConfig `yaml:"inmemory"`
 }
 
 func (cfg *IndexCacheConfig) RegisterFlags(f *flag.FlagSet) {

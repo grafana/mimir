@@ -28,21 +28,26 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 		},
 		"unsupported backend should fail": {
 			cfg: IndexCacheConfig{
-				Backend: "xxx",
+				BackendConfig: cache.BackendConfig{
+					Backend: "xxx",
+				},
 			},
 			expected: errUnsupportedIndexCacheBackend,
 		},
 		"no memcached addresses should fail": {
 			cfg: IndexCacheConfig{
-				Backend: IndexCacheBackendMemcached,
+				BackendConfig: cache.BackendConfig{
+					Backend: IndexCacheBackendMemcached,
+				},
 			},
 			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"one memcached address should pass": {
 			cfg: IndexCacheConfig{
-				Backend: IndexCacheBackendMemcached,
-				Memcached: cache.MemcachedConfig{
-					Addresses: "dns+localhost:11211",
+				BackendConfig: cache.BackendConfig{Backend: IndexCacheBackendMemcached,
+					Memcached: cache.MemcachedConfig{
+						Addresses: "dns+localhost:11211",
+					},
 				},
 			},
 		},

@@ -34,6 +34,7 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/frontend/v1/frontendv1pb"
@@ -79,7 +80,9 @@ func TestMimir(t *testing.T) {
 				ChunkPoolMinBucketSizeBytes: tsdb.ChunkPoolDefaultMinBucketSize,
 				ChunkPoolMaxBucketSizeBytes: tsdb.ChunkPoolDefaultMaxBucketSize,
 				IndexCache: tsdb.IndexCacheConfig{
-					Backend: tsdb.IndexCacheBackendInMemory,
+					BackendConfig: cache.BackendConfig{
+						Backend: tsdb.IndexCacheBackendInMemory,
+					},
 				},
 			},
 		},
