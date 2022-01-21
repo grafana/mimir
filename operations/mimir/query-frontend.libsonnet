@@ -14,11 +14,11 @@
       'server.http-write-timeout': '1m',
 
       // Split long queries up into multiple day-long queries.
-      'querier.split-queries-by-interval': '24h',
+      'frontend.split-queries-by-interval': '24h',
 
       // Cache query results.
-      'querier.align-querier-with-step': false,
-      'querier.cache-results': true,
+      'frontend.align-querier-with-step': false,
+      'frontend.cache-results': true,
       'frontend.results-cache.backend': 'memcached',
       'frontend.results-cache.memcached.addresses': 'dnssrvnoa+memcached-frontend.%(namespace)s.svc.cluster.local:11211' % $._config,
       'frontend.results-cache.memcached.timeout': '500ms',

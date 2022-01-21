@@ -926,9 +926,9 @@ spec:
         - -frontend.results-cache.memcached.timeout=500ms
         - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -log.level=debug
-        - -querier.align-querier-with-step=false
-        - -querier.cache-results=true
-        - -querier.split-queries-by-interval=24h
+        - -frontend.align-querier-with-step=false
+        - -frontend.cache-results=true
+        - -frontend.split-queries-by-interval=24h
         - -runtime-config.file=/etc/cortex/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
