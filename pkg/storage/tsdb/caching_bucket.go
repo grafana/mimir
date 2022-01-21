@@ -20,8 +20,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/thanos-io/thanos/pkg/block"
 	"github.com/thanos-io/thanos/pkg/block/metadata"
-	thanos_cache "github.com/thanos-io/thanos/pkg/cache"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
 	"github.com/grafana/mimir/pkg/cache"
@@ -96,12 +94,12 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	cfg := tsdb_cache.NewCachingBucketConfig()
 	cachingConfigured := false
 
-	chunksCache, err := createCache("chunks-cache", chunksConfig.Backend, chunksConfig.Memcached, logger, reg)
+	chunksCache, err := cache.CreateClient("chunks-cache", chunksConfig.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "chunks-cache")
 	}
 
-	metadataCache, err := createCache("metadata-cache", metadataConfig.Backend, metadataConfig.Memcached, logger, reg)
+	metadataCache, err := cache.CreateClient("metadata-cache", metadataConfig.BackendConfig, logger, reg)
 	if err != nil {
 		return nil, errors.Wrapf(err, "metadata-cache")
 	}
@@ -148,25 +146,6 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	}
 
 	return tsdb_cache.NewCachingBucket(bkt, cfg, logger, reg)
-}
-
-func createCache(cacheName string, backend string, memcached cache.MemcachedConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
-	switch backend {
-	case "":
-		// No caching.
-		return nil, nil
-
-	case cache.BackendMemcached:
-		var client cacheutil.MemcachedClient
-		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, memcached.ToMemcachedClientConfig(), reg)
-		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create memcached client")
-		}
-		return thanos_cache.NewMemcachedCache(cacheName, logger, client, reg), nil
-
-	default:
-		return nil, errors.Errorf("unsupported cache type for cache %s: %s", cacheName, backend)
-	}
 }
 
 var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)

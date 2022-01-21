@@ -23,8 +23,6 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	thanos_cache "github.com/thanos-io/thanos/pkg/cache"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/uber/jaeger-client-go"
 
 	"github.com/grafana/mimir/pkg/cache"
@@ -46,9 +44,8 @@ var (
 
 // ResultsCacheConfig is the config for the results cache.
 type ResultsCacheConfig struct {
-	Backend     string                  `yaml:"backend"`
-	Memcached   cache.MemcachedConfig   `yaml:"memcached"`
-	Compression cache.CompressionConfig `yaml:",inline"`
+	cache.BackendConfig `yaml:",inline"`
+	Compression         cache.CompressionConfig `yaml:",inline"`
 }
 
 // RegisterFlags registers flags.
@@ -82,23 +79,14 @@ func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
 
 // newResultsCache creates a new results cache based on the input configuration.
 func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
-	switch cfg.Backend {
-	case cache.BackendMemcached:
-		return newMemcachedResultsCache(cfg.Memcached, logger, reg)
-	default:
+	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	} else if client == nil {
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
-}
 
-func newMemcachedResultsCache(cfg cache.MemcachedConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
-	const cacheName = "frontend-cache"
-
-	backend, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.ToMemcachedClientConfig(), reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "create results cache memcached client")
-	}
-
-	return cache.NewSpanlessTracingCache(thanos_cache.NewMemcachedCache(cacheName, logger, backend, reg), logger), nil
+	return cache.NewSpanlessTracingCache(client, logger), nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.
