@@ -77,8 +77,10 @@ readonly WEBSITE_PREV_HEAD
 
 # cleanup performs clean up after the script exits for any reason.
 function cleanup {
+  set +e
   cd "${WEBSITE_DIR}" && git checkout "${WEBSITE_PREV_HEAD}"
   cd "${MIMIR_DIR}" && git checkout "${MIMIR_PREV_HEAD}"
+  set -e
 }
 
 trap "cleanup" INT TERM EXIT
