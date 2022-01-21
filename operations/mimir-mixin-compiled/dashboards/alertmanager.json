@@ -13,7 +13,7 @@
             "includeVars": true,
             "keepTime": true,
             "tags": [
-               "cortex"
+               "mimir"
             ],
             "targetBlank": false,
             "title": "Mimir Dashboards",
@@ -2615,7 +2615,7 @@
       "schemaVersion": 14,
       "style": "dark",
       "tags": [
-         "cortex"
+         "mimir"
       ],
       "templating": {
          "list": [

@@ -44,7 +44,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
               keepTime: true,
               tags: $._config.tags,
               targetBlank: false,
-              title: 'Mimir Dashboards',
+              title: '%(product)s Dashboards' % $._config,
               type: 'dashboards',
             },
           ],

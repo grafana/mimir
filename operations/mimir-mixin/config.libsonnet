@@ -7,7 +7,7 @@
     product: 'Mimir',
 
     // Tags for dashboards.
-    tags: ['cortex'],
+    tags: ['mimir'],
 
     // If Cortex is deployed as a single binary, set to true to
     // modify the job selectors in the dashboard queries.
