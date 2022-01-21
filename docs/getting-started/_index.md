@@ -20,7 +20,7 @@ Mimir can also make use of external Memcacheds and Redis for caching.
 ## Single instance, single process
 
 For simplicity and to get started, we'll run it as a [single process](../configuration/single-process-config-blocks.yaml) with no dependencies.
-You can reconfigure the config to use GCS, Azure storage or local storage as shown in the file's comments. 
+You can reconfigure the config to use GCS, Azure storage or local storage as shown in the file's comments.
 
 > **Note:** The `filesystem` backend only works for single instance, single process deployments. Highly available deployments must use an external object store.
 
