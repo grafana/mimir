@@ -27,7 +27,7 @@ const (
 	IndexCacheBackendInMemory = "inmemory"
 
 	// IndexCacheBackendMemcached is the value for the memcached index cache backend.
-	IndexCacheBackendMemcached = "memcached"
+	IndexCacheBackendMemcached = cache.BackendMemcached
 
 	// IndexCacheBackendDefault is the value for the default index cache backend.
 	IndexCacheBackendDefault = IndexCacheBackendInMemory

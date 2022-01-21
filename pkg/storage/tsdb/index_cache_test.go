@@ -34,13 +34,13 @@ func TestIndexCacheConfig_Validate(t *testing.T) {
 		},
 		"no memcached addresses should fail": {
 			cfg: IndexCacheConfig{
-				Backend: "memcached",
+				Backend: IndexCacheBackendMemcached,
 			},
 			expected: cache.ErrNoMemcachedAddresses,
 		},
 		"one memcached address should pass": {
 			cfg: IndexCacheConfig{
-				Backend: "memcached",
+				Backend: IndexCacheBackendMemcached,
 				Memcached: cache.MemcachedConfig{
 					Addresses: "dns+localhost:11211",
 				},

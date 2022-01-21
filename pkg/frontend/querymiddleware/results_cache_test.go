@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/cache"
 	mimir_tsdb "github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
 )
@@ -36,7 +37,7 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 		},
 		"should pass with memcached backend": {
 			cfg: ResultsCacheConfig{
-				Backend: "memcached",
+				Backend: cache.BackendMemcached,
 				Memcached: mimir_tsdb.MemcachedConfig{
 					Addresses: "localhost",
 				},
@@ -44,7 +45,7 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 		},
 		"should fail with invalid memcached config": {
 			cfg: ResultsCacheConfig{
-				Backend: "memcached",
+				Backend: cache.BackendMemcached,
 				Memcached: mimir_tsdb.MemcachedConfig{
 					Addresses: "",
 				},

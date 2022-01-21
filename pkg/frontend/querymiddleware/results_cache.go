@@ -33,9 +33,6 @@ import (
 )
 
 const (
-	// resultsCacheBackendMemcached is the value for the memcached results cache backend.
-	resultsCacheBackendMemcached = "memcached"
-
 	// cacheControlHeader is the name of the cache control header.
 	cacheControlHeader = "Cache-Control"
 
@@ -44,7 +41,7 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{resultsCacheBackendMemcached}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached}
 )
 
 // ResultsCacheConfig is the config for the results cache.
@@ -66,7 +63,7 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == resultsCacheBackendMemcached {
+	if cfg.Backend == cache.BackendMemcached {
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
@@ -86,7 +83,7 @@ func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
 // newResultsCache creates a new results cache based on the input configuration.
 func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	switch cfg.Backend {
-	case resultsCacheBackendMemcached:
+	case cache.BackendMemcached:
 		return newMemcachedResultsCache(cfg.Memcached, logger, reg)
 	default:
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
