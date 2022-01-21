@@ -99,27 +99,8 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 		}
 	}
 
-	{
-		// compare source tenants
-		if len(groupOne.SourceTenants) != len(groupTwo.SourceTenants) {
-			return errDiffSourceTenants
-		}
-
-		copyAndSort := func(x []string) []string {
-			copied := make([]string, len(x))
-			copy(copied, x)
-			sort.Strings(copied)
-			return copied
-		}
-
-		g1SourceTenantsCopy := copyAndSort(groupOne.SourceTenants)
-		g2SourceTenantsCopy := copyAndSort(groupTwo.SourceTenants)
-
-		for i := range g2SourceTenantsCopy {
-			if g1SourceTenantsCopy[i] != g2SourceTenantsCopy[i] {
-				return errDiffSourceTenants
-			}
-		}
+	if !stringSlicesElementsMatch(groupOne.SourceTenants, groupTwo.SourceTenants) {
+		return errDiffSourceTenants
 	}
 
 	for i := range groupOne.Rules {
@@ -130,6 +111,30 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 	}
 
 	return nil
+}
+
+func stringSlicesElementsMatch(s1, s2 []string) bool {
+	if len(s1) != len(s2) {
+		return false
+	}
+
+	copyAndSort := func(x []string) []string {
+		copied := make([]string, len(x))
+		copy(copied, x)
+		sort.Strings(copied)
+		return copied
+	}
+
+	s1Copy := copyAndSort(s1)
+	s2Copy := copyAndSort(s2)
+
+	for i := range s2Copy {
+		if s1Copy[i] != s2Copy[i] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func rulesEqual(a, b *rulefmt.RuleNode) bool {
