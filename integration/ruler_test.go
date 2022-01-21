@@ -372,6 +372,8 @@ func TestRulerSharding(t *testing.T) {
 			"-querier.store-gateway-addresses": "localhost:12345",
 			// Enable the bucket index so we can skip the initial bucket scan.
 			"-blocks-storage.bucket-store.bucket-index.enabled": "true",
+			// Disable rule group limit
+			"-ruler.max-rule-groups-per-tenant": "0",
 		},
 	)
 
