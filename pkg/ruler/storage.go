@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	promRules "github.com/prometheus/prometheus/rules"
 
@@ -22,6 +23,10 @@ import (
 func NewRuleStore(ctx context.Context, cfg rulestore.Config, cfgProvider bucket.TenantConfigProvider, loader promRules.GroupLoader, logger log.Logger, reg prometheus.Registerer) (rulestore.RuleStore, error) {
 	if cfg.Backend == local.Name {
 		return local.NewLocalRulesClient(cfg.Local, loader)
+	}
+
+	if cfg.Backend == bucket.Filesystem {
+		level.Warn(logger).Log("msg", "-ruler-storage.backend=filesystem is for development and testing only; you should switch to an external object store for production use or use a shared filesystem")
 	}
 
 	bucketClient, err := bucket.NewClient(ctx, cfg.Config, "ruler-storage", logger, reg)
