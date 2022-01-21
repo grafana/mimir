@@ -1,1 +1,1 @@
-GOPRIVATE=github.com/grafana/prometheus-private
+GOPRIVATE=github.com/grafana/mimir-prometheus
