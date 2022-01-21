@@ -26,11 +26,11 @@ fi
 readonly NO_DRY_RUN="${NO_DRY_RUN:-0}"
 
 # wet_run will run a command iff NO_DRY_RUN has a truth-y value.
-# Otherwise it will run a no-op command.
+# Otherwise it log that the command was not run.
 function wet_run {
   case "${NO_DRY_RUN}" in
     t | 1 | true) "$@" ;;
-    *) : ;; # Do nothing.
+    *) echo "Not running \"$*\" as the NO_DRY_RUN environment variable is not 'true'" ;;
   esac
 }
 
