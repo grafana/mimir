@@ -12,7 +12,9 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// SpanlessTracingCache logs Fetch operation in the parent spans.
+// SpanlessTracingCache wraps a Cache and logs Fetch operation in the parent spans.
+// This is different than Thanos' TracingCache because this logs in the parent span
+// without creating a new span.
 type SpanlessTracingCache struct {
 	c      Cache
 	logger log.Logger
