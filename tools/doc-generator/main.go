@@ -21,6 +21,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/alertmanager"
 	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
+	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
 	"github.com/grafana/mimir/pkg/flusher"
@@ -153,6 +154,11 @@ var (
 			name:       "s3_sse_config",
 			structType: reflect.TypeOf(s3.SSEConfig{}),
 			desc:       "The s3_sse_config configures the S3 server-side encryption.",
+		},
+		{
+			name:       "memcached_config",
+			structType: reflect.TypeOf(cache.MemcachedConfig{}),
+			desc:       "The memcached_config configures the Memcached-based caching backend.",
 		},
 	}
 )

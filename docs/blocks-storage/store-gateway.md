@@ -543,47 +543,10 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.index-cache.backend
       [backend: <string> | default = "inmemory"]
 
-      memcached:
-        # Comma separated list of memcached addresses. Supported prefixes are:
-        # dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV
-        # query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup
-        # made after that).
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.addresses
-        [addresses: <string> | default = ""]
-
-        # The socket read/write timeout.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.timeout
-        [timeout: <duration> | default = 100ms]
-
-        # The maximum number of idle connections that will be maintained per
-        # address.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-idle-connections
-        [max_idle_connections: <int> | default = 16]
-
-        # The maximum number of concurrent asynchronous operations can occur.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-async-concurrency
-        [max_async_concurrency: <int> | default = 50]
-
-        # The maximum number of enqueued asynchronous operations allowed.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size
-        [max_async_buffer_size: <int> | default = 10000]
-
-        # The maximum number of concurrent connections running get operations.
-        # If set to 0, concurrency is unlimited.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency
-        [max_get_multi_concurrency: <int> | default = 100]
-
-        # The maximum number of keys a single underlying get operation should
-        # run. If more keys are specified, internally keys are split into
-        # multiple batches and fetched concurrently, honoring the max
-        # concurrency. If set to 0, the max batch size is unlimited.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-get-multi-batch-size
-        [max_get_multi_batch_size: <int> | default = 0]
-
-        # The maximum size of an item stored in memcached. Bigger items are not
-        # stored. If set to 0, no maximum size is enforced.
-        # CLI flag: -blocks-storage.bucket-store.index-cache.memcached.max-item-size
-        [max_item_size: <int> | default = 1048576]
+      # The memcached_config configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block config is:
+      # blocks-storage.bucket-store.index-cache
+      [memcached: <memcached_config>]
 
       inmemory:
         # Maximum size in bytes of in-memory index cache used to speed up blocks
@@ -596,47 +559,10 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.chunks-cache.backend
       [backend: <string> | default = ""]
 
-      memcached:
-        # Comma separated list of memcached addresses. Supported prefixes are:
-        # dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV
-        # query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup
-        # made after that).
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.addresses
-        [addresses: <string> | default = ""]
-
-        # The socket read/write timeout.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.timeout
-        [timeout: <duration> | default = 100ms]
-
-        # The maximum number of idle connections that will be maintained per
-        # address.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections
-        [max_idle_connections: <int> | default = 16]
-
-        # The maximum number of concurrent asynchronous operations can occur.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.max-async-concurrency
-        [max_async_concurrency: <int> | default = 50]
-
-        # The maximum number of enqueued asynchronous operations allowed.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.max-async-buffer-size
-        [max_async_buffer_size: <int> | default = 10000]
-
-        # The maximum number of concurrent connections running get operations.
-        # If set to 0, concurrency is unlimited.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency
-        [max_get_multi_concurrency: <int> | default = 100]
-
-        # The maximum number of keys a single underlying get operation should
-        # run. If more keys are specified, internally keys are split into
-        # multiple batches and fetched concurrently, honoring the max
-        # concurrency. If set to 0, the max batch size is unlimited.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-batch-size
-        [max_get_multi_batch_size: <int> | default = 0]
-
-        # The maximum size of an item stored in memcached. Bigger items are not
-        # stored. If set to 0, no maximum size is enforced.
-        # CLI flag: -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size
-        [max_item_size: <int> | default = 1048576]
+      # The memcached_config configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block config is:
+      # blocks-storage.bucket-store.chunks-cache
+      [memcached: <memcached_config>]
 
       # Size of each subrange that bucket object is split into for better
       # caching.
@@ -670,47 +596,10 @@ blocks_storage:
       # CLI flag: -blocks-storage.bucket-store.metadata-cache.backend
       [backend: <string> | default = ""]
 
-      memcached:
-        # Comma separated list of memcached addresses. Supported prefixes are:
-        # dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV
-        # query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup
-        # made after that).
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.addresses
-        [addresses: <string> | default = ""]
-
-        # The socket read/write timeout.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.timeout
-        [timeout: <duration> | default = 100ms]
-
-        # The maximum number of idle connections that will be maintained per
-        # address.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections
-        [max_idle_connections: <int> | default = 16]
-
-        # The maximum number of concurrent asynchronous operations can occur.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.max-async-concurrency
-        [max_async_concurrency: <int> | default = 50]
-
-        # The maximum number of enqueued asynchronous operations allowed.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size
-        [max_async_buffer_size: <int> | default = 10000]
-
-        # The maximum number of concurrent connections running get operations.
-        # If set to 0, concurrency is unlimited.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency
-        [max_get_multi_concurrency: <int> | default = 100]
-
-        # The maximum number of keys a single underlying get operation should
-        # run. If more keys are specified, internally keys are split into
-        # multiple batches and fetched concurrently, honoring the max
-        # concurrency. If set to 0, the max batch size is unlimited.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-batch-size
-        [max_get_multi_batch_size: <int> | default = 0]
-
-        # The maximum size of an item stored in memcached. Bigger items are not
-        # stored. If set to 0, no maximum size is enforced.
-        # CLI flag: -blocks-storage.bucket-store.metadata-cache.memcached.max-item-size
-        [max_item_size: <int> | default = 1048576]
+      # The memcached_config configures the Memcached-based caching backend.
+      # The CLI flags prefix for this block config is:
+      # blocks-storage.bucket-store.metadata-cache
+      [memcached: <memcached_config>]
 
       # How long to cache list of tenants in the bucket.
       # CLI flag: -blocks-storage.bucket-store.metadata-cache.tenants-list-ttl
