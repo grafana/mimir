@@ -6,7 +6,14 @@
   This removes the following flags:
   * `-validation.reject-old-samples`
   * `-validation.reject-old-samples.max-age`
-* [CHANGE] Changed default `-blocks-storage.backend` from `s3` to `filesystem` #833
+* [CHANGE] Changed default storage backends from `s3` to `filesystem` #833
+  This effects the following flags:
+  * `-blocks-storage.backend` now defaults to `filesystem`
+  * `-blocks-storage.filesystem.dir` now defaults to `blocks`
+  * `-alertmanager-storage.backend` now defaults to `filesystem`
+  * `-alertmanager-storage.filesystem.dir` now defaults to `alertmanager`
+  * `-ruler-storage.backend` now defaults to `filesystem`
+  * `-ruler-storage.filesystem.dir` now defaults to `ruler`
 * [CHANGE] Removed local limit-related flags in favor of global limits. #725
   The distributor ring is now required, and can be configured via the `distributor.ring.*` flags.
   This removes the following flags:
