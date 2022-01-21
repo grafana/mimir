@@ -31,20 +31,20 @@ func GetDefaultImage() string {
 }
 
 // GetExtraArgs returns the extra args to pass to the Docker command used to run Mimir.
-func GetExtraArgs() string {
+func GetExtraArgs() []string {
 	// Get extra args from the MIMIR_EXTRA_ARGS env variable
 	// falling back to an empty list
 	if os.Getenv("MIMIR_EXTRA_ARGS") != "" {
-		return os.Getenv("MIMIR_EXTRA_ARGS")
+		return strings.Fields(os.Getenv("MIMIR_EXTRA_ARGS"))
 	}
 
-	return ""
+	return nil
 }
 
 func buildArgsWithExtra(args []string) []string {
 	extraArgs := GetExtraArgs()
 	if len(extraArgs) > 0 {
-		return append([]string{extraArgs}, args...)
+		return append(extraArgs, args...)
 	}
 
 	return args
