@@ -41,6 +41,7 @@ JSONNET_FMT := jsonnetfmt
 
 # path to the mimir-mixin
 MIXIN_PATH := operations/mimir-mixin
+MIXIN_OUT_PATH := operations/mimir-mixin-compiled
 
 # path to the mimir jsonnet manifests
 JSONNET_MANIFESTS_PATH := operations/mimir
@@ -380,7 +381,7 @@ check-white-noise: clean-white-noise
 
 check-mixin: format-mixin check-mixin-jb check-mixin-mixtool check-mixin-playbook
 	@echo "Checking diff:"
-	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please format mixin by running 'make format-mixin'" && false)
+	@git diff --exit-code -- $(MIXIN_PATH) || (echo "Please build and format mixin by running 'make build-mixin format-mixin'" && false)
 
 	@cd $(MIXIN_PATH) && \
 	jb install && \
@@ -398,10 +399,10 @@ check-mixin-playbook: build-mixin
 	@$(MIXIN_PATH)/scripts/lint-playbooks.sh
 
 build-mixin: check-mixin-jb
-	@rm -rf $(MIXIN_PATH)/out && mkdir $(MIXIN_PATH)/out
-	@cd $(MIXIN_PATH) && \
-	mixtool generate all --output-alerts out/alerts.yaml --output-rules out/rules.yaml --directory out/dashboards mixin.libsonnet && \
-	zip -q -r mimir-mixin.zip out
+	@rm -rf $(MIXIN_OUT_PATH) && mkdir $(MIXIN_OUT_PATH)
+	@mixtool generate all --output-alerts $(MIXIN_OUT_PATH)/alerts.yaml --output-rules $(MIXIN_OUT_PATH)/rules.yaml --directory $(MIXIN_OUT_PATH)/dashboards ${MIXIN_PATH}/mixin.libsonnet
+	@cd $(MIXIN_OUT_PATH)/.. && zip -q -r mimir-mixin.zip $$(basename "$(MIXIN_OUT_PATH)")
+	@echo "The mixin has been compiled to $(MIXIN_OUT_PATH) and archived to $$(realpath --relative-to=$$(pwd) $(MIXIN_OUT_PATH)/../mimir-mixin.zip)"
 
 format-mixin:
 	@find $(MIXIN_PATH) -type f -name '*.libsonnet' -print -o -name '*.jsonnet' -print | xargs jsonnetfmt -i
