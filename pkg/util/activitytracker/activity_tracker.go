@@ -7,7 +7,6 @@ import (
 	"flag"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -38,8 +37,6 @@ const (
 
 	reasonFull          = "tracker_full"
 	reasonEmptyActivity = "empty_activity"
-
-	placeholderPath = "<tempdir>/metrics-activity.log"
 )
 
 var emptyEntry = make([]byte, entrySize)
@@ -50,19 +47,8 @@ type Config struct {
 }
 
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
-	f.StringVar(&c.Filepath, "activity-tracker.filepath", placeholderPath, "File where ongoing activities are stored. If empty, activity tracking is disabled. Default location may differ depending on the OS setting for placing temporary files.")
+	f.StringVar(&c.Filepath, "activity-tracker.filepath", "/tmp/metrics-activity.log", "File where ongoing activities are stored. If empty, activity tracking is disabled.")
 	f.IntVar(&c.MaxEntries, "activity-tracker.max-entries", 1024, "Max number of concurrent activities that can be tracked. Used to size the file in advance. Additional activities are ignored.")
-}
-
-// translatePath converts the default placeholder value for the activity tracker file to an appropriate
-// location for the current OS. This is done to ensure generated documentation for the feature does not
-// change based on the OS the `make doc` target is being run on.
-func translatePath(file string) string {
-	if file == placeholderPath {
-		return filepath.Join(os.TempDir(), "metrics-activity.log")
-	}
-
-	return file
 }
 
 func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker, error) {
@@ -71,7 +57,7 @@ func NewActivityTracker(cfg Config, reg prometheus.Registerer) (*ActivityTracker
 	}
 
 	filesize := cfg.MaxEntries * entrySize
-	file, fileAsBytes, err := getMappedFile(translatePath(cfg.Filepath), filesize)
+	file, fileAsBytes, err := getMappedFile(cfg.Filepath, filesize)
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +206,7 @@ type Entry struct {
 
 // LoadUnfinishedEntries loads and returns list of unfinished activities in the activity file.
 func LoadUnfinishedEntries(file string) ([]Entry, error) {
-	fd, err := os.Open(translatePath(file))
+	fd, err := os.Open(file)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
