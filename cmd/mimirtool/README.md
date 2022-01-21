@@ -115,7 +115,7 @@ It is important to note that a modification can be a PromQL expression lint or a
 
 ##### Rules Check
 
-This command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules. This command does not interact with your Cortex cluster.
+This command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules. This command does not interact with your Mimir cluster.
 
     mimirtool rules check ./example_rules_one.yaml
 
