@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/model"
 
+	"github.com/grafana/mimir/pkg/cache"
 	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
@@ -26,7 +27,7 @@ const (
 	IndexCacheBackendInMemory = "inmemory"
 
 	// IndexCacheBackendMemcached is the value for the memcached index cache backend.
-	IndexCacheBackendMemcached = "memcached"
+	IndexCacheBackendMemcached = cache.BackendMemcached
 
 	// IndexCacheBackendDefault is the value for the default index cache backend.
 	IndexCacheBackendDefault = IndexCacheBackendInMemory
@@ -38,13 +39,11 @@ var (
 	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
 
 	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
-	errNoIndexCacheAddresses        = errors.New("no index cache backend addresses")
 )
 
 type IndexCacheConfig struct {
-	Backend   string                   `yaml:"backend"`
-	InMemory  InMemoryIndexCacheConfig `yaml:"inmemory"`
-	Memcached MemcachedClientConfig    `yaml:"memcached"`
+	cache.BackendConfig `yaml:",inline"`
+	InMemory            InMemoryIndexCacheConfig `yaml:"inmemory"`
 }
 
 func (cfg *IndexCacheConfig) RegisterFlags(f *flag.FlagSet) {
@@ -108,7 +107,7 @@ func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, regi
 	})
 }
 
-func newMemcachedIndexCache(cfg MemcachedClientConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
+func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
 	client, err := cacheutil.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), registerer)
 	if err != nil {
 		return nil, errors.Wrap(err, "create index cache memcached client")

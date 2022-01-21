@@ -14,36 +14,37 @@ import (
 )
 
 type MockCache struct {
-	sync.Mutex
-	cache map[string][]byte
+	mu    sync.Mutex
+	cache map[string]cacheItem
 }
 
-// NewMockCache makes a new MockCache.
 func NewMockCache() *MockCache {
-	return &MockCache{
-		cache: map[string][]byte{},
+	c := &MockCache{}
+	c.Flush()
+	return c
+}
+
+func (m *MockCache) Store(_ context.Context, data map[string][]byte, ttl time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	exp := time.Now().Add(ttl)
+	for key, val := range data {
+		m.cache[key] = cacheItem{data: val, expiresAt: exp}
 	}
 }
 
-func (m *MockCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
-	m.Lock()
-	defer m.Unlock()
+func (m *MockCache) Fetch(_ context.Context, keys []string) map[string][]byte {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
-	for key, value := range data {
-		m.cache[key] = value
-	}
-}
+	found := make(map[string][]byte, len(keys))
 
-func (m *MockCache) Fetch(ctx context.Context, keys []string) map[string][]byte {
-	found := make(map[string][]byte)
-
-	m.Lock()
-	defer m.Unlock()
-
-	for _, key := range keys {
-		buf, ok := m.cache[key]
-		if ok {
-			found[key] = buf
+	now := time.Now()
+	for _, k := range keys {
+		v, ok := m.cache[k]
+		if ok && now.Before(v.expiresAt) {
+			found[k] = v.data
 		}
 	}
 
@@ -52,6 +53,20 @@ func (m *MockCache) Fetch(ctx context.Context, keys []string) map[string][]byte 
 
 func (m *MockCache) Name() string {
 	return "mock"
+}
+
+func (m *MockCache) Flush() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.cache = map[string]cacheItem{}
+}
+
+func (m *MockCache) Delete(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	delete(m.cache, key)
 }
 
 // InstrumentedMockCache is a mocked cache implementation which also tracks the number

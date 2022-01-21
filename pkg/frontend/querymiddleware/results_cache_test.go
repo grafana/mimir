@@ -17,8 +17,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/mimir/pkg/cache"
+	mimir_tsdb "github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
 )
 
 func TestResultsCacheConfig_Validate(t *testing.T) {
@@ -36,24 +37,30 @@ func TestResultsCacheConfig_Validate(t *testing.T) {
 		},
 		"should pass with memcached backend": {
 			cfg: ResultsCacheConfig{
-				Backend: "memcached",
-				Memcached: mimir_tsdb.MemcachedClientConfig{
-					Addresses: "localhost",
+				BackendConfig: cache.BackendConfig{
+					Backend: cache.BackendMemcached,
+					Memcached: mimir_tsdb.MemcachedConfig{
+						Addresses: "localhost",
+					},
 				},
 			},
 		},
 		"should fail with invalid memcached config": {
 			cfg: ResultsCacheConfig{
-				Backend: "memcached",
-				Memcached: mimir_tsdb.MemcachedClientConfig{
-					Addresses: "",
+				BackendConfig: cache.BackendConfig{
+					Backend: cache.BackendMemcached,
+					Memcached: mimir_tsdb.MemcachedConfig{
+						Addresses: "",
+					},
 				},
 			},
-			expected: errors.New("query-frontend results cache: no index cache backend addresses"),
+			expected: errors.New("query-frontend results cache: no memcached addresses configured"),
 		},
 		"should fail with unsupported backend": {
 			cfg: ResultsCacheConfig{
-				Backend: "unsupported",
+				BackendConfig: cache.BackendConfig{
+					Backend: "unsupported",
+				},
 			},
 			expected: errUnsupportedResultsCacheBackend("unsupported"),
 		},

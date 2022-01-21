@@ -23,20 +23,14 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	thanos_cache "github.com/thanos-io/thanos/pkg/cache"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/uber/jaeger-client-go"
 
+	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
 const (
-	// resultsCacheBackendMemcached is the value for the memcached results cache backend.
-	resultsCacheBackendMemcached = "memcached"
-
 	// cacheControlHeader is the name of the cache control header.
 	cacheControlHeader = "Cache-Control"
 
@@ -45,14 +39,13 @@ const (
 )
 
 var (
-	supportedResultsCacheBackends = []string{resultsCacheBackendMemcached}
+	supportedResultsCacheBackends = []string{cache.BackendMemcached}
 )
 
 // ResultsCacheConfig is the config for the results cache.
 type ResultsCacheConfig struct {
-	Backend     string                           `yaml:"backend"`
-	Memcached   mimir_tsdb.MemcachedClientConfig `yaml:"memcached"`
-	Compression cache.CompressionConfig          `yaml:",inline"`
+	cache.BackendConfig `yaml:",inline"`
+	Compression         cache.CompressionConfig `yaml:",inline"`
 }
 
 // RegisterFlags registers flags.
@@ -67,7 +60,7 @@ func (cfg *ResultsCacheConfig) Validate() error {
 		return errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
 
-	if cfg.Backend == resultsCacheBackendMemcached {
+	if cfg.Backend == cache.BackendMemcached {
 		if err := cfg.Memcached.Validate(); err != nil {
 			return errors.Wrap(err, "query-frontend results cache")
 		}
@@ -86,23 +79,14 @@ func errUnsupportedResultsCacheBackend(unsupportedBackend string) error {
 
 // newResultsCache creates a new results cache based on the input configuration.
 func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
-	switch cfg.Backend {
-	case resultsCacheBackendMemcached:
-		return newMemcachedResultsCache(cfg.Memcached, logger, reg)
-	default:
+	client, err := cache.CreateClient("frontend-cache", cfg.BackendConfig, logger, reg)
+	if err != nil {
+		return nil, err
+	} else if client == nil {
 		return nil, errUnsupportedResultsCacheBackend(cfg.Backend)
 	}
-}
 
-func newMemcachedResultsCache(cfg mimir_tsdb.MemcachedClientConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
-	const cacheName = "frontend-cache"
-
-	backend, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.ToMemcachedClientConfig(), reg)
-	if err != nil {
-		return nil, errors.Wrap(err, "create results cache memcached client")
-	}
-
-	return cache.NewTracingCache(thanos_cache.NewMemcachedCache(cacheName, logger, backend, reg), logger), nil
+	return cache.NewSpanlessTracingCache(client, logger), nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.

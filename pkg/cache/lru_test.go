@@ -15,7 +15,7 @@ import (
 
 func TestLRUCache_StoreFetch(t *testing.T) {
 	var (
-		mock = newMockCache()
+		mock = NewMockCache()
 		ctx  = context.Background()
 	)
 	// This entry is only known by our underlying cache.
@@ -64,7 +64,7 @@ func TestLRUCache_Evictions(t *testing.T) {
 	const maxItems = 2
 
 	reg := prometheus.NewPedanticRegistry()
-	lru, err := WrapWithLRUCache(newMockCache(), "test", reg, maxItems, 2*time.Hour)
+	lru, err := WrapWithLRUCache(NewMockCache(), "test", reg, maxItems, 2*time.Hour)
 	require.NoError(t, err)
 
 	lru.Store(context.Background(), map[string][]byte{
