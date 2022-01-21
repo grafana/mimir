@@ -614,7 +614,7 @@ github.com/prometheus/node_exporter/https
 github.com/prometheus/procfs
 github.com/prometheus/procfs/internal/fs
 github.com/prometheus/procfs/internal/util
-# github.com/prometheus/prometheus v1.8.2-0.20211217191541-41f1a8125e66 => github.com/grafana/prometheus-private v0.0.0-20220107153801-049c5e44352c
+# github.com/prometheus/prometheus v1.8.2-0.20211217191541-41f1a8125e66 => github.com/grafana/mimir-prometheus v0.0.0-20220107153801-049c5e44352c
 ## explicit; go 1.16
 github.com/prometheus/prometheus/config
 github.com/prometheus/prometheus/discovery
@@ -1072,7 +1072,7 @@ gopkg.in/yaml.v3
 sigs.k8s.io/yaml
 # git.apache.org/thrift.git => github.com/apache/thrift v0.0.0-20180902110319-2566ecd5d999
 # github.com/bradfitz/gomemcache => github.com/themihai/gomemcache v0.0.0-20180902122335-24332e2d58ab
-# github.com/prometheus/prometheus => github.com/grafana/prometheus-private v0.0.0-20220107153801-049c5e44352c
+# github.com/prometheus/prometheus => github.com/grafana/mimir-prometheus v0.0.0-20220107153801-049c5e44352c
 # github.com/hashicorp/go-immutable-radix => github.com/hashicorp/go-immutable-radix v1.2.0
 # github.com/hashicorp/go-hclog => github.com/hashicorp/go-hclog v0.12.2
 # github.com/hashicorp/memberlist v0.2.4 => github.com/grafana/memberlist v0.2.5-0.20211201083710-c7bc8e9df94b

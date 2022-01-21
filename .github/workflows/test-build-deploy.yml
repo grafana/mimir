@@ -36,7 +36,7 @@ jobs:
         run: make BUILD_IN_CONTAINER=false lint
       - name: Check Vendor Directory
         run: |
-          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/prometheus-private".insteadOf "https://github.com/grafana/prometheus-private"
+          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/mimir-prometheus".insteadOf "https://github.com/grafana/mimir-prometheus"
           make BUILD_IN_CONTAINER=false mod-check
         env:
           GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
