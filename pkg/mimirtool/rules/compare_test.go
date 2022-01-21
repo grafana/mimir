@@ -8,6 +8,8 @@ package rules
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/prometheus/prometheus/model/rulefmt"
 	yaml "gopkg.in/yaml.v3"
 
@@ -318,7 +320,7 @@ func TestCompareGroups(t *testing.T) {
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
-					SourceTenants: []string{"tenant-1", "tenant-2"},
+					SourceTenants: []string{"tenant-1", "tenant-3"},
 					Rules: []rulefmt.RuleNode{
 						{
 							Record:      yaml.Node{Value: "one"},
@@ -348,11 +350,8 @@ func TestCompareGroups(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := CompareGroups(tt.groupOne, tt.groupTwo); err != nil {
-				if err != tt.expectedErr {
-					t.Errorf("CompareGroups() error = %v, wantErr %v", err, tt.expectedErr)
-				}
-			}
+			actualErr := CompareGroups(tt.groupOne, tt.groupTwo)
+			assert.ErrorIs(t, actualErr, tt.expectedErr)
 		})
 	}
 }
