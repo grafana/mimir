@@ -255,6 +255,7 @@ func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus
 		activeSeriesMatcher: &ActiveSeriesMatchers{},
 
 		tsdbs:               make(map[string]*userTSDB),
+		usersMetadata:       make(map[string]*userMetricsMetadata),
 		bucket:              bucketClient,
 		tsdbMetrics:         newTSDBMetrics(registerer),
 		forceCompactTrigger: make(chan requestWithUsersAndCallback),
@@ -276,7 +277,6 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		return nil, err
 	}
 	i.clientConfig = clientConfig
-	i.usersMetadata = map[string]*userMetricsMetadata{}
 	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
 	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
