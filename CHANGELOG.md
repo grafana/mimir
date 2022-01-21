@@ -2,6 +2,10 @@
 
 ## Mimir - main / unreleased
 
+* [CHANGE] Removed deprecated limits for rejecting old samples #799
+  This removes the following flags:
+  * `-validation.reject-old-samples`
+  * `-validation.reject-old-samples.max-age`
 * [CHANGE] Removed local limit-related flags in favor of global limits. #725
   The distributor ring is now required, and can be configured via the `distributor.ring.*` flags.
   This removes the following flags:

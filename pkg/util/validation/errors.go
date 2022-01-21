@@ -135,14 +135,6 @@ func (e *sampleValidationError) Error() string {
 	return fmt.Sprintf(e.message, e.timestamp, e.metricName)
 }
 
-func newSampleTimestampTooOldError(metricName string, timestamp int64) ValidationError {
-	return &sampleValidationError{
-		message:    "timestamp too old: %d metric: %.200q",
-		metricName: metricName,
-		timestamp:  timestamp,
-	}
-}
-
 func newSampleTimestampTooNewError(metricName string, timestamp int64) ValidationError {
 	return &sampleValidationError{
 		message:    "timestamp too new: %d metric: %.200q",

@@ -43,8 +43,6 @@ type Limits struct {
 	MaxLabelValueLength       int                 `yaml:"max_label_value_length" json:"max_label_value_length"`
 	MaxLabelNamesPerSeries    int                 `yaml:"max_label_names_per_series" json:"max_label_names_per_series"`
 	MaxMetadataLength         int                 `yaml:"max_metadata_length" json:"max_metadata_length"`
-	RejectOldSamples          bool                `yaml:"reject_old_samples" json:"reject_old_samples"`
-	RejectOldSamplesMaxAge    model.Duration      `yaml:"reject_old_samples_max_age" json:"reject_old_samples_max_age"`
 	CreationGracePeriod       model.Duration      `yaml:"creation_grace_period" json:"creation_grace_period"`
 	EnforceMetadataMetricName bool                `yaml:"enforce_metadata_metric_name" json:"enforce_metadata_metric_name"`
 	IngestionTenantShardSize  int                 `yaml:"ingestion_tenant_shard_size" json:"ingestion_tenant_shard_size"`
@@ -127,9 +125,6 @@ func (l *Limits) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&l.MaxLabelValueLength, "validation.max-length-label-value", 2048, "Maximum length accepted for label value. This setting also applies to the metric name")
 	f.IntVar(&l.MaxLabelNamesPerSeries, "validation.max-label-names-per-series", 30, "Maximum number of label names per series.")
 	f.IntVar(&l.MaxMetadataLength, "validation.max-metadata-length", 1024, "Maximum length accepted for metric metadata. Metadata refers to Metric Name, HELP and UNIT.")
-	f.BoolVar(&l.RejectOldSamples, "validation.reject-old-samples", false, "Reject old samples.")
-	_ = l.RejectOldSamplesMaxAge.Set("14d")
-	f.Var(&l.RejectOldSamplesMaxAge, "validation.reject-old-samples.max-age", "Maximum accepted sample age before rejecting.")
 	_ = l.CreationGracePeriod.Set("10m")
 	f.Var(&l.CreationGracePeriod, "validation.create-grace-period", "Duration which table will be created/deleted before/after it's needed; we won't accept sample from before this time.")
 	f.BoolVar(&l.EnforceMetadataMetricName, "validation.enforce-metadata-metric-name", true, "Enforce every metadata has a metric name.")
@@ -332,17 +327,6 @@ func (o *Overrides) MaxLabelNamesPerSeries(userID string) int {
 // to the Metric Name, HELP and UNIT.
 func (o *Overrides) MaxMetadataLength(userID string) int {
 	return o.getOverridesForUser(userID).MaxMetadataLength
-}
-
-// RejectOldSamples returns true when we should reject samples older than certain
-// age.
-func (o *Overrides) RejectOldSamples(userID string) bool {
-	return o.getOverridesForUser(userID).RejectOldSamples
-}
-
-// RejectOldSamplesMaxAge returns the age at which samples should be rejected.
-func (o *Overrides) RejectOldSamplesMaxAge(userID string) time.Duration {
-	return time.Duration(o.getOverridesForUser(userID).RejectOldSamplesMaxAge)
 }
 
 // CreationGracePeriod is misnamed, and actually returns how far into the future

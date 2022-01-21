@@ -38,16 +38,15 @@ const (
 	// ErrQueryTooLong is used in chunk store, querier and query frontend.
 	ErrQueryTooLong = "the query time range exceeds the limit (query length: %s, limit: %s)"
 
-	missingMetricName       = "missing_metric_name"
-	invalidMetricName       = "metric_name_invalid"
-	greaterThanMaxSampleAge = "greater_than_max_sample_age"
-	maxLabelNamesPerSeries  = "max_label_names_per_series"
-	tooFarInFuture          = "too_far_in_future"
-	invalidLabel            = "label_invalid"
-	labelNameTooLong        = "label_name_too_long"
-	duplicateLabelNames     = "duplicate_label_names"
-	labelsNotSorted         = "labels_not_sorted"
-	labelValueTooLong       = "label_value_too_long"
+	missingMetricName      = "missing_metric_name"
+	invalidMetricName      = "metric_name_invalid"
+	maxLabelNamesPerSeries = "max_label_names_per_series"
+	tooFarInFuture         = "too_far_in_future"
+	invalidLabel           = "label_invalid"
+	labelNameTooLong       = "label_name_too_long"
+	duplicateLabelNames    = "duplicate_label_names"
+	labelsNotSorted        = "labels_not_sorted"
+	labelValueTooLong      = "label_value_too_long"
 
 	// Exemplar-specific validation reasons
 	exemplarLabelsMissing    = "exemplar_labels_missing"
@@ -102,8 +101,6 @@ func init() {
 
 // SampleValidationConfig helps with getting required config to validate sample.
 type SampleValidationConfig interface {
-	RejectOldSamples(userID string) bool
-	RejectOldSamplesMaxAge(userID string) time.Duration
 	CreationGracePeriod(userID string) time.Duration
 }
 
@@ -112,11 +109,6 @@ type SampleValidationConfig interface {
 // It uses the passed 'now' time to measure the relative time of the sample.
 func ValidateSample(now model.Time, cfg SampleValidationConfig, userID string, ls []mimirpb.LabelAdapter, s mimirpb.Sample) ValidationError {
 	unsafeMetricName, _ := extract.UnsafeMetricNameFromLabelAdapters(ls)
-
-	if cfg.RejectOldSamples(userID) && model.Time(s.TimestampMs) < now.Add(-cfg.RejectOldSamplesMaxAge(userID)) {
-		DiscardedSamples.WithLabelValues(greaterThanMaxSampleAge, userID).Inc()
-		return newSampleTimestampTooOldError(unsafeMetricName, s.TimestampMs)
-	}
 
 	if model.Time(s.TimestampMs) > now.Add(cfg.CreationGracePeriod(userID)) {
 		DiscardedSamples.WithLabelValues(tooFarInFuture, userID).Inc()

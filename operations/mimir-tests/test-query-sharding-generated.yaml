@@ -760,8 +760,6 @@ spec:
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -target=distributor
-        - -validation.reject-old-samples=true
-        - -validation.reject-old-samples.max-age=12h
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
