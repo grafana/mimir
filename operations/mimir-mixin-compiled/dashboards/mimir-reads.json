@@ -27,7 +27,7 @@
             "height": "175px",
             "panels": [
                {
-                  "content": "<p>\n  This dashboard shows health metrics for the Cortex read path.\n  It is broken into sections for each service on the read path, and organized by the order in which the read request flows.\n  <br/>\n  Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the time range of the query).\n  <br/>\n  For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.\n</p>\n<p>\n  The dashboard also shows metrics for the 4 optional caches that can be deployed with Cortex:\n  the query results cache, the metadata cache, the chunks cache, and the index cache.\n  <br/>\n  These panels will show “no data” if the caches are not deployed.\n</p>\n<p>\n  Lastly, it also includes metrics for how the ingester and store-gateway interact with object storage.\n</p>\n",
+                  "content": "<p>\n  This dashboard shows health metrics for the read path.\n  It is broken into sections for each service on the read path, and organized by the order in which the read request flows.\n  <br/>\n  Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the time range of the query).\n  <br/>\n  For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.\n</p>\n<p>\n  The dashboard also shows metrics for the 4 optional caches that can be deployed:\n  the query results cache, the metadata cache, the chunks cache, and the index cache.\n  <br/>\n  These panels will show “no data” if the caches are not deployed.\n</p>\n<p>\n  Lastly, it also includes metrics for how the ingester and store-gateway interact with object storage.\n</p>\n",
                   "datasource": null,
                   "description": "",
                   "id": 1,
@@ -132,7 +132,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Range queries per second\nRate of range queries per second being made to\nCortex via the <tt>/prometheus</tt> API.\n\n",
+                  "description": "### Range queries per second\nRate of range queries per second being made to\nMimir via the <tt>/prometheus</tt> API.\n\n",
                   "fill": 1,
                   "format": "reqps",
                   "id": 3,
@@ -2354,7 +2354,7 @@
                   "dashLength": 10,
                   "dashes": false,
                   "datasource": "$datasource",
-                  "description": "### Hit Ratio\nEven if you do not set up memcached for the blocks index cache, you will still see data in this panel because Cortex by default has an\nin-memory blocks index cache.\n\n",
+                  "description": "### Hit Ratio\nEven if you do not set up memcached for the blocks index cache, you will still see data in this panel because the store-gateway by default has an\nin-memory blocks index cache.\n\n",
                   "fill": 1,
                   "id": 29,
                   "legend": {
