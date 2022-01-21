@@ -192,7 +192,7 @@
     * For all metrics the value of the "name" label has changed from `frontend.memcached` to `frontend-cache`
   * The following metrics have been removed:
     * `cortex_cache_background_queue_length{name}`
-* [CHANGE] Frontend: merged `query_range_config` into `query_frontend_config` (with same keys) and renamed flags: #825
+* [CHANGE] Frontend: merged `query_range` into `frontend` in the YAML config (keeping the same keys) and renamed flags: #825
   * `-querier.max-retries-per-request` renamed to `-frontend.max-retries-per-request`
   * `-querier.split-queries-by-interval` renamed to `-frontend.split-queries-by-interval`
   * `-querier.align-querier-with-step` renamed to `-frontend.align-querier-with-step`
