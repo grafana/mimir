@@ -60,9 +60,9 @@ The current team members are:
 
 Previous team members:
 
-- Goutham Veeramachaneni - [@gouthamve](https://github.com/gouthamve) ([Grafana Labs](https://grafana.com/))
-- Jacob Lisi - [@jtlisi](https://github.com/jtlisi) ([Grafana Labs](https://grafana.com/))
-- Tom Wilkie - [@tomwilkie](https://github.com/tomwilkie) ([Grafana Labs](https://grafana.com/))
+- Goutham Veeramachaneni - [@gouthamve](https://github.com/gouthamve)
+- Jacob Lisi - [@jtlisi](https://github.com/jtlisi)
+- Tom Wilkie - [@tomwilkie](https://github.com/tomwilkie)
 
 ### Maintainers
 
