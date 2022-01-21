@@ -4,6 +4,7 @@ package compactor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -83,6 +84,9 @@ func (j *job) String() string {
 		maxT := time.Unix(0, block.MaxTime*int64(time.Millisecond)).UTC()
 		blocks = append(blocks, fmt.Sprintf("%s (min time: %s, max time: %s)", block.ULID.String(), minT.String(), maxT.String()))
 	}
+
+	// Keep the output stable for tests.
+	sort.Strings(blocks)
 
 	return fmt.Sprintf("stage: %s, range start: %d, range end: %d, shard: %s, blocks: %s",
 		j.stage, j.rangeStart, j.rangeEnd, j.shardID, strings.Join(blocks, ","))

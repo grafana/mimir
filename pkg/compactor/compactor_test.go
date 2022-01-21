@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -118,13 +119,6 @@ func TestConfig_Validate(t *testing.T) {
 				cfg.CompactionJobsOrder = "everything-is-important"
 			},
 			expected: errInvalidCompactionOrder.Error(),
-		},
-		"should fail on unsupported compaction jobs order": {
-			setup: func(cfg *Config) {
-				cfg.CompactionStrategy = CompactionStrategyDefault
-				cfg.CompactionJobsOrder = CompactionOrderNewestFirst
-			},
-			expected: errors.Errorf(errUnsupportedCompactionOrder, CompactionStrategyDefault, CompactionOrderNewestFirst).Error(),
 		},
 		"should fail on invalid value of max-opening-blocks-concurrency": {
 			setup:    func(cfg *Config) { cfg.MaxOpeningBlocksConcurrency = 0 },
@@ -444,12 +438,15 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 	userID := "test-user"
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{userID}, nil)
-	bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D"}, nil)
+	bucketClient.MockIter(userID+"/", []string{userID + "/01DTVP434PA9VFXSW2JKB3392D", userID + "/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
 	bucketClient.MockIter(userID+"/markers/", nil, nil)
 	bucketClient.MockExists(path.Join(userID, mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSON("01DTVP434PA9VFXSW2JKB3392D"), nil)
 	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
 	bucketClient.MockGet(userID+"/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/meta.json", mockBlockMetaJSON("01DTW0ZCPDDNV4BV83Q2SV4QAZ"), nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/deletion-mark.json", "", nil)
+	bucketClient.MockGet(userID+"/01DTW0ZCPDDNV4BV83Q2SV4QAZ/no-compact-mark.json", "", nil)
 	bucketClient.MockGet(userID+"/bucket-index.json.gz", "", nil)
 	bucketClient.MockUpload(userID+"/bucket-index.json.gz", nil)
 
@@ -458,7 +455,7 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
 
 	// Wait until all retry attempts have completed.
-	test.Poll(t, time.Second, 1.0, func() interface{} {
+	test.Poll(t, time.Minute, 1.0, func() interface{} {
 		return prom_testutil.ToFloat64(c.compactionRunsFailed)
 	})
 
@@ -486,19 +483,26 @@ func TestMultitenantCompactor_ShouldIncrementCompactionErrorIfFailedToCompactASi
 func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.T) {
 	t.Parallel()
 
-	// Mock the bucket to contain two users, each one with one block.
+	// Mock the bucket to contain two users, each one with two blocks (to make sure that grouper doesn't skip them).
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", mimir_tsdb.TenantDeletionMarkPath), false, nil)
-	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
-	bucketClient.MockIter("user-2/", []string{"user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
+	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01FS51A7GQ1RQWV35DBVYQM4KF"}, nil)
+	bucketClient.MockIter("user-2/", []string{"user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ", "user-2/01FRSF035J26D6CGX7STCSD1KG"}, nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSON("01DTVP434PA9VFXSW2JKB3392D"), nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FS51A7GQ1RQWV35DBVYQM4KF/meta.json", mockBlockMetaJSON("01FS51A7GQ1RQWV35DBVYQM4KF"), nil)
+	bucketClient.MockGet("user-1/01FS51A7GQ1RQWV35DBVYQM4KF/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FS51A7GQ1RQWV35DBVYQM4KF/no-compact-mark.json", "", nil)
+
 	bucketClient.MockGet("user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ/meta.json", mockBlockMetaJSON("01DTW0ZCPDDNV4BV83Q2SV4QAZ"), nil)
 	bucketClient.MockGet("user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ/no-compact-mark.json", "", nil)
+	bucketClient.MockGet("user-2/01FRSF035J26D6CGX7STCSD1KG/meta.json", mockBlockMetaJSON("01FRSF035J26D6CGX7STCSD1KG"), nil)
+	bucketClient.MockGet("user-2/01FRSF035J26D6CGX7STCSD1KG/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-2/01FRSF035J26D6CGX7STCSD1KG/no-compact-mark.json", "", nil)
 	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
 	bucketClient.MockGet("user-2/bucket-index.json.gz", "", nil)
 	bucketClient.MockIter("user-1/markers/", nil, nil)
@@ -535,15 +539,17 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
 		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-1 msg="start of GC"`,
+		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FS51A7GQ1RQWV35DBVYQM4KF (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
-		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
+		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
 		`level=info component=compactor org_id=user-2 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-2 msg="start of GC"`,
+		`level=debug component=compactor org_id=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTW0ZCPDDNV4BV83Q2SV4QAZ (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FRSF035J26D6CGX7STCSD1KG (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor org_id=user-2 msg="start of compactions"`,
-		`level=info component=compactor org_id=user-2 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
+		`level=info component=compactor org_id=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -616,18 +622,24 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionTime(t *testing.T) {
 	t.Parallel()
 
-	// By using two blocks with different labels, we get two compaction jobs. Only one of these jobs will be started,
+	// By using blocks with different labels, we get two compaction jobs. Only one of these jobs will be started,
 	// and since its planning will take longer than maxCompactionTime, we stop compactions early.
 	bucketClient := &bucket.ClientMock{}
 	bucketClient.MockIter("", []string{"user-1"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
-	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01FN3VCQV5X342W2ZKMQQXAZRX"}, nil)
+	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01FN3VCQV5X342W2ZKMQQXAZRX", "user-1/01FS51A7GQ1RQWV35DBVYQM4KF", "user-1/01FRQGQB7RWQ2TS0VWA82QTPXE"}, nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01DTVP434PA9VFXSW2JKB3392D", 1574776800000, 1574784000000, map[string]string{"A": "B"}), nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", "", nil)
-	bucketClient.MockGet("user-1/01FN3VCQV5X342W2ZKMQQXAZRX/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01FN3VCQV5X342W2ZKMQQXAZRX", 1637839280000, 1637842892000, map[string]string{"C": "D"}), nil)
+	bucketClient.MockGet("user-1/01FS51A7GQ1RQWV35DBVYQM4KF/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01FS51A7GQ1RQWV35DBVYQM4KF", 1574776800000, 1574784000000, map[string]string{"A": "B"}), nil)
+	bucketClient.MockGet("user-1/01FS51A7GQ1RQWV35DBVYQM4KF/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FS51A7GQ1RQWV35DBVYQM4KF/no-compact-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FN3VCQV5X342W2ZKMQQXAZRX/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01FN3VCQV5X342W2ZKMQQXAZRX", 1574776800000, 1574784000000, map[string]string{"C": "D"}), nil)
 	bucketClient.MockGet("user-1/01FN3VCQV5X342W2ZKMQQXAZRX/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-1/01FN3VCQV5X342W2ZKMQQXAZRX/no-compact-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FRQGQB7RWQ2TS0VWA82QTPXE/meta.json", mockBlockMetaJSONWithTimeRangeAndLabels("01FRQGQB7RWQ2TS0VWA82QTPXE", 1574776800000, 1574784000000, map[string]string{"C": "D"}), nil)
+	bucketClient.MockGet("user-1/01FRQGQB7RWQ2TS0VWA82QTPXE/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FRQGQB7RWQ2TS0VWA82QTPXE/no-compact-mark.json", "", nil)
 	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
 	bucketClient.MockIter("user-1/markers/", nil, nil)
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
@@ -663,9 +675,11 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
 		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-1 msg="start of GC"`,
+		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@414047632870839233-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FS51A7GQ1RQWV35DBVYQM4KF (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
+		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@12695595599644216241-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01FN3VCQV5X342W2ZKMQQXAZRX (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FRQGQB7RWQ2TS0VWA82QTPXE (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
 		`level=info component=compactor org_id=user-1 msg="max compaction time reached, no more compactions will be started"`,
-		`level=info component=compactor org_id=user-1 groupKey=0@12695595599644216241 msg="compaction job finished" success=true`,
+		`level=info component=compactor org_id=user-1 groupKey=0@12695595599644216241-merge--1574776800000-1574784000000 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -944,16 +958,22 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 	bucketClient.MockIter("", []string{"user-1", "user-2"}, nil)
 	bucketClient.MockExists(path.Join("user-1", mimir_tsdb.TenantDeletionMarkPath), false, nil)
 	bucketClient.MockExists(path.Join("user-2", mimir_tsdb.TenantDeletionMarkPath), false, nil)
-	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D"}, nil)
-	bucketClient.MockIter("user-2/", []string{"user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ"}, nil)
+	bucketClient.MockIter("user-1/", []string{"user-1/01DTVP434PA9VFXSW2JKB3392D", "user-1/01FSTQ95C8FS0ZAGTQS2EF1NEG"}, nil)
+	bucketClient.MockIter("user-2/", []string{"user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ", "user-2/01FSV54G6QFQH1G9QE93G3B9TB"}, nil)
 	bucketClient.MockIter("user-1/markers/", nil, nil)
 	bucketClient.MockIter("user-2/markers/", nil, nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/meta.json", mockBlockMetaJSON("01DTVP434PA9VFXSW2JKB3392D"), nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-1/01DTVP434PA9VFXSW2JKB3392D/no-compact-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FSTQ95C8FS0ZAGTQS2EF1NEG/meta.json", mockBlockMetaJSON("01FSTQ95C8FS0ZAGTQS2EF1NEG"), nil)
+	bucketClient.MockGet("user-1/01FSTQ95C8FS0ZAGTQS2EF1NEG/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-1/01FSTQ95C8FS0ZAGTQS2EF1NEG/no-compact-mark.json", "", nil)
 	bucketClient.MockGet("user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ/meta.json", mockBlockMetaJSON("01DTW0ZCPDDNV4BV83Q2SV4QAZ"), nil)
 	bucketClient.MockGet("user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ/deletion-mark.json", "", nil)
 	bucketClient.MockGet("user-2/01DTW0ZCPDDNV4BV83Q2SV4QAZ/no-compact-mark.json", "", nil)
+	bucketClient.MockGet("user-2/01FSV54G6QFQH1G9QE93G3B9TB/meta.json", mockBlockMetaJSON("01FSV54G6QFQH1G9QE93G3B9TB"), nil)
+	bucketClient.MockGet("user-2/01FSV54G6QFQH1G9QE93G3B9TB/deletion-mark.json", "", nil)
+	bucketClient.MockGet("user-2/01FSV54G6QFQH1G9QE93G3B9TB/no-compact-mark.json", "", nil)
 	bucketClient.MockGet("user-1/bucket-index.json.gz", "", nil)
 	bucketClient.MockGet("user-2/bucket-index.json.gz", "", nil)
 	bucketClient.MockUpload("user-1/bucket-index.json.gz", nil)
@@ -998,15 +1018,17 @@ func TestMultitenantCompactor_ShouldCompactAllUsersOnShardingEnabledButOnlyOneIn
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
 		`level=info component=compactor org_id=user-1 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-1 msg="start of GC"`,
+		`level=debug component=compactor org_id=user-1 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTVP434PA9VFXSW2JKB3392D (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FSTQ95C8FS0ZAGTQS2EF1NEG (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor org_id=user-1 msg="start of compactions"`,
-		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
+		`level=info component=compactor org_id=user-1 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-1 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-2`,
 		`level=info component=compactor org_id=user-2 msg="start sync of metas"`,
 		`level=info component=compactor org_id=user-2 msg="start of GC"`,
+		`level=debug component=compactor org_id=user-2 msg="grouper found a compactable blocks group" groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 job="stage: merge, range start: 1574776800000, range end: 1574784000000, shard: , blocks: 01DTW0ZCPDDNV4BV83Q2SV4QAZ (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC),01FSV54G6QFQH1G9QE93G3B9TB (min time: 2019-11-26 14:00:00 +0000 UTC, max time: 2019-11-26 16:00:00 +0000 UTC)"`,
 		`level=info component=compactor org_id=user-2 msg="start of compactions"`,
-		`level=info component=compactor org_id=user-2 groupKey=0@17241709254077376921 msg="compaction job finished" success=true`,
+		`level=info component=compactor org_id=user-2 groupKey=0@17241709254077376921-merge--1574776800000-1574784000000 msg="compaction job finished" success=true`,
 		`level=info component=compactor org_id=user-2 msg="compaction iterations done"`,
 		`level=info component=compactor msg="successfully compacted user blocks" user=user-2`,
 	}, removeIgnoredLogs(strings.Split(strings.TrimSpace(logs.String()), "\n")))
@@ -1158,7 +1180,6 @@ func TestMultitenantCompactor_ShouldSkipCompactionForJobsNoMoreOwnedAfterPlannin
 
 	cfg := prepareConfig()
 	cfg.CompactionConcurrency = 1
-	cfg.CompactionStrategy = CompactionStrategySplitMerge
 	cfg.ShardingEnabled = true
 	cfg.ShardingRing.InstanceID = "compactor-1"
 	cfg.ShardingRing.InstanceAddr = "1.2.3.4"
@@ -1482,12 +1503,7 @@ func prepareWithConfigProvider(t *testing.T, compactorCfg Config, bucketClient o
 		return tsdbCompactor, tsdbPlanner, nil
 	}
 
-	grouper := defaultBlocksGrouperFactory
-	if compactorCfg.CompactionStrategy == CompactionStrategySplitMerge {
-		grouper = splitAndMergeGrouperFactory
-	}
-
-	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, grouper, blocksCompactorFactory)
+	c, err := newMultitenantCompactor(compactorCfg, storageCfg, limits, logger, registry, bucketClientFactory, splitAndMergeGrouperFactory, blocksCompactorFactory)
 	require.NoError(t, err)
 
 	return c, tsdbCompactor, tsdbPlanner, logs, registry
@@ -1744,12 +1760,11 @@ const (
 
 func TestOwnUser(t *testing.T) {
 	type testCase struct {
-		compactors         int
-		compactionStrategy string
-		sharding           bool
-		enabledUsers       []string
-		disabledUsers      []string
-		compactorShards    map[string]int
+		compactors      int
+		sharding        bool
+		enabledUsers    []string
+		disabledUsers   []string
+		compactorShards map[string]int
 
 		check func(t *testing.T, comps []*MultitenantCompactor)
 	}
@@ -1759,10 +1774,9 @@ func TestOwnUser(t *testing.T) {
 
 	testCases := map[string]testCase{
 		"5 compactors, no sharding": {
-			compactors:         5,
-			compactionStrategy: CompactionStrategyDefault,
-			sharding:           false,
-			compactorShards:    map[string]int{user1: 2}, // Not used when sharding is disabled.
+			compactors:      5,
+			sharding:        false,
+			compactorShards: map[string]int{user1: 2}, // Not used when sharding is disabled.
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
 				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
@@ -1773,41 +1787,10 @@ func TestOwnUser(t *testing.T) {
 			},
 		},
 
-		"5 compactors, no sharding, split-and-merge": {
-			compactors:         5,
-			compactionStrategy: CompactionStrategySplitMerge,
-			sharding:           false,
-			compactorShards:    map[string]int{user1: 2}, // Not used when sharding is disabled.
-
-			check: func(t *testing.T, comps []*MultitenantCompactor) {
-				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
-				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 5)
-
-				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 5)
-				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 5)
-			},
-		},
-
-		"5 compactors, sharding enabled, default strategy": {
-			compactors:         5,
-			compactionStrategy: CompactionStrategyDefault,
-			sharding:           true,
-			compactorShards:    map[string]int{user1: 2}, // Not used for CompactionStrategyDefault.
-
-			check: func(t *testing.T, comps []*MultitenantCompactor) {
-				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 1)
-				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonBlocksCleaner), 1)
-
-				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 1)
-				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonBlocksCleaner), 1)
-			},
-		},
-
-		"5 compactors, sharding enabled, split-merge strategy, no compactor shard size": {
-			compactors:         5,
-			compactionStrategy: CompactionStrategySplitMerge,
-			sharding:           true,
-			compactorShards:    nil, // no limits
+		"5 compactors, sharding enabled, no compactor shard size": {
+			compactors:      5,
+			sharding:        true,
+			compactorShards: nil, // no limits
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
 				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 5)
@@ -1818,11 +1801,10 @@ func TestOwnUser(t *testing.T) {
 			},
 		},
 
-		"10 compactors, sharding enabled, split-merge strategy, with non-zero shard sizes": {
-			compactors:         10,
-			compactionStrategy: CompactionStrategySplitMerge,
-			sharding:           true,
-			compactorShards:    map[string]int{user1: 2, user2: 3},
+		"10 compactors, sharding enabled, with non-zero shard sizes": {
+			compactors:      10,
+			sharding:        true,
+			compactorShards: map[string]int{user1: 2, user2: 3},
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
 				require.Len(t, owningCompactors(t, comps, user1, ownUserReasonCompactor), 2)
@@ -1837,11 +1819,10 @@ func TestOwnUser(t *testing.T) {
 			},
 		},
 
-		"10 compactors, sharding enabled, split-merge strategy, with zero shard size": {
-			compactors:         10,
-			compactionStrategy: CompactionStrategySplitMerge,
-			sharding:           true,
-			compactorShards:    map[string]int{user2: 0},
+		"10 compactors, sharding enabled, with zero shard size": {
+			compactors:      10,
+			sharding:        true,
+			compactorShards: map[string]int{user2: 0},
 
 			check: func(t *testing.T, comps []*MultitenantCompactor) {
 				require.Len(t, owningCompactors(t, comps, user2, ownUserReasonCompactor), 10)
@@ -1865,7 +1846,6 @@ func TestOwnUser(t *testing.T) {
 				cfg := prepareConfig()
 				cfg.CompactionInterval = 10 * time.Minute // We will only call compaction manually.
 
-				cfg.CompactionStrategy = tc.compactionStrategy
 				cfg.EnabledTenants = tc.enabledUsers
 				cfg.DisabledTenants = tc.disabledUsers
 
@@ -1945,6 +1925,8 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 			Chunks: []chunks.Meta{
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(20, 20), newSample(21, 21)}),
 				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(10, 10), newSample(11, 11)}),
+				// Extend block to cover 2h.
+				tsdbutil.ChunkFromSamples([]tsdbutil.Sample{newSample(0, 0), newSample(2*time.Hour.Milliseconds()-1, 0)}),
 			},
 		},
 	}
@@ -1952,7 +1934,10 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	const user = "user"
 
 	storageDir := t.TempDir()
-	meta, err := testutil.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	// We need two blocks to start compaction.
+	meta1, err := testutil.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
+	require.NoError(t, err)
+	meta2, err := testutil.GenerateBlockFromSpec(user, filepath.Join(storageDir, user), specs)
 	require.NoError(t, err)
 
 	bkt, err := filesystem.NewBucketClient(filesystem.Config{Directory: storageDir})
@@ -1961,7 +1946,7 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	cfg := prepareConfig()
 	c, _, tsdbPlanner, logs, registry := prepare(t, cfg, bkt)
 
-	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{meta}, nil)
+	tsdbPlanner.On("Plan", mock.Anything, mock.Anything).Return([]*metadata.Meta{meta1, meta2}, nil)
 
 	// Start the compactor
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), c))
@@ -1975,11 +1960,16 @@ func TestMultitenantCompactor_OutOfOrderCompaction(t *testing.T) {
 	require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 
 	// Verify that compactor has found block with out of order chunks, and this block is now marked for no-compaction.
-	require.Contains(t, logs.String(), "level=info component=compactor org_id=user msg=\"block has been marked for no compaction\" block="+meta.ULID.String())
+	r := regexp.MustCompile("level=info component=compactor org_id=user msg=\"block has been marked for no compaction\" block=([0-9A-Z]+)")
+	matches := r.FindStringSubmatch(logs.String())
+	require.Len(t, matches, 2) // Entire string match + single group match.
+
+	skippedBlock := matches[1]
+	require.True(t, skippedBlock == meta1.ULID.String() || skippedBlock == meta2.ULID.String())
 
 	m := &metadata.NoCompactMark{}
-	require.NoError(t, metadata.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, meta.ULID.String()), m))
-	require.Equal(t, meta.ULID, m.ID)
+	require.NoError(t, metadata.ReadMarker(context.Background(), log.NewNopLogger(), objstore.WithNoopInstr(bkt), path.Join(user, skippedBlock), m))
+	require.Equal(t, skippedBlock, m.ID.String())
 	require.NotZero(t, m.NoCompactTime)
 	require.Equal(t, metadata.NoCompactReason(metadata.OutOfOrderChunksNoCompactReason), m.Reason)
 
