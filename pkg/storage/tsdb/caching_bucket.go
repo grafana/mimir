@@ -107,7 +107,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 	}
 	if metadataCache != nil {
 		cachingConfigured = true
-		metadataCache = cache.NewTracingCache(metadataCache, logger)
+		metadataCache = cache.NewSpanlessTracingCache(metadataCache, logger)
 
 		cfg.CacheExists("metafile", metadataCache, isMetaFile, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
 		cfg.CacheGet("metafile", metadataCache, isMetaFile, metadataConfig.MetafileMaxSize, metadataConfig.MetafileContentTTL, metadataConfig.MetafileExistsTTL, metadataConfig.MetafileDoesntExistTTL)
@@ -123,7 +123,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 
 	if chunksCache != nil {
 		cachingConfigured = true
-		chunksCache = cache.NewTracingCache(chunksCache, logger)
+		chunksCache = cache.NewSpanlessTracingCache(chunksCache, logger)
 
 		// Use the metadata cache for attributes if configured, otherwise fallback to chunks cache.
 		// If in-memory cache is enabled, wrap the attributes cache with the in-memory LRU cache.

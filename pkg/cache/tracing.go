@@ -12,21 +12,21 @@ import (
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
 
-// TracingCache logs Fetch operation in the parent spans.
-type TracingCache struct {
+// SpanlessTracingCache logs Fetch operation in the parent spans.
+type SpanlessTracingCache struct {
 	c      Cache
 	logger log.Logger
 }
 
-func NewTracingCache(cache Cache, logger log.Logger) Cache {
-	return TracingCache{c: cache, logger: logger}
+func NewSpanlessTracingCache(cache Cache, logger log.Logger) Cache {
+	return SpanlessTracingCache{c: cache, logger: logger}
 }
 
-func (t TracingCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
+func (t SpanlessTracingCache) Store(ctx context.Context, data map[string][]byte, ttl time.Duration) {
 	t.c.Store(ctx, data, ttl)
 }
 
-func (t TracingCache) Fetch(ctx context.Context, keys []string) (result map[string][]byte) {
+func (t SpanlessTracingCache) Fetch(ctx context.Context, keys []string) (result map[string][]byte) {
 	var (
 		bytes  int
 		logger = spanlogger.FromContext(ctx, t.logger)
@@ -41,6 +41,6 @@ func (t TracingCache) Fetch(ctx context.Context, keys []string) (result map[stri
 	return
 }
 
-func (t TracingCache) Name() string {
+func (t SpanlessTracingCache) Name() string {
 	return t.c.Name()
 }

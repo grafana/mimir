@@ -98,7 +98,7 @@ func newMemcachedResultsCache(cfg cache.MemcachedConfig, logger log.Logger, reg 
 		return nil, errors.Wrap(err, "create results cache memcached client")
 	}
 
-	return cache.NewTracingCache(thanos_cache.NewMemcachedCache(cacheName, logger, backend, reg), logger), nil
+	return cache.NewSpanlessTracingCache(thanos_cache.NewMemcachedCache(cacheName, logger, backend, reg), logger), nil
 }
 
 // Extractor is used by the cache to extract a subset of a response from a cache entry.
