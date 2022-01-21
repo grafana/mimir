@@ -3,7 +3,7 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package tsdb
+package cache
 
 import (
 	"testing"
@@ -13,23 +13,23 @@ import (
 
 func TestMemcachedIndexCacheConfig_GetAddresses(t *testing.T) {
 	tests := map[string]struct {
-		cfg      MemcachedClientConfig
+		cfg      MemcachedConfig
 		expected []string
 	}{
 		"no addresses": {
-			cfg: MemcachedClientConfig{
+			cfg: MemcachedConfig{
 				Addresses: "",
 			},
 			expected: []string{},
 		},
 		"one address": {
-			cfg: MemcachedClientConfig{
+			cfg: MemcachedConfig{
 				Addresses: "dns+localhost:11211",
 			},
 			expected: []string{"dns+localhost:11211"},
 		},
 		"two addresses": {
-			cfg: MemcachedClientConfig{
+			cfg: MemcachedConfig{
 				Addresses: "dns+memcached-1:11211,dns+memcached-2:11211",
 			},
 			expected: []string{"dns+memcached-1:11211", "dns+memcached-2:11211"},

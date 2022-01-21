@@ -24,35 +24,12 @@ import (
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/cache"
+	tsdb_cache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 )
-
-const (
-	CacheBackendMemcached = "memcached"
-)
-
-type CacheBackend struct {
-	Backend   string                `yaml:"backend"`
-	Memcached MemcachedClientConfig `yaml:"memcached"`
-}
-
-// Validate the config.
-func (cfg *CacheBackend) Validate() error {
-	if cfg.Backend != "" && cfg.Backend != CacheBackendMemcached {
-		return fmt.Errorf("unsupported cache backend: %s", cfg.Backend)
-	}
-
-	if cfg.Backend == CacheBackendMemcached {
-		if err := cfg.Memcached.Validate(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
 
 type ChunksCacheConfig struct {
-	CacheBackend `yaml:",inline"`
+	cache.BackendConfig `yaml:",inline"`
 
 	SubrangeSize               int64         `yaml:"subrange_size"`
 	MaxGetRangeRequests        int           `yaml:"max_get_range_requests"`
@@ -62,7 +39,7 @@ type ChunksCacheConfig struct {
 }
 
 func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", CacheBackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for chunks cache, if not empty. Supported values: %s.", cache.BackendMemcached))
 
 	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
 
@@ -74,11 +51,11 @@ func (cfg *ChunksCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix st
 }
 
 func (cfg *ChunksCacheConfig) Validate() error {
-	return cfg.CacheBackend.Validate()
+	return cfg.BackendConfig.Validate()
 }
 
 type MetadataCacheConfig struct {
-	CacheBackend `yaml:",inline"`
+	cache.BackendConfig `yaml:",inline"`
 
 	TenantsListTTL          time.Duration `yaml:"tenants_list_ttl"`
 	TenantBlocksListTTL     time.Duration `yaml:"tenant_blocks_list_ttl"`
@@ -94,7 +71,7 @@ type MetadataCacheConfig struct {
 }
 
 func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
-	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", CacheBackendMemcached))
+	f.StringVar(&cfg.Backend, prefix+"backend", "", fmt.Sprintf("Backend for metadata cache, if not empty. Supported values: %s.", cache.BackendMemcached))
 
 	cfg.Memcached.RegisterFlagsWithPrefix(f, prefix+"memcached.")
 
@@ -112,11 +89,11 @@ func (cfg *MetadataCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix 
 }
 
 func (cfg *MetadataCacheConfig) Validate() error {
-	return cfg.CacheBackend.Validate()
+	return cfg.BackendConfig.Validate()
 }
 
 func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig MetadataCacheConfig, bkt objstore.Bucket, logger log.Logger, reg prometheus.Registerer) (objstore.Bucket, error) {
-	cfg := cache.NewCachingBucketConfig()
+	cfg := tsdb_cache.NewCachingBucketConfig()
 	cachingConfigured := false
 
 	chunksCache, err := createCache("chunks-cache", chunksConfig.Backend, chunksConfig.Memcached, logger, reg)
@@ -138,7 +115,7 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		cfg.CacheAttributes("block-index", metadataCache, isBlockIndexFile, metadataConfig.BlockIndexAttributesTTL)
 		cfg.CacheGet("bucket-index", metadataCache, isBucketIndexFile, metadataConfig.BucketIndexMaxSize, metadataConfig.BucketIndexContentTTL /* do not cache exist / not exist: */, 0, 0)
 
-		codec := snappyIterCodec{cache.JSONIterCodec{}}
+		codec := snappyIterCodec{tsdb_cache.JSONIterCodec{}}
 		cfg.CacheIter("tenants-iter", metadataCache, isTenantsDir, metadataConfig.TenantsListTTL, codec)
 		cfg.CacheIter("tenant-blocks-iter", metadataCache, isTenantBlocksDir, metadataConfig.TenantBlocksListTTL, codec)
 		cfg.CacheIter("chunks-iter", metadataCache, isChunksDir, metadataConfig.ChunksListTTL, codec)
@@ -170,16 +147,16 @@ func CreateCachingBucket(chunksConfig ChunksCacheConfig, metadataConfig Metadata
 		return bkt, nil
 	}
 
-	return cache.NewCachingBucket(bkt, cfg, logger, reg)
+	return tsdb_cache.NewCachingBucket(bkt, cfg, logger, reg)
 }
 
-func createCache(cacheName string, backend string, memcached MemcachedClientConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+func createCache(cacheName string, backend string, memcached cache.MemcachedConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	switch backend {
 	case "":
 		// No caching.
 		return nil, nil
 
-	case CacheBackendMemcached:
+	case cache.BackendMemcached:
 		var client cacheutil.MemcachedClient
 		client, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, memcached.ToMemcachedClientConfig(), reg)
 		if err != nil {
@@ -230,7 +207,7 @@ func isChunksDir(name string) bool {
 }
 
 type snappyIterCodec struct {
-	cache.IterCodec
+	tsdb_cache.IterCodec
 }
 
 func (i snappyIterCodec) Encode(files []string) ([]byte, error) {

@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
-	thanos_cache "github.com/thanos-io/thanos/pkg/cache"
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 )
@@ -38,9 +37,6 @@ var (
 		cacheTypeLabelValues,
 	}
 )
-
-// Cache is a generic interface. Re-mapping Thanos one for convenience (same packages name make it annoying to use).
-type Cache = thanos_cache.Cache
 
 // IndexCache is the interface exported by index cache backends.
 type IndexCache interface {

@@ -12,9 +12,9 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -24,6 +24,8 @@ import (
 	promtest "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/thanos-io/thanos/pkg/objstore"
+
+	"github.com/grafana/mimir/pkg/cache"
 )
 
 const testFilename = "/random_object"
@@ -43,7 +45,7 @@ func TestChunksCaching(t *testing.T) {
 	assert.NoError(t, inmem.Upload(context.Background(), name, bytes.NewReader(data)))
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	// Warning, these tests must be run in order, they depend cache state from previous test.
 	for _, tc := range []struct {
@@ -114,7 +116,7 @@ func TestChunksCaching(t *testing.T) {
 			expectedFetchedBytes: length,
 			expectedCachedBytes:  0, // Cache is flushed.
 			init: func() {
-				cache.flush()
+				cache.Flush()
 			},
 		},
 
@@ -127,9 +129,9 @@ func TestChunksCaching(t *testing.T) {
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
 				// Delete first 3 subranges.
-				delete(cache.cache, cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize))
-				delete(cache.cache, cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize))
-				delete(cache.cache, cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 0*subrangeSize, 1*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 1*subrangeSize, 2*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 2*subrangeSize, 3*subrangeSize))
 			},
 		},
 
@@ -142,9 +144,9 @@ func TestChunksCaching(t *testing.T) {
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
 				// Delete last 3 subranges.
-				delete(cache.cache, cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize))
-				delete(cache.cache, cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize))
-				delete(cache.cache, cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 7*subrangeSize, 8*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 8*subrangeSize, 9*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 9*subrangeSize, 10*subrangeSize))
 			},
 		},
 
@@ -157,9 +159,9 @@ func TestChunksCaching(t *testing.T) {
 			expectedCachedBytes:  7 * subrangeSize,
 			init: func() {
 				// Delete 3 subranges in the middle.
-				delete(cache.cache, cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize))
-				delete(cache.cache, cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize))
-				delete(cache.cache, cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 3*subrangeSize, 4*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 4*subrangeSize, 5*subrangeSize))
+				cache.Delete(cachingKeyObjectSubrange(name, 5*subrangeSize, 6*subrangeSize))
 			},
 		},
 
@@ -176,7 +178,7 @@ func TestChunksCaching(t *testing.T) {
 					if i > 0 && i%3 == 0 {
 						continue
 					}
-					delete(cache.cache, cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
 				}
 			},
 		},
@@ -196,7 +198,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 3 || i == 5 || i == 7 {
 						continue
 					}
-					delete(cache.cache, cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
 				}
 			},
 		},
@@ -215,7 +217,7 @@ func TestChunksCaching(t *testing.T) {
 					if i == 5 || i == 6 || i == 7 {
 						continue
 					}
-					delete(cache.cache, cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
+					cache.Delete(cachingKeyObjectSubrange(name, i*subrangeSize, (i+1)*subrangeSize))
 				}
 			},
 		},
@@ -252,52 +254,6 @@ func verifyGetRange(t *testing.T, cachingBucket *CachingBucket, name string, off
 			t.Fatalf("bytes differ at position %d", ix)
 		}
 	}
-}
-
-type mockCache struct {
-	mu    sync.Mutex
-	cache map[string]cacheItem
-}
-
-func newMockCache() *mockCache {
-	c := &mockCache{}
-	c.flush()
-	return c
-}
-
-func (m *mockCache) Store(_ context.Context, data map[string][]byte, ttl time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	exp := time.Now().Add(ttl)
-	for key, val := range data {
-		m.cache[key] = cacheItem{data: val, expiresAt: exp}
-	}
-}
-
-func (m *mockCache) Fetch(_ context.Context, keys []string) map[string][]byte {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	found := make(map[string][]byte, len(keys))
-
-	now := time.Now()
-	for _, k := range keys {
-		v, ok := m.cache[k]
-		if ok && now.Before(v.expiresAt) {
-			found[k] = v.data
-		}
-	}
-
-	return found
-}
-
-func (m *mockCache) Name() string {
-	return "mock"
-}
-
-func (m *mockCache) flush() {
-	m.cache = map[string]cacheItem{}
 }
 
 func TestMergeRanges(t *testing.T) {
@@ -338,7 +294,7 @@ func TestMergeRanges(t *testing.T) {
 func TestInvalidOffsetAndLength(t *testing.T) {
 	b := &testBucket{objstore.NewInMemBucket()}
 
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 	cfg := NewCachingBucketConfig()
 	cfg.CacheGetRange("chunks", cache, func(string) bool { return true }, 10000, cache, time.Hour, time.Hour, 3)
 
@@ -380,7 +336,7 @@ func TestCachedIter(t *testing.T) {
 	allFiles := []string{"/file-1", "/file-2", "/file-3", "/file-4"}
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	const cfgName = "dirs"
 	cfg := NewCachingBucketConfig()
@@ -394,11 +350,11 @@ func TestCachedIter(t *testing.T) {
 	assert.NoError(t, inmem.Upload(context.Background(), "/file-5", strings.NewReader("nazdar")))
 	verifyIter(t, cb, allFiles, true, cfgName) // Iter returns old response.
 
-	cache.flush()
+	cache.Flush()
 	allFiles = append(allFiles, "/file-5")
 	verifyIter(t, cb, allFiles, false, cfgName)
 
-	cache.flush()
+	cache.Flush()
 
 	e := errors.Errorf("test error")
 
@@ -443,7 +399,7 @@ func TestExists(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
@@ -456,12 +412,12 @@ func TestExists(t *testing.T) {
 
 	assert.NoError(t, inmem.Upload(context.Background(), testFilename, strings.NewReader("hej")))
 	verifyExists(t, cb, testFilename, false, true, cfgName) // Reused cache result.
-	cache.flush()
+	cache.Flush()
 	verifyExists(t, cb, testFilename, true, false, cfgName)
 
 	assert.NoError(t, inmem.Delete(context.Background(), testFilename))
 	verifyExists(t, cb, testFilename, true, true, cfgName) // Reused cache result.
-	cache.flush()
+	cache.Flush()
 	verifyExists(t, cb, testFilename, false, false, cfgName)
 }
 
@@ -469,7 +425,7 @@ func TestExistsCachingDisabled(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
@@ -506,7 +462,7 @@ func TestGet(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "metafile"
@@ -526,7 +482,7 @@ func TestGet(t *testing.T) {
 	verifyGet(t, cb, testFilename, nil, true, cfgName)
 	verifyExists(t, cb, testFilename, false, true, cfgName)
 
-	cache.flush()
+	cache.Flush()
 
 	verifyGet(t, cb, testFilename, data, false, cfgName)
 	verifyGet(t, cb, testFilename, data, true, cfgName)
@@ -537,7 +493,7 @@ func TestGetTooBigObject(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "metafile"
@@ -560,7 +516,7 @@ func TestGetTooBigObject(t *testing.T) {
 func TestGetPartialRead(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "metafile"
@@ -619,7 +575,7 @@ func TestAttributes(t *testing.T) {
 	inmem := objstore.NewInMemBucket()
 
 	// We reuse cache between tests (!)
-	cache := newMockCache()
+	cache := cache.NewMockCache()
 
 	cfg := NewCachingBucketConfig()
 	const cfgName = "test"
@@ -659,3 +615,7 @@ func verifyObjectAttrs(t *testing.T, cb *CachingBucket, file string, expectedLen
 }
 
 func matchAll(string) bool { return true }
+
+var chunksMatcher = regexp.MustCompile(`^.*/chunks/\d+$`)
+
+func isTSDBChunkFile(name string) bool { return chunksMatcher.MatchString(name) }

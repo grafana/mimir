@@ -27,9 +27,8 @@ import (
 	"github.com/thanos-io/thanos/pkg/cacheutil"
 	"github.com/uber/jaeger-client-go"
 
+	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/mimirpb"
-	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -50,9 +49,9 @@ var (
 
 // ResultsCacheConfig is the config for the results cache.
 type ResultsCacheConfig struct {
-	Backend     string                           `yaml:"backend"`
-	Memcached   mimir_tsdb.MemcachedClientConfig `yaml:"memcached"`
-	Compression cache.CompressionConfig          `yaml:",inline"`
+	Backend     string                  `yaml:"backend"`
+	Memcached   cache.MemcachedConfig   `yaml:"memcached"`
+	Compression cache.CompressionConfig `yaml:",inline"`
 }
 
 // RegisterFlags registers flags.
@@ -94,7 +93,7 @@ func newResultsCache(cfg ResultsCacheConfig, logger log.Logger, reg prometheus.R
 	}
 }
 
-func newMemcachedResultsCache(cfg mimir_tsdb.MemcachedClientConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
+func newMemcachedResultsCache(cfg cache.MemcachedConfig, logger log.Logger, reg prometheus.Registerer) (cache.Cache, error) {
 	const cacheName = "frontend-cache"
 
 	backend, err := cacheutil.NewMemcachedClientWithConfig(logger, cacheName, cfg.ToMemcachedClientConfig(), reg)

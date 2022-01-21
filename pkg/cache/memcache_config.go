@@ -3,9 +3,10 @@
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Cortex Authors.
 
-package tsdb
+package cache
 
 import (
+	"errors"
 	"flag"
 	"strings"
 	"time"
@@ -14,7 +15,11 @@ import (
 	"github.com/thanos-io/thanos/pkg/model"
 )
 
-type MemcachedClientConfig struct {
+var (
+	ErrNoMemcachedAddresses = errors.New("no memcached addresses configured")
+)
+
+type MemcachedConfig struct {
 	Addresses              string        `yaml:"addresses"`
 	Timeout                time.Duration `yaml:"timeout"`
 	MaxIdleConnections     int           `yaml:"max_idle_connections"`
@@ -25,7 +30,7 @@ type MemcachedClientConfig struct {
 	MaxItemSize            int           `yaml:"max_item_size"`
 }
 
-func (cfg *MemcachedClientConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
+func (cfg *MemcachedConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.StringVar(&cfg.Addresses, prefix+"addresses", "", "Comma separated list of memcached addresses. Supported prefixes are: dns+ (looked up as an A/AAAA query), dnssrv+ (looked up as a SRV query, dnssrvnoa+ (looked up as a SRV query, with no A/AAAA lookup made after that).")
 	f.DurationVar(&cfg.Timeout, prefix+"timeout", 100*time.Millisecond, "The socket read/write timeout.")
 	f.IntVar(&cfg.MaxIdleConnections, prefix+"max-idle-connections", 16, "The maximum number of idle connections that will be maintained per address.")
@@ -36,7 +41,7 @@ func (cfg *MemcachedClientConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefi
 	f.IntVar(&cfg.MaxItemSize, prefix+"max-item-size", 1024*1024, "The maximum size of an item stored in memcached. Bigger items are not stored. If set to 0, no maximum size is enforced.")
 }
 
-func (cfg *MemcachedClientConfig) GetAddresses() []string {
+func (cfg *MemcachedConfig) GetAddresses() []string {
 	if cfg.Addresses == "" {
 		return []string{}
 	}
@@ -45,15 +50,15 @@ func (cfg *MemcachedClientConfig) GetAddresses() []string {
 }
 
 // Validate the config.
-func (cfg *MemcachedClientConfig) Validate() error {
+func (cfg *MemcachedConfig) Validate() error {
 	if len(cfg.GetAddresses()) == 0 {
-		return errNoIndexCacheAddresses
+		return ErrNoMemcachedAddresses
 	}
 
 	return nil
 }
 
-func (cfg MemcachedClientConfig) ToMemcachedClientConfig() cacheutil.MemcachedClientConfig {
+func (cfg MemcachedConfig) ToMemcachedClientConfig() cacheutil.MemcachedClientConfig {
 	return cacheutil.MemcachedClientConfig{
 		Addresses:                 cfg.GetAddresses(),
 		Timeout:                   cfg.Timeout,
