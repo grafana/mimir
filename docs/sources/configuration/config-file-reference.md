@@ -2538,9 +2538,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 
 # The amount of shards to use when doing parallelisation via query sharding by
 # tenant. 0 to disable query sharding for tenant. Query sharding implementation
-# will adjust the number of query shards based on compactor shards used by
-# compactor. This allows querier to not search the blocks which cannot possibly
-# have the series for given query shard.
+# will adjust the number of query shards based on compactor shards. This allows
+# querier to not search the blocks which cannot possibly have the series for
+# given query shard.
 # CLI flag: -frontend.query-sharding-total-shards
 [query_sharding_total_shards: <int> | default = 16]
 

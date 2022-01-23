@@ -47,10 +47,11 @@ When running Cortex blocks storage cluster at scale, querying non compacted bloc
 Because of this, we would suggest to avoid querying non compacted blocks. In order to do it, you should:
 
 1. Run the [compactor](./compactor.md)
-2. Configure queriers `-querier.query-store-after` large enough to give compactor enough time to compact newly uploaded blocks (_see below_)
-3. Configure queriers `-querier.query-ingesters-within` equal to `-querier.query-store-after` plus 5m (5 minutes is just a delta to query the boundary both from ingesters and queriers)
-4. Configure ingesters `-blocks-storage.tsdb.retention-period` at least as `-querier.query-ingesters-within`
-5. Lower `-blocks-storage.bucket-store.ignore-deletion-marks-delay` to 1h, otherwise non compacted blocks could be queried anyway, even if their compacted replacement is available
+2. Configure compactor `-compactor.split-and-merge-shards` and `-compactor.split-groups` if your cluster has some very large tenants.
+3. Configure queriers `-querier.query-store-after` large enough to give compactor enough time to compact newly uploaded blocks (_see below_)
+4. Configure queriers `-querier.query-ingesters-within` equal to `-querier.query-store-after` plus 5m (5 minutes is just a delta to query the boundary both from ingesters and queriers)
+5. Configure ingesters `-blocks-storage.tsdb.retention-period` at least as `-querier.query-ingesters-within`
+6. Lower `-blocks-storage.bucket-store.ignore-deletion-marks-delay` to 1h, otherwise non compacted blocks could be queried anyway, even if their compacted replacement is available
 
 #### How to estimate `-querier.query-store-after`
 
