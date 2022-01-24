@@ -3161,16 +3161,22 @@ func TestDistributorValidation(t *testing.T) {
 	future, past := now.Add(5*time.Hour), now.Add(-25*time.Hour)
 
 	for i, tc := range []struct {
-		metadata []*mimirpb.MetricMetadata
-		labels   []labels.Labels
-		samples  []mimirpb.Sample
-		err      error
+		metadata  []*mimirpb.MetricMetadata
+		labels    []labels.Labels
+		samples   []mimirpb.Sample
+		exemplars []*mimirpb.Exemplar
+		err       error
 	}{
 		// Test validation passes.
 		{
 			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
 			labels:   []labels.Labels{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
 			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+			exemplars: []*mimirpb.Exemplar{{
+				Labels:      []mimirpb.LabelAdapter{{Name: "traceID", Value: "123abc"}},
 				TimestampMs: int64(now),
 				Value:       1,
 			}},
@@ -3217,6 +3223,21 @@ func TestDistributorValidation(t *testing.T) {
 			}},
 			err: httpgrpc.Errorf(http.StatusBadRequest, `metadata missing metric name`),
 		},
+		// Test empty exemplar labels fails.
+		{
+			metadata: []*mimirpb.MetricMetadata{{MetricFamilyName: "testmetric", Help: "a test metric.", Unit: "", Type: mimirpb.COUNTER}},
+			labels:   []labels.Labels{{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}},
+			samples: []mimirpb.Sample{{
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+			exemplars: []*mimirpb.Exemplar{{
+				Labels:      nil,
+				TimestampMs: int64(now),
+				Value:       1,
+			}},
+			err: httpgrpc.Errorf(http.StatusBadRequest, "exemplar missing labels, timestamp: %d series: %+v labels: {}", now, labels.Labels{{Name: labels.MetricName, Value: "testmetric"}, {Name: "foo", Value: "bar"}}),
+		},
 	} {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			var limits validation.Limits
@@ -3232,7 +3253,7 @@ func TestDistributorValidation(t *testing.T) {
 				limits:          &limits,
 			})
 
-			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, nil, tc.metadata, mimirpb.API))
+			_, err := ds[0].Push(ctx, mimirpb.ToWriteRequest(tc.labels, tc.samples, tc.exemplars, tc.metadata, mimirpb.API))
 			require.Equal(t, tc.err, err)
 		})
 	}
