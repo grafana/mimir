@@ -3311,10 +3311,10 @@ The `compactor_config` configures the compactor service.
 # CLI flag: -compactor.disabled-tenants
 [disabled_tenants: <string> | default = ""]
 
-# Shard tenants across multiple compactor instances. Sharding is required if you
-# run multiple compactor instances, in order to coordinate compactions and avoid
-# race conditions leading to the same tenant blocks simultaneously compacted by
-# different instances.
+# Shard workload across multiple compactor instances. Sharding is required if
+# you run multiple compactor instances, in order to coordinate compactions and
+# avoid race conditions leading to the same tenant blocks simultaneously
+# compacted by different instances.
 # CLI flag: -compactor.sharding-enabled
 [sharding_enabled: <boolean> | default = false]
 

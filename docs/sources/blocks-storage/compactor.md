@@ -231,7 +231,7 @@ compactor:
   # CLI flag: -compactor.disabled-tenants
   [disabled_tenants: <string> | default = ""]
 
-  # Shard tenants across multiple compactor instances. Sharding is required if
+  # Shard workload across multiple compactor instances. Sharding is required if
   # you run multiple compactor instances, in order to coordinate compactions and
   # avoid race conditions leading to the same tenant blocks simultaneously
   # compacted by different instances.
