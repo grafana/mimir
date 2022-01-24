@@ -74,7 +74,6 @@ The configuration for a Prometheus server that scrapes itself and writes those m
 ```yaml
 remote_write:
   - url: http://localhost:9009/api/v1/push
-    name: drop_expensive
 
 scrape_configs:
   - job_name: prometheus
