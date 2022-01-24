@@ -19,6 +19,18 @@
       'compactor.compaction-concurrency': $._config.cortex_compactor_max_concurrency,
       'compactor.cleanup-interval': $._config.cortex_compactor_cleanup_interval,
 
+      // Will be set on per-tenant basis via overrides and user classes. No splitting by default.
+      'compactor.split-and-merge-shards': 0,
+      'compactor.compactor-tenant-shard-size': 1,
+
+      // One group by default, except when overriden by user class.
+      'compactor.split-groups': 1,
+
+      // Enable open/close/flush concurrency.
+      'compactor.max-opening-blocks-concurrency': '4',
+      'compactor.max-closing-blocks-concurrency': '2',  // Closing of blocks means writing index, which uses extra memory, hence only 2.
+      'compactor.symbols-flushers-concurrency': '4',
+
       // Enable sharding.
       'compactor.sharding-enabled': true,
       'compactor.ring.store': 'consul',

@@ -478,6 +478,20 @@
 * [CHANGE] Increased memcached metadata/chunks/index-queries max connections from 4k to 16k. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
 * [CHANGE] Disabled step alignment in query-frontend to be compliant with PromQL. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
 * [CHANGE] Do not limit compactor CPU and request a number of cores equal to the configured concurrency. [#420](https://github.com/grafana/cortex-jsonnet/pull/420)
+* [CHANGE] Configured split-and-merge compactor. #853
+  * The following CLI flags are set on compactor:
+    * `-compactor.split-and-merge-shards=0`
+    * `-compactor.compactor-tenant-shard-size=1`
+    * `-compactor.split-groups=1`
+    * `-compactor.max-opening-blocks-concurrency=4`
+    * `-compactor.max-closing-blocks-concurrency=2`
+    * `-compactor.symbols-flushers-concurrency=4`
+  * The following per-tenant overrides have been set on `super_user` and `mega_user` classes:
+    ```
+    compactor_split_and_merge_shards: 2,
+    compactor_tenant_shard_size: 2,
+    compactor_split_groups: 2,
+    ```
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
