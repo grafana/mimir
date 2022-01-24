@@ -69,6 +69,8 @@ const (
 	typeMetadata = "metadata"
 
 	instanceIngestionRateTickInterval = time.Second
+
+	sampleFrequency = 10000
 )
 
 // Distributor is a storage.SampleAppender and a client.Querier which
@@ -120,6 +122,8 @@ type Distributor struct {
 	ingesterQueryFailures            *prometheus.CounterVec
 	replicationFactor                prometheus.Gauge
 	latestSeenSampleTimestampPerUser *prometheus.GaugeVec
+
+	sampleCount atomic.Int64
 }
 
 // Config contains the configuration required to
@@ -534,6 +538,13 @@ func (d *Distributor) validateSeries(nowt time.Time, ts mimirpb.PreallocTimeseri
 
 	for i := 0; i < len(ts.Exemplars); {
 		e := ts.Exemplars[i]
+		{
+			count := d.sampleCount.Inc()
+			if count%int64(sampleFrequency) == 0 {
+				d.log.Log("exemplar", fmt.Sprintf("%#v", e))
+			}
+		}
+
 		if err := validation.ValidateExemplar(userID, ts.Labels, e); err != nil {
 			// An exemplar validation error prevents ingesting samples
 			// in the same series object. However because the current Prometheus
