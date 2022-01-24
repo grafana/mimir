@@ -176,6 +176,7 @@
     * `-frontend.memcached.timeout` renamed to `-frontend.results-cache.memcached.timeout`
     * `-frontend.memcached.max-item-size` renamed to `-frontend.results-cache.memcached.max-item-size`
     * `-frontend.memcached.max-idle-conns` renamed to `-frontend.results-cache.memcached.max-idle-connections`
+    * `-frontend.compression` renamed to `-frontend.results-cache.compression`
   * The following CLI flags (and their respective YAML config options) have been removed:
     * `-frontend.memcached.circuit-breaker-consecutive-failures`: feature removed
     * `-frontend.memcached.circuit-breaker-timeout`: feature removed
