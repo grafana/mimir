@@ -801,6 +801,11 @@ func TestRulerFederatedRules(t *testing.T) {
 			c, err := e2emimir.NewClient(distributor.HTTPEndpoint(), querier.HTTPEndpoint(), "", ruler.HTTPEndpoint(), tc.ruleGroupOwner)
 			require.NoError(t, err)
 
+			// Obtain total series before rule evaluation
+			totalSeriesBeforeEval, err := ingester.SumMetrics([]string{"cortex_ingester_memory_series"})
+			require.NoError(t, err)
+
+			// Create federated rule group
 			namespace := "test_namespace"
 			ruleName := "federated_rule_name"
 			g := ruleGroupWithRule("x", ruleName, tc.ruleExpression)
@@ -819,10 +824,8 @@ func TestRulerFederatedRules(t *testing.T) {
 			require.Len(t, retrievedNamespace, 1)
 			require.ElementsMatch(t, retrievedNamespace[0].SourceTenants, tc.groupSourceTenants)
 
-			// Wait for at least one evaluation
-			ruleEvaluationsRightAfterPush, err := ruler.SumMetrics([]string{"cortex_prometheus_rule_evaluations_total"})
-			require.NoError(t, err)
-			require.NoError(t, ruler.WaitSumMetrics(e2e.Greater(ruleEvaluationsRightAfterPush[0]), "cortex_prometheus_rule_evaluations_total"))
+			// Wait until rule evaluation resulting series had been pushed
+			require.NoError(t, ingester.WaitSumMetrics(e2e.Greater(totalSeriesBeforeEval[0]), "cortex_ingester_memory_series"))
 
 			result, err := c.Query(ruleName, time.Now())
 			require.NoError(t, err)
