@@ -119,6 +119,12 @@ func TestMultiResolver(t *testing.T) {
 			tenantIDs:   []string{"tenant-a", "tenant-b"},
 		},
 		{
+			name:        "multi-tenant-with-duplicates",
+			headerValue: strptr("tenant-a|tenant-b|tenant-b"),
+			errTenantID: user.ErrTooManyOrgIDs,
+			tenantIDs:   []string{"tenant-a", "tenant-b"},
+		},
+		{
 			name:        "multi-tenant-wrong-order",
 			headerValue: strptr("tenant-b|tenant-a"),
 			errTenantID: user.ErrTooManyOrgIDs,
