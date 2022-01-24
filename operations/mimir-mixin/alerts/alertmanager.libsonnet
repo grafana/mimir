@@ -14,8 +14,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to read tenant configurations from storage.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to read tenant configurations from storage.
+            ||| % $._config,
           },
         },
         {
@@ -29,8 +29,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to check tenants ownership via the ring.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to check tenants ownership via the ring.
+            ||| % $._config,
           },
         },
         {
@@ -44,8 +44,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to merge partial state changes received from a replica.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to merge partial state changes received from a replica.
+            ||| % $._config,
           },
         },
         {
@@ -59,8 +59,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
+            ||| % $._config,
           },
         },
         {
@@ -74,8 +74,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
+            ||| % $._config,
           },
         },
         {
@@ -88,8 +88,8 @@
           },
           annotations: {
             message: |||
-              Cortex Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
-            |||,
+              %(product)s Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
+            ||| % $._config,
           },
         },
       ],

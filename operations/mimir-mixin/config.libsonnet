@@ -14,7 +14,7 @@
     singleBinary: false,
 
     // These are used by the dashboards and allow for the simultaneous display of
-    // microservice and single binary cortex clusters.
+    // microservice and single binary Mimir clusters.
     job_names: {
       ingester: '(ingester.*|cortex$)',  // Match also custom and per-zone ingester deployments.
       distributor: '(distributor|cortex$)',
