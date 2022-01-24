@@ -349,16 +349,29 @@ list-image-targets:
 save-images:
 	@mkdir -p docker-images
 	for image_name in $(IMAGE_NAMES); do \
-		if ! echo $$image_name | grep build; then \
+		if echo $$image_name | grep -q build; then \
+			continue; \
+		fi; \
+		if [ "$$(docker images -q $$image_name:$(IMAGE_TAG) 2> /dev/null)" = "" ]; then \
+			echo "Skipping $$image_name:$(IMAGE_TAG) because image does not exist"; \
+		else \
+			echo "Saving $$image_name:$(IMAGE_TAG)"; \
 			docker save $$image_name:$(IMAGE_TAG) -o docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		fi \
+		fi; \
 	done
 
 load-images:
 	for image_name in $(IMAGE_NAMES); do \
-		if ! echo $$image_name | grep build; then \
-			docker load -i docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
-		fi \
+		if echo $$image_name | grep -q build; then \
+			continue; \
+		fi; \
+		image_path=docker-images/$$(echo $$image_name | tr "/" _):$(IMAGE_TAG); \
+		if [ -e "$$image_path" ]; then \
+			echo "Loading $$image_path"; \
+			docker load -i "$$image_path"; \
+		else \
+			echo "Skipping $$image_path because image does not exist"; \
+		fi; \
 	done
 
 clean-doc:
