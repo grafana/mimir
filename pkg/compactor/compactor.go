@@ -444,6 +444,8 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 				level.Info(c.logger).Log("msg", "compactor ring topology is stable")
 			}
 		}
+	} else {
+		level.Warn(c.logger).Log("msg", "Compactor sharding is disabled. Please don't run more than one compactor in this mode.")
 	}
 
 	allowedTenants := util.NewAllowedTenants(c.compactorCfg.EnabledTenants, c.compactorCfg.DisabledTenants)
