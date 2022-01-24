@@ -27,7 +27,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	cfg.ExtraBackends = []string{local.Name}
 	cfg.Local.RegisterFlagsWithPrefix(prefix, f)
-	cfg.RegisterFlagsWithPrefix(prefix, f)
+	cfg.RegisterFlagsWithPrefixAndDefaultDirectory(prefix, "ruler", f)
 }
 
 // IsDefaults returns true if the storage options have not been set.

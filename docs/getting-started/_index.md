@@ -10,17 +10,21 @@ Mimir can be run as a single binary or as multiple independent microservices.
 The single-binary mode is easier to deploy and is aimed mainly at users wanting to try out Mimir or develop on it.
 The microservices mode is intended for production usage, as it allows you to independently scale different services and isolate failures.
 
-This document will focus on single-process Mimir with the blocks storage.
+This document will focus on single-binary Mimir with the blocks storage.
 See [the architecture doc](../architecture.md) for more information about the microservices and [blocks operation](../blocks-storage/_index.md)
 for more information about the blocks storage.
 
-Separately from single process vs microservices decision, Mimir can be configured to use local storage or cloud storage (S3, GCS and Azure).
+Separately from single-binary vs microservices decision, Mimir can be configured to use local storage or cloud storage (S3, GCS and Azure).
 Mimir can also make use of external Memcacheds and Redis for caching.
 
-## Single instance, single process
+## Single instance running in single-binary mode
 
 For simplicity and to get started, we'll run it as a [single process](../configuration/single-process-config-blocks.yaml) with no dependencies.
 You can reconfigure the config to use GCS, Azure storage or local storage as shown in the file's comments.
+
+> **Note:** The `filesystem` backend only works for a single instance running in
+> single-binary mode. Highly available deployments (both single-binary and
+> microservices modes) must use an external object store.
 
 ```sh
 $ go build ./cmd/mimir
@@ -68,6 +72,10 @@ Next we're going to show how you can run a scale out Mimir cluster using Docker.
 - A built Mimir image.
 - A Docker network to put these containers on so they can resolve each other by name.
 - A single node Consul instance to coordinate the Mimir cluster.
+
+> **Note:** In order to horizontally scale mimir, you must use an external
+> object store. See the [blocks storage documentation]({{< relref
+> "../blocks-storage/_index.md" >}}) for information on supported backends.
 
 ```sh
 $ make ./cmd/mimir/.uptodate
