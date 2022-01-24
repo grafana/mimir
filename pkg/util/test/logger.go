@@ -19,6 +19,6 @@ func NewTestingLogger(t *testing.T) log.Logger {
 }
 
 func (l *testingLogger) Log(keyvals ...interface{}) error {
-	l.t.Log(keyvals)
+	l.t.Log(keyvals...)
 	return nil
 }
