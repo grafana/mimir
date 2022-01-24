@@ -139,13 +139,14 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	// Exemplar label length does not include chars involved in text
 	// rendering such as quotes, commas, etc.  See spec and const definition.
 	labelSetLen := 0
+	// We require at least one label to have a non-empty name and value. Otherwise,
+	// return an error. Labels with no value are ignored by the Prometheus TSDB
+	// exemplar code and will be dropped when stored. We explicitly return an error
+	// when there are no valid labels to make bad data easier to spot.
+	foundValidLabel := false
 	for _, l := range e.Labels {
-		// Labels with no name aren't valid. Labels with no value are ignored by the Prometheus
-		// TSDB code and will be dropped when stored. We explicitly return an error here so that
-		// bad labels are more obvious, instead of accepting but silently discarding them.
-		if l.Name == "" || l.Value == "" {
-			DiscardedExemplars.WithLabelValues(exemplarLabelsBlank, userID).Inc()
-			return newExemplarEmtpyLabelsError(ls, e.Labels, e.TimestampMs)
+		if l.Name != "" && l.Value != "" {
+			foundValidLabel = true
 		}
 
 		labelSetLen += utf8.RuneCountInString(l.Name)
@@ -159,6 +160,11 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 			e.Labels,
 			e.TimestampMs,
 		)
+	}
+
+	if !foundValidLabel {
+		DiscardedExemplars.WithLabelValues(exemplarLabelsBlank, userID).Inc()
+		return newExemplarEmtpyLabelsError(ls, e.Labels, e.TimestampMs)
 	}
 
 	return nil

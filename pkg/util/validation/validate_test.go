@@ -177,8 +177,24 @@ func TestValidateExemplars(t *testing.T) {
 	}
 
 	for _, ie := range invalidExemplars {
-		err := ValidateExemplar(userID, []mimirpb.LabelAdapter{}, ie)
-		assert.Error(t, err)
+		assert.Error(t, ValidateExemplar(userID, []mimirpb.LabelAdapter{}, ie))
+	}
+
+	validExemplars := []mimirpb.Exemplar{
+		{
+			// Valid labels
+			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
+			TimestampMs: 1000,
+		},
+		{
+			// Single label blank value with one valid value
+			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: ""}, {Name: "traceID", Value: "123abc"}},
+			TimestampMs: 1000,
+		},
+	}
+
+	for _, ve := range validExemplars {
+		assert.NoError(t, ValidateExemplar(userID, []mimirpb.LabelAdapter{}, ve))
 	}
 
 	DiscardedExemplars.WithLabelValues("random reason", "different user").Inc()
