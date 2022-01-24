@@ -161,7 +161,7 @@ func TestValidateExemplars(t *testing.T) {
 			TimestampMs: 1000,
 		},
 		{
-			// Labels values blank
+			// Labels value blank
 			Labels:      []mimirpb.LabelAdapter{{Name: "foo", Value: ""}},
 			TimestampMs: 1000,
 		},
