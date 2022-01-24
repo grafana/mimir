@@ -385,6 +385,7 @@
 * [CHANGE] Increased `CortexIngesterReachingSeriesLimit` warning threshold from 70% to 80% and critical threshold from 85% to 90%. [#404](https://github.com/grafana/cortex-jsonnet/pull/404)
 * [CHANGE] Raised `CortexKVStoreFailure` alert severity from warning to critical. #493
 * [CHANGE] Increase `CortexRolloutStuck` alert "for" duration from 15m to 30m. #493 #573
+* [CHANGE] The Alertmanager and Ruler compiled dashboards (`alertmanager.json` and `ruler.json`) have been respectively renamed to `mimir-alertmanager.json` and `mimir-ruler.json`. #869
 * [FEATURE] Added `Cortex / Overrides` dashboard, displaying default limits and per-tenant overrides applied to Mimir. #673
 * [FEATURE] Added `Mimir / Tenants` and `Mimir / Top tenants` dashboards, displaying user-based metrics. #776
 * [ENHANCEMENT] cortex-mixin: Make `cluster_namespace_deployment:kube_pod_container_resource_requests_{cpu_cores,memory_bytes}:sum` backwards compatible with `kube-state-metrics` v2.0.0. [#317](https://github.com/grafana/cortex-jsonnet/pull/317)
