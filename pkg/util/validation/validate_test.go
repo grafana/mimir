@@ -156,6 +156,11 @@ func TestValidateExemplars(t *testing.T) {
 			Labels: nil,
 		},
 		{
+			// Labels all blank
+			Labels:      []mimirpb.LabelAdapter{{Name: "", Value: ""}},
+			TimestampMs: 1000,
+		},
+		{
 			// Invalid timestamp
 			Labels: []mimirpb.LabelAdapter{{Name: "foo", Value: "bar"}},
 		},
@@ -176,6 +181,7 @@ func TestValidateExemplars(t *testing.T) {
 	require.NoError(t, testutil.GatherAndCompare(prometheus.DefaultGatherer, strings.NewReader(`
 			# HELP cortex_discarded_exemplars_total The total number of exemplars that were discarded.
 			# TYPE cortex_discarded_exemplars_total counter
+			cortex_discarded_exemplars_total{reason="exemplar_labels_blank",user="testUser"} 1
 			cortex_discarded_exemplars_total{reason="exemplar_labels_missing",user="testUser"} 1
 			cortex_discarded_exemplars_total{reason="exemplar_labels_too_long",user="testUser"} 1
 			cortex_discarded_exemplars_total{reason="exemplar_timestamp_invalid",user="testUser"} 1

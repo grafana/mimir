@@ -50,6 +50,7 @@ const (
 
 	// Exemplar-specific validation reasons
 	exemplarLabelsMissing    = "exemplar_labels_missing"
+	exemplarLabelsBlank      = "exemplar_labels_blank"
 	exemplarLabelsTooLong    = "exemplar_labels_too_long"
 	exemplarTimestampInvalid = "exemplar_timestamp_invalid"
 	exemplarTooOld           = "exemplar_too_old"
@@ -141,6 +142,11 @@ func ValidateExemplar(userID string, ls []mimirpb.LabelAdapter, e mimirpb.Exempl
 	for _, l := range e.Labels {
 		labelSetLen += utf8.RuneCountInString(l.Name)
 		labelSetLen += utf8.RuneCountInString(l.Value)
+	}
+
+	if labelSetLen == 0 {
+		DiscardedExemplars.WithLabelValues(exemplarLabelsBlank, userID).Inc()
+		return newExemplarEmtpyLabelsError(ls, e.Labels, e.TimestampMs)
 	}
 
 	if labelSetLen > ExemplarMaxLabelSetLength {
