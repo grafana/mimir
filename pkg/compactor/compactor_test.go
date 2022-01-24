@@ -1120,7 +1120,13 @@ func TestMultitenantCompactor_ShouldCompactOnlyUsersOwnedByTheInstanceOnSharding
 		cfg.ShardingRing.WaitStabilityMaxDuration = 10 * time.Second
 		cfg.ShardingRing.KVStore.Mock = kvstore
 
-		c, _, tsdbPlanner, l, _ := prepare(t, cfg, bucketClient)
+		var limits validation.Limits
+		flagext.DefaultValues(&limits)
+		limits.CompactorTenantShardSize = 1
+		overrides, err := validation.NewOverrides(limits, nil)
+		require.NoError(t, err)
+
+		c, _, tsdbPlanner, l, _ := prepareWithConfigProvider(t, cfg, bucketClient, overrides)
 		defer services.StopAndAwaitTerminated(context.Background(), c) //nolint:errcheck
 
 		compactors = append(compactors, c)
@@ -1668,7 +1674,13 @@ func TestMultitenantCompactor_DeleteLocalSyncFiles(t *testing.T) {
 		cfg.ShardingRing.KVStore.Mock = kvstore
 
 		// Each compactor will get its own temp dir for storing local files.
-		c, _, tsdbPlanner, _, _ := prepare(t, cfg, inmem)
+		var limits validation.Limits
+		flagext.DefaultValues(&limits)
+		limits.CompactorTenantShardSize = 1 // Each tenant will belong to single compactor only.
+		overrides, err := validation.NewOverrides(limits, nil)
+		require.NoError(t, err)
+
+		c, _, tsdbPlanner, _, _ := prepareWithConfigProvider(t, cfg, inmem, overrides)
 		t.Cleanup(func() {
 			require.NoError(t, services.StopAndAwaitTerminated(context.Background(), c))
 		})
