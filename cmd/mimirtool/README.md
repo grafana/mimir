@@ -95,12 +95,12 @@ Example file:
 ```yaml
 namespace: my_namespace
 groups:
-    - name: example
-      interval: 5m
-      source_tenants: [team-engineering, team-finance]
-      rules:
-        - record: job:http_inprogress_requests:sum
-          expr: sum by (job) (http_inprogress_requests)
+  - name: example
+    interval: 5m
+    source_tenants: [team-engineering, team-finance]
+    rules:
+      - record: job:http_inprogress_requests:sum
+        expr: sum by (job) (http_inprogress_requests)
 ```
 
 ##### Rules Lint
