@@ -6,7 +6,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
     gateway_job_matcher: $.jobMatcher($._config.job_names.gateway),
     gateway_write_routes_regex: 'api_(v1|prom)_push',
     gateway_read_routes_regex: '(prometheus|api_prom)_api_v1_.+',
-    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester.*', 'query-frontend.*', 'query-scheduler.*', 'querier.*', 'compactor', 'store-gateway.*', 'ruler', 'alertmanager.*', 'overrides-exporter]),
+    all_services_regex: std.join('|', ['cortex-gw', 'distributor', 'ingester.*', 'query-frontend.*', 'query-scheduler.*', 'querier.*', 'compactor', 'store-gateway.*', 'ruler', 'alertmanager.*', 'overrides-exporter']),
   },
 
   'mimir-rollout-progress.json':
