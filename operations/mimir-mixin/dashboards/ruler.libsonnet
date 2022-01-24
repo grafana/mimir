@@ -59,7 +59,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   },
 
   'ruler.json':
-    ($.dashboard('Mimir / Ruler') + { uid: '44d12bcb1f95661c6ab6bc946dfc3473' })
+    ($.dashboard('Ruler') + { uid: '44d12bcb1f95661c6ab6bc946dfc3473' })
     .addClusterSelectorTemplates()
     .addRow(
       ($.row('Headlines') + {

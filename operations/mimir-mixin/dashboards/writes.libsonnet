@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-writes.json':
-    ($.dashboard('Mimir / Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
+    ($.dashboard('Writes') + { uid: '0156f6d15aa234d452a33a4f13c838e3' })
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.writes,
@@ -10,7 +10,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.textPanel('', |||
           <p>
-            This dashboard shows various health metrics for the Cortex write path.
+            This dashboard shows various health metrics for the write path.
             It is broken into sections for each service on the write path,
             and organized by the order in which the write request flows.
             <br/>

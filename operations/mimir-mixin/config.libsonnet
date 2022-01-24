@@ -1,12 +1,15 @@
 {
-  grafanaDashboardFolder: 'Cortex',
+  grafanaDashboardFolder: 'Mimir',
   grafanaDashboardShards: 4,
 
   _config+:: {
-    // Tags for dashboards.
-    tags: ['cortex'],
+    // The product name used when building dashboards.
+    product: 'Mimir',
 
-    // If Cortex is deployed as a single binary, set to true to
+    // Tags for dashboards.
+    tags: ['mimir'],
+
+    // If Mimir is deployed as a single binary, set to true to
     // modify the job selectors in the dashboard queries.
     singleBinary: false,
 

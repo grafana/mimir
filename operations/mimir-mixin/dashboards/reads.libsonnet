@@ -2,7 +2,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
 
 (import 'dashboard-utils.libsonnet') {
   'mimir-reads.json':
-    ($.dashboard('Mimir / Reads') + { uid: '8d6ba60eccc4b6eedfa329b24b1bd339' })
+    ($.dashboard('Reads') + { uid: '8d6ba60eccc4b6eedfa329b24b1bd339' })
     .addClusterSelectorTemplates()
     .addRowIf(
       $._config.show_dashboard_descriptions.reads,
@@ -10,7 +10,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
       .addPanel(
         $.textPanel('', |||
           <p>
-            This dashboard shows health metrics for the Cortex read path.
+            This dashboard shows health metrics for the read path.
             It is broken into sections for each service on the read path, and organized by the order in which the read request flows.
             <br/>
             Incoming queries travel from the gateway → query frontend → query scheduler → querier → ingester and/or store-gateway (depending on the time range of the query).
@@ -18,7 +18,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
             For each service, there are 3 panels showing (1) requests per second to that service, (2) average, median, and p99 latency of requests to that service, and (3) p99 latency of requests to each instance of that service.
           </p>
           <p>
-            The dashboard also shows metrics for the 4 optional caches that can be deployed with Cortex:
+            The dashboard also shows metrics for the 4 optional caches that can be deployed:
             the query results cache, the metadata cache, the chunks cache, and the index cache.
             <br/>
             These panels will show “no data” if the caches are not deployed.
@@ -83,8 +83,8 @@ local utils = import 'mixin-utils/utils.libsonnet';
           'Range queries per second',
           |||
             Rate of range queries per second being made to
-            Cortex via the <tt>/prometheus</tt> API.
-          |||
+            %(product)s via the <tt>/prometheus</tt> API.
+          ||| % $._config
         ),
       )
     )
@@ -302,7 +302,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
         $.panelDescription(
           'Hit Ratio',
           |||
-            Even if you do not set up memcached for the blocks index cache, you will still see data in this panel because Cortex by default has an
+            Even if you do not set up memcached for the blocks index cache, you will still see data in this panel because the store-gateway by default has an
             in-memory blocks index cache.
           |||
         ),
