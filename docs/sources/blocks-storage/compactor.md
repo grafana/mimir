@@ -42,9 +42,9 @@ By design, the `split-and-merge` compactor overcomes TSDB index limitations and 
 
 This compaction strategy is a two stage process: split and merge.
 
-For the configured first level of compaction, for example `2h`, the compactor divides all source blocks into _N_ groups. For each group, the compactor compacts together the blocks, but instead of returning one compacted block, it outputs _N_ blocks, which are called _split_ blocks. Each split block contains a subset of the series. Series are sharded across the _N_ split blocks. At the end of the split stage, the compactor produces _`N * N`_ blocks with a reference to their shard in the block’s `meta.json` file.
+For the configured first level of compaction, for example `2h`, the compactor divides all source blocks into _N_ (`-compactor.split-groups`) groups. For each group, the compactor compacts together the blocks, but instead of producing single result block, it outputs _M_ (`-compactor.split-and-merge-shards`) blocks, which are called _split_ blocks. Each split block contains only a subset of the series belonging to given shard out of _M_ shards. At the end of the split stage, the compactor produces _N \* M_ blocks with a reference to their shard in the block’s `meta.json` file.
 
-Given the split blocks, the compactor runs the **merge** stage which compacts together all split blocks of a given shard. Once this stage is completed, the number of blocks will be reduced by a factor of `N`. Given a compaction time range, we'll have a compacted block for each shard.
+Given the split blocks, the compactor then runs the **merge** stage for each shard, which compacts together all _N_ split blocks of a given shard. Once this stage is completed, the number of blocks will be reduced from _N \* M_ to _M_. Given a compaction time range, we'll have a compacted block for each of _M_ shards.
 
 The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h), compacting together blocks belonging to the same shard (_not shown in the picture below_).
 
@@ -52,7 +52,9 @@ The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
-This strategy is suitable for clusters with large tenants. The _N_ number of split blocks is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and the split blocks can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We currently recommend 1 shard per every 25 to 30 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 4 shards.
+This strategy is suitable for clusters with large tenants. The number of shards _M_ is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and it can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We currently recommend 1 shard per every 25 to 30 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 4 shards.
+
+Number of split groups _N_ can also be adjusted per tenant using `-compactor.split-groups` option. Increasing this value produces more compaction jobs with fewer blocks during the split stage. This allows multiple compactors to work on these jobs, and finish the splitting stage faster. However increasing this value also generates more intermediate blocks during the split stage, which will only be reduced later in the merge stage.
 
 When sharding is enabled, each compaction stage (both split and merge) planned by the compactor can be horizontally scaled. Non conflicting / overlapping jobs will be executed in parallel.
 
