@@ -56,10 +56,15 @@ func NewClient(
 	rulerAddress string,
 	orgID string,
 ) (*Client, error) {
+	// Disable compression in querier client so it's easier to debug issue looking at the HTTP responses
+	// logged by the querier.
+	querierTransport := http.DefaultTransport.(*http.Transport).Clone()
+	querierTransport.DisableCompression = true
+
 	// Create querier API client
 	querierAPIClient, err := promapi.NewClient(promapi.Config{
 		Address:      "http://" + querierAddress + "/api/prom",
-		RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: http.DefaultTransport},
+		RoundTripper: &addOrgIDRoundTripper{orgID: orgID, next: querierTransport},
 	})
 	if err != nil {
 		return nil, err
