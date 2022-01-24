@@ -322,6 +322,10 @@
         // 2600 rules
         ruler_max_rules_per_rule_group: 20,
         ruler_max_rule_groups_per_tenant: 130,
+
+        compactor_split_and_merge_shards: 2,
+        compactor_tenant_shard_size: 2,
+        compactor_split_groups: 2,
       },
 
       // This user class has limits increased by +50% compared to the previous one.
@@ -335,6 +339,10 @@
         // 3000 rules
         ruler_max_rules_per_rule_group: 20,
         ruler_max_rule_groups_per_tenant: 150,
+
+        compactor_split_and_merge_shards: 2,
+        compactor_tenant_shard_size: 2,
+        compactor_split_groups: 2,
       },
     },
 
