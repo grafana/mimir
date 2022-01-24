@@ -34,6 +34,8 @@ import (
 	"go.uber.org/atomic"
 	"google.golang.org/grpc"
 
+	"github.com/grafana/mimir/pkg/alertmanager"
+	"github.com/grafana/mimir/pkg/alertmanager/alertstore"
 	"github.com/grafana/mimir/pkg/cache"
 	"github.com/grafana/mimir/pkg/compactor"
 	"github.com/grafana/mimir/pkg/distributor"
@@ -95,6 +97,17 @@ func TestMimir(t *testing.T) {
 			},
 		},
 		Compactor: compactor.Config{CompactionJobsOrder: compactor.CompactionOrderOldestFirst},
+		Alertmanager: alertmanager.MultitenantAlertmanagerConfig{
+			DataDir: t.TempDir(),
+		},
+		AlertmanagerStorage: alertstore.Config{
+			Config: bucket.Config{
+				Backend: "filesystem",
+				Filesystem: filesystem.Config{
+					Directory: t.TempDir(),
+				},
+			},
+		},
 		Distributor: distributor.Config{
 			DistributorRing: distributor.RingConfig{
 				KVStore: kv.Config{
@@ -104,7 +117,7 @@ func TestMimir(t *testing.T) {
 			},
 		},
 
-		Target: []string{All, Compactor},
+		Target: []string{All, AlertManager},
 	}
 
 	c, err := New(cfg)
@@ -124,9 +137,10 @@ func TestMimir(t *testing.T) {
 	require.NotNil(t, serviceMap[IngesterService])
 	require.NotNil(t, serviceMap[Ring])
 	require.NotNil(t, serviceMap[DistributorService])
-
-	// check that compactor is configured which is not part of Target=All
 	require.NotNil(t, serviceMap[Compactor])
+
+	// check that alertmanager is configured which is not part of Target=All
+	require.NotNil(t, serviceMap[AlertManager])
 }
 
 func TestMimirServerShutdownWithActivityTrackerEnabled(t *testing.T) {

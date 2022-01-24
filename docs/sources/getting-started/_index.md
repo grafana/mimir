@@ -61,7 +61,7 @@ Your Prometheus instance will now start pushing data to Mimir. To query that dat
 $ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
 ```
 
-In [the Grafana UI](http://localhost:3000) (username/password admin/admin), add a Prometheus datasource for Mimir (`http://host.docker.internal:9009/prometheus`).
+In [the Grafana UI](http://localhost:3000) (username/password admin/admin), add a Prometheus datasource for Mimir (`http://host.docker.internal:9009/api/prom`).
 
 **To clean up:** press CTRL-C in both terminals (for Mimir and Prometheus).
 
@@ -92,14 +92,19 @@ $ docker run -d --name=mimir1 --network=mimir \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
     -ring.store=consul \
-    -consul.hostname=consul:8500
+    -consul.hostname=consul:8500 \
+    -compactor.ring.store=consul \
+    -compactor.ring.consul.hostname=consul:8500
+
 $ docker run -d --name=mimir2 --network=mimir \
     -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9002:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
     -ring.store=consul \
-    -consul.hostname=consul:8500
+    -consul.hostname=consul:8500 \
+    -compactor.ring.store=consul \
+    -compactor.ring.consul.hostname=consul:8500
 ```
 
 If you go to http://localhost:9001/ring (or http://localhost:9002/ring) you should see both Mimir nodes join the ring.
