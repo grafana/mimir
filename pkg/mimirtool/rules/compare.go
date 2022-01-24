@@ -113,23 +113,47 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 	return nil
 }
 
+// stringSlicesElementsMatch returns true if the two slices have completely overlapping elements.
+// For example, `stringSlicesElementsMatch([a, b], [a, b]) == true`
+// and `stringSlicesElementsMatch([a, b], [a, b, b]) == true`
 func stringSlicesElementsMatch(s1, s2 []string) bool {
-	if len(s1) != len(s2) {
-		return false
-	}
-
-	copyAndSort := func(x []string) []string {
-		copied := make([]string, len(x))
-		copy(copied, x)
-		sort.Strings(copied)
+	copySlice := func(slice []string) []string {
+		copied := make([]string, len(slice))
+		copy(copied, slice)
 		return copied
 	}
 
-	s1Copy := copyAndSort(s1)
-	s2Copy := copyAndSort(s2)
+	sortSlice := func(slice []string) []string {
+		sort.Strings(slice)
+		return slice
+	}
 
-	for i := range s2Copy {
-		if s1Copy[i] != s2Copy[i] {
+	deduplicate := func(slice []string) []string {
+		count := len(slice)
+		if count <= 1 {
+			return slice
+		}
+
+		posOut := 1
+		for posIn := 1; posIn < count; posIn++ {
+			if slice[posIn] != slice[posIn-1] {
+				slice[posOut] = slice[posIn]
+				posOut++
+			}
+		}
+
+		return slice[0:posOut]
+	}
+
+	s1UniqueSorted := deduplicate(sortSlice(copySlice(s1)))
+	s2UniqueSorted := deduplicate(sortSlice(copySlice(s2)))
+
+	if len(s1UniqueSorted) != len(s2UniqueSorted) {
+		return false
+	}
+
+	for i := range s2UniqueSorted {
+		if s1UniqueSorted[i] != s2UniqueSorted[i] {
 			return false
 		}
 	}

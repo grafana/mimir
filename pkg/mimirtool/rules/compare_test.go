@@ -348,7 +348,7 @@ func TestCompareGroups(t *testing.T) {
 			expectedErr: errDiffSourceTenants,
 		},
 		{
-			name: "repeating source tenants",
+			name: "repeated subset of source tenants",
 			groupOne: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name:          "example_group",
@@ -378,6 +378,38 @@ func TestCompareGroups(t *testing.T) {
 				},
 			},
 			expectedErr: errDiffSourceTenants,
+		},
+		{
+			name: "repeated single tenant (tenants should be deduplicated)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-1"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			expectedErr: nil,
 		},
 	}
 	for _, tt := range tests {
