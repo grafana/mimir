@@ -1785,7 +1785,7 @@ func TestIngester_Query_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	assert.Empty(t, s.responses)
 
 	// Check if the TSDB has been created
-	_, tsdbCreated := i.TSDBState.dbs[userID]
+	_, tsdbCreated := i.tsdbs[userID]
 	assert.False(t, tsdbCreated)
 }
 
@@ -1805,7 +1805,7 @@ func TestIngester_LabelValues_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	assert.Equal(t, &client.LabelValuesResponse{}, res)
 
 	// Check if the TSDB has been created
-	_, tsdbCreated := i.TSDBState.dbs[userID]
+	_, tsdbCreated := i.tsdbs[userID]
 	assert.False(t, tsdbCreated)
 }
 
@@ -1825,7 +1825,7 @@ func TestIngester_LabelNames_ShouldNotCreateTSDBIfDoesNotExists(t *testing.T) {
 	assert.Equal(t, &client.LabelNamesResponse{}, res)
 
 	// Check if the TSDB has been created
-	_, tsdbCreated := i.TSDBState.dbs[userID]
+	_, tsdbCreated := i.tsdbs[userID]
 	assert.False(t, tsdbCreated)
 }
 
@@ -1851,7 +1851,7 @@ func TestIngester_Push_ShouldNotCreateTSDBIfNotInActiveState(t *testing.T) {
 	assert.Nil(t, res)
 
 	// Check if the TSDB has been created
-	_, tsdbCreated := i.TSDBState.dbs[userID]
+	_, tsdbCreated := i.tsdbs[userID]
 	assert.False(t, tsdbCreated)
 }
 
@@ -2906,7 +2906,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 			concurrency: 10,
 			setup:       func(t *testing.T, dir string) {},
 			check: func(t *testing.T, i *Ingester) {
-				require.Zero(t, len(i.TSDBState.dbs))
+				require.Zero(t, len(i.tsdbs))
 			},
 		},
 		"should not load any TSDB is the root directory is missing": {
@@ -2915,7 +2915,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, os.Remove(dir))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Zero(t, len(i.TSDBState.dbs))
+				require.Zero(t, len(i.tsdbs))
 			},
 		},
 		"should load TSDB for any non-empty user directory": {
@@ -2926,7 +2926,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, os.Mkdir(filepath.Join(dir, "user2"), 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Equal(t, 2, len(i.TSDBState.dbs))
+				require.Equal(t, 2, len(i.tsdbs))
 				require.NotNil(t, i.getTSDB("user0"))
 				require.NotNil(t, i.getTSDB("user1"))
 				require.Nil(t, i.getTSDB("user2"))
@@ -2942,7 +2942,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user4", "dummy"), 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Equal(t, 5, len(i.TSDBState.dbs))
+				require.Equal(t, 5, len(i.tsdbs))
 				require.NotNil(t, i.getTSDB("user0"))
 				require.NotNil(t, i.getTSDB("user1"))
 				require.NotNil(t, i.getTSDB("user2"))
@@ -2963,7 +2963,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, os.MkdirAll(filepath.Join(dir, "user1", "dummy"), 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Equal(t, 0, len(i.TSDBState.dbs))
+				require.Equal(t, 0, len(i.tsdbs))
 				require.Nil(t, i.getTSDB("user0"))
 				require.Nil(t, i.getTSDB("user1"))
 			},
@@ -2985,7 +2985,7 @@ func TestIngester_OpenExistingTSDBOnStartup(t *testing.T) {
 				require.NoError(t, ioutil.WriteFile(filepath.Join(dir, "user2", "chunks_head", "00000002"), nil, 0700))
 			},
 			check: func(t *testing.T, i *Ingester) {
-				require.Equal(t, 0, len(i.TSDBState.dbs))
+				require.Equal(t, 0, len(i.tsdbs))
 				require.Nil(t, i.getTSDB("user0"))
 				require.Nil(t, i.getTSDB("user1"))
 				require.Nil(t, i.getTSDB("user2"))
@@ -3087,7 +3087,7 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	// Use in-memory bucket.
 	bucket := objstore.NewInMemBucket()
 
-	i.TSDBState.bucket = bucket
+	i.bucket = bucket
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
@@ -3097,9 +3097,9 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(1), i.seriesCount.Load())
 	i.compactBlocks(context.Background(), true, nil)
-	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(0), i.seriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
 	numObjects := len(bucket.Objects())
@@ -3114,9 +3114,9 @@ func TestIngester_dontShipBlocksWhenTenantDeletionMarkerIsPresent(t *testing.T) 
 
 	// After writing tenant deletion mark,
 	pushSingleSampleWithMetadata(t, i)
-	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(1), i.seriesCount.Load())
 	i.compactBlocks(context.Background(), true, nil)
-	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(0), i.seriesCount.Load())
 	i.shipBlocks(context.Background(), nil)
 
 	numObjectsAfterMarkingTenantForDeletion := len(bucket.Objects())
@@ -3139,7 +3139,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	// Write tenant deletion mark.
 	require.NoError(t, mimir_tsdb.WriteTenantDeletionMark(context.Background(), bucket, userID, nil, mimir_tsdb.NewTenantDeletionMark(time.Now())))
 
-	i.TSDBState.bucket = bucket
+	i.bucket = bucket
 	require.NoError(t, services.StartAndAwaitRunning(context.Background(), i))
 	defer services.StopAndAwaitTerminated(context.Background(), i) //nolint:errcheck
 
@@ -3149,7 +3149,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	})
 
 	pushSingleSampleWithMetadata(t, i)
-	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(1), i.seriesCount.Load())
 
 	// We call shipBlocks to check for deletion marker (it happens inside this method).
 	i.shipBlocks(context.Background(), nil)
@@ -3164,7 +3164,7 @@ func TestIngester_seriesCountIsCorrectAfterClosingTSDBForDeletedTenant(t *testin
 	require.Equal(t, tsdbTenantMarkedForDeletion, i.closeAndDeleteUserTSDBIfIdle(userID))
 
 	// Closing should decrease series count.
-	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(0), i.seriesCount.Load())
 }
 
 func TestIngester_closeAndDeleteUserTSDBIfIdle_shouldNotCloseTSDBIfShippingIsInProgress(t *testing.T) {
@@ -3669,7 +3669,7 @@ func Test_Ingester_UserStats(t *testing.T) {
 	}
 
 	// force update statistics
-	for _, db := range i.TSDBState.dbs {
+	for _, db := range i.tsdbs {
 		db.ingestedAPISamples.Tick()
 		db.ingestedRuleSamples.Tick()
 	}
@@ -3714,7 +3714,7 @@ func Test_Ingester_AllUserStats(t *testing.T) {
 	}
 
 	// force update statistics
-	for _, db := range i.TSDBState.dbs {
+	for _, db := range i.tsdbs {
 		db.ingestedAPISamples.Tick()
 		db.ingestedRuleSamples.Tick()
 	}
@@ -3854,7 +3854,7 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 	pushSingleSampleWithMetadata(t, i)
 	i.updateActiveSeries(time.Now())
 
-	require.Equal(t, int64(1), i.TSDBState.seriesCount.Load())
+	require.Equal(t, int64(1), i.seriesCount.Load())
 
 	metricsToCheck := []string{"cortex_ingester_memory_series_created_total", "cortex_ingester_memory_series_removed_total", "cortex_ingester_memory_users", "cortex_ingester_active_series",
 		"cortex_ingester_memory_metadata", "cortex_ingester_memory_metadata_created_total", "cortex_ingester_memory_metadata_removed_total"}
@@ -3887,14 +3887,14 @@ func TestIngesterCompactAndCloseIdleTSDB(t *testing.T) {
 
 	// Wait until TSDB has been closed and removed.
 	test.Poll(t, 20*time.Second, 0, func() interface{} {
-		i.tsdbStateDBMtx.Lock()
-		defer i.tsdbStateDBMtx.Unlock()
-		return len(i.TSDBState.dbs)
+		i.tsdbsMtx.Lock()
+		defer i.tsdbsMtx.Unlock()
+		return len(i.tsdbs)
 	})
 
 	require.Greater(t, testutil.ToFloat64(i.metrics.idleTsdbChecks.WithLabelValues(string(tsdbIdleClosed))), float64(0))
 	i.updateActiveSeries(time.Now())
-	require.Equal(t, int64(0), i.TSDBState.seriesCount.Load()) // Flushing removed all series from memory.
+	require.Equal(t, int64(0), i.seriesCount.Load()) // Flushing removed all series from memory.
 
 	// Verify that user has disappeared from metrics.
 	require.NoError(t, testutil.GatherAndCompare(r, strings.NewReader(`

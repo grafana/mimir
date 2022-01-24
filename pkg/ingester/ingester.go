@@ -107,46 +107,9 @@ const (
 	QueryStreamChunks                         // Stream entire chunks.
 )
 
-// TSDBState holds data structures used by the TSDB storage engine
-type TSDBState struct {
-	dbs    map[string]*userTSDB // tsdb sharded by userID. Protected by Ingester.tsdbStateDBMtx
-	bucket objstore.Bucket
-
-	// Value used by shipper as external label.
-	shipperIngesterID string
-
-	subservices *services.Manager
-
-	tsdbMetrics *tsdbMetrics
-
-	forceCompactTrigger chan requestWithUsersAndCallback
-	shipTrigger         chan requestWithUsersAndCallback
-
-	// Maps the per-block series ID with its labels hash.
-	seriesHashCache *hashcache.SeriesHashCache
-
-	// Timeout chosen for idle compactions.
-	compactionIdleTimeout time.Duration
-
-	// Number of series in memory, across all tenants.
-	seriesCount atomic.Int64
-}
-
 type requestWithUsersAndCallback struct {
 	users    *util.AllowedTenants // if nil, all tenants are allowed.
 	callback chan<- struct{}      // when compaction/shipping is finished, this channel is closed
-}
-
-func newTSDBState(cfg Config, bucketClient objstore.Bucket, registerer prometheus.Registerer) TSDBState {
-
-	return TSDBState{
-		dbs:                 make(map[string]*userTSDB),
-		bucket:              bucketClient,
-		tsdbMetrics:         newTSDBMetrics(registerer),
-		forceCompactTrigger: make(chan requestWithUsersAndCallback),
-		shipTrigger:         make(chan requestWithUsersAndCallback),
-		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
-	}
 }
 
 // Config for an Ingester.
@@ -246,8 +209,29 @@ type Ingester struct {
 	subservicesWatcher *services.FailureWatcher
 
 	// Mimir blocks storage.
-	tsdbStateDBMtx sync.RWMutex // protects TSDBState.db
-	TSDBState      TSDBState    // TODO: (remove-chunks) Integrate TSDBState into Ingester struct
+	tsdbsMtx sync.RWMutex
+	tsdbs    map[string]*userTSDB // tsdb sharded by userID
+
+	bucket objstore.Bucket
+
+	// Value used by shipper as external label.
+	shipperIngesterID string
+
+	subservices *services.Manager
+
+	tsdbMetrics *tsdbMetrics
+
+	forceCompactTrigger chan requestWithUsersAndCallback
+	shipTrigger         chan requestWithUsersAndCallback
+
+	// Maps the per-block series ID with its labels hash.
+	seriesHashCache *hashcache.SeriesHashCache
+
+	// Timeout chosen for idle compactions.
+	compactionIdleTimeout time.Duration
+
+	// Number of series in memory, across all tenants.
+	seriesCount atomic.Int64
 
 	// For storing metadata ingested.
 	usersMetadataMtx sync.RWMutex
@@ -258,6 +242,28 @@ type Ingester struct {
 	inflightPushRequests atomic.Int64
 }
 
+func newIngester(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
+	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, registerer)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create the bucket client")
+	}
+
+	return &Ingester{
+		cfg:                 cfg,
+		limits:              limits,
+		logger:              logger,
+		activeSeriesMatcher: &ActiveSeriesMatchers{},
+
+		tsdbs:               make(map[string]*userTSDB),
+		usersMetadata:       make(map[string]*userMetricsMetadata),
+		bucket:              bucketClient,
+		tsdbMetrics:         newTSDBMetrics(registerer),
+		forceCompactTrigger: make(chan requestWithUsersAndCallback),
+		shipTrigger:         make(chan requestWithUsersAndCallback),
+		seriesHashCache:     hashcache.NewSeriesHashCache(cfg.BlocksStorageConfig.TSDB.SeriesHashCacheMaxBytes),
+	}, nil
+}
+
 // New returns an Ingester that uses Mimir block storage.
 func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
 	defaultInstanceLimits = &cfg.DefaultLimits
@@ -266,27 +272,19 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		cfg.ingesterClientFactory = client.MakeIngesterClient
 	}
 
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, registerer)
+	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create the bucket client")
+		return nil, err
 	}
+	i.clientConfig = clientConfig
+	i.ingestionRate = util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval)
+	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
 
 	asm, err := NewActiveSeriesMatchers(cfg.ActiveSeriesCustomTrackers)
 	if err != nil {
 		return nil, err
 	}
-
-	i := &Ingester{
-		cfg:                 cfg,
-		clientConfig:        clientConfig,
-		limits:              limits,
-		usersMetadata:       map[string]*userMetricsMetadata{},
-		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
-		logger:              logger,
-		ingestionRate:       util_math.NewEWMARate(0.2, instanceIngestionRateTickInterval),
-		activeSeriesMatcher: asm,
-	}
-	i.metrics = newIngesterMetrics(registerer, cfg.ActiveSeriesMetricsEnabled, i.activeSeriesMatcher.MatcherNames(), i.getInstanceLimits, i.ingestionRate, &i.inflightPushRequests)
+	i.activeSeriesMatcher = asm
 
 	// Replace specific metrics which we can't directly track but we need to read
 	// them from the underlying system (ie. TSDB).
@@ -317,11 +315,11 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 		cfg.LifecyclerConfig.RingConfig.ReplicationFactor,
 		cfg.LifecyclerConfig.RingConfig.ZoneAwarenessEnabled)
 
-	i.TSDBState.shipperIngesterID = i.lifecycler.ID
+	i.shipperIngesterID = i.lifecycler.ID
 
 	// Apply positive jitter only to ensure that the minimum timeout is adhered to.
-	i.TSDBState.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
-	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.TSDBState.compactionIdleTimeout)
+	i.compactionIdleTimeout = util.DurationWithPositiveJitter(i.cfg.BlocksStorageConfig.TSDB.HeadCompactionIdleTimeout, compactionIdleTimeoutJitter)
+	level.Info(i.logger).Log("msg", "TSDB idle compaction timeout set", "timeout", i.compactionIdleTimeout)
 
 	i.BasicService = services.NewBasicService(i.starting, i.updateLoop, i.stopping)
 	return i, nil
@@ -331,21 +329,13 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 // ingester is not ingesting anything, its only purpose is to react on Flush
 // method and flush all openened TSDBs when called.
 func NewForFlusher(cfg Config, limits *validation.Overrides, registerer prometheus.Registerer, logger log.Logger) (*Ingester, error) {
-	bucketClient, err := bucket.NewClient(context.Background(), cfg.BlocksStorageConfig.Bucket, "ingester", logger, registerer)
+	i, err := newIngester(cfg, limits, registerer, logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to create the bucket client")
-	}
-
-	i := &Ingester{
-		cfg:                 cfg,
-		limits:              limits,
-		TSDBState:           newTSDBState(cfg, bucketClient, registerer),
-		logger:              logger,
-		activeSeriesMatcher: &ActiveSeriesMatchers{},
+		return nil, err
 	}
 	i.metrics = newIngesterMetrics(registerer, false, nil, i.getInstanceLimits, nil, &i.inflightPushRequests)
 
-	i.TSDBState.shipperIngesterID = "flusher"
+	i.shipperIngesterID = "flusher"
 
 	// This ingester will not start any subservices (lifecycler, compaction, shipping),
 	// and will only open TSDBs, wait for Flush to be called, and then close TSDBs again.
@@ -402,9 +392,9 @@ func (i *Ingester) starting(ctx context.Context) error {
 	}
 
 	var err error
-	i.TSDBState.subservices, err = services.NewManager(servs...)
+	i.subservices, err = services.NewManager(servs...)
 	if err == nil {
-		err = services.StartManagerAndAwaitHealthy(ctx, i.TSDBState.subservices)
+		err = services.StartManagerAndAwaitHealthy(ctx, i.subservices)
 	}
 	return errors.Wrap(err, "failed to start ingester components")
 }
@@ -421,7 +411,7 @@ func (i *Ingester) stopping(_ error) error {
 	// because the blocks transfer should start only once it's guaranteed
 	// there's no shipping on-going.
 
-	if err := services.StopManagerAndAwaitStopped(context.Background(), i.TSDBState.subservices); err != nil {
+	if err := services.StopManagerAndAwaitStopped(context.Background(), i.subservices); err != nil {
 		level.Warn(i.logger).Log("msg", "failed to stop ingester subservices", "err", err)
 	}
 
@@ -469,12 +459,12 @@ func (i *Ingester) updateLoop(ctx context.Context) error {
 		case <-ingestionRateTicker.C:
 			i.ingestionRate.Tick()
 		case <-rateUpdateTicker.C:
-			i.tsdbStateDBMtx.RLock()
-			for _, db := range i.TSDBState.dbs {
+			i.tsdbsMtx.RLock()
+			for _, db := range i.tsdbs {
 				db.ingestedAPISamples.Tick()
 				db.ingestedRuleSamples.Tick()
 			}
-			i.tsdbStateDBMtx.RUnlock()
+			i.tsdbsMtx.RUnlock()
 
 		case <-exemplarUpdateTicker.C:
 			i.applyExemplarsSettings()
@@ -1051,10 +1041,10 @@ func (i *Ingester) AllUserStats(ctx context.Context, req *client.UserStatsReques
 		return nil, err
 	}
 
-	i.tsdbStateDBMtx.RLock()
-	defer i.tsdbStateDBMtx.RUnlock()
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
 
-	users := i.TSDBState.dbs
+	users := i.tsdbs
 
 	response := &client.UsersStatsResponse{
 		Stats: make([]*client.UserIDStatsResponse, 0, len(users)),
@@ -1386,20 +1376,20 @@ func (i *Ingester) queryStreamChunks(ctx context.Context, db *userTSDB, from, th
 }
 
 func (i *Ingester) getTSDB(userID string) *userTSDB {
-	i.tsdbStateDBMtx.RLock()
-	defer i.tsdbStateDBMtx.RUnlock()
-	db := i.TSDBState.dbs[userID]
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
+	db := i.tsdbs[userID]
 	return db
 }
 
 // List all users for which we have a TSDB. We do it here in order
 // to keep the mutex locked for the shortest time possible.
 func (i *Ingester) getTSDBUsers() []string {
-	i.tsdbStateDBMtx.RLock()
-	defer i.tsdbStateDBMtx.RUnlock()
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
 
-	ids := make([]string, 0, len(i.TSDBState.dbs))
-	for userID := range i.TSDBState.dbs {
+	ids := make([]string, 0, len(i.tsdbs))
+	for userID := range i.tsdbs {
 		ids = append(ids, userID)
 	}
 
@@ -1412,12 +1402,12 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 		return db, nil
 	}
 
-	i.tsdbStateDBMtx.Lock()
-	defer i.tsdbStateDBMtx.Unlock()
+	i.tsdbsMtx.Lock()
+	defer i.tsdbsMtx.Unlock()
 
 	// Check again for DB in the event it was created in-between locks
 	var ok bool
-	db, ok = i.TSDBState.dbs[userID]
+	db, ok = i.tsdbs[userID]
 	if ok {
 		return db, nil
 	}
@@ -1434,7 +1424,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 
 	gl := i.getInstanceLimits()
 	if gl != nil && gl.MaxInMemoryTenants > 0 {
-		if users := int64(len(i.TSDBState.dbs)); users >= gl.MaxInMemoryTenants {
+		if users := int64(len(i.tsdbs)); users >= gl.MaxInMemoryTenants {
 			return nil, errMaxUsersLimitReached
 		}
 	}
@@ -1446,7 +1436,7 @@ func (i *Ingester) getOrCreateTSDB(userID string, force bool) (*userTSDB, error)
 	}
 
 	// Add the db to list of user databases
-	i.TSDBState.dbs[userID] = db
+	i.tsdbs[userID] = db
 	i.metrics.memUsers.Inc()
 
 	return db, nil
@@ -1468,7 +1458,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		ingestedRuleSamples: util_math.NewEWMARate(0.2, i.cfg.RateUpdatePeriod),
 
 		instanceLimitsFn:    i.getInstanceLimits,
-		instanceSeriesCount: &i.TSDBState.seriesCount,
+		instanceSeriesCount: &i.seriesCount,
 	}
 
 	maxExemplars := i.limiter.convertGlobalToLocalLimit(userID, i.limits.MaxGlobalExemplarsPerUser(userID))
@@ -1487,7 +1477,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		BlocksToDelete:                 userDB.blocksToDelete,
 		EnableExemplarStorage:          true, // enable for everyone so we can raise the limit later
 		MaxExemplars:                   int64(maxExemplars),
-		SeriesHashCache:                i.TSDBState.seriesHashCache,
+		SeriesHashCache:                i.seriesHashCache,
 		EnableMemorySnapshotOnShutdown: i.cfg.BlocksStorageConfig.TSDB.MemorySnapshotOnShutdown,
 		IsolationDisabled:              !i.cfg.BlocksStorageConfig.TSDB.IsolationEnabled,
 		HeadChunksWriteQueueSize:       i.cfg.BlocksStorageConfig.TSDB.HeadChunksWriteQueueSize,
@@ -1529,7 +1519,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			Value: userID,
 		}, {
 			Name:  mimir_tsdb.IngesterIDExternalLabel,
-			Value: i.TSDBState.shipperIngesterID,
+			Value: i.shipperIngesterID,
 		},
 	}
 
@@ -1539,7 +1529,7 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 			userLogger,
 			tsdbPromReg,
 			udir,
-			bucket.NewUserBucketClient(userID, i.TSDBState.bucket, i.limits),
+			bucket.NewUserBucketClient(userID, i.bucket, i.limits),
 			func() labels.Labels { return l },
 			metadata.ReceiveSource,
 			false, // No need to upload compacted blocks. Mimir compactor takes care of that.
@@ -1553,18 +1543,18 @@ func (i *Ingester) createTSDB(userID string) (*userTSDB, error) {
 		}
 	}
 
-	i.TSDBState.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
+	i.tsdbMetrics.setRegistryForUser(userID, tsdbPromReg)
 	return userDB, nil
 }
 
 func (i *Ingester) closeAllTSDB() {
-	i.tsdbStateDBMtx.Lock()
+	i.tsdbsMtx.Lock()
 
 	wg := &sync.WaitGroup{}
-	wg.Add(len(i.TSDBState.dbs))
+	wg.Add(len(i.tsdbs))
 
 	// Concurrently close all users TSDB
-	for userID, userDB := range i.TSDBState.dbs {
+	for userID, userDB := range i.tsdbs {
 		userID := userID
 
 		go func(db *userTSDB) {
@@ -1579,9 +1569,9 @@ func (i *Ingester) closeAllTSDB() {
 			// set of open ones. This lock acquisition doesn't deadlock with the
 			// outer one, because the outer one is released as soon as all go
 			// routines are started.
-			i.tsdbStateDBMtx.Lock()
-			delete(i.TSDBState.dbs, userID)
-			i.tsdbStateDBMtx.Unlock()
+			i.tsdbsMtx.Lock()
+			delete(i.tsdbs, userID)
+			i.tsdbsMtx.Unlock()
 
 			i.metrics.memUsers.Dec()
 			i.metrics.activeSeriesPerUser.DeleteLabelValues(userID)
@@ -1592,7 +1582,7 @@ func (i *Ingester) closeAllTSDB() {
 	}
 
 	// Wait until all Close() completed
-	i.tsdbStateDBMtx.Unlock()
+	i.tsdbsMtx.Unlock()
 	wg.Wait()
 }
 
@@ -1617,9 +1607,9 @@ func (i *Ingester) openExistingTSDB(ctx context.Context) error {
 				}
 
 				// Add the database to the map of user databases
-				i.tsdbStateDBMtx.Lock()
-				i.TSDBState.dbs[userID] = db
-				i.tsdbStateDBMtx.Unlock()
+				i.tsdbsMtx.Lock()
+				i.tsdbs[userID] = db
+				i.tsdbsMtx.Unlock()
 				i.metrics.memUsers.Inc()
 
 				i.metrics.walReplayTime.Observe(time.Since(startTime).Seconds())
@@ -1702,11 +1692,11 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 		return 0
 	}
 
-	i.tsdbStateDBMtx.RLock()
-	defer i.tsdbStateDBMtx.RUnlock()
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
 
 	count := uint64(0)
-	for _, db := range i.TSDBState.dbs {
+	for _, db := range i.tsdbs {
 		count += db.Head().NumSeries()
 	}
 
@@ -1716,11 +1706,11 @@ func (i *Ingester) getMemorySeriesMetric() float64 {
 // getOldestUnshippedBlockMetric returns the unix timestamp of the oldest unshipped block or
 // 0 if all blocks have been shipped.
 func (i *Ingester) getOldestUnshippedBlockMetric() float64 {
-	i.tsdbStateDBMtx.RLock()
-	defer i.tsdbStateDBMtx.RUnlock()
+	i.tsdbsMtx.RLock()
+	defer i.tsdbsMtx.RUnlock()
 
 	oldest := uint64(0)
-	for _, db := range i.TSDBState.dbs {
+	for _, db := range i.tsdbs {
 		if ts := db.getOldestUnshippedBlockTime(); oldest == 0 || ts < oldest {
 			oldest = ts
 		}
@@ -1741,7 +1731,7 @@ func (i *Ingester) shipBlocksLoop(ctx context.Context) error {
 		case <-shipTicker.C:
 			i.shipBlocks(ctx, nil)
 
-		case req := <-i.TSDBState.shipTrigger:
+		case req := <-i.shipTrigger:
 			i.shipBlocks(ctx, req.users)
 			close(req.callback) // Notify back.
 
@@ -1785,7 +1775,7 @@ func (i *Ingester) shipBlocks(ctx context.Context, allowed *util.AllowedTenants)
 			// Even if check fails with error, we don't want to repeat it too often.
 			userDB.lastDeletionMarkCheck.Store(time.Now().Unix())
 
-			deletionMarkExists, err := mimir_tsdb.TenantDeletionMarkExists(ctx, i.TSDBState.bucket, userID)
+			deletionMarkExists, err := mimir_tsdb.TenantDeletionMarkExists(ctx, i.bucket, userID)
 			if err != nil {
 				// If we cannot check for deletion mark, we continue anyway, even though in production shipper will likely fail too.
 				// This however simplifies unit tests, where tenant deletion check is enabled by default, but tests don't setup bucket.
@@ -1837,7 +1827,7 @@ func (i *Ingester) compactionLoop(ctx context.Context) error {
 		case <-ticker.C:
 			i.compactBlocks(ctx, false, nil)
 
-		case req := <-i.TSDBState.forceCompactTrigger:
+		case req := <-i.forceCompactTrigger:
 			i.compactBlocks(ctx, true, req.users)
 			close(req.callback) // Notify back.
 
@@ -1885,7 +1875,7 @@ func (i *Ingester) compactBlocks(ctx context.Context, force bool, allowed *util.
 			reason = "forced"
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds())
 
-		case i.TSDBState.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.TSDBState.compactionIdleTimeout):
+		case i.compactionIdleTimeout > 0 && userDB.isIdle(time.Now(), i.compactionIdleTimeout):
 			reason = "idle"
 			level.Info(i.logger).Log("msg", "TSDB is idle, forcing compaction", "user", userID)
 			err = userDB.compactHead(i.cfg.BlocksStorageConfig.TSDB.BlockRanges[0].Milliseconds())
@@ -1954,7 +1944,7 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// At this point there are no more pushes to TSDB, and no possible compaction. Normally TSDB is empty,
 	// but if we're closing TSDB because of tenant deletion mark, then it may still contain some series.
 	// We need to remove these series from series count.
-	i.TSDBState.seriesCount.Sub(int64(userDB.Head().NumSeries()))
+	i.seriesCount.Sub(int64(userDB.Head().NumSeries()))
 
 	dir := userDB.db.Dir()
 
@@ -1974,13 +1964,13 @@ func (i *Ingester) closeAndDeleteUserTSDBIfIdle(userID string) tsdbCloseCheckRes
 	// If this happens now, the request will get reject as the push will not be able to acquire the lock as the tsdb will be
 	// in closed state
 	defer func() {
-		i.tsdbStateDBMtx.Lock()
-		delete(i.TSDBState.dbs, userID)
-		i.tsdbStateDBMtx.Unlock()
+		i.tsdbsMtx.Lock()
+		delete(i.tsdbs, userID)
+		i.tsdbsMtx.Unlock()
 	}()
 
 	i.metrics.memUsers.Dec()
-	i.TSDBState.tsdbMetrics.removeRegistryForUser(userID)
+	i.tsdbMetrics.removeRegistryForUser(userID)
 
 	i.deleteUserMetadata(userID)
 	i.metrics.deletePerUserMetrics(userID)
@@ -2054,7 +2044,7 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 
 		level.Info(i.logger).Log("msg", "flushing TSDB blocks: triggering compaction")
 		select {
-		case i.TSDBState.forceCompactTrigger <- requestWithUsersAndCallback{users: allowedUsers, callback: compactionCallbackCh}:
+		case i.forceCompactTrigger <- requestWithUsersAndCallback{users: allowedUsers, callback: compactionCallbackCh}:
 			// Compacting now.
 		case <-ingCtx.Done():
 			level.Warn(i.logger).Log("msg", "failed to compact TSDB blocks, ingester not running anymore")
@@ -2076,7 +2066,7 @@ func (i *Ingester) FlushHandler(w http.ResponseWriter, r *http.Request) {
 			level.Info(i.logger).Log("msg", "flushing TSDB blocks: triggering shipping")
 
 			select {
-			case i.TSDBState.shipTrigger <- requestWithUsersAndCallback{users: allowedUsers, callback: shippingCallbackCh}:
+			case i.shipTrigger <- requestWithUsersAndCallback{users: allowedUsers, callback: shippingCallbackCh}:
 				// shipping now
 			case <-ingCtx.Done():
 				level.Warn(i.logger).Log("msg", "failed to ship TSDB blocks, ingester not running anymore")
