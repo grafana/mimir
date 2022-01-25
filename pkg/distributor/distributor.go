@@ -767,7 +767,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 
 	subRing := d.ingestersRing
 
-	// Obtain a subring if required.
+	// Get a subring if tenant has shuffle shard size configured.
 	subRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
 	// Use a background context to make sure all ingesters get samples even if we return early
