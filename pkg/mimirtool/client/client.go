@@ -99,7 +99,7 @@ func New(cfg Config) (*CortexClient, error) {
 	}, nil
 }
 
-// Query executes a PromQL query against the Cortex cluster.
+// Query executes a PromQL query against the Mimir cluster.
 func (r *CortexClient) Query(ctx context.Context, query string) (*http.Response, error) {
 
 	query = fmt.Sprintf("query=%s&time=%d", query, time.Now().Unix())

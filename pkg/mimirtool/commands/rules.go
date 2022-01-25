@@ -47,7 +47,7 @@ var (
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
 
-// RuleCommand configures and executes rule related cortex operations
+// RuleCommand configures and executes rule related mimir operations
 type RuleCommand struct {
 	ClientConfig client.Config
 
@@ -131,7 +131,7 @@ func (r *RuleCommand) Register(app *kingpin.Application) {
 		Command("check", "runs various best practice checks against rules.").
 		Action(r.checkRecordingRuleNames)
 
-	// Require Cortex cluster address and tentant ID on all these commands
+	// Require Mimir cluster address and tentant ID on all these commands
 	for _, c := range []*kingpin.CmdClause{listCmd, printRulesCmd, getRuleGroupCmd, deleteRuleGroupCmd, loadRulesCmd, diffRulesCmd, syncRulesCmd} {
 		c.Flag("address", "Address of the cortex cluster, alternatively set MIMIR_ADDRESS.").
 			Envar("MIMIR_ADDRESS").
@@ -446,7 +446,7 @@ func (r *RuleCommand) diffRules(k *kingpin.ParseContext) error {
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
-	// If we're unable to reach the Cortex API due to a bad URL, we'll assume no rules are
+	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
 		return errors.Wrap(err, "diff operation unsuccessful, unable to contact cortex api")
@@ -509,7 +509,7 @@ func (r *RuleCommand) syncRules(k *kingpin.ParseContext) error {
 
 	currentNamespaceMap, err := r.cli.ListRules(context.Background(), "")
 	//TODO: Skipping the 404s here might end up in an unsual scenario.
-	// If we're unable to reach the Cortex API due to a bad URL, we'll assume no rules are
+	// If we're unable to reach the Mimir API due to a bad URL, we'll assume no rules are
 	// part of the namespace and provide a diff of the whole ruleset.
 	if err != nil && err != client.ErrResourceNotFound {
 		return errors.Wrap(err, "sync operation unsuccessful, unable to contact cortex api")

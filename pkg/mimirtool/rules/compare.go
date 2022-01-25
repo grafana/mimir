@@ -27,7 +27,7 @@ var (
 )
 
 // NamespaceState is used to denote the difference between the staged namespace
-// and active namespace for the cortex tenant
+// and active namespace for the mimir tenant
 type NamespaceState int
 
 const (

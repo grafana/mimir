@@ -1,12 +1,12 @@
-# Cortex Tools
+# Mimir Tools
 
-This repo contains tools used for interacting with [Cortex](https://github.com/cortexproject/cortex).
+This repo contains tools used for interacting with [Mimir](https://github.com/grafana/mimir).
 
 - [benchtool](docs/benchtool.md): A powerful YAML driven tool for benchmarking
-  Cortex write and query API.
-- [cortextool](#cortextool): Interacts with user-facing Cortex APIs and backend storage components
-- [chunktool](#chunktool): Interacts with chunks stored and indexed in Cortex storage backends.
-- [logtool](#logtool): Tool which parses Cortex query-frontend logs and formats them for easy analysis.
+  Mimir write and query API.
+- [mimirtool](#mimirtool): Interacts with user-facing Mimir APIs and backend storage components
+- [chunktool](#chunktool): Interacts with chunks stored and indexed in Mimir storage backends.
+- [logtool](#logtool): Tool which parses Mimir query-frontend logs and formats them for easy analysis.
 - [e2ealerting](docs/e2ealerting.md): Tool that helps measure how long an alerts takes from scrape of sample to Alertmanager notifcation delivery.
 
 # Installation
@@ -25,15 +25,15 @@ $ brew install grafana/grafana/mimirtool
 
 ## Linux, Docker and Windows
 
-Refer to the [latest release](https://github.com/grafana/cortex-tools/releases) for installation intructions on these.
+Refer to the [latest release](https://github.com/grafana/mimir-tools/releases) for installation intructions on these.
 
 ## mimirtool
 
-This tool is designed to interact with the various user-facing APIs provided by Cortex, as well as, interact with various backend storage components containing Cortex data.
+This tool is designed to interact with the various user-facing APIs provided by Mimir, as well as, interact with various backend storage components containing Mimir data.
 
 ### Config Commands
 
-Config commands interact with the Cortex api and read/create/update/delete user configs from Cortex. Specifically a users alertmanager and rule configs can be composed and updated using these commands.
+Config commands interact with the Mimir api and read/create/update/delete user configs from Mimir. Specifically a users alertmanager and rule configs can be composed and updated using these commands.
 
 #### Configuration
 
@@ -46,7 +46,7 @@ Config commands interact with the Cortex api and read/create/update/delete user 
 
 #### Alertmanager
 
-The following commands are used by users to interact with their Cortex alertmanager configuration, as well as their alert template files.
+The following commands are used by users to interact with their Mimir alertmanager configuration, as well as their alert template files.
 
 ##### Alertmanager Get
 
@@ -60,23 +60,23 @@ The following commands are used by users to interact with their Cortex alertmana
 
 #### Rules
 
-The following commands are used by users to interact with their Cortex ruler configuration. They can load prometheus rule files, as well as interact with individual rule groups.
+The following commands are used by users to interact with their Mimir ruler configuration. They can load prometheus rule files, as well as interact with individual rule groups.
 
 ##### Rules List
 
-This command will retrieve all of the rule groups stored in the specified Cortex instance and print each one by rule group name and namespace to the terminal.
+This command will retrieve all of the rule groups stored in the specified Mimir instance and print each one by rule group name and namespace to the terminal.
 
     mimirtool rules list
 
 ##### Rules Print
 
-This command will retrieve all of the rule groups stored in the specified Cortex instance and print them to the terminal.
+This command will retrieve all of the rule groups stored in the specified Mimir instance and print them to the terminal.
 
     mimirtool rules print
 
 ##### Rules Get
 
-This command will retrieve the specified rule group from Cortex and print it to the terminal.
+This command will retrieve the specified rule group from Mimir and print it to the terminal.
 
     mimirtool rules get example_namespace example_rule_group
 
@@ -88,7 +88,7 @@ This command will delete the specified rule group from the specified namespace.
 
 ##### Rules Load
 
-This command will load each rule group in the specified files and load them into Cortex. If a rule already exists in Cortex it will be overwritten if a diff is found.
+This command will load each rule group in the specified files and load them into Mimir. If a rule already exists in Mimir it will be overwritten if a diff is found.
 
     mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 
@@ -107,7 +107,7 @@ groups:
 
 ##### Rules Lint
 
-This command lints a rules file. The linter's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file. This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does not make any changes. This command does not interact with your Cortex cluster.
+This command lints a rules file. The linter's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file. This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does not make any changes. This command does not interact with your Mimir cluster.
 
     mimirtool rules lint -n ./example_rules_one.yaml ./example_rules_two.yaml ...
 
@@ -115,7 +115,7 @@ The format of the file is the same as in [Rules Diff](#rules-diff).
 
 ##### Rules Prepare
 
-This command prepares a rules file for upload to Cortex. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. This command does not interact with your Cortex cluster.
+This command prepares a rules file for upload to Mimir. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. This command does not interact with your Mimir cluster.
 
     mimirtool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
 
@@ -158,7 +158,7 @@ The format of the file is the same as in [Rules Diff](#rules-diff).
 
 #### Remote Read
 
-Cortex exposes a [Remote Read API] which allows access to the stored series. The `remote-read` subcommand of `cortextool` allows to interact with its API, to find out which series are stored.
+Mimir exposes a [Remote Read API] which allows access to the stored series. The `remote-read` subcommand of `mimirtool` allows to interact with its API, to find out which series are stored.
 
 [remote read api]: https://prometheus.io/docs/prometheus/latest/storage/#remote-storage-integrations
 
@@ -232,7 +232,7 @@ This lets you generate the header which can then be used to enforce access contr
 
 #### Analyse
 
-Run analysis against your Prometheus, Grafana and Cortex to see which metrics being used and exported. Can also extract metrics
+Run analysis against your Prometheus, Grafana and Mimir to see which metrics being used and exported. Can also extract metrics
 from dashboard JSON and rules YAML files.
 
 ##### `analyse grafana`
@@ -413,7 +413,7 @@ mimirtool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml ...
 
 ## chunktool
 
-This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in cortex backends.
+This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in mimir backends.
 
 ##### Chunk Delete
 
@@ -421,9 +421,9 @@ The delete command currently cleans all index entries pointing to chunks in the 
 
 ##### Chunk Migrate
 
-The migrate command helps with migrating chunks across cortex clusters. It also takes care of setting right index in the new cluster as per the specified schema config.
+The migrate command helps with migrating chunks across mimir clusters. It also takes care of setting right index in the new cluster as per the specified schema config.
 
-As of now it only supports `Bigtable` or `GCS` as a source to read chunks from for migration while for writing it supports all the storages that Cortex supports.
+As of now it only supports `Bigtable` or `GCS` as a source to read chunks from for migration while for writing it supports all the storages that Mimir supports.
 More details about it [here](./pkg/chunk/migrate/README.md)
 
 ##### Chunk Validate/Clean-Index
@@ -432,7 +432,7 @@ The `chunk validate-index` and `chunk clean-index` command allows users to scan 
 
 ## logtool
 
-A CLI tool to parse Cortex query-frontend logs and formats them for easy analysis.
+A CLI tool to parse Mimir query-frontend logs and formats them for easy analysis.
 
 ```
 Options:

@@ -9,22 +9,19 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"strings"
 	"time"
 
-	"io/ioutil"
-	"net/url"
-
 	"github.com/pkg/errors"
-
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/alecthomas/kingpin.v2"
 
@@ -41,7 +38,7 @@ var (
 	)
 )
 
-// AlertmanagerCommand configures and executes rule related cortex api operations
+// AlertmanagerCommand configures and executes rule related mimir api operations
 type AlertmanagerCommand struct {
 	ClientConfig           client.Config
 	AlertmanagerURL        url.URL
@@ -208,7 +205,7 @@ func (a *AlertCommand) verifyConfig(k *kingpin.ParseContext) error {
 		return err
 	}
 
-	// Use a different registerer than default so we don't get all the Cortex metrics, but include Go runtime metrics.
+	// Use a different registerer than default so we don't get all the Mimir metrics, but include Go runtime metrics.
 	goStats := collectors.NewGoCollector()
 	reg := prometheus.NewRegistry()
 	reg.MustRegister(nonDuplicateAlerts)

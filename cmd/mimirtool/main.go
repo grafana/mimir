@@ -29,7 +29,7 @@ var (
 )
 
 func main() {
-	app := kingpin.New("mimirtool", "A command-line tool to manage cortex.")
+	app := kingpin.New("mimirtool", "A command-line tool to manage mimir and GEM.")
 	logConfig.Register(app)
 	alertCommand.Register(app)
 	alertmanagerCommand.Register(app)
