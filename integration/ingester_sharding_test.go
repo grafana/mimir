@@ -27,17 +27,14 @@ func TestIngesterSharding(t *testing.T) {
 	const numSeriesToPush = 1000
 
 	tests := map[string]struct {
-		shardingStrategy            string
 		tenantShardSize             int
 		expectedIngestersWithSeries int
 	}{
-		"default sharding strategy should spread series across all ingesters": {
-			shardingStrategy:            "default",
-			tenantShardSize:             2, // Ignored by default strategy.
+		"disabled shuffle sharding should spread series across all ingesters": {
+			tenantShardSize:             0, // Disable shuffle sharding
 			expectedIngestersWithSeries: 3,
 		},
-		"shuffle-sharding strategy should spread series across the configured shard size number of ingesters": {
-			shardingStrategy:            "shuffle-sharding",
+		"non-zero shuffle-sharding should spread series across the configured shard size number of ingesters": {
 			tenantShardSize:             2,
 			expectedIngestersWithSeries: 2,
 		},
@@ -50,14 +47,11 @@ func TestIngesterSharding(t *testing.T) {
 			defer s.Close()
 
 			flags := BlocksStorageFlags()
-			flags["-distributor.sharding-strategy"] = testData.shardingStrategy
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
 
-			if testData.shardingStrategy == "shuffle-sharding" {
-				// Enable shuffle sharding on read path but not lookback, otherwise all ingesters would be
-				// queried being just registered.
-				flags["-querier.shuffle-sharding-ingesters-lookback-period"] = "1ns"
-			}
+			// Enable shuffle sharding on read path but not lookback, otherwise all ingesters would be
+			// queried being just registered.
+			flags["-querier.shuffle-sharding-ingesters-lookback-period"] = "1ns"
 
 			// Start dependencies.
 			consul := e2edb.NewConsul()
@@ -128,7 +122,7 @@ func TestIngesterSharding(t *testing.T) {
 			// We expect that only ingesters belonging to tenant's shard have been queried if
 			// shuffle sharding is enabled.
 			expectedIngesters := ingesters.NumInstances()
-			if testData.shardingStrategy == "shuffle-sharding" {
+			if testData.tenantShardSize > 0 {
 				expectedIngesters = testData.tenantShardSize
 			}
 

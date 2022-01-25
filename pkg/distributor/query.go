@@ -22,7 +22,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/querier/stats"
 	"github.com/grafana/mimir/pkg/tenant"
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/limiter"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -89,15 +88,13 @@ func (d *Distributor) GetIngestersForQuery(ctx context.Context, matchers ...*lab
 		return ring.ReplicationSet{}, err
 	}
 
-	// If shuffle sharding is enabled we should only query ingesters which are
+	// If tenant uses shuffle sharding, we should only query ingesters which are
 	// part of the tenant's subring.
-	if d.cfg.ShardingStrategy == util.ShardingStrategyShuffle {
-		shardSize := d.limits.IngestionTenantShardSize(userID)
-		lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
+	shardSize := d.limits.IngestionTenantShardSize(userID)
+	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
-		if shardSize > 0 && lookbackPeriod > 0 {
-			return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
-		}
+	if shardSize > 0 && lookbackPeriod > 0 {
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
 	}
 
 	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)
@@ -111,15 +108,13 @@ func (d *Distributor) GetIngestersForMetadata(ctx context.Context) (ring.Replica
 		return ring.ReplicationSet{}, err
 	}
 
-	// If shuffle sharding is enabled we should only query ingesters which are
+	// If tenant uses shuffle sharding, we should only query ingesters which are
 	// part of the tenant's subring.
-	if d.cfg.ShardingStrategy == util.ShardingStrategyShuffle {
-		shardSize := d.limits.IngestionTenantShardSize(userID)
-		lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
+	shardSize := d.limits.IngestionTenantShardSize(userID)
+	lookbackPeriod := d.cfg.ShuffleShardingLookbackPeriod
 
-		if shardSize > 0 && lookbackPeriod > 0 {
-			return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
-		}
+	if shardSize > 0 && lookbackPeriod > 0 {
+		return d.ingestersRing.ShuffleShardWithLookback(userID, shardSize, lookbackPeriod, time.Now()).GetReplicationSetForOperation(ring.Read)
 	}
 
 	return d.ingestersRing.GetReplicationSetForOperation(ring.Read)

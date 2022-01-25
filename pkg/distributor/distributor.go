@@ -13,7 +13,6 @@ import (
 	math "math"
 	"net/http"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -48,11 +47,9 @@ import (
 )
 
 var (
-	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
-
 	// Validation errors.
 	errInvalidShardingStrategy = errors.New("invalid sharding strategy")
-	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater than 0")
+	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
 	errTooManyInflightPushRequests    = errors.New("too many inflight push requests in distributor")
@@ -133,8 +130,7 @@ type Config struct {
 	RemoteTimeout   time.Duration `yaml:"remote_timeout"`
 	ExtraQueryDelay time.Duration `yaml:"extra_queue_delay"`
 
-	ShardingStrategy string `yaml:"sharding_strategy"`
-	ExtendWrites     bool   `yaml:"extend_writes"`
+	ExtendWrites bool `yaml:"extend_writes"`
 
 	// Distributors ring
 	DistributorRing RingConfig `yaml:"ring"`
@@ -167,7 +163,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.MaxRecvMsgSize, "distributor.max-recv-msg-size", 100<<20, "remote_write API max receive message size (bytes).")
 	f.DurationVar(&cfg.RemoteTimeout, "distributor.remote-timeout", 2*time.Second, "Timeout for downstream ingesters.")
 	f.DurationVar(&cfg.ExtraQueryDelay, "distributor.extra-query-delay", 0, "Time to wait before sending more than the minimum successful query requests.")
-	f.StringVar(&cfg.ShardingStrategy, "distributor.sharding-strategy", util.ShardingStrategyDefault, fmt.Sprintf("The sharding strategy to use. Supported values are: %s.", strings.Join(supportedShardingStrategies, ", ")))
 	f.BoolVar(&cfg.ExtendWrites, "distributor.extend-writes", true, "Try writing to an additional ingester in the presence of an ingester not in the ACTIVE state. It is useful to disable this along with -ingester.unregister-on-shutdown=false in order to not spread samples to extra ingesters during rolling restarts with consistent naming.")
 
 	f.Float64Var(&cfg.InstanceLimits.MaxIngestionRate, "distributor.instance-limits.max-ingestion-rate", 0, "Max ingestion rate (samples/sec) that this distributor will accept. This limit is per-distributor, not per-tenant. Additional push requests will be rejected. Current ingestion rate is computed as exponentially weighted moving average, updated every second. 0 = unlimited.")
@@ -176,11 +171,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits) error {
-	if !util.StringsContain(supportedShardingStrategies, cfg.ShardingStrategy) {
-		return errInvalidShardingStrategy
-	}
-
-	if cfg.ShardingStrategy == util.ShardingStrategyShuffle && limits.IngestionTenantShardSize <= 0 {
+	if limits.IngestionTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
@@ -777,9 +768,7 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	subRing := d.ingestersRing
 
 	// Obtain a subring if required.
-	if d.cfg.ShardingStrategy == util.ShardingStrategyShuffle {
-		subRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
-	}
+	subRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
 	// Use a background context to make sure all ingesters get samples even if we return early
 	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
