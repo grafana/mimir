@@ -111,16 +111,6 @@ func isZeroValue(fl *flag.Flag, value string) bool {
 	return value == z.Interface().(flag.Value).String()
 }
 
-// -- string Value
-type stringValue string
-
-func (s *stringValue) Set(val string) error {
-	*s = stringValue(val)
-	return nil
-}
-
-func (s *stringValue) String() string { return string(*s) }
-
 // parseConfig parses a mimir.Config and populates fields.
 func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error {
 	// The input config is expected to be a pointer to struct.
