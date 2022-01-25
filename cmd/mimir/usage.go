@@ -24,8 +24,8 @@ const (
 	categoryExperimental
 )
 
-// usage prints command-line usage given a certain category of flags.
-func usage(cfg *mimir.Config, cat category) error {
+// usage prints command-line usage, printAll argument controlling whether also non-basic flags will be included.
+func usage(cfg *mimir.Config, printAll bool) error {
 	fields := map[uintptr]reflect.StructField{}
 	if err := parseConfig(cfg, fields); err != nil {
 		return err
@@ -50,8 +50,8 @@ func usage(cfg *mimir.Config, cat category) error {
 			}
 		}
 
-		if fieldCat != cat {
-			// Don't print help for this flag since it's the wrong category
+		if fieldCat != categoryBasic && !printAll {
+			// Don't print help for this flag since we're supposed to print only basic flags
 			return
 		}
 
