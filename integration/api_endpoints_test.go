@@ -25,7 +25,7 @@ func newMimirSingleBinaryWithLocalFilesytemBucket(t *testing.T, name string, fla
 	require.NoError(t, err)
 
 	// Start Mimir in single binary mode, reading the config from file.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
 	if flags == nil {
 		flags = map[string]string{}

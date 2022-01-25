@@ -166,7 +166,7 @@ func TestRulerAPISingleBinary(t *testing.T) {
 	)
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerUserConfigYaml)))
 	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(mimir))
@@ -232,7 +232,7 @@ func TestRulerEvaluationDelay(t *testing.T) {
 	)
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 	require.NoError(t, writeFileToSharedDir(s, filepath.Join("ruler_configs", user, namespace), []byte(mimirRulerEvalStaleNanConfigYaml)))
 	mimir := e2emimir.NewSingleBinaryWithConfigFile("mimir", mimirConfigFile, flags, "", 9009, 9095)
 	require.NoError(t, s.StartAndWaitReady(mimir))

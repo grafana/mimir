@@ -204,7 +204,7 @@ lint-packaging-scripts: packaging/deb/control/postinst packaging/deb/control/pre
 	shellcheck $?
 
 lint: lint-packaging-scripts check-makefiles
-	misspell -error docs
+	misspell -error docs/sources
 
 	# Configured via .golangci.yml.
 	golangci-lint run
@@ -304,13 +304,13 @@ web-deploy:
 
 # Generates the config file documentation.
 doc: clean-doc
-	go run ./tools/doc-generator ./docs/configuration/config-file-reference.template > ./docs/configuration/config-file-reference.md
-	go run ./tools/doc-generator ./docs/blocks-storage/compactor.template            > ./docs/blocks-storage/compactor.md
-	go run ./tools/doc-generator ./docs/blocks-storage/store-gateway.template        > ./docs/blocks-storage/store-gateway.md
-	go run ./tools/doc-generator ./docs/blocks-storage/querier.template              > ./docs/blocks-storage/querier.md
-	go run ./tools/doc-generator ./docs/guides/encryption-at-rest.template           > ./docs/guides/encryption-at-rest.md
-	embedmd -w docs/operations/requests-mirroring-to-secondary-cluster.md
-	embedmd -w docs/guides/overrides-exporter.md
+	go run ./tools/doc-generator ./docs/sources/configuration/config-file-reference.template > ./docs/sources/configuration/config-file-reference.md
+	go run ./tools/doc-generator ./docs/sources/blocks-storage/compactor.template            > ./docs/sources/blocks-storage/compactor.md
+	go run ./tools/doc-generator ./docs/sources/blocks-storage/store-gateway.template        > ./docs/sources/blocks-storage/store-gateway.md
+	go run ./tools/doc-generator ./docs/sources/blocks-storage/querier.template              > ./docs/sources/blocks-storage/querier.md
+	go run ./tools/doc-generator ./docs/sources/guides/encryption-at-rest.template           > ./docs/sources/guides/encryption-at-rest.md
+	embedmd -w docs/sources/operations/requests-mirroring-to-secondary-cluster.md
+	embedmd -w docs/sources/guides/overrides-exporter.md
 	embedmd -w operations/mimir/README.md
 
 	# Make up markdown files prettier. When running with check-doc target, it will fail if this produces any change.
@@ -376,14 +376,14 @@ load-images:
 
 clean-doc:
 	rm -f \
-		./docs/configuration/config-file-reference.md \
-		./docs/blocks-storage/compactor.md \
-		./docs/blocks-storage/store-gateway.md \
-		./docs/blocks-storage/querier.md \
-		./docs/guides/encryption-at-rest.md
+		./docs/sources/configuration/config-file-reference.md \
+		./docs/sources/blocks-storage/compactor.md \
+		./docs/sources/blocks-storage/store-gateway.md \
+		./docs/sources/blocks-storage/querier.md \
+		./docs/sources/guides/encryption-at-rest.md
 
 check-doc: doc
-	@git diff --exit-code -- ./docs/configuration/config-file-reference.md ./docs/blocks-storage/*.md ./docs/configuration/*.md ./operations/mimir/*.md ./operations/mimir-mixin/docs/*.md
+	@git diff --exit-code -- ./docs/sources/configuration/config-file-reference.md ./docs/sources/blocks-storage/*.md ./docs/sources/configuration/*.md ./operations/mimir/*.md ./operations/mimir-mixin/docs/sources/*.md
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
@@ -503,7 +503,7 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--before-remove packaging/deb/control/prerm \
 			--package dist/mimir-$(VERSION)_$$arch.deb \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
 			packaging/deb/default/mimir=/etc/default/mimir \
 			packaging/deb/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 		$(FPM_OPTS) -t rpm  \
@@ -512,7 +512,7 @@ dist/$(UPTODATE)-packages: dist $(wildcard packaging/deb/**) $(wildcard packagin
 			--before-remove packaging/rpm/control/preun \
 			--package dist/mimir-$(VERSION)_$$arch.rpm \
 			dist/mimir-linux-$$arch=/usr/local/bin/mimir \
-			docs/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
+			docs/sources/chunks-storage/single-process-config.yaml=/etc/mimir/single-process-config.yaml \
 			packaging/rpm/sysconfig/mimir=/etc/sysconfig/mimir \
 			packaging/rpm/systemd/mimir.service=/etc/systemd/system/mimir.service; \
 	done

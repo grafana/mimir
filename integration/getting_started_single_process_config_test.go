@@ -32,7 +32,7 @@ func TestGettingStartedSingleProcessConfigWithBlocksStorage(t *testing.T) {
 	require.NoError(t, s.StartAndWaitReady(minio))
 
 	// Start Mimir components.
-	require.NoError(t, copyFileToSharedDir(s, "docs/configuration/single-process-config-blocks.yaml", mimirConfigFile))
+	require.NoError(t, copyFileToSharedDir(s, "docs/sources/configuration/single-process-config-blocks.yaml", mimirConfigFile))
 
 	// Start Mimir in single binary mode, reading the config from file and overwriting
 	// the backend config to make it work with Minio.
