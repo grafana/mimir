@@ -24,7 +24,7 @@ const (
 	categoryExperimental
 )
 
-// usage prints command-line usage, printAll argument controlling whether also non-basic flags will be included.
+// usage prints command-line usage, the printAll argument controls whether also non-basic flags will be included.
 func usage(cfg *mimir.Config, printAll bool) error {
 	fields := map[uintptr]reflect.StructField{}
 	if err := parseConfig(cfg, fields); err != nil {
