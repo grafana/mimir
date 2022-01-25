@@ -329,6 +329,7 @@
     * User config size (`-alertmanager.max-config-size-bytes`)
     * Templates count in user config (`-alertmanager.max-templates-count`)
     * Max template size (`-alertmanager.max-template-size-bytes`)
+* [FEATURE] Querier: Added support for tenant federation to exemplar endpoints. #927
 * [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_workers_enqueued_requests_total` metric to track the number of requests enqueued in each query-scheduler. #384
 * [ENHANCEMENT] Add a flag (`--proxy.compare-use-relative-error`) in the query-tee to compare floating point values using relative error. #208
 * [ENHANCEMENT] Add a flag (`--proxy.compare-skip-recent-samples`) in the query-tee to skip comparing recent samples. By default samples not older than 1 minute are skipped. #234

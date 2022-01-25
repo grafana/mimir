@@ -281,8 +281,9 @@ func (t *Mimir) initTenantFederation() (serv services.Service, err error) {
 		// Make sure the mergeQuerier is only used for request with more than a
 		// single tenant. This allows for a less impactful enabling of tenant
 		// federation.
-		const byPassForSingleQuerier = true
-		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, byPassForSingleQuerier, util_log.Logger))
+		const bypassForSingleQuerier = true
+		t.QuerierQueryable = querier.NewSampleAndChunkQueryable(tenantfederation.NewQueryable(t.QuerierQueryable, bypassForSingleQuerier, util_log.Logger))
+		t.ExemplarQueryable = tenantfederation.NewExemplarQueryable(t.ExemplarQueryable, bypassForSingleQuerier, util_log.Logger)
 	}
 	return nil, nil
 }
@@ -533,12 +534,12 @@ func (t *Mimir) initRuler() (serv services.Service, err error) {
 		if !t.Cfg.TenantFederation.Enabled {
 			return nil, errors.New("-ruler.tenant-federation.enabled=true requires -tenant-federation.enabled=true")
 		}
-		// Setting byPassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
+		// Setting bypassForSingleQuerier=false forces `tenantfederation.NewQueryable` to add
 		// the `__tenant_id__` label on all metrics regardless if they're for a single tenant or multiple tenants.
 		// This makes this label more consistent and hopefully less confusing to users.
-		const byPassForSingleQuerier = false
+		const bypassForSingleQuerier = false
 
-		federatedQueryable = tenantfederation.NewQueryable(queryable, byPassForSingleQuerier, util_log.Logger)
+		federatedQueryable = tenantfederation.NewQueryable(queryable, bypassForSingleQuerier, util_log.Logger)
 	}
 
 	managerFactory := ruler.DefaultTenantManagerFactory(t.Cfg.Ruler, t.Distributor, queryable, federatedQueryable, eng, t.Overrides, prometheus.DefaultRegisterer)
