@@ -11,14 +11,9 @@ import (
 	"strings"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/thanos-io/thanos/pkg/cacheutil"
-	"github.com/thanos-io/thanos/pkg/model"
 
 	"github.com/grafana/mimir/pkg/cache"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	"github.com/grafana/mimir/pkg/util"
 )
 
@@ -31,14 +26,12 @@ const (
 
 	// IndexCacheBackendDefault is the value for the default index cache backend.
 	IndexCacheBackendDefault = IndexCacheBackendInMemory
-
-	defaultMaxItemSize = model.Bytes(128 * units.MiB)
 )
 
 var (
 	supportedIndexCacheBackends = []string{IndexCacheBackendInMemory, IndexCacheBackendMemcached}
 
-	errUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
+	ErrUnsupportedIndexCacheBackend = errors.New("unsupported index cache backend")
 )
 
 type IndexCacheConfig struct {
@@ -60,7 +53,7 @@ func (cfg *IndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix str
 // Validate the config.
 func (cfg *IndexCacheConfig) Validate() error {
 	if !util.StringsContain(supportedIndexCacheBackends, cfg.Backend) {
-		return errUnsupportedIndexCacheBackend
+		return ErrUnsupportedIndexCacheBackend
 	}
 
 	if cfg.Backend == IndexCacheBackendMemcached {
@@ -78,45 +71,4 @@ type InMemoryIndexCacheConfig struct {
 
 func (cfg *InMemoryIndexCacheConfig) RegisterFlagsWithPrefix(f *flag.FlagSet, prefix string) {
 	f.Uint64Var(&cfg.MaxSizeBytes, prefix+"max-size-bytes", uint64(1*units.Gibibyte), "Maximum size in bytes of in-memory index cache used to speed up blocks index lookups (shared between all tenants).")
-}
-
-// NewIndexCache creates a new index cache based on the input configuration.
-func NewIndexCache(cfg IndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
-	switch cfg.Backend {
-	case IndexCacheBackendInMemory:
-		return newInMemoryIndexCache(cfg.InMemory, logger, registerer)
-	case IndexCacheBackendMemcached:
-		return newMemcachedIndexCache(cfg.Memcached, logger, registerer)
-	default:
-		return nil, errUnsupportedIndexCacheBackend
-	}
-}
-
-func newInMemoryIndexCache(cfg InMemoryIndexCacheConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
-	maxCacheSize := model.Bytes(cfg.MaxSizeBytes)
-
-	// Calculate the max item size.
-	maxItemSize := defaultMaxItemSize
-	if maxItemSize > maxCacheSize {
-		maxItemSize = maxCacheSize
-	}
-
-	return storecache.NewInMemoryIndexCacheWithConfig(logger, registerer, storecache.InMemoryIndexCacheConfig{
-		MaxSize:     maxCacheSize,
-		MaxItemSize: maxItemSize,
-	})
-}
-
-func newMemcachedIndexCache(cfg cache.MemcachedConfig, logger log.Logger, registerer prometheus.Registerer) (storecache.IndexCache, error) {
-	client, err := cacheutil.NewMemcachedClientWithConfig(logger, "index-cache", cfg.ToMemcachedClientConfig(), registerer)
-	if err != nil {
-		return nil, errors.Wrap(err, "create index cache memcached client")
-	}
-
-	cache, err := storecache.NewMemcachedIndexCache(logger, client, registerer)
-	if err != nil {
-		return nil, errors.Wrap(err, "create memcached-based index cache")
-	}
-
-	return storecache.NewTracingIndexCache(cache, logger), nil
 }

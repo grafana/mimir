@@ -9,13 +9,13 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 )
 
 func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 	type testType struct {
 		LabelSets   []labels.Labels
-		MatchersKey cache.LabelMatchersKey
+		MatchersKey indexcache.LabelMatchersKey
 	}
 
 	entry := testType{
@@ -23,7 +23,7 @@ func TestSnappyGobSeriesCacheEntryCodec(t *testing.T) {
 			{{Name: "foo", Value: "bar"}},
 			{{Name: "baz", Value: "boo"}},
 		},
-		MatchersKey: cache.CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")}),
+		MatchersKey: indexcache.CanonicalLabelMatchersKey([]*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar")}),
 	}
 
 	t.Run("happy case roundtrip", func(t *testing.T) {

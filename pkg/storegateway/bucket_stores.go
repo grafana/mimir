@@ -38,7 +38,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketcache"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	util_log "github.com/grafana/mimir/pkg/util/log"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 	"github.com/grafana/mimir/pkg/util/validation"
@@ -56,7 +56,7 @@ type BucketStores struct {
 	shardingStrategy   ShardingStrategy
 
 	// Index cache shared across all tenants.
-	indexCache storecache.IndexCache
+	indexCache indexcache.IndexCache
 
 	// Series hash cache shared across all tenants.
 	seriesHashCache *hashcache.SeriesHashCache
@@ -136,7 +136,7 @@ func NewBucketStores(cfg tsdb.BlocksStorageConfig, shardingStrategy ShardingStra
 	}, u.getBlocksLoadedMetric)
 
 	// Init the index cache.
-	if u.indexCache, err = tsdb.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
+	if u.indexCache, err = indexcache.NewIndexCache(cfg.BucketStore.IndexCache, logger, reg); err != nil {
 		return nil, errors.Wrap(err, "create index cache")
 	}
 

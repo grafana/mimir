@@ -59,8 +59,7 @@ import (
 
 	"github.com/grafana/mimir/pkg/storage/sharding"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	"github.com/grafana/mimir/pkg/storage/tsdb/cache"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/spanlogger"
 )
@@ -118,7 +117,7 @@ type BucketStore struct {
 	bkt             objstore.InstrumentedBucketReader
 	fetcher         block.MetadataFetcher
 	dir             string
-	indexCache      storecache.IndexCache
+	indexCache      indexcache.IndexCache
 	indexReaderPool *indexheader.ReaderPool
 	chunkPool       pool.Bytes
 	seriesHashCache *hashcache.SeriesHashCache
@@ -166,28 +165,28 @@ func (noopCache) FetchMultiSeriesForRefs(_ context.Context, _ string, _ ulid.ULI
 	return map[storage.SeriesRef][]byte{}, ids
 }
 
-func (c noopCache) StoreExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ cache.LabelMatchersKey, _ []byte) {
+func (c noopCache) StoreExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
 }
 
-func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ cache.LabelMatchersKey) ([]byte, bool) {
+func (c noopCache) FetchExpandedPostings(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreSeries(_ context.Context, _ string, _ ulid.ULID, _ storecache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
+func (noopCache) StoreSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector, _ []byte) {
 }
-func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ storecache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
+func (noopCache) FetchSeries(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ *sharding.ShardSelector) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreLabelNames(_ context.Context, _ string, _ ulid.ULID, _ storecache.LabelMatchersKey, _ []byte) {
+func (noopCache) StoreLabelNames(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey, _ []byte) {
 }
-func (noopCache) FetchLabelNames(_ context.Context, _ string, _ ulid.ULID, _ storecache.LabelMatchersKey) ([]byte, bool) {
+func (noopCache) FetchLabelNames(_ context.Context, _ string, _ ulid.ULID, _ indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 
-func (noopCache) StoreLabelValues(_ context.Context, _ string, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey, _ []byte) {
+func (noopCache) StoreLabelValues(_ context.Context, _ string, _ ulid.ULID, _ string, _ indexcache.LabelMatchersKey, _ []byte) {
 }
-func (noopCache) FetchLabelValues(_ context.Context, _ string, _ ulid.ULID, _ string, _ storecache.LabelMatchersKey) ([]byte, bool) {
+func (noopCache) FetchLabelValues(_ context.Context, _ string, _ ulid.ULID, _ string, _ indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 
@@ -202,7 +201,7 @@ func WithLogger(logger log.Logger) BucketStoreOption {
 }
 
 // WithIndexCache sets a indexCache to use instead of a noopCache.
-func WithIndexCache(cache storecache.IndexCache) BucketStoreOption {
+func WithIndexCache(cache indexcache.IndexCache) BucketStoreOption {
 	return func(s *BucketStore) {
 		s.indexCache = cache
 	}
@@ -787,12 +786,12 @@ func blockSeries(
 
 type seriesCacheEntry struct {
 	LabelSets   []labels.Labels
-	MatchersKey cache.LabelMatchersKey
+	MatchersKey indexcache.LabelMatchersKey
 	Shard       sharding.ShardSelector
 }
 
-func fetchCachedSeries(ctx context.Context, userID string, indexCache cache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, logger log.Logger) ([]seriesEntry, bool) {
-	matchersKey := cache.CanonicalLabelMatchersKey(matchers)
+func fetchCachedSeries(ctx context.Context, userID string, indexCache indexcache.IndexCache, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, logger log.Logger) ([]seriesEntry, bool) {
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
 	data, ok := indexCache.FetchSeries(ctx, userID, blockID, matchersKey, shard)
 	if !ok {
 		return nil, false
@@ -818,10 +817,10 @@ func fetchCachedSeries(ctx context.Context, userID string, indexCache cache.Inde
 	return res, true
 }
 
-func storeCachedSeries(ctx context.Context, indexCache cache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, series []seriesEntry, logger log.Logger) {
+func storeCachedSeries(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, shard *sharding.ShardSelector, series []seriesEntry, logger log.Logger) {
 	entry := seriesCacheEntry{
 		LabelSets:   make([]labels.Labels, len(series)),
-		MatchersKey: cache.CanonicalLabelMatchersKey(matchers),
+		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
 		Shard:       maybeNilShard(shard),
 	}
 	for i, s := range series {
@@ -1330,11 +1329,11 @@ func blockLabelNames(ctx context.Context, indexr *bucketIndexReader, matchers []
 
 type labelNamesCacheEntry struct {
 	Names       []string
-	MatchersKey cache.LabelMatchersKey
+	MatchersKey indexcache.LabelMatchersKey
 }
 
-func fetchCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, logger log.Logger) ([]string, bool) {
-	matchersKey := cache.CanonicalLabelMatchersKey(matchers)
+func fetchCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, logger log.Logger) ([]string, bool) {
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
 	data, ok := indexCache.FetchLabelNames(ctx, userID, blockID, matchersKey)
 	if !ok {
 		return nil, false
@@ -1352,10 +1351,10 @@ func fetchCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, use
 	return entry.Names, true
 }
 
-func storeCachedLabelNames(ctx context.Context, indexCache cache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, values []string, logger log.Logger) {
+func storeCachedLabelNames(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, matchers []*labels.Matcher, values []string, logger log.Logger) {
 	entry := labelNamesCacheEntry{
 		Names:       values,
-		MatchersKey: cache.CanonicalLabelMatchersKey(matchers),
+		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
 	}
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
@@ -1503,11 +1502,11 @@ func blockLabelValues(ctx context.Context, indexr *bucketIndexReader, labelName 
 type labelValuesCacheEntry struct {
 	Values      []string
 	LabelName   string
-	MatchersKey cache.LabelMatchersKey
+	MatchersKey indexcache.LabelMatchersKey
 }
 
-func fetchCachedLabelValues(ctx context.Context, indexCache cache.IndexCache, userID string, blockID ulid.ULID, labelName string, matchers []*labels.Matcher, logger log.Logger) ([]string, bool) {
-	matchersKey := cache.CanonicalLabelMatchersKey(matchers)
+func fetchCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, labelName string, matchers []*labels.Matcher, logger log.Logger) ([]string, bool) {
+	matchersKey := indexcache.CanonicalLabelMatchersKey(matchers)
 	data, ok := indexCache.FetchLabelValues(ctx, userID, blockID, labelName, matchersKey)
 	if !ok {
 		return nil, false
@@ -1529,11 +1528,11 @@ func fetchCachedLabelValues(ctx context.Context, indexCache cache.IndexCache, us
 	return entry.Values, true
 }
 
-func storeCachedLabelValues(ctx context.Context, indexCache cache.IndexCache, userID string, blockID ulid.ULID, labelName string, matchers []*labels.Matcher, values []string, logger log.Logger) {
+func storeCachedLabelValues(ctx context.Context, indexCache indexcache.IndexCache, userID string, blockID ulid.ULID, labelName string, matchers []*labels.Matcher, values []string, logger log.Logger) {
 	entry := labelValuesCacheEntry{
 		Values:      values,
 		LabelName:   labelName,
-		MatchersKey: cache.CanonicalLabelMatchersKey(matchers),
+		MatchersKey: indexcache.CanonicalLabelMatchersKey(matchers),
 	}
 	data, err := encodeSnappyGob(entry)
 	if err != nil {
@@ -1687,7 +1686,7 @@ type bucketBlock struct {
 	bkt        objstore.BucketReader
 	meta       *metadata.Meta
 	dir        string
-	indexCache storecache.IndexCache
+	indexCache indexcache.IndexCache
 	chunkPool  pool.Bytes
 
 	indexHeaderReader indexheader.Reader
@@ -1713,7 +1712,7 @@ func newBucketBlock(
 	meta *metadata.Meta,
 	bkt objstore.BucketReader,
 	dir string,
-	indexCache storecache.IndexCache,
+	indexCache indexcache.IndexCache,
 	chunkPool pool.Bytes,
 	indexHeadReader indexheader.Reader,
 	p Partitioner,
@@ -1935,7 +1934,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 		return refsCopy, cached, nil
 	}
 
-	key := cache.CanonicalLabelMatchersKey(ms)
+	key := indexcache.CanonicalLabelMatchersKey(ms)
 
 	var loadedPromise interface{}
 	loadedPromise, loaded = r.block.expandedPostingsPromises.LoadOrStore(key, promise)
@@ -1957,7 +1956,7 @@ func (r *bucketIndexReader) expandedPostingsPromise(ctx context.Context, ms []*l
 	return promise, false
 }
 
-func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID string, key storecache.LabelMatchersKey, refs []storage.SeriesRef) {
+func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey, refs []storage.SeriesRef) {
 	data, err := diffVarintSnappyEncode(index.NewListPostings(refs), len(refs))
 	if err != nil {
 		level.Warn(r.block.logger).Log("msg", "can't encode expanded postings cache", "err", err, "matchers_key", key, "block", r.block.meta.ULID)
@@ -1966,7 +1965,7 @@ func (r *bucketIndexReader) cacheExpandedPostings(ctx context.Context, userID st
 	r.block.indexCache.StoreExpandedPostings(ctx, userID, r.block.meta.ULID, key, data)
 }
 
-func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key cache.LabelMatchersKey) ([]storage.SeriesRef, bool) {
+func (r *bucketIndexReader) fetchCachedExpandedPostings(ctx context.Context, userID string, key indexcache.LabelMatchersKey) ([]storage.SeriesRef, bool) {
 	data, ok := r.block.indexCache.FetchExpandedPostings(ctx, userID, r.block.meta.ULID, key)
 	if !ok {
 		return nil, false

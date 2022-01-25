@@ -47,8 +47,8 @@ import (
 	"github.com/grafana/mimir/pkg/storage/bucket"
 	"github.com/grafana/mimir/pkg/storage/bucket/filesystem"
 	mimir_tsdb "github.com/grafana/mimir/pkg/storage/tsdb"
-	storecache "github.com/grafana/mimir/pkg/storage/tsdb/cache"
 	mimir_testutil "github.com/grafana/mimir/pkg/storage/tsdb/testutil"
+	"github.com/grafana/mimir/pkg/storegateway/indexcache"
 	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/test"
 )
@@ -762,7 +762,7 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 	assert.Equal(tb, s.minTime, mint)
 	assert.Equal(tb, s.maxTime, maxt)
 
-	indexCache, err := storecache.NewInMemoryIndexCacheWithConfig(s.logger, nil, storecache.InMemoryIndexCacheConfig{
+	indexCache, err := indexcache.NewInMemoryIndexCacheWithConfig(s.logger, nil, indexcache.InMemoryIndexCacheConfig{
 		MaxItemSize: 1e5,
 		MaxSize:     2e5,
 	})
@@ -862,10 +862,10 @@ func BenchmarkBucketStoreLabelValues(tb *testing.B) {
 // indexCacheMissingLabelValues wraps an IndexCache returning a miss on all FetchLabelValues calls,
 // making it useful to benchmark the LabelValues calls (it still caches the underlying postings calls)
 type indexCacheMissingLabelValues struct {
-	storecache.IndexCache
+	indexcache.IndexCache
 }
 
-func (indexCacheMissingLabelValues) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey storecache.LabelMatchersKey) ([]byte, bool) {
+func (indexCacheMissingLabelValues) FetchLabelValues(ctx context.Context, userID string, blockID ulid.ULID, labelName string, matchersKey indexcache.LabelMatchersKey) ([]byte, bool) {
 	return nil, false
 }
 

@@ -2,7 +2,7 @@
 // Provenance-includes-location: https://github.com/thanos-io/thanos/blob/main/pkg/store/cache/inmemory.go
 // Provenance-includes-license: Apache-2.0
 // Provenance-includes-copyright: The Thanos Authors.
-package cache
+package indexcache
 
 import (
 	"context"

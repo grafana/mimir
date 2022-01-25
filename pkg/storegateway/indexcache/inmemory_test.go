@@ -4,7 +4,7 @@
 // Provenance-includes-copyright: The Thanos Authors.
 
 // Tests out the index cache implementation.
-package cache
+package indexcache
 
 import (
 	"bytes"
