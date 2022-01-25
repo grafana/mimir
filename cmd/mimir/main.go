@@ -68,6 +68,7 @@ func main() {
 		blockProfileRate     int
 		printVersion         bool
 		printModules         bool
+		printHelp            bool
 	)
 
 	configFile, expandENV := parseConfigFileParameter(os.Args[1:])
@@ -95,24 +96,27 @@ func main() {
 	flag.IntVar(&blockProfileRate, "debug.block-profile-rate", 0, "Fraction of goroutine blocking events that are reported in the blocking profile. 1 to include every blocking event in the profile, 0 to disable.")
 	flag.BoolVar(&printVersion, "version", false, "Print application version and exit.")
 	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
+	flag.BoolVar(&printHelp, "help", false, "Print basic help.")
+	flag.BoolVar(&printHelp, "h", false, "Print basic help.")
 
 	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
 
-	err := flag.CommandLine.Parse(os.Args[1:])
-	if err == flag.ErrHelp {
-		// Print available parameters to stdout, so that users can grep/less it easily.
+	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
+		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get list of available parameters")
+		if !testMode {
+			os.Exit(2)
+		}
+	}
+
+	if printHelp {
+		// Print available basic parameters to stdout, so that users can grep/less it easily.
 		flag.CommandLine.SetOutput(os.Stdout)
 		if err := usage(&cfg, categoryBasic); err != nil {
 			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
 			os.Exit(1)
 		}
 
-		if !testMode {
-			os.Exit(2)
-		}
-	} else if err != nil {
-		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get list of available parameters")
 		if !testMode {
 			os.Exit(2)
 		}
@@ -125,8 +129,7 @@ func main() {
 
 	// Validate the config once both the config file has been loaded
 	// and CLI flags parsed.
-	err = cfg.Validate(util_log.Logger)
-	if err != nil {
+	if err := cfg.Validate(util_log.Logger); err != nil {
 		fmt.Fprintf(os.Stderr, "error validating config: %v\n", err)
 		if !testMode {
 			os.Exit(1)
