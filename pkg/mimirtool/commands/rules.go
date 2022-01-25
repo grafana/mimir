@@ -43,7 +43,7 @@ var (
 		Help:      "The timestamp of the last successful rule load.",
 	})
 
-	backends = []string{rules.CortexBackend}     // list of supported backend types
+	backends = []string{rules.MimirBackend}      // list of supported backend types
 	formats  = []string{"json", "yaml", "table"} // list of supported formats for the list command
 )
 

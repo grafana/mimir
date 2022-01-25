@@ -24,7 +24,7 @@ func TestParseFiles(t *testing.T) {
 	}{
 		{
 			name:    "basic_file",
-			backend: CortexBackend,
+			backend: MimirBackend,
 			files: []string{
 				"testdata/basic_namespace.yaml",
 			},
@@ -48,7 +48,7 @@ func TestParseFiles(t *testing.T) {
 		},
 		{
 			name:    "file_namespace_overlap",
-			backend: CortexBackend,
+			backend: MimirBackend,
 			files: []string{
 				"testdata/basic_namespace.yaml",
 				"testdata/basic_namespace_repeated.yaml",
@@ -57,7 +57,7 @@ func TestParseFiles(t *testing.T) {
 		},
 		{
 			name:    "multiple_namespace_file",
-			backend: CortexBackend,
+			backend: MimirBackend,
 			files: []string{
 				"testdata/multiple_namespace.yaml",
 			},

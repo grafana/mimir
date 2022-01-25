@@ -15,6 +15,7 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
   * `CORTEX_TLS_CA_PATH` to `MIMIR_TLS_CA_PATH`
   * `CORTEX_TLS_CERT_PATH` to `MIMIR_TLS_CERT_PATH`
   * `CORTEX_TLS_KEY_PATH` to `MIMIR_TLS_KEY_PATH`
+* [CHANGE] Change `cortex` backend to `mimir`.
 
 ## v0.10.7
 
