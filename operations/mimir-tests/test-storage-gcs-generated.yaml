@@ -300,8 +300,8 @@ spec:
   clusterIP: None
   ports:
   - name: alertmanager-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: alertmanager-grpc
     port: 9095
     targetPort: 9095
@@ -349,8 +349,8 @@ spec:
   clusterIP: None
   ports:
   - name: distributor-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: distributor-grpc
     port: 9095
     targetPort: 9095
@@ -367,8 +367,8 @@ metadata:
 spec:
   ports:
   - name: ingester-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: ingester-grpc
     port: 9095
     targetPort: 9095
@@ -461,8 +461,8 @@ metadata:
 spec:
   ports:
   - name: querier-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: querier-grpc
     port: 9095
     targetPort: 9095
@@ -479,8 +479,8 @@ metadata:
 spec:
   ports:
   - name: query-frontend-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-frontend-grpc
     port: 9095
     targetPort: 9095
@@ -498,8 +498,8 @@ spec:
   clusterIP: None
   ports:
   - name: query-frontend-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-frontend-grpc
     port: 9095
     targetPort: 9095
@@ -517,8 +517,8 @@ metadata:
 spec:
   ports:
   - name: query-scheduler-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-scheduler-grpc
     port: 9095
     targetPort: 9095
@@ -536,8 +536,8 @@ spec:
   clusterIP: None
   ports:
   - name: query-scheduler-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-scheduler-grpc
     port: 9095
     targetPort: 9095
@@ -555,8 +555,8 @@ metadata:
 spec:
   ports:
   - name: ruler-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: ruler-grpc
     port: 9095
     targetPort: 9095
@@ -573,8 +573,8 @@ metadata:
 spec:
   ports:
   - name: store-gateway-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
@@ -764,14 +764,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -862,14 +862,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -937,14 +937,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1000,14 +1000,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1100,14 +1100,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1169,14 +1169,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1256,14 +1256,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1356,14 +1356,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1682,14 +1682,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:

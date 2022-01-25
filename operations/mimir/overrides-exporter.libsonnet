@@ -19,7 +19,7 @@
   },
 
   local containerPort = $.core.v1.containerPort,
-  overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=80),
+  overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=8080),
 
   overrides_exporter_args:: {
     target: 'overrides-exporter',

@@ -15,7 +15,7 @@ For example, requests mirroring can be used when you need to setup a testing Cor
 
 ### Example Envoy config
 
-The following Envoy configuration shows an example with two Cortex clusters. Envoy will listen on port `9900` and will proxies all requests to `cortex-primary:80`, mirroring it to `cortex-secondary:80` too.
+The following Envoy configuration shows an example with two Cortex clusters. Envoy will listen on port `9900` and will proxies all requests to `cortex-primary:8080`, mirroring it to `cortex-secondary:8080` too.
 
 <!-- prettier-ignore-start -->
 [embedmd]:# (./requests-mirroring-envoy.yaml)
@@ -62,12 +62,12 @@ static_resources:
     - name: cortex_primary
       type: STRICT_DNS
       connect_timeout: 1s
-      hosts: [{ socket_address: { address: cortex-primary, port_value: 80 }}]
+      hosts: [{ socket_address: { address: cortex-primary, port_value: 8080 }}]
       dns_refresh_rate: 5s
     - name: cortex_secondary
       type: STRICT_DNS
       connect_timeout: 1s
-      hosts: [{ socket_address: { address: cortex-secondary, port_value: 80 }}]
+      hosts: [{ socket_address: { address: cortex-secondary, port_value: 8080 }}]
       dns_refresh_rate: 5s
 ```
 <!-- prettier-ignore-end -->
