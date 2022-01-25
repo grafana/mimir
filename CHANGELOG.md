@@ -56,6 +56,7 @@
   * CLI flag `-blocks-storage.tsdb.max-exemplars` is renamed to `-ingester.max-global-exemplars-per-user`.
   * YAML `max_exemplars` is moved from `tsdb` to `overrides` and renamed to `max_global_exemplars_per_user`.
 * [CHANGE] The metric `cortex_deprecated_flags_inuse_total` has been renamed to `deprecated_flags_inuse_total` as part of using grafana/dskit functionality. #185
+* [CHANGE] API: Always enable GZIP response compression and removes `api.response_compression_enabled` flag. #880
 * [CHANGE] Alertmanager: Don't count user-not-found errors from replicas as failures in the `cortex_alertmanager_state_fetch_replica_state_failed_total` metric. #190
 * [CHANGE] Alertmanager: Use distributor for non-API routes when sharding is enabled. #213
 * [CHANGE] Query-frontend: added `sharded` label to `cortex_query_seconds_total` metric. #235
