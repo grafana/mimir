@@ -18,7 +18,10 @@ DOCS_DOCKER_CONTAINER = $(DOCS_PROJECT)-docs
 # through versioning.
 define docs_docker_run
 	@docker run --name $(DOCS_DOCKER_CONTAINER) -d $(DOCS_DOCKER_RUN_FLAGS) /bin/bash -c 'find content/docs/ -mindepth 1 -maxdepth 1 -type d -a ! -name "$(DOCS_PROJECT)" -exec rm -rf {} \; && exec $(1)'; \
-	until curl -sLw '%{http_code}' http://localhost:$(DOCS_HOST_PORT)/docs/$(DOCS_PROJECT)/ | grep -q 200; do sleep 1; done; \
+	until curl -sLw '%{http_code}' http://localhost:$(DOCS_HOST_PORT)/docs/$(DOCS_PROJECT)/ | grep -q 200; do \
+		echo "Waiting for docs container to be ready..."; \
+		sleep 1; \
+	done; \
 	docker logs $(DOCS_DOCKER_CONTAINER); \
 	echo ; \
 	echo ------------------------- ; \
