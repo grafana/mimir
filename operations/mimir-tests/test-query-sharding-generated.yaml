@@ -913,7 +913,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -api.response-compression-enabled=true
         - -frontend.align-querier-with-step=false
         - -frontend.cache-results=true
         - -frontend.max-cache-freshness=10m
@@ -1055,7 +1054,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -api.response-compression-enabled=true
         - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.bucket-index.enabled=true
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached

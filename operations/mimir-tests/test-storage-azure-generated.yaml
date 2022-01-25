@@ -915,7 +915,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -api.response-compression-enabled=true
         - -frontend.align-querier-with-step=false
         - -frontend.cache-results=true
         - -frontend.max-cache-freshness=10m
@@ -1053,7 +1052,6 @@ spec:
             topologyKey: kubernetes.io/hostname
       containers:
       - args:
-        - -api.response-compression-enabled=true
         - -blocks-storage.azure.account-key=blocks-account-key
         - -blocks-storage.azure.account-name=blocks-account-name
         - -blocks-storage.azure.container-name=blocks-bucket

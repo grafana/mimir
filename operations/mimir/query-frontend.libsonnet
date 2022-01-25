@@ -25,10 +25,6 @@
       // So that exporters like cloudwatch can still send in data and be un-cached.
       'frontend.max-cache-freshness': '10m',
 
-      // Use GZIP compression for API responses; improves latency for very big results and slow
-      // connections.
-      'api.response-compression-enabled': true,
-
       // So it can receive big responses from the querier.
       'server.grpc-max-recv-msg-size-bytes': 100 << 20,
 
