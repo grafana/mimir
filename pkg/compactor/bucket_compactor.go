@@ -12,7 +12,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -211,52 +210,6 @@ func DefaultGroupKey(meta metadata.Thanos) string {
 
 func defaultGroupKey(res int64, lbls labels.Labels) string {
 	return fmt.Sprintf("%d@%v", res, lbls.Hash())
-}
-
-// DefaultGrouper is the default grouper. It groups blocks based on downsample
-// resolution and block's labels.
-type DefaultGrouper struct {
-	userID   string
-	hashFunc metadata.HashFunc
-}
-
-// NewDefaultGrouper makes a new DefaultGrouper.
-func NewDefaultGrouper(userID string, hashFunc metadata.HashFunc) *DefaultGrouper {
-	return &DefaultGrouper{
-		userID:   userID,
-		hashFunc: hashFunc,
-	}
-}
-
-// Groups implements Grouper.Groups.
-func (g *DefaultGrouper) Groups(blocks map[ulid.ULID]*metadata.Meta) (res []*Job, err error) {
-	groups := map[string]*Job{}
-	for _, m := range blocks {
-		groupKey := DefaultGroupKey(m.Thanos)
-		job, ok := groups[groupKey]
-		if !ok {
-			lbls := labels.FromMap(m.Thanos.Labels)
-			job = NewJob(
-				g.userID,
-				groupKey,
-				lbls,
-				m.Thanos.Downsample.Resolution,
-				g.hashFunc,
-				false, // No splitting.
-				0,     // No splitting shards.
-				"",    // No sharding.
-			)
-			groups[groupKey] = job
-			res = append(res, job)
-		}
-		if err := job.AppendMeta(m); err != nil {
-			return nil, errors.Wrap(err, "add compaction group")
-		}
-	}
-	sort.Slice(res, func(i, j int) bool {
-		return res[i].Key() < res[j].Key()
-	})
-	return res, nil
 }
 
 func minTime(metas []*metadata.Meta) time.Time {
