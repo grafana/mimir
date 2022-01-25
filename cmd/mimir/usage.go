@@ -74,7 +74,11 @@ func usage(cfg *mimir.Config, cat category) error {
 		b.WriteString(strings.ReplaceAll(usage, "\n", "\n    \t"))
 
 		if !isZeroValue(fl, fl.DefValue) {
-			if _, ok := fl.Value.(*stringValue); ok {
+			v := reflect.ValueOf(fl.Value)
+			if v.Kind() == reflect.Ptr {
+				v = v.Elem()
+			}
+			if v.Kind() == reflect.String {
 				// put quotes on the value
 				fmt.Fprintf(&b, " (default %q)", fl.DefValue)
 			} else {
@@ -102,16 +106,6 @@ func isZeroValue(fl *flag.Flag, value string) bool {
 	}
 	return value == z.Interface().(flag.Value).String()
 }
-
-// -- string Value
-type stringValue string
-
-func (s *stringValue) Set(val string) error {
-	*s = stringValue(val)
-	return nil
-}
-
-func (s *stringValue) String() string { return string(*s) }
 
 // parseConfig parses a mimir.Config and populates fields.
 func parseConfig(cfg interface{}, fields map[uintptr]reflect.StructField) error {
