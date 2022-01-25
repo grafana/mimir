@@ -8,10 +8,9 @@ package rules
 import (
 	"testing"
 
-	"github.com/stretchr/testify/assert"
-
 	"github.com/prometheus/prometheus/model/rulefmt"
-	yaml "gopkg.in/yaml.v3"
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
