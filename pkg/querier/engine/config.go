@@ -19,7 +19,7 @@ type Config struct {
 	MaxConcurrent     int           `yaml:"max_concurrent"`
 	Timeout           time.Duration `yaml:"timeout"`
 	MaxSamples        int           `yaml:"max_samples"`
-	AtModifierEnabled bool          `yaml:"at_modifier_enabled"`
+	AtModifierEnabled bool          `yaml:"at_modifier_enabled" category:"experimental"`
 
 	// The default evaluation interval for the promql engine.
 	// Needs to be configured for subqueries to work as it is the default
