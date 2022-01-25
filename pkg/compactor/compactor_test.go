@@ -172,6 +172,7 @@ func TestMultitenantCompactor_ShouldDoNothingOnNoUserBlocks(t *testing.T) {
 	assert.Equal(t, prom_testutil.ToFloat64(c.compactionRunInterval), cfg.CompactionInterval.Seconds())
 
 	assert.Equal(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=0`,
 	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
@@ -314,6 +315,7 @@ func TestMultitenantCompactor_ShouldRetryCompactionOnFailureWhileDiscoveringUser
 	bucketClient.AssertNumberOfCalls(t, "Iter", 1+3)
 
 	assert.Equal(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=error component=compactor msg="failed to discover users from bucket" err="failed to iterate the bucket"`,
 	}, strings.Split(strings.TrimSpace(logs.String()), "\n"))
@@ -534,6 +536,7 @@ func TestMultitenantCompactor_ShouldIterateOverUsersAndRunCompaction(t *testing.
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 2)
 
 	assert.ElementsMatch(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=2`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -670,6 +673,7 @@ func TestMultitenantCompactor_ShouldStopCompactingTenantOnReachingMaxCompactionT
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 1)
 
 	assert.Equal(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -742,6 +746,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForDeletion(t *testing
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -839,6 +844,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksMarkedForNoCompaction(t *tes
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=info component=compactor msg="starting compaction of user blocks" user=user-1`,
@@ -897,6 +903,7 @@ func TestMultitenantCompactor_ShouldNotCompactBlocksForUsersMarkedForDeletion(t 
 	tsdbPlanner.AssertNumberOfCalls(t, "Plan", 0)
 
 	assert.ElementsMatch(t, []string{
+		`level=warn component=compactor msg="Compactor sharding is disabled. Please don't run more than one compactor in this mode."`,
 		`level=info component=compactor msg="discovering users from bucket"`,
 		`level=info component=compactor msg="discovered users from bucket" users=1`,
 		`level=debug component=compactor msg="skipping user because it is marked for deletion" user=user-1`,

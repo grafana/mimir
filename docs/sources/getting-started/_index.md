@@ -92,14 +92,19 @@ $ docker run -d --name=mimir1 --network=mimir \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
     -ring.store=consul \
-    -consul.hostname=consul:8500
+    -consul.hostname=consul:8500 \
+    -compactor.ring.store=consul \
+    -compactor.ring.consul.hostname=consul:8500
+
 $ docker run -d --name=mimir2 --network=mimir \
     -v $(pwd)/docs/sources/configuration/single-process-config-blocks.yaml:/etc/single-process-config-blocks.yaml \
     -p 9002:9009 \
     us.gcr.io/kubernetes-dev/mimir \
     -config.file=/etc/single-process-config-blocks.yaml \
     -ring.store=consul \
-    -consul.hostname=consul:8500
+    -consul.hostname=consul:8500 \
+    -compactor.ring.store=consul \
+    -compactor.ring.consul.hostname=consul:8500
 ```
 
 If you go to http://localhost:9001/ring (or http://localhost:9002/ring) you should see both Mimir nodes join the ring.
