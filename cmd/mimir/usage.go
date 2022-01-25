@@ -57,11 +57,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 
 		var b strings.Builder
 		// Two spaces before -; see next two comments.
-		b.WriteString("  ")
-		if fieldCat == categoryExperimental {
-			b.WriteString("[experimental] ")
-		}
-		fmt.Fprintf(&b, "-%s", fl.Name)
+		fmt.Fprintf(&b, "  -%s", fl.Name)
 		name, usage := flag.UnquoteUsage(fl)
 		if len(name) > 0 {
 			b.WriteString(" ")
@@ -75,6 +71,9 @@ func usage(cfg *mimir.Config, printAll bool) error {
 			// Four spaces before the tab triggers good alignment
 			// for both 4- and 8-space tab stops.
 			b.WriteString("\n    \t")
+		}
+		if fieldCat == categoryExperimental {
+			b.WriteString("[experimental] ")
 		}
 		b.WriteString(strings.ReplaceAll(usage, "\n", "\n    \t"))
 
