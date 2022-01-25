@@ -1,7 +1,7 @@
 groups:
 - name: cortex_alerts
   rules:
-  - alert: CortexIngesterUnhealthy
+  - alert: MimirIngesterUnhealthy
     annotations:
       message: Mimir cluster {{ $labels.cluster }}/{{ $labels.namespace }} has {{ printf "%f" $value }} unhealthy ingester(s).
     expr: |
@@ -9,7 +9,7 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: CortexRequestErrors
+  - alert: MimirRequestErrors
     annotations:
       message: |
         The route {{ $labels.route }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors.
@@ -21,7 +21,7 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: CortexRequestLatency
+  - alert: MimirRequestLatency
     annotations:
       message: |
         {{ $labels.job }} {{ $labels.route }} is experiencing {{ printf "%.2f" $value }}s 99th percentile latency.
@@ -32,7 +32,7 @@ groups:
     for: 15m
     labels:
       severity: warning
-  - alert: CortexQueriesIncorrect
+  - alert: MimirQueriesIncorrect
     annotations:
       message: |
         The Mimir cluster {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% incorrect query results.
@@ -43,7 +43,7 @@ groups:
     for: 15m
     labels:
       severity: warning
-  - alert: CortexInconsistentRuntimeConfig
+  - alert: MimirInconsistentRuntimeConfig
     annotations:
       message: |
         An inconsistent runtime config file is used across cluster {{ $labels.cluster }}/{{ $labels.namespace }}.
@@ -52,7 +52,7 @@ groups:
     for: 1h
     labels:
       severity: critical
-  - alert: CortexBadRuntimeConfig
+  - alert: MimirBadRuntimeConfig
     annotations:
       message: |
         {{ $labels.job }} failed to reload runtime config.
@@ -62,7 +62,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexFrontendQueriesStuck
+  - alert: MimirFrontendQueriesStuck
     annotations:
       message: |
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-frontend.
@@ -71,7 +71,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexSchedulerQueriesStuck
+  - alert: MimirSchedulerQueriesStuck
     annotations:
       message: |
         There are {{ $value }} queued up queries in {{ $labels.cluster }}/{{ $labels.namespace }} query-scheduler.
@@ -80,7 +80,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexMemcachedRequestErrors
+  - alert: MimirMemcachedRequestErrors
     annotations:
       message: |
         Memcached {{ $labels.name }} used by Mimir {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors for {{ $labels.operation }} operation.
@@ -92,14 +92,14 @@ groups:
     for: 5m
     labels:
       severity: warning
-  - alert: CortexIngesterRestarts
+  - alert: MimirIngesterRestarts
     annotations:
       message: '{{ $labels.job }}/{{ $labels.instance }} has restarted {{ printf "%.2f" $value }} times in the last 30 mins.'
     expr: |
       changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
     labels:
       severity: warning
-  - alert: CortexKVStoreFailure
+  - alert: MimirKVStoreFailure
     annotations:
       message: |
         Mimir {{ $labels.pod }} in  {{ $labels.cluster }}/{{ $labels.namespace }} is failing to talk to the KV store {{ $labels.kv_name }}.
@@ -114,7 +114,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexMemoryMapAreasTooHigh
+  - alert: MimirMemoryMapAreasTooHigh
     annotations:
       message: '{{ $labels.job }}/{{ $labels.instance }} has a number of mmap-ed areas close to the limit.'
     expr: |
@@ -124,7 +124,7 @@ groups:
       severity: critical
 - name: cortex_instance_limits_alerts
   rules:
-  - alert: CortexIngesterReachingSeriesLimit
+  - alert: MimirIngesterReachingSeriesLimit
     annotations:
       message: |
         Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
@@ -137,7 +137,7 @@ groups:
     for: 3h
     labels:
       severity: warning
-  - alert: CortexIngesterReachingSeriesLimit
+  - alert: MimirIngesterReachingSeriesLimit
     annotations:
       message: |
         Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its series limit.
@@ -150,7 +150,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexIngesterReachingTenantsLimit
+  - alert: MimirIngesterReachingTenantsLimit
     annotations:
       message: |
         Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
@@ -163,7 +163,7 @@ groups:
     for: 5m
     labels:
       severity: warning
-  - alert: CortexIngesterReachingTenantsLimit
+  - alert: MimirIngesterReachingTenantsLimit
     annotations:
       message: |
         Ingester {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its tenant limit.
@@ -176,7 +176,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexReachingTCPConnectionsLimit
+  - alert: MimirReachingTCPConnectionsLimit
     annotations:
       message: |
         Mimir instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
@@ -186,7 +186,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexDistributorReachingInflightPushRequestLimit
+  - alert: MimirDistributorReachingInflightPushRequestLimit
     annotations:
       message: |
         Distributor {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its inflight push request limit.
@@ -199,9 +199,9 @@ groups:
     for: 5m
     labels:
       severity: critical
-- name: cortex-rollout-alerts
+- name: mimir-rollout-alerts
   rules:
-  - alert: CortexRolloutStuck
+  - alert: MimirRolloutStuck
     annotations:
       message: |
         The {{ $labels.rollout_group }} rollout is stuck in {{ $labels.cluster }}/{{ $labels.namespace }}.
@@ -227,7 +227,7 @@ groups:
     for: 30m
     labels:
       severity: warning
-  - alert: CortexRolloutStuck
+  - alert: MimirRolloutStuck
     annotations:
       message: |
         The {{ $labels.rollout_group }} rollout is stuck in {{ $labels.cluster }}/{{ $labels.namespace }}.
@@ -245,9 +245,9 @@ groups:
     for: 30m
     labels:
       severity: warning
-- name: cortex-provisioning
+- name: mimir-provisioning
   rules:
-  - alert: CortexProvisioningTooManyActiveSeries
+  - alert: MimirProvisioningTooManyActiveSeries
     annotations:
       message: |
         The number of in-memory series per ingester in {{ $labels.cluster }}/{{ $labels.namespace }} is too high.
@@ -256,7 +256,7 @@ groups:
     for: 2h
     labels:
       severity: warning
-  - alert: CortexProvisioningTooManyWrites
+  - alert: MimirProvisioningTooManyWrites
     annotations:
       message: |
         Ingesters in {{ $labels.cluster }}/{{ $labels.namespace }} ingest too many samples per second.
@@ -265,7 +265,7 @@ groups:
     for: 15m
     labels:
       severity: warning
-  - alert: CortexAllocatingTooMuchMemory
+  - alert: MimirAllocatingTooMuchMemory
     annotations:
       message: |
         Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
@@ -278,7 +278,7 @@ groups:
     for: 15m
     labels:
       severity: warning
-  - alert: CortexAllocatingTooMuchMemory
+  - alert: MimirAllocatingTooMuchMemory
     annotations:
       message: |
         Ingester {{ $labels.pod }} in {{ $labels.cluster }}/{{ $labels.namespace }} is using too much memory.
@@ -293,7 +293,7 @@ groups:
       severity: critical
 - name: ruler_alerts
   rules:
-  - alert: CortexRulerTooManyFailedPushes
+  - alert: MimirRulerTooManyFailedPushes
     annotations:
       message: |
         Mimir Ruler {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% write (push) errors.
@@ -306,7 +306,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexRulerTooManyFailedQueries
+  - alert: MimirRulerTooManyFailedQueries
     annotations:
       message: |
         Mimir Ruler {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% errors while evaluating rules.
@@ -319,7 +319,7 @@ groups:
     for: 5m
     labels:
       severity: warning
-  - alert: CortexRulerMissedEvaluations
+  - alert: MimirRulerMissedEvaluations
     annotations:
       message: |
         Mimir Ruler {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is experiencing {{ printf "%.2f" $value }}% missed iterations for the rule group {{ $labels.rule_group }}.
@@ -331,7 +331,7 @@ groups:
     for: 5m
     labels:
       severity: warning
-  - alert: CortexRulerFailedRingCheck
+  - alert: MimirRulerFailedRingCheck
     annotations:
       message: |
         Mimir Rulers in {{ $labels.cluster }}/{{ $labels.namespace }} are experiencing errors when checking the ring for rule group ownership.
@@ -343,7 +343,7 @@ groups:
       severity: critical
 - name: gossip_alerts
   rules:
-  - alert: CortexGossipMembersMismatch
+  - alert: MimirGossipMembersMismatch
     annotations:
       message: Mimir instance {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} sees incorrect number of gossip members.
     expr: |
@@ -383,7 +383,7 @@ groups:
       severity: critical
 - name: alertmanager_alerts
   rules:
-  - alert: CortexAlertmanagerSyncConfigsFailing
+  - alert: MimirAlertmanagerSyncConfigsFailing
     annotations:
       message: |
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to read tenant configurations from storage.
@@ -392,7 +392,7 @@ groups:
     for: 30m
     labels:
       severity: critical
-  - alert: CortexAlertmanagerRingCheckFailing
+  - alert: MimirAlertmanagerRingCheckFailing
     annotations:
       message: |
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to check tenants ownership via the ring.
@@ -401,7 +401,7 @@ groups:
     for: 10m
     labels:
       severity: critical
-  - alert: CortexAlertmanagerPartialStateMergeFailing
+  - alert: MimirAlertmanagerPartialStateMergeFailing
     annotations:
       message: |
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to merge partial state changes received from a replica.
@@ -410,7 +410,7 @@ groups:
     for: 10m
     labels:
       severity: critical
-  - alert: CortexAlertmanagerReplicationFailing
+  - alert: MimirAlertmanagerReplicationFailing
     annotations:
       message: |
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is failing to replicating partial state to its replicas.
@@ -419,7 +419,7 @@ groups:
     for: 10m
     labels:
       severity: critical
-  - alert: CortexAlertmanagerPersistStateFailing
+  - alert: MimirAlertmanagerPersistStateFailing
     annotations:
       message: |
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} is unable to persist full state snaphots to remote storage.
@@ -428,7 +428,7 @@ groups:
     for: 1h
     labels:
       severity: critical
-  - alert: CortexAlertmanagerInitialSyncFailed
+  - alert: MimirAlertmanagerInitialSyncFailed
     annotations:
       message: |
         Mimir Alertmanager {{ $labels.job }}/{{ $labels.instance }} was unable to obtain some initial state when starting up.
@@ -438,7 +438,7 @@ groups:
       severity: critical
 - name: cortex_blocks_alerts
   rules:
-  - alert: CortexIngesterHasNotShippedBlocks
+  - alert: MimirIngesterHasNotShippedBlocks
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not shipped any block in the last 4 hours.
     expr: |
@@ -457,7 +457,7 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: CortexIngesterHasNotShippedBlocksSinceStart
+  - alert: MimirIngesterHasNotShippedBlocksSinceStart
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not shipped any block in the last 4 hours.
     expr: |
@@ -467,7 +467,7 @@ groups:
     for: 4h
     labels:
       severity: critical
-  - alert: CortexIngesterHasUnshippedBlocks
+  - alert: MimirIngesterHasUnshippedBlocks
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has compacted a block {{ $value | humanizeDuration }} ago but it hasn't been successfully uploaded to the storage yet.
     expr: |
@@ -477,7 +477,7 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: CortexIngesterTSDBHeadCompactionFailed
+  - alert: MimirIngesterTSDBHeadCompactionFailed
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to compact TSDB head.
     expr: |
@@ -485,42 +485,42 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: CortexIngesterTSDBHeadTruncationFailed
+  - alert: MimirIngesterTSDBHeadTruncationFailed
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to truncate TSDB head.
     expr: |
       rate(cortex_ingester_tsdb_head_truncations_failed_total[5m]) > 0
     labels:
       severity: critical
-  - alert: CortexIngesterTSDBCheckpointCreationFailed
+  - alert: MimirIngesterTSDBCheckpointCreationFailed
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to create TSDB checkpoint.
     expr: |
       rate(cortex_ingester_tsdb_checkpoint_creations_failed_total[5m]) > 0
     labels:
       severity: critical
-  - alert: CortexIngesterTSDBCheckpointDeletionFailed
+  - alert: MimirIngesterTSDBCheckpointDeletionFailed
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to delete TSDB checkpoint.
     expr: |
       rate(cortex_ingester_tsdb_checkpoint_deletions_failed_total[5m]) > 0
     labels:
       severity: critical
-  - alert: CortexIngesterTSDBWALTruncationFailed
+  - alert: MimirIngesterTSDBWALTruncationFailed
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to truncate TSDB WAL.
     expr: |
       rate(cortex_ingester_tsdb_wal_truncations_failed_total[5m]) > 0
     labels:
       severity: warning
-  - alert: CortexIngesterTSDBWALCorrupted
+  - alert: MimirIngesterTSDBWALCorrupted
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} got a corrupted TSDB WAL.
     expr: |
       rate(cortex_ingester_tsdb_wal_corruptions_total[5m]) > 0
     labels:
       severity: critical
-  - alert: CortexIngesterTSDBWALWritesFailed
+  - alert: MimirIngesterTSDBWALWritesFailed
     annotations:
       message: Mimir Ingester {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} is failing to write to TSDB WAL.
     expr: |
@@ -528,7 +528,7 @@ groups:
     for: 3m
     labels:
       severity: critical
-  - alert: CortexQuerierHasNotScanTheBucket
+  - alert: MimirQuerierHasNotScanTheBucket
     annotations:
       message: Mimir Querier {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully scanned the bucket since {{ $value | humanizeDuration }}.
     expr: |
@@ -538,7 +538,7 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexQuerierHighRefetchRate
+  - alert: MimirQuerierHighRefetchRate
     annotations:
       message: Mimir Queries in {{ $labels.cluster }}/{{ $labels.namespace }} are refetching series from different store-gateways (because of missing blocks) for the {{ printf "%.0f" $value }}% of queries.
     expr: |
@@ -555,7 +555,7 @@ groups:
     for: 10m
     labels:
       severity: warning
-  - alert: CortexStoreGatewayHasNotSyncTheBucket
+  - alert: MimirStoreGatewayHasNotSyncTheBucket
     annotations:
       message: Mimir Store Gateway {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully synched the bucket since {{ $value | humanizeDuration }}.
     expr: |
@@ -565,14 +565,14 @@ groups:
     for: 5m
     labels:
       severity: critical
-  - alert: CortexBucketIndexNotUpdated
+  - alert: MimirBucketIndexNotUpdated
     annotations:
       message: Mimir bucket index for tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not been updated since {{ $value | humanizeDuration }}.
     expr: |
       min by(cluster, namespace, user) (time() - cortex_bucket_index_last_successful_update_timestamp_seconds) > 7200
     labels:
       severity: critical
-  - alert: CortexTenantHasPartialBlocks
+  - alert: MimirTenantHasPartialBlocks
     annotations:
       message: Mimir tenant {{ $labels.user }} in {{ $labels.cluster }}/{{ $labels.namespace }} has {{ $value }} partial blocks.
     expr: |
@@ -582,7 +582,7 @@ groups:
       severity: warning
 - name: cortex_compactor_alerts
   rules:
-  - alert: CortexCompactorHasNotSuccessfullyCleanedUpBlocks
+  - alert: MimirCompactorHasNotSuccessfullyCleanedUpBlocks
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not successfully cleaned up blocks in the last 6 hours.
     expr: |
@@ -590,7 +590,7 @@ groups:
     for: 1h
     labels:
       severity: critical
-  - alert: CortexCompactorHasNotSuccessfullyRunCompaction
+  - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
     expr: |
@@ -600,7 +600,7 @@ groups:
     for: 1h
     labels:
       severity: critical
-  - alert: CortexCompactorHasNotSuccessfullyRunCompaction
+  - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not run compaction in the last 24 hours.
     expr: |
@@ -608,14 +608,14 @@ groups:
     for: 24h
     labels:
       severity: critical
-  - alert: CortexCompactorHasNotSuccessfullyRunCompaction
+  - alert: MimirCompactorHasNotSuccessfullyRunCompaction
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} failed to run 2 consecutive compactions.
     expr: |
       increase(cortex_compactor_runs_failed_total[2h]) >= 2
     labels:
       severity: critical
-  - alert: CortexCompactorHasNotUploadedBlocks
+  - alert: MimirCompactorHasNotUploadedBlocks
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
     expr: |
@@ -625,7 +625,7 @@ groups:
     for: 15m
     labels:
       severity: critical
-  - alert: CortexCompactorHasNotUploadedBlocks
+  - alert: MimirCompactorHasNotUploadedBlocks
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
     expr: |
@@ -633,7 +633,7 @@ groups:
     for: 24h
     labels:
       severity: critical
-  - alert: CortexCompactorSkippedBlocksWithOutOfOrderChunks
+  - alert: MimirCompactorSkippedBlocksWithOutOfOrderChunks
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored blocks with out of order chunks.
     expr: |

@@ -1,4 +1,4 @@
-{
+(import 'alerts-utils.libsonnet') {
   // simpleRegexpOpt produces a simple regexp that matches all strings in the input array.
   local simpleRegexpOpt(strings) =
     assert std.isArray(strings) : 'simpleRegexpOpt requires that `strings` is an array of strings`';
@@ -15,7 +15,7 @@
       name: 'cortex_alerts',
       rules: [
         {
-          alert: 'CortexIngesterUnhealthy',
+          alert: $.alertName('IngesterUnhealthy'),
           'for': '15m',
           expr: |||
             min by (%s) (cortex_ring_members{state="Unhealthy", name="ingester"}) > 0
@@ -28,7 +28,7 @@
           },
         },
         {
-          alert: 'CortexRequestErrors',
+          alert: $.alertName('RequestErrors'),
           // Note if alert_aggregation_labels is "job", this will repeat the label. But
           // prometheus seems to tolerate that.
           expr: |||
@@ -51,7 +51,7 @@
           },
         },
         {
-          alert: 'CortexRequestLatency',
+          alert: $.alertName('RequestLatency'),
           expr: |||
             %(group_prefix_jobs)s_route:cortex_request_duration_seconds:99quantile{route!~"%(excluded_routes)s"}
                >
@@ -76,7 +76,7 @@
           },
         },
         {
-          alert: 'CortexQueriesIncorrect',
+          alert: $.alertName('QueriesIncorrect'),
           expr: |||
             100 * sum by (%s) (rate(test_exporter_test_case_result_total{result="fail"}[5m]))
               /
@@ -93,7 +93,7 @@
           },
         },
         {
-          alert: 'CortexInconsistentRuntimeConfig',
+          alert: $.alertName('InconsistentRuntimeConfig'),
           expr: |||
             count(count by(%s, job, sha256) (cortex_runtime_config_hash)) without(sha256) > 1
           ||| % $._config.alert_aggregation_labels,
@@ -108,7 +108,7 @@
           },
         },
         {
-          alert: 'CortexBadRuntimeConfig',
+          alert: $.alertName('BadRuntimeConfig'),
           expr: |||
             # The metric value is reset to 0 on error while reloading the config at runtime.
             cortex_runtime_config_last_reload_successful == 0
@@ -125,7 +125,7 @@
           },
         },
         {
-          alert: 'CortexFrontendQueriesStuck',
+          alert: $.alertName('FrontendQueriesStuck'),
           expr: |||
             sum by (%s) (cortex_query_frontend_queue_length) > 1
           ||| % $._config.alert_aggregation_labels,
@@ -140,7 +140,7 @@
           },
         },
         {
-          alert: 'CortexSchedulerQueriesStuck',
+          alert: $.alertName('SchedulerQueriesStuck'),
           expr: |||
             sum by (%s) (cortex_query_scheduler_queue_length) > 1
           ||| % $._config.alert_aggregation_labels,
@@ -155,7 +155,7 @@
           },
         },
         {
-          alert: 'CortexMemcachedRequestErrors',
+          alert: $.alertName('MemcachedRequestErrors'),
           expr: |||
             (
               sum by(%s, name, operation) (rate(thanos_memcached_operation_failures_total[1m])) /
@@ -173,7 +173,7 @@
           },
         },
         {
-          alert: 'CortexIngesterRestarts',
+          alert: $.alertName('IngesterRestarts'),
           expr: |||
             changes(process_start_time_seconds{job=~".+(cortex|ingester.*)"}[30m]) >= 2
           |||,
@@ -188,7 +188,7 @@
           },
         },
         {
-          alert: 'CortexKVStoreFailure',
+          alert: $.alertName('KVStoreFailure'),
           expr: |||
             (
               sum by(%s, pod, status_code, kv_name) (rate(cortex_kv_request_duration_seconds_count{status_code!~"2.+"}[1m]))
@@ -209,7 +209,7 @@
           },
         },
         {
-          alert: 'CortexMemoryMapAreasTooHigh',
+          alert: $.alertName('MemoryMapAreasTooHigh'),
           expr: |||
             process_memory_map_areas{job=~".+(cortex|ingester.*|store-gateway.*)"} / process_memory_map_areas_limit{job=~".+(cortex|ingester.*|store-gateway.*)"} > 0.8
           |||,
@@ -227,7 +227,7 @@
       name: 'cortex_instance_limits_alerts',
       rules: [
         {
-          alert: 'CortexIngesterReachingSeriesLimit',
+          alert: $.alertName('IngesterReachingSeriesLimit'),
           expr: |||
             (
                 (cortex_ingester_memory_series / ignoring(limit) cortex_ingester_instance_limits{limit="max_series"})
@@ -246,7 +246,7 @@
           },
         },
         {
-          alert: 'CortexIngesterReachingSeriesLimit',
+          alert: $.alertName('IngesterReachingSeriesLimit'),
           expr: |||
             (
                 (cortex_ingester_memory_series / ignoring(limit) cortex_ingester_instance_limits{limit="max_series"})
@@ -265,7 +265,7 @@
           },
         },
         {
-          alert: 'CortexIngesterReachingTenantsLimit',
+          alert: $.alertName('IngesterReachingTenantsLimit'),
           expr: |||
             (
                 (cortex_ingester_memory_users / ignoring(limit) cortex_ingester_instance_limits{limit="max_tenants"})
@@ -284,7 +284,7 @@
           },
         },
         {
-          alert: 'CortexIngesterReachingTenantsLimit',
+          alert: $.alertName('IngesterReachingTenantsLimit'),
           expr: |||
             (
                 (cortex_ingester_memory_users / ignoring(limit) cortex_ingester_instance_limits{limit="max_tenants"})
@@ -303,7 +303,7 @@
           },
         },
         {
-          alert: 'CortexReachingTCPConnectionsLimit',
+          alert: $.alertName('ReachingTCPConnectionsLimit'),
           expr: |||
             cortex_tcp_connections / cortex_tcp_connections_limit > 0.8 and
             cortex_tcp_connections_limit > 0
@@ -319,7 +319,7 @@
           },
         },
         {
-          alert: 'CortexDistributorReachingInflightPushRequestLimit',
+          alert: $.alertName('DistributorReachingInflightPushRequestLimit'),
           expr: |||
             (
                 (cortex_distributor_inflight_push_requests / ignoring(limit) cortex_distributor_instance_limits{limit="max_inflight_push_requests"})
@@ -340,10 +340,10 @@
       ],
     },
     {
-      name: 'cortex-rollout-alerts',
+      name: 'mimir-rollout-alerts',
       rules: [
         {
-          alert: 'CortexRolloutStuck',
+          alert: $.alertName('RolloutStuck'),
           expr: |||
             (
               max without (revision) (
@@ -381,7 +381,7 @@
           },
         },
         {
-          alert: 'CortexRolloutStuck',
+          alert: $.alertName('RolloutStuck'),
           expr: |||
             (
               %(kube_deployment_spec_replicas)s
@@ -411,10 +411,10 @@
       ],
     },
     {
-      name: 'cortex-provisioning',
+      name: 'mimir-provisioning',
       rules: [
         {
-          alert: 'CortexProvisioningTooManyActiveSeries',
+          alert: $.alertName('ProvisioningTooManyActiveSeries'),
           // We target each ingester to 1.5M in-memory series. This alert fires if the average
           // number of series / ingester in a Mimir cluster is > 1.6M for 2h (we compact
           // the TSDB head every 2h).
@@ -432,7 +432,7 @@
           },
         },
         {
-          alert: 'CortexProvisioningTooManyWrites',
+          alert: $.alertName('ProvisioningTooManyWrites'),
           // 80k writes / s per ingester max.
           expr: |||
             avg by (%s) (rate(cortex_ingester_ingested_samples_total[1m])) > 80e3
@@ -448,7 +448,7 @@
           },
         },
         {
-          alert: 'CortexAllocatingTooMuchMemory',
+          alert: $.alertName('AllocatingTooMuchMemory'),
           expr: |||
             (
               container_memory_working_set_bytes{container="ingester"}
@@ -467,7 +467,7 @@
           },
         },
         {
-          alert: 'CortexAllocatingTooMuchMemory',
+          alert: $.alertName('AllocatingTooMuchMemory'),
           expr: |||
             (
               container_memory_working_set_bytes{container="ingester"}
@@ -491,7 +491,7 @@
       name: 'ruler_alerts',
       rules: [
         {
-          alert: 'CortexRulerTooManyFailedPushes',
+          alert: $.alertName('RulerTooManyFailedPushes'),
           expr: |||
             100 * (
             sum by (%s, instance) (rate(cortex_ruler_write_requests_failed_total[1m]))
@@ -510,7 +510,7 @@
           },
         },
         {
-          alert: 'CortexRulerTooManyFailedQueries',
+          alert: $.alertName('RulerTooManyFailedQueries'),
           expr: |||
             100 * (
             sum by (%s, instance) (rate(cortex_ruler_queries_failed_total[1m]))
@@ -529,7 +529,7 @@
           },
         },
         {
-          alert: 'CortexRulerMissedEvaluations',
+          alert: $.alertName('RulerMissedEvaluations'),
           expr: |||
             sum by (%s, instance, rule_group) (rate(cortex_prometheus_rule_group_iterations_missed_total[1m]))
               /
@@ -547,7 +547,7 @@
           },
         },
         {
-          alert: 'CortexRulerFailedRingCheck',
+          alert: $.alertName('RulerFailedRingCheck'),
           expr: |||
             sum by (%s, job) (rate(cortex_ruler_ring_check_errors_total[1m]))
                > 0
@@ -568,7 +568,7 @@
       name: 'gossip_alerts',
       rules: [
         {
-          alert: 'CortexGossipMembersMismatch',
+          alert: $.alertName('GossipMembersMismatch'),
           expr:
             |||
               memberlist_client_cluster_members_count

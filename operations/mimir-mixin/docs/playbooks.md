@@ -7,7 +7,7 @@ This document contains playbooks, or at least a checklist of what to look for, f
 
 ## Alerts
 
-### CortexIngesterRestarts
+### MimirIngesterRestarts
 
 First, check if the alert is for a single ingester or multiple. Even if the alert is only for one ingester, it's best to follow up by checking `kubectl get pods --namespace=<prod/staging/etc.>` every few minutes, or looking at the query `rate(kube_pod_container_status_restarts_total{container="ingester"}[30m]) > 0` just until you're sure there isn't a larger issue causing multiple restarts.
 
@@ -27,7 +27,7 @@ If nothing obvious from the above, check for increased load:
 - If there is an increase in the number of active series and the memory provisioned is not enough, scale up the ingesters horizontally to have the same number of series as before per ingester.
 - If we had an outage and once Mimir is back up, the incoming traffic increases. (or) The clients have their Prometheus remote-write lagging and starts to send samples at a higher rate (again, an increase in traffic but in terms of number of samples). Scale up the ingester horizontally in this case too.
 
-### CortexIngesterReachingSeriesLimit
+### MimirIngesterReachingSeriesLimit
 
 This alert fires when the `max_series` per ingester instance limit is enabled and the actual number of in-memory series in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new series, while appending samples to existing ones will continue to succeed.
 
@@ -95,7 +95,7 @@ How to **fix**:
 3. **Scale up ingesters**<br />
    Scaling up ingesters will lower the number of series per ingester. However, the effect of this change will take up to 4h, because after the scale up we need to wait until all stale series are dropped from memory as the effect of TSDB head compaction, which could take up to 4h (with the default config, TSDB keeps in-memory series up to 3h old and it gets compacted every 2h).
 
-### CortexIngesterReachingTenantsLimit
+### MimirIngesterReachingTenantsLimit
 
 This alert fires when the `max_tenants` per ingester instance limit is enabled and the actual number of tenants in an ingester is reaching the limit. Once the limit is reached, writes to the ingester will fail (5xx) for new tenants, while they will continue to succeed for previously existing ones.
 
@@ -127,7 +127,7 @@ How to **fix**:
 1. Ensure shuffle-sharding is enabled in the Mimir cluster
 1. Assuming shuffle-sharding is enabled, scaling up ingesters will lower the number of tenants per ingester. However, the effect of this change will be visible only after `-blocks-storage.tsdb.close-idle-tsdb-timeout` period so you may have to temporarily increase the limit
 
-### CortexDistributorReachingInflightPushRequestLimit
+### MimirDistributorReachingInflightPushRequestLimit
 
 This alert fires when the `cortex_distributor_inflight_push_requests` per distributor instance limit is enabled and the actual number of inflight push requests is approaching the set limit. Once the limit is reached, push requests to the distributor will fail (5xx) for new requests, while existing inflight push requests will continue to succeed.
 
@@ -154,7 +154,7 @@ How to **fix**:
 2. **Scale up distributors**<br />
    Scaling up distributors will lower the number of inflight push requests per distributor.
 
-### CortexRequestLatency
+### MimirRequestLatency
 
 This alert fires when a specific Mimir route is experiencing an high latency.
 
@@ -176,8 +176,8 @@ How to **investigate**:
   - **`ingester`**
     - Typically, ingester p99 latency is in the range 5-50ms. If the ingester latency is higher than this, you should investigate the root cause before scaling up ingesters.
     - Check out the following alerts and fix them if firing:
-      - `CortexProvisioningTooManyActiveSeries`
-      - `CortexProvisioningTooManyWrites`
+      - `MimirProvisioningTooManyActiveSeries`
+      - `MimirProvisioningTooManyWrites`
 
 #### Read Latency
 
@@ -207,7 +207,7 @@ How to **investigate**:
         - If memcached eviction rate is high, then you should scale up memcached replicas. Check the recommendations by `Mimir / Scaling` dashboard and make reasonable adjustments as necessary.
         - If memcached eviction rate is zero or very low, then it may be caused by "first time" queries
 
-### CortexRequestErrors
+### MimirRequestErrors
 
 This alert fires when the rate of 5xx errors of a specific route is > 1% for some time.
 
@@ -223,11 +223,11 @@ How to **investigate**:
 - If the failing service is going OOM (`OOMKilled`): scale up or increase the memory
 - If the failing service is crashing / panicking: look for the stack trace in the logs and investigate from there
 
-### CortexIngesterUnhealthy
+### MimirIngesterUnhealthy
 
 This alert goes off when an ingester is marked as unhealthy. Check the ring web page to see which is marked as unhealthy. You could then check the logs to see if there are any related to that ingester ex: `kubectl logs -f ingester-01 --namespace=prod`. A simple way to resolve this may be to click the "Forgot" button on the ring page, especially if the pod doesn't exist anymore. It might not exist anymore because it was on a node that got shut down, so you could check to see if there are any logs related to the node that pod is/was on, ex: `kubectl get events --namespace=prod | grep cloud-provider-node`.
 
-### CortexMemoryMapAreasTooHigh
+### MimirMemoryMapAreasTooHigh
 
 This alert fires when a Mimir process has a number of memory map areas close to the limit. The limit is a per-process limit imposed by the kernel and this issue is typically caused by a large number of mmap-ed failes.
 
@@ -241,11 +241,11 @@ More information:
 - [Kernel doc](https://www.kernel.org/doc/Documentation/sysctl/vm.txt)
 - [Side effects when increasing `vm.max_map_count`](https://www.suse.com/support/kb/doc/?id=000016692)
 
-### CortexRulerFailedRingCheck
+### MimirRulerFailedRingCheck
 
 This alert occurs when a ruler is unable to validate whether or not it should claim ownership over the evaluation of a rule group. The most likely cause is that one of the rule ring entries is unhealthy. If this is the case proceed to the ring admin http page and forget the unhealth ruler. The other possible cause would be an error returned the ring client. If this is the case look into debugging the ring based on the in-use backend implementation.
 
-### CortexRulerTooManyFailedPushes
+### MimirRulerTooManyFailedPushes
 
 This alert fires when rulers cannot push new samples (result of rule evaluation) to ingesters.
 
@@ -256,7 +256,7 @@ How to **fix**:
 
 - Investigate the ruler logs to find out the reason why ruler cannot write samples. Note that ruler logs all push errors, including "user errors", but those are not causing the alert to fire. Focus on problems with ingesters.
 
-### CortexRulerTooManyFailedQueries
+### MimirRulerTooManyFailedQueries
 
 This alert fires when rulers fail to evaluate rule queries.
 
@@ -268,11 +268,11 @@ How to **fix**:
 
 - Investigate the ruler logs to find out the reason why ruler cannot evaluate queries. Note that ruler logs rule evaluation errors even for "user errors", but those are not causing the alert to fire. Focus on problems with ingesters or store-gateways.
 
-### CortexRulerMissedEvaluations
+### MimirRulerMissedEvaluations
 
 _TODO: this playbook has not been written yet._
 
-### CortexIngesterHasNotShippedBlocks
+### MimirIngesterHasNotShippedBlocks
 
 This alert fires when a Mimir ingester is not uploading any block to the long-term storage. An ingester is expected to upload a block to the storage every block range period (defaults to 2h) and if a longer time elapse since the last successful upload it means something is not working correctly.
 
@@ -281,7 +281,7 @@ How to **investigate**:
 - Ensure the ingester is receiving write-path traffic (samples to ingest)
 - Look for any upload error in the ingester logs (ie. networking or authentication issues)
 
-_If the alert `CortexIngesterTSDBHeadCompactionFailed` fired as well, then give priority to it because that could be the cause._
+_If the alert `MimirIngesterTSDBHeadCompactionFailed` fired as well, then give priority to it because that could be the cause._
 
 #### Ingester hit the disk capacity
 
@@ -293,11 +293,11 @@ If the ingester hit the disk capacity, any attempt to append samples will fail. 
 - Was the disk just too small?
 - Was there an issue compacting TSDB head and the WAL is increasing indefinitely?
 
-### CortexIngesterHasNotShippedBlocksSinceStart
+### MimirIngesterHasNotShippedBlocksSinceStart
 
-Same as [`CortexIngesterHasNotShippedBlocks`](#CortexIngesterHasNotShippedBlocks).
+Same as [`MimirIngesterHasNotShippedBlocks`](#MimirIngesterHasNotShippedBlocks).
 
-### CortexIngesterHasUnshippedBlocks
+### MimirIngesterHasUnshippedBlocks
 
 This alert fires when a Mimir ingester has compacted some blocks but such blocks haven't been successfully uploaded to the storage yet.
 
@@ -305,7 +305,7 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### CortexIngesterTSDBHeadCompactionFailed
+### MimirIngesterTSDBHeadCompactionFailed
 
 This alert fires when a Mimir ingester is failing to compact the TSDB head into a block.
 
@@ -321,7 +321,7 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### CortexIngesterTSDBHeadTruncationFailed
+### MimirIngesterTSDBHeadTruncationFailed
 
 This alert fires when a Mimir ingester fails to truncate the TSDB head.
 
@@ -331,16 +331,16 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### CortexIngesterTSDBCheckpointCreationFailed
+### MimirIngesterTSDBCheckpointCreationFailed
 
 This alert fires when a Mimir ingester fails to create a TSDB checkpoint.
 
 How to **investigate**:
 
 - Look for details in the ingester logs
-- If the checkpoint fails because of a `corruption in segment`, you can restart the ingester because at next startup TSDB will try to "repair" it. After restart, if the issue is repaired and the ingester is running, you should also get paged by `CortexIngesterTSDBWALCorrupted` to signal you the WAL was corrupted and manual investigation is required.
+- If the checkpoint fails because of a `corruption in segment`, you can restart the ingester because at next startup TSDB will try to "repair" it. After restart, if the issue is repaired and the ingester is running, you should also get paged by `MimirIngesterTSDBWALCorrupted` to signal you the WAL was corrupted and manual investigation is required.
 
-### CortexIngesterTSDBCheckpointDeletionFailed
+### MimirIngesterTSDBCheckpointDeletionFailed
 
 This alert fires when a Mimir ingester fails to delete a TSDB checkpoint.
 
@@ -350,7 +350,7 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### CortexIngesterTSDBWALTruncationFailed
+### MimirIngesterTSDBWALTruncationFailed
 
 This alert fires when a Mimir ingester fails to truncate the TSDB WAL.
 
@@ -358,15 +358,15 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### CortexIngesterTSDBWALCorrupted
+### MimirIngesterTSDBWALCorrupted
 
 This alert fires when a Mimir ingester finds a corrupted TSDB WAL (stored on disk) while replaying it at ingester startup or when creation of a checkpoint comes across a WAL corruption.
 
 If this alert fires during an **ingester startup**, the WAL should have been auto-repaired, but manual investigation is required. The WAL repair mechanism cause data loss because all WAL records after the corrupted segment are discarded and so their samples lost while replaying the WAL. If this issue happen only on 1 ingester then Mimir doesn't suffer any data loss because of the replication factor, while if it happens on multiple ingesters then some data loss is possible.
 
-If this alert fires during a **checkpoint creation**, you should have also been paged with `CortexIngesterTSDBCheckpointCreationFailed`, and you can follow the steps under that alert.
+If this alert fires during a **checkpoint creation**, you should have also been paged with `MimirIngesterTSDBCheckpointCreationFailed`, and you can follow the steps under that alert.
 
-### CortexIngesterTSDBWALWritesFailed
+### MimirIngesterTSDBWALWritesFailed
 
 This alert fires when a Mimir ingester is failing to log records to the TSDB WAL on disk.
 
@@ -374,7 +374,7 @@ How to **investigate**:
 
 - Look for details in the ingester logs
 
-### CortexQuerierHasNotScanTheBucket
+### MimirQuerierHasNotScanTheBucket
 
 This alert fires when a Mimir querier is not successfully scanning blocks in the storage (bucket). A querier is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket since a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
@@ -382,7 +382,7 @@ How to **investigate**:
 
 - Look for any scan error in the querier logs (ie. networking or rate limiting issues)
 
-### CortexQuerierHighRefetchRate
+### MimirQuerierHighRefetchRate
 
 This alert fires when there's an high number of queries for which series have been refetched from a different store-gateway because of missing blocks. This could happen for a short time whenever a store-gateway ring resharding occurs (e.g. during/after an outage or while rolling out store-gateway) but store-gateways should reconcile in a short time. This alert fires if the issue persist for an unexpected long time and thus it should be investigated.
 
@@ -391,7 +391,7 @@ How to **investigate**:
 - Ensure there are no errors related to blocks scan or sync in the queriers and store-gateways
 - Check store-gateway logs to see if all store-gateway have successfully completed a blocks sync
 
-### CortexStoreGatewayHasNotSyncTheBucket
+### MimirStoreGatewayHasNotSyncTheBucket
 
 This alert fires when a Mimir store-gateway is not successfully scanning blocks in the storage (bucket). A store-gateway is expected to periodically iterate the bucket to find new and deleted blocks (defaults to every 5m) and if it's not successfully synching the bucket for a long time, it may end up querying only a subset of blocks, thus leading to potentially partial results.
 
@@ -399,7 +399,7 @@ How to **investigate**:
 
 - Look for any scan error in the store-gateway logs (ie. networking or rate limiting issues)
 
-### CortexCompactorHasNotSuccessfullyCleanedUpBlocks
+### MimirCompactorHasNotSuccessfullyCleanedUpBlocks
 
 This alert fires when a Mimir compactor is not successfully deleting blocks marked for deletion for a long time.
 
@@ -408,22 +408,22 @@ How to **investigate**:
 - Ensure the compactor is not crashing during compaction (ie. `OOMKilled`)
 - Look for any error in the compactor logs (ie. bucket Delete API errors)
 
-### CortexCompactorHasNotSuccessfullyCleanedUpBlocksSinceStart
+### MimirCompactorHasNotSuccessfullyCleanedUpBlocksSinceStart
 
-Same as [`CortexCompactorHasNotSuccessfullyCleanedUpBlocks`](#CortexCompactorHasNotSuccessfullyCleanedUpBlocks).
+Same as [`MimirCompactorHasNotSuccessfullyCleanedUpBlocks`](#MimirCompactorHasNotSuccessfullyCleanedUpBlocks).
 
-### CortexCompactorHasNotUploadedBlocks
+### MimirCompactorHasNotUploadedBlocks
 
 This alert fires when a Mimir compactor is not uploading any compacted blocks to the storage since a long time.
 
 How to **investigate**:
 
-- If the alert `CortexCompactorHasNotSuccessfullyRunCompaction` has fired as well, then investigate that issue first
-- If the alert `CortexIngesterHasNotShippedBlocks` or `CortexIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
+- If the alert `MimirCompactorHasNotSuccessfullyRunCompaction` has fired as well, then investigate that issue first
+- If the alert `MimirIngesterHasNotShippedBlocks` or `MimirIngesterHasNotShippedBlocksSinceStart` have fired as well, then investigate that issue first
 - Ensure ingesters are successfully shipping blocks to the storage
 - Look for any error in the compactor logs
 
-### CortexCompactorHasNotSuccessfullyRunCompaction
+### MimirCompactorHasNotSuccessfullyRunCompaction
 
 This alert fires if the compactor is not able to successfully compact all discovered compactable blocks (across all tenants).
 
@@ -434,7 +434,7 @@ How to **investigate**:
 - Look for any error in the compactor logs
   - Corruption: [`not healthy index found`](#compactor-is-failing-because-of-not-healthy-index-found)
 
-### CortexCompactorSkippedBlocksWithOutOfOrderChunks
+### MimirCompactorSkippedBlocksWithOutOfOrderChunks
 
 This alert fires when compactor tries to compact a block, but finds that given block has out-of-order chunks. This indicates a bug in Prometheus TSDB library and should be investigated.
 
@@ -464,7 +464,7 @@ Where:
 - `TENANT` is the tenant id reported in the example error message above as `REDACTED-TENANT`
 - `BLOCK` is the last part of the file path reported as `REDACTED-BLOCK` in the example error message above
 
-### CortexBucketIndexNotUpdated
+### MimirBucketIndexNotUpdated
 
 This alert fires when the bucket index, for a given tenant, is not updated since a long time. The bucket index is expected to be periodically updated by the compactor and is used by queriers and store-gateways to get an almost-updated view over the bucket store.
 
@@ -473,7 +473,7 @@ How to **investigate**:
 - Ensure the compactor is successfully running
 - Look for any error in the compactor logs
 
-### CortexTenantHasPartialBlocks
+### MimirTenantHasPartialBlocks
 
 This alert fires when Mimir finds partial blocks for a given tenant. A partial block is a block missing the `meta.json` and this may usually happen in two circumstances:
 
@@ -491,11 +491,11 @@ How to **investigate**:
 - Safely manually delete the block from the bucket if was a partial delete or an upload failed by a compactor
 - Further investigate if was an upload failed by an ingester but not later retried (ingesters are expected to retry uploads until succeed)
 
-### CortexQueriesIncorrect
+### MimirQueriesIncorrect
 
 _TODO: this playbook has not been written yet._
 
-### CortexInconsistentRuntimeConfig
+### MimirInconsistentRuntimeConfig
 
 This alert fires if multiple replicas of the same Mimir service are using a different runtime config for a longer period of time.
 
@@ -514,7 +514,7 @@ How to **investigate**:
 - Check if the runtime config has been updated on the affected replicas' filesystem. Check `-runtime-config.file` command line argument to find the location of the file.
 - Check the affected replicas logs and look for any error loading the runtime config
 
-### CortexBadRuntimeConfig
+### MimirBadRuntimeConfig
 
 This alert fires if Mimir is unable to reload the runtime config.
 
@@ -525,13 +525,13 @@ How to **investigate**:
 - Check the latest runtime config update (it's likely to be broken)
 - Check Mimir logs to get more details about what's wrong with the config
 
-### CortexFrontendQueriesStuck
+### MimirFrontendQueriesStuck
 
 This alert fires if Mimir is running without query-scheduler and queries are piling up in the query-frontend queue.
 
-The procedure to investigate it is the same as the one for [`CortexSchedulerQueriesStuck`](#CortexSchedulerQueriesStuck): please see the other playbook for more details.
+The procedure to investigate it is the same as the one for [`MimirSchedulerQueriesStuck`](#MimirSchedulerQueriesStuck): please see the other playbook for more details.
 
-### CortexSchedulerQueriesStuck
+### MimirSchedulerQueriesStuck
 
 This alert fires if queries are piling up in the query-scheduler.
 
@@ -562,7 +562,7 @@ How to **investigate**:
     - Verify if the particular queries are hitting edge cases, where query-sharding is not benefical, by getting traces from the `Mimir / Slow Queries` dashboard and then look where time is spent. If time is spent in the query-frontend running PromQL engine, then it means query-sharding is not beneficial for this tenant. Consider disabling query-sharding or reduce the shard count using the `query_sharding_total_shards` override.
     - Otherwise and only if the queries by the tenant are within reason representing normal usage, consider scaling of queriers and potentially store-gateways.
 
-### CortexMemcachedRequestErrors
+### MimirMemcachedRequestErrors
 
 This alert fires if Mimir memcached client is experiencing an high error rate for a specific cache and operation.
 
@@ -591,7 +591,7 @@ How to **investigate**:
   - `other`
     - Check both Mimir and memcached logs to find more details
 
-### CortexProvisioningTooManyActiveSeries
+### MimirProvisioningTooManyActiveSeries
 
 This alert fires if the average number of in-memory series per ingester is above our target (1.5M).
 
@@ -605,7 +605,7 @@ How to **fix**:
     ```
 - After the scale up, the in-memory series are expected to be reduced at the next TSDB head compaction (occurring every 2h)
 
-### CortexProvisioningTooManyWrites
+### MimirProvisioningTooManyWrites
 
 This alert fires if the average number of samples ingested / sec in ingesters is above our target.
 
@@ -617,7 +617,7 @@ How to **fix**:
     sum(rate(cortex_ingester_ingested_samples_total{namespace="<namespace>"}[$__rate_interval])) / (<target> * 0.9)
     ```
 
-### CortexAllocatingTooMuchMemory
+### MimirAllocatingTooMuchMemory
 
 This alert fires when an ingester memory utilization is getting closer to the limit.
 
@@ -641,7 +641,7 @@ How to **fix**:
   - Scale up ingesters
   - Memory is expected to be reclaimed at the next TSDB head compaction (occurring every 2h)
 
-### CortexGossipMembersMismatch
+### MimirGossipMembersMismatch
 
 This alert fires when any instance does not register all other instances as members of the memberlist cluster.
 
@@ -689,7 +689,7 @@ This can be triggered if there are too many HA dedupe keys in etcd. We saw this 
   },
 ```
 
-### CortexAlertmanagerSyncConfigsFailing
+### MimirAlertmanagerSyncConfigsFailing
 
 How it **works**:
 
@@ -709,7 +709,7 @@ How to **investigate**:
 
 Look at the error message that is logged and attempt to understand what is causing the failure. I.e. it could be a networking issue, incorrect configuration for the store, etc.
 
-### CortexAlertmanagerRingCheckFailing
+### MimirAlertmanagerRingCheckFailing
 
 How it **works**:
 
@@ -723,7 +723,7 @@ How to **investigate**:
 
 Look at the error message that is logged and attempt to understand what is causing the failure. In most cases the error will be encountered when attempting to read from the ring, which can fail if there is an issue with in-use backend implementation.
 
-### CortexAlertmanagerPartialStateMergeFailing
+### MimirAlertmanagerPartialStateMergeFailing
 
 How it **works**:
 
@@ -733,9 +733,9 @@ The metric for this alert is cortex_alertmanager_partial_state_merges_failed_tot
 
 How to **investigate**:
 
-The error is not currently logged on the receiver side. If this alert is firing, it is likely that CortexAlertmanagerReplicationFailing is firing also, so instead follow the investigation steps for that alert, with the assumption that the issue is not RPC/communication related.
+The error is not currently logged on the receiver side. If this alert is firing, it is likely that `MimirAlertmanagerReplicationFailing` is firing also, so instead follow the investigation steps for that alert, with the assumption that the issue is not RPC/communication related.
 
-### CortexAlertmanagerReplicationFailing
+### MimirAlertmanagerReplicationFailing
 
 How it **works**:
 
@@ -747,7 +747,7 @@ How to **investigate**:
 
 When state replication fails it gets logged as an error in the alertmanager that attempted the state replication. Check the error message in the log to understand the cause of the error (i.e. was it due to an RPC/communication error or was there an error in the receiving alertmanager).
 
-### CortexAlertmanagerPersistStateFailing
+### MimirAlertmanagerPersistStateFailing
 
 How it **works**:
 
@@ -762,7 +762,7 @@ Each failure to persist state to the remote object storage is logged. Find the r
 - The most probable cause is that remote write failed. Try to investigate why based on the message (network issue, storage issue). If the error indicates the issue might be transient, then you can wait until the next periodic attempt and see if it succeeds.
 - It is also possible that encoding the state failed. This does not depend on external factors as it is just pulling state from the Alertmanager internal state. It may indicate a bug in the encoding method.
 
-### CortexAlertmanagerInitialSyncFailed
+### MimirAlertmanagerInitialSyncFailed
 
 How it **works**:
 
@@ -777,7 +777,7 @@ When an alertmanager cannot read the state for a tenant from storage it gets log
 - The state could not be merged because it might be invalid and could not be decoded. This could indicate data corruption and therefore a bug in the reading or writing of the state, and would need further investigation.
 - The state could not be read from storage. This could be due to a networking issue such as a timeout or an authentication and authorization issue with the remote object store.
 
-### CortexRolloutStuck
+### MimirRolloutStuck
 
 This alert fires when a Mimir service rollout is stuck, which means the number of updated replicas doesn't match the expected one and looks there's no progress in the rollout. The alert monitors services deployed as Kubernetes `StatefulSet` and `Deployment`.
 
@@ -788,7 +788,7 @@ How to **investigate**:
 - Ensure there's no pod `NotReady` (the number of ready containers should match the total number of containers, eg. `1/1` or `2/2`)
 - Run `kubectl -n <namespace> describe statefulset <name>` or `kubectl -n <namespace> describe deployment <name>` and look at "Pod Status" and "Events" to get more information
 
-### CortexKVStoreFailure
+### MimirKVStoreFailure
 
 This alert fires if a Mimir instance is failing to run any operation on a KV store (eg. consul or etcd).
 
@@ -804,7 +804,7 @@ How to **investigate**:
 - Ensure Consul/Etcd is up and running.
 - Investigate the logs of the affected instance to find the specific error occurring when talking to Consul/Etcd.
 
-### CortexReachingTCPConnectionsLimit
+### MimirReachingTCPConnectionsLimit
 
 This alert fires if a Mimir instance is configured with `-server.http-conn-limit` or `-server.grpc-conn-limit` and is reaching the limit.
 
