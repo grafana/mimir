@@ -35,12 +35,12 @@ Config commands interact with the Cortex api and read/create/update/delete user 
 
 #### Configuration
 
-| Env Variables    | Flag      | Description                                                                                                                                                                          |
-| ---------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| CORTEX_ADDRESS   | `address` | Address of the API of the desired Cortex cluster.                                                                                                                                    |
-| CORTEX_API_USER  | `user`    | In cases where the Cortex API is set behind a basic auth gateway, a user can be set as a basic auth user. If empty and CORTEX_API_KEY is set, CORTEX_TENANT_ID will be used instead. |
-| CORTEX_API_KEY   | `key`     | In cases where the Cortex API is set behind a basic auth gateway, a key can be set as a basic auth password.                                                                         |
-| CORTEX_TENANT_ID | `id`      | The tenant ID of the Cortex instance to interact with.                                                                                                                               |
+| Env Variables   | Flag      | Description                                                                                                                                                                       |
+| --------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MIMIR_ADDRESS   | `address` | Address of the API of the desired Mimir cluster.                                                                                                                                  |
+| MIMIR_API_USER  | `user`    | In cases where the Mimir API is set behind a basic auth gateway, a user can be set as a basic auth user. If empty and MIMIR_API_KEY is set, MIMIR_TENANT_ID will be used instead. |
+| MIMIR_API_KEY   | `key`     | In cases where the Mimir API is set behind a basic auth gateway, a key can be set as a basic auth password.                                                                       |
+| MIMIR_TENANT_ID | `id`      | The tenant ID of the Mimir instance to interact with.                                                                                                                             |
 
 #### Alertmanager
 
@@ -286,12 +286,12 @@ This command will run against your Grafana Cloud Prometheus instance and will fe
 
 ###### Configuration
 
-| Env Variables    | Flag      | Description                                             |
-| ---------------- | --------- | ------------------------------------------------------- |
-| CORTEX_ADDRESS   | `address` | Address of the Prometheus instance.                     |
-| CORTEX_TENANT_ID | `id`      | If you're using Grafana Cloud this is your instance ID. |
-| CORTEX_API_KEY   | `key`     | If you're using Grafana Cloud this is your API Key.     |
-| \_\_             | `output`  | The output file path. metrics-in-ruler.json by default. |
+| Env Variables   | Flag      | Description                                             |
+| --------------- | --------- | ------------------------------------------------------- |
+| MIMIR_ADDRESS   | `address` | Address of the Prometheus instance.                     |
+| MIMIR_TENANT_ID | `id`      | If you're using Grafana Cloud this is your instance ID. |
+| MIMIR_API_KEY   | `key`     | If you're using Grafana Cloud this is your API Key.     |
+| \_\_            | `output`  | The output file path. metrics-in-ruler.json by default. |
 
 ###### Running the command
 
@@ -330,14 +330,14 @@ This command will run against your Prometheus / Cloud Prometheus instance. It wi
 
 ###### Configuration
 
-| Env Variables    | Flag                   | Description                                                                  |
-| ---------------- | ---------------------- | ---------------------------------------------------------------------------- |
-| CORTEX_ADDRESS   | `address`              | Address of the Prometheus instance.                                          |
-| CORTEX_TENANT_ID | `id`                   | If you're using Grafana Cloud this is your instance ID.                      |
-| CORTEX_API_KEY   | `key`                  | If you're using Grafana Cloud this is your API Key.                          |
-| \_\_             | `grafana-metrics-file` | The dashboard metrics input file path. `metrics-in-grafana.json` by default. |
-| \_\_             | `ruler-metrics-file`   | The rules metrics input file path. `metrics-in-ruler.json` by default.       |
-| \_\_             | `output`               | The output file path. `prometheus-metrics.json` by default.                  |
+| Env Variables   | Flag                   | Description                                                                  |
+| --------------- | ---------------------- | ---------------------------------------------------------------------------- |
+| MIMIR_ADDRESS   | `address`              | Address of the Prometheus instance.                                          |
+| MIMIR_TENANT_ID | `id`                   | If you're using Grafana Cloud this is your instance ID.                      |
+| MIMIR_API_KEY   | `key`                  | If you're using Grafana Cloud this is your API Key.                          |
+| \_\_            | `grafana-metrics-file` | The dashboard metrics input file path. `metrics-in-grafana.json` by default. |
+| \_\_            | `ruler-metrics-file`   | The rules metrics input file path. `metrics-in-ruler.json` by default.       |
+| \_\_            | `output`               | The output file path. `prometheus-metrics.json` by default.                  |
 
 ###### Running the command
 
