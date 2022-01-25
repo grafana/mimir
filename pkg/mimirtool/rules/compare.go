@@ -19,10 +19,11 @@ import (
 )
 
 var (
-	errNameDiff      = errors.New("rule groups are named differently")
-	errIntervalDiff  = errors.New("rule groups have different intervals")
-	errDiffRuleLen   = errors.New("rule groups have a different number of rules")
-	errDiffRWConfigs = errors.New("rule groups has different remote write configs")
+	errNameDiff          = errors.New("rule groups are named differently")
+	errIntervalDiff      = errors.New("rule groups have different intervals")
+	errDiffRuleLen       = errors.New("rule groups have a different number of rules")
+	errDiffRWConfigs     = errors.New("rule groups have different remote write configs")
+	errDiffSourceTenants = errors.New("rule groups have different source tenants")
 )
 
 // NamespaceState is used to denote the difference between the staged namespace
@@ -97,6 +98,10 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 		}
 	}
 
+	if !stringSlicesElementsMatch(groupOne.SourceTenants, groupTwo.SourceTenants) {
+		return errDiffSourceTenants
+	}
+
 	for i := range groupOne.Rules {
 		eq := rulesEqual(&groupOne.Rules[i], &groupTwo.Rules[i])
 		if !eq {
@@ -105,6 +110,34 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 	}
 
 	return nil
+}
+
+// stringSlicesElementsMatch returns true if the two slices have completely overlapping elements.
+// For example, `stringSlicesElementsMatch([a, b], [a, b]) == true`
+// and `stringSlicesElementsMatch([a, b], [a, b, b]) == true`
+func stringSlicesElementsMatch(s1, s2 []string) bool {
+	toMap := func(input []string) map[string]bool {
+		result := map[string]bool{}
+		for _, e := range input {
+			result[e] = true
+		}
+		return result
+	}
+
+	m1 := toMap(s1)
+	m2 := toMap(s2)
+
+	if len(m1) != len(m2) {
+		return false
+	}
+
+	for k := range m1 {
+		if !m2[k] {
+			return false
+		}
+	}
+
+	return true
 }
 
 func rulesEqual(a, b *rulefmt.RuleNode) bool {

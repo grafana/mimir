@@ -9,7 +9,8 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/model/rulefmt"
-	yaml "gopkg.in/yaml.v3"
+	"github.com/stretchr/testify/assert"
+	"gopkg.in/yaml.v3"
 
 	"github.com/grafana/mimir/pkg/mimirtool/rules/rwrulefmt"
 )
@@ -124,6 +125,38 @@ func TestCompareGroups(t *testing.T) {
 			groupTwo: rwrulefmt.RuleGroup{
 				RuleGroup: rulefmt.RuleGroup{
 					Name: "example_group",
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+		},
+		{
+			name: "differently ordered source tenants (should still be equivalent)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-2", "tenant-1"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-2"},
 					Rules: []rulefmt.RuleNode{
 						{
 							Record:      yaml.Node{Value: "one"},
@@ -281,14 +314,107 @@ func TestCompareGroups(t *testing.T) {
 			},
 			expectedErr: errDiffRWConfigs,
 		},
+		{
+			name: "different source tenants",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-3"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-2"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			expectedErr: errDiffSourceTenants,
+		},
+		{
+			name: "repeated subset of source tenants",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-2"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-1"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			expectedErr: errDiffSourceTenants,
+		},
+		{
+			name: "repeated single tenant (tenants should be deduplicated)",
+			groupOne: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			groupTwo: rwrulefmt.RuleGroup{
+				RuleGroup: rulefmt.RuleGroup{
+					Name:          "example_group",
+					SourceTenants: []string{"tenant-1", "tenant-1"},
+					Rules: []rulefmt.RuleNode{
+						{
+							Record:      yaml.Node{Value: "one"},
+							Expr:        yaml.Node{Value: "up"},
+							Annotations: map[string]string{"a": "b", "c": "d"},
+							Labels:      nil,
+						},
+					},
+				},
+			},
+			expectedErr: nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := CompareGroups(tt.groupOne, tt.groupTwo); err != nil {
-				if err != tt.expectedErr {
-					t.Errorf("CompareGroups() error = %v, wantErr %v", err, tt.expectedErr)
-				}
-			}
+			actualErr := CompareGroups(tt.groupOne, tt.groupTwo)
+			assert.ErrorIs(t, actualErr, tt.expectedErr)
 		})
 	}
 }
