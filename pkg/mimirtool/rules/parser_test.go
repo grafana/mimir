@@ -96,7 +96,7 @@ func TestParseFiles(t *testing.T) {
 		},
 		{
 			name:    "federated_rule_groups",
-			backend: CortexBackend,
+			backend: MimirBackend,
 			files: []string{
 				"testdata/mimir_federated_rules.yaml",
 			},
