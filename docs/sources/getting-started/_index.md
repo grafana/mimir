@@ -61,7 +61,7 @@ Your Prometheus instance will now start pushing data to Mimir. To query that dat
 $ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
 ```
 
-In [the Grafana UI](http://localhost:3000) (username/password admin/admin), add a Prometheus datasource for Mimir (`http://host.docker.internal:9009/api/prom`).
+In [the Grafana UI](http://localhost:3000) (username/password admin/admin), add a Prometheus datasource for Mimir (`http://host.docker.internal:9009/prometheus`).
 
 **To clean up:** press CTRL-C in both terminals (for Mimir and Prometheus).
 
