@@ -31,33 +31,20 @@ The **horizontal compaction** triggers after the vertical compaction and compact
 
 ## Compaction strategy
 
-The compactor supports two compaction strategies, configurable via the `-compactor.compaction-strategy` flag (or its respective YAML config option):
-
-- `default`
-- `split-and-merge`
-
-### `default` compaction strategy
-
-The `default` compaction strategy runs the standard Prometheus TSDB compactor. For each tenant, the compactor sequentially compacts each group of compactable blocks. The compaction workload of a single tenant cannot be neither vertically scaled or horizontally scaled (when sharding is enabled).
-
-This strategy is suited for clusters with small tenants.
-
-### `split-and-merge` compaction strategy
-
-The `split-and-merge` compaction strategy is a more sophisticated compaction strategy that allows to both vertically and horizontally scale compaction of a single tenant:
+Mimir's `split-and-merge` compactor is a sophisticated compaction strategy that allows you to both vertically and horizontally scale compaction of a single tenant:
 
 - **Vertical scaling**<br />
   The setting `-compactor.compaction-concurrency` allows you to configure max number of concurrent compactions running in a single compactor replica (each compaction uses 1 CPU core).
 - **Horizontal scaling**<br />
   When [sharding](#compactor-sharding) is enabled and you run multiple compactor replicas, compaction jobs will be sharded across compactor replicas. Use the CLI flag `-compactor.compactor-tenant-shard-size` (or its respective YAML config option) to control how many of the available replicas to spread compaction jobs across. If set to 0, compaction jobs will be spread across all available replicas.
 
-The `split-and-merge` is designed to overcome TSDB index limitations and avoid that compacted blocks can grow indefinitely for a very large tenant (at any compaction stage).
+By design, the `split-and-merge` compactor overcomes TSDB index limitations and avoids situations where compacted blocks grow indefinitely for a very large tenant (at any compaction stage).
 
 This compaction strategy is a two stage process: split and merge.
 
-For the configured 1st level of compaction (eg. 2h), the compactor divides all source blocks into N groups. For each group, the compactor compacts together the blocks, but instead of returning 1 compacted block (as with the `default` strategy), it outputs N blocks, called **split** blocks. Each split block contains a subset of the series. Series are sharded across the N split blocks using a stable hashmod function. At the end of the split stage, the compactor will have produced `N * N` blocks with a reference to their shard in the block's `meta.json`.
+For the configured first level of compaction, for example `2h`, the compactor divides all source blocks into _N_ (`-compactor.split-groups`) groups. For each group, the compactor compacts together the blocks, but instead of producing single result block, it outputs _M_ (`-compactor.split-and-merge-shards`) blocks, which are called _split_ blocks. Each split block contains only a subset of the series belonging to given shard out of _M_ shards. At the end of the split stage, the compactor produces _N \* M_ blocks with a reference to their shard in the block’s `meta.json` file.
 
-Given the split blocks, the compactor runs the **merge** stage which compacts together all split blocks of a given shard. Once this stage is completed, the number of blocks will be reduced by a factor of `N`. Given a compaction time range, we'll have a compacted block for each shard.
+Given the split blocks, the compactor then runs the **merge** stage for each shard, which compacts together all _N_ split blocks of a given shard. Once this stage is completed, the number of blocks will be reduced from _N \* M_ to _M_. Given a compaction time range, we'll have a compacted block for each of _M_ shards.
 
 The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h), compacting together blocks belonging to the same shard (_not shown in the picture below_).
 
@@ -65,30 +52,23 @@ The merge stage is then run for subsequent compaction time ranges (eg. 12h, 24h)
 
 <!-- Diagram source at https://docs.google.com/presentation/d/1bHp8_zcoWCYoNU2AhO2lSagQyuIrghkCncViSqn14cU/edit -->
 
-This strategy is suited for clusters with large tenants. The `N` number of split blocks is configurable on a per-tenant basis (`-compactor.split-and-merge-shards`) and can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards, in order to improve compaction parallelization and keep each per-shard compacted block size under control. We currently recommend 1 shard per every 25 to 30 million active series in a tenant (e.g., for a tenant with 100 million active series, you'd want roughly 4 shards). Please note this recommendation may change because this feature is still experimental.
+This strategy is suitable for clusters with large tenants. The number of shards _M_ is configurable on a per-tenant basis using `-compactor.split-and-merge-shards`, and it can be adjusted based on the number of series of each tenant. The more a tenant grows in terms of series, the more you can grow the configured number of shards. Doing so improves compaction parallelization and keeps each per-shard compacted block size under control. We currently recommend 1 shard per every 25 to 30 million active series in a tenant. For example, for a tenant with 100 million active series, use approximately 4 shards.
+
+Number of split groups _N_ can also be adjusted per tenant using `-compactor.split-groups` option. Increasing this value produces more compaction jobs with fewer blocks during the split stage. This allows multiple compactors to work on these jobs, and finish the splitting stage faster. However increasing this value also generates more intermediate blocks during the split stage, which will only be reduced later in the merge stage.
 
 When sharding is enabled, each compaction stage (both split and merge) planned by the compactor can be horizontally scaled. Non conflicting / overlapping jobs will be executed in parallel.
 
-#### How does it behave if `-compactor.split-and-merge-shards` changes?
+### How does compaction behave if `-compactor.split-and-merge-shards` changes?
 
 In case you change the `-compactor.split-and-merge-shards` setting, the change will affect only compaction of blocks which haven't been split yet. Blocks which have already run through the split stage will not be split again to produce a number of shards equal to the new setting, but will be merged keeping the old configuration (this information is stored in the `meta.json` of each split block).
 
 ## Compactor sharding
 
-The compactor optionally supports sharding.
-
-When sharding is enabled, multiple compactor instances can coordinate to split the workload.
-
-The actual sharding depends on the compaction stategy used:
-
-- **`default`**<br />
-  The compactor shard compaction workload by tenant. All the blocks of a tenant are processed by a single compactor instance at any given time, but compaction for different tenants may simultaneously run on different compactor instances.
-- **`split-and-merge`**<br />
-  The compactor shards compaction jobs, either from a single or multiple tenants. Contrary to the `default` strategy, compaction of a single tenant can be split and processed by multiple compactor instances.
+The compactor optionally supports sharding. The compactor shards compaction jobs, either from a single tenant or multiple tenants. Compaction of a single tenant can be split and processed by multiple compactor instances.
 
 Whenever the pool of compactors increase or decrease (ie. following up a scale up/down), tenants / jobs are resharded across the available compactor instances without any manual intervention.
 
-The compactor sharding is based on the Cortex [hash ring](../architecture.md#the-hash-ring). At startup, a compactor generates random tokens and registers itself to the ring. While running, it periodically scans the storage bucket (every `-compactor.compaction-interval`) to discover the list of tenants in the storage and compacts blocks for each tenant whose hash matches the token ranges assigned to the instance itself within the ring.
+The compactor sharding is based on the Mimir [hash ring](../architecture.md#the-hash-ring). At startup, a compactor generates random tokens and registers itself to the ring. While running, it periodically scans the storage bucket at every interval defined by `-compactor.compaction-interval` to discover the list of tenants in the storage and compacts blocks for each tenant whose hash matches the token ranges that are assigned to the instance itself within the ring.
 
 This feature can be enabled via `-compactor.sharding-enabled=true` and requires the backend [hash ring](../architecture.md#the-hash-ring) to be configured via `-compactor.ring.*` flags (or their respective YAML config options).
 
@@ -105,7 +85,7 @@ To disable this waiting logic, you can start the compactor with `-compactor.ring
 The compactor allows to configure the compaction jobs order via the `-compactor.compaction-jobs-order` flag (or its respective YAML config option). The configured ordering defines which compaction jobs should be executed first. The following options are supported:
 
 - `smallest-range-oldest-blocks-first` (default)
-- `newest-blocks-first` (not supported by `default` compaction strategy)
+- `newest-blocks-first`
 
 ### `smallest-range-oldest-blocks-first`
 
@@ -113,15 +93,13 @@ This ordering gives priority to smallest range, oldest blocks first.
 
 For example let's assume that you run the compactor with the compaction ranges `2h, 12h, 24h`. Compactor will compact 2h ranges first and among them it gives priority to oldest blocks. Once all blocks in the 2h range have been compacted, it moves to the 12h range and finally to 24h one.
 
-When using `split-and-merge` compaction strategy all split jobs are moved to the front of the work queue, because finishing all split jobs in a given time range unblocks all merge jobs.
+All split jobs are moved to the front of the work queue, because finishing all split jobs in a given time range unblocks the merge jobs.
 
 ### `newest-blocks-first`
 
 This ordering gives priority to most recent time ranges first, regardless of their compaction level.
 
 Let's assume you run the compactor with the compaction ranges `2h, 12h, 24h`. With this sorting the compactor compacts the most recent blocks first (up to the 24h range) and then moves to older blocks. This policy favours most recent blocks, assuming they are queried the most frequently.
-
-This sorting is not supported by the `default` [compaction strategy](#compaction-strategy).
 
 ## Soft and hard blocks deletion
 
@@ -255,7 +233,7 @@ compactor:
   # CLI flag: -compactor.disabled-tenants
   [disabled_tenants: <string> | default = ""]
 
-  # Shard tenants across multiple compactor instances. Sharding is required if
+  # Shard workload across multiple compactor instances. Sharding is required if
   # you run multiple compactor instances, in order to coordinate compactions and
   # avoid race conditions leading to the same tenant blocks simultaneously
   # compacted by different instances.

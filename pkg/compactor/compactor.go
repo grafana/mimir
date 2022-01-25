@@ -138,7 +138,7 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	f.IntVar(&cfg.CompactionConcurrency, "compactor.compaction-concurrency", 1, "Max number of concurrent compactions running.")
 	f.DurationVar(&cfg.CleanupInterval, "compactor.cleanup-interval", 15*time.Minute, "How frequently compactor should run blocks cleanup and maintenance, as well as update the bucket index.")
 	f.IntVar(&cfg.CleanupConcurrency, "compactor.cleanup-concurrency", 20, "Max number of tenants for which blocks cleanup and maintenance should run concurrently.")
-	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard tenants across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
+	f.BoolVar(&cfg.ShardingEnabled, "compactor.sharding-enabled", false, "Shard workload across multiple compactor instances. Sharding is required if you run multiple compactor instances, in order to coordinate compactions and avoid race conditions leading to the same tenant blocks simultaneously compacted by different instances.")
 	f.StringVar(&cfg.CompactionJobsOrder, "compactor.compaction-jobs-order", CompactionOrderOldestFirst, fmt.Sprintf("The sorting to use when deciding which compaction jobs should run first for a given tenant. Supported values are: %s.", strings.Join(CompactionOrders, ", ")))
 	f.DurationVar(&cfg.DeletionDelay, "compactor.deletion-delay", 12*time.Hour, "Time before a block marked for deletion is deleted from bucket. "+
 		"If not 0, blocks will be marked for deletion and compactor component will permanently delete blocks marked for deletion from the bucket. "+
@@ -185,17 +185,14 @@ type ConfigProvider interface {
 	// CompactorBlocksRetentionPeriod returns the retention period for a given user.
 	CompactorBlocksRetentionPeriod(user string) time.Duration
 
-	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks
-	// (used only when split-and-merge compaction strategy is enabled).
+	// CompactorSplitAndMergeShards returns the number of shards to use when splitting blocks.
 	CompactorSplitAndMergeShards(userID string) int
 
-	// CompactorSplitGroupsCount returns the number of groups that blocks used for splitting should
+	// CompactorSplitGroups returns the number of groups that blocks used for splitting should
 	// be grouped into. Different groups are then split by different jobs.
-	// Used only when split-and-merge compaction strategy is enabled.
 	CompactorSplitGroups(userID string) int
 
-	// CompactorTenantShardSize returns number of compactors that this user can use. Only used
-	// for split-and-merge compaction strategy. 0 = all compactors.
+	// CompactorTenantShardSize returns number of compactors that this user can use. 0 = all compactors.
 	CompactorTenantShardSize(userID string) int
 }
 
@@ -780,7 +777,7 @@ func (n *noShardingStrategy) ownJob(job *Job) (bool, error) {
 	return n.ownUser(job.UserID()), nil
 }
 
-// splitAndMergeShardingStrategy is used with split-and-merge compaction strategy.
+// splitAndMergeShardingStrategy is used by split-and-merge compactor when configured with sharding.
 // All compactors from user's shard own the user for compaction purposes, and plan jobs.
 // Each job is only owned and executed by single compactor.
 // Only one of compactors from user's shard will do cleanup.
@@ -811,7 +808,7 @@ func (s *splitAndMergeShardingStrategy) blocksCleanerOwnUser(userID string) (boo
 	return instanceOwnsTokenInRing(r, s.ringLifecycler.Addr, userID)
 }
 
-// When using split-and-merge compaction strategy, ALL compactors should plan jobs for all users.
+// ALL compactors should plan jobs for all users.
 func (s *splitAndMergeShardingStrategy) compactorOwnUser(userID string) (bool, error) {
 	if !s.allowedTenants.IsAllowed(userID) {
 		return false, nil

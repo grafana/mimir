@@ -47,7 +47,7 @@ When running Cortex blocks storage cluster at scale, querying non compacted bloc
 Because of this, we would suggest to avoid querying non compacted blocks. In order to do it, you should:
 
 1. Run the [compactor](./compactor.md)
-2. Configure compactor to use `-compactor.compaction-strategy=split-and-merge` if your cluster has some very large tenants
+2. Configure compactor `-compactor.split-and-merge-shards` and `-compactor.split-groups` if your cluster has some very large tenants.
 3. Configure queriers `-querier.query-store-after` large enough to give compactor enough time to compact newly uploaded blocks (_see below_)
 4. Configure queriers `-querier.query-ingesters-within` equal to `-querier.query-store-after` plus 5m (5 minutes is just a delta to query the boundary both from ingesters and queriers)
 5. Configure ingesters `-blocks-storage.tsdb.retention-period` at least as `-querier.query-ingesters-within`
