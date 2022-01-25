@@ -45,11 +45,7 @@ import (
 )
 
 var (
-	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
-
-	// Validation errors.
-	errInvalidShardingStrategy = errors.New("invalid sharding strategy")
-	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater than 0")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 )
 
 const (
@@ -111,7 +107,6 @@ type Config struct {
 
 	// Enable sharding rule groups.
 	EnableSharding   bool          `yaml:"enable_sharding"`
-	ShardingStrategy string        `yaml:"sharding_strategy"`
 	SearchPendingFor time.Duration `yaml:"search_pending_for"`
 	Ring             RingConfig    `yaml:"ring"`
 	FlushCheckPeriod time.Duration `yaml:"flush_period"`
@@ -130,11 +125,7 @@ type Config struct {
 
 // Validate config and returns error on failure
 func (cfg *Config) Validate(limits validation.Limits, log log.Logger) error {
-	if !util.StringsContain(supportedShardingStrategies, cfg.ShardingStrategy) {
-		return errInvalidShardingStrategy
-	}
-
-	if cfg.ShardingStrategy == util.ShardingStrategyShuffle && limits.RulerTenantShardSize <= 0 {
+	if limits.RulerTenantShardSize < 0 {
 		return errInvalidTenantShardSize
 	}
 
@@ -165,7 +156,6 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 
 	f.DurationVar(&cfg.SearchPendingFor, "ruler.search-pending-for", 5*time.Minute, "Time to spend searching for a pending ruler when shutting down.")
 	f.BoolVar(&cfg.EnableSharding, "ruler.enable-sharding", false, "Distribute rule evaluation using ring backend")
-	f.StringVar(&cfg.ShardingStrategy, "ruler.sharding-strategy", util.ShardingStrategyDefault, fmt.Sprintf("The sharding strategy to use. Supported values are: %s.", strings.Join(supportedShardingStrategies, ", ")))
 	f.DurationVar(&cfg.FlushCheckPeriod, "ruler.flush-period", 1*time.Minute, "Period with which to attempt to flush rule groups.")
 	f.StringVar(&cfg.RulePath, "ruler.rule-path", "/rules", "file path to store temporary rule files for the prometheus rule managers")
 	f.BoolVar(&cfg.EnableAPI, "experimental.ruler.enable-api", false, "Enable the ruler api")
@@ -495,18 +485,10 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 }
 
 func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
-	switch {
-	case !r.cfg.EnableSharding:
+	if !r.cfg.EnableSharding {
 		result, err = r.listRulesNoSharding(ctx)
-
-	case r.cfg.ShardingStrategy == util.ShardingStrategyDefault:
-		result, err = r.listRulesShardingDefault(ctx)
-
-	case r.cfg.ShardingStrategy == util.ShardingStrategyShuffle:
+	} else {
 		result, err = r.listRulesShuffleSharding(ctx)
-
-	default:
-		return nil, errors.New("invalid sharding configuration")
 	}
 
 	if err != nil {
@@ -524,22 +506,6 @@ func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGr
 
 func (r *Ruler) listRulesNoSharding(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
 	return r.store.ListAllRuleGroups(ctx)
-}
-
-func (r *Ruler) listRulesShardingDefault(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
-	configs, err := r.store.ListAllRuleGroups(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	filteredConfigs := make(map[string]rulespb.RuleGroupList)
-	for userID, groups := range configs {
-		filtered := filterRuleGroups(userID, groups, r.ring, r.lifecycler.GetInstanceAddr(), r.logger, r.ringCheckErrors)
-		if len(filtered) > 0 {
-			filteredConfigs[userID] = filtered
-		}
-	}
-	return filteredConfigs, nil
 }
 
 func (r *Ruler) listRulesShuffleSharding(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
@@ -742,7 +708,7 @@ func (r *Ruler) getLocalRules(userID string) ([]*GroupStateDesc, error) {
 func (r *Ruler) getShardedRules(ctx context.Context, userID string) ([]*GroupStateDesc, error) {
 	ring := ring.ReadRing(r.ring)
 
-	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 && r.cfg.ShardingStrategy == util.ShardingStrategyShuffle {
+	if shardSize := r.limits.RulerTenantShardSize(userID); shardSize > 0 {
 		ring = r.ring.ShuffleShard(userID, shardSize)
 	}
 
