@@ -1,4 +1,4 @@
-# Adapted from https://suva.sh/posts/well-documented-makefiles/
+# Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
 .PHONY: help
 help: ## Display this help.
 help:
