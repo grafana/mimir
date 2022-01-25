@@ -669,7 +669,7 @@ How to **investigate**:
   - `memberlist_tcp_transport_packets_sent_errors_total`
   - `memberlist_tcp_transport_packets_received_errors_total`
   - These errors (and others) can be found by searching for messages prefixed with `TCPTransport:`.
-- Logs coming directly from memberlist are also logged by Cortex; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:xyz`.
+- Logs coming directly from memberlist are also logged by Mimir; they may indicate where to investigate further. These can be identified as such due to being tagged with `caller=memberlist_logger.go:xyz`.
 
 ### EtcdAllocatingTooMuchMemory
 
@@ -889,7 +889,7 @@ The blocks retained in the ingesters can be used in case the compactor generates
 
 How to manually blocks from ingesters to the bucket:
 
-1. Ensure [`gsutil`](https://cloud.google.com/storage/docs/gsutil) is installed in the Mimir pod. If not, [install it](#install-gsutil-in-the-cortex-pod)
+1. Ensure [`gsutil`](https://cloud.google.com/storage/docs/gsutil) is installed in the Mimir pod. If not, [install it](#install-gsutil-in-the-mimir-pod)
 2. Run `cd /data/tsdb && /path/to/gsutil -m rsync -n -r -x 'thanos.shipper.json|chunks_head|wal' . gs://<bucket>/recovered/`
    - `-n` enabled the **dry run** (remove it once you've verified the output matches your expectations)
    - `-m` enables parallel mode

@@ -24,7 +24,7 @@
             severity: 'critical',
           },
           annotations: {
-            message: 'Cortex cluster %(alert_aggregation_variables)s has {{ printf "%%f" $value }} unhealthy ingester(s).' % $._config,
+            message: '%(product)s cluster %(alert_aggregation_variables)s has {{ printf "%%f" $value }} unhealthy ingester(s).' % $._config,
           },
         },
         {
@@ -88,7 +88,7 @@
           },
           annotations: {
             message: |||
-              The Cortex cluster %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% incorrect query results.
+              The %(product)s cluster %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% incorrect query results.
             ||| % $._config,
           },
         },
@@ -168,7 +168,7 @@
           },
           annotations: {
             message: |||
-              Memcached {{ $labels.name }} used by Cortex %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
+              Memcached {{ $labels.name }} used by %(product)s %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors for {{ $labels.operation }} operation.
             ||| % $._config,
           },
         },
@@ -204,7 +204,7 @@
           },
           annotations: {
             message: |||
-              Cortex {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
+              %(product)s {{ $labels.pod }} in  %(alert_aggregation_variables)s is failing to talk to the KV store {{ $labels.kv_name }}.
             ||| % $._config,
           },
         },
@@ -314,8 +314,8 @@
           },
           annotations: {
             message: |||
-              Cortex instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
-            |||,
+              %(product)s instance {{ $labels.job }}/{{ $labels.instance }} has reached {{ $value | humanizePercentage }} of its TCP connections limit for {{ $labels.protocol }} protocol.
+            ||| % $._config,
           },
         },
         {
@@ -416,7 +416,7 @@
         {
           alert: 'CortexProvisioningTooManyActiveSeries',
           // We target each ingester to 1.5M in-memory series. This alert fires if the average
-          // number of series / ingester in a Cortex cluster is > 1.6M for 2h (we compact
+          // number of series / ingester in a Mimir cluster is > 1.6M for 2h (we compact
           // the TSDB head every 2h).
           expr: |||
             avg by (%s) (cortex_ingester_memory_series) > 1.6e6
@@ -505,7 +505,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% write (push) errors.
+              %(product)s Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% write (push) errors.
             ||| % $._config,
           },
         },
@@ -524,7 +524,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
+              %(product)s Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% errors while evaluating rules.
             ||| % $._config,
           },
         },
@@ -542,7 +542,7 @@
           },
           annotations: {
             message: |||
-              Cortex Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
+              %(product)s Ruler {{ $labels.instance }} in %(alert_aggregation_variables)s is experiencing {{ printf "%%.2f" $value }}%% missed iterations for the rule group {{ $labels.rule_group }}.
             ||| % $._config,
           },
         },
@@ -558,7 +558,7 @@
           },
           annotations: {
             message: |||
-              Cortex Rulers in %(alert_aggregation_variables)s are experiencing errors when checking the ring for rule group ownership.
+              %(product)s Rulers in %(alert_aggregation_variables)s are experiencing errors when checking the ring for rule group ownership.
             ||| % $._config,
           },
         },
@@ -580,7 +580,7 @@
             severity: 'warning',
           },
           annotations: {
-            message: 'Cortex instance {{ $labels.instance }} in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
+            message: '%(product)s instance {{ $labels.instance }} in %(alert_aggregation_variables)s sees incorrect number of gossip members.' % $._config,
           },
         },
       ],
