@@ -215,7 +215,7 @@ func TestGroupCompactE2E(t *testing.T) {
 
 		ignoreDeletionMarkFilter := NewExcludeMarkedForDeletionFilter(objstore.WithNoopInstr(bkt))
 		duplicateBlocksFilter := NewShardAwareDeduplicateFilter()
-		noCompactMarkerFilter := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), false)
+		noCompactMarkerFilter := NewNoCompactionMarkFilter(objstore.WithNoopInstr(bkt), true)
 		metaFetcher, err := block.NewMetaFetcher(nil, 32, objstore.WithNoopInstr(bkt), "", nil, []block.MetadataFilter{
 			ignoreDeletionMarkFilter,
 			duplicateBlocksFilter,
@@ -231,8 +231,8 @@ func TestGroupCompactE2E(t *testing.T) {
 		comp, err := tsdb.NewLeveledCompactor(ctx, reg, logger, []int64{1000, 3000}, nil, nil)
 		require.NoError(t, err)
 
-		planner := NewPlanner(logger, []int64{1000, 3000}, noCompactMarkerFilter)
-		grouper := NewDefaultGrouper("user-1", metadata.NoneFunc)
+		planner := NewSplitAndMergePlanner([]int64{1000, 3000})
+		grouper := NewSplitAndMergeGrouper("user-1", []int64{1000, 3000}, 0, 0, logger)
 		metrics := NewBucketCompactorMetrics(blocksMarkedForDeletion, garbageCollectedBlocks, prometheus.NewPedanticRegistry())
 		bComp, err := NewBucketCompactor(logger, sy, grouper, planner, comp, dir, bkt, 2, true, ownAllJobs, sortJobsByNewestBlocksFirst, 4, metrics)
 		require.NoError(t, err)
@@ -344,8 +344,8 @@ func TestGroupCompactE2E(t *testing.T) {
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.blocksMarkedForNoCompact))
 		assert.Equal(t, 0.0, promtest.ToFloat64(sy.metrics.garbageCollectionFailures))
 		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactions))
-		assert.Equal(t, 12.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
-		assert.Equal(t, 11.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
+		assert.Equal(t, 3.0, promtest.ToFloat64(metrics.groupCompactionRunsStarted))
+		assert.Equal(t, 2.0, promtest.ToFloat64(metrics.groupCompactionRunsCompleted))
 		assert.Equal(t, 1.0, promtest.ToFloat64(metrics.groupCompactionRunsFailed))
 
 		_, err = os.Stat(dir)
