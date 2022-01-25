@@ -106,19 +106,15 @@ func main() {
 
 	if err := flag.CommandLine.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintln(flag.CommandLine.Output(), "Run with -help to get list of available parameters")
-		if err := usage(&cfg, categoryBasic); err != nil {
-			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
-			os.Exit(1)
-		}
 		if !testMode {
 			os.Exit(2)
 		}
 	}
 
-	if printHelp || printHelpAll {
-		// Print available parameters to stdout, so that users can grep/less them easily.
+	if printHelp {
+		// Print available basic parameters to stdout, so that users can grep/less it easily.
 		flag.CommandLine.SetOutput(os.Stdout)
-		if err := usage(&cfg, printHelpAll); err != nil {
+		if err := usage(&cfg, categoryBasic); err != nil {
 			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
 			os.Exit(1)
 		}
