@@ -1,3 +1,9 @@
+# Adapted from https://www.thapaliya.com/en/writings/well-documented-makefiles/
+.PHONY: help
+help: ## Display this help and any documented user-facing targets. Other undocumented targets may be present in the Makefile.
+help:
+	@awk 'BEGIN {FS = ": ##"; printf "Usage:\n  make <target>\n\nTargets:\n"} /^[a-zA-Z0-9_\.\-\/%]+: ##/ { printf "  %-45s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+
 # Local settings (optional). See Makefile.local.example for an example.
 # WARNING: do not commit to a repository!
 -include Makefile.local
@@ -542,3 +548,4 @@ test-packages: packages packaging/rpm/centos-systemd/$(UPTODATE) packaging/deb/d
 	./tools/packaging/test-packages $(IMAGE_PREFIX) $(VERSION)
 
 include docs.mk
+docs: doc
