@@ -74,8 +74,8 @@ Next we're going to show how you can run a scale out Mimir cluster using Docker.
 - A single node Consul instance to coordinate the Mimir cluster.
 
 > **Note:** In order to horizontally scale mimir, you must use an external
-> object store. See the [blocks storage documentation]({{< relref
-> "../blocks-storage/_index.md" >}}) for information on supported backends.
+> object store. See the [blocks storage documentation]({{< relref "../blocks-storage/_index.md" >}})
+> for information on supported backends.
 
 ```sh
 $ make ./cmd/mimir/.uptodate
