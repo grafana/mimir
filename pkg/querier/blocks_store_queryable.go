@@ -247,7 +247,7 @@ func NewBlocksStoreQueryableFromConfig(querierCfg Config, gatewayCfg storegatewa
 			return nil, errors.Wrap(err, "failed to create store-gateway ring client")
 		}
 
-		stores, err = newBlocksStoreReplicationSet(storesRing, gatewayCfg.ShardingStrategy, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
+		stores, err = newBlocksStoreReplicationSet(storesRing, randomLoadBalancing, limits, querierCfg.StoreGatewayClient, logger, reg)
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to create store set")
 		}

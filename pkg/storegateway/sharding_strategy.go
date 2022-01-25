@@ -64,26 +64,6 @@ type DefaultShardingStrategy struct {
 	logger       log.Logger
 }
 
-// NewDefaultShardingStrategy creates DefaultShardingStrategy.
-func NewDefaultShardingStrategy(r *ring.Ring, instanceAddr string, logger log.Logger) *DefaultShardingStrategy {
-	return &DefaultShardingStrategy{
-		r:            r,
-		instanceAddr: instanceAddr,
-		logger:       logger,
-	}
-}
-
-// FilterUsers implements ShardingStrategy.
-func (s *DefaultShardingStrategy) FilterUsers(_ context.Context, userIDs []string) []string {
-	return userIDs
-}
-
-// FilterBlocks implements ShardingStrategy.
-func (s *DefaultShardingStrategy) FilterBlocks(_ context.Context, _ string, metas map[ulid.ULID]*metadata.Meta, loaded map[ulid.ULID]struct{}, synced *extprom.TxGaugeVec) error {
-	filterBlocksByRingSharding(s.r, s.instanceAddr, metas, loaded, synced, s.logger)
-	return nil
-}
-
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {

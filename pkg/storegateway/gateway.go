@@ -9,7 +9,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -49,18 +48,14 @@ const (
 )
 
 var (
-	supportedShardingStrategies = []string{util.ShardingStrategyDefault, util.ShardingStrategyShuffle}
-
 	// Validation errors.
-	errInvalidShardingStrategy = errors.New("invalid sharding strategy")
-	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater than 0")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to 0")
 )
 
 // Config holds the store gateway config.
 type Config struct {
-	ShardingEnabled  bool       `yaml:"sharding_enabled"`
-	ShardingRing     RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration. This option is required only if blocks sharding is enabled."`
-	ShardingStrategy string     `yaml:"sharding_strategy"`
+	ShardingEnabled bool       `yaml:"sharding_enabled"`
+	ShardingRing    RingConfig `yaml:"sharding_ring" doc:"description=The hash ring configuration. This option is required only if blocks sharding is enabled."`
 }
 
 // RegisterFlags registers the Config flags.
@@ -68,19 +63,12 @@ func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
 	cfg.ShardingRing.RegisterFlags(f)
 
 	f.BoolVar(&cfg.ShardingEnabled, "store-gateway.sharding-enabled", false, "Shard blocks across multiple store gateway instances."+sharedOptionWithQuerier)
-	f.StringVar(&cfg.ShardingStrategy, "store-gateway.sharding-strategy", util.ShardingStrategyDefault, fmt.Sprintf("The sharding strategy to use. Supported values are: %s.", strings.Join(supportedShardingStrategies, ", ")))
 }
 
 // Validate the Config.
 func (cfg *Config) Validate(limits validation.Limits) error {
-	if cfg.ShardingEnabled {
-		if !util.StringsContain(supportedShardingStrategies, cfg.ShardingStrategy) {
-			return errInvalidShardingStrategy
-		}
-
-		if cfg.ShardingStrategy == util.ShardingStrategyShuffle && limits.StoreGatewayTenantShardSize <= 0 {
-			return errInvalidTenantShardSize
-		}
+	if cfg.ShardingEnabled && limits.StoreGatewayTenantShardSize < 0 {
+		return errInvalidTenantShardSize
 	}
 
 	return nil
@@ -178,15 +166,7 @@ func newStoreGateway(gatewayCfg Config, storageCfg mimir_tsdb.BlocksStorageConfi
 			return nil, errors.Wrap(err, "create ring client")
 		}
 
-		// Instance the right strategy.
-		switch gatewayCfg.ShardingStrategy {
-		case util.ShardingStrategyDefault:
-			shardingStrategy = NewDefaultShardingStrategy(g.ring, lifecyclerCfg.Addr, logger)
-		case util.ShardingStrategyShuffle:
-			shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
-		default:
-			return nil, errInvalidShardingStrategy
-		}
+		shardingStrategy = NewShuffleShardingStrategy(g.ring, lifecyclerCfg.ID, lifecyclerCfg.Addr, limits, logger)
 	} else {
 		shardingStrategy = NewNoShardingStrategy()
 	}
