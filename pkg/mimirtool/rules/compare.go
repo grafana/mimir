@@ -117,43 +117,23 @@ func CompareGroups(groupOne, groupTwo rwrulefmt.RuleGroup) error {
 // For example, `stringSlicesElementsMatch([a, b], [a, b]) == true`
 // and `stringSlicesElementsMatch([a, b], [a, b, b]) == true`
 func stringSlicesElementsMatch(s1, s2 []string) bool {
-	copySlice := func(slice []string) []string {
-		copied := make([]string, len(slice))
-		copy(copied, slice)
-		return copied
-	}
-
-	sortSlice := func(slice []string) []string {
-		sort.Strings(slice)
-		return slice
-	}
-
-	deduplicate := func(slice []string) []string {
-		count := len(slice)
-		if count <= 1 {
-			return slice
+	toMap := func(input []string) map[string]bool {
+		result := map[string]bool{}
+		for _, e := range input {
+			result[e] = true
 		}
-
-		posOut := 1
-		for posIn := 1; posIn < count; posIn++ {
-			if slice[posIn] != slice[posIn-1] {
-				slice[posOut] = slice[posIn]
-				posOut++
-			}
-		}
-
-		return slice[0:posOut]
+		return result
 	}
 
-	s1UniqueSorted := deduplicate(sortSlice(copySlice(s1)))
-	s2UniqueSorted := deduplicate(sortSlice(copySlice(s2)))
+	m1 := toMap(s1)
+	m2 := toMap(s2)
 
-	if len(s1UniqueSorted) != len(s2UniqueSorted) {
+	if len(m1) != len(m2) {
 		return false
 	}
 
-	for i := range s2UniqueSorted {
-		if s1UniqueSorted[i] != s2UniqueSorted[i] {
+	for k := range m1 {
+		if !m2[k] {
 			return false
 		}
 	}
