@@ -70,7 +70,6 @@ type Config struct {
 
 // RegisterFlags adds the flags required to config this to the given FlagSet.
 func (cfg *Config) RegisterFlags(f *flag.FlagSet) {
-	f.BoolVar(&cfg.ResponseCompression, "api.response-compression-enabled", false, "Use GZIP compression for API responses. Some endpoints serve large YAML or JSON blobs which can benefit from compression.")
 	// TODO(56quarters): Mention the specific header "X-Mimir-SkipLabelNameValidation" after Mimir is public
 	f.BoolVar(&cfg.SkipLabelNameValidationHeader, "api.skip-label-name-validation-header-enabled", false, "Allows to skip label name validation via header on the http write path. Use with caution as it breaks PromQL. Allowing this for external clients allows any client to send invalid label names. After enabling it, requests with a specific HTTP header set to true will not have label names validated.")
 	cfg.RegisterFlagsWithPrefix("", f)
@@ -142,10 +141,7 @@ func (a *API) RegisterRoute(path string, handler http.Handler, auth bool, method
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
-
-	if a.cfg.ResponseCompression {
-		handler = gziphandler.GzipHandler(handler)
-	}
+	handler = gziphandler.GzipHandler(handler)
 
 	if len(methods) == 0 {
 		a.server.HTTP.Path(path).Handler(handler)
@@ -159,10 +155,7 @@ func (a *API) RegisterRoutesWithPrefix(prefix string, handler http.Handler, auth
 	if auth {
 		handler = a.AuthMiddleware.Wrap(handler)
 	}
-
-	if a.cfg.ResponseCompression {
-		handler = gziphandler.GzipHandler(handler)
-	}
+	handler = gziphandler.GzipHandler(handler)
 
 	if len(methods) == 0 {
 		a.server.HTTP.PathPrefix(prefix).Handler(handler)
