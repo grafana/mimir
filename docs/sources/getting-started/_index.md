@@ -17,6 +17,10 @@ The microservices mode allows you to independently scale different services and 
 These instructions focus on deploying Mimir as a single process.
 Refer to [Architecture](../architecture.md) for more information about the microservices.
 
+This guide assumes you have already installed a Prometheus server or the Grafana Agent.
+To install Prometheus, refer to [Prometheus Installation](https://prometheus.io/docs/prometheus/latest/installation/).
+To install the Grafana Agent, refer to the [latest release](https://github.com/grafana/agent/releases/latest).
+
 ## Install Mimir
 
 To install Mimir, download the latest release from GitHub and mark the file as executable.
@@ -60,8 +64,6 @@ Mimir starts in the background, listening on port 9009.
 
 ## Configure Prometheus to write to Mimir
 
-If you don't already have Prometheus installed, refer to [Prometheus Installation](https://prometheus.io/docs/prometheus/latest/installation/).
-
 Add the following YAML snippet to your Prometheus configuration file and restart the Prometheus server.
 
 ```yaml
@@ -84,7 +86,6 @@ scrape_configs:
 
 ## Configure the Grafana Agent to write to Mimir
 
-If you don't already have the Grafana Agent installed, refer to the [latest release](https://github.com/grafana/agent/releases/latest).
 
 Add the following YAML snippet to one of your Agent `metrics` `configs` in your Agent configuration file and restart the Grafana Agent.
 
@@ -128,3 +129,10 @@ $ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
 |-------|------------------------------------|
 | Name  | Mimir                              |
 | URL   | http://localhost:9009/api/v1/query |
+
+For an illustrated guide to adding a data source, refer to [Add a data source](https://grafana.com/docs/grafana/latest/datasources/add-a-data-source/).
+
+## Success
+
+You are now able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
+and create dashboard panelsusing the newly configured Mimir data source.
