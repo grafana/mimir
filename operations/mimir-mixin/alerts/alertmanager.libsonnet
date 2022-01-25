@@ -1,10 +1,10 @@
-{
+(import 'alerts-utils.libsonnet') {
   groups+: [
     {
       name: 'alertmanager_alerts',
       rules: [
         {
-          alert: 'CortexAlertmanagerSyncConfigsFailing',
+          alert: $.alertName('AlertmanagerSyncConfigsFailing'),
           expr: |||
             rate(cortex_alertmanager_sync_configs_failed_total[5m]) > 0
           |||,
@@ -19,7 +19,7 @@
           },
         },
         {
-          alert: 'CortexAlertmanagerRingCheckFailing',
+          alert: $.alertName('AlertmanagerRingCheckFailing'),
           expr: |||
             rate(cortex_alertmanager_ring_check_errors_total[2m]) > 0
           |||,
@@ -34,7 +34,7 @@
           },
         },
         {
-          alert: 'CortexAlertmanagerPartialStateMergeFailing',
+          alert: $.alertName('AlertmanagerPartialStateMergeFailing'),
           expr: |||
             rate(cortex_alertmanager_partial_state_merges_failed_total[2m]) > 0
           |||,
@@ -49,7 +49,7 @@
           },
         },
         {
-          alert: 'CortexAlertmanagerReplicationFailing',
+          alert: $.alertName('AlertmanagerReplicationFailing'),
           expr: |||
             rate(cortex_alertmanager_state_replication_failed_total[2m]) > 0
           |||,
@@ -64,7 +64,7 @@
           },
         },
         {
-          alert: 'CortexAlertmanagerPersistStateFailing',
+          alert: $.alertName('AlertmanagerPersistStateFailing'),
           expr: |||
             rate(cortex_alertmanager_state_persist_failed_total[15m]) > 0
           |||,
@@ -79,7 +79,7 @@
           },
         },
         {
-          alert: 'CortexAlertmanagerInitialSyncFailed',
+          alert: $.alertName('AlertmanagerInitialSyncFailed'),
           expr: |||
             increase(cortex_alertmanager_state_initial_sync_completed_total{outcome="failed"}[1m]) > 0
           |||,
