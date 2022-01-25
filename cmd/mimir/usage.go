@@ -37,18 +37,9 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		v := reflect.ValueOf(fl.Value)
 		fieldCat := categoryBasic
 		if v.Kind() == reflect.Ptr {
-			// Ignore flags with non-pointer values
-			return
-		}
-
 			ptr := v.Pointer()
 			field, ok := fields[ptr]
 			if ok {
-			// This flag doesn't correspond to any configuration field
-			return
-		}
-
-		var fieldCat category
 				catStr := field.Tag.Get("category")
 				switch catStr {
 				case "advanced":
