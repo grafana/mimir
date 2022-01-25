@@ -57,11 +57,7 @@ func usage(cfg *mimir.Config, printAll bool) error {
 
 		var b strings.Builder
 		// Two spaces before -; see next two comments.
-		b.WriteString("  ")
-		if fieldCat == categoryExperimental {
-			b.WriteString("[experimental] ")
-		}
-		fmt.Fprintf(&b, "-%s", fl.Name)
+		fmt.Fprintf(&b, "  -%s", fl.Name)
 		name, usage := flag.UnquoteUsage(fl)
 		if len(name) > 0 {
 			b.WriteString(" ")
