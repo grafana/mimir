@@ -48,8 +48,7 @@ import (
 
 var (
 	// Validation errors.
-	errInvalidShardingStrategy = errors.New("invalid sharding strategy")
-	errInvalidTenantShardSize  = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
+	errInvalidTenantShardSize = errors.New("invalid tenant shard size, the value must be greater or equal to zero")
 
 	// Distributor instance limits errors.
 	errTooManyInflightPushRequests    = errors.New("too many inflight push requests in distributor")
@@ -765,10 +764,8 @@ func (d *Distributor) PushWithCleanup(ctx context.Context, req *mimirpb.WriteReq
 	// totalN included samples and metadata. Ingester follows this pattern when computing its ingestion rate.
 	d.ingestionRate.Add(int64(totalN))
 
-	subRing := d.ingestersRing
-
 	// Get a subring if tenant has shuffle shard size configured.
-	subRing = d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
+	subRing := d.ingestersRing.ShuffleShard(userID, d.limits.IngestionTenantShardSize(userID))
 
 	// Use a background context to make sure all ingesters get samples even if we return early
 	localCtx, cancel := context.WithTimeout(context.Background(), d.cfg.RemoteTimeout)
