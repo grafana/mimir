@@ -4,4 +4,4 @@
 export MIMIR_ADDRESS=http://localhost:8021/
 export MIMIR_TENANT_ID=fake
 
-cortextool rules $@
+mimirtool rules $@

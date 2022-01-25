@@ -15,17 +15,19 @@ The various binaries are available for macOS, Windows, and Linux.
 
 ## macOS
 
-`cortextool` is available on macOS via [Homebrew](https://brew.sh/):
+> TODO https://github.com/grafana/mimir/issues/837
+
+`mimirtool` is available on macOS via [Homebrew](https://brew.sh/):
 
 ```bash
-$ brew install grafana/grafana/cortextool
+$ brew install grafana/grafana/mimirtool
 ```
 
 ## Linux, Docker and Windows
 
 Refer to the [latest release](https://github.com/grafana/cortex-tools/releases) for installation intructions on these.
 
-## cortextool
+## mimirtool
 
 This tool is designed to interact with the various user-facing APIs provided by Cortex, as well as, interact with various backend storage components containing Cortex data.
 
@@ -48,13 +50,13 @@ The following commands are used by users to interact with their Cortex alertmana
 
 ##### Alertmanager Get
 
-    cortextool alertmanager get
+    mimirtool alertmanager get
 
 ##### Alertmanager Load
 
-    cortextool alertmanager load ./example_alertmanager_config.yaml
+    mimirtool alertmanager load ./example_alertmanager_config.yaml
 
-    cortextool alertmanager load ./example_alertmanager_config.yaml template_file1.tmpl template_file2.tmpl
+    mimirtool alertmanager load ./example_alertmanager_config.yaml template_file1.tmpl template_file2.tmpl
 
 #### Rules
 
@@ -64,31 +66,31 @@ The following commands are used by users to interact with their Cortex ruler con
 
 This command will retrieve all of the rule groups stored in the specified Cortex instance and print each one by rule group name and namespace to the terminal.
 
-    cortextool rules list
+    mimirtool rules list
 
 ##### Rules Print
 
 This command will retrieve all of the rule groups stored in the specified Cortex instance and print them to the terminal.
 
-    cortextool rules print
+    mimirtool rules print
 
 ##### Rules Get
 
 This command will retrieve the specified rule group from Cortex and print it to the terminal.
 
-    cortextool rules get example_namespace example_rule_group
+    mimirtool rules get example_namespace example_rule_group
 
 ##### Rules Delete
 
 This command will delete the specified rule group from the specified namespace.
 
-    cortextool rules delete example_namespace example_rule_group
+    mimirtool rules delete example_namespace example_rule_group
 
 ##### Rules Load
 
 This command will load each rule group in the specified files and load them into Cortex. If a rule already exists in Cortex it will be overwritten if a diff is found.
 
-    cortextool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
+    mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
 
 Example file:
 
@@ -107,7 +109,7 @@ groups:
 
 This command lints a rules file. The linter's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file. This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does not make any changes. This command does not interact with your Cortex cluster.
 
-    cortextool rules lint -n ./example_rules_one.yaml ./example_rules_two.yaml ...
+    mimirtool rules lint -n ./example_rules_one.yaml ./example_rules_two.yaml ...
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -115,7 +117,7 @@ The format of the file is the same as in [Rules Diff](#rules-diff).
 
 This command prepares a rules file for upload to Cortex. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. This command does not interact with your Cortex cluster.
 
-    cortextool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
+    mimirtool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -165,7 +167,7 @@ Cortex exposes a [Remote Read API] which allows access to the stored series. The
 The `remote-read stats` command summarizes statistics of the stored series matching the selector.
 
 ```sh
-cortextool remote-read stats --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+mimirtool remote-read stats --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Querying time from=2020-12-30T14:00:00Z to=2020-12-30T15:00:00Z with selector={job="node"}
 INFO[0000] MIN TIME                           MAX TIME                           DURATION     NUM SAMPLES  NUM SERIES   NUM STALE NAN VALUES  NUM NAN VALUES
@@ -177,7 +179,7 @@ INFO[0000] 2020-12-30 14:00:00.629 +0000 UTC  2020-12-30 14:59:59.629 +0000 UTC 
 The `remote-read dump` command prints all series and samples matching the selector.
 
 ```sh
-cortextool remote-read dump --selector 'up{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+mimirtool remote-read dump --selector 'up{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} 1 1609336914711
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} NaN 1609336924709 # StaleNaN
 [...]
@@ -187,9 +189,9 @@ cortextool remote-read dump --selector 'up{job="node"}' --address http://demo.ro
 
 The `remote-read export` command exports all series and samples matching the selector into a local TSDB. This TSDB can then be further analysed with local tooling like `prometheus` and `promtool`.
 
-```sh
+```shell
 # Use Remote Read API to download all metrics with label job=name into local tsdb
-cortextool remote-read export --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
+mimirtool remote-read export --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Created TSDB in path './local-tsdb'
 INFO[0000] Using existing TSDB in path './local-tsdb'
@@ -214,7 +216,7 @@ prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 
 The Overrides Exporter allows to continuously export [per tenant configuration overrides][runtime-config] as metrics. Optionally it can also export a presets file (cf. example [override config file] and [presets file]).
 
-    cortextool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
+    mimirtool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
 
 [override config file]: ./pkg/commands/testdata/overrides.yaml
 [presets file]: ./pkg/commands/testdata/presets.yaml
@@ -224,8 +226,8 @@ The Overrides Exporter allows to continuously export [per tenant configuration o
 
 This lets you generate the header which can then be used to enforce access control rules in GME / GrafanaCloud.
 
-```
-./cortextool acl generate-header --id=1234 --rule='{namespace="A"}'
+```shell
+./mimirtool acl generate-header --id=1234 --rule='{namespace="A"}'
 ```
 
 #### Analyse
@@ -248,7 +250,7 @@ This command will run against your Grafana instance and will download its dashbo
 ###### Running the command
 
 ```shell
-cortextool analyse grafana --address=<grafana-address> --key=<API-Key>
+mimirtool analyse grafana --address=<grafana-address> --key=<API-Key>
 ```
 
 ###### Sample output
@@ -296,7 +298,7 @@ This command will run against your Grafana Cloud Prometheus instance and will fe
 ###### Running the command
 
 ```shell
-cortextool analyse ruler --address=https://prometheus-blocks-prod-us-central1.grafana.net --id=<1234> --key=<API-Key>
+mimirtool analyse ruler --address=https://prometheus-blocks-prod-us-central1.grafana.net --id=<1234> --key=<API-Key>
 ```
 
 ###### Sample output
@@ -342,7 +344,7 @@ This command will run against your Prometheus / Cloud Prometheus instance. It wi
 ###### Running the command
 
 ```shell
-cortextool analyse prometheus --address=https://prometheus-blocks-prod-us-central1.grafana.net --id=<1234> --key=<API-Key> --log.level=debug
+mimirtool analyse prometheus --address=https://prometheus-blocks-prod-us-central1.grafana.net --id=<1234> --key=<API-Key> --log.level=debug
 ```
 
 ###### Sample output
@@ -396,7 +398,7 @@ This command accepts Grafana dashboard JSON files as input and extracts Promethe
 ###### Running the command
 
 ```shell
-cortextool analyse dashboard ./dashboard_one.json ./dashboard_two.json ...
+mimirtool analyse dashboard ./dashboard_one.json ./dashboard_two.json ...
 ```
 
 ##### `analyse rule-file`
@@ -406,7 +408,7 @@ This command accepts Prometheus rule YAML files as input and extracts Prometheus
 ###### Running the command
 
 ```shell
-cortextool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml ...
+mimirtool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml ...
 ```
 
 ## chunktool
