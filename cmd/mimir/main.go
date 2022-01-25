@@ -62,14 +62,15 @@ var testMode = false
 
 func main() {
 	var (
-		cfg                  mimir.Config
-		ballastBytes         int
-		mutexProfileFraction int
-		blockProfileRate     int
-		printVersion         bool
-		printModules         bool
-		printHelp            bool
-		printHelpAll         bool
+		cfg                   mimir.Config
+		ballastBytes          int
+		mutexProfileFraction  int
+		blockProfileRate      int
+		printVersion          bool
+		printModules          bool
+		printHelp             bool
+		printHelpAdvanced     bool
+		printHelpExperimental bool
 	)
 
 	configFile, expandENV := parseConfigFileParameter(os.Args[1:])
@@ -99,7 +100,8 @@ func main() {
 	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
 	flag.BoolVar(&printHelp, "help", false, "Print basic help.")
 	flag.BoolVar(&printHelp, "h", false, "Print basic help.")
-	flag.BoolVar(&printHelpAll, "help-all", false, "Print help including also advanced and experimental flags.")
+	flag.BoolVar(&printHelpAdvanced, "help-advanced", false, "Print advanced help.")
+	flag.BoolVar(&printHelpExperimental, "help-experimental", false, "Print experimental help.")
 
 	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
@@ -111,10 +113,16 @@ func main() {
 		}
 	}
 
-	if printHelp {
-		// Print available basic parameters to stdout, so that users can grep/less it easily.
+	if printHelp || printHelpAdvanced || printHelpExperimental {
+		// Print available parameters to stdout, so that users can grep/less them easily.
 		flag.CommandLine.SetOutput(os.Stdout)
-		if err := usage(&cfg, categoryBasic); err != nil {
+		cat := categoryBasic
+		if printHelpAdvanced {
+			cat = categoryAdvanced
+		} else if printHelpExperimental {
+			cat = categoryExperimental
+		}
+		if err := usage(&cfg, cat); err != nil {
 			fmt.Fprintf(os.Stderr, "error printing usage: %s\n", err)
 			os.Exit(1)
 		}
