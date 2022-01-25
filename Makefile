@@ -389,7 +389,14 @@ clean-doc:
 		./docs/sources/guides/encryption-at-rest.md
 
 check-doc: doc
-	@git diff --exit-code -- ./docs/sources/configuration/config-file-reference.md ./docs/sources/blocks-storage/*.md ./docs/sources/configuration/*.md ./operations/mimir/*.md ./operations/mimir-mixin/docs/sources/*.md
+	@git diff --exit-code -- \
+		./docs/sources/configuration/config-file-reference.md \
+		./docs/sources/blocks-storage/*.md \
+		./docs/sources/configuration/*.md \
+		./docs/sources/operations/*.md \
+		./operations/mimir/*.md \
+		./operations/mimir-mixin/docs/sources/*.md \
+	|| (echo "Please update generated documentation by running 'make doc'" && false)
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \
