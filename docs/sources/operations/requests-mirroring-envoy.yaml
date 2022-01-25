@@ -40,10 +40,10 @@ static_resources:
     - name: cortex_primary
       type: STRICT_DNS
       connect_timeout: 1s
-      hosts: [{ socket_address: { address: cortex-primary, port_value: 80 }}]
+      hosts: [{ socket_address: { address: cortex-primary, port_value: 8080 }}]
       dns_refresh_rate: 5s
     - name: cortex_secondary
       type: STRICT_DNS
       connect_timeout: 1s
-      hosts: [{ socket_address: { address: cortex-secondary, port_value: 80 }}]
+      hosts: [{ socket_address: { address: cortex-secondary, port_value: 8080 }}]
       dns_refresh_rate: 5s
