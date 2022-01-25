@@ -35,28 +35,21 @@ func usage(cfg *mimir.Config, cat category) error {
 	fmt.Fprintf(fs.Output(), "Usage of %s:\n", os.Args[0])
 	fs.VisitAll(func(fl *flag.Flag) {
 		v := reflect.ValueOf(fl.Value)
-		if v.Kind() != reflect.Ptr {
-			// Ignore flags with non-pointer values
-			return
+		fieldCat := categoryBasic
+		if v.Kind() == reflect.Ptr {
+			ptr := v.Pointer()
+			field, ok := fields[ptr]
+			if ok {
+				catStr := field.Tag.Get("category")
+				switch catStr {
+				case "advanced":
+					fieldCat = categoryAdvanced
+				case "experimental":
+					fieldCat = categoryExperimental
+				}
+			}
 		}
 
-		ptr := v.Pointer()
-		field, ok := fields[ptr]
-		if !ok {
-			// This flag doesn't correspond to any configuration field
-			return
-		}
-
-		var fieldCat category
-		catStr := field.Tag.Get("category")
-		switch catStr {
-		case "advanced":
-			fieldCat = categoryAdvanced
-		case "experimental":
-			fieldCat = categoryExperimental
-		default:
-			fieldCat = categoryBasic
-		}
 		if fieldCat != cat {
 			// Don't print help for this flag since it's the wrong category
 			return
