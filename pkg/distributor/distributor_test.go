@@ -74,7 +74,7 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidTenantShardSize,
 		},
-		"should pass if the default shard size > 0 on when sharding strategy = shuffle-sharding": {
+		"should pass if the default shard size > 0": {
 			initLimits: func(limits *validation.Limits) {
 				limits.IngestionTenantShardSize = 3
 			},
@@ -751,23 +751,21 @@ func TestDistributor_PushHAInstances(t *testing.T) {
 }
 
 func TestDistributor_PushQuery(t *testing.T) {
-	const shuffleShardSize = 5
-
 	ctx := user.InjectOrgID(context.Background(), "user")
 	nameMatcher := mustEqualMatcher(model.MetricNameLabel, "foo")
 	barMatcher := mustEqualMatcher("bar", "baz")
 
 	type testcase struct {
-		name                string
-		numIngesters        int
-		happyIngesters      int
-		samples             int
-		metadata            int
-		matchers            []*labels.Matcher
-		expectedIngesters   int
-		expectedResponse    model.Matrix
-		expectedError       error
-		shuffleShardEnabled bool
+		name              string
+		numIngesters      int
+		happyIngesters    int
+		samples           int
+		metadata          int
+		matchers          []*labels.Matcher
+		expectedIngesters int
+		expectedResponse  model.Matrix
+		expectedError     error
+		shuffleShardSize  int
 	}
 
 	// We'll programmatically build the test cases now, as we want complete
@@ -781,11 +779,11 @@ func TestDistributor_PushQuery(t *testing.T) {
 		for happyIngesters := 0; happyIngesters <= numIngesters; happyIngesters++ {
 
 			// Test either with shuffle-sharding enabled or disabled.
-			for _, shuffleShardEnabled := range []bool{false, true} {
-				scenario := fmt.Sprintf("numIngester=%d, happyIngester=%d, shuffleSharding=%v)", numIngesters, happyIngesters, shuffleShardEnabled)
+			for _, shuffleShardSize := range []int{0, 5} {
+				scenario := fmt.Sprintf("numIngester=%d, happyIngester=%d, shuffleShardSize=%v)", numIngesters, happyIngesters, shuffleShardSize)
 
 				var expectedIngesters int
-				if shuffleShardEnabled {
+				if shuffleShardSize > 0 {
 					expectedIngesters = util_math.Min(shuffleShardSize, numIngesters)
 				} else {
 					expectedIngesters = numIngesters
@@ -794,12 +792,12 @@ func TestDistributor_PushQuery(t *testing.T) {
 				// Queriers with more than one failed ingester should fail.
 				if numIngesters-happyIngesters > 1 {
 					testcases = append(testcases, testcase{
-						name:                fmt.Sprintf("ExpectFail(%s)", scenario),
-						numIngesters:        numIngesters,
-						happyIngesters:      happyIngesters,
-						matchers:            []*labels.Matcher{nameMatcher, barMatcher},
-						expectedError:       errFail,
-						shuffleShardEnabled: shuffleShardEnabled,
+						name:             fmt.Sprintf("ExpectFail(%s)", scenario),
+						numIngesters:     numIngesters,
+						happyIngesters:   happyIngesters,
+						matchers:         []*labels.Matcher{nameMatcher, barMatcher},
+						expectedError:    errFail,
+						shuffleShardSize: shuffleShardSize,
 					})
 					continue
 				}
@@ -808,51 +806,51 @@ func TestDistributor_PushQuery(t *testing.T) {
 				// will cause a failure.
 				if numIngesters < 3 && happyIngesters < 2 {
 					testcases = append(testcases, testcase{
-						name:                fmt.Sprintf("ExpectFail(%s)", scenario),
-						numIngesters:        numIngesters,
-						happyIngesters:      happyIngesters,
-						matchers:            []*labels.Matcher{nameMatcher, barMatcher},
-						expectedError:       errFail,
-						shuffleShardEnabled: shuffleShardEnabled,
+						name:             fmt.Sprintf("ExpectFail(%s)", scenario),
+						numIngesters:     numIngesters,
+						happyIngesters:   happyIngesters,
+						matchers:         []*labels.Matcher{nameMatcher, barMatcher},
+						expectedError:    errFail,
+						shuffleShardSize: shuffleShardSize,
 					})
 					continue
 				}
 
 				// Reading all the samples back should succeed.
 				testcases = append(testcases, testcase{
-					name:                fmt.Sprintf("ReadAll(%s)", scenario),
-					numIngesters:        numIngesters,
-					happyIngesters:      happyIngesters,
-					samples:             10,
-					matchers:            []*labels.Matcher{nameMatcher, barMatcher},
-					expectedResponse:    expectedResponse(0, 10),
-					expectedIngesters:   expectedIngesters,
-					shuffleShardEnabled: shuffleShardEnabled,
+					name:              fmt.Sprintf("ReadAll(%s)", scenario),
+					numIngesters:      numIngesters,
+					happyIngesters:    happyIngesters,
+					samples:           10,
+					matchers:          []*labels.Matcher{nameMatcher, barMatcher},
+					expectedResponse:  expectedResponse(0, 10),
+					expectedIngesters: expectedIngesters,
+					shuffleShardSize:  shuffleShardSize,
 				})
 
 				// As should reading none of the samples back.
 				testcases = append(testcases, testcase{
-					name:                fmt.Sprintf("ReadNone(%s)", scenario),
-					numIngesters:        numIngesters,
-					happyIngesters:      happyIngesters,
-					samples:             10,
-					matchers:            []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
-					expectedResponse:    expectedResponse(0, 0),
-					expectedIngesters:   expectedIngesters,
-					shuffleShardEnabled: shuffleShardEnabled,
+					name:              fmt.Sprintf("ReadNone(%s)", scenario),
+					numIngesters:      numIngesters,
+					happyIngesters:    happyIngesters,
+					samples:           10,
+					matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("not", "found")},
+					expectedResponse:  expectedResponse(0, 0),
+					expectedIngesters: expectedIngesters,
+					shuffleShardSize:  shuffleShardSize,
 				})
 
 				// And reading each sample individually.
 				for i := 0; i < 10; i++ {
 					testcases = append(testcases, testcase{
-						name:                fmt.Sprintf("ReadOne(%s, sample=%d)", scenario, i),
-						numIngesters:        numIngesters,
-						happyIngesters:      happyIngesters,
-						samples:             10,
-						matchers:            []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
-						expectedResponse:    expectedResponse(i, i+1),
-						expectedIngesters:   expectedIngesters,
-						shuffleShardEnabled: shuffleShardEnabled,
+						name:              fmt.Sprintf("ReadOne(%s, sample=%d)", scenario, i),
+						numIngesters:      numIngesters,
+						happyIngesters:    happyIngesters,
+						samples:           10,
+						matchers:          []*labels.Matcher{nameMatcher, mustEqualMatcher("sample", strconv.Itoa(i))},
+						expectedResponse:  expectedResponse(i, i+1),
+						expectedIngesters: expectedIngesters,
+						shuffleShardSize:  shuffleShardSize,
 					})
 				}
 			}
@@ -867,11 +865,7 @@ func TestDistributor_PushQuery(t *testing.T) {
 				numDistributors: 1,
 			}
 
-			if tc.shuffleShardEnabled {
-				cfg.shuffleShardSize = shuffleShardSize
-			} else {
-				cfg.shuffleShardSize = 0
-			}
+			cfg.shuffleShardSize = tc.shuffleShardSize
 
 			ds, ingesters, _ := prepare(t, cfg)
 
@@ -1856,11 +1850,10 @@ func TestDistributor_LabelNames(t *testing.T) {
 	}
 
 	tests := map[string]struct {
-		shuffleShardEnabledg bool
-		shuffleShardSize     int
-		matchers             []*labels.Matcher
-		expectedResult       []string
-		expectedIngesters    int
+		shuffleShardSize  int
+		matchers          []*labels.Matcher
+		expectedResult    []string
+		expectedIngesters int
 	}{
 		"should return an empty response if no metric match": {
 			matchers: []*labels.Matcher{

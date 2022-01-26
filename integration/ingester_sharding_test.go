@@ -30,11 +30,11 @@ func TestIngesterSharding(t *testing.T) {
 		tenantShardSize             int
 		expectedIngestersWithSeries int
 	}{
-		"disabled shuffle sharding should spread series across all ingesters": {
-			tenantShardSize:             0, // Disable shuffle sharding
+		"zero shard size should spread series across all ingesters": {
+			tenantShardSize:             0,
 			expectedIngestersWithSeries: 3,
 		},
-		"non-zero shuffle-sharding should spread series across the configured shard size number of ingesters": {
+		"non-zero shard size should spread series across the configured shard size number of ingesters": {
 			tenantShardSize:             2,
 			expectedIngestersWithSeries: 2,
 		},
