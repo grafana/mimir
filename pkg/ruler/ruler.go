@@ -485,10 +485,10 @@ func (r *Ruler) syncRules(ctx context.Context, reason string) {
 }
 
 func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGroupList, err error) {
-	if !r.cfg.EnableSharding {
-		result, err = r.listRulesNoSharding(ctx)
+	if r.cfg.EnableSharding {
+		result, err = r.listRulesSharded(ctx)
 	} else {
-		result, err = r.listRulesShuffleSharding(ctx)
+		result, err = r.listRulesUnsharded(ctx)
 	}
 
 	if err != nil {
@@ -504,11 +504,11 @@ func (r *Ruler) listRules(ctx context.Context) (result map[string]rulespb.RuleGr
 	return
 }
 
-func (r *Ruler) listRulesNoSharding(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
+func (r *Ruler) listRulesUnsharded(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
 	return r.store.ListAllRuleGroups(ctx)
 }
 
-func (r *Ruler) listRulesShuffleSharding(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
+func (r *Ruler) listRulesSharded(ctx context.Context) (map[string]rulespb.RuleGroupList, error) {
 	users, err := r.store.ListAllUsers(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to list users of ruler")
