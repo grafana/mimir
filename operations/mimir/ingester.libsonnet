@@ -57,9 +57,9 @@
   // volume in order to be crash resilient.
   local ingester_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_ingester_data_disk_size }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.ingester_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.cortex_ingester_data_disk_class) +
+    pvc.mixin.spec.withStorageClassName($._config.ingester_data_disk_class) +
     pvc.mixin.metadata.withName('ingester-data'),
 
   newIngesterStatefulSet(name, container, with_anti_affinity=true)::

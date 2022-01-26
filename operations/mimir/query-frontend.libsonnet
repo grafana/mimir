@@ -52,7 +52,7 @@
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
-    (if $._config.cortex_query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    (if $._config.query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 

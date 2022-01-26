@@ -16,8 +16,8 @@
       'compactor.block-ranges': '2h,12h,24h',
       'compactor.data-dir': '/data',
       'compactor.compaction-interval': '30m',
-      'compactor.compaction-concurrency': $._config.cortex_compactor_max_concurrency,
-      'compactor.cleanup-interval': $._config.cortex_compactor_cleanup_interval,
+      'compactor.compaction-concurrency': $._config.compactor_max_concurrency,
+      'compactor.cleanup-interval': $._config.compactor_cleanup_interval,
 
       // Will be set on per-tenant basis via overrides and user classes. No splitting by default.
       'compactor.split-and-merge-shards': 0,
@@ -45,9 +45,9 @@
   // it does not support horizontal scalability yet.
   local compactor_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_compactor_data_disk_size }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.compactor_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.cortex_compactor_data_disk_class) +
+    pvc.mixin.spec.withStorageClassName($._config.compactor_data_disk_class) +
     pvc.mixin.metadata.withName('compactor-data'),
 
   compactor_ports:: $.util.defaultPorts,
@@ -58,7 +58,7 @@
     container.withArgsMixin($.util.mapToFlags($.compactor_args)) +
     container.withVolumeMountsMixin([volumeMount.new('compactor-data', '/data')]) +
     // Do not limit compactor CPU and request enough cores to honor configured max concurrency.
-    $.util.resourcesRequests($._config.cortex_compactor_max_concurrency, '6Gi') +
+    $.util.resourcesRequests($._config.compactor_max_concurrency, '6Gi') +
     $.util.resourcesLimits(null, '6Gi') +
     $.util.readinessProbe +
     $.jaeger_mixin,

@@ -520,6 +520,23 @@
      },
    }
    ```
+* [CHANGE] Removed `cortex_` prefix from config fields. #898
+  * The following config fields have been renamed:
+    * `cortex_bucket_index_enabled` renamed to `bucket_index_enabled`
+    * `cortex_compactor_cleanup_interval` renamed to `compactor_cleanup_interval`
+    * `cortex_compactor_data_disk_class` renamed to `compactor_data_disk_class`
+    * `cortex_compactor_data_disk_size` renamed to `compactor_data_disk_size`
+    * `cortex_compactor_max_concurrency` renamed to `compactor_max_concurrency`
+    * `cortex_distributor_allow_multiple_replicas_on_same_node` renamed to `distributor_allow_multiple_replicas_on_same_node`
+    * `cortex_ingester_data_disk_class` renamed to `ingester_data_disk_class`
+    * `cortex_ingester_data_disk_size` renamed to `ingester_data_disk_size`
+    * `cortex_querier_allow_multiple_replicas_on_same_node` renamed to `querier_allow_multiple_replicas_on_same_node`
+    * `cortex_query_frontend_allow_multiple_replicas_on_same_node` renamed to `query_frontend_allow_multiple_replicas_on_same_node`
+    * `cortex_query_sharding_enabled` renamed to `query_sharding_enabled`
+    * `cortex_query_sharding_msg_size_factor` renamed to `query_sharding_msg_size_factor`
+    * `cortex_ruler_allow_multiple_replicas_on_same_node` renamed to `ruler_allow_multiple_replicas_on_same_node`
+    * `cortex_store_gateway_data_disk_class` renamed to `store_gateway_data_disk_class`
+    * `cortex_store_gateway_data_disk_size` renamed to `store_gateway_data_disk_size`
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
