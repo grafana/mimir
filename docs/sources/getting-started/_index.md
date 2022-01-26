@@ -135,4 +135,4 @@ For an illustrated guide to adding a data source, refer to [Add a data source](h
 ## Success
 
 You are now able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
-and create dashboard panelsusing the newly configured Mimir data source.
+and create dashboard panels using the newly configured Mimir data source.
