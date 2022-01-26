@@ -162,7 +162,7 @@ metrics:
 Run a local Grafana server using Docker:
 
 ```bash
-docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
+docker run --rm --detach --name=grafana --network=host grafana/grafana
 ```
 
 ### Add Mimir as a Prometheus data source
