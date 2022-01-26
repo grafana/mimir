@@ -1,11 +1,11 @@
 {
   _config+: {
-    cortex_query_sharding_enabled: false,
+    query_sharding_enabled: false,
 
     // Raise the msg size for the GRPC messages query-frontend <-> querier by this factor when query sharding is enabled
-    cortex_query_sharding_msg_size_factor: 4,
+    query_sharding_msg_size_factor: 4,
 
-    overrides+: if $._config.cortex_query_sharding_enabled then {
+    overrides+: if $._config.query_sharding_enabled then {
       // Target 6M active series.
       big_user+:: {
         query_sharding_total_shards: 8,
@@ -31,9 +31,9 @@
       replicas: std.max(super.replicas, min_replicas),
     },
   },
-  query_frontend_deployment+: if $._config.cortex_query_sharding_enabled then ensure_replica_ratio_to_queriers else {},
+  query_frontend_deployment+: if $._config.query_sharding_enabled then ensure_replica_ratio_to_queriers else {},
 
-  query_frontend_args+:: if !$._config.cortex_query_sharding_enabled then {} else
+  query_frontend_args+:: if !$._config.query_sharding_enabled then {} else
     // When sharding is enabled, query-frontend runs PromQL engine internally.
     $._config.queryEngineConfig {
       'frontend.parallelize-shardable-queries': true,
@@ -45,15 +45,15 @@
 
       'frontend.query-sharding-max-sharded-queries': 128,
 
-      'server.grpc-max-recv-msg-size-bytes': super['server.grpc-max-recv-msg-size-bytes'] * $._config.cortex_query_sharding_msg_size_factor,
+      'server.grpc-max-recv-msg-size-bytes': super['server.grpc-max-recv-msg-size-bytes'] * $._config.query_sharding_msg_size_factor,
     },
 
-  query_scheduler_args+:: if !$._config.cortex_query_sharding_enabled then {} else {
+  query_scheduler_args+:: if !$._config.query_sharding_enabled then {} else {
     // Query sharding generates a higher order of magnitude of requests.
     'query-scheduler.max-outstanding-requests-per-tenant': 800,
   },
 
-  querier_args+:: if !$._config.cortex_query_sharding_enabled then {} else {
+  querier_args+:: if !$._config.query_sharding_enabled then {} else {
     // The expectation is that if sharding is enabled, we would run more but smaller
     // queries on the queriers. However this can't be extended too far because several
     // queries (including instant queries) can't be sharded. Therefore, we must strike a balance
@@ -62,6 +62,6 @@
     'querier.max-concurrent': 16,
 
     // Raise the msg size for the GRPC messages query-frontend <-> querier by a factor when query sharding is enabled
-    'querier.frontend-client.grpc-max-send-msg-size': super['querier.frontend-client.grpc-max-send-msg-size'] * $._config.cortex_query_sharding_msg_size_factor,
+    'querier.frontend-client.grpc-max-send-msg-size': super['querier.frontend-client.grpc-max-send-msg-size'] * $._config.query_sharding_msg_size_factor,
   },
 }

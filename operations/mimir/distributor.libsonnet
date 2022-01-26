@@ -54,7 +54,7 @@
 
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
-    (if $._config.cortex_distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
+    (if $._config.distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),

@@ -8,9 +8,9 @@
   // The store-gateway runs a statefulset.
   local store_gateway_data_pvc =
     pvc.new() +
-    pvc.mixin.spec.resources.withRequests({ storage: $._config.cortex_store_gateway_data_disk_size }) +
+    pvc.mixin.spec.resources.withRequests({ storage: $._config.store_gateway_data_disk_size }) +
     pvc.mixin.spec.withAccessModes(['ReadWriteOnce']) +
-    pvc.mixin.spec.withStorageClassName($._config.cortex_store_gateway_data_disk_class) +
+    pvc.mixin.spec.withStorageClassName($._config.store_gateway_data_disk_class) +
     pvc.mixin.metadata.withName('store-gateway-data'),
 
   store_gateway_args::

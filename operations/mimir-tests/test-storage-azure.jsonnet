@@ -9,7 +9,7 @@ mimir {
     blocks_storage_bucket_name: 'blocks-bucket',
     blocks_storage_azure_account_name: 'blocks-account-name',
     blocks_storage_azure_account_key: 'blocks-account-key',
-    cortex_bucket_index_enabled: true,
+    bucket_index_enabled: true,
     query_scheduler_enabled: true,
 
     ruler_enabled: true,

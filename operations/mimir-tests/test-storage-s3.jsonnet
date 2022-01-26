@@ -8,7 +8,7 @@ mimir {
 
     blocks_storage_backend: 's3',
     blocks_storage_bucket_name: 'blocks-bucket',
-    cortex_bucket_index_enabled: true,
+    bucket_index_enabled: true,
     query_scheduler_enabled: true,
 
     ruler_enabled: true,
