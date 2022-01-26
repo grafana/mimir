@@ -17,6 +17,9 @@ GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
 HOSTNAME := $(shell hostname)
+BUILD_USER := $(shell id -un)@$(HOSTNAME)
+# Date in ISO 8601
+BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
@@ -176,7 +179,15 @@ LATEST_BUILD_IMAGE_TAG ?= import-jsonnet-readme-2418fd778-WIP
 # as it currently disallows TTY devices. This value needs to be overridden
 # in any custom cloudbuild.yaml files
 TTY := --tty
-GO_FLAGS := -ldflags "-X main.Branch=$(GIT_BRANCH) -X main.Revision=$(GIT_REVISION) -X main.Version=$(VERSION) -extldflags \"-static\" -s -w" -tags netgo
+PROM_VERSION := github.com/prometheus/common/version
+
+GO_FLAGS := -ldflags "\
+		 -X $(PROM_VERSION).Branch=$(GIT_BRANCH) \
+		 -X $(PROM_VERSION).Revision=$(GIT_REVISION) \
+		 -X $(PROM_VERSION).Version=$(VERSION) \
+		 -X $(PROM_VERSION).BuildUser=$(BUILD_USER) \
+		 -X $(PROM_VERSION).BuildDate=$(BUILD_DATE) \
+		 -extldflags \"-static\" -s -w" -tags netgo
 
 ifeq ($(BUILD_IN_CONTAINER),true)
 

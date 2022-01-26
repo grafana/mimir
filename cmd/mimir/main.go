@@ -29,13 +29,6 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
-// Version is set via build flag -ldflags -X main.Version
-var (
-	Version  string
-	Branch   string
-	Revision string
-)
-
 // configHash exposes information about the loaded config
 var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
 	prometheus.GaugeOpts{
@@ -46,9 +39,6 @@ var configHash *prometheus.GaugeVec = prometheus.NewGaugeVec(
 )
 
 func init() {
-	version.Version = Version
-	version.Branch = Branch
-	version.Revision = Revision
 	prometheus.MustRegister(version.NewCollector("cortex"))
 	prometheus.MustRegister(configHash)
 }
