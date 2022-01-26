@@ -184,7 +184,7 @@
         },
       }[$._config.ruler_client_type],
 
-    container_http_port: 8080,
+    server_http_port: 8080,
 
     alertmanager: {
       replicas: 3,
