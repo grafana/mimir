@@ -20,6 +20,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/services"
+	"github.com/grafana/mimir/pkg/util"
 )
 
 // LifecyclerConfig is the config to build a Lifecycler.
@@ -76,7 +77,7 @@ func (cfg *LifecyclerConfig) RegisterFlagsWithPrefix(prefix string, f *flag.Flag
 		panic(fmt.Errorf("failed to get hostname %s", err))
 	}
 
-	cfg.InfNames = []string{"eth0", "en0"}
+	cfg.InfNames = util.PrivateNetworkInterfaces()
 	f.Var((*flagext.StringSlice)(&cfg.InfNames), prefix+"lifecycler.interface", "Name of network interface to read address from.")
 	f.StringVar(&cfg.Addr, prefix+"lifecycler.addr", "", "IP address to advertise in the ring.")
 	f.IntVar(&cfg.Port, prefix+"lifecycler.port", 0, "port to advertise in consul (defaults to server.grpc-listen-port).")
