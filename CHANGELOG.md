@@ -214,7 +214,7 @@
   * `-query-frontend.cache-unaligned-requests` renamed to `-frontend.cache-unaligned-requests`
 * [CHANGE] Ruler: set new default limits for rule groups: `ruler.max_rules_per_rule_group` to 20 (previously 0, disabled) and `ruler.max_rule_groups_per_tenant` to 70 (previously 0, disabled). #847
 * [CHANGE] Compactor is now included in `all` target (single-binary). #866
-* [CHANGE] Shuffle-sharding: 
+* [CHANGE] Shuffle-sharding:
   * `-store-gateway.sharding-strategy` option has been removed store-gateways. Store-gateway now uses shuffle-sharding by default, but respects `store_gateway_tenant_shard_size` for tenant, and this value defaults to 0. #891
   * `-ruler.sharding-strategy` option has been removed from ruler. Ruler now uses shuffle-sharding by default, but respects `ruler_tenant_shard_size`, which defaults to 0 (ie. use all rulers for tenant). #889
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
