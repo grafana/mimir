@@ -123,7 +123,7 @@
 
     // Querier component config (shared between the ruler and querier).
     queryConfig: {
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
 
       // Don't allow individual queries of longer than 32days.  Due to day query
       // splitting in the frontend, the reality is this only limits rate(foo[32d])
@@ -246,6 +246,7 @@
     limitsConfig: self.distributorLimitsConfig + self.ingesterLimitsConfig + self.rulerLimitsConfig + self.compactorLimitsConfig,
 
     overrides_configmap: 'overrides',
+    overrides_configmap_mountpoint: '/etc/mimir',
 
     overrides: {
       extra_small_user:: {

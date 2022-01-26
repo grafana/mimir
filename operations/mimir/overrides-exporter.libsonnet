@@ -24,7 +24,7 @@
   overrides_exporter_args:: {
     target: 'overrides-exporter',
 
-    'runtime-config.file': '/etc/cortex/overrides.yaml',
+    'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
   } + $._config.limitsConfig,
 
   local container = $.core.v1.container,
@@ -41,7 +41,7 @@
   local deployment = $.apps.v1.deployment,
   overrides_exporter_deployment:
     deployment.new(name, 1, [$.overrides_exporter_container], { name: name }) +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     deployment.mixin.metadata.withLabels({ name: name }),
 
   overrides_exporter_service:

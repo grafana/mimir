@@ -20,7 +20,7 @@
     $._config.queryBlocksStorageConfig +
     {
       target: 'store-gateway',
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
 
       // Persist ring tokens so that when the store-gateway will be restarted
       // it will pick the same tokens
@@ -77,7 +77,7 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
 
   store_gateway_statefulset: self.newStoreGatewayStatefulSet('store-gateway', $.store_gateway_container),
 

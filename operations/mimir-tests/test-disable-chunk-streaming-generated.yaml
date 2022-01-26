@@ -754,7 +754,7 @@ spec:
         - -mem-ballast-size-bytes=1073741824
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.max-connection-age=2m
         - -server.grpc.keepalive.max-connection-age-grace=5m
         - -server.grpc.keepalive.max-connection-idle=1m
@@ -782,7 +782,7 @@ spec:
             cpu: "2"
             memory: 2Gi
         volumeMounts:
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       volumes:
       - configMap:
@@ -845,7 +845,7 @@ spec:
         - -querier.worker-match-max-concurrent=true
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -server.http-write-timeout=1m
@@ -880,7 +880,7 @@ spec:
             cpu: "1"
             memory: 12Gi
         volumeMounts:
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       volumes:
       - configMap:
@@ -927,7 +927,7 @@ spec:
         - -frontend.scheduler-address=query-scheduler-discovery.default.svc.cluster.local:9095
         - -frontend.split-queries-by-interval=24h
         - -log.level=debug
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=104857600
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
@@ -955,7 +955,7 @@ spec:
             cpu: "2"
             memory: 600Mi
         volumeMounts:
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       volumes:
       - configMap:
@@ -1018,7 +1018,7 @@ spec:
             cpu: "2"
             memory: 1Gi
         volumeMounts:
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       volumes:
       - configMap:
@@ -1085,7 +1085,7 @@ spec:
         - -ruler.max-rule-groups-per-tenant=35
         - -ruler.max-rules-per-rule-group=20
         - -ruler.ring.consul.hostname=consul.default.svc.cluster.local:8500
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-recv-msg-size-bytes=10485760
         - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
@@ -1119,7 +1119,7 @@ spec:
             cpu: "1"
             memory: 6Gi
         volumeMounts:
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       terminationGracePeriodSeconds: 600
       volumes:
@@ -1157,7 +1157,7 @@ spec:
         - -alertmanager.web.external-url=http://test/alertmanager
         - -experimental.alertmanager.enable-api=true
         - -log.level=debug
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -target=alertmanager
@@ -1187,7 +1187,7 @@ spec:
         volumeMounts:
         - mountPath: /data
           name: alertmanager-data
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       securityContext:
         runAsUser: 0
@@ -1249,7 +1249,7 @@ spec:
         - -compactor.split-and-merge-shards=0
         - -compactor.split-groups=1
         - -compactor.symbols-flushers-concurrency=4
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -target=compactor
@@ -1276,7 +1276,7 @@ spec:
         volumeMounts:
         - mountPath: /data
           name: compactor-data
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       securityContext:
         runAsUser: 0
@@ -1346,7 +1346,7 @@ spec:
         - -ingester.unregister-on-shutdown=true
         - -ring.heartbeat-timeout=10m
         - -ring.prefix=
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc-max-concurrent-streams=10000
         - -server.grpc-max-recv-msg-size-bytes=10485760
         - -server.grpc-max-send-msg-size-bytes=10485760
@@ -1376,7 +1376,7 @@ spec:
         volumeMounts:
         - mountPath: /data
           name: ingester-data
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       securityContext:
         runAsUser: 0
@@ -1669,7 +1669,7 @@ spec:
         - -blocks-storage.bucket-store.sync-dir=/data/tsdb
         - -blocks-storage.bucket-store.sync-interval=15m
         - -blocks-storage.gcs.bucket-name=blocks-bucket
-        - -runtime-config.file=/etc/cortex/overrides.yaml
+        - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
         - -store-gateway.sharding-enabled=true
@@ -1702,7 +1702,7 @@ spec:
         volumeMounts:
         - mountPath: /data
           name: store-gateway-data
-        - mountPath: /etc/cortex
+        - mountPath: /etc/mimir
           name: overrides
       securityContext:
         runAsUser: 0
