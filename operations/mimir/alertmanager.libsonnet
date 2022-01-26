@@ -65,7 +65,6 @@
     mode.args +
     {
       target: 'alertmanager',
-      'log.level': 'debug',
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'experimental.alertmanager.enable-api': 'true',
       'alertmanager.storage.path': '/data',

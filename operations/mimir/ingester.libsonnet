@@ -32,8 +32,14 @@
       // Blocks storage.
       'blocks-storage.tsdb.dir': '/data/tsdb',
       'blocks-storage.tsdb.block-ranges-period': '2h',
-      'blocks-storage.tsdb.retention-period': '96h',  // 4 days protection against blocks not being uploaded from ingesters.
+      'blocks-storage.tsdb.retention-period': '24h',  // 1 day protection against blocks not being uploaded from ingesters.
       'blocks-storage.tsdb.ship-interval': '1m',
+
+      // Close idle TSDBs.
+      'blocks-storage.tsdb.close-idle-tsdb-timeout': $._config.queryConfig['querier.query-ingesters-within'],
+
+      // Disable TSDB isolation.
+      'blocks-storage.tsdb.isolation-enabled': 'false',
 
       // Persist ring tokens so that when the ingester will be restarted
       // it will pick the same tokens

@@ -6,9 +6,6 @@
     {
       target: 'query-frontend',
 
-      // Need log.level=debug so all queries are logged, needed for analyse.py.
-      'log.level': 'debug',
-
       'server.http-listen-port': $._config.server_http_port,
 
       // Increase HTTP server response write timeout, as we were seeing some

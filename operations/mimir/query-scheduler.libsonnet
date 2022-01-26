@@ -9,7 +9,6 @@
     $._config.grpcConfig
     {
       target: 'query-scheduler',
-      'log.level': 'debug',
       'server.http-listen-port': $._config.server_http_port,
       'query-scheduler.max-outstanding-requests-per-tenant': 100,
     },

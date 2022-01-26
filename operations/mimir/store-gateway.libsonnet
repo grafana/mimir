@@ -48,6 +48,14 @@
       'blocks-storage.bucket-store.index-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.index-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.chunks-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.chunks-cache.memcached.max-get-multi-concurrency'],
       'blocks-storage.bucket-store.metadata-cache.memcached.max-idle-connections': $.store_gateway_args['blocks-storage.bucket-store.metadata-cache.memcached.max-get-multi-concurrency'],
+
+      // Enable segment objects attributes in-memory cache.
+      'blocks-storage.bucket-store.chunks-cache.attributes-in-memory-max-items': 50000,
+
+      // Queriers will not query store for data younger than 12h (see -querier.query-store-after).
+      // Store-gateways don't need to load blocks with very most recent data. We use 2h buffer to
+      // make sure that blocks are ready for querying when needed.
+      'blocks-storage.bucket-store.ignore-blocks-within': '10h',
     } +
     $.blocks_chunks_caching_config +
     $.blocks_metadata_caching_config +

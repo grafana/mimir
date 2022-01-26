@@ -136,11 +136,14 @@
 
       // No need to look at store for data younger than 12h, as ingesters have all of it.
       'querier.query-store-after': '12h',
+
+      // Enable the support for label matchers when queriying label names.
+      'querier.query-label-names-with-matchers-enabled': true,
     },
 
     // PromQL query engine config (shared between all services running PromQL engine, like the ruler and querier).
     queryEngineConfig: {
-      // Keep it even if empty, to allow downstream projects to easily configure it.
+      'querier.at-modifier-enabled': true,
     },
 
     ringConfig: {

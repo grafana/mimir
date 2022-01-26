@@ -6,7 +6,6 @@
   local servicePort = $.core.v1.servicePort,
 
   query_tee_args:: {
-    'log.level': 'debug',
     'backend.endpoints': std.join(',', $._config.query_tee_backend_endpoints),
     'backend.preferred': $._config.query_tee_backend_preferred,
   },
