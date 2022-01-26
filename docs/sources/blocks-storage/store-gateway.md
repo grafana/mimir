@@ -649,10 +649,9 @@ blocks_storage:
     # while fetching blocks. The idea of ignore-deletion-marks-delay is to
     # ignore blocks that are marked for deletion with some delay. This ensures
     # store can still serve blocks that are meant to be deleted but do not have
-    # a replacement yet. Default is 6h, half of the default value for
-    # -compactor.deletion-delay.
+    # a replacement yet.
     # CLI flag: -blocks-storage.bucket-store.ignore-deletion-marks-delay
-    [ignore_deletion_mark_delay: <duration> | default = 6h]
+    [ignore_deletion_mark_delay: <duration> | default = 1h]
 
     bucket_index:
       # True to enable querier and store-gateway to discover blocks in the

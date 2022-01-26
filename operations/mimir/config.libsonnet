@@ -89,7 +89,6 @@
     genericBlocksStorageConfig:: {},
     queryBlocksStorageConfig:: {
       'blocks-storage.bucket-store.sync-dir': '/data/tsdb',
-      'blocks-storage.bucket-store.ignore-deletion-marks-delay': '1h',
 
       'store-gateway.sharding-enabled': true,
       'store-gateway.sharding-ring.store': 'consul',

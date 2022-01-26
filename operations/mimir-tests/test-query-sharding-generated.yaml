@@ -821,7 +821,6 @@ spec:
       - args:
         - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.bucket-index.enabled=true
-        - -blocks-storage.bucket-store.ignore-deletion-marks-delay=1h
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size=25000
@@ -1066,7 +1065,6 @@ spec:
         - -api.response-compression-enabled=true
         - -blocks-storage.backend=gcs
         - -blocks-storage.bucket-store.bucket-index.enabled=true
-        - -blocks-storage.bucket-store.ignore-deletion-marks-delay=1h
         - -blocks-storage.bucket-store.metadata-cache.backend=memcached
         - -blocks-storage.bucket-store.metadata-cache.memcached.addresses=dnssrvnoa+memcached-metadata.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.metadata-cache.memcached.max-async-buffer-size=25000
@@ -1661,7 +1659,6 @@ spec:
         - -blocks-storage.bucket-store.chunks-cache.memcached.max-item-size=1048576
         - -blocks-storage.bucket-store.chunks-cache.memcached.timeout=200ms
         - -blocks-storage.bucket-store.ignore-blocks-within=10h
-        - -blocks-storage.bucket-store.ignore-deletion-marks-delay=1h
         - -blocks-storage.bucket-store.index-cache.backend=memcached
         - -blocks-storage.bucket-store.index-cache.memcached.addresses=dnssrvnoa+memcached-index-queries.default.svc.cluster.local:11211
         - -blocks-storage.bucket-store.index-cache.memcached.max-async-buffer-size=25000
