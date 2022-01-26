@@ -74,7 +74,7 @@ func TestConfig_Validate(t *testing.T) {
 			},
 			expected: errInvalidTenantShardSize,
 		},
-		"should pass if the default shard size > 0": {
+		"should pass if the default shard size >= 0": {
 			initLimits: func(limits *validation.Limits) {
 				limits.IngestionTenantShardSize = 3
 			},

@@ -84,7 +84,7 @@ _The shard size can be overridden on a per-tenant basis in the limits overrides 
 To enable shuffle-sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) to **distributor**, **ingester** and **ruler**:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`<br />
-  `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is greater than the number of available ingesters in the Cortex cluster, the tenant series are sharded across all ingesters.
+  `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is zero or greater than the number of available ingesters in the Cortex cluster, the tenant series are sharded across all ingesters.
 
 #### Ingesters read path
 
