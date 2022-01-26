@@ -22,4 +22,5 @@
 (import 'test-exporter.libsonnet') +
 
 // Mimir features
+(import 'shuffle-sharding.libsonnet') +
 (import 'query-sharding.libsonnet')

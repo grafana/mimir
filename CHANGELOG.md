@@ -539,6 +539,18 @@
     * `cortex_store_gateway_data_disk_size` renamed to `store_gateway_data_disk_size`
 * [CHANGE] The overrides configmap default mountpoint has changed from `/etc/cortex` to `/etc/mimir`. It can be customized via the `overrides_configmap_mountpoint` config field. #899
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
+* [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
+   ```
+   _config+:: {
+     shuffle_sharding:: {
+       ingester_write_path_enabled: true,
+       ingester_read_path_enabled: true,
+       querier_enabled: true,
+       ruler_enabled: true,
+       store_gateway_enabled: true,
+     },
+   }
+   ```
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)
 * [ENHANCEMENT] Update `etcd-operator` to latest version (see https://github.com/grafana/jsonnet-libs/pull/480). [#263](https://github.com/grafana/cortex-jsonnet/pull/263)
