@@ -23,40 +23,86 @@ To install the Grafana Agent, refer to the [latest release](https://github.com/g
 
 ## Install Mimir
 
-To install Mimir, download the latest release from GitHub and mark the file as executable.
+To pull the latest Mimir Docker image locally:
+
+```bash
+export MIMIR_LATEST=$(curl -Ls -o /dev/null -w %{url_effective} https://github.com/grafana/mimir/releases | awk -F / '{ print $NF; }')
+docker pull "grafana/mimir:${MIMIR_LATEST}"
+```
+
+To install Mimir locally, download the latest release from GitHub and mark the file as executable.
 
 ```bash
 curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
 chmod +x mimir
 ```
 
-Alternatively, to build Mimir from source, clone the repository and build it with Go.
-
-```bash
-git clone https://github.com/grafana/mimir.git
-cd mimir
-go build ./cmd/mimir
-```
-
-### Verify the installation
-
-To verify the downloaded binary version, you can run Mimir with the `--version` flag:
-
-```bash
-./mimir --version
-Mimir, version  (branch: , revision: )
-  build user:
-  build date:
-  go version:       go1.17.6
-  platform:         linux/amd64
-```
-
 ## Start Mimir
 
-To run Mimir in a single process and with local filesystem storage, use the [`dev.yaml`](./configuration/dev.yaml) configuration file:
+To run Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`.
+
+```yaml
+# Configuration for running Mimir in single process mode.
+# This should not be used in production.  It is only for getting started
+# and development.
+auth_enabled: false
+
+blocks_storage:
+  backend: filesystem
+  bucket_store:
+    sync_dir: /tmp/mimir/tsdb-sync
+  filesystem:
+    dir: /tmp/mimir/data/tsdb
+  tsdb:
+    dir: /tmp/mimir/tsdb
+
+compactor:
+  data_dir: /tmp/mimir/compactor
+  sharding_ring:
+    kvstore:
+      store: memberlist
+
+distributor:
+  ring:
+    instance_addr: 127.0.0.1
+    kvstore:
+      store: memberlist
+
+ingester:
+  lifecycler:
+    address: 127.0.0.1
+    ring:
+      kvstore:
+        store: memberlist
+      replication_factor: 1
+
+ruler:
+  enable_api: true
+  enable_sharding: false
+
+ruler_storage:
+  backend: local
+  local:
+    directory: /tmp/mimir/rules
+
+server:
+  http_listen_port: 9009
+  log_level: error
+
+store_gateway:
+  sharding_ring:
+    replication_factor: 1
+```
+
+Using Docker, run Mimir with:
 
 ```bash
-curl -LO https://raw.githubusercontent.com/grafana/mimir/main/docs/configuration/dev.yaml
+docker run --rm --name mimir --detach --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
+```
+
+Using a local binary, run Mimir with:
+
+```bash
 ./mimir --config.file=./dev.yaml &
 ```
 
