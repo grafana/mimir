@@ -454,10 +454,11 @@ func (c *MultitenantCompactor) starting(ctx context.Context) error {
 
 	// Create the blocks cleaner (service).
 	c.blocksCleaner = NewBlocksCleaner(BlocksCleanerConfig{
-		DeletionDelay:      c.compactorCfg.DeletionDelay,
-		CleanupInterval:    util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
-		CleanupConcurrency: c.compactorCfg.CleanupConcurrency,
-		TenantCleanupDelay: c.compactorCfg.TenantCleanupDelay,
+		DeletionDelay:           c.compactorCfg.DeletionDelay,
+		CleanupInterval:         util.DurationWithJitter(c.compactorCfg.CleanupInterval, 0.1),
+		CleanupConcurrency:      c.compactorCfg.CleanupConcurrency,
+		TenantCleanupDelay:      c.compactorCfg.TenantCleanupDelay,
+		DeleteBlocksConcurrency: defaultDeleteBlocksConcurrency,
 	}, c.bucketClient, c.shardingStrategy.blocksCleanerOwnUser, c.cfgProvider, c.parentLogger, c.registerer)
 
 	// Start blocks cleaner asynchronously, don't wait until initial cleanup is finished.

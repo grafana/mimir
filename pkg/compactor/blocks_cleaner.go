@@ -30,11 +30,16 @@ import (
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
 
+const (
+	defaultDeleteBlocksConcurrency = 16
+)
+
 type BlocksCleanerConfig struct {
-	DeletionDelay      time.Duration
-	CleanupInterval    time.Duration
-	CleanupConcurrency int
-	TenantCleanupDelay time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeletionDelay           time.Duration
+	CleanupInterval         time.Duration
+	CleanupConcurrency      int
+	TenantCleanupDelay      time.Duration // Delay before removing tenant deletion mark and "debug".
+	DeleteBlocksConcurrency int
 }
 
 type BlocksCleaner struct {
@@ -360,8 +365,6 @@ func (c *BlocksCleaner) cleanUser(ctx context.Context, userID string) (returnErr
 	return nil
 }
 
-const deleteBlocksConcurrency = 16
-
 // Concurrently deletes blocks marked for deletion, and removes blocks from index.
 func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *bucketindex.Index, userBucket objstore.Bucket, userLogger log.Logger) {
 	blocksToDelete := make([]ulid.ULID, 0, len(idx.BlockDeletionMarks))
@@ -377,7 +380,7 @@ func (c *BlocksCleaner) deleteBlocksMarkedForDeletion(ctx context.Context, idx *
 	var mu sync.Mutex
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
-	_ = concurrency.ForEachJob(ctx, len(blocksToDelete), deleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
+	_ = concurrency.ForEachJob(ctx, len(blocksToDelete), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
 		blockID := blocksToDelete[jobIdx]
 
 		if err := block.Delete(ctx, userLogger, userBucket, blockID); err != nil {
@@ -415,7 +418,7 @@ func (c *BlocksCleaner) cleanUserPartialBlocks(ctx context.Context, partials map
 	var mu sync.Mutex
 
 	// We don't want to return errors from our function, as that would stop ForEach loop early.
-	_ = concurrency.ForEachJob(ctx, len(blocks), deleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
+	_ = concurrency.ForEachJob(ctx, len(blocks), c.cfg.DeleteBlocksConcurrency, func(ctx context.Context, jobIdx int) error {
 		blockID := blocks[jobIdx]
 
 		// We can safely delete only partial blocks with a deletion mark.
