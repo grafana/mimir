@@ -24,6 +24,8 @@
   overrides_exporter_args:: {
     target: 'overrides-exporter',
 
+    'server.http-listen-port': $._config.server_http_port,
+
     'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
   } + $._config.limitsConfig,
 

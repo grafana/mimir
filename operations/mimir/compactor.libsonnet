@@ -12,6 +12,8 @@
     {
       target: 'compactor',
 
+      'server.http-listen-port': $._config.server_http_port,
+
       // Compactor config.
       'compactor.block-ranges': '2h,12h,24h',
       'compactor.data-dir': '/data',

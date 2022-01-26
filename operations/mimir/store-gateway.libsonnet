@@ -20,6 +20,9 @@
     $._config.queryBlocksStorageConfig +
     {
       target: 'store-gateway',
+
+      'server.http-listen-port': $._config.server_http_port,
+
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
 
       // Persist ring tokens so that when the store-gateway will be restarted

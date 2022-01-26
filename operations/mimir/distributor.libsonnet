@@ -24,6 +24,7 @@
       // around 1.25G, reducing the 99%ile.
       'mem-ballast-size-bytes': 1 << 30,  // 1GB
 
+      'server.http-listen-port': $._config.server_http_port,
       'server.grpc.keepalive.max-connection-age': '2m',
       'server.grpc.keepalive.max-connection-age-grace': '5m',
       'server.grpc.keepalive.max-connection-idle': '1m',

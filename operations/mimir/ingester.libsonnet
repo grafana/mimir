@@ -15,6 +15,8 @@
     {
       target: 'ingester',
 
+      'server.http-listen-port': $._config.server_http_port,
+
       // Ring config.
       'ingester.num-tokens': 512,
       'ingester.join-after': '0s',
