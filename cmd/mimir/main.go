@@ -122,6 +122,7 @@ func main() {
 		if !testMode {
 			os.Exit(2)
 		}
+		return
 	}
 
 	if printVersion {

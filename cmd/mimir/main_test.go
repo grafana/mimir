@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"text/template"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -28,8 +29,20 @@ func TestFlagParsing(t *testing.T) {
 		stdoutExcluded string // string that must NOT be included in stdout
 		stderrExcluded string // string that must NOT be included in stderr
 	}{
-		"help": {
+		"help-short": {
 			arguments:      []string{"-h"},
+			stdoutMessage:  "Usage of", // Usage must be on stdout, not stderr.
+			stderrExcluded: "Usage of",
+		},
+
+		"help": {
+			arguments:      []string{"-help"},
+			stdoutMessage:  "Usage of", // Usage must be on stdout, not stderr.
+			stderrExcluded: "Usage of",
+		},
+
+		"help-all": {
+			arguments:      []string{"-help-all"},
 			stdoutMessage:  "Usage of", // Usage must be on stdout, not stderr.
 			stderrExcluded: "Usage of",
 		},
@@ -95,6 +108,73 @@ func TestFlagParsing(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_ = os.Setenv("TARGET", "ingester")
 			testSingle(t, tc.arguments, tc.yaml, []byte(tc.stdoutMessage), []byte(tc.stderrMessage), []byte(tc.stdoutExcluded), []byte(tc.stderrExcluded))
+		})
+	}
+}
+
+func TestHelp(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		arg      string
+		filename string
+	}{
+		{
+			name:     "basic",
+			arg:      "-h",
+			filename: "help.txt.tmpl",
+		},
+		{
+			name:     "all",
+			arg:      "-help-all",
+			filename: "help-all.txt.tmpl",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldArgs, oldStdout, oldStderr, oldTestMode, oldCmdLine := os.Args, os.Stdout, os.Stderr, testMode, flag.CommandLine
+			restored := false
+			restoreIfNeeded := func() {
+				if restored {
+					return
+				}
+
+				os.Stdout = oldStdout
+				os.Stderr = oldStderr
+				os.Args = oldArgs
+				testMode = oldTestMode
+				flag.CommandLine = oldCmdLine
+				restored = true
+			}
+			t.Cleanup(restoreIfNeeded)
+
+			testMode = true
+			co := captureOutput(t)
+
+			os.Args = []string{"./mimir", tc.arg}
+
+			// reset default flags
+			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+
+			main()
+
+			stdout, stderr := co.Done()
+
+			// Restore stdout and stderr before reporting errors to make them visible.
+			restoreIfNeeded()
+
+			hostname, err := os.Hostname()
+			require.NoError(t, err)
+			c := struct {
+				Hostname string
+			}{
+				Hostname: hostname,
+			}
+
+			tmpl, err := template.ParseFiles(tc.filename)
+			require.NoError(t, err)
+			var b strings.Builder
+			require.NoError(t, tmpl.Execute(&b, c))
+			assert.Equal(t, b.String(), string(stdout))
+			assert.Empty(t, stderr)
 		})
 	}
 }
