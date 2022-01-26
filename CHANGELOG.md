@@ -511,6 +511,7 @@
     compactor_tenant_shard_size: 2,
     compactor_split_groups: 2,
     ```
+* [CHANGE] The entrypoint file to include has been renamed from `cortex.libsonnet` to `mimir.libsonnet`. #897
 * [CHANGE] The default image config field has been renamed from `cortex` to `mimir`. #896
    ```
    {

@@ -1,4 +1,4 @@
-// Query-scheduler is optional service. When query-scheduler.libsonnet is added to Cortex, querier and frontend
+// Query-scheduler is optional service. When query-scheduler.libsonnet is added to Mimir, querier and frontend
 // are reconfigured to use query-scheduler service.
 {
   local container = $.core.v1.container,

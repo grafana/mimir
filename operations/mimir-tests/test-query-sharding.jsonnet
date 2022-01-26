@@ -1,4 +1,4 @@
-local mimir = import 'mimir/cortex.libsonnet';
+local mimir = import 'mimir/mimir.libsonnet';
 
 mimir {
   _config+:: {
