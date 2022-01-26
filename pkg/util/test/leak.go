@@ -9,7 +9,18 @@ import (
 )
 
 func VerifyNoLeak(t testing.TB) {
-	opts := []goleak.Option{
+	// Run it as a cleanup function so that "last added, first called" ordering execution is guaranteed.
+	t.Cleanup(func() {
+		goleak.VerifyNone(t, goLeakOptions()...)
+	})
+}
+
+func VerifyNoLeakTestMain(m *testing.M) {
+	goleak.VerifyTestMain(m, goLeakOptions()...)
+}
+
+func goLeakOptions() []goleak.Option {
+	return []goleak.Option{
 		// Ignore opencensus default worker because it's started in a init() function.
 		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
 
@@ -18,9 +29,4 @@ func VerifyNoLeak(t testing.TB) {
 		// on store-gateway termination so it never gets terminated.
 		goleak.IgnoreTopFunction("github.com/thanos-io/thanos/pkg/block/indexheader.NewReaderPool.func1"),
 	}
-
-	// Run it as a cleanup function so that "last added, first called" ordering execution is guaranteed.
-	t.Cleanup(func() {
-		goleak.VerifyNone(t, opts...)
-	})
 }
