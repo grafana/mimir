@@ -149,7 +149,8 @@ func TestHelp(t *testing.T) {
 			testMode = true
 			co := captureOutput(t)
 
-			os.Args = []string{"./mimir", tc.arg}
+			const cmd = "./cmd/mimir/mimir"
+			os.Args = []string{cmd, tc.arg}
 
 			// reset default flags
 			flag.CommandLine = flag.NewFlagSet(os.Args[0], flag.ExitOnError)
@@ -173,7 +174,7 @@ func TestHelp(t *testing.T) {
 			require.NoError(t, err)
 			var b strings.Builder
 			require.NoError(t, tmpl.Execute(&b, c))
-			assert.Equal(t, b.String(), string(stdout))
+			assert.Equalf(t, b.String(), string(stdout), "%s %s output changed; try `make reference-help`", cmd, tc.arg)
 			assert.Empty(t, stderr)
 		})
 	}
