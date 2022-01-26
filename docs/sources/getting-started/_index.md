@@ -25,25 +25,25 @@ To install the Grafana Agent, refer to the [latest release](https://github.com/g
 
 To install Mimir, download the latest release from GitHub and mark the file as executable.
 
-```console
-$ curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
-$ chmod +x mimir
+```bash
+curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
+chmod +x mimir
 ```
 
 Alternatively, to build Mimir from source, clone the repository and build it with Go.
 
-```console
-$ git clone https://github.com/grafana/mimir.git
-$ cd mimir
-$ go build ./cmd/mimir
+```bash
+git clone https://github.com/grafana/mimir.git
+cd mimir
+go build ./cmd/mimir
 ```
 
 ### Verify the installation
 
 To verify the downloaded binary version, you can run Mimir with the `--version` flag:
 
-```console
-$ ./mimir --version
+```bash
+./mimir --version
 Mimir, version  (branch: , revision: )
   build user:
   build date:
@@ -55,9 +55,9 @@ Mimir, version  (branch: , revision: )
 
 To run Mimir in a single process and with local filesystem storage, use the [`dev.yaml`](./configuration/dev.yaml) configuration file:
 
-```console
-$ curl -LO https://raw.githubusercontent.com/grafana/mimir/main/docs/configuration/dev.yaml
-$ ./mimir --config.file=./dev.yaml &
+```bash
+curl -LO https://raw.githubusercontent.com/grafana/mimir/main/docs/configuration/dev.yaml
+./mimir --config.file=./dev.yaml &
 ```
 
 Mimir starts in the background, listening on port 9009.
@@ -115,8 +115,8 @@ metrics:
 
 Run a local Grafana server using Docker:
 
-```console
-$ docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
+```bash
+docker run --rm -d --name=grafana -p 3000:3000 grafana/grafana
 ```
 
 ### Add Mimir as a Prometheus data source
