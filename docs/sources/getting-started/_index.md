@@ -132,7 +132,6 @@ scrape_configs:
 
 ## Configure the Grafana Agent to write to Mimir
 
-
 Add the following YAML snippet to one of your Agent `metrics` `configs` in your Agent configuration file and restart the Grafana Agent.
 
 ```yaml
@@ -152,7 +151,7 @@ metrics:
       scrape_configs:
         - job_name: agent
           static_configs:
-            - targets: ['127.0.0.1:12345']
+            - targets: ["127.0.0.1:12345"]
       remote_write:
         - url: http://localhost:9009/prometheus/api/v1/push
 ```
@@ -172,7 +171,7 @@ docker run --rm --detach --name=grafana --network=host grafana/grafana
 1. Configure a new Prometheus data source to query the local Mimir server using the following settings:
 
 | Field | Value                            |
-|-------|----------------------------------|
+| ----- | -------------------------------- |
 | Name  | Mimir                            |
 | URL   | http://localhost:9009/prometheus |
 
