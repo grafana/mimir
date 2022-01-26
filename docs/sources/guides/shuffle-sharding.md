@@ -83,15 +83,13 @@ _The shard size can be overridden on a per-tenant basis in the limits overrides 
 
 To enable shuffle-sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) to **distributor**, **ingester** and **ruler**:
 
-- `-distributor.sharding-strategy=shuffle-sharding`
 - `-distributor.ingestion-tenant-shard-size=<size>`<br />
-  `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is greater than the number of available ingesters in the Cortex cluster, the tenant series are sharded across all ingesters.
+  `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is zero or greater than the number of available ingesters in the Cortex cluster, the tenant series are sharded across all ingesters.
 
 #### Ingesters read path
 
 Assuming shuffle-sharding has been enabled for the write path, to enable shuffle-sharding for ingesters on the read path too you need to configure the following CLI flags (or their respective YAML config options) to **querier** and **ruler**:
 
-- `-distributor.sharding-strategy=shuffle-sharding`
 - `-distributor.ingestion-tenant-shard-size=<size>`
 - `-querier.shuffle-sharding-ingesters-lookback-period=<period>`<br />
   Queriers and rulers fetch in-memory series from the minimum set of required ingesters, selecting only ingesters which may have received series since 'now - lookback period'. The configured lookback `<period>` should be greater or equal than `-querier.query-store-after` and `-querier.query-ingesters-within` if set, and greater than the estimated minimum time it takes for the oldest samples stored in a block uploaded by ingester to be discovered and available for querying (3h with the default configuration).

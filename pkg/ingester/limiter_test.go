@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
-	"github.com/grafana/mimir/pkg/util"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
 
@@ -78,34 +77,55 @@ func runLimiterMaxFunctionTest(
 		ringIngesterCount        int
 		ringZonesCount           int
 		shardSize                int
-		expectedDefaultSharding  int
-		expectedShuffleSharding  int
+		expectedValue            int
 	}{
 		"limit is disabled": {
-			globalLimit:             0,
-			ringReplicationFactor:   1,
-			ringIngesterCount:       1,
-			ringZonesCount:          1,
-			expectedDefaultSharding: math.MaxInt32,
-			expectedShuffleSharding: math.MaxInt32,
+			globalLimit:           0,
+			ringReplicationFactor: 1,
+			ringIngesterCount:     1,
+			ringZonesCount:        1,
+			expectedValue:         math.MaxInt32,
 		},
-		"limit is enabled with replication-factor=1": {
-			globalLimit:             1000,
-			ringReplicationFactor:   1,
-			ringIngesterCount:       10,
-			ringZonesCount:          1,
-			shardSize:               5,
-			expectedDefaultSharding: 100,
-			expectedShuffleSharding: 200,
+		"limit is enabled with replication-factor=1, shard size 0": {
+			globalLimit:           1000,
+			ringReplicationFactor: 1,
+			ringIngesterCount:     10,
+			ringZonesCount:        1,
+			shardSize:             0,
+			expectedValue:         100,
 		},
-		"limit is enabled with replication-factor=3": {
-			globalLimit:             1000,
-			ringReplicationFactor:   3,
-			ringIngesterCount:       10,
-			ringZonesCount:          1,
-			shardSize:               5,
-			expectedDefaultSharding: 300,
-			expectedShuffleSharding: 600,
+		"limit is enabled with replication-factor=1, shard size 5": {
+			globalLimit:           1000,
+			ringReplicationFactor: 1,
+			ringIngesterCount:     10,
+			ringZonesCount:        1,
+			shardSize:             5,
+			expectedValue:         200,
+		},
+		"limit is enabled with replication-factor=3, shard size 0": {
+			globalLimit:           1000,
+			ringReplicationFactor: 3,
+			ringIngesterCount:     10,
+			ringZonesCount:        1,
+			shardSize:             0,
+			expectedValue:         300,
+		},
+		"limit is enabled with replication-factor=3, shard size 5": {
+			globalLimit:           1000,
+			ringReplicationFactor: 3,
+			ringIngesterCount:     10,
+			ringZonesCount:        1,
+			shardSize:             5,
+			expectedValue:         600,
+		},
+		"zone-awareness enabled, limit enabled and the shard size is 0": {
+			globalLimit:              900,
+			ringReplicationFactor:    3,
+			ringZoneAwarenessEnabled: true,
+			ringIngesterCount:        9,
+			ringZonesCount:           3,
+			shardSize:                0,
+			expectedValue:            300,
 		},
 		"zone-awareness enabled, limit enabled and the shard size is NOT divisible by number of zones": {
 			globalLimit:              900,
@@ -113,9 +133,8 @@ func runLimiterMaxFunctionTest(
 			ringZoneAwarenessEnabled: true,
 			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardSize:                5, // Not divisible by number of zones.
-			expectedDefaultSharding:  300,
-			expectedShuffleSharding:  450, // (900 / 6) * 3
+			shardSize:                5,   // Not divisible by number of zones.
+			expectedValue:            450, // (900 / 6) * 3
 		},
 		"zone-awareness enabled, limit enabled and the shard size is divisible by number of zones": {
 			globalLimit:              900,
@@ -123,9 +142,8 @@ func runLimiterMaxFunctionTest(
 			ringZoneAwarenessEnabled: true,
 			ringIngesterCount:        9,
 			ringZonesCount:           3,
-			shardSize:                6, // Divisible by number of zones.
-			expectedDefaultSharding:  300,
-			expectedShuffleSharding:  450, // (900 / 6) * 3
+			shardSize:                6,   // Divisible by number of zones.
+			expectedValue:            450, // (900 / 6) * 3
 		},
 		"zone-awareness enabled, limit enabled and the shard size > number of ingesters": {
 			globalLimit:              900,
@@ -134,8 +152,7 @@ func runLimiterMaxFunctionTest(
 			ringIngesterCount:        9,
 			ringZonesCount:           3,
 			shardSize:                20, // Greater than number of ingesters.
-			expectedDefaultSharding:  300,
-			expectedShuffleSharding:  300,
+			expectedValue:            300,
 		},
 	}
 
@@ -155,15 +172,9 @@ func runLimiterMaxFunctionTest(
 			overrides, err := validation.NewOverrides(limits, nil)
 			require.NoError(t, err)
 
-			// Assert on default sharding strategy.
-			limiter := NewLimiter(overrides, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
+			limiter := NewLimiter(overrides, ring, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
 			actual := runMaxFn(limiter)
-			assert.Equal(t, testData.expectedDefaultSharding, actual)
-
-			// Assert on shuffle sharding strategy.
-			limiter = NewLimiter(overrides, ring, util.ShardingStrategyShuffle, testData.ringReplicationFactor, testData.ringZoneAwarenessEnabled)
-			actual = runMaxFn(limiter)
-			assert.Equal(t, testData.expectedShuffleSharding, actual)
+			assert.Equal(t, testData.expectedValue, actual)
 		})
 	}
 }
@@ -214,7 +225,7 @@ func TestLimiter_AssertMaxSeriesPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxSeriesPerMetric("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -267,7 +278,7 @@ func TestLimiter_AssertMaxMetadataPerMetric(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxMetadataPerMetric("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -321,7 +332,7 @@ func TestLimiter_AssertMaxSeriesPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxSeriesPerUser("test", testData.series)
 
 			assert.Equal(t, testData.expected, actual)
@@ -375,7 +386,7 @@ func TestLimiter_AssertMaxMetricsWithMetadataPerUser(t *testing.T) {
 			}, nil)
 			require.NoError(t, err)
 
-			limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, testData.ringReplicationFactor, false)
+			limiter := NewLimiter(limits, ring, testData.ringReplicationFactor, false)
 			actual := limiter.AssertMaxMetricsWithMetadataPerUser("test", testData.metadata)
 
 			assert.Equal(t, testData.expected, actual)
@@ -398,7 +409,7 @@ func TestLimiter_FormatError(t *testing.T) {
 	}, nil)
 	require.NoError(t, err)
 
-	limiter := NewLimiter(limits, ring, util.ShardingStrategyDefault, 3, false)
+	limiter := NewLimiter(limits, ring, 3, false)
 
 	actual := limiter.FormatError("user-1", errMaxSeriesPerUserLimitExceeded)
 	assert.EqualError(t, actual, "per-user series limit of 100 exceeded, please contact administrator to raise it (per-ingester local limit: 100)")
