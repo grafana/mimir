@@ -50,12 +50,14 @@ The current team members are:
 
 - Arve Knudsen — [@aknuds1](https://github.com/aknuds1) ([Grafana Labs](https://grafana.com/))
 - Bryan Boreham — [@bboreham](https://github.com/bboreham) ([Grafana Labs](https://grafana.com/))
+- George Krajcsovits - [@krajorama](https://github.com/krajorama) ([Grafana Labs](https://grafana.com/))
 - Johanna Ratliff — [@johannaratliff](https://github.com/johannaratliff) ([Grafana Labs](https://grafana.com/))
 - Marco Pracucci — [@pracucci](https://github.com/pracucci) ([Grafana Labs](https://grafana.com/))
 - Mauro Stettler — [@replay](https://github.com/replay) ([Grafana Labs](https://grafana.com/))
 - Nick Pillitteri — [@56quarters](https://github.com/56quarters) ([Grafana Labs](https://grafana.com/))
 - Oleg Zaytsev — [@colega](https://github.com/colega) ([Grafana Labs](https://grafana.com/))
 - Peter Štibraný — [@pstibrany](https://github.com/pstibrany) ([Grafana Labs](https://grafana.com/))
+- Steve Simpson - [@stevesg](https://github.com/stevesg) ([Grafana Labs](https://grafana.com/))
 - Tyler Reid — [@treid314](https://github.com/treid314) ([Grafana Labs](https://grafana.com/))
 
 Previous team members:
