@@ -16,7 +16,7 @@ import (
 type category int
 
 const (
-	// categoryBasic is the basic flag category.
+	// categoryBasic is the basic flag category, and the default if none is defined.
 	categoryBasic category = iota
 	// categoryAdvanced is the advanced flag category.
 	categoryAdvanced
