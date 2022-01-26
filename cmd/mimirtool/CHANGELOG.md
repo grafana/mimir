@@ -7,7 +7,7 @@ Order should be `CHANGE`, `FEATURE`, `ENHANCEMENT`, and `BUGFIX`
 * [FEATURE] Support Arm64 on Darwin for all binaries (benchtool etc). https://github.com/grafana/cortex-tools/pull/215
 * [ENHANCEMENT] Correctly support federated rules. #823
 * [BUGFIX] Fix `cortextool rules` legends displaying wrong symbols for updates and deletions. https://github.com/grafana/cortex-tools/pull/226
-* [CHANGE] The following environment variables have been renamed: ##883
+* [CHANGE] The following environment variables have been renamed: #883
   * `CORTEX_ADDRESS` to `MIMIR_ADDRESS`
   * `CORTEX_API_USER` to `MIMIR_API_USER`
   * `CORTEX_API_KEY` to `MIMIR_API_KEY`

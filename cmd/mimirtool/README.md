@@ -20,7 +20,7 @@ The various binaries are available for macOS, Windows, and Linux.
 `mimirtool` is available on macOS via [Homebrew](https://brew.sh/):
 
 ```bash
-$ brew install grafana/grafana/mimirtool
+brew install grafana/grafana/mimirtool
 ```
 
 ## Linux, Docker and Windows
@@ -226,7 +226,7 @@ The Overrides Exporter allows to continuously export [per tenant configuration o
 
 This lets you generate the header which can then be used to enforce access control rules in GME / GrafanaCloud.
 
-```shell
+```bash
 ./mimirtool acl generate-header --id=1234 --rule='{namespace="A"}'
 ```
 
