@@ -29,6 +29,8 @@
       'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
       'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
 
+      'server.http-listen-port': $._config.server_http_port,
+
       // Do not extend the replication set on unhealthy (or LEAVING) ingester when "unregister on shutdown"
       // is set to false.
       'distributor.extend-writes': $._config.unregister_ingesters_on_shutdown,

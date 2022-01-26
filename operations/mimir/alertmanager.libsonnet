@@ -70,6 +70,7 @@
       'experimental.alertmanager.enable-api': 'true',
       'alertmanager.storage.path': '/data',
       'alertmanager.web.external-url': '%s/alertmanager' % $._config.external_url,
+      'server.http-listen-port': $._config.server_http_port,
     } +
     (if hasFallbackConfig then {
        'alertmanager.configs.fallback': '/configs/alertmanager_fallback_config.yaml',

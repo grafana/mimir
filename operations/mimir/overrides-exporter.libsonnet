@@ -19,10 +19,12 @@
   },
 
   local containerPort = $.core.v1.containerPort,
-  overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=80),
+  overrides_exporter_port:: containerPort.newNamed(name='http-metrics', containerPort=$._config.server_http_port),
 
   overrides_exporter_args:: {
     target: 'overrides-exporter',
+
+    'server.http-listen-port': $._config.server_http_port,
 
     'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
   } + $._config.limitsConfig,

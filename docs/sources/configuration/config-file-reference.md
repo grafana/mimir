@@ -273,7 +273,7 @@ The `server_config` configures the HTTP and gRPC server of the launched service(
 
 # HTTP server listen port.
 # CLI flag: -server.http-listen-port
-[http_listen_port: <int> | default = 80]
+[http_listen_port: <int> | default = 8080]
 
 # Maximum number of simultaneous http connections, <=0 to disable
 # CLI flag: -server.http-conn-limit

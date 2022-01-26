@@ -184,6 +184,8 @@
         },
       }[$._config.ruler_client_type],
 
+    server_http_port: 8080,
+
     alertmanager: {
       replicas: 3,
       sharding_enabled: false,

@@ -300,8 +300,8 @@ spec:
   clusterIP: None
   ports:
   - name: alertmanager-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: alertmanager-grpc
     port: 9095
     targetPort: 9095
@@ -349,8 +349,8 @@ spec:
   clusterIP: None
   ports:
   - name: distributor-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: distributor-grpc
     port: 9095
     targetPort: 9095
@@ -367,8 +367,8 @@ metadata:
 spec:
   ports:
   - name: ingester-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: ingester-grpc
     port: 9095
     targetPort: 9095
@@ -461,8 +461,8 @@ metadata:
 spec:
   ports:
   - name: querier-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: querier-grpc
     port: 9095
     targetPort: 9095
@@ -479,8 +479,8 @@ metadata:
 spec:
   ports:
   - name: query-frontend-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-frontend-grpc
     port: 9095
     targetPort: 9095
@@ -498,8 +498,8 @@ spec:
   clusterIP: None
   ports:
   - name: query-frontend-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-frontend-grpc
     port: 9095
     targetPort: 9095
@@ -517,8 +517,8 @@ metadata:
 spec:
   ports:
   - name: query-scheduler-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-scheduler-grpc
     port: 9095
     targetPort: 9095
@@ -536,8 +536,8 @@ spec:
   clusterIP: None
   ports:
   - name: query-scheduler-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: query-scheduler-grpc
     port: 9095
     targetPort: 9095
@@ -555,8 +555,8 @@ metadata:
 spec:
   ports:
   - name: ruler-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: ruler-grpc
     port: 9095
     targetPort: 9095
@@ -573,8 +573,8 @@ metadata:
 spec:
   ports:
   - name: store-gateway-http-metrics
-    port: 80
-    targetPort: 80
+    port: 8080
+    targetPort: 8080
   - name: store-gateway-grpc
     port: 9095
     targetPort: 9095
@@ -759,19 +759,20 @@ spec:
         - -server.grpc.keepalive.max-connection-idle=1m
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -target=distributor
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
         name: distributor
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -847,6 +848,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -server.http-write-timeout=1m
         - -store-gateway.sharding-enabled=true
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
@@ -862,14 +864,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: querier
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -934,6 +936,7 @@ spec:
         - -server.grpc-max-recv-msg-size-bytes=419430400
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -server.http-write-timeout=1m
         - -store.max-query-length=12000h
         - -target=query-frontend
@@ -941,14 +944,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: query-frontend
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -999,19 +1002,20 @@ spec:
         - -query-scheduler.max-outstanding-requests-per-tenant=800
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -target=query-scheduler
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
         name: query-scheduler
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1093,6 +1097,7 @@ spec:
         - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -store-gateway.sharding-enabled=true
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
@@ -1104,14 +1109,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: ruler
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1163,6 +1168,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -target=alertmanager
         env:
         - name: POD_IP
@@ -1173,14 +1179,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: alertmanager
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1255,19 +1261,20 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -target=compactor
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
         name: compactor
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1355,19 +1362,20 @@ spec:
         - -server.grpc-max-send-msg-size-bytes=10485760
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -target=ingester
         image: cortexproject/cortex:v1.9.0
         imagePullPolicy: IfNotPresent
         name: ingester
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:
@@ -1675,6 +1683,7 @@ spec:
         - -runtime-config.file=/etc/mimir/overrides.yaml
         - -server.grpc.keepalive.min-time-between-pings=10s
         - -server.grpc.keepalive.ping-without-stream-allowed=true
+        - -server.http-listen-port=8080
         - -store-gateway.sharding-enabled=true
         - -store-gateway.sharding-ring.consul.hostname=consul.default.svc.cluster.local:8500
         - -store-gateway.sharding-ring.prefix=
@@ -1686,14 +1695,14 @@ spec:
         imagePullPolicy: IfNotPresent
         name: store-gateway
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http-metrics
         - containerPort: 9095
           name: grpc
         readinessProbe:
           httpGet:
             path: /ready
-            port: 80
+            port: 8080
           initialDelaySeconds: 15
           timeoutSeconds: 1
         resources:

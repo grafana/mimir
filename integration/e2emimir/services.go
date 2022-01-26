@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	httpPort   = 80
+	httpPort   = 8080
 	grpcPort   = 9095
 	GossipPort = 9094
 )
