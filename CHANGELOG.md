@@ -539,6 +539,13 @@
     * `cortex_store_gateway_data_disk_class` renamed to `store_gateway_data_disk_class`
     * `cortex_store_gateway_data_disk_size` renamed to `store_gateway_data_disk_size`
 * [CHANGE] The overrides configmap default mountpoint has changed from `/etc/cortex` to `/etc/mimir`. It can be customized via the `overrides_configmap_mountpoint` config field. #899
+* [CHANGE] Enabled in the querier the features to query label names with matchers, PromQL at modifier and query long-term storage for labels. #905
+* [CHANGE] Reduced TSDB blocks retention on ingesters disk from 96h to 24h. #905
+* [CHANGE] Enabled closing of idle TSDB in ingesters. #905
+* [CHANGE] Disabled TSDB isolation in ingesters for better performances. #905
+* [CHANGE] Changed log level of querier, query-frontend, query-scheduler and alertmanager from `debug` to `info`. #905
+* [CHANGE] Enabled attributes in-memory cache in store-gateway. #905
+* [CHANGE] Configured store-gateway to not load blocks containing samples more recent than 10h (because such samples are queried from ingesters). #905
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```
