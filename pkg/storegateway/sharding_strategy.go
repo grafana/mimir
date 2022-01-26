@@ -56,14 +56,6 @@ func (s *NoShardingStrategy) FilterBlocks(_ context.Context, _ string, _ map[uli
 	return nil
 }
 
-// DefaultShardingStrategy is a sharding strategy based on the hash ring formed by store-gateways.
-// Not go-routine safe.
-type DefaultShardingStrategy struct {
-	r            *ring.Ring
-	instanceAddr string
-	logger       log.Logger
-}
-
 // ShuffleShardingStrategy is a shuffle sharding strategy, based on the hash ring formed by store-gateways,
 // where each tenant blocks are sharded across a subset of store-gateway instances.
 type ShuffleShardingStrategy struct {
