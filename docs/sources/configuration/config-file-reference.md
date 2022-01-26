@@ -1223,10 +1223,6 @@ alertmanager_client:
 # CLI flag: -ruler.enable-sharding
 [enable_sharding: <boolean> | default = false]
 
-# The sharding strategy to use. Supported values are: default, shuffle-sharding.
-# CLI flag: -ruler.sharding-strategy
-[sharding_strategy: <string> | default = "default"]
-
 # Time to spend searching for a pending ruler when shutting down.
 # CLI flag: -ruler.search-pending-for
 [search_pending_for: <duration> | default = 5m]
@@ -2570,9 +2566,9 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -ruler.evaluation-delay-duration
 [ruler_evaluation_delay_duration: <duration> | default = 0s]
 
-# The tenant's shard size when the shuffle-sharding strategy is used by ruler.
-# When this setting is specified in the per-tenant overrides, a value of 0
-# disables shuffle sharding for the tenant.
+# The tenant's shard size when sharding is used by ruler. Value of 0 disables
+# shuffle sharding for the tenant, and tenant rules will be sharded across all
+# ruler replicas.
 # CLI flag: -ruler.tenant-shard-size
 [ruler_tenant_shard_size: <int> | default = 0]
 
