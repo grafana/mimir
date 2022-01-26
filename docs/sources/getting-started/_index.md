@@ -137,7 +137,7 @@ Add the following YAML snippet to one of your Agent `metrics` `configs` in your 
 
 ```yaml
 remote_write:
-  - url: http://localhost:9009/api/v1/push
+  - url: http://localhost:9009/prometheus/api/v1/push
 ```
 
 The configuration for an Agent that scrapes itself for metrics and writes those metrics to Mimir would look similar to:
@@ -154,7 +154,7 @@ metrics:
           static_configs:
             - targets: ['127.0.0.1:12345']
       remote_write:
-        - url: http://localhost:9009/api/v1/push
+        - url: http://localhost:9009/prometheus/api/v1/push
 ```
 
 ## Query data in Grafana
