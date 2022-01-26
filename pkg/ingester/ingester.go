@@ -133,10 +133,6 @@ type Config struct {
 	// Runtime-override for type of streaming query to use (chunks or samples).
 	StreamTypeFn func() QueryStreamType `yaml:"-"`
 
-	// Injected at runtime and read from the distributor config, required
-	// to accurately apply global limits.
-	DistributorShardingStrategy string `yaml:"-"`
-
 	DefaultLimits    InstanceLimits         `yaml:"instance_limits"`
 	InstanceLimitsFn func() *InstanceLimits `yaml:"-"`
 
@@ -315,7 +311,6 @@ func New(cfg Config, clientConfig client.Config, limits *validation.Overrides, r
 	i.limiter = NewLimiter(
 		limits,
 		i.lifecycler,
-		cfg.DistributorShardingStrategy,
 		cfg.LifecyclerConfig.RingConfig.ReplicationFactor,
 		cfg.LifecyclerConfig.RingConfig.ZoneAwarenessEnabled)
 

@@ -514,10 +514,6 @@ ha_tracker:
 # CLI flag: -distributor.extra-query-delay
 [extra_queue_delay: <duration> | default = 0s]
 
-# The sharding strategy to use. Supported values are: default, shuffle-sharding.
-# CLI flag: -distributor.sharding-strategy
-[sharding_strategy: <string> | default = "default"]
-
 # Try writing to an additional ingester in the presence of an ingester not in
 # the ACTIVE state. It is useful to disable this along with
 # -ingester.unregister-on-shutdown=false in order to not spread samples to extra
@@ -2439,9 +2435,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 # CLI flag: -validation.enforce-metadata-metric-name
 [enforce_metadata_metric_name: <boolean> | default = true]
 
-# The tenant's shard size when the shuffle-sharding strategy is used. Must be
-# set both on ingesters and distributors. When this setting is specified in the
-# per-tenant overrides, a value of 0 disables shuffle sharding for the tenant.
+# The tenant's shard size used by shuffle-sharding. Must be set both on
+# ingesters and distributors. 0 disables shuffle sharding.
 # CLI flag: -distributor.ingestion-tenant-shard-size
 [ingestion_tenant_shard_size: <int> | default = 0]
 

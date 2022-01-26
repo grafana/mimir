@@ -27,19 +27,16 @@ import (
 
 func TestIngesterGlobalLimits(t *testing.T) {
 	tests := map[string]struct {
-		shardingStrategy         string
 		tenantShardSize          int
 		maxGlobalSeriesPerTenant int
 		maxGlobalSeriesPerMetric int
 	}{
-		"default sharding strategy": {
-			shardingStrategy:         "default",
-			tenantShardSize:          1, // Ignored by default strategy.
+		"shuffle sharding disabled": {
+			tenantShardSize:          0,
 			maxGlobalSeriesPerTenant: 1000,
 			maxGlobalSeriesPerMetric: 300,
 		},
-		"shuffle sharding strategy": {
-			shardingStrategy:         "shuffle-sharding",
+		"shuffle sharding enabled": {
 			tenantShardSize:          1,
 			maxGlobalSeriesPerTenant: 1000,
 			maxGlobalSeriesPerMetric: 300,
@@ -54,7 +51,6 @@ func TestIngesterGlobalLimits(t *testing.T) {
 
 			flags := BlocksStorageFlags()
 			flags["-distributor.replication-factor"] = "1"
-			flags["-distributor.sharding-strategy"] = testData.shardingStrategy
 			flags["-distributor.ingestion-tenant-shard-size"] = strconv.Itoa(testData.tenantShardSize)
 			flags["-ingester.max-global-series-per-user"] = strconv.Itoa(testData.maxGlobalSeriesPerTenant)
 			flags["-ingester.max-global-series-per-metric"] = strconv.Itoa(testData.maxGlobalSeriesPerMetric)

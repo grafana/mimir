@@ -33,27 +33,24 @@ type RingCount interface {
 // Limiter implements primitives to get the maximum number of series
 // an ingester can handle for a specific tenant
 type Limiter struct {
-	limits                 *validation.Overrides
-	ring                   RingCount
-	replicationFactor      int
-	shuffleShardingEnabled bool
-	zoneAwarenessEnabled   bool
+	limits               *validation.Overrides
+	ring                 RingCount
+	replicationFactor    int
+	zoneAwarenessEnabled bool
 }
 
 // NewLimiter makes a new in-memory series limiter
 func NewLimiter(
 	limits *validation.Overrides,
 	ring RingCount,
-	shardingStrategy string,
 	replicationFactor int,
 	zoneAwarenessEnabled bool,
 ) *Limiter {
 	return &Limiter{
-		limits:                 limits,
-		ring:                   ring,
-		replicationFactor:      replicationFactor,
-		shuffleShardingEnabled: shardingStrategy == util.ShardingStrategyShuffle,
-		zoneAwarenessEnabled:   zoneAwarenessEnabled,
+		limits:               limits,
+		ring:                 ring,
+		replicationFactor:    replicationFactor,
+		zoneAwarenessEnabled: zoneAwarenessEnabled,
 	}
 }
 
@@ -204,10 +201,6 @@ func (l *Limiter) convertGlobalToLocalLimit(userID string, globalLimit int) int 
 }
 
 func (l *Limiter) getShardSize(userID string) int {
-	if !l.shuffleShardingEnabled {
-		return 0
-	}
-
 	return l.limits.IngestionTenantShardSize(userID)
 }
 
