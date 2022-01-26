@@ -138,9 +138,7 @@ To mitigate it, Cortex allows to configure a delay between when a querier discon
 
 ### Store-gateway shuffle sharding
 
-The Cortex store-gateway -- used by the [blocks storage](../blocks-storage/_index.md) -- by default spreads each tenant's blocks across all running store-gateways.
-
-When shuffle sharding is **enabled** via `-store-gateway.sharding-strategy=shuffle-sharding` (or its respective YAML config option), each tenant blocks will be sharded across a subset of `-store-gateway.tenant-shard-size` store-gateway instances. This configuration needs to be set to **store-gateway**, **querier** and **ruler**.
+The Mimir store-gateway -- used by the [blocks storage](../blocks-storage/_index.md) -- spreads each tenant's blocks across `-store-gateway.tenant-shard-size` running store-gateway instances. If this flag is 0, it means all store-gateway instances. This flag needs to be set to **store-gateway**, **querier** and **ruler**.
 
 _The shard size can be overridden on a per-tenant basis setting `store_gateway_tenant_shard_size` in the limits overrides configuration._
 

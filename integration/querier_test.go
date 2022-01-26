@@ -30,42 +30,37 @@ import (
 
 func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 	tests := map[string]struct {
-		blocksShardingStrategy string // Empty means sharding is disabled.
-		tenantShardSize        int
-		indexCacheBackend      string
-		bucketIndexEnabled     bool
-		queryShardingEnabled   bool
+		tenantShardSize      int
+		indexCacheBackend    string
+		bucketIndexEnabled   bool
+		queryShardingEnabled bool
 	}{
-		"blocks default sharding, inmemory index cache": {
-			blocksShardingStrategy: "default",
-			indexCacheBackend:      tsdb.IndexCacheBackendInMemory,
+		"shard size 0, inmemory index cache": {
+			tenantShardSize:   0,
+			indexCacheBackend: tsdb.IndexCacheBackendInMemory,
 		},
-		"blocks default sharding, memcached index cache": {
-			blocksShardingStrategy: "default",
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
+		"shard size 0, memcached index cache": {
+			tenantShardSize:   0,
+			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"blocks shuffle sharding, memcached index cache": {
-			blocksShardingStrategy: "shuffle-sharding",
-			tenantShardSize:        1,
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
+		"shard size 1, memcached index cache": {
+			tenantShardSize:   1,
+			indexCacheBackend: tsdb.IndexCacheBackendMemcached,
 		},
-		"blocks default sharding, inmemory index cache, bucket index enabled": {
-			blocksShardingStrategy: "default",
-			indexCacheBackend:      tsdb.IndexCacheBackendInMemory,
-			bucketIndexEnabled:     true,
+		"shard size 0, inmemory index cache, bucket index enabled": {
+			indexCacheBackend:  tsdb.IndexCacheBackendInMemory,
+			bucketIndexEnabled: true,
 		},
-		"blocks shuffle sharding, memcached index cache, bucket index enabled": {
-			blocksShardingStrategy: "shuffle-sharding",
-			tenantShardSize:        1,
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:     true,
+		"shard size 1, memcached index cache, bucket index enabled": {
+			tenantShardSize:    1,
+			indexCacheBackend:  tsdb.IndexCacheBackendMemcached,
+			bucketIndexEnabled: true,
 		},
-		"blocks shuffle sharding, ingester gRPC streaming enabled, memcached index cache, bucket index enabled, query sharding enabled": {
-			blocksShardingStrategy: "shuffle-sharding",
-			tenantShardSize:        1,
-			indexCacheBackend:      tsdb.IndexCacheBackendMemcached,
-			bucketIndexEnabled:     true,
-			queryShardingEnabled:   true,
+		"shard size 1, ingester gRPC streaming enabled, memcached index cache, bucket index enabled, query sharding enabled": {
+			tenantShardSize:      1,
+			indexCacheBackend:    tsdb.IndexCacheBackendMemcached,
+			bucketIndexEnabled:   true,
+			queryShardingEnabled: true,
 		},
 	}
 
@@ -154,8 +149,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 				"-blocks-storage.bucket-store.sync-interval":                   "1s",
 				"-blocks-storage.bucket-store.index-cache.backend":             testCfg.indexCacheBackend,
 				"-blocks-storage.bucket-store.bucket-index.enabled":            strconv.FormatBool(testCfg.bucketIndexEnabled),
-				"-store-gateway.sharding-enabled":                              strconv.FormatBool(testCfg.blocksShardingStrategy != ""),
-				"-store-gateway.sharding-strategy":                             testCfg.blocksShardingStrategy,
+				"-store-gateway.sharding-enabled":                              strconv.FormatBool(true),
 				"-store-gateway.tenant-shard-size":                             fmt.Sprintf("%d", testCfg.tenantShardSize),
 				"-querier.query-store-for-labels-enabled":                      "true",
 				"-frontend.query-stats-enabled":                                "true",
@@ -178,11 +172,6 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			flags["-querier.frontend-address"] = queryFrontend.NetworkGRPCEndpoint()
 
 			// Start the querier with configuring store-gateway addresses if sharding is disabled.
-			if testCfg.blocksShardingStrategy == "" {
-				flags = mergeFlags(flags, map[string]string{
-					"-querier.store-gateway-addresses": strings.Join([]string{storeGateway1.NetworkGRPCEndpoint(), storeGateway2.NetworkGRPCEndpoint()}, ","),
-				})
-			}
 			querier := e2emimir.NewQuerier("querier", consul.NetworkHTTPEndpoint(), flags, "")
 			t.Cleanup(func() { require.NoError(t, s.Stop(querier)) })
 			require.NoError(t, s.StartAndWaitReady(querier))
@@ -190,11 +179,7 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 
 			// Wait until the querier has updated the ring. The querier will also watch
 			// the store-gateway ring if blocks sharding is enabled.
-			if testCfg.blocksShardingStrategy != "" {
-				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
-			} else {
-				require.NoError(t, querier.WaitSumMetrics(e2e.Equals(512), "cortex_ring_tokens_total"))
-			}
+			require.NoError(t, querier.WaitSumMetrics(e2e.Equals(float64(512+(512*storeGateways.NumInstances()))), "cortex_ring_tokens_total"))
 
 			if !testCfg.bucketIndexEnabled {
 				// Wait until the querier has discovered the uploaded blocks.
@@ -204,15 +189,11 @@ func TestQuerierWithBlocksStorageRunningInMicroservicesMode(t *testing.T) {
 			// Wait until the store-gateway has synched the new uploaded blocks. When sharding is enabled
 			// we don't known which store-gateway instance will synch the blocks, so we need to wait on
 			// metrics extracted from all instances.
-			if testCfg.blocksShardingStrategy != "" {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
-			} else {
-				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(2*storeGateways.NumInstances())), "cortex_bucket_store_blocks_loaded"))
-			}
+			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(2), "cortex_bucket_store_blocks_loaded"))
 
 			// Check how many tenants have been discovered and synced by store-gateways.
 			require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_discovered"))
-			if testCfg.blocksShardingStrategy == "shuffle-sharding" {
+			if testCfg.tenantShardSize > 0 {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1)), "cortex_bucket_stores_tenants_synced"))
 			} else {
 				require.NoError(t, storeGateways.WaitSumMetrics(e2e.Equals(float64(1*storeGateways.NumInstances())), "cortex_bucket_stores_tenants_synced"))

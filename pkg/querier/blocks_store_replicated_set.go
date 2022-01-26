@@ -37,7 +37,6 @@ type blocksStoreReplicationSet struct {
 
 	storesRing        *ring.Ring
 	clientsPool       *client.Pool
-	shardingStrategy  string
 	balancingStrategy loadBalancingStrategy
 	limits            BlocksStoreLimits
 
@@ -48,7 +47,6 @@ type blocksStoreReplicationSet struct {
 
 func newBlocksStoreReplicationSet(
 	storesRing *ring.Ring,
-	shardingStrategy string,
 	balancingStrategy loadBalancingStrategy,
 	limits BlocksStoreLimits,
 	clientConfig ClientConfig,
@@ -58,7 +56,6 @@ func newBlocksStoreReplicationSet(
 	s := &blocksStoreReplicationSet{
 		storesRing:        storesRing,
 		clientsPool:       newStoreGatewayClientPool(client.NewRingServiceDiscovery(storesRing), clientConfig, logger, reg),
-		shardingStrategy:  shardingStrategy,
 		balancingStrategy: balancingStrategy,
 		limits:            limits,
 	}
@@ -102,14 +99,7 @@ func (s *blocksStoreReplicationSet) stopping(_ error) error {
 func (s *blocksStoreReplicationSet) GetClientsFor(userID string, blockIDs []ulid.ULID, exclude map[ulid.ULID][]string) (map[BlocksStoreClient][]ulid.ULID, error) {
 	shards := map[string][]ulid.ULID{}
 
-	// If shuffle sharding is enabled, we should build a subring for the user,
-	// otherwise we just use the full ring.
-	var userRing ring.ReadRing
-	if s.shardingStrategy == util.ShardingStrategyShuffle {
-		userRing = storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
-	} else {
-		userRing = s.storesRing
-	}
+	userRing := storegateway.GetShuffleShardingSubring(s.storesRing, userID, s.limits)
 
 	// Find the replication set of each block we need to query.
 	for _, blockID := range blockIDs {
