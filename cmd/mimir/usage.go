@@ -86,6 +86,10 @@ func usage(cfg *mimir.Config, printAll bool) error {
 		fmt.Fprint(fs.Output(), b.String(), "\n")
 	})
 
+	if !printAll {
+		fmt.Fprintf(fs.Output(), "\nTo see all flags, use -help-all\n")
+	}
+
 	return nil
 }
 
