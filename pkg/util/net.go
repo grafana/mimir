@@ -65,3 +65,36 @@ func filterIPs(addrs []net.Addr) string {
 	}
 	return ipAddr
 }
+
+// Parses network interfaces and returns those having an address conformant to RFC1918
+func PrivateNetworkInterfaces() []string {
+	var privInts []string
+	ints, err := net.Interfaces()
+	if err != nil {
+		level.Warn(util_log.Logger).Log("msg", "error getting interfaces", "err", err)
+	}
+	for _, i := range ints {
+		fmt.Println(i.Index, i.Name)
+		addrs, err := i.Addrs()
+		if err != nil {
+			level.Warn(util_log.Logger).Log("msg", "error getting addresses", "inf", i.Name, "err", err)
+		}
+		for _, a := range addrs {
+			s := a.String()
+			ip, _, err := net.ParseCIDR(s)
+			if err != nil {
+				level.Warn(util_log.Logger).Log("msg", "error getting ip address", "inf", i.Name, "addr", s, "err", err)
+			}
+			if ip.IsPrivate() {
+				privInts = append(privInts, i.Name)
+				break
+			}
+		}
+	}
+	if len(privInts) == 0 {
+		level.Warn(util_log.Logger).Log("msg", "couldn't find any interfaces on private networks, defaulting to [eth0 en0]")
+		return []string{"eth0", "en0"}
+	}
+	level.Info(util_log.Logger).Log("msg", "found interfaces on private networks:", "["+strings.Join(privInts, ", ")+"]")
+	return privInts
+}

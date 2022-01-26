@@ -14,6 +14,7 @@ import (
 	"github.com/grafana/dskit/flagext"
 	"github.com/grafana/dskit/kv"
 	"github.com/grafana/dskit/ring"
+	"github.com/grafana/mimir/pkg/util"
 
 	util_log "github.com/grafana/mimir/pkg/util/log"
 )
@@ -52,7 +53,7 @@ func (cfg *RingConfig) RegisterFlags(f *flag.FlagSet) {
 	f.DurationVar(&cfg.HeartbeatTimeout, "distributor.ring.heartbeat-timeout", time.Minute, "The heartbeat timeout after which distributors are considered unhealthy within the ring. 0 = never (timeout disabled).")
 
 	// Instance flags
-	cfg.InstanceInterfaceNames = []string{"eth0", "en0"}
+	cfg.InstanceInterfaceNames = util.PrivateNetworkInterfaces()
 	f.Var((*flagext.StringSlice)(&cfg.InstanceInterfaceNames), "distributor.ring.instance-interface-names", "Name of network interface to read address from.")
 	f.StringVar(&cfg.InstanceAddr, "distributor.ring.instance-addr", "", "IP address to advertise in the ring.")
 	f.IntVar(&cfg.InstancePort, "distributor.ring.instance-port", 0, "Port to advertise in the ring (defaults to server.grpc-listen-port).")
