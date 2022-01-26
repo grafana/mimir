@@ -9,8 +9,8 @@ import (
 	"bytes"
 	"flag"
 	"io"
-	"io/ioutil"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -116,18 +116,12 @@ func testSingle(t *testing.T, arguments []string, yaml string, stdoutMessage, st
 	defer restoreIfNeeded()
 
 	if yaml != "" {
-		tempFile, err := ioutil.TempFile("", "test")
+		tempDir := t.TempDir()
+		fpath := filepath.Join(tempDir, "test")
+		err := os.WriteFile(fpath, []byte(yaml), 0600)
 		require.NoError(t, err)
 
-		defer func() {
-			require.NoError(t, tempFile.Close())
-			require.NoError(t, os.Remove(tempFile.Name()))
-		}()
-
-		_, err = tempFile.WriteString(yaml)
-		require.NoError(t, err)
-
-		arguments = append(arguments, "-"+configFileOption, tempFile.Name())
+		arguments = append(arguments, "-"+configFileOption, fpath)
 	}
 
 	arguments = append([]string{"./mimir"}, arguments...)
