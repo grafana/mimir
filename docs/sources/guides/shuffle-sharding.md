@@ -149,7 +149,7 @@ _Please check out the [store-gateway documentation](../blocks-storage/store-gate
 Mimir ruler can run in two modes:
 
 1. **No sharding at all.** This is the most basic mode of the ruler. It is activated by using `-ruler.enable-sharding=false` (default) and works correctly only if single ruler is running. In this mode the Ruler loads all rules for all tenants.
-2. **Sharding**, activated by using `-ruler.enable-sharding=true`. In this mode rulers register themselves into the ring. Each ruler will then select and evaluate only those rules that it "owns". Rule groups for each tenant can only be evaluated on limited number of rulers (`-ruler.tenant-shard-size`, can also be set per tenant as `ruler_tenant_shard_size` in overrides).
+2. **Sharding**, activated by using `-ruler.enable-sharding=true`. In this mode rulers register themselves into the ring. Each ruler will then select and evaluate only those rules that it "owns". Rule groups for each tenant can only be evaluated on limited number of rulers (`-ruler.tenant-shard-size`, can also be set per tenant as `ruler_tenant_shard_size` in overrides). If shard size for tenant is set to 0, then tenant's rules are sharded across all ruler replicas.
 
 Note that when using sharding strategy, each rule group is evaluated by single ruler only, there is no replication.
 

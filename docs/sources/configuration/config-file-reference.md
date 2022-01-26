@@ -2567,7 +2567,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [ruler_evaluation_delay_duration: <duration> | default = 0s]
 
 # The tenant's shard size when sharding is used by ruler. Value of 0 disables
-# shuffle sharding for the tenant.
+# shuffle sharding for the tenant, and tenant rules will be sharded across all
+# ruler replicas.
 # CLI flag: -ruler.tenant-shard-size
 [ruler_tenant_shard_size: <int> | default = 0]
 
