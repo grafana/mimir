@@ -510,6 +510,14 @@
     compactor_tenant_shard_size: 2,
     compactor_split_groups: 2,
     ```
+* [CHANGE] The default image config field has been renamed from `cortex` to `mimir`. #896
+   ```
+   {
+     _images+:: {
+       mimir: '...',
+     },
+   }
+   ```
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [ENHANCEMENT] Add overrides config to compactor. This allows setting retention configs per user. [#386](https://github.com/grafana/cortex-jsonnet/pull/386)
 * [ENHANCEMENT] Added 256MB memory ballast to querier. [#369](https://github.com/grafana/cortex-jsonnet/pull/369)

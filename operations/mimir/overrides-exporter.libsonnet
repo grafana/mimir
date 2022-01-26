@@ -29,7 +29,7 @@
 
   local container = $.core.v1.container,
   overrides_exporter_container::
-    container.new(name, $._images.cortex) +
+    container.new(name, $._images.overrides_exporter) +
     container.withPorts([
       $.overrides_exporter_port,
     ]) +
