@@ -10,7 +10,7 @@
     {
       target: 'distributor',
 
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'distributor.remote-timeout': '20s',
 
       'distributor.ha-tracker.enable': true,
@@ -55,7 +55,7 @@
   distributor_deployment:
     deployment.new('distributor', 3, [$.distributor_container], $.distributor_deployment_labels) +
     (if $._config.distributor_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(5) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),
 

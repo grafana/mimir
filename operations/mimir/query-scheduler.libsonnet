@@ -24,7 +24,7 @@
 
   newQuerySchedulerDeployment(name, container)::
     deployment.new(name, 2, [container]) +
-    $.util.configVolumeMount('overrides', '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     $.util.antiAffinity +
     // Do not run more query-schedulers than expected.
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(0) +

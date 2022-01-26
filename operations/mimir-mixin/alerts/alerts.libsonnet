@@ -12,7 +12,7 @@
 
   groups+: [
     {
-      name: 'cortex_alerts',
+      name: 'mimir_alerts',
       rules: [
         {
           alert: $.alertName('IngesterUnhealthy'),

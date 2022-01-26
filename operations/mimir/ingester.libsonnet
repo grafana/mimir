@@ -22,7 +22,7 @@
       'ingester.unregister-on-shutdown': $._config.unregister_ingesters_on_shutdown,
 
       // Limits config.
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
       'server.grpc-max-concurrent-streams': 10000,
       'server.grpc-max-send-msg-size-bytes': 10 * 1024 * 1024,
       'server.grpc-max-recv-msg-size-bytes': 10 * 1024 * 1024,
@@ -78,7 +78,7 @@
     // For this reason, we grant an high termination period (80 minutes).
     statefulSet.mixin.spec.template.spec.withTerminationGracePeriodSeconds(1200) +
     statefulSet.mixin.spec.updateStrategy.withType('RollingUpdate') +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     $.util.podPriority('high') +
     // Parallelly scale up/down ingester instances instead of starting them
     // one by one. This does NOT affect rolling updates: they will continue to be

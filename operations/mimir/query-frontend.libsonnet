@@ -35,7 +35,7 @@
 
       // Limit queries to 500 days, allow this to be override per-user.
       'store.max-query-length': '12000h',  // 500 Days
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
   query_frontend_container::
@@ -51,7 +51,7 @@
 
   newQueryFrontendDeployment(name, container)::
     deployment.new(name, $._config.queryFrontend.replicas, [container]) +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex') +
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint) +
     (if $._config.query_frontend_allow_multiple_replicas_on_same_node then {} else $.util.antiAffinity) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxSurge(1) +
     deployment.mixin.spec.strategy.rollingUpdate.withMaxUnavailable(1),

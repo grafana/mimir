@@ -38,7 +38,7 @@
       'compactor.ring.prefix': '',
 
       // Limits config.
-      'runtime-config.file': '/etc/cortex/overrides.yaml',
+      'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,
     },
 
   // The compactor runs a statefulset with a single replica, because
@@ -78,7 +78,7 @@
     // rolled out one by one (the next pod will be rolled out once the previous is
     // ready).
     statefulSet.mixin.spec.withPodManagementPolicy('Parallel') +
-    $.util.configVolumeMount($._config.overrides_configmap, '/etc/cortex'),
+    $.util.configVolumeMount($._config.overrides_configmap, $._config.overrides_configmap_mountpoint),
 
   compactor_statefulset:
     $.newCompactorStatefulSet('compactor', $.compactor_container),
