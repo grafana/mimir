@@ -65,14 +65,14 @@ func TestConfig_Validate(t *testing.T) {
 			setup:    func(cfg *Config, limits *validation.Limits) {},
 			expected: nil,
 		},
-		"should fail if the sharding strategy is shuffle-sharding and shard size is negative": {
+		"should fail if shard size is negative": {
 			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.ShardingEnabled = true
 				limits.StoreGatewayTenantShardSize = -3
 			},
 			expected: errInvalidTenantShardSize,
 		},
-		"should pass if the sharding strategy is shuffle-sharding and shard size has been set": {
+		"should pass if shard size has been set": {
 			setup: func(cfg *Config, limits *validation.Limits) {
 				cfg.ShardingEnabled = true
 				limits.StoreGatewayTenantShardSize = 3

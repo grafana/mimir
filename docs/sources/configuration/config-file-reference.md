@@ -2585,7 +2585,8 @@ The `limits_config` configures default and per-tenant limits imposed by services
 [ruler_max_rule_groups_per_tenant: <int> | default = 70]
 
 # The tenant's shard size, used when store-gateway sharding is enabled. Value of
-# 0 disables shuffle sharding for the tenant.
+# 0 disables shuffle sharding for the tenant, that is all tenant blocks are
+# sharded across all store-gateway replicas.
 # CLI flag: -store-gateway.tenant-shard-size
 [store_gateway_tenant_shard_size: <int> | default = 0]
 
