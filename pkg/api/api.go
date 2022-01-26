@@ -332,6 +332,8 @@ func (a *API) RegisterStoreGateway(s *storegateway.StoreGateway) {
 
 	a.indexPage.AddLink(SectionAdminEndpoints, "/store-gateway/ring", "Store Gateway Ring")
 	a.RegisterRoute("/store-gateway/ring", http.HandlerFunc(s.RingHandler), false, "GET", "POST")
+	a.RegisterRoute("/store-gateway/users", http.HandlerFunc(s.UsersHandler), false, "GET")
+	a.RegisterRoute("/store-gateway/user/{user}/blocks", http.HandlerFunc(s.BlocksHandler), false, "GET")
 }
 
 // RegisterCompactor registers the ring UI page associated with the compactor.

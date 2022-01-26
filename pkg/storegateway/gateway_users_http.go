@@ -1,0 +1,63 @@
+package storegateway
+
+import (
+	"fmt"
+	"html/template"
+	"net/http"
+	"time"
+
+	"github.com/grafana/mimir/pkg/util"
+)
+
+const usersPageTemplate = `
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="UTF-8">
+		<title>Store-gateway: bucket users</title>
+	</head>
+	<body>
+		<h1>Store-gateway: bucket users</h1>
+		<p>Current time: {{ .Now }}</p>
+		<table border="1">
+			<thead>
+				<tr>
+					<th>User</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{ range .Users }}
+				<tr>
+					<td>{{ .UserID }}</td>
+				</tr>
+				{{ end }}
+			</tbody>
+		</table>
+	</body>
+</html>`
+
+var usersTemplate = template.Must(template.New("webpage").Parse(usersPageTemplate))
+
+func (s *StoreGateway) UsersHandler(w http.ResponseWriter, req *http.Request) {
+	userIDs, err := s.stores.scanUsers(req.Context())
+	if err != nil {
+		util.WriteTextResponse(w, fmt.Sprintf("Can't read users: %s", err))
+		return
+	}
+
+	type userData struct {
+		UserID string
+	}
+	users := make([]userData, len(userIDs))
+	for i := range userIDs {
+		users[i].UserID = userIDs[i]
+	}
+
+	util.RenderHTTPResponse(w, struct {
+		Now   time.Time
+		Users []userData
+	}{
+		Now:   time.Now(),
+		Users: users,
+	}, usersTemplate, req)
+}
