@@ -98,7 +98,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\",statefulset=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\",statefulset=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter|cortex|mimir\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      kube_statefulset_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"statefulset\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
                   "format": null,
                   "intervalFactor": null,
                   "legendFormat": "{{cortex_service}}",
@@ -106,7 +106,7 @@
                   "step": null
                },
                {
-                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\",deployment=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_spec_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_spec_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
+                  "expr": "(\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_status_replicas_updated{cluster=~\"$cluster\", namespace=~\"$namespace\",deployment=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter|cortex|mimir\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  /\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_spec_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n) and (\n  sum by(cortex_service) (\n    label_replace(\n      kube_deployment_spec_replicas{cluster=~\"$cluster\", namespace=~\"$namespace\"},\n      \"cortex_service\", \"$1\", \"deployment\", \"(.*?)(?:-zone-[a-z])?\"\n    )\n  )\n  > 0\n)\n",
                   "format": null,
                   "intervalFactor": null,
                   "legendFormat": "{{cortex_service}}",
@@ -208,7 +208,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\",status_code=~\"2.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\"}[$__rate_interval]))\n",
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\",status_code=~\"2.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"}[$__rate_interval]))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -320,7 +320,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\",status_code=~\"4.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\"}[$__rate_interval]))\n",
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\",status_code=~\"4.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"}[$__rate_interval]))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -428,7 +428,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\",status_code=~\"5.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\"}[$__rate_interval]))\n",
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\",status_code=~\"5.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"}[$__rate_interval]))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -540,7 +540,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\"}))\n",
+                  "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"}))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -644,7 +644,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"2.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"2.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -756,7 +756,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"4.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"4.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -864,7 +864,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"5.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
+                  "expr": "sum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\",status_code=~\"5.+\"}[$__rate_interval])) /\nsum(rate(cortex_request_duration_seconds_count{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}[$__rate_interval]))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -976,7 +976,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))\n",
+                  "expr": "histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))\n",
                   "format": null,
                   "instant": false,
                   "interval": "",
@@ -1094,7 +1094,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "kube_deployment_status_replicas_unavailable{cluster=~\"$cluster\", namespace=~\"$namespace\", deployment=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter\"}\n> 0\n",
+                  "expr": "kube_deployment_status_replicas_unavailable{cluster=~\"$cluster\", namespace=~\"$namespace\", deployment=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter|cortex|mimir\"}\n> 0\n",
                   "format": null,
                   "instant": true,
                   "interval": "",
@@ -1104,7 +1104,7 @@
                   "step": null
                },
                {
-                  "expr": "kube_statefulset_status_replicas_current{cluster=~\"$cluster\", namespace=~\"$namespace\", statefulset=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter\"} -\nkube_statefulset_status_replicas_ready {cluster=~\"$cluster\", namespace=~\"$namespace\", statefulset=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter\"}\n> 0\n",
+                  "expr": "kube_statefulset_status_replicas_current{cluster=~\"$cluster\", namespace=~\"$namespace\", statefulset=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter|cortex|mimir\"} -\nkube_statefulset_status_replicas_ready {cluster=~\"$cluster\", namespace=~\"$namespace\", statefulset=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter|cortex|mimir\"}\n> 0\n",
                   "format": null,
                   "instant": true,
                   "interval": "",
@@ -1177,7 +1177,7 @@
             "id": 11,
             "targets": [
                {
-                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter\"},\n    \"version\", \"$1\", \"image\", \".*:(.+)-.*\"\n  )\n)\n",
+                  "expr": "count by(container, version) (\n  label_replace(\n    kube_pod_container_info{cluster=~\"$cluster\", namespace=~\"$namespace\",container=~\"cortex-gw|distributor|ingester.*|query-frontend.*|query-scheduler.*|querier.*|compactor|store-gateway.*|ruler|alertmanager.*|overrides-exporter|cortex|mimir\"},\n    \"version\", \"$1\", \"image\", \".*:(.+)-.*\"\n  )\n)\n",
                   "instant": true,
                   "legendFormat": "",
                   "refId": "A"
@@ -1251,7 +1251,7 @@
             "steppedLine": false,
             "targets": [
                {
-                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"api_(v1|prom)_push\"}))[1h:])\n)\n",
+                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"api_(v1|prom)_push\"}))[1h:])\n)\n",
                   "format": "time_series",
                   "interval": "15s",
                   "intervalFactor": 2,
@@ -1260,7 +1260,7 @@
                   "step": 10
                },
                {
-                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))[1h:])\n)\n",
+                  "expr": "1 - (\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"} offset 24h))[1h:])\n  /\n  avg_over_time(histogram_quantile(0.99, sum by (le) (cluster_job_route:cortex_request_duration_seconds_bucket:sum_rate{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\", route=~\"(prometheus|api_prom)_api_v1_.+\"}))[1h:])\n)\n",
                   "format": "time_series",
                   "interval": "15s",
                   "intervalFactor": 2,

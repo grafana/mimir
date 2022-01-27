@@ -99,7 +99,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobMatcher(job)::
     if $._config.singleBinary
     then 'job=~"$job"'
-    else 'cluster=~"$cluster", job=~"($namespace)/%s"' % job,
+    else 'cluster=~"$cluster", job=~"($namespace)/(%s)"' % job,
 
   namespaceMatcher()::
     if $._config.singleBinary
@@ -109,7 +109,7 @@ local utils = import 'mixin-utils/utils.libsonnet';
   jobSelector(job)::
     if $._config.singleBinary
     then [utils.selector.noop('cluster'), utils.selector.re('job', '$job')]
-    else [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/%s' % job)],
+    else [utils.selector.re('cluster', '$cluster'), utils.selector.re('job', '($namespace)/(%s)' % job)],
 
   queryPanel(queries, legends, legendLink=null)::
     super.queryPanel(queries, legends, legendLink) + {

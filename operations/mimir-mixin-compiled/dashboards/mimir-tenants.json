@@ -82,7 +82,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n)\n",
+                        "expr": "sum by (user) (\n  cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -91,7 +91,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum by (user, name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n) > 0\n",
+                        "expr": "sum by (user, name) (\n  cortex_ingester_active_series_custom_tracker{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n) > 0\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -169,7 +169,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n)\n",
+                        "expr": "sum by (user) (\n  cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -247,7 +247,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "time() - max by (user) (cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"} > 0)",
+                        "expr": "time() - max by (user) (cortex_distributor_latest_seen_sample_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"} > 0)",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -325,7 +325,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "time() - min by (user) (cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"} > 0)",
+                        "expr": "time() - min by (user) (cortex_ingester_tsdb_exemplar_last_exemplars_timestamp_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"} > 0)",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -415,7 +415,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_distributor_samples_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -493,7 +493,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -571,7 +571,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_distributor_deduped_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -580,7 +580,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_non_ha_samples_received_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_distributor_non_ha_samples_received_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -658,7 +658,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user, reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -667,7 +667,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "sum by (user, reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user, reason) (rate(cortex_discarded_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -757,7 +757,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_distributor_exemplars_in_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -835,7 +835,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -913,7 +913,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user, reason) (rate(cortex_discarded_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -991,7 +991,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n)\n",
+                        "expr": "sum by (user) (\n  rate(cortex_ingester_tsdb_exemplar_exemplars_appended_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"}[$__rate_interval])\n  / on(cluster, namespace) group_left\n  max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n)\n",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1081,7 +1081,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"})",
+                        "expr": "sum by (user, job) (cortex_ingester_tsdb_symbol_table_size_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1159,7 +1159,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\", user=~\"$user\"})",
+                        "expr": "sum by (user, job) (cortex_ingester_tsdb_storage_blocks_bytes{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\", user=~\"$user\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1249,7 +1249,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "count by (user) (sum by (user, rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"}))",
+                        "expr": "count by (user) (sum by (user, rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1327,7 +1327,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"})",
+                        "expr": "sum by (user) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1404,7 +1404,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user) (rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user) (rate(cortex_prometheus_rule_evaluations_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1481,7 +1481,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by (user, rule_group) (rate(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by (user, rule_group) (rate(cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1608,7 +1608,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"}))",
+                        "expr": "topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_rules{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1724,7 +1724,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\"}))",
+                        "expr": "topk($limit, sum by (user, rule_group) (cortex_prometheus_rule_group_last_duration_seconds{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -1814,7 +1814,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_sent_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1891,7 +1891,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\", user=~\"$user\"}[$__rate_interval]))",
+                        "expr": "sum by(user) (rate(cortex_prometheus_notifications_errors_total{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\", user=~\"$user\"}[$__rate_interval]))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,

@@ -212,7 +212,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -221,7 +221,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -298,7 +298,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -307,7 +307,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -316,7 +316,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/(gateway|cortex-gw|cortex-gw-internal)\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((gateway|cortex-gw|cortex-gw-internal))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -559,7 +559,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(query-frontend.*|cortex$)\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -568,7 +568,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(query-frontend.*|cortex$)\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -645,7 +645,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(query-frontend.*|cortex$)\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -654,7 +654,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(query-frontend.*|cortex$)\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -663,7 +663,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/(query-frontend.*|cortex$)\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((query-frontend.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -906,7 +906,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/query-scheduler.*\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(query-scheduler.*)\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -915,7 +915,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/query-scheduler.*\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(query-scheduler.*)\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -992,7 +992,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/query-scheduler.*\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(query-scheduler.*)\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1001,7 +1001,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/query-scheduler.*\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(query-scheduler.*)\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1010,7 +1010,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/query-scheduler.*\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/(query-scheduler.*)\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1253,7 +1253,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(querier.*|cortex$)\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1262,7 +1262,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(querier.*|cortex$)\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1339,7 +1339,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(querier.*|cortex$)\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1348,7 +1348,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(querier.*|cortex$)\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1357,7 +1357,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/(querier.*|cortex$)\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((querier.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1600,7 +1600,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(store-gateway.*|cortex$)\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1609,7 +1609,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(store-gateway.*|cortex$)\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1686,7 +1686,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(store-gateway.*|cortex$)\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1695,7 +1695,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(store-gateway.*|cortex$)\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1704,7 +1704,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/(store-gateway.*|cortex$)\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((store-gateway.*|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1947,7 +1947,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\"})",
+                        "expr": "avg(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -1956,7 +1956,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\"})",
+                        "expr": "max(cortex_inflight_requests{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -2033,7 +2033,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\"}))",
+                        "expr": "avg(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -2042,7 +2042,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\"}))",
+                        "expr": "max(sum by(pod) (cortex_tcp_connections{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"}))",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
@@ -2051,7 +2051,7 @@
                         "step": 10
                      },
                      {
-                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/(ruler|cortex$)\"})",
+                        "expr": "min(cortex_tcp_connections_limit{cluster=~\"$cluster\", job=~\"($namespace)/((ruler|cortex|mimir))\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,

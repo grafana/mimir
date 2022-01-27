@@ -119,7 +119,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n  )\n)\n",
+                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_active_series{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n  )\n)\n",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -247,7 +247,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    (\n        sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\"})\n        -\n        sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\"})\n    )\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n  )\n)\n",
+                        "expr": "topk($limit,\n  sum by (user) (\n    (\n        sum by (user, cluster, namespace) (cortex_ingester_memory_series_created_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})\n        -\n        sum by (user, cluster, namespace) (cortex_ingester_memory_series_removed_total{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"})\n    )\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n  )\n)\n",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -375,7 +375,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_samples_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -503,7 +503,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/(ingester.*|cortex$)\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"})\n  )\n)\n",
+                        "expr": "topk($limit,\n  sum by (user) (\n    cortex_ingester_tsdb_exemplar_series_with_exemplars_in_storage{cluster=~\"$cluster\", job=~\"($namespace)/((ingester.*|cortex|mimir))\"}\n    / on(cluster, namespace) group_left\n    max by (cluster, namespace) (cortex_distributor_replication_factor{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"})\n  )\n)\n",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
@@ -631,7 +631,7 @@
                   ],
                   "targets": [
                      {
-                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/(distributor|cortex$)\"}[5m])))",
+                        "expr": "topk($limit, sum by (user) (rate(cortex_distributor_received_exemplars_total{cluster=~\"$cluster\", job=~\"($namespace)/((distributor|cortex|mimir))\"}[5m])))",
                         "format": "table",
                         "instant": true,
                         "intervalFactor": 2,
