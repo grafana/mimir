@@ -131,7 +131,7 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	type blockData struct {
 		ULID            string   `json:"ulid,omitempty"`
 		ULIDTime        string   `json:"ulid_time,omitempty"`
-		SplitCount      uint32   `json:"split_count,omitempty"`
+		SplitCount      *uint32  `json:"split_count,omitempty"`
 		MinTime         string   `json:"min_time,omitempty"`
 		MaxTime         string   `json:"max_time,omitempty"`
 		Duration        string   `json:"duration,omitempty"`
@@ -156,9 +156,10 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		for _, pb := range m.Compaction.Sources {
 			sources = append(parents, pb.String())
 		}
-		var blockSplitCount uint32
+		var blockSplitCount *uint32
 		if splitCount > 0 {
-			blockSplitCount = tsdb.HashBlockID(m.ULID) % uint32(splitCount)
+			bsc := tsdb.HashBlockID(m.ULID) % uint32(splitCount)
+			blockSplitCount = &bsc
 		}
 		blocks = append(blocks, blockData{
 			ULID:            m.ULID.String(),
