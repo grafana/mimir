@@ -2,12 +2,7 @@
 
 This repo contains tools used for interacting with [Mimir](https://github.com/grafana/mimir).
 
-- [benchtool](docs/benchtool.md): A powerful YAML driven tool for benchmarking
-  Mimir write and query API.
 - [mimirtool](#mimirtool): Interacts with user-facing Mimir APIs and backend storage components
-- [chunktool](#chunktool): Interacts with chunks stored and indexed in Mimir storage backends.
-- [logtool](#logtool): Tool which parses Mimir query-frontend logs and formats them for easy analysis.
-- [e2ealerting](docs/e2ealerting.md): Tool that helps measure how long an alerts takes from scrape of sample to Alertmanager notifcation delivery.
 
 # Installation
 
