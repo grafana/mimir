@@ -19,7 +19,7 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, minTime time.Time) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
+func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
 	deletedBlocks := map[ulid.ULID]bool{}
 	deletionMarkerFiles := []string(nil)
 
@@ -44,7 +44,7 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 
 			// Block's ULID is typically higher than min/max time of the block,
 			// unless somebody was ingesting data with timestamps in the future.
-			if !minTime.IsZero() && ulid.Time(id.Time()).Before(minTime) {
+			if !ulidMinTime.IsZero() && ulid.Time(id.Time()).Before(ulidMinTime) {
 				return nil
 			}
 
