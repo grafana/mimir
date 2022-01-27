@@ -13,7 +13,7 @@ The sharding strategy employed by Mimir distributes the workload across a subset
 
 > **Note:** In a multi-tenant cluster this default (`0`) value introduces some downsides:
 
-1. An outage affects all tenants
+* An outage affects all tenants
 * A misbehaving tenant, which for example causes an out-of-memory error, could negatively affect all other tenants.
 
 Configuring a shard size value higher than zero enables **shuffle sharding**. The goal of **shuffle sharding** is to reduce the blast radius of an outage and better isolate tenants.
