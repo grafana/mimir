@@ -73,8 +73,8 @@ const blocksPageTemplate = `
 					<td>{{ .Duration }}</td>
 					{{ if $page.ShowDeleted }}<td>{{ .DeletedTime }}</td>{{ end }}
 					<td>{{ .CompactionLevel }}</td>
-					<td>{{ .BlockSize }}</td>
-					<td>{{ .Labels }}</td>
+					<td>{{ .BlockSizeHuman }}</td>
+					<td>{{ .LabelsString }}</td>
 					{{ if $page.ShowSources }}
 						<td>
 							{{ range $i, $source := .Sources }}
@@ -129,18 +129,25 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	metas := listblocks.SortedBlocks(metasMap)
 
 	type blockData struct {
-		ULID            string   `json:"ulid,omitempty"`
-		ULIDTime        string   `json:"ulid_time,omitempty"`
-		SplitCount      *uint32  `json:"split_count,omitempty"`
-		MinTime         string   `json:"min_time,omitempty"`
-		MaxTime         string   `json:"max_time,omitempty"`
-		Duration        string   `json:"duration,omitempty"`
-		DeletedTime     string   `json:"deleted_time,omitempty"`
-		CompactionLevel int      `json:"compaction_level,omitempty"`
-		BlockSize       string   `json:"block_size,omitempty"`
-		Labels          string   `json:"labels,omitempty"`
-		Sources         []string `json:"sources,omitempty"`
-		Parents         []string `json:"parents,omitempty"`
+		ULID                  string        `json:"ulid,omitempty"`
+		ULIDTime              string        `json:"ulid_time,omitempty"`
+		ULIDTimeUnixMillis    int64         `json:"ulid_time_unix_millis,omitempty"`
+		SplitCount            *uint32       `json:"split_count,omitempty"`
+		MinTime               string        `json:"min_time,omitempty"`
+		MinTimeUnixMillis     int64         `json:"min_time_unix_millis,omitempty"`
+		MaxTime               string        `json:"max_time,omitempty"`
+		MaxTimeUnixMillis     int64         `json:"max_time_unix_millis,omitempty"`
+		Duration              string        `json:"duration,omitempty"`
+		DurationSeconds       float64       `json:"duration_seconds,omitempty"`
+		DeletedTime           string        `json:"deleted_time,omitempty"`
+		DeletedTimeUnixMillis int64         `json:"deleted_time_unix_millis,omitempty"`
+		CompactionLevel       int           `json:"compaction_level,omitempty"`
+		BlockSizeHuman        string        `json:"block_size_human,omitempty"`
+		BlockSizeBytes        uint64        `json:"block_size_bytes,omitempty"`
+		LabelsString          string        `json:"-"`
+		Labels                labels.Labels `json:"labels,omitempty"`
+		Sources               []string      `json:"sources,omitempty"`
+		Parents               []string      `json:"parents,omitempty"`
 	}
 	blocks := make([]blockData, 0, len(metas))
 
@@ -161,19 +168,27 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 			bsc := tsdb.HashBlockID(m.ULID) % uint32(splitCount)
 			blockSplitCount = &bsc
 		}
+		lbls := labels.FromMap(m.Thanos.Labels)
 		blocks = append(blocks, blockData{
-			ULID:            m.ULID.String(),
-			ULIDTime:        util.TimeFromMillis(int64(m.ULID.Time())).UTC().Format(time.RFC3339),
-			SplitCount:      blockSplitCount,
-			MinTime:         util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
-			MaxTime:         util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
-			Duration:        util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
-			DeletedTime:     deletedTimes[m.ULID].UTC().Format(time.RFC3339),
-			CompactionLevel: m.Compaction.Level,
-			BlockSize:       listblocks.GetFormattedBlockSize(m),
-			Labels:          labels.FromMap(m.Thanos.Labels).WithoutLabels(tsdb.TenantIDExternalLabel).String(),
-			Sources:         sources,
-			Parents:         parents,
+			ULID:                  m.ULID.String(),
+			ULIDTime:              util.TimeFromMillis(int64(m.ULID.Time())).UTC().Format(time.RFC3339),
+			ULIDTimeUnixMillis:    util.TimeFromMillis(int64(m.ULID.Time())).UTC().UnixMilli(),
+			SplitCount:            blockSplitCount,
+			MinTime:               util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
+			MinTimeUnixMillis:     util.TimeFromMillis(m.MinTime).UTC().UnixMilli(),
+			MaxTime:               util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
+			MaxTimeUnixMillis:     util.TimeFromMillis(m.MaxTime).UTC().UnixMilli(),
+			Duration:              util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
+			DurationSeconds:       util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).Seconds(),
+			DeletedTime:           deletedTimes[m.ULID].UTC().Format(time.RFC3339),
+			DeletedTimeUnixMillis: deletedTimes[m.ULID].UTC().UnixMilli(),
+			CompactionLevel:       m.Compaction.Level,
+			BlockSizeHuman:        listblocks.GetFormattedBlockSize(m),
+			BlockSizeBytes:        listblocks.GetBlockSizeBytes(m),
+			LabelsString:          lbls.WithoutLabels(tsdb.TenantIDExternalLabel).String(),
+			Labels:                lbls,
+			Sources:               sources,
+			Parents:               parents,
 		})
 	}
 

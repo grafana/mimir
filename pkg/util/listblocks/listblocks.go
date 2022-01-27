@@ -186,10 +186,15 @@ func GetFormattedBlockSize(b *metadata.Meta) string {
 		return ""
 	}
 
+	size := GetBlockSizeBytes(b)
+
+	return humanize.IBytes(size)
+}
+
+func GetBlockSizeBytes(b *metadata.Meta) uint64 {
 	size := uint64(0)
 	for _, f := range b.Thanos.Files {
 		size += uint64(f.SizeBytes)
 	}
-
-	return humanize.IBytes(size)
+	return size
 }
