@@ -619,9 +619,9 @@ groups:
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
     expr: |
-      (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor.*|cortex|mimir"} > 60 * 60 * 24)
+      (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} > 60 * 60 * 24)
       and
-      (thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor.*|cortex|mimir"} > 0)
+      (thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} > 0)
     for: 15m
     labels:
       severity: critical
@@ -629,7 +629,7 @@ groups:
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has not uploaded any block in the last 24 hours.
     expr: |
-      thanos_objstore_bucket_last_successful_upload_time{job=~".+/compactor.*|cortex|mimir"} == 0
+      thanos_objstore_bucket_last_successful_upload_time{job=~".+/(compactor.*|cortex|mimir)"} == 0
     for: 24h
     labels:
       severity: critical
@@ -637,7 +637,7 @@ groups:
     annotations:
       message: Mimir Compactor {{ $labels.instance }} in {{ $labels.cluster }}/{{ $labels.namespace }} has found and ignored blocks with out of order chunks.
     expr: |
-      increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/compactor.*|cortex|mimir", reason="block-index-out-of-order-chunk"}[5m]) > 0
+      increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/(compactor.*|cortex|mimir)", reason="block-index-out-of-order-chunk"}[5m]) > 0
     for: 1m
     labels:
       severity: warning
