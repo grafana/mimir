@@ -44,7 +44,7 @@ const blocksPageTemplate = `
 		<p>
 			Use ?split_count= query param to show split compactor count preview.
 		</p>
-		<table border="1">
+		<table border="1" cellpadding="5">
 			<thead>
 				<tr>
 					<th>Block ID</th>
