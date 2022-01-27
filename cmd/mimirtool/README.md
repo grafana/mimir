@@ -191,6 +191,7 @@ mimirtool remote-read stats --selector '{job="node"}' --address http://demo.robu
 ```
 
 The output is the following:
+
 ```console
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Querying time from=2020-12-30T14:00:00Z to=2020-12-30T15:00:00Z with selector={job="node"}
@@ -207,6 +208,7 @@ mimirtool remote-read dump --selector 'up{job="node"}' --address http://demo.rob
 ```
 
 The output is the following:
+
 ```console
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} 1 1609336914711
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} NaN 1609336924709 # StaleNaN
@@ -223,6 +225,7 @@ mimirtool remote-read export --selector '{job="node"}' --address http://demo.rob
 ```
 
 The output is the following:
+
 ```console
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Created TSDB in path './local-tsdb'
