@@ -196,16 +196,16 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		Now            time.Time   `json:"now"`
 		User           string      `json:"user,omitempty"`
 		Blocks         []blockData `json:"blocks,omitempty"`
-		ShowDeleted    bool        `json:"show_deleted,omitempty"`
-		ShowSplitCount bool        `json:"show_split_count,omitempty"`
-		ShowSources    bool        `json:"show_sources,omitempty"`
-		ShowParents    bool        `json:"show_parents,omitempty"`
+		ShowDeleted    bool        `json:"-"`
+		ShowSplitCount bool        `json:"-"`
+		ShowSources    bool        `json:"-"`
+		ShowParents    bool        `json:"-"`
 
 		ShowDeletedURI string `json:"-"`
 		ShowSourcesURI string `json:"-"`
 		ShowParentsURI string `json:"-"`
 
-		TSDBTenantIDExternalLabel string `json:"tsdb_tenant_id_external_label,omitempty"`
+		TSDBTenantIDExternalLabel string `json:"-"`
 	}{
 		Now:    time.Now(),
 		User:   userID,
