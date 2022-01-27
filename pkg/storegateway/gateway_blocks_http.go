@@ -12,6 +12,7 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/thanos-io/thanos/pkg/block/metadata"
 
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/util"
@@ -63,7 +64,7 @@ const blocksPageTemplate = `
 			</thead>
 			<tbody>
 				{{ $page := . }}
-				{{ range .Blocks }}
+				{{ range .FormattedBlocks }}
 				<tr>
 					<td>{{ .ULID }}</td>
 					{{ if $page.ShowSplitCount }}<td>{{ .SplitCount }}</td>{{ end }}
@@ -73,8 +74,8 @@ const blocksPageTemplate = `
 					<td>{{ .Duration }}</td>
 					{{ if $page.ShowDeleted }}<td>{{ .DeletedTime }}</td>{{ end }}
 					<td>{{ .CompactionLevel }}</td>
-					<td>{{ .BlockSizeHuman }}</td>
-					<td>{{ .LabelsString }}</td>
+					<td>{{ .BlockSize }}</td>
+					<td>{{ .Labels }}</td>
 					{{ if $page.ShowSources }}
 						<td>
 							{{ range $i, $source := .Sources }}
@@ -133,28 +134,30 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}
 	metas := listblocks.SortedBlocks(metasMap)
 
-	type blockData struct {
-		ULID                  string        `json:"ulid,omitempty"`
-		ULIDTime              string        `json:"ulid_time,omitempty"`
-		ULIDTimeUnixMillis    int64         `json:"ulid_time_unix_millis"`
-		SplitCount            *uint32       `json:"split_count,omitempty"`
-		MinTime               string        `json:"min_time,omitempty"`
-		MinTimeUnixMillis     int64         `json:"min_time_unix_millis"`
-		MaxTime               string        `json:"max_time,omitempty"`
-		MaxTimeUnixMillis     int64         `json:"max_time_unix_millis"`
-		Duration              string        `json:"duration,omitempty"`
-		DurationSeconds       float64       `json:"duration_seconds"`
-		DeletedTime           string        `json:"deleted_time,omitempty"`
-		DeletedTimeUnixMillis int64         `json:"deleted_time_unix_millis"`
-		CompactionLevel       int           `json:"compaction_level"`
-		BlockSizeHuman        string        `json:"block_size_human,omitempty"`
-		BlockSizeBytes        uint64        `json:"block_size_bytes"`
-		LabelsString          string        `json:"-"`
-		Labels                labels.Labels `json:"labels"`
-		Sources               []string      `json:"sources"`
-		Parents               []string      `json:"parents"`
+	type formattedBlockData struct {
+		ULID            string
+		ULIDTime        string
+		SplitCount      *uint32
+		MinTime         string
+		MaxTime         string
+		Duration        string
+		DeletedTime     string
+		CompactionLevel int
+		BlockSize       string
+		Labels          string
+		Sources         []string
+		Parents         []string
 	}
-	blocks := make([]blockData, 0, len(metas))
+
+	type richMeta struct {
+		*metadata.Meta
+		Duration    float64 `json:"duration"`
+		DeletedTime *int64  `json:"deletedTime,omitempty"`
+		SplitID     *uint32 `json:"splitId,omitempty"`
+	}
+
+	formattedBlocks := make([]formattedBlockData, 0, len(metas))
+	richMetas := make([]richMeta, 0, len(metas))
 
 	for _, m := range metas {
 		if !showDeleted && !deletedTimes[m.ULID].IsZero() {
@@ -168,43 +171,48 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		for _, pb := range m.Compaction.Sources {
 			sources = append(parents, pb.String())
 		}
-		var blockSplitCount *uint32
+		var blockSplitID *uint32
 		if splitCount > 0 {
 			bsc := tsdb.HashBlockID(m.ULID) % uint32(splitCount)
-			blockSplitCount = &bsc
+			blockSplitID = &bsc
 		}
 		lbls := labels.FromMap(m.Thanos.Labels)
-		blocks = append(blocks, blockData{
-			ULID:                  m.ULID.String(),
-			ULIDTime:              util.TimeFromMillis(int64(m.ULID.Time())).UTC().Format(time.RFC3339),
-			ULIDTimeUnixMillis:    util.TimeFromMillis(int64(m.ULID.Time())).UTC().UnixMilli(),
-			SplitCount:            blockSplitCount,
-			MinTime:               util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
-			MinTimeUnixMillis:     util.TimeFromMillis(m.MinTime).UTC().UnixMilli(),
-			MaxTime:               util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
-			MaxTimeUnixMillis:     util.TimeFromMillis(m.MaxTime).UTC().UnixMilli(),
-			Duration:              util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
-			DurationSeconds:       util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).Seconds(),
-			DeletedTime:           deletedTimes[m.ULID].UTC().Format(time.RFC3339),
-			DeletedTimeUnixMillis: deletedTimes[m.ULID].UTC().UnixMilli(),
-			CompactionLevel:       m.Compaction.Level,
-			BlockSizeHuman:        listblocks.GetFormattedBlockSize(m),
-			BlockSizeBytes:        listblocks.GetBlockSizeBytes(m),
-			LabelsString:          lbls.WithoutLabels(tsdb.TenantIDExternalLabel).String(),
-			Labels:                lbls,
-			Sources:               sources,
-			Parents:               parents,
+		formattedBlocks = append(formattedBlocks, formattedBlockData{
+			ULID:            m.ULID.String(),
+			ULIDTime:        util.TimeFromMillis(int64(m.ULID.Time())).UTC().Format(time.RFC3339),
+			SplitCount:      blockSplitID,
+			MinTime:         util.TimeFromMillis(m.MinTime).UTC().Format(time.RFC3339),
+			MaxTime:         util.TimeFromMillis(m.MaxTime).UTC().Format(time.RFC3339),
+			Duration:        util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).String(),
+			DeletedTime:     deletedTimes[m.ULID].UTC().Format(time.RFC3339),
+			CompactionLevel: m.Compaction.Level,
+			BlockSize:       listblocks.GetFormattedBlockSize(m),
+			Labels:          lbls.WithoutLabels(tsdb.TenantIDExternalLabel).String(),
+			Sources:         sources,
+			Parents:         parents,
+		})
+		var deletedAt *int64
+		if dt, ok := deletedTimes[m.ULID]; ok {
+			deletedAtTime := dt.UnixMilli()
+			deletedAt = &deletedAtTime
+		}
+		richMetas = append(richMetas, richMeta{
+			Meta:        m,
+			DeletedTime: deletedAt,
+			Duration:    util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).Seconds(),
+			SplitID:     blockSplitID,
 		})
 	}
 
 	util.RenderHTTPResponse(w, struct {
-		Now            time.Time   `json:"now"`
-		User           string      `json:"user,omitempty"`
-		Blocks         []blockData `json:"blocks,omitempty"`
-		ShowDeleted    bool        `json:"-"`
-		ShowSplitCount bool        `json:"-"`
-		ShowSources    bool        `json:"-"`
-		ShowParents    bool        `json:"-"`
+		Now             time.Time            `json:"now"`
+		User            string               `json:"user,omitempty"`
+		RichMetas       []richMeta           `json:"metas"`
+		FormattedBlocks []formattedBlockData `json:"-"`
+		ShowDeleted     bool                 `json:"-"`
+		ShowSplitCount  bool                 `json:"-"`
+		ShowSources     bool                 `json:"-"`
+		ShowParents     bool                 `json:"-"`
 
 		ShowDeletedURI string `json:"-"`
 		ShowSourcesURI string `json:"-"`
@@ -212,15 +220,15 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 
 		TSDBTenantIDExternalLabel string `json:"-"`
 	}{
-		Now:    time.Now(),
-		User:   userID,
-		Blocks: blocks,
+		Now:             time.Now(),
+		User:            userID,
+		RichMetas:       richMetas,
+		FormattedBlocks: formattedBlocks,
 
 		ShowSplitCount: splitCount > 0,
-
-		ShowDeleted: showDeleted,
-		ShowSources: showSources,
-		ShowParents: showParents,
+		ShowDeleted:    showDeleted,
+		ShowSources:    showSources,
+		ShowParents:    showParents,
 
 		ShowDeletedURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_deleted"),
 		ShowSourcesURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_sources"),
