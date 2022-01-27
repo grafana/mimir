@@ -8,17 +8,7 @@ This tool is used to interact with user-facing Mimir APIs.
 
 The various binaries are available for macOS, Windows, and Linux.
 
-## macOS
-
-> TODO https://github.com/grafana/mimir/issues/837
-
-`mimirtool` is available on macOS via [Homebrew](https://brew.sh/):
-
-```bash
-brew install grafana/grafana/mimirtool
-```
-
-## Linux, Docker and Windows
+## macOS, Linux, Windows, and Docker
 
 Refer to the [latest release](https://github.com/grafana/mimir/releases) for installation instructions on these.
 
