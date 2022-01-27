@@ -131,23 +131,23 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	type blockData struct {
 		ULID                  string        `json:"ulid,omitempty"`
 		ULIDTime              string        `json:"ulid_time,omitempty"`
-		ULIDTimeUnixMillis    int64         `json:"ulid_time_unix_millis,omitempty"`
+		ULIDTimeUnixMillis    int64         `json:"ulid_time_unix_millis"`
 		SplitCount            *uint32       `json:"split_count,omitempty"`
 		MinTime               string        `json:"min_time,omitempty"`
-		MinTimeUnixMillis     int64         `json:"min_time_unix_millis,omitempty"`
+		MinTimeUnixMillis     int64         `json:"min_time_unix_millis"`
 		MaxTime               string        `json:"max_time,omitempty"`
-		MaxTimeUnixMillis     int64         `json:"max_time_unix_millis,omitempty"`
+		MaxTimeUnixMillis     int64         `json:"max_time_unix_millis"`
 		Duration              string        `json:"duration,omitempty"`
-		DurationSeconds       float64       `json:"duration_seconds,omitempty"`
+		DurationSeconds       float64       `json:"duration_seconds"`
 		DeletedTime           string        `json:"deleted_time,omitempty"`
-		DeletedTimeUnixMillis int64         `json:"deleted_time_unix_millis,omitempty"`
-		CompactionLevel       int           `json:"compaction_level,omitempty"`
+		DeletedTimeUnixMillis int64         `json:"deleted_time_unix_millis"`
+		CompactionLevel       int           `json:"compaction_level"`
 		BlockSizeHuman        string        `json:"block_size_human,omitempty"`
-		BlockSizeBytes        uint64        `json:"block_size_bytes,omitempty"`
+		BlockSizeBytes        uint64        `json:"block_size_bytes"`
 		LabelsString          string        `json:"-"`
-		Labels                labels.Labels `json:"labels,omitempty"`
-		Sources               []string      `json:"sources,omitempty"`
-		Parents               []string      `json:"parents,omitempty"`
+		Labels                labels.Labels `json:"labels"`
+		Sources               []string      `json:"sources"`
+		Parents               []string      `json:"parents"`
 	}
 	blocks := make([]blockData, 0, len(metas))
 
