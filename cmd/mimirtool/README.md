@@ -408,4 +408,4 @@ mimirtool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml ...
 
 ### License
 
-Licensed Apache 2.0, see [LICENSE](LICENSE).
+Licensed AGPLv3, see [LICENSE](../../LICENSE).
