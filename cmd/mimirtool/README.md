@@ -406,68 +406,6 @@ This command accepts Prometheus rule YAML files as input and extracts Prometheus
 mimirtool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml ...
 ```
 
-## chunktool
-
-This repo also contains the `chunktool`. A client meant to interact with chunks stored and indexed in mimir backends.
-
-##### Chunk Delete
-
-The delete command currently cleans all index entries pointing to chunks in the specified index. Only bigtable and the v10 schema are currently fully supported. This will not delete the entire index entry, only the corresponding chunk entries within the index row.
-
-##### Chunk Migrate
-
-The migrate command helps with migrating chunks across mimir clusters. It also takes care of setting right index in the new cluster as per the specified schema config.
-
-As of now it only supports `Bigtable` or `GCS` as a source to read chunks from for migration while for writing it supports all the storages that Mimir supports.
-More details about it [here](./pkg/chunk/migrate/README.md)
-
-##### Chunk Validate/Clean-Index
-
-The `chunk validate-index` and `chunk clean-index` command allows users to scan their index and chunk backends for invalid entries. The `validate-index` command will find invalid entries and ouput them to a CSV file. The `clean-index` command will take that CSV file as input and delete the invalid entries.
-
-## logtool
-
-A CLI tool to parse Mimir query-frontend logs and formats them for easy analysis.
-
-```
-Options:
-  -dur duration
-        only show queries which took longer than this duration, e.g. -dur 10s
-  -query
-        show the query
-  -utc
-        show timestamp in UTC time
-```
-
-Feed logs into it using [`logcli`](https://github.com/grafana/loki/blob/master/docs/getting-started/logcli.md) from Loki, [`kubectl`](https://kubernetes.io/docs/reference/kubectl/overview/) for Kubernetes, `cat` from a file, or any other way to get raw logs:
-
-Loki `logcli` example:
-
-```
-$ logcli query '{cluster="us-central1", name="query-frontend", namespace="dev"}' --limit=5000 --since=3h --forward -o raw | ./logtool -dur 5s
-https://logs-dev-ops-tools1.grafana.net/loki/api/v1/query_range?direction=FORWARD&end=1591119479093405000&limit=5000&query=%7Bcluster%3D%22us-central1%22%2C+name%3D%22query-frontend%22%2C+namespace%3D%22dev%22%7D&start=1591108679093405000
-Common labels: {cluster="us-central1", container_name="query-frontend", job="dev/query-frontend", level="debug", name="query-frontend", namespace="dev", pod_template_hash="7cd4bf469d", stream="stderr"}
-
-Timestamp                                TraceID           Length    Duration       Status  Path
-2020-06-02 10:38:40.34205349 -0400 EDT   1f2533b40f7711d3  12h0m0s   21.92465802s   (200)   /api/prom/api/v1/query_range
-2020-06-02 10:40:25.171649132 -0400 EDT  2ac59421db0000d8  168h0m0s  16.378698276s  (200)   /api/prom/api/v1/query_range
-2020-06-02 10:40:29.698167258 -0400 EDT  3fd088d900160ba8  168h0m0s  20.912864541s  (200)   /api/prom/api/v1/query_range
-```
-
-```
-$ cat query-frontend-logs.log | ./logtool -dur 5s
-Timestamp                                TraceID           Length    Duration       Status  Path
-2020-05-26 13:51:15.0577354 -0400 EDT    76b9939fd5c78b8f  6h0m0s    10.249149614s  (200)   /api/prom/api/v1/query_range
-2020-05-26 13:52:15.771988849 -0400 EDT  2e7473ab10160630  10h33m0s  7.472855362s   (200)   /api/prom/api/v1/query_range
-2020-05-26 13:53:46.712563497 -0400 EDT  761f3221dcdd85de  10h33m0s  11.874296689s  (200)   /api/prom/api/v1/query_range
-```
-
-## benchtool
-
-A tool for benchmarking a Prometheus remote-write backend and PromQL compatible
-API. It allows for metrics to be generated using a [workload
-file](docs/benchtool.md).
-
 ### License
 
 Licensed Apache 2.0, see [LICENSE](LICENSE).
