@@ -30,7 +30,7 @@ export MIMIR_LATEST=$(curl -Ls -o /dev/null -w %{url_effective} https://github.c
 docker pull "grafana/mimir:${MIMIR_LATEST}"
 ```
 
-To install Grafana Mimir locally, download the latest release from GitHub and mark the file as executable.
+To install Grafana Mimir locally, download the latest release binary from GitHub and make it executable.
 
 ```bash
 curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
