@@ -1477,8 +1477,8 @@ Usage of ./cmd/mimir/mimir:
     	file path to store temporary rule files for the prometheus rule managers (default "/rules")
   -ruler.search-pending-for duration
     	Time to spend searching for a pending ruler when shutting down. (default 5m0s)
-  -ruler.tenant-federation.enabled source_tenants
-    	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's source_tenants field. If this flag is set to `false` when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
+  -ruler.tenant-federation.enabled
+    	Enable running rule groups against multiple tenants. The tenant IDs involved need to be in the rule group's `source_tenants` field. If this flag is set to `false` when there are already created federated rule groups, then these rules groups will be skipped during evaluations.
   -ruler.tenant-shard-size int
     	The tenant's shard size when sharding is used by ruler. Value of 0 disables shuffle sharding for the tenant, and tenant rules will be sharded across all ruler replicas.
   -runtime-config.file string
