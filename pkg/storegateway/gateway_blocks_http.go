@@ -108,11 +108,16 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	showDeleted := req.URL.Query().Get("show_deleted") == "true"
-	showSources := req.URL.Query().Get("show_sources") == "true"
-	showParents := req.URL.Query().Get("show_parents") == "true"
+	if err := req.ParseForm(); err != nil {
+		util.WriteTextResponse(w, fmt.Sprintf("Can't parse form: %s", err))
+		return
+	}
+
+	showDeleted := req.Form.Get("show_deleted") == "true"
+	showSources := req.Form.Get("show_sources") == "true"
+	showParents := req.Form.Get("show_parents") == "true"
 	var splitCount int
-	if sc := req.URL.Query().Get("split_count"); sc != "" {
+	if sc := req.Form.Get("split_count"); sc != "" {
 		var err error
 		splitCount, err = strconv.Atoi(sc)
 		if err != nil {
@@ -217,19 +222,24 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		ShowSources: showSources,
 		ShowParents: showParents,
 
-		ShowDeletedURI: uriWithTrueBoolParam(req.URL, "show_deleted"),
-		ShowSourcesURI: uriWithTrueBoolParam(req.URL, "show_sources"),
-		ShowParentsURI: uriWithTrueBoolParam(req.URL, "show_parents"),
+		ShowDeletedURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_deleted"),
+		ShowSourcesURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_sources"),
+		ShowParentsURI: uriWithTrueBoolParam(*req.URL, req.Form, "show_parents"),
 
 		TSDBTenantIDExternalLabel: tsdb.TenantIDExternalLabel,
 	}, blocksTemplate, req)
 }
 
-func uriWithTrueBoolParam(u *url.URL, boolParam string) string {
-	uc := *u
-	q := uc.Query()
+func uriWithTrueBoolParam(u url.URL, form url.Values, boolParam string) string {
+	q := u.Query()
+	for k, vs := range form {
+		for _, val := range vs {
+			// Yes, we set only the last value, but otherwise the logic just gets too complicated.
+			q.Set(k, val)
+		}
+	}
 	q.Set(boolParam, "true")
-	uc.RawQuery = q.Encode()
+	u.RawQuery = q.Encode()
 
-	return uc.RequestURI()
+	return u.RequestURI()
 }
