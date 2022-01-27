@@ -117,7 +117,7 @@ remote_write:
   - url: http://localhost:9009/api/v1/push
 ```
 
-The configuration for a Prometheus server that scrapes itself and writes those metrics to Grafana Mimir would look similar to:
+The configuration for a Prometheus server that scrapes itself and writes those metrics to Grafana Mimir looks similar to this:
 
 ```yaml
 remote_write:
@@ -139,7 +139,7 @@ remote_write:
   - url: http://localhost:9009/prometheus/api/v1/push
 ```
 
-The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir would look similar to:
+The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir looks similar to this:
 
 ```yaml
 server:
