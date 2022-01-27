@@ -5,33 +5,33 @@ weight: 10
 slug: shuffle-sharding
 ---
 
-Mimir leverages sharding techniques to horizontally scale both single and multi-tenant clusters beyond the capacity of a single node.
+Grafana Mimir leverages sharding techniques to horizontally scale both single- and multi-tenant clusters beyond the capacity of a single node.
 
 ## Background
 
 The sharding strategy employed by Mimir distributes the workload across a subset of the instances running a given service (eg. ingesters). For example, on the write path each tenant's series are sharded across a subset of the ingesters. The size of this subset (i.e. the number of instances) is configured using the "shard size" parameter. The default value for shard size is 0, which means that all available instances should be used for each tenant. This allows for a fair balance on the resources consumed by each instance (ie. CPU and memory) and to maximise these resources across the cluster.
 
-However, in a **multi-tenant** cluster this zero default value introduces some **downsides**:
+> **Note:** In a multi-tenant cluster this default (`0`) value introduces some downsides:
 
 1. An outage affects all tenants
-2. A misbehaving tenant (eg. causing out of memory) could affect all other tenants
+* A misbehaving tenant, which for example causes an out-of-memory error, could negatively affect all other tenants.
 
 Configuring a shard size value higher than zero enables **shuffle sharding**. The goal of **shuffle sharding** is to reduce the blast radius of an outage and better isolate tenants.
 
 ## What is shuffle sharding
 
-Shuffle sharding is a technique used to isolate different tenant's workloads and to give each tenant a single-tenant experience even if they're running in a shared cluster. This technique has been publicly shared and clearly explained by AWS in their [builders' library](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/) and a reference implementation has been shown in the [Route53 Infima library](https://github.com/awslabs/route53-infima/blob/master/src/main/java/com/amazonaws/services/route53/infima/SimpleSignatureShuffleSharder.java).
+Shuffle sharding is a technique that isolates different tenant's workloads and gives each tenant a single-tenant experience even if they're running in a shared cluster. For details, see how AWS answers the question [What is shuffle sharding?](https://aws.amazon.com/builders-library/workload-isolation-using-shuffle-sharding/) and a reference implementation within the [Route53 Infima library](https://github.com/awslabs/route53-infima/blob/master/src/main/java/com/amazonaws/services/route53/infima/SimpleSignatureShuffleSharder.java).
 
-The idea is to assign each tenant a shard composed by a subset of the Mimir service instances, aiming to minimize the overlapping instances between two different tenants. Shuffle sharding brings the following **benefits**:
+The idea is to assign each tenant a shard that is composed of a subset of the Grafana Mimir service instances, which minimizes the number of overlapping instances between two different tenants. Shuffle sharding has the following benefits:
 
-- An outage on some Mimir cluster instances/nodes will only affect a subset of tenants.
-- A misbehaving tenant will affect only its shard instances. Due to the low overlap of instances between different tenants, it's statistically quite likely that any other tenant will run on different instances or only a subset of instances will match the affected ones.
+- An outage on some Grafana Mimir cluster instances or nodes will only affect a subset of tenants.
+- A misbehaving tenant only affects its shard instances. Due to the low overlap of instances between different tenants, it’s statistically likely that any other tenant will run on different instances or that only a subset of instances will match the affected ones.
 
-Using shuffle sharding doesn't require more resources but instances may be less evenly balanced from time to time.
+Using shuffle sharding doesn’t require more resources, but instances might be periodically less evenly balanced.
 
 ### Low overlapping instances probability
 
-For example, given a Mimir cluster running **50 ingesters** and assigning **each tenant 4** out of 50 ingesters, shuffling instances between each tenant, we get **230K possible combinations**.
+For example, given that a Grafana Mimir cluster that is running 50 ingesters and assigning each tenant 4 out of 50 ingesters, by shuffling instances between each tenant, there are 230K possible combinations.
 
 Randomly picking two different tenants we have the:
 
@@ -45,20 +45,22 @@ Randomly picking two different tenants we have the:
 
 <!-- Chart source at https://docs.google.com/spreadsheets/d/1FXbiWTXi6bdERtamH-IfmpgFq1fNL4GP_KX_yJvbRi4/edit -->
 
-## Mimir shuffle sharding
+## Grafana Mimir shuffle sharding
 
-Mimir currently supports shuffle sharding in the following services:
+Grafana Mimir supports shuffle sharding in the following services:
 
 - [Ingesters](#ingesters-shuffle-sharding)
 - [Query-frontend / Query-scheduler](#query-frontend-and-query-scheduler-shuffle-sharding)
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
 
-Since default value of shard size is 0, shuffle sharding is **disabled by default** and needs to be explicitly enabled by increasing the shard size, either globally or only for a given tenant. Note that if this value is higher than the number of available instances (e.g. `-distributor.ingestion-tenant-shard-size` is higher than the number of ingesters), then shuffle-sharding is disabled and all instances are used again.
+If the default value of the shard size is `0`, shuffle sharding is disabled and you need to explicitly enable by increasing the shard size either globally or for a given tenant.
+
+> **Note:** If the shard-size value is higher than the number of available instances, for example where `-distributor.ingestion-tenant-shard-size` is higher than the number of ingesters, then shuffle-sharding is disabled and all instances are used again.
 
 ### Guaranteed properties
 
-The Mimir shuffle sharding implementation guarantees the following properties:
+The Grafana Mimir shuffle sharding implementation provides the following benefits:
 
 - **Stability**<br />
   Given a consistent state of the hash ring, the shuffle sharding algorithm always selects the same instances for a given tenant, even across different machines.
@@ -71,7 +73,7 @@ The Mimir shuffle sharding implementation guarantees the following properties:
 
 ### Ingesters shuffle sharding
 
-By default the Mimir distributor spreads the received series across all running ingesters.
+By default, the Grafana Mimir distributor spreads the received series across all running ingesters.
 
 When shuffle sharding is **enabled** for the ingesters, the distributor and ruler on the **write path** spread each tenant series across `-distributor.ingestion-tenant-shard-size` number of ingesters, while on the **read path** the querier and ruler queries only the subset of ingesters holding the series for a given tenant.
 
@@ -82,7 +84,7 @@ _The shard size can be overridden on a per-tenant basis in the limits overrides 
 To enable shuffle-sharding for ingesters on the write path you need to configure the following CLI flags (or their respective YAML config options) to **distributor**, **ingester** and **ruler**:
 
 - `-distributor.ingestion-tenant-shard-size=<size>`<br />
-  `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is zero or greater than the number of available ingesters in the Mimir cluster, the tenant series are sharded across all ingesters.
+  `<size>` set to the number of ingesters each tenant series should be sharded to. If `<size>` is zero or greater than the number of available ingesters in the Grafana Mimir cluster, the tenant series are sharded across all ingesters.
 
 #### Ingesters read path
 
@@ -94,7 +96,7 @@ Assuming shuffle-sharding has been enabled for the write path, to enable shuffle
 
 #### Rollout strategy
 
-If you're running a Mimir cluster with shuffle-sharding disabled and you want to enable it for ingesters, the following rollout strategy should be used to avoid missing querying any time-series in the ingesters memory:
+If you’re running a Grafana Mimir cluster with shuffle sharding disabled, and you want to enable it for ingesters, use the following rollout strategy to avoid missing querying any time-series in the ingesters memory:
 
 1. Enable ingesters shuffle-sharding on the **write path**
 2. **Wait** at least `-querier.shuffle-sharding-ingesters-lookback-period` time
@@ -115,7 +117,7 @@ This is deemed an infrequent operation that we considered banning, but a workaro
 
 ### Query-frontend and Query-scheduler shuffle sharding
 
-By default all Mimir queriers can execute received queries for given tenant.
+By default, all Grafana Mimir queriers can execute received queries for a given tenant.
 
 When shuffle sharding is **enabled** by setting `-frontend.max-queriers-per-tenant` (or its respective YAML config option) to a value higher than 0 and lower than the number of available queriers, only specified number of queriers will execute queries for single tenant.
 
@@ -127,7 +129,7 @@ _The maximum number of queriers can be overridden on a per-tenant basis in the l
 
 In the event a tenant is repeatedly sending a "query of death" which leads the querier to crash or getting killed because of out-of-memory, the crashed querier will get disconnected from the query-frontend or query-scheduler and a new querier will be immediately assigned to the tenant's shard. This practically invalidates the assumption that shuffle-sharding can be used to contain the blast radius in case of a query of death.
 
-To mitigate it, Mimir allows to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant's shard (and another healthy querier is added as replacement). A delay of 1 minute may be a reasonable trade-off:
+To mitigate it, Grafana Mimir allows you to configure a delay between when a querier disconnects because of a crash and when the crashed querier is actually removed from the tenant’s shard (and another healthy querier is added as a replacement). A delay of 1 minute might be a reasonable trade-off:
 
 - Query-frontend: `-query-frontend.querier-forget-delay=1m`
 - Query-scheduler: `-query-scheduler.querier-forget-delay=1m`
