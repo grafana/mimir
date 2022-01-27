@@ -90,7 +90,7 @@ This dashboard shows various metrics for the selected tenant/user.
 
 ## Mimir / Top Tenants
 
-This dashboard shows the top tenants based on multiple selection criterias.
+This dashboard shows the top tenants based on multiple selection criteria.
 
 ## Mimir / Object Store
 
