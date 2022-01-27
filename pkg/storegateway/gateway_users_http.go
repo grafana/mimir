@@ -30,7 +30,7 @@ const usersPageTemplate = `
 			<tbody>
 				{{ range .Users }}
 				<tr>
-					<td><a href="user/{{ .UserID }}/blocks">{{ .UserID }}</a></td>
+					<td><a href="user/{{ . }}/blocks">{{ . }}</a></td>
 				</tr>
 				{{ end }}
 			</tbody>
@@ -47,19 +47,11 @@ func (s *StoreGateway) UsersHandler(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	type userData struct {
-		UserID string
-	}
-	users := make([]userData, len(userIDs))
-	for i := range userIDs {
-		users[i].UserID = userIDs[i]
-	}
-
 	util.RenderHTTPResponse(w, struct {
-		Now   time.Time  `json:"now"`
-		Users []userData `json:"users,omitempty"`
+		Now   time.Time `json:"now"`
+		Users []string  `json:"users,omitempty"`
 	}{
 		Now:   time.Now(),
-		Users: users,
+		Users: userIDs,
 	}, usersTemplate, req)
 }
