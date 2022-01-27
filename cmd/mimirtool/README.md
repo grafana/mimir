@@ -45,13 +45,16 @@ The following commands are used by users to interact with their Mimir alertmanag
 
 ##### Alertmanager Get
 
-    mimirtool alertmanager get
+```bash
+mimirtool alertmanager get
+```
 
 ##### Alertmanager Load
 
-    mimirtool alertmanager load ./example_alertmanager_config.yaml
-
-    mimirtool alertmanager load ./example_alertmanager_config.yaml template_file1.tmpl template_file2.tmpl
+```bash
+mimirtool alertmanager load ./example_alertmanager_config.yaml
+mimirtool alertmanager load ./example_alertmanager_config.yaml template_file1.tmpl template_file2.tmpl
+```
 
 #### Rules
 
@@ -61,31 +64,41 @@ The following commands are used by users to interact with their Mimir ruler conf
 
 This command will retrieve all of the rule groups stored in the specified Mimir instance and print each one by rule group name and namespace to the terminal.
 
-    mimirtool rules list
+```bash
+mimirtool rules list
+```
 
 ##### Rules Print
 
 This command will retrieve all of the rule groups stored in the specified Mimir instance and print them to the terminal.
 
-    mimirtool rules print
+```bash
+mimirtool rules print
+```
 
 ##### Rules Get
 
 This command will retrieve the specified rule group from Mimir and print it to the terminal.
 
-    mimirtool rules get example_namespace example_rule_group
+```bash
+mimirtool rules get example_namespace example_rule_group
+```
 
 ##### Rules Delete
 
 This command will delete the specified rule group from the specified namespace.
 
-    mimirtool rules delete example_namespace example_rule_group
+```bash
+mimirtool rules delete example_namespace example_rule_group
+```
 
 ##### Rules Load
 
 This command will load each rule group in the specified files and load them into Mimir. If a rule already exists in Mimir it will be overwritten if a diff is found.
 
-    mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml  ...
+```bash
+mimirtool rules load ./example_rules_one.yaml ./example_rules_two.yaml
+```
 
 Example file:
 
@@ -104,7 +117,9 @@ groups:
 
 This command lints a rules file. The linter's aim is not to verify correctness but just YAML and PromQL expression formatting within the rule file. This command always edits in place, you can use the dry run flag (`-n`) if you'd like to perform a trial run that does not make any changes. This command does not interact with your Mimir cluster.
 
-    mimirtool rules lint -n ./example_rules_one.yaml ./example_rules_two.yaml ...
+```bash
+mimirtool rules lint -n ./example_rules_one.yaml ./example_rules_two.yaml
+```
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -112,7 +127,9 @@ The format of the file is the same as in [Rules Diff](#rules-diff).
 
 This command prepares a rules file for upload to Mimir. It lints all your PromQL expressions and adds an specific label to your PromQL query aggregations in the file. This command does not interact with your Mimir cluster.
 
-    mimirtool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml ...
+```bash
+mimirtool rules prepare -i ./example_rules_one.yaml ./example_rules_two.yaml
+```
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -123,7 +140,9 @@ There are two flags of note for this command:
 
 At the end of the run, the command tells you whenever the operation was a success in the form of
 
-    INFO[0000] SUCESS: 194 rules found, 0 modified expressions
+```console
+INFO[0000] SUCESS: 194 rules found, 0 modified expressions
+```
 
 It is important to note that a modification can be a PromQL expression lint or a label add to your aggregation.
 
@@ -131,7 +150,9 @@ It is important to note that a modification can be a PromQL expression lint or a
 
 This command checks rules against the recommended [best practices](https://prometheus.io/docs/practices/rules/) for rules. This command does not interact with your Mimir cluster.
 
-    mimirtool rules check ./example_rules_one.yaml
+```bash
+mimirtool rules check ./example_rules_one.yaml
+```
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -139,7 +160,9 @@ The format of the file is the same as in [Rules Diff](#rules-diff).
 
 This command compares rules against the rules in your Mimir cluster.
 
-    mimirtool rules diff ./example_rules_one.yaml
+```bash
+mimirtool rules diff ./example_rules_one.yaml
+```
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -147,7 +170,9 @@ The format of the file is the same as in [Rules Diff](#rules-diff).
 
 This command compares rules against the rules in your Mimir cluster. It applies any differences to your Mimir cluster.
 
-    mimirtool rules sync ./example_rules_one.yaml
+```bash
+mimirtool rules sync ./example_rules_one.yaml
+```
 
 The format of the file is the same as in [Rules Diff](#rules-diff).
 
@@ -161,8 +186,11 @@ Mimir exposes a [Remote Read API] which allows access to the stored series. The 
 
 The `remote-read stats` command summarizes statistics of the stored series matching the selector.
 
-```sh
+```bash
 mimirtool remote-read stats --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+```
+
+```console
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Querying time from=2020-12-30T14:00:00Z to=2020-12-30T15:00:00Z with selector={job="node"}
 INFO[0000] MIN TIME                           MAX TIME                           DURATION     NUM SAMPLES  NUM SERIES   NUM STALE NAN VALUES  NUM NAN VALUES
@@ -173,8 +201,11 @@ INFO[0000] 2020-12-30 14:00:00.629 +0000 UTC  2020-12-30 14:59:59.629 +0000 UTC 
 
 The `remote-read dump` command prints all series and samples matching the selector.
 
-```sh
+```bash
 mimirtool remote-read dump --selector 'up{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
+```
+
+```console
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} 1 1609336914711
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} NaN 1609336924709 # StaleNaN
 [...]
@@ -184,9 +215,12 @@ mimirtool remote-read dump --selector 'up{job="node"}' --address http://demo.rob
 
 The `remote-read export` command exports all series and samples matching the selector into a local TSDB. This TSDB can then be further analysed with local tooling like `prometheus` and `promtool`.
 
-```shell
+```bash
 # Use Remote Read API to download all metrics with label job=name into local tsdb
 mimirtool remote-read export --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
+```
+
+```console
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Created TSDB in path './local-tsdb'
 INFO[0000] Using existing TSDB in path './local-tsdb'
@@ -195,15 +229,21 @@ INFO[0001] Store TSDB blocks in './local-tsdb'
 INFO[0001] BLOCK ULID                  MIN TIME                       MAX TIME                       DURATION     NUM SAMPLES  NUM CHUNKS   NUM SERIES   SIZE
 INFO[0001] 01ETT28D6B8948J87NZXY8VYD9  2020-12-30 13:53:59 +0000 UTC  2020-12-30 13:59:59 +0000 UTC  6m0.001s     15950        429          425          105KiB867B
 INFO[0001] 01ETT28D91Z9SVRYF3DY0KNV41  2020-12-30 14:00:00 +0000 UTC  2020-12-30 14:53:58 +0000 UTC  53m58.001s   143530       1325         425          509KiB679B
+```
 
-# Examples for using local TSDB
-## Analyzing contents using promtool
+###### Examples for using local TSDB
+Analyzing contents using promtool
+```bash
 promtool tsdb analyze ./local-tsdb
+```
 
-## Dump all values of the TSDB
+Dump all values of the TSDB
+```bash
 promtool tsdb dump ./local-tsdb
+```
 
-## Run a local prometheus
+Run a local prometheus
+```bash
 prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 ```
 
@@ -211,7 +251,9 @@ prometheus --storage.tsdb.path ./local-tsdb --config.file=<(echo "")
 
 The Overrides Exporter allows to continuously export [per tenant configuration overrides][runtime-config] as metrics. Optionally it can also export a presets file (cf. example [override config file] and [presets file]).
 
-    mimirtool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
+```bash
+mimirtool overrides-exporter --overrides-file overrides.yaml --presets-file presets.yaml
+```
 
 [override config file]: ./pkg/commands/testdata/overrides.yaml
 [presets file]: ./pkg/commands/testdata/presets.yaml
@@ -222,7 +264,7 @@ The Overrides Exporter allows to continuously export [per tenant configuration o
 This lets you generate the header which can then be used to enforce access control rules in GME / GrafanaCloud.
 
 ```bash
-./mimirtool acl generate-header --id=1234 --rule='{namespace="A"}'
+mimirtool acl generate-header --id=1234 --rule='{namespace="A"}'
 ```
 
 #### Analyse
@@ -244,7 +286,7 @@ This command will run against your Grafana instance and will download its dashbo
 
 ###### Running the command
 
-```shell
+```bash
 mimirtool analyse grafana --address=<grafana-address> --key=<API-Key>
 ```
 
@@ -292,7 +334,7 @@ This command will run against your Grafana Cloud Prometheus instance and will fe
 
 ###### Running the command
 
-```shell
+```bash
 mimirtool analyse ruler --address=https://prometheus-blocks-prod-us-central1.grafana.net --id=<1234> --key=<API-Key>
 ```
 
@@ -338,7 +380,7 @@ This command will run against your Prometheus / Cloud Prometheus instance. It wi
 
 ###### Running the command
 
-```shell
+```bash
 mimirtool analyse prometheus --address=https://prometheus-blocks-prod-us-central1.grafana.net --id=<1234> --key=<API-Key> --log.level=debug
 ```
 
@@ -392,8 +434,8 @@ This command accepts Grafana dashboard JSON files as input and extracts Promethe
 
 ###### Running the command
 
-```shell
-mimirtool analyse dashboard ./dashboard_one.json ./dashboard_two.json ...
+```bash
+mimirtool analyse dashboard ./dashboard_one.json ./dashboard_two.json
 ```
 
 ##### `analyse rule-file`
@@ -402,8 +444,8 @@ This command accepts Prometheus rule YAML files as input and extracts Prometheus
 
 ###### Running the command
 
-```shell
-mimirtool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml ...
+```bash
+mimirtool analyse rule-file ./rule_file_one.yaml ./rule_file_two.yaml
 ```
 
 ### License
