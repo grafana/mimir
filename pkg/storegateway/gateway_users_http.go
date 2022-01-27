@@ -28,7 +28,7 @@ const usersPageTemplate = `
 			<tbody>
 				{{ range .Users }}
 				<tr>
-					<td>{{ .UserID }}</td>
+					<td><a href="user/{{ .UserID }}/blocks">{{ .UserID }}</a></td>
 				</tr>
 				{{ end }}
 			</tbody>

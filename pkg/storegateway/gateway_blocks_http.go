@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -27,6 +28,20 @@ const blocksPageTemplate = `
 		<h1>Store-gateway: bucket user blocks</h1>
 		<p>Current time: {{ .Now }}</p>
 		<p>Showing blocks for user: {{ .User }}</p>
+		<p>
+			{{ if not .ShowDeleted }}
+				<a href="{{ .ShowDeletedURI }}">Show Deleted</a>
+			{{ end }}
+			{{ if not .ShowSources }}
+				<a href="{{ .ShowSourcesURI }}">Show Sources</a>
+			{{ end }}
+			{{ if not .ShowParents }}
+				<a href="{{ .ShowParentsURI }}">Show Parents</a>
+			{{ end }}
+		</p>
+		<p>
+			Use ?split_count= query param to show split compactor count preview.
+		</p>
 		<table border="1">
 			<thead>
 				<tr>
@@ -160,22 +175,43 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 	}
 
 	util.RenderHTTPResponse(w, struct {
-		Now                       time.Time
-		User                      string
-		Blocks                    []blockData
-		ShowSplitCount            bool
-		ShowDeleted               bool
-		ShowSources               bool
-		ShowParents               bool
+		Now            time.Time
+		User           string
+		Blocks         []blockData
+		ShowDeleted    bool
+		ShowSplitCount bool
+		ShowSources    bool
+		ShowParents    bool
+
+		ShowDeletedURI string
+		ShowSourcesURI string
+		ShowParentsURI string
+
 		TSDBTenantIDExternalLabel string
 	}{
-		Now:                       time.Now(),
-		User:                      userID,
-		Blocks:                    blocks,
-		ShowSplitCount:            splitCount > 0,
-		ShowDeleted:               showDeleted,
-		ShowSources:               showSources,
-		ShowParents:               showParents,
+		Now:    time.Now(),
+		User:   userID,
+		Blocks: blocks,
+
+		ShowSplitCount: splitCount > 0,
+
+		ShowDeleted: showDeleted,
+		ShowSources: showSources,
+		ShowParents: showParents,
+
+		ShowDeletedURI: uriWithTrueBoolParam(req.URL, "show_deleted"),
+		ShowSourcesURI: uriWithTrueBoolParam(req.URL, "show_sources"),
+		ShowParentsURI: uriWithTrueBoolParam(req.URL, "show_parents"),
+
 		TSDBTenantIDExternalLabel: tsdb.TenantIDExternalLabel,
 	}, blocksTemplate, req)
+}
+
+func uriWithTrueBoolParam(u *url.URL, boolParam string) string {
+	uc := *u
+	q := uc.Query()
+	q.Set(boolParam, "true")
+	uc.RawQuery = q.Encode()
+
+	return uc.RequestURI()
 }
