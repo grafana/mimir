@@ -1,6 +1,6 @@
 # Mimir Tools
 
-This repo contains tools used for interacting with [Mimir](https://github.com/grafana/mimir).
+This tool is used to interact with user-facing Mimir APIs.
 
 - [mimirtool](#mimirtool): Interacts with user-facing Mimir APIs and backend storage components
 
@@ -20,7 +20,7 @@ brew install grafana/grafana/mimirtool
 
 ## Linux, Docker and Windows
 
-Refer to the [latest release](https://github.com/grafana/mimir-tools/releases) for installation intructions on these.
+Refer to the [latest release](https://github.com/grafana/mimir/releases) for installation instructions on these.
 
 ## mimirtool
 
@@ -190,6 +190,7 @@ The `remote-read stats` command summarizes statistics of the stored series match
 mimirtool remote-read stats --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
 ```
 
+The output is the following:
 ```console
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Querying time from=2020-12-30T14:00:00Z to=2020-12-30T15:00:00Z with selector={job="node"}
@@ -205,6 +206,7 @@ The `remote-read dump` command prints all series and samples matching the select
 mimirtool remote-read dump --selector 'up{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read
 ```
 
+The output is the following:
 ```console
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} 1 1609336914711
 {__name__="up", instance="demo.robustperception.io:9100", job="node"} NaN 1609336924709 # StaleNaN
@@ -220,6 +222,7 @@ The `remote-read export` command exports all series and samples matching the sel
 mimirtool remote-read export --selector '{job="node"}' --address http://demo.robustperception.io:9090 --remote-read-path /api/v1/read --tsdb-path ./local-tsdb
 ```
 
+The output is the following:
 ```console
 INFO[0000] Create remote read client using endpoint 'http://demo.robustperception.io:9090/api/v1/read'
 INFO[0000] Created TSDB in path './local-tsdb'
