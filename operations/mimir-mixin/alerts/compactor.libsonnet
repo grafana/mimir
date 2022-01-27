@@ -65,9 +65,9 @@
           alert: $.alertName('CompactorHasNotUploadedBlocks'),
           'for': '15m',
           expr: |||
-            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} > 60 * 60 * 24)
+            (time() - thanos_objstore_bucket_last_successful_upload_time{job=~".+/(%(compactor)s)"} > 60 * 60 * 24)
             and
-            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} > 0)
+            (thanos_objstore_bucket_last_successful_upload_time{job=~".+/(%(compactor)s)"} > 0)
           ||| % $._config.job_names,
           labels: {
             severity: 'critical',
@@ -81,7 +81,7 @@
           alert: $.alertName('CompactorHasNotUploadedBlocks'),
           'for': '24h',
           expr: |||
-            thanos_objstore_bucket_last_successful_upload_time{job=~".+/%(compactor)s"} == 0
+            thanos_objstore_bucket_last_successful_upload_time{job=~".+/(%(compactor)s)"} == 0
           ||| % $._config.job_names,
           labels: {
             severity: 'critical',
@@ -95,7 +95,7 @@
           alert: $.alertName('CompactorSkippedBlocksWithOutOfOrderChunks'),
           'for': '1m',
           expr: |||
-            increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/%(compactor)s", reason="block-index-out-of-order-chunk"}[5m]) > 0
+            increase(cortex_compactor_blocks_marked_for_no_compaction_total{job=~".+/(%(compactor)s)", reason="block-index-out-of-order-chunk"}[5m]) > 0
           ||| % $._config.job_names,
           labels: {
             severity: 'warning',

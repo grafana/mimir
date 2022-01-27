@@ -238,7 +238,7 @@
                   "steppedLine": false,
                   "targets": [
                      {
-                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/compactor.*\"})",
+                        "expr": "sum by(pod) (go_memstats_heap_inuse_bytes{cluster=~\"$cluster\", job=~\"($namespace)/(compactor.*|cortex|mimir)\"})",
                         "format": "time_series",
                         "interval": "15s",
                         "intervalFactor": 2,
