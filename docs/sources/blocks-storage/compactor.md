@@ -140,23 +140,23 @@ The `compactor_config` configures the compactor service.
 
 ```yaml
 compactor:
-  # List of compaction time ranges.
+  # [advanced] List of compaction time ranges.
   # CLI flag: -compactor.block-ranges
   [block_ranges: <list of duration> | default = 2h0m0s,12h0m0s,24h0m0s]
 
-  # Number of Go routines to use when downloading blocks for compaction and
-  # uploading resulting blocks.
+  # [advanced] Number of Go routines to use when downloading blocks for
+  # compaction and uploading resulting blocks.
   # CLI flag: -compactor.block-sync-concurrency
   [block_sync_concurrency: <int> | default = 8]
 
-  # Number of Go routines to use when syncing block meta files from the long
-  # term storage.
+  # [advanced] Number of Go routines to use when syncing block meta files from
+  # the long term storage.
   # CLI flag: -compactor.meta-sync-concurrency
   [meta_sync_concurrency: <int> | default = 20]
 
-  # Minimum age of fresh (non-compacted) blocks before they are being processed.
-  # Malformed blocks older than the maximum of consistency-delay and 48h0m0s
-  # will be removed.
+  # [advanced] Minimum age of fresh (non-compacted) blocks before they are being
+  # processed. Malformed blocks older than the maximum of consistency-delay and
+  # 48h0m0s will be removed.
   # CLI flag: -compactor.consistency-delay
   [consistency_delay: <duration> | default = 0s]
 
@@ -164,72 +164,75 @@ compactor:
   # CLI flag: -compactor.data-dir
   [data_dir: <string> | default = "./data"]
 
-  # The frequency at which the compaction runs
+  # [advanced] The frequency at which the compaction runs
   # CLI flag: -compactor.compaction-interval
   [compaction_interval: <duration> | default = 1h]
 
-  # How many times to retry a failed compaction within a single compaction run.
+  # [advanced] How many times to retry a failed compaction within a single
+  # compaction run.
   # CLI flag: -compactor.compaction-retries
   [compaction_retries: <int> | default = 3]
 
-  # Max number of concurrent compactions running.
+  # [advanced] Max number of concurrent compactions running.
   # CLI flag: -compactor.compaction-concurrency
   [compaction_concurrency: <int> | default = 1]
 
-  # How frequently compactor should run blocks cleanup and maintenance, as well
-  # as update the bucket index.
+  # [advanced] How frequently compactor should run blocks cleanup and
+  # maintenance, as well as update the bucket index.
   # CLI flag: -compactor.cleanup-interval
   [cleanup_interval: <duration> | default = 15m]
 
-  # Max number of tenants for which blocks cleanup and maintenance should run
-  # concurrently.
+  # [advanced] Max number of tenants for which blocks cleanup and maintenance
+  # should run concurrently.
   # CLI flag: -compactor.cleanup-concurrency
   [cleanup_concurrency: <int> | default = 20]
 
-  # Time before a block marked for deletion is deleted from bucket. If not 0,
-  # blocks will be marked for deletion and compactor component will permanently
-  # delete blocks marked for deletion from the bucket. If 0, blocks will be
-  # deleted straight away. Note that deleting blocks immediately can cause query
-  # failures.
+  # [advanced] Time before a block marked for deletion is deleted from bucket.
+  # If not 0, blocks will be marked for deletion and compactor component will
+  # permanently delete blocks marked for deletion from the bucket. If 0, blocks
+  # will be deleted straight away. Note that deleting blocks immediately can
+  # cause query failures.
   # CLI flag: -compactor.deletion-delay
   [deletion_delay: <duration> | default = 12h]
 
-  # For tenants marked for deletion, this is time between deleting of last
-  # block, and doing final cleanup (marker files, debug files) of the tenant.
+  # [advanced] For tenants marked for deletion, this is time between deleting of
+  # last block, and doing final cleanup (marker files, debug files) of the
+  # tenant.
   # CLI flag: -compactor.tenant-cleanup-delay
   [tenant_cleanup_delay: <duration> | default = 6h]
 
-  # Max time for starting compactions for a single tenant. After this time no
-  # new compactions for the tenant are started before next compaction cycle.
-  # This can help in multi-tenant environments to avoid single tenant using all
-  # compaction time, but also in single-tenant environments to force new
-  # discovery of blocks more often. 0 = disabled.
+  # [advanced] Max time for starting compactions for a single tenant. After this
+  # time no new compactions for the tenant are started before next compaction
+  # cycle. This can help in multi-tenant environments to avoid single tenant
+  # using all compaction time, but also in single-tenant environments to force
+  # new discovery of blocks more often. 0 = disabled.
   # CLI flag: -compactor.max-compaction-time
   [max_compaction_time: <duration> | default = 0s]
 
-  # Number of goroutines opening blocks before compaction.
+  # [advanced] Number of goroutines opening blocks before compaction.
   # CLI flag: -compactor.max-opening-blocks-concurrency
   [max_opening_blocks_concurrency: <int> | default = 1]
 
-  # Max number of blocks that can be closed concurrently during split
+  # [advanced] Max number of blocks that can be closed concurrently during split
   # compaction. Note that closing of newly compacted block uses a lot of memory
   # for writing index.
   # CLI flag: -compactor.max-closing-blocks-concurrency
   [max_closing_blocks_concurrency: <int> | default = 1]
 
-  # Number of symbols flushers used when doing split compaction.
+  # [advanced] Number of symbols flushers used when doing split compaction.
   # CLI flag: -compactor.symbols-flushers-concurrency
   [symbols_flushers_concurrency: <int> | default = 1]
 
-  # Comma separated list of tenants that can be compacted. If specified, only
-  # these tenants will be compacted by compactor, otherwise all tenants can be
-  # compacted. Subject to sharding.
+  # [advanced] Comma separated list of tenants that can be compacted. If
+  # specified, only these tenants will be compacted by compactor, otherwise all
+  # tenants can be compacted. Subject to sharding.
   # CLI flag: -compactor.enabled-tenants
   [enabled_tenants: <string> | default = ""]
 
-  # Comma separated list of tenants that cannot be compacted by this compactor.
-  # If specified, and compactor would normally pick given tenant for compaction
-  # (via -compactor.enabled-tenants or sharding), it will be ignored instead.
+  # [advanced] Comma separated list of tenants that cannot be compacted by this
+  # compactor. If specified, and compactor would normally pick given tenant for
+  # compaction (via -compactor.enabled-tenants or sharding), it will be ignored
+  # instead.
   # CLI flag: -compactor.disabled-tenants
   [disabled_tenants: <string> | default = ""]
 
@@ -240,7 +243,7 @@ compactor:
       # CLI flag: -compactor.ring.store
       [store: <string> | default = "memberlist"]
 
-      # The prefix for the keys in the store. Should end with a /.
+      # [advanced] The prefix for the keys in the store. Should end with a /.
       # CLI flag: -compactor.ring.prefix
       [prefix: <string> | default = "collectors/"]
 
@@ -253,19 +256,19 @@ compactor:
       [etcd: <etcd_config>]
 
       multi:
-        # Primary backend storage used by multi-client.
+        # [advanced] Primary backend storage used by multi-client.
         # CLI flag: -compactor.ring.multi.primary
         [primary: <string> | default = ""]
 
-        # Secondary backend storage used by multi-client.
+        # [advanced] Secondary backend storage used by multi-client.
         # CLI flag: -compactor.ring.multi.secondary
         [secondary: <string> | default = ""]
 
-        # Mirror writes to secondary store.
+        # [advanced] Mirror writes to secondary store.
         # CLI flag: -compactor.ring.multi.mirror-enabled
         [mirror_enabled: <boolean> | default = false]
 
-        # Timeout for storing value to secondary store.
+        # [advanced] Timeout for storing value to secondary store.
         # CLI flag: -compactor.ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
@@ -295,9 +298,9 @@ compactor:
     # CLI flag: -compactor.ring.wait-active-instance-timeout
     [wait_active_instance_timeout: <duration> | default = 10m]
 
-  # The sorting to use when deciding which compaction jobs should run first for
-  # a given tenant. Supported values are: smallest-range-oldest-blocks-first,
-  # newest-blocks-first.
+  # [advanced] The sorting to use when deciding which compaction jobs should run
+  # first for a given tenant. Supported values are:
+  # smallest-range-oldest-blocks-first, newest-blocks-first.
   # CLI flag: -compactor.compaction-jobs-order
   [compaction_jobs_order: <string> | default = "smallest-range-oldest-blocks-first"]
 ```

@@ -149,7 +149,7 @@ type TSDBConfig struct {
 	HeadCompactionConcurrency int           `yaml:"head_compaction_concurrency"`
 	HeadCompactionIdleTimeout time.Duration `yaml:"head_compaction_idle_timeout"`
 	HeadChunksWriteBufferSize int           `yaml:"head_chunks_write_buffer_size_bytes"`
-	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" doc:"hidden"`
+	HeadChunksEndTimeVariance float64       `yaml:"head_chunks_end_time_variance" category:"experimental"`
 	StripeSize                int           `yaml:"stripe_size"`
 	WALCompressionEnabled     bool          `yaml:"wal_compression_enabled"`
 	WALSegmentSizeBytes       int           `yaml:"wal_segment_size_bytes"`
@@ -267,8 +267,8 @@ type BucketStoreConfig struct {
 
 	// Chunk pool.
 	MaxChunkPoolBytes           uint64 `yaml:"max_chunk_pool_bytes"`
-	ChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" doc:"hidden"`
-	ChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" doc:"hidden"`
+	ChunkPoolMinBucketSizeBytes int    `yaml:"chunk_pool_min_bucket_size_bytes" category:"advanced"`
+	ChunkPoolMaxBucketSizeBytes int    `yaml:"chunk_pool_max_bucket_size_bytes" category:"advanced"`
 
 	// Series hash cache.
 	SeriesHashCacheMaxBytes uint64 `yaml:"series_hash_cache_max_size_bytes"`
@@ -278,15 +278,14 @@ type BucketStoreConfig struct {
 	IndexHeaderLazyLoadingIdleTimeout time.Duration `yaml:"index_header_lazy_loading_idle_timeout"`
 
 	// Controls the partitioner, used to aggregate multiple GET object API requests.
-	// The config option is hidden until experimental.
-	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" doc:"hidden"`
+	PartitionerMaxGapBytes uint64 `yaml:"partitioner_max_gap_bytes" category:"advanced"`
 
 	// Controls what is the ratio of postings offsets store will hold in memory.
 	// Larger value will keep less offsets, which will increase CPU cycles needed for query touching those postings.
 	// It's meant for setups that want low baseline memory pressure and where less traffic is expected.
 	// On the contrary, smaller value will increase baseline memory usage, but improve latency slightly.
 	// 1 will keep all in memory. Default value is the same as in Prometheus which gives a good balance.
-	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" doc:"hidden"`
+	PostingOffsetsInMemSampling int `yaml:"postings_offsets_in_mem_sampling" category:"advanced"`
 }
 
 // RegisterFlags registers the BucketStore flags

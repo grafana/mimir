@@ -245,6 +245,8 @@
 * [CHANGE] Distributor: change default value of `-distributor.instance-limits.max-inflight-push-requests` to `2000`. #964
 * [CHANGE] Distributor: change default value of `-distributor.remote-timeout` from `2s` to `20s`. #970
 * [CHANGE] Ingester: change default value of `-ingester.final-sleep` from `30s` to `0s`. #981
+* [CHANGE] Ruler: `-experimental.ruler.enable-api` flag has been renamed to `-ruler.enable-api` and is now stable. #913
+* [CHANGE] Alertmanager: `-experimental.alertmanager.enable-api` flag has been renamed to `-alertmanager.enable-api` and is now stable. #913
 * [FEATURE] Query Frontend: Add `cortex_query_fetched_chunks_total` per-user counter to expose the number of chunks fetched as part of queries. This metric can be enabled with the `-frontend.query-stats-enabled` flag (or its respective YAML config option `query_stats_enabled`). #31
 * [FEATURE] Query Frontend: Add experimental querysharding for the blocks storage (instant and range queries). You can now enable querysharding for blocks storage (`-store.engine=blocks`) by setting `-frontend.parallelize-shardable-queries` to `true`. The following additional config and exported metrics have been added. #79 #80 #100 #124 #140 #148 #150 #151 #153 #154 #155 #156 #157 #158 #159 #160 #163 #169 #172 #196 #205 #225 #226 #227 #228 #230 #235 #240 #239 #246 #244 #319 #330 #371 #385 #400 #458 #586 #630 #660 #707
   * New config options:
@@ -294,6 +296,35 @@
 * [FEATURE] Mimir: Added "Activity tracker" feature which can log ongoing activities from previous Mimir run in case of the crash. It is enabled by default and controlled by the `-activity-tracker.filepath` flag. It can be disabled by setting this path to an empty string. Currently, the Store-gateway, Ruler, Querier, and Query-frontend components uses this feature. #631 #782 #822
 * [FEATURE] Mimir: Divide configuration parameters into categories "basic", "advanced", and "experimental". Only flags in the basic category are shown when invoking `-help`, whereas `-help-all` will include flags in all categories (basic, advanced, experimental). #840
 * [FEATURE] Store-gateway: Added `/store-gateway/tenants` and `/store-gateway/tenant/{tenant}/blocks` endpoints that provide functionality that was provided by `tools/listblocks`. #911
+* [FEATURE] The following features have been moved from experimental to stable: #913
+  * Alertmanager API
+  * Alertmanager receiver firewall
+  * Alertmanager sharding
+  * Azure blob storage support
+  * Blocks storage bucket index
+  * Disable the ring health check in the readiness endpoint (`-ingester.readiness-check-ring-health=false`)
+  * Distributor: do not extend writes on unhealthy ingesters
+  * Do not unregister ingesters from ring on shutdown (`-ingester.unregister-on-shutdown=false`)
+  * HA Tracker: cleanup of old replicas from KV Store
+  * Instance limits in ingester and distributor
+  * OpenStack Swift storage support
+  * Query-frontend: query stats tracking
+  * Query-scheduler
+  * Ruler API
+  * S3 Server Side Encryption (SSE) using KMS
+  * TLS configuration for gRPC, HTTP and etcd clients
+  * Zone-aware replication
+  * `/labels` API using matchers (`-querier.query-label-names-with-matchers-enabled`)
+  * The following querier limits:
+    * `-querier.max-fetched-chunks-per-query`
+    * `-querier.max-fetched-chunk-bytes-per-query`
+    * `-querier.max-fetched-series-per-query`
+  * The following alertmanager limits:
+    * Notification rate (`-alertmanager.notification-rate-limit` and `-alertmanager.notification-rate-limit-per-integration`)
+    * Dispatcher groups (`-alertmanager.max-dispatcher-aggregation-groups`)
+    * User config size (`-alertmanager.max-config-size-bytes`)
+    * Templates count in user config (`-alertmanager.max-templates-count`)
+    * Max template size (`-alertmanager.max-template-size-bytes`)
 * [ENHANCEMENT] Query-frontend: added `cortex_query_frontend_workers_enqueued_requests_total` metric to track the number of requests enqueued in each query-scheduler. #384
 * [ENHANCEMENT] Add a flag (`--proxy.compare-use-relative-error`) in the query-tee to compare floating point values using relative error. #208
 * [ENHANCEMENT] Add a flag (`--proxy.compare-skip-recent-samples`) in the query-tee to skip comparing recent samples. By default samples not older than 1 minute are skipped. #234

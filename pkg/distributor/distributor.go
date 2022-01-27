@@ -41,7 +41,6 @@ import (
 	"github.com/grafana/mimir/pkg/mimirpb"
 	"github.com/grafana/mimir/pkg/tenant"
 	"github.com/grafana/mimir/pkg/util"
-	util_log "github.com/grafana/mimir/pkg/util/log"
 	util_math "github.com/grafana/mimir/pkg/util/math"
 	"github.com/grafana/mimir/pkg/util/validation"
 )
@@ -379,10 +378,6 @@ func New(cfg Config, clientConfig ingester_client.Config, limits *validation.Ove
 }
 
 func (d *Distributor) starting(ctx context.Context) error {
-	if d.cfg.InstanceLimits != (InstanceLimits{}) {
-		util_log.WarnExperimentalUse("distributor instance limits")
-	}
-
 	// Only report success if all sub-services start properly
 	return services.StartManagerAndAwaitHealthy(ctx, d.subservices)
 }

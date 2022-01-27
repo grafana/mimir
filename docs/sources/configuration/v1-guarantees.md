@@ -9,73 +9,40 @@ For the v1.0 release, we want to provide the following guarantees:
 
 ## Flags, Config and minor version upgrades
 
-Upgrading cortex from one minor version to the next should "just work"; that being said, we don't want to bump the major version every time we remove a flag, so we will will keep deprecated flags around for 2 minor release. There is a metric (`cortex_deprecated_flags_used_total`) you can alert on to find out if you're using a deprecated flag.
-
-Similarly to flags, minor version upgrades using config files should "just work". If we do need to change config, we will keep the old way working for two minor version. There will be a metric you can alert on for this too.
+Upgrading Grafana Mimir from one minor version to the next should "just work"; that being said, we don't want to bump the major version every time we remove a configuration parameter, so we will keep deprecated flags and YAML config parameters around for 2 minor releases. There is a metric (`deprecated_flags_inuse_total`) you can alert on to find out if you're using a deprecated flag.
 
 These guarantees don't apply for [experimental features](#experimental-features).
 
 ## Reading old data
 
-The Cortex maintainers commit to ensuring future version of Cortex can read data written by versions up to two years old. In practice we expect to be able to read more, but this is our guarantee.
+The Grafana Mimir maintainers commit to ensuring future versions can read data written by versions up to two years old. In practice we expect to be able to read more, but this is our guarantee.
 
 ## API Compatibility
 
-Cortex strives to be 100% API compatible with Prometheus (under `/prometheus/*` and `/api/prom/*`); any deviation from this is considered a bug, except:
+Grafana Mimir strives to be 100% API compatible with Prometheus (under `/prometheus/*`); any deviation from this is considered a bug, except:
 
 - Additional API endpoints for creating, removing and modifying alerts and recording rules.
-- Additional API around pushing metrics (under `/api/push`).
-- Additional API endpoints for management of Cortex itself, such as the ring. These APIs are not part of the any compatibility guarantees.
+- Additional API around pushing metrics (under `/prometheus/api/push`).
+- Additional API endpoints for management of Grafana Mimir itself, such as the ring. These APIs are not part of the any compatibility guarantees.
 
 _For more information, please refer to the [limitations](../guides/limitations.md) doc._
 
 ## Experimental features
 
-Cortex is an actively developed project and we want to encourage the introduction of new features and capability. As such, not everything in each release of Cortex is considered "production-ready". We don't provide any backwards compatibility guarantees on these and the config and flags might break.
+Grafana Mimir is an actively developed project and we want to encourage the introduction of new features and capabilities. As such, not everything in each release of Grafana Mimir is considered "production-ready". Features not considered "production-ready" and the flags used to enable and/or configure these features will be marked "Experimental". There are no backwards compatibility guarantees on anything marked experimental. Configuration and flags are subject to change.
 
 Currently experimental features are:
 
-- S3 Server Side Encryption (SSE) using KMS (including per-tenant KMS config overrides).
-- Azure blob storage.
-- Zone awareness based replication.
-- Ruler API (to PUT rules).
-- Alertmanager:
-  - API (enabled via `-experimental.alertmanager.enable-api`)
-  - Sharding of tenants across multiple instances (enabled via `-alertmanager.sharding-enabled`)
-  - Receiver integrations firewall (configured via `-alertmanager.receivers-firewall.*`)
-- Memcached client DNS-based service discovery.
-- Delete series APIs.
-- In-memory (FIFO) and Redis cache.
-- gRPC Store.
-- TLS configuration in gRPC and HTTP clients.
-- TLS configuration in Etcd client.
-- OpenStack Swift storage support.
-- Metric relabeling in the distributor.
-- Scalable query-frontend (when using query-scheduler)
-- Distributor: do not extend writes on unhealthy ingesters (`-distributor.extend-writes=false`)
-- Tenant Deletion in Purger, for blocks storage.
-- Query-frontend: query stats tracking (`-frontend.query-stats-enabled`)
-- Blocks storage bucket index
-  - The bucket index support in the querier and store-gateway (enabled via `-blocks-storage.bucket-store.bucket-index.enabled=true`) is experimental
-  - The block deletion marks migration support in the compactor (`-compactor.block-deletion-marks-migration-enabled`) is temporarily and will be removed in future versions
-- Querier: tenant federation
-- The thanosconvert tool for converting Thanos block metadata to Cortex
-- HA Tracker: cleanup of old replicas from KV Store.
-- Instance limits in ingester and distributor
-- Exemplar storage, currently in-memory only within the Ingester based on Prometheus exemplar storage (`-blocks-storage.tsdb.max-exemplars`)
-- Querier limits:
-  - `-querier.max-fetched-chunks-per-query`
-  - `-querier.max-fetched-chunk-bytes-per-query`
-  - `-querier.max-fetched-series-per-query`
-- Alertmanager limits
-  - notification rate (`-alertmanager.notification-rate-limit` and `-alertmanager.notification-rate-limit-per-integration`)
-  - dispatcher groups (`-alertmanager.max-dispatcher-aggregation-groups`)
-  - user config size (`-alertmanager.max-config-size-bytes`)
-  - templates count in user config (`-alertmanager.max-templates-count`)
-  - max template size (`-alertmanager.max-template-size-bytes`)
+- Querier: tenant federation.
+- Ruler: tenant federation.
+- Distributor: metrics relabeling.
+- Purger: tenant deletion API.
+- `thanosconvert` tool for converting Thanos block metadata to Grafana Mimir metadata.
+- Exemplar storage
+  - `-ingester.max-global-exemplars-per-user`
+  - `-ingester.exemplars-update-period`
+  - API endpoint `/api/v1/query_exemplars`
 - Hash ring
-  - Do not unregister ingesters from ring on shutdown (`-ingester.unregister-on-shutdown=false`)
-  - Disable the ring health check in the readiness endpoint (`-ingester.readiness-check-ring-health=false`)
   - Disabling ring heartbeat timeouts
     - `-distributor.ring.heartbeat-timeout=0`
     - `-ring.heartbeat-timeout=0`
@@ -90,6 +57,5 @@ Currently experimental features are:
     - `-alertmanager.sharding-ring.heartbeat-period=0`
     - `-compactor.ring.heartbeat-period=0`
     - `-store-gateway.sharding-ring.heartbeat-period=0`
-- `LabelNames` calls using matchers
-  - `-querier.query-label-names-with-matchers-enabled`
-- Exclude ingesters running in specific zones (`-distributor.excluded-zones`)
+  - Exclude ingesters running in specific zones (`-distributor.excluded-zones`)
+- Ingester: Add variance to chunks end time to spread writing across time (`-blocks-storage.tsdb.head-chunks-end-time-variance`)

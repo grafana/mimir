@@ -196,7 +196,7 @@ store_gateway:
       # CLI flag: -store-gateway.sharding-ring.store
       [store: <string> | default = "consul"]
 
-      # The prefix for the keys in the store. Should end with a /.
+      # [advanced] The prefix for the keys in the store. Should end with a /.
       # CLI flag: -store-gateway.sharding-ring.prefix
       [prefix: <string> | default = "collectors/"]
 
@@ -211,19 +211,19 @@ store_gateway:
       [etcd: <etcd_config>]
 
       multi:
-        # Primary backend storage used by multi-client.
+        # [advanced] Primary backend storage used by multi-client.
         # CLI flag: -store-gateway.sharding-ring.multi.primary
         [primary: <string> | default = ""]
 
-        # Secondary backend storage used by multi-client.
+        # [advanced] Secondary backend storage used by multi-client.
         # CLI flag: -store-gateway.sharding-ring.multi.secondary
         [secondary: <string> | default = ""]
 
-        # Mirror writes to secondary store.
+        # [advanced] Mirror writes to secondary store.
         # CLI flag: -store-gateway.sharding-ring.multi.mirror-enabled
         [mirror_enabled: <boolean> | default = false]
 
-        # Timeout for storing value to secondary store.
+        # [advanced] Timeout for storing value to secondary store.
         # CLI flag: -store-gateway.sharding-ring.multi.mirror-timeout
         [mirror_timeout: <duration> | default = 2s]
 
@@ -336,12 +336,12 @@ blocks_storage:
       # CLI flag: -blocks-storage.s3.http.response-header-timeout
       [response_header_timeout: <duration> | default = 2m]
 
-      # If the client connects to S3 via HTTPS and this option is enabled, the
-      # client will accept any certificate and hostname.
+      # [advanced] If the client connects to S3 via HTTPS and this option is
+      # enabled, the client will accept any certificate and hostname.
       # CLI flag: -blocks-storage.s3.http.insecure-skip-verify
       [insecure_skip_verify: <boolean> | default = false]
 
-      # Maximum time to wait for a TLS handshake. 0 means no limit.
+      # [advanced] Maximum time to wait for a TLS handshake. 0 means no limit.
       # CLI flag: -blocks-storage.s3.tls-handshake-timeout
       [tls_handshake_timeout: <duration> | default = 10s]
 
@@ -690,6 +690,14 @@ blocks_storage:
     # CLI flag: -blocks-storage.bucket-store.max-chunk-pool-bytes
     [max_chunk_pool_bytes: <int> | default = 2147483648]
 
+    # [advanced] Size - in bytes - of the smallest chunks pool bucket.
+    # CLI flag: -blocks-storage.bucket-store.chunk-pool-min-bucket-size-bytes
+    [chunk_pool_min_bucket_size_bytes: <int> | default = 16000]
+
+    # [advanced] Size - in bytes - of the largest chunks pool bucket.
+    # CLI flag: -blocks-storage.bucket-store.chunk-pool-max-bucket-size-bytes
+    [chunk_pool_max_bucket_size_bytes: <int> | default = 50000000]
+
     # Max size - in bytes - of the in-memory series hash cache. The cache is
     # shared across all tenants and it's used only when query sharding is
     # enabled.
@@ -706,6 +714,16 @@ blocks_storage:
     # inactivity.
     # CLI flag: -blocks-storage.bucket-store.index-header-lazy-loading-idle-timeout
     [index_header_lazy_loading_idle_timeout: <duration> | default = 1h]
+
+    # [advanced] Max size - in bytes - of a gap for which the partitioner
+    # aggregates together two bucket GET object requests.
+    # CLI flag: -blocks-storage.bucket-store.partitioner-max-gap-bytes
+    [partitioner_max_gap_bytes: <int> | default = 524288]
+
+    # [advanced] Controls what is the ratio of postings offsets that the store
+    # will hold in memory.
+    # CLI flag: -blocks-storage.bucket-store.posting-offsets-in-mem-sampling
+    [postings_offsets_in_mem_sampling: <int> | default = 32]
 
   tsdb:
     # Local directory to store TSDBs in the ingesters.
@@ -753,6 +771,12 @@ blocks_storage:
     # of increased disk I/O operations.
     # CLI flag: -blocks-storage.tsdb.head-chunks-write-buffer-size-bytes
     [head_chunks_write_buffer_size_bytes: <int> | default = 4194304]
+
+    # [experimental] How much variance (as percentage between 0 and 1) should be
+    # applied to the chunk end time, to spread chunks writing across time.
+    # Doesn't apply to the last chunk of the chunk range. 0 means no variance.
+    # CLI flag: -blocks-storage.tsdb.head-chunks-end-time-variance
+    [head_chunks_end_time_variance: <float> | default = 0]
 
     # The number of shards of series to use in TSDB (must be a power of 2).
     # Reducing this will decrease memory footprint, but can negatively impact

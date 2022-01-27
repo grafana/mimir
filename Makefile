@@ -317,6 +317,7 @@ doc: clean-doc
 	go run ./tools/doc-generator ./docs/sources/blocks-storage/store-gateway.template        > ./docs/sources/blocks-storage/store-gateway.md
 	go run ./tools/doc-generator ./docs/sources/blocks-storage/querier.template              > ./docs/sources/blocks-storage/querier.md
 	go run ./tools/doc-generator ./docs/sources/guides/encryption-at-rest.template           > ./docs/sources/guides/encryption-at-rest.md
+	embedmd -w docs/sources/configuration/prometheus-frontend.md
 	embedmd -w docs/sources/operations/requests-mirroring-to-secondary-cluster.md
 	embedmd -w docs/sources/guides/overrides-exporter.md
 	embedmd -w operations/mimir/README.md
