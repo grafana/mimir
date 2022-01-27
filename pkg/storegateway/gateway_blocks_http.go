@@ -151,7 +151,6 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 
 	type richMeta struct {
 		*metadata.Meta
-		Duration    float64 `json:"duration"`
 		DeletedTime *int64  `json:"deletedTime,omitempty"`
 		SplitID     *uint32 `json:"splitId,omitempty"`
 	}
@@ -199,7 +198,6 @@ func (s *StoreGateway) BlocksHandler(w http.ResponseWriter, req *http.Request) {
 		richMetas = append(richMetas, richMeta{
 			Meta:        m,
 			DeletedTime: deletedAt,
-			Duration:    util.TimeFromMillis(m.MaxTime).Sub(util.TimeFromMillis(m.MinTime)).Seconds(),
 			SplitID:     blockSplitID,
 		})
 	}
