@@ -15,6 +15,7 @@ import (
 	"github.com/thanos-io/thanos/pkg/block/metadata"
 	"github.com/thanos-io/thanos/pkg/objstore"
 
+	"github.com/grafana/mimir/pkg/storage/sharding"
 	"github.com/grafana/mimir/pkg/storage/tsdb"
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
@@ -154,7 +155,18 @@ func SortedBlocks(metas map[ulid.ULID]*metadata.Meta) []*metadata.Meta {
 		shardj := blocks[j].Thanos.Labels[tsdb.CompactorShardIDExternalLabel]
 
 		if shardi != "" && shardj != "" && shardi != shardj {
-			return shardi < shardj
+			shardiIndex, shardiCount, erri := sharding.ParseShardIDLabelValue(shardi)
+			shardjIndex, shardjCount, errj := sharding.ParseShardIDLabelValue(shardj)
+			if erri != nil || errj != nil {
+				// Ff failed parsing any of labels, fallback to lexicographical sort.
+				return shardi < shardj
+			} else if shardiCount != shardjCount {
+				// If parsed but shard count differs, first sort by shard count.
+				return shardiCount < shardjCount
+			}
+
+			// Otherwise, sort by shard count, this should be the happy path when there are sharded blocks.
+			return shardiIndex < shardjIndex
 		}
 
 		// ULID time.
