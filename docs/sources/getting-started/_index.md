@@ -110,7 +110,7 @@ Grafana Mimir starts in the background, listening on port 9009.
 
 ## Configure Prometheus to write to Grafana Mimir
 
-Add the following YAML snippet to your Prometheus configuration file and restart the Prometheus server.
+Add the following YAML snippet to your Prometheus configuration file and restart the Prometheus server:
 
 ```yaml
 remote_write:
