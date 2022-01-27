@@ -10,8 +10,8 @@ slug: "getting-started-with-grafana-mimir"
 
 ## Overview
 
-Grafana Mimir runs as a single process or as multiple microservice processes.
-The single process mode is easier to deploy for users wanting to try out Grafana Mimir or develop on it.
+Grafana Mimir runs as either a single process or as multiple microservice processes.
+The single process mode is useful for users who want to try or develop on Grafana Mimir.
 The microservices mode allows you to independently scale different services and isolate failures.
 
 These instructions focus on deploying Grafana Mimir as a single process.
