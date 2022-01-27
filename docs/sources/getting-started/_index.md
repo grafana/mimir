@@ -1,48 +1,48 @@
 ---
-title: "Getting started with Mimir"
-linkTitle: "Getting started with Mimir"
+title: "Getting started with Grafana Mimir"
+linkTitle: "Getting started with Grafana Mimir"
 weight: 1
 no_section_index_title: true
-slug: "getting-started-with-mimir"
+slug: "getting-started-with-grafana-mimir"
 ---
 
-# Getting started with Mimir
+# Getting started with Grafana Mimir
 
 ## Overview
 
-Mimir runs as a single process or as multiple microservice processes.
-The single process mode is easier to deploy for users wanting to try out Mimir or develop on it.
+Grafana Mimir runs as a single process or as multiple microservice processes.
+The single process mode is easier to deploy for users wanting to try out Grafana Mimir or develop on it.
 The microservices mode allows you to independently scale different services and isolate failures.
 
-These instructions focus on deploying Mimir as a single process.
+These instructions focus on deploying Grafana Mimir as a single process.
 Refer to [Architecture](../architecture.md) for more information about the microservices.
 
 This guide assumes you have already installed a Prometheus server or the Grafana Agent.
 To install Prometheus, refer to [Prometheus Installation](https://prometheus.io/docs/prometheus/latest/installation/).
 To install the Grafana Agent, refer to the [latest release](https://github.com/grafana/agent/releases/latest).
 
-## Install Mimir
+## Install Grafana Mimir
 
-To pull the latest Mimir Docker image locally:
+To pull the latest Grafana Mimir Docker image locally:
 
 ```bash
 export MIMIR_LATEST=$(curl -Ls -o /dev/null -w %{url_effective} https://github.com/grafana/mimir/releases | awk -F / '{ print $NF; }')
 docker pull "grafana/mimir:${MIMIR_LATEST}"
 ```
 
-To install Mimir locally, download the latest release from GitHub and mark the file as executable.
+To install Grafana Mimir locally, download the latest release from GitHub and mark the file as executable.
 
 ```bash
 curl -LO https://github.com/grafana/mimir/releases/latest/download/mimir
 chmod +x mimir
 ```
 
-## Start Mimir
+## Start Grafana Mimir
 
-To run Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`.
+To run Grafana Mimir in a single process and with local filesystem storage, write the following configuration YAML to a file called `dev.yaml`.
 
 ```yaml
-# Configuration for running Mimir in single process mode.
+# Configuration for running Grafana Mimir in single process mode.
 # This should not be used in production.  It is only for getting started
 # and development.
 auth_enabled: false
@@ -94,21 +94,21 @@ store_gateway:
     replication_factor: 1
 ```
 
-Using Docker, run Mimir with:
+Using Docker, run Grafana Mimir with:
 
 ```bash
 docker run --rm --name mimir --detach --publish 9009:9009 --volume "$(pwd)"/dev.yaml:/etc/mimir/dev.yaml "grafana/mimir:${MIMIR_LATEST}" --config.file=/etc/mimir/dev.yaml
 ```
 
-Using a local binary, run Mimir with:
+Using a local binary, run Grafana Mimir with:
 
 ```bash
 ./mimir --config.file=./dev.yaml &
 ```
 
-Mimir starts in the background, listening on port 9009.
+Grafana Mimir starts in the background, listening on port 9009.
 
-## Configure Prometheus to write to Mimir
+## Configure Prometheus to write to Grafana Mimir
 
 Add the following YAML snippet to your Prometheus configuration file and restart the Prometheus server.
 
@@ -117,7 +117,7 @@ remote_write:
   - url: http://localhost:9009/api/v1/push
 ```
 
-The configuration for a Prometheus server that scrapes itself and writes those metrics to Mimir would look similar to:
+The configuration for a Prometheus server that scrapes itself and writes those metrics to Grafana Mimir would look similar to:
 
 ```yaml
 remote_write:
@@ -130,7 +130,7 @@ scrape_configs:
       - targets: ["localhost:9090"]
 ```
 
-## Configure the Grafana Agent to write to Mimir
+## Configure the Grafana Agent to write to Grafana Mimir
 
 Add the following YAML snippet to one of your Agent `metrics` `configs` in your Agent configuration file and restart the Grafana Agent.
 
@@ -139,7 +139,7 @@ remote_write:
   - url: http://localhost:9009/prometheus/api/v1/push
 ```
 
-The configuration for an Agent that scrapes itself for metrics and writes those metrics to Mimir would look similar to:
+The configuration for an Agent that scrapes itself for metrics and writes those metrics to Grafana Mimir would look similar to:
 
 ```yaml
 server:
@@ -164,11 +164,11 @@ Run a local Grafana server using Docker:
 docker run --rm --detach --name=grafana --network=host grafana/grafana
 ```
 
-### Add Mimir as a Prometheus data source
+### Add Grafana Mimir as a Prometheus data source
 
 1. Browse to the Grafana server at http://localhost:3000/datasources.
 1. Log in using the default username `admin` and password `admin`.
-1. Configure a new Prometheus data source to query the local Mimir server using the following settings:
+1. Configure a new Prometheus data source to query the local Grafana Mimir server using the following settings:
 
 | Field | Value                            |
 | ----- | -------------------------------- |
@@ -180,4 +180,4 @@ For an illustrated guide to adding a data source, refer to [Add a data source](h
 ## Success
 
 You are now able to query metrics in [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)
-and create dashboard panels using the newly configured Mimir data source.
+and create dashboard panels using the newly configured Grafana Mimir data source.
