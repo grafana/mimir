@@ -4,6 +4,26 @@
   local container = $.core.v1.container,
   local statefulSet = $.apps.v1.statefulSet,
 
+  local parseDuration(duration) =
+    if std.endsWith(duration, 's') then
+      std.parseInt(std.substr(duration, 0, std.length(duration) - 1))
+    else if std.endsWith(duration, 'm') then
+      std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 60
+    else if std.endsWith(duration, 'h') then
+      std.parseInt(std.substr(duration, 0, std.length(duration) - 1)) * 3600
+    else
+      error 'unable to parse duration %s' % duration,
+
+  local formatDuration(seconds) =
+    if seconds <= 60 then
+      '%ds' % seconds
+    else if seconds <= 3600 && seconds % 60 == 0 then
+      '%dm' % (seconds / 60)
+    else if seconds % 3600 == 0 then
+      '%dh' % (seconds / 3600)
+    else
+      '%dm%ds' % [seconds / 60, seconds % 60],
+
   compactor_args::
     $._config.grpcConfig +
     $._config.storageConfig +
@@ -38,6 +58,21 @@
       'compactor.ring.store': 'consul',
       'compactor.ring.consul.hostname': 'consul.%s.svc.cluster.local:8500' % $._config.namespace,
       'compactor.ring.prefix': '',
+
+      // Delete blocks sooner in order to keep the number of live blocks lower in the storage.
+      'compactor.deletion-delay': formatDuration(
+        // Bucket index is updated every cleanup interval.
+        parseDuration($._config.compactor_cleanup_interval) +
+        // Wait until after the ignore deletion marks delay.
+        parseDuration($._config.queryBlocksStorageConfig['blocks-storage.bucket-store.ignore-deletion-marks-delay']) +
+        // Wait until store-gateway have updated. Add 3x the sync interval (instead of 1x) to account for delays and temporarily failures.
+        (parseDuration(
+           if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.sync-interval') then
+             $.store_gateway_args['blocks-storage.bucket-store.sync-interval']
+           else
+             '15m'  // Default config.
+         ) * 3)
+      ),
 
       // Limits config.
       'runtime-config.file': '%s/overrides.yaml' % $._config.overrides_configmap_mountpoint,

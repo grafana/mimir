@@ -548,6 +548,7 @@
 * [CHANGE] Changed log level of querier, query-frontend, query-scheduler and alertmanager from `debug` to `info`. #905
 * [CHANGE] Enabled attributes in-memory cache in store-gateway. #905
 * [CHANGE] Configured store-gateway to not load blocks containing samples more recent than 10h (because such samples are queried from ingesters). #905
+* [CHANGE] Dynamically compute `-compactor.deletion-delay` based on other settings, in order to reduce the deletion delay as much as possible and lower the number of live blocks in the storage. #907
 * [FEATURE] Added query sharding support. It can be enabled setting `cortex_query_sharding_enabled: true` in the `_config` object. #653
 * [FEATURE] Added shuffle-sharding support. It can be enabled and configured using the following config: #902
    ```

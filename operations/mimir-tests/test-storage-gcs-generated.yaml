@@ -1244,6 +1244,7 @@ spec:
         - -compactor.compaction-interval=30m
         - -compactor.compactor-tenant-shard-size=1
         - -compactor.data-dir=/data
+        - -compactor.deletion-delay=2h
         - -compactor.max-closing-blocks-concurrency=2
         - -compactor.max-opening-blocks-concurrency=4
         - -compactor.ring.consul.hostname=consul.default.svc.cluster.local:8500
