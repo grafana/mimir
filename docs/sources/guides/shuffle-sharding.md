@@ -5,18 +5,18 @@ weight: 10
 slug: shuffle-sharding
 ---
 
-Mimir leverages on sharding techniques to horizontally scale both single and multi-tenant clusters beyond the capacity of a single node.
+Mimir leverages sharding techniques to horizontally scale both single and multi-tenant clusters beyond the capacity of a single node.
 
 ## Background
 
-Sharding strategy employed by Mimir distributes the workload across the subset of instances running a given service (eg. ingesters). For example, on the write path each tenant's series are sharded across subset of ingesters. The size of this subset (i.e. the number of instances) is configured using "shard size" parameter. Default value for shard size is 0, which means to use all available instances for each tenant. This allows to have a fair balance on the resources consumed by each instance (ie. CPU and memory) and to maximise these resources across the cluster.
+The sharding strategy employed by Mimir distributes the workload across a subset of the instances running a given service (eg. ingesters). For example, on the write path each tenant's series are sharded across a subset of the ingesters. The size of this subset (i.e. the number of instances) is configured using the "shard size" parameter. The default value for shard size is 0, which means that all available instances should be used for each tenant. This allows for a fair balance on the resources consumed by each instance (ie. CPU and memory) and to maximise these resources across the cluster.
 
 However, in a **multi-tenant** cluster this zero default value introduces some **downsides**:
 
 1. An outage affects all tenants
 2. A misbehaving tenant (eg. causing out of memory) could affect all other tenants
 
-Configuring shard size value higher than zero enables **shuffle sharding**. The goal of **shuffle sharding** is to reduce the blast radius of an outage and better isolate tenants.
+Configuring a shard size value higher than zero enables **shuffle sharding**. The goal of **shuffle sharding** is to reduce the blast radius of an outage and better isolate tenants.
 
 ## What is shuffle sharding
 
@@ -54,7 +54,7 @@ Mimir currently supports shuffle sharding in the following services:
 - [Store-gateway](#store-gateway-shuffle-sharding)
 - [Ruler](#ruler-shuffle-sharding)
 
-Since default value of shard size is 0, shuffle sharding is **disabled by default** and needs to be explicitly enabled by increasing the shard size, either globally or only for given tenant. Note that if this value is higher than number of available instances (e.g. `-distributor.ingestion-tenant-shard-size` is higher than number of ingesters), then shuffle-sharding is disabled and all instances are used again.
+Since default value of shard size is 0, shuffle sharding is **disabled by default** and needs to be explicitly enabled by increasing the shard size, either globally or only for a given tenant. Note that if this value is higher than the number of available instances (e.g. `-distributor.ingestion-tenant-shard-size` is higher than the number of ingesters), then shuffle-sharding is disabled and all instances are used again.
 
 ### Guaranteed properties
 
