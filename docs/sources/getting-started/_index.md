@@ -15,7 +15,7 @@ The single process mode is easier to deploy for users wanting to try out Grafana
 The microservices mode allows you to independently scale different services and isolate failures.
 
 These instructions focus on deploying Grafana Mimir as a single process.
-Refer to [Architecture](../architecture.md) for more information about the microservices.
+Refer to [Architecture]({{<relref "../architecture.md" >}}) for more information about the microservices.
 
 This guide assumes you have already installed a Prometheus server or the Grafana Agent.
 To install Prometheus, refer to [Prometheus Installation](https://prometheus.io/docs/prometheus/latest/installation/).
