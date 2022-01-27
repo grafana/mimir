@@ -16,6 +16,8 @@ VERSION=$(shell cat "./VERSION" 2> /dev/null)
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 
+HOSTNAME := $(shell hostname)
+
 # Don't export GOOS and GOARCH as environment variables. They get exported when passed via CLI options,
 # but that breaks tools ran via "go run". We use GOOS/GOARCH explicitly in places where needed.
 unexport GOOS
@@ -397,6 +399,13 @@ check-doc: doc
 		./operations/mimir/*.md \
 		./operations/mimir-mixin/docs/sources/*.md \
 	|| (echo "Please update generated documentation by running 'make doc'" && false)
+
+.PHONY: reference-help
+reference-help: cmd/mimir/mimir
+	@(./cmd/mimir/mimir -h || true) > cmd/mimir/help.txt.tmpl
+	@sed -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help.txt.tmpl
+	@(./cmd/mimir/mimir -help-all || true) > cmd/mimir/help-all.txt.tmpl
+	@sed -i s/$(HOSTNAME)/\{\{.Hostname\}\}/g cmd/mimir/help-all.txt.tmpl
 
 clean-white-noise:
 	@find . -path ./.pkg -prune -o -path ./vendor -prune -o -path ./website -prune -or -type f -name "*.md" -print | \

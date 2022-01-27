@@ -279,9 +279,9 @@ func main() {
 
 	templatePath := flag.Arg(0)
 
-	// In order to match YAML config fields with CLI flags, we do map
+	// In order to match YAML config fields with CLI flags, we map
 	// the memory address of the CLI flag variables and match them with
-	// the config struct fields address.
+	// the config struct fields' addresses.
 	cfg := &mimir.Config{}
 	flags := parseFlags(cfg, util_log.Logger)
 
