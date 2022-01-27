@@ -64,7 +64,12 @@
         // Bucket index is updated every cleanup interval.
         parseDuration($._config.compactor_cleanup_interval) +
         // Wait until after the ignore deletion marks delay.
-        parseDuration($._config.queryBlocksStorageConfig['blocks-storage.bucket-store.ignore-deletion-marks-delay']) +
+        parseDuration(
+          if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.ignore-deletion-marks-delay') then
+            $.store_gateway_args['blocks-storage.bucket-store.ignore-deletion-marks-delay']
+          else
+            '1h'  // Default config.
+        ) +
         // Wait until store-gateway have updated. Add 3x the sync interval (instead of 1x) to account for delays and temporarily failures.
         (parseDuration(
            if std.objectHas($.store_gateway_args, 'blocks-storage.bucket-store.sync-interval') then

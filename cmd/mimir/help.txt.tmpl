@@ -296,7 +296,7 @@ Usage of ./cmd/mimir/mimir:
   -blocks-storage.bucket-store.ignore-blocks-within duration
     	Blocks with minimum time within this duration are ignored, and not loaded by store-gateway. Useful when used together with -querier.query-store-after to prevent loading young blocks, because there are usually many of them (depending on number of ingesters) and they are not yet compacted. Negative values or 0 disable the filter.
   -blocks-storage.bucket-store.ignore-deletion-marks-delay duration
-    	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. Default is 6h, half of the default value for -compactor.deletion-delay. (default 6h0m0s)
+    	Duration after which the blocks marked for deletion will be filtered out while fetching blocks. The idea of ignore-deletion-marks-delay is to ignore blocks that are marked for deletion with some delay. This ensures store can still serve blocks that are meant to be deleted but do not have a replacement yet. (default 1h0m0s)
   -blocks-storage.bucket-store.index-cache.backend string
     	The index cache backend type. Supported values: inmemory, memcached. (default "inmemory")
   -blocks-storage.bucket-store.index-cache.inmemory.max-size-bytes uint
