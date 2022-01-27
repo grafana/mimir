@@ -23,7 +23,7 @@ To install the Grafana Agent, refer to the [latest release](https://github.com/g
 
 ## Install Grafana Mimir
 
-To pull the latest Grafana Mimir Docker image locally:
+Pull the latest Grafana Mimir Docker image locally:
 
 ```bash
 export MIMIR_LATEST=$(curl -Ls -o /dev/null -w %{url_effective} https://github.com/grafana/mimir/releases | awk -F / '{ print $NF; }')
