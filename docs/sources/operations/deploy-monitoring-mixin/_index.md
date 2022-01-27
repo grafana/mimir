@@ -12,7 +12,7 @@ Grafana Mimir exposes a `/metrics` endpoint returning Prometheus metrics. The en
 
 Grafana Mimir is shipped with a comprehensive set of production-ready Grafana dashboards and alerts to monitor the state and health of a Mimir cluster.
 
-Dashboards both provide an high-level and in-depth view over every aspect of a Grafana Mimir cluster. You can take a look at all the available dashboards in [this overview]({{< relref "./dashboards-overview.md" >}}).
+Dashboards both provide an high-level and in-depth view over every aspect of a Grafana Mimir cluster. You can take a look at all the available dashboards in [this overview]({{< relref "./dashboards/_index.md" >}}).
 
 Alerts allow you to monitor the health of a Mimir cluster. For each alert, we provide detailed [playbooks](https://github.com/grafana/mimir/blob/main/operations/mimir-mixin/docs/playbooks.md) to further investigate and fix the issue.
 

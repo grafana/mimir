@@ -5,7 +5,7 @@ weight = 2
 
 # Install Grafana Mimir dashboards and alerts
 
-Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [dashboards]({{< relref "./dashboards-overview.md" >}}) and alerts to monitor the state and health of a Mimir cluster.
+Grafana Mimir is shipped with a comprehensive set of production-ready Grafana [dashboards]({{< relref "./dashboards/_index.md" >}}) and alerts to monitor the state and health of a Mimir cluster.
 
 ## Requirements
 

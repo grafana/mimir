@@ -1,5 +1,5 @@
-local mimir = import 'mimir/mimir.libsonnet';
 local gossip = import 'mimir/gossip.libsonnet';
+local mimir = import 'mimir/mimir.libsonnet';
 
 mimir + gossip {
   _config+:: {
