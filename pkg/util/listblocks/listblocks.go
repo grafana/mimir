@@ -22,7 +22,12 @@ import (
 	"github.com/grafana/mimir/pkg/storage/tsdb/bucketindex"
 )
 
-func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (map[ulid.ULID]*metadata.Meta, map[ulid.ULID]time.Time, error) {
+// LoadMetaFilesAndDeletionMarkers reads the bucket and loads the meta files for the provided user.
+// If showDeleted is true, then deletion marker files are also read and returned.
+// If ulidMinTime is non-zero, then only blocks with ULID time higher than that are read,
+// this is useful to filter the results for users with high amount of blocks without reading the metas
+// (but it can be inexact since ULID time can differ from block min/max times range).
+func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketReader, user string, showDeleted bool, ulidMinTime time.Time) (metas map[ulid.ULID]*metadata.Meta, deletionTimes map[ulid.ULID]time.Time, _ error) {
 	deletedBlocks := map[ulid.ULID]bool{}
 	deletionMarkerFiles := []string(nil)
 
@@ -60,7 +65,6 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 		return nil, nil, err
 	}
 
-	var deletionTimes map[ulid.ULID]time.Time
 	if showDeleted {
 		deletionTimes, err = fetchDeletionTimes(ctx, bkt, deletionMarkerFiles)
 		if err != nil {
@@ -68,7 +72,7 @@ func LoadMetaFilesAndDeletionMarkers(ctx context.Context, bkt objstore.BucketRea
 		}
 	}
 
-	metas, err := fetchMetas(ctx, bkt, metaPaths)
+	metas, err = fetchMetas(ctx, bkt, metaPaths)
 	return metas, deletionTimes, err
 }
 
