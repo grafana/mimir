@@ -132,7 +132,7 @@ scrape_configs:
 
 ## Configure the Grafana Agent to write to Grafana Mimir
 
-Add the following YAML snippet to one of your Agent `metrics` `configs` in your Agent configuration file and restart the Grafana Agent.
+Add the following YAML snippet to one of your Agent metrics configurations (`metrics.configs`) in your Agent configuration file and restart the Grafana Agent.
 
 ```yaml
 remote_write:
