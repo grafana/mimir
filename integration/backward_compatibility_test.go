@@ -37,6 +37,7 @@ func previousVersionImages() map[string]func(map[string]string) map[string]strin
 		for _, image := range strings.Split(overrideImageVersions, ",") {
 			previousVersionImages[image] = func(flags map[string]string) map[string]string {
 				flags["-store.engine"] = "blocks"
+				flags["-server.http-listen-port"] = "8080"
 				return flags
 			}
 		}
