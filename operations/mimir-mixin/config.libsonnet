@@ -35,7 +35,7 @@
     cortex_p99_latency_threshold_seconds: 2.5,
 
     // Whether resources dashboards are enabled (based on cAdvisor metrics).
-    resources_dashboards_enabled: false,
+    resources_dashboards_enabled: true,
 
     // The label used to differentiate between different application instances (i.e. 'pod' in a kubernetes install).
     per_instance_label: 'pod',
