@@ -99,7 +99,7 @@ func main() {
 	flag.BoolVar(&printModules, "modules", false, "List available values that can be used as target.")
 	flag.BoolVar(&printHelp, "help", false, "Print basic help.")
 	flag.BoolVar(&printHelp, "h", false, "Print basic help.")
-	flag.BoolVar(&printHelpAll, "help-all", false, "Print help including also advanced and experimental flags.")
+	flag.BoolVar(&printHelpAll, "help-all", false, "Print help, also including advanced and experimental parameters.")
 
 	flag.CommandLine.Usage = func() { /* don't do anything by default, we will print usage ourselves, but only when requested. */ }
 	flag.CommandLine.Init(flag.CommandLine.Name(), flag.ContinueOnError)
